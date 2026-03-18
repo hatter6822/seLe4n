@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "f346d2a71bf3231b80c92a92cfe8b23bb5da76f1",
-      "tree_sha": "5763a0f337cbe0902091903bc691c030b9cd233c",
-      "committed_at_utc": "2026-03-18T15:24:47+00:00"
+      "commit_sha": "feb61ce97723c242c52d18bedc27f3c7ae7652e6",
+      "tree_sha": "9d073adc785f68c08af45052f34f8ec660df2f7b",
+      "committed_at_utc": "2026-03-18T15:32:03+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2b295f8d8817e0da95f4e4378931f62e71448238e261171388d0c453cc64da3b"
+    "source_digest": "24f3cd34d4abfa04e62979423ca2648a579f94946f884fc36e17ba504795ad40"
   },
   "summary": {
     "module_count": 81,
@@ -27,7 +27,7 @@
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 43240,
+    "production_loc": 43284,
     "test_files": 4,
     "test_loc": 5256,
     "proved_theorem_lemma_decls": 1350,
@@ -10138,7 +10138,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 1734,
+          "line": 1777,
           "called": [
             "probeChainDominant"
           ]
@@ -10146,19 +10146,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 1744,
+          "line": 1788,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 1753,
+          "line": 1797,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 1762,
+          "line": 1806,
           "called": []
         }
       ]

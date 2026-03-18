@@ -37,10 +37,20 @@
   `erase_preserves_distCorrect`
 - Preservation theorems complete: WF (all ops), distCorrect (all ops),
   noDupKeys (all ops)
+- TPI-D1 completed: `insertLoop_preserves_noDupKeys` — full fuel induction
+  proving noDupKeys for insertLoop result (zero sorry)
+- TPI-D2 completed: `insertLoop_preserves_pcd` — full fuel induction proving
+  probeChainDominant for insertLoop result (zero sorry)
+- Helper infrastructure added: `offset_injective` (modular offset injectivity),
+  `getElem_idx_eq` (array access proof irrelevance), `carried_key_absent`
+  (key absent if probe reached empty/swap position), `getLoop_none_of_absent`
+  (if key absent from all slots, getLoop returns none)
+- D6 (`get_after_erase_eq`) structured via `getLoop_none_of_absent` +
+  `erase_removes_key`
 - Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
   `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
   `RobinHood.lean`)
-- 6 TPI-D deferred items remaining (TPI-D1 through TPI-D6): probeChainDominant
+- 4 TPI-D deferred items remaining (TPI-D3 through TPI-D6): erase PCD
   preservation and lookup correctness
 - Zero `sorry`/`axiom` in completed proofs; zero warnings; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.2`

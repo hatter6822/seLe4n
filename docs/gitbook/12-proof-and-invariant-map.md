@@ -153,28 +153,44 @@ Bundle preservation (`Invariant/Preservation.lean`):
 noDupKeys preservation (`Invariant/Preservation.lean`):
 - `noDupKeys_after_clear`, `backshiftLoop_preserves_noDupKeys`,
   `erase_preserves_noDupKeys`
+- `insertLoop_preserves_noDupKeys` — full fuel induction proving noDupKeys for
+  insertLoop result (TPI-D1, zero sorry)
 
 Erase distCorrect preservation (`Invariant/Preservation.lean`):
 - `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
   `erase_preserves_distCorrect`
 
-Lookup correctness signatures (`Invariant/Lookup.lean`):
-- `get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`
+probeChainDominant preservation (`Invariant/Preservation.lean`):
+- `insertLoop_preserves_pcd` — full fuel induction proving probeChainDominant
+  for insertLoop result (TPI-D2, zero sorry)
+
+Helper infrastructure (`Invariant/Preservation.lean`):
+- `offset_injective` — injectivity of modular offsets from same base
+- `getElem_idx_eq` — array access proof irrelevance
+- `carried_key_absent` — key absent if probe reached empty/swap position
+
+Lookup helpers (`Invariant/Lookup.lean`):
+- `getLoop_none_of_absent` — if key absent from all slots, getLoop returns none
+- `get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq` (signatures;
+  D6 structured via `getLoop_none_of_absent` + `erase_removes_key`)
 
 **invExt bundle restructuring:** Discovery: `robinHoodOrdered` (non-decreasing
 dist within clusters) is NOT preserved by backshift-on-erase. The `invExt`
 bundle was restructured to use `probeChainDominant` instead, which IS preserved
 by all operations. Preservation theorems proved: WF (all ops), distCorrect
-(all ops), noDupKeys (all ops). 6 TPI items remaining for `probeChainDominant`
-preservation and lookup correctness.
+(all ops), noDupKeys (all ops), probeChainDominant (insert — TPI-D1/D2
+completed). 4 TPI items remaining for erase PCD preservation and lookup
+correctness.
 
 The WS-N workstream introduces a formally verified Robin Hood hash table
 with the following remaining planned theorems (N2 in-progress + N3–N5):
 
 - **Remaining N2 proofs** (in progress): `probeChainDominant` preservation
-  through insert/erase/resize, lookup correctness proof bodies for
-  `get_after_insert_eq/ne`, `get_after_erase_eq`. 6 TPI-D items (TPI-D1
-  through TPI-D6).
+  through erase/resize, lookup correctness proof bodies for
+  `get_after_insert_eq/ne`, `get_after_erase_eq`. 4 TPI-D items (TPI-D3
+  through TPI-D6): TPI-D3 (`erase_preserves_probeChainDominant`), TPI-D4
+  (`get_after_insert_eq`), TPI-D5 (`get_after_insert_ne`), TPI-D6a
+  (`erase_removes_key`).
 - **Bridge lemmas** (N3, planned): 12 lemmas mirroring `Std.HashMap` proof patterns
   used by kernel (`getElem?_insert_self/ne`, `getElem?_erase_self/ne`,
   `size_erase_le`, `size_filter_le_size`, `mem_iff_isSome_getElem?`, etc.).
