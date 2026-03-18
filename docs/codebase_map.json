@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "8f7ce2f3e964fd5ea9d9b81f20ae4849932e0209",
-      "tree_sha": "10d1e169aba469096b493ef0fabe964ab72e3665",
-      "committed_at_utc": "2026-03-18T17:19:20-04:00"
+      "branch": "claude/audit-pr-invariant-proofs-84jZC",
+      "commit_sha": "e3dbc686f95867c44e79450940abcf89f6ddf3fd",
+      "tree_sha": "3f469fd735f799bbbc6d256c504be6724b163e6e",
+      "committed_at_utc": "2026-03-18T21:05:58+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "73e20b953cedcdfc58a807e17fca2ba70dbd7ffd1fb75240eb4a2333bfbf974a"
+    "source_digest": "fa33fba8095eb4e45120104e961083a854bbcf93ab538df2e1b52d8b078ef30a"
   },
   "summary": {
     "module_count": 81,
-    "declaration_count": 2457
+    "declaration_count": 2486
   },
   "readme_sync": {
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 41973,
+    "production_loc": 44656,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1343,
+    "proved_theorem_lemma_decls": 1371,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9703,7 +9703,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Lookup",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-      "declaration_count": 4,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -9713,28 +9713,168 @@
         },
         {
           "kind": "theorem",
+          "name": "getLoop_none_of_absent",
+          "line": 21,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "findLoop_none_implies_absent",
+          "line": 49,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftLoop_preserves_key_absence",
+          "line": 189,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "erase_removes_key",
+          "line": 251,
+          "called": [
+            "backshiftLoop_preserves_key_absence",
+            "findLoop_none_implies_absent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "displacement_roundtrip'",
+          "line": 306,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "offset_injective'",
+          "line": 325,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "disp_step'",
+          "line": 349,
+          "called": [
+            "displacement_roundtrip'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getLoop_finds_present",
+          "line": 388,
+          "called": [
+            "disp_step'",
+            "displacement_roundtrip'",
+            "offset_injective'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_preserves_slot",
+          "line": 478,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_places_key",
+          "line": 523,
+          "called": [
+            "insertLoop_preserves_slot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "List.countP_eq_length",
+          "line": 606,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "exists_empty_slot",
+          "line": 619,
+          "called": [
+            "List.countP_eq_length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "position_reachable",
+          "line": 647,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_has_key",
+          "line": 670,
+          "called": [
+            "exists_empty_slot",
+            "insertLoop_places_key",
+            "position_reachable"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.get_after_insert_eq",
-          "line": 19,
+          "line": 754,
+          "called": [
+            "getLoop_finds_present",
+            "insert_has_key"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_absent_ne_key",
+          "line": 787,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "getLoop_some_implies_entry",
+          "line": 851,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "resize_preserves_key_absence",
+          "line": 878,
+          "called": [
+            "insertLoop_absent_ne_key"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_output_source",
+          "line": 912,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_ne",
-          "line": 26,
-          "called": []
+          "line": 986,
+          "called": [
+            "getLoop_finds_present",
+            "getLoop_none_of_absent",
+            "getLoop_some_implies_entry",
+            "insertLoop_absent_ne_key",
+            "insertLoop_output_source",
+            "resize_preserves_key_absence"
+          ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 34,
-          "called": []
+          "line": 1195,
+          "called": [
+            "erase_removes_key",
+            "getLoop_none_of_absent"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Preservation",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean",
-      "declaration_count": 50,
+      "declaration_count": 61,
       "declarations": [
         {
           "kind": "namespace",
@@ -9879,19 +10019,19 @@
         {
           "kind": "def",
           "name": "probeChainDominant",
-          "line": 420,
+          "line": 421,
           "called": []
         },
         {
           "kind": "def",
           "name": "RHTable.probeChainDominant",
-          "line": 431,
+          "line": 432,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.empty_probeChainDominant",
-          "line": 435,
+          "line": 436,
           "called": [
             "probeChainDominant"
           ]
@@ -9899,13 +10039,13 @@
         {
           "kind": "def",
           "name": "RHTable.invExt",
-          "line": 441,
+          "line": 447,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExt",
-          "line": 445,
+          "line": 451,
           "called": [
             "RHTable.empty_probeChainDominant"
           ]
@@ -9913,27 +10053,76 @@
         {
           "kind": "theorem",
           "name": "displacement_roundtrip",
-          "line": 454,
+          "line": 463,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "same_displacement_eq",
-          "line": 475,
+          "line": 484,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_distCorrect",
-          "line": 516,
+          "line": 525,
           "called": [
             "dist_step_mod"
           ]
         },
         {
           "kind": "theorem",
+          "name": "offset_injective",
+          "line": 602,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "getElem_idx_eq",
+          "line": 625,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "carried_key_absent",
+          "line": 637,
+          "called": [
+            "displacement_roundtrip",
+            "getElem_idx_eq",
+            "probeChainDominant",
+            "same_displacement_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_preserves_noDupKeys",
+          "line": 719,
+          "called": [
+            "carried_key_absent",
+            "displacement_roundtrip",
+            "dist_step_mod",
+            "getElem_idx_eq",
+            "offset_injective",
+            "probeChainDominant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_preserves_pcd",
+          "line": 989,
+          "called": [
+            "carried_key_absent",
+            "displacement_roundtrip",
+            "dist_step_mod",
+            "getElem_idx_eq",
+            "offset_injective",
+            "probeChainDominant"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_distCorrect",
-          "line": 592,
+          "line": 1269,
           "called": [
             "insertLoop_preserves_distCorrect"
           ]
@@ -9941,53 +10130,42 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_distCorrect",
-          "line": 602,
+          "line": 1279,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_distCorrect",
-          "line": 615,
+          "line": 1292,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_noDupKeys",
-          "line": 626,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.insertNoResize_preserves_robinHoodOrdered",
-          "line": 632,
-          "called": []
+          "line": 1303,
+          "called": [
+            "insertLoop_preserves_noDupKeys"
+          ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_probeChainDominant",
-          "line": 638,
+          "line": 1319,
           "called": [
+            "insertLoop_preserves_pcd",
             "probeChainDominant"
           ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_invExt",
-          "line": 644,
+          "line": 1333,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_noDupKeys",
-          "line": 654,
-          "called": [
-            "RHTable.empty_invExt"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.resize_preserves_robinHoodOrdered",
-          "line": 667,
+          "line": 1342,
           "called": [
             "RHTable.empty_invExt"
           ]
@@ -9995,7 +10173,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_probeChainDominant",
-          "line": 680,
+          "line": 1355,
           "called": [
             "RHTable.empty_invExt",
             "probeChainDominant"
@@ -10004,83 +10182,167 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invExt",
-          "line": 693,
+          "line": 1368,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_noDupKeys",
-          "line": 701,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.insert_preserves_robinHoodOrdered",
-          "line": 709,
+          "line": 1375,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_probeChainDominant",
-          "line": 717,
+          "line": 1383,
           "called": [
             "probeChainDominant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "noDupKeys_after_clear",
+          "line": 1395,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftLoop_preserves_noDupKeys",
+          "line": 1418,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "displacement_backward",
+          "line": 1520,
+          "called": [
+            "dist_step_mod"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftLoop_preserves_distCorrect",
+          "line": 1589,
+          "called": [
+            "displacement_backward"
           ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_distCorrect",
-          "line": 725,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.erase_preserves_noDupKeys",
-          "line": 731,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.erase_preserves_robinHoodOrdered",
-          "line": 737,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 743,
+          "line": 1671,
           "called": [
-            "probeChainDominant"
+            "backshiftLoop_preserves_distCorrect"
           ]
         },
         {
           "kind": "theorem",
-          "name": "RHTable.insert_preserves_invariant",
-          "line": 753,
+          "name": "RHTable.erase_preserves_noDupKeys",
+          "line": 1700,
+          "called": [
+            "backshiftLoop_preserves_noDupKeys",
+            "findLoop_lt",
+            "noDupKeys_after_clear"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "relaxedPCD",
+          "line": 1726,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "relaxedPCD_to_pcd_at_termination",
+          "line": 1740,
+          "called": [
+            "displacement_roundtrip",
+            "probeChainDominant",
+            "relaxedPCD"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pcd_to_relaxedPCD_after_clear",
+          "line": 1849,
+          "called": [
+            "probeChainDominant",
+            "relaxedPCD"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftStep_relaxedPCD",
+          "line": 1875,
+          "called": [
+            "displacement_roundtrip",
+            "relaxedPCD"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mod_add_mod",
+          "line": 2004,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftLoop_preserves_pcd",
+          "line": 2014,
+          "called": [
+            "backshiftStep_relaxedPCD",
+            "displacement_backward",
+            "mod_add_mod",
+            "probeChainDominant",
+            "relaxedPCD",
+            "relaxedPCD_to_pcd_at_termination"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "List.exists_none_of_countP_lt",
+          "line": 2163,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "exists_none_of_countOccupied_lt",
+          "line": 2179,
+          "called": [
+            "List.exists_none_of_countP_lt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.erase_preserves_probeChainDominant",
+          "line": 2190,
+          "called": [
+            "backshiftLoop_preserves_pcd",
+            "exists_none_of_countOccupied_lt",
+            "findLoop_correct",
+            "findLoop_lt",
+            "mod_add_mod",
+            "pcd_to_relaxedPCD_after_clear",
+            "probeChainDominant",
+            "relaxedPCD"
+          ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 762,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.erase_preserves_invariant",
-          "line": 769,
+          "line": 2283,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 778,
+          "line": 2295,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 785,
+          "line": 2304,
           "called": []
         }
       ]

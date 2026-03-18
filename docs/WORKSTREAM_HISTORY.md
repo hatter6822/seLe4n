@@ -33,7 +33,7 @@ per-cluster modular-arithmetic ordering.
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-N1** | Core types + operations: `RHEntry`, `RHTable`, `empty`, `insert`, `get?`, `erase`, `fold`, `resize`; fuel-bounded loops, bounds-checked access; `empty_wf` proof | CRITICAL — **COMPLETED** (v0.17.1) |
-| **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`robinHoodOrdered` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_erase_eq`) | HIGH — **IN PROGRESS** (v0.17.2) |
+| **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`probeChainDominant` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_erase_eq`). TPI-D1 (`insertLoop_preserves_noDupKeys`) + TPI-D2 (`insertLoop_preserves_pcd`) completed; 4 TPI-D items remaining | HIGH — **IN PROGRESS** (v0.17.2) |
 | **WS-N3** | Kernel API bridge: `GetElem?`/`Membership` instances, 12 bridge lemmas matching `Std.HashMap` proof patterns, `filter` support | MEDIUM — **PLANNED** |
 | **WS-N4** | Kernel integration (first site): replace `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; update ~15 CNode theorems, ~8 invariant proofs, test fixtures | MEDIUM — **PLANNED** |
 | **WS-N5** | Test coverage + documentation: 12 standalone + 6 integration test scenarios, full documentation sync across 8 canonical files + 4 GitBook chapters | LOW — **PLANNED** |
@@ -70,10 +70,15 @@ for the full workstream plan (5 phases: N1 through N5, 122 subtasks).
 **WS-N2 (v0.17.2):** Invariant proofs — invariant definitions, WF/distCorrect
 preservation, modular arithmetic helpers, and lookup correctness foundations.
 Delivers:
+- **Major finding:** Discovery: `robinHoodOrdered` (non-decreasing dist within
+  clusters) is NOT preserved by backshift-on-erase. The `invExt` bundle was
+  restructured to use `probeChainDominant` instead, which IS preserved by all
+  operations.
 - **N2-A:** Invariant definitions in `SeLe4n/Kernel/RobinHood/Invariant/Defs.lean`:
   `distCorrect` (probe distance accuracy), `noDupKeys` (key uniqueness),
-  `robinHoodOrdered` (non-decreasing cluster distances), `RHTable.invariant`
-  (4-conjunct bundle: `wf ∧ distCorrect ∧ noDupKeys ∧ robinHoodOrdered`).
+  `robinHoodOrdered` (non-decreasing cluster distances), `probeChainDominant`
+  (replaces `robinHoodOrdered` in `invExt` bundle), `RHTable.invariant`
+  (restructured bundle using `probeChainDominant`).
   `empty_distCorrect`, `empty_noDupKeys`, `empty_robinHoodOrdered`,
   `empty_invariant` proofs for empty table.
 - **N2-B:** WF preservation in `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean`:
@@ -100,8 +105,27 @@ Delivers:
   `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean`,
   `SeLe4n/Kernel/RobinHood/Invariant.lean` (new);
   `SeLe4n/Kernel/RobinHood/Core.lean`, `SeLe4n/Kernel/RobinHood.lean` (modified).
-- noDupKeys, robinHoodOrdered preservation, and lookup correctness proofs
-  still in progress (finalized in subsequent N2 iterations).
+- **N2 additional deliverables:** `noDupKeys_after_clear`,
+  `backshiftLoop_preserves_noDupKeys`, `erase_preserves_noDupKeys`,
+  `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
+  `erase_preserves_distCorrect`.
+- Preservation theorems proved: WF (all ops), distCorrect (all ops),
+  noDupKeys (all ops). `probeChainDominant` preservation through insert
+  (TPI-D1, TPI-D2 completed), erase preservation and lookup correctness
+  proofs still in progress.
+- **TPI-D1 completed:** `insertLoop_preserves_noDupKeys` — full fuel induction
+  proving noDupKeys for insertLoop result (zero sorry).
+- **TPI-D2 completed:** `insertLoop_preserves_pcd` — full fuel induction
+  proving probeChainDominant for insertLoop result (zero sorry).
+- Helper infrastructure: `offset_injective` (modular offset injectivity),
+  `getElem_idx_eq` (array access proof irrelevance), `carried_key_absent`
+  (key absent if probe reached empty/swap position), `getLoop_none_of_absent`
+  (if key absent from all slots, getLoop returns none).
+- **D6 structured:** `get_after_erase_eq` partially proved via
+  `getLoop_none_of_absent` + `erase_removes_key`.
+- 4 TPI-D items remaining (TPI-D3 through TPI-D6): TPI-D3
+  (`erase_preserves_probeChainDominant`), TPI-D4 (`get_after_insert_eq`),
+  TPI-D5 (`get_after_insert_ne`), TPI-D6a (`erase_removes_key`).
 - Zero `sorry`/`axiom` in completed proofs. Zero warnings. All test tiers pass.
 
 ### WS-M workstream (Capability subsystem audit & remediation)

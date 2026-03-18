@@ -28,11 +28,34 @@
   `SeLe4n/Kernel/RobinHood.lean` to import Invariant; changed `private` to
   `protected` for `insertNoResize`, `insertNoResize_capacity`,
   `resize_fold_capacity` in `Core.lean`
+- **Major finding:** `robinHoodOrdered` (non-decreasing dist within clusters)
+  is NOT preserved by backshift-on-erase. `invExt` bundle restructured to use
+  `probeChainDominant` instead, which IS preserved by all operations
+- Additional helper lemmas proved: `noDupKeys_after_clear`,
+  `backshiftLoop_preserves_noDupKeys`, `erase_preserves_noDupKeys`,
+  `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
+  `erase_preserves_distCorrect`
+- Preservation theorems complete: WF (all ops), distCorrect (all ops),
+  noDupKeys (all ops)
+- TPI-D1 completed: `insertLoop_preserves_noDupKeys` — full fuel induction
+  proving noDupKeys for insertLoop result (zero sorry)
+- TPI-D2 completed: `insertLoop_preserves_pcd` — full fuel induction proving
+  probeChainDominant for insertLoop result (zero sorry)
+- Helper infrastructure added: `offset_injective` (modular offset injectivity),
+  `getElem_idx_eq` (array access proof irrelevance), `carried_key_absent`
+  (key absent if probe reached empty/swap position), `getLoop_none_of_absent`
+  (if key absent from all slots, getLoop returns none)
+- TPI-D4 completed: `get_after_insert_eq` — insert lookup correctness via
+  `getLoop_finds_present` + `insertLoop_places_key` (zero sorry)
+- TPI-D6 completed: `get_after_erase_eq` — erase lookup correctness via
+  `erase_removes_key` + `getLoop_none_of_absent` (zero sorry)
+- Additional helpers: `findLoop_none_implies_absent`, `backshiftLoop_preserves_key_absence`,
+  `getLoop_finds_present`, `insertLoop_places_key`
 - Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
   `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
   `RobinHood.lean`)
-- noDupKeys, robinHoodOrdered preservation, and lookup correctness proofs
-  still in progress
+- 2 TPI-D deferred items remaining: TPI-D3 (erase PCD preservation,
+  requires relaxedPCD invariant), TPI-D5 (insert non-interference)
 - Zero `sorry`/`axiom` in completed proofs; zero warnings; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.2`
 
