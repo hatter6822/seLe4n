@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "da19e709c7a8e8dfd164a58703b225e9f259b966",
-      "tree_sha": "e520601f2b10e817c06121ecae6a981ece0fbe9d",
-      "committed_at_utc": "2026-03-18T15:21:31+00:00"
+      "commit_sha": "f346d2a71bf3231b80c92a92cfe8b23bb5da76f1",
+      "tree_sha": "5763a0f337cbe0902091903bc691c030b9cd233c",
+      "committed_at_utc": "2026-03-18T15:24:47+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c485f6c85befbf462b651801c649693daf5098db73dd2e141486fd74617fe329"
+    "source_digest": "2b295f8d8817e0da95f4e4378931f62e71448238e261171388d0c453cc64da3b"
   },
   "summary": {
     "module_count": 81,
-    "declaration_count": 2462
+    "declaration_count": 2464
   },
   "readme_sync": {
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 43003,
+    "production_loc": 43240,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1348,
+    "proved_theorem_lemma_decls": 1350,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9703,7 +9703,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Lookup",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-      "declaration_count": 6,
+      "declaration_count": 8,
       "declarations": [
         {
           "kind": "namespace",
@@ -9719,26 +9719,41 @@
         },
         {
           "kind": "theorem",
-          "name": "erase_removes_key",
-          "line": 47,
+          "name": "findLoop_none_implies_absent",
+          "line": 49,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "backshiftLoop_preserves_key_absence",
+          "line": 189,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "erase_removes_key",
+          "line": 251,
+          "called": [
+            "backshiftLoop_preserves_key_absence",
+            "findLoop_none_implies_absent"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.get_after_insert_eq",
-          "line": 69,
+          "line": 306,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_ne",
-          "line": 76,
+          "line": 313,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 85,
+          "line": 322,
           "called": [
             "erase_removes_key",
             "getLoop_none_of_absent"
