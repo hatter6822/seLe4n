@@ -126,9 +126,12 @@ All 14 WS-M findings resolved. See [WS-M workstream plan](../audits/AUDIT_v0.16.
 Invariant definitions (`Invariant/Defs.lean`):
 - `distCorrect` — probe distance accuracy for all occupied slots
 - `noDupKeys` — key uniqueness across the table
-- `robinHoodOrdered` — non-decreasing cluster distances (Robin Hood property)
-- `RHTable.invariant` — 4-conjunct bundle: `wf ∧ distCorrect ∧ noDupKeys ∧ robinHoodOrdered`
-- `empty_distCorrect`, `empty_noDupKeys`, `empty_robinHoodOrdered`, `empty_invariant`
+- `robinHoodOrdered` — non-decreasing cluster distances (reference only; not
+  preserved by erase)
+- `probeChainDominant` — probe-chain dominant property (replaces
+  `robinHoodOrdered` in the invariant bundle; preserved by all operations)
+- `RHTable.invariant` — 4-conjunct bundle: `wf ∧ distCorrect ∧ noDupKeys ∧ probeChainDominant`
+- `empty_distCorrect`, `empty_noDupKeys`, `empty_probeChainDominant`, `empty_invariant`
 
 WF preservation (`Invariant/Preservation.lean`):
 - `insertNoResize_preserves_wf`, `insert_preserves_wf`, `resize_preserves_wf`,
@@ -169,28 +172,25 @@ Helper infrastructure (`Invariant/Preservation.lean`):
 - `getElem_idx_eq` — array access proof irrelevance
 - `carried_key_absent` — key absent if probe reached empty/swap position
 
-Lookup helpers (`Invariant/Lookup.lean`):
+Lookup correctness (`Invariant/Lookup.lean`):
 - `getLoop_none_of_absent` — if key absent from all slots, getLoop returns none
-- `get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq` (signatures;
-  D6 structured via `getLoop_none_of_absent` + `erase_removes_key`)
+- `findLoop_none_implies_absent` — if findLoop returns none, key is absent
+- `backshiftLoop_preserves_key_absence` — backshift doesn't introduce new keys
+- `erase_removes_key` — after erase, erased key absent from all slots
+- `getLoop_finds_present` — getLoop returns value when key present with
+  correct displacement
+- `insertLoop_places_key` — insertLoop places key at some position
+- `get_after_insert_eq` (TPI-D4) — `(t.insert k v).get? k = some v`
+- `get_after_insert_ne` (TPI-D5) — `(t.insert k v).get? k' = t.get? k'` for `k ≠ k'`
+- `get_after_erase_eq` (TPI-D6) — `(t.erase k).get? k = none`
 
-**invExt bundle restructuring:** Discovery: `robinHoodOrdered` (non-decreasing
-dist within clusters) is NOT preserved by backshift-on-erase. The `invExt`
-bundle was restructured to use `probeChainDominant` instead, which IS preserved
-by all operations. Preservation theorems proved: WF (all ops), distCorrect
-(all ops), noDupKeys (all ops), probeChainDominant (insert — TPI-D1/D2
-completed). 4 TPI items remaining for erase PCD preservation and lookup
-correctness.
+**Invariant bundle unification:** Discovery: `robinHoodOrdered` (non-decreasing
+dist within clusters) is NOT preserved by backshift-on-erase. The `RHTable.invariant`
+bundle now uses `probeChainDominant` instead (unified from former `invExt`),
+which IS preserved by all operations. All TPI-D items (D1–D6) completed.
 
 The WS-N workstream introduces a formally verified Robin Hood hash table
-with the following remaining planned theorems (N2 in-progress + N3–N5):
-
-- **Remaining N2 proofs** (in progress): `probeChainDominant` preservation
-  through erase/resize, lookup correctness proof bodies for
-  `get_after_insert_eq/ne`, `get_after_erase_eq`. 4 TPI-D items (TPI-D3
-  through TPI-D6): TPI-D3 (`erase_preserves_probeChainDominant`), TPI-D4
-  (`get_after_insert_eq`), TPI-D5 (`get_after_insert_ne`), TPI-D6a
-  (`erase_removes_key`).
+with the following remaining planned phases (N3–N5):
 - **Bridge lemmas** (N3, planned): 12 lemmas mirroring `Std.HashMap` proof patterns
   used by kernel (`getElem?_insert_self/ne`, `getElem?_erase_self/ne`,
   `size_erase_le`, `size_filter_le_size`, `mem_iff_isSome_getElem?`, etc.).
