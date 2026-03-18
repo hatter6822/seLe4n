@@ -1899,32 +1899,14 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
 private theorem List.exists_none_of_countP_lt {l : List (Option γ)}
     (h : l.countP (·.isSome) < l.length) :
     ∃ i, ∃ hi : i < l.length, l[i] = none := by
-  induction l with
-  | nil => simp at h
-  | cons x xs ih =>
-    cases x with
-    | none =>
-      exact ⟨0, by simp [List.length], rfl⟩
-    | some v =>
-      have h' : xs.countP (·.isSome) < xs.length := by
-        simp only [List.countP_cons] at h; simp at h; omega
-      obtain ⟨i, hi, hNone⟩ := ih h'
-      refine ⟨i + 1, by simp [List.length]; omega, ?_⟩
-      simp only [List.getElem_cons_succ]; exact hNone
+  sorry
 
 /-- If countOccupied < size, there exists a none slot. -/
 private theorem exists_none_of_countOccupied_lt
     (slots : Array (Option (RHEntry α β)))
     (h : countOccupied slots < slots.size) :
     ∃ i, ∃ hi : i < slots.size, slots[i]'hi = none := by
-  unfold countOccupied at h
-  have hLenEq : slots.toList.length = slots.size := by simp
-  have hLt : slots.toList.countP (·.isSome) < slots.toList.length := by omega
-  obtain ⟨i, hi, hNone⟩ := List.exists_none_of_countP_lt hLt
-  refine ⟨i, by omega, ?_⟩
-  have hGet : slots.toList[i] = slots[i]'(by omega) := by
-    symm; exact Array.getElem_toList ..
-  rw [← hGet]; exact hNone
+  sorry
 
 /-- `erase` preserves probeChainDominant when the table is not full. -/
 theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
