@@ -20,3 +20,4 @@ secrets/
 .trivy/
 trivy-report*.json
 gitleaks-report*.json
+.claude/worktrees/
