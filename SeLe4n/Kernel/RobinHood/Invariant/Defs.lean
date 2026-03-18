@@ -38,10 +38,38 @@ def RHTable.robinHoodOrdered (t : RHTable α β) : Prop :=
     t.slots[(i + 1) % t.capacity]'(by rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos) = some ej →
     ej.dist = 0 ∨ ei.dist ≤ ej.dist
 
+/-- Probe-chain dominant (slot-level): for every occupied slot at position `p`,
+    every position in its probe chain `(idealIndex e.key + d) % cap` for
+    `d < e.dist` is occupied by an entry with `dist ≥ d`.
+
+    This prevents insertLoop from Robin-Hood-swapping a key into a
+    position when the same key already exists further along the chain,
+    which would create duplicate keys. It also enables getLoop's early
+    termination. -/
+def probeChainDominant [Hashable α]
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    : Prop :=
+  ∀ (p : Nat) (hp : p < capacity) (e : RHEntry α β),
+    slots[p]'(by rw [hLen]; exact hp) = some e →
+    ∀ (d : Nat), d < e.dist →
+      ∃ e', slots[(idealIndex e.key capacity hCapPos + d) % capacity]'(by
+        rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' ∧ e'.dist ≥ d
+
+/-- Table-level probe-chain dominant. -/
+def RHTable.probeChainDominant [Hashable α] (t : RHTable α β) : Prop :=
+  SeLe4n.Kernel.RobinHood.probeChainDominant t.slots t.capacity t.hSlotsLen t.hCapPos
+
 /-- Composite invariant bundle: well-formedness ∧ distance correctness ∧
-    no duplicate keys ∧ Robin Hood ordering. -/
+    no duplicate keys ∧ probe-chain dominant.
+
+    **Design note:** The original N2-D candidate `robinHoodOrdered`
+    (non-decreasing probe distances within clusters) is NOT preserved by
+    backshift-on-erase. `probeChainDominant` is the weaker but preserved
+    invariant that suffices for lookup correctness. `robinHoodOrdered` is
+    retained above as an independent definition for documentation. -/
 def RHTable.invariant [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
-  t.WF ∧ t.distCorrect ∧ t.noDupKeys ∧ t.robinHoodOrdered
+  t.WF ∧ t.distCorrect ∧ t.noDupKeys ∧ t.probeChainDominant
 
 -- ============================================================================
 -- N2-A1, B1, C1, D1: Empty Table Invariants
@@ -68,12 +96,18 @@ theorem RHTable.empty_robinHoodOrdered (cap : Nat) (hPos : 0 < cap) :
   intro i hi ei ej hSlotI _
   simp [RHTable.empty] at hSlotI
 
+/-- Empty tables trivially satisfy probe-chain dominant. -/
+theorem RHTable.empty_probeChainDominant [Hashable α] (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable α β).probeChainDominant := by
+  intro p hp e hSlot
+  simp [RHTable.empty] at hSlot
+
 /-- N2-A1 + B1 + C1 + D1: The empty table satisfies the full invariant bundle. -/
 theorem RHTable.empty_invariant [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).invariant :=
   ⟨RHTable.empty_wf cap hPos,
    RHTable.empty_distCorrect cap hPos,
    RHTable.empty_noDupKeys cap hPos,
-   RHTable.empty_robinHoodOrdered cap hPos⟩
+   RHTable.empty_probeChainDominant cap hPos⟩
 
 end SeLe4n.Kernel.RobinHood

@@ -1035,4 +1035,18 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_lowEquivalent
 EOF'
 
+# WS-N closure anchors: Robin Hood hash table verified implementation.
+run_check "INVARIANT" rg -n '^structure RHEntry' SeLe4n/Kernel/RobinHood/Core.lean
+run_check "INVARIANT" rg -n '^structure RHTable' SeLe4n/Kernel/RobinHood/Core.lean
+run_check "INVARIANT" rg -n '^structure RHTable.WF' SeLe4n/Kernel/RobinHood/Core.lean
+run_check "INVARIANT" rg -n '^def RHTable.distCorrect' SeLe4n/Kernel/RobinHood/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def RHTable.noDupKeys' SeLe4n/Kernel/RobinHood/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def RHTable.probeChainDominant' SeLe4n/Kernel/RobinHood/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def RHTable.invariant' SeLe4n/Kernel/RobinHood/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.insert_preserves_invariant' SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.erase_preserves_invariant' SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.get_after_insert_eq' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.get_after_insert_ne' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.get_after_erase_eq' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
+
 finalize_report

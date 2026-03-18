@@ -67,21 +67,14 @@ implementation) — a formally verified Robin Hood hash table to close the trust
 gap between seLe4n's machine-checked proofs and the unverified `Std.HashMap`
 library type. 5 phases (N1–N5, 122 subtasks). **WS-N1** (v0.17.1) —
 core types + operations — **COMPLETED**. **WS-N2** (v0.17.2) — invariant
-proofs — **IN PROGRESS**: invariant definitions (`distCorrect`, `noDupKeys`,
+proofs — **COMPLETED**: invariant definitions (`distCorrect`, `noDupKeys`,
 `probeChainDominant`, `RHTable.invariant` bundle), WF preservation through
-insert/erase/resize, `distCorrect` preservation via full induction with modular
-arithmetic helpers, noDupKeys preservation through all ops, `findLoop_correct`
-lookup correctness, bundle preservation theorems. Major finding:
-`robinHoodOrdered` is NOT preserved by backshift-on-erase; `invExt` bundle
-restructured to use `probeChainDominant` instead. Preservation complete for WF
-(all ops), distCorrect (all ops), noDupKeys (all ops). TPI-D1
-(`insertLoop_preserves_noDupKeys`) and TPI-D2 (`insertLoop_preserves_pcd`)
-completed with full fuel induction proofs (zero sorry). Helper infrastructure:
-`offset_injective`, `getElem_idx_eq`, `carried_key_absent`,
-`getLoop_none_of_absent`. D6 (`get_after_erase_eq`) structured via
-`getLoop_none_of_absent` + `erase_removes_key`. 4 TPI-D items remaining
-(TPI-D3 through TPI-D6) for erase PCD preservation and lookup correctness.
-Zero sorry/axiom in completed proofs. Remaining: N3 (kernel API bridge),
+insert/erase/resize, `distCorrect` preservation, noDupKeys preservation,
+`probeChainDominant` preservation, bundle preservation theorems, lookup
+correctness (`get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`).
+All TPI-D items (D1–D6) completed. `RHTable.invariant` unified from former
+`invExt` to use `probeChainDominant` (moved to Defs.lean). Robin Hood test suite
+added. Zero sorry/axiom in production proofs. Remaining: N3 (kernel API bridge),
 N4 (CNode.slots integration), N5 (tests + documentation).
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 

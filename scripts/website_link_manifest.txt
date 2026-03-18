@@ -66,6 +66,13 @@ SeLe4n/Kernel/Architecture/VSpace.lean
 SeLe4n/Kernel/Architecture/VSpaceBackend.lean
 SeLe4n/Kernel/Architecture/Adapter.lean
 
+# Robin Hood
+SeLe4n/Kernel/RobinHood/Core.lean
+SeLe4n/Kernel/RobinHood/Invariant.lean
+SeLe4n/Kernel/RobinHood/Invariant/Defs.lean
+SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean
+SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
+
 # Platform
 SeLe4n/Platform/Contract.lean
 
@@ -105,6 +112,7 @@ SeLe4n/Kernel/InformationFlow/
 SeLe4n/Kernel/Lifecycle/
 SeLe4n/Kernel/Service/
 SeLe4n/Kernel/Architecture/
+SeLe4n/Kernel/RobinHood/
 SeLe4n/Model/
 SeLe4n/Testing/
 SeLe4n/Platform/

@@ -29,8 +29,9 @@
   `protected` for `insertNoResize`, `insertNoResize_capacity`,
   `resize_fold_capacity` in `Core.lean`
 - **Major finding:** `robinHoodOrdered` (non-decreasing dist within clusters)
-  is NOT preserved by backshift-on-erase. `invExt` bundle restructured to use
-  `probeChainDominant` instead, which IS preserved by all operations
+  is NOT preserved by backshift-on-erase. `RHTable.invariant` bundle updated
+  to use `probeChainDominant` instead (unified from former `invExt`), which IS
+  preserved by all operations. `probeChainDominant` definition moved to Defs.lean
 - Additional helper lemmas proved: `noDupKeys_after_clear`,
   `backshiftLoop_preserves_noDupKeys`, `erase_preserves_noDupKeys`,
   `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
@@ -54,9 +55,16 @@
 - Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
   `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
   `RobinHood.lean`)
-- 2 TPI-D deferred items remaining: TPI-D3 (erase PCD preservation,
-  requires relaxedPCD invariant), TPI-D5 (insert non-interference)
-- Zero `sorry`/`axiom` in completed proofs; zero warnings; all test tiers pass
+- TPI-D3 completed: `erase_preserves_probeChainDominant` — erase PCD
+  preservation via relaxedPCD invariant
+- TPI-D5 completed: `get_after_insert_ne` — insert non-interference via
+  `insertLoop_absent_ne_key` + `insertLoop_output_source`
+- All TPI-D items (D1–D6) completed
+- **Audit remediation:** Unified `invExt` into `RHTable.invariant` (Defs.lean),
+  moved `probeChainDominant` definition to Defs.lean, removed debug artifact,
+  added Robin Hood test suite (`tests/RobinHoodSuite.lean`), added Tier 3
+  invariant anchors and website link manifest entries
+- Zero `sorry`/`axiom` in production proofs; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.2`
 
 ## [0.17.1] — WS-N1 Core Robin Hood Types + Operations

@@ -26,3 +26,7 @@ root = "tests.NegativeStateSuite"
 [[lean_exe]]
 name = "information_flow_suite"
 root = "tests.InformationFlowSuite"
+
+[[lean_exe]]
+name = "robin_hood_suite"
+root = "tests.RobinHoodSuite"
