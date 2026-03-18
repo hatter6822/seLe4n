@@ -1722,6 +1722,125 @@ theorem RHTable.erase_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
     exact backshiftLoop_preserves_noDupKeys t.capacity idx _ _ hLen' t.hCapPos
       hGap hND' i j hi hj ei ej hI hJ hKeyEq
 
+/-- Relaxed PCD: like probeChainDominant but excuses one gap position. -/
+private def relaxedPCD [Hashable α]
+    (gap : Nat) (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity) : Prop :=
+  ∀ (p : Nat) (hp : p < capacity) (e : RHEntry α β),
+    slots[p]'(by rw [hLen]; exact hp) = some e →
+    ∀ (d : Nat), d < e.dist →
+      (idealIndex e.key capacity hCapPos + d) % capacity = gap ∨
+      ∃ e', slots[(idealIndex e.key capacity hCapPos + d) % capacity]'(by
+        rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' ∧ e'.dist ≥ d
+
+/-- When the gap and its next slot are both "inactive" (next is none or dist=0),
+    relaxedPCD collapses to full PCD. The gap excuse is vacuous because any chain
+    passing through the gap would need a witness at the next slot too, but the next
+    slot either doesn't exist or has dist=0 which can't provide a sufficient witness. -/
+private theorem relaxedPCD_to_pcd_at_termination [Hashable α]
+    (gap : Nat) (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (hGapNone : slots[gap % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none)
+    (hGapLt : gap % capacity < capacity)
+    (hNextInactive : slots[(gap + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none ∨
+      ∃ ne, slots[(gap + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some ne ∧
+        ne.dist = 0)
+    (hDist : ∀ (j : Nat) (hj : j < capacity) (e : RHEntry α β),
+      slots[j]'(by rw [hLen]; exact hj) = some e →
+      e.dist = (j + capacity - idealIndex e.key capacity hCapPos) % capacity)
+    (hRelaxed : relaxedPCD (gap % capacity) slots capacity hLen hCapPos) :
+    probeChainDominant slots capacity hLen hCapPos := by
+  intro p hp e hSlot d hd
+  have hR := hRelaxed p hp e hSlot d hd
+  cases hR with
+  | inr h => exact h
+  | inl hWitGap =>
+    -- The witness position = gap%cap. Show this is impossible.
+    exfalso
+    -- Entry at p has ideal h, dist = (p + cap - h) % cap, and d < dist.
+    -- Witness position (h + d) % cap = gap % cap.
+    -- If d + 1 < e.dist, consider d+1: by relaxedPCD, (h + d + 1) % cap = gap%cap
+    -- or witness exists at (h+d+1)%cap = (gap+1)%cap.
+    -- (h+d+1)%cap = (gap+1)%cap (since (h+d)%cap = gap%cap, adding 1 mod cap).
+    -- But (gap+1)%cap either has none or dist=0, and the gap excuse requires
+    -- (gap+1)%cap = gap%cap which is false for cap > 1.
+    have hGapM : gap % capacity = (idealIndex e.key capacity hCapPos + d) % capacity := hWitGap.symm
+    -- Case: is d + 1 < e.dist?
+    by_cases hd1 : d + 1 < e.dist
+    · -- Consider chain witness at d+1
+      have hR2 := hRelaxed p hp e hSlot (d + 1) hd1
+      -- (idealIndex e.key cap hCapPos + (d+1)) % cap = (gap + 1) % cap
+      have hWitNext : (idealIndex e.key capacity hCapPos + (d + 1)) % capacity =
+          (gap + 1) % capacity := by
+        rw [show idealIndex e.key capacity hCapPos + (d + 1) =
+            (idealIndex e.key capacity hCapPos + d) + 1 from by omega]
+        have := hGapM; omega
+      cases hR2 with
+      | inl hGap2 =>
+        -- (h + d + 1) % cap = gap % cap
+        -- But (h + d + 1) % cap = (gap + 1) % cap (from above)
+        -- So (gap + 1) % cap = gap % cap
+        rw [hWitNext] at hGap2
+        -- This means (gap + 1) % cap = gap % cap
+        have : (gap + 1) % capacity = gap % capacity := hGap2
+        have h1 := Nat.mod_lt gap hCapPos
+        have h2 := Nat.mod_lt (gap + 1) hCapPos
+        -- gap%cap and (gap+1)%cap differ when cap > 1; if cap = 1, gap%1 = 0 = (gap+1)%1
+        by_cases hCap1 : capacity = 1
+        · -- cap = 1: the entry at p has dist > 0 but p < 1, so p = 0
+          -- dist = (0 + 1 - ideal) % 1 = 0. But d < dist and d >= 0, so dist > 0. Contradiction.
+          subst hCap1
+          have := hDist p hp e hSlot; simp [Nat.mod_one] at this; omega
+        · -- cap > 1: gap%cap != (gap+1)%cap
+          have hCapGe2 : capacity ≥ 2 := by omega
+          by_cases hw : gap % capacity + 1 < capacity
+          · have : (gap + 1) % capacity = gap % capacity + 1 := by
+              have hDiv := Nat.div_add_mod gap capacity
+              rw [show gap + 1 = gap % capacity + 1 + capacity * (gap / capacity) from by omega,
+                Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt hw]
+            omega
+          · have hEq : gap % capacity = capacity - 1 := by omega
+            have : (gap + 1) % capacity = 0 := by
+              have hDiv := Nat.div_add_mod gap capacity
+              rw [show gap + 1 = gap % capacity + 1 + capacity * (gap / capacity) from by omega,
+                hEq, show capacity - 1 + 1 = capacity from by omega,
+                Nat.add_mul_mod_self_left, Nat.mod_self]
+            omega
+      | inr ⟨e', he', hge'⟩ =>
+        -- Witness at (gap+1)%cap with dist >= d+1
+        rw [hWitNext] at he' hge'
+        -- But (gap+1)%cap is either none or has dist=0
+        cases hNextInactive with
+        | inl hNone => rw [hNone] at he'; exact Option.noConfusion he'
+        | inr ⟨ne, hne, hne0⟩ =>
+          rw [hne] at he'
+          have := Option.some.inj he'; subst this; omega
+    · -- d + 1 >= e.dist, so d = e.dist - 1 (since d < e.dist)
+      have hd_eq : d = e.dist - 1 := by omega
+      -- Entry at p: (h + dist) % cap = p (by distCorrect roundtrip)
+      -- (h + d) % cap = gap % cap, d = dist - 1
+      -- So (h + dist) % cap = (gap + 1) % cap, meaning p = (gap + 1) % cap
+      have hEDist := hDist p hp e hSlot
+      have hPEq : p = (idealIndex e.key capacity hCapPos + e.dist) % capacity := by
+        rw [hEDist]
+        exact (displacement_roundtrip p (idealIndex e.key capacity hCapPos) capacity hCapPos
+          (idealIndex_lt e.key capacity hCapPos) _ hEDist
+          (by rw [hEDist]; exact Nat.mod_lt _ hCapPos)).symm
+      have hStep : (idealIndex e.key capacity hCapPos + e.dist) % capacity =
+          (gap + 1) % capacity := by
+        rw [show idealIndex e.key capacity hCapPos + e.dist =
+            (idealIndex e.key capacity hCapPos + d) + 1 from by omega]
+        have := hGapM; omega
+      rw [hPEq, hStep] at hSlot
+      -- slots[(gap+1)%cap] = some e, but it's either none or dist=0
+      cases hNextInactive with
+      | inl hNone => rw [hNone] at hSlot; exact Option.noConfusion hSlot
+      | inr ⟨ne, hne, hne0⟩ =>
+        rw [hne] at hSlot
+        have := Option.some.inj hSlot; subst this
+        -- ne.dist = 0 but d < ne.dist means d < 0. Contradiction with d : Nat.
+        omega
+
 -- Note: `erase_preserves_robinHoodOrdered` is NOT provable.
 -- The standard backshift-on-erase algorithm does NOT preserve non-decreasing
 -- dist within clusters (counterexample: consecutive entries with equal dist,

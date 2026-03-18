@@ -301,12 +301,224 @@ private theorem erase_removes_key [BEq α] [Hashable α] [LawfulBEq α]
       (t.slots.set (idx % t.capacity) none hIdxS) t.capacity hLen' t.hCapPos k
       hAbsentCleared j hj e hSlot
 
+/-- Modular displacement roundtrip: if `d = (p + cap - h) % cap` where
+    `p < cap` and `h < cap` and `d < cap`, then `(h + d) % cap = p`. -/
+private theorem displacement_roundtrip'
+    (p h cap : Nat) (hCapPos : 0 < cap) (hp : p < cap) (hh : h < cap)
+    (d : Nat) (hD : d = (p + cap - h) % cap) (hd : d < cap) :
+    (h + d) % cap = p := by
+  subst hD
+  by_cases hge : p ≥ h
+  · have hval : (p + cap - h) % cap = p - h := by
+      rw [show p + cap - h = (p - h) + cap from by omega,
+          Nat.add_mod_right]
+      exact Nat.mod_eq_of_lt (by omega)
+    rw [hval, show h + (p - h) = p from by omega, Nat.mod_eq_of_lt hp]
+  · push_neg at hge
+    have hval : (p + cap - h) % cap = p + cap - h :=
+      Nat.mod_eq_of_lt (by omega)
+    rw [hval, show h + (p + cap - h) = p + cap from by omega,
+        Nat.add_mod_right, Nat.mod_eq_of_lt hp]
+
+/-- If `(h + d1) % cap = (h + d2) % cap` with `d1 < cap` and `d2 < cap`,
+    then `d1 = d2`. -/
+private theorem offset_injective'
+    (h cap d1 d2 : Nat) (_hCapPos : 0 < cap) (hd1 : d1 < cap) (hd2 : d2 < cap)
+    (hEq : (h + d1) % cap = (h + d2) % cap) :
+    d1 = d2 := by
+  have hm : h % cap < cap := Nat.mod_lt h _hCapPos
+  rw [Nat.add_mod, Nat.mod_eq_of_lt hd1, Nat.add_mod, Nat.mod_eq_of_lt hd2] at hEq
+  by_cases h1 : h % cap + d1 < cap <;> by_cases h2 : h % cap + d2 < cap
+  · rw [Nat.mod_eq_of_lt h1, Nat.mod_eq_of_lt h2] at hEq; omega
+  · push_neg at h2
+    rw [Nat.mod_eq_of_lt h1,
+        show h % cap + d2 = (h % cap + d2 - cap) + cap from by omega,
+        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hEq; omega
+  · push_neg at h1
+    rw [Nat.mod_eq_of_lt h2,
+        show h % cap + d1 = (h % cap + d1 - cap) + cap from by omega,
+        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hEq; omega
+  · push_neg at h1 h2
+    rw [show h % cap + d1 = (h % cap + d1 - cap) + cap from by omega,
+        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega),
+        show h % cap + d2 = (h % cap + d2 - cap) + cap from by omega,
+        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hEq; omega
+
+/-- Displacement step: `d + 1 = ((idx + 1) % cap + cap - h) % cap`
+    given `d = (idx + cap - h) % cap`, `idx < cap`, `d + 1 < cap`. -/
+private theorem disp_step'
+    (idx h cap : Nat) (hCapPos : 0 < cap) (hIdx : idx < cap)
+    (hh : h < cap) (d : Nat) (hD : d = (idx + cap - h) % cap)
+    (hSmall : d + 1 < cap) :
+    d + 1 = ((idx + 1) % cap + cap - h) % cap := by
+  -- Key idea: (h + d) % cap = idx (by roundtrip), so (h + (d+1)) % cap = (idx+1) % cap
+  -- and d+1 < cap, so d+1 is the unique displacement from h to (idx+1)%cap.
+  have hRound := displacement_roundtrip' idx h cap hCapPos hIdx hh d hD (by omega)
+  -- We need: d + 1 = ((idx+1)%cap + cap - h) % cap
+  -- Equivalently: (h + (d+1)) % cap = (idx+1) % cap  (and d+1 < cap)
+  -- This follows from: (h + (d+1)) = (h + d) + 1, and (h + d) % cap = idx
+  suffices hGoal : (h + (d + 1)) % cap = (idx + 1) % cap by
+    -- Now we have (h + (d+1)) % cap = (idx+1) % cap
+    -- and d+1 < cap. We need d+1 = ((idx+1)%cap + cap - h) % cap.
+    -- This is the "inverse" of displacement_roundtrip', i.e.,
+    -- if (h + x) % cap = y % cap and x < cap, then x = (y%cap + cap - h) % cap.
+    have hNxt := Nat.mod_lt (idx + 1) hCapPos
+    by_cases hge : (idx + 1) % cap ≥ h
+    · rw [show (idx + 1) % cap + cap - h = ((idx + 1) % cap - h) + cap from by omega,
+          Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+      -- (h + (d+1)) % cap = (idx+1) % cap  and  (idx+1)%cap ≥ h
+      by_cases hlt : h + (d + 1) < cap
+      · rw [Nat.mod_eq_of_lt hlt] at hGoal; omega
+      · push_neg at hlt
+        rw [show h + (d + 1) = (h + (d + 1) - cap) + cap from by omega,
+            Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hGoal; omega
+    · push_neg at hge
+      rw [Nat.mod_eq_of_lt (by omega)]
+      by_cases hlt : h + (d + 1) < cap
+      · rw [Nat.mod_eq_of_lt hlt] at hGoal; omega
+      · push_neg at hlt
+        rw [show h + (d + 1) = (h + (d + 1) - cap) + cap from by omega,
+            Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hGoal; omega
+  rw [show h + (d + 1) = (h + d) + 1 from by omega, Nat.add_mod, hRound, ← Nat.add_mod]
+
+/-- If a table satisfies `distCorrect`, `PCD`, and `noDupKeys`, and there exists
+    a position `p` with `slots[p] = some e` where `e.key == k = true` and
+    `e.value = v`, then `getLoop fuel idx k d` returns `some v` whenever
+    `d ≤ e.dist` and `e.dist - d < fuel` and `d` tracks the displacement. -/
+private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
+    (fuel : Nat) (idx : Nat) (k : α) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (p : Nat) (hp : p < capacity) (e : RHEntry α β)
+    (hSlotP : slots[p]'(hLen ▸ hp) = some e)
+    (hKey : (e.key == k) = true) (hVal : e.value = v)
+    (hDist : ∀ j (hj : j < capacity) (e' : RHEntry α β),
+      slots[j]'(hLen ▸ hj) = some e' →
+      e'.dist = (j + capacity - idealIndex e'.key capacity hCapPos) % capacity)
+    (hPCD : probeChainDominant slots capacity hLen hCapPos)
+    (hNoDup : ∀ i j (hi : i < capacity) (hj : j < capacity)
+      (ei ej : RHEntry α β),
+      slots[i]'(hLen ▸ hi) = some ei →
+      slots[j]'(hLen ▸ hj) = some ej →
+      (ei.key == ej.key) = true → i = j)
+    (hD : d = (idx % capacity + capacity -
+      idealIndex k capacity hCapPos) % capacity)
+    (hFuel : e.dist - d < fuel)
+    (hDLe : d ≤ e.dist) :
+    getLoop fuel idx k d slots capacity hLen hCapPos = some v := by
+  induction fuel generalizing idx d with
+  | zero => omega
+  | succ n ih =>
+    unfold getLoop; simp only []
+    have hIdxMod : idx % capacity < capacity := Nat.mod_lt _ hCapPos
+    have hIdxS : idx % capacity < slots.size := hLen ▸ hIdxMod
+    have hd_lt_cap : d < capacity := by
+      have := Nat.mod_lt (idx % capacity + capacity -
+        idealIndex k capacity hCapPos) hCapPos; omega
+    -- e.dist is the displacement of the target from ideal(k)
+    have hKeyEq : idealIndex e.key capacity hCapPos = idealIndex k capacity hCapPos := by
+      rw [eq_of_beq hKey]
+    have hEDist := hDist p hp e hSlotP
+    rw [hKeyEq] at hEDist
+    have hdk_lt : e.dist < capacity := by
+      have := Nat.mod_lt (p + capacity - idealIndex k capacity hCapPos) hCapPos; omega
+    -- (ideal(k) + d) % cap = idx % cap
+    have hRound : (idealIndex k capacity hCapPos + d) % capacity = idx % capacity :=
+      displacement_roundtrip' (idx % capacity) (idealIndex k capacity hCapPos) capacity
+        hCapPos hIdxMod (idealIndex_lt k capacity hCapPos) d
+        (by rwa [Nat.mod_eq_of_lt hIdxMod] at hD) hd_lt_cap
+    -- (ideal(k) + e.dist) % cap = p
+    have hpRound : (idealIndex k capacity hCapPos + e.dist) % capacity = p :=
+      displacement_roundtrip' p (idealIndex k capacity hCapPos) capacity
+        hCapPos hp (idealIndex_lt k capacity hCapPos) e.dist hEDist hdk_lt
+    by_cases hDeq : d = e.dist
+    · -- At the target: idx % cap = p
+      have hIdxP : idx % capacity = p := by rw [← hRound, hDeq, hpRound]
+      have hSlotP' : slots[idx % capacity]'hIdxS = some e := by
+        have : (hLen ▸ hp : p < slots.size) = hIdxS := by
+          exact Nat.lt_irrefl _ |>.elim ∘ fun h => by exact absurd rfl h |>.elim
+            |> fun _ => rfl |>.elim |> fun _ => by
+          simp [hIdxP]
+        conv_rhs => rw [← hSlotP]; congr 1; exact hIdxP.symm
+      rw [hSlotP']; simp [hKey, hVal]
+    · -- d < e.dist: not at target yet
+      have hDLt : d < e.dist := by omega
+      -- PCD at distance d from ideal(e.key)
+      obtain ⟨e', he', hge'⟩ := hPCD p hp e hSlotP d hDLt
+      rw [hKeyEq] at he'
+      -- e' at (ideal(k) + d) % cap = idx % cap
+      have he'Pos : slots[idx % capacity]'hIdxS = some e' := by
+        conv_rhs => rw [← he']; congr 1; exact hRound.symm
+      rw [he'Pos]
+      -- e'.key ≠ k: if e'.key == k, noDupKeys gives (ideal(k)+d)%cap = p,
+      -- then d = e.dist by offset_injective', contradicting d < e.dist.
+      have hKeyNe : (e'.key == k) = false := by
+        by_contra hContra; push_neg at hContra; simp at hContra
+        have := hNoDup (idx % capacity) p hIdxMod hp e' e he'Pos hSlotP
+          (by rw [hContra]; exact hKey)
+        -- idx % cap = p → (ideal(k)+d)%cap = p = (ideal(k)+e.dist)%cap
+        rw [this] at hRound
+        exact absurd (offset_injective' (idealIndex k capacity hCapPos) capacity
+          d e.dist hCapPos hd_lt_cap hdk_lt (hRound.trans hpRound.symm)) (by omega)
+      simp [hKeyNe]
+      -- e'.dist ≥ d, so no early termination
+      have : ¬(e'.dist < d) := by omega
+      simp [this]
+      -- Recurse at d+1
+      have hD' : d + 1 = ((idx % capacity + 1) % capacity + capacity -
+          idealIndex k capacity hCapPos) % capacity :=
+        disp_step' (idx % capacity) (idealIndex k capacity hCapPos) capacity
+          hCapPos hIdxMod (idealIndex_lt k capacity hCapPos) d
+          (by rwa [Nat.mod_eq_of_lt hIdxMod] at hD) (by omega)
+      exact ih (idx % capacity + 1) (d + 1) hD' (by omega) (by omega)
+
+/-- After `insertLoop fuel idx k v d slots cap hLen hCapPos`, the result array
+    contains an entry at some position with `key == k = true` and `value = v`,
+    provided the loop makes progress (empty slot found, or key match, or swap). -/
+private theorem insertLoop_places_key [BEq α] [Hashable α] [LawfulBEq α]
+    (fuel : Nat) (idx : Nat) (k : α) (v : β) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (hD : d = (idx % capacity + capacity -
+      idealIndex k capacity hCapPos) % capacity)
+    (hBound : d + fuel ≤ capacity)
+    (hNoDup : ∀ i j (hi : i < capacity) (hj : j < capacity)
+      (ei ej : RHEntry α β),
+      slots[i]'(hLen ▸ hi) = some ei →
+      slots[j]'(hLen ▸ hj) = some ej →
+      (ei.key == ej.key) = true → i = j)
+    (hDist : ∀ j (hj : j < capacity) (e' : RHEntry α β),
+      slots[j]'(hLen ▸ hj) = some e' →
+      e'.dist = (j + capacity - idealIndex e'.key capacity hCapPos) % capacity)
+    (hNotFound : ∀ d', d' < d →
+      ∀ e', slots[(idealIndex k capacity hCapPos + d') % capacity]'(by
+        rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' →
+      (e'.key == k) = false)
+    (hProgress : fuel > 0 ∨ ∃ p (hp : p < capacity),
+      ∃ e, slots[p]'(hLen ▸ hp) = some e ∧ (e.key == k) = true) :
+    ∃ p (hp : p < (insertLoop fuel idx k v d slots capacity hLen hCapPos).1.size),
+      ∃ e, (insertLoop fuel idx k v d slots capacity hLen hCapPos).1[p]'hp = some e
+        ∧ (e.key == k) = true ∧ e.value = v := by
+  sorry -- TPI-D4-sub-B: insertLoop placement proof (~80 lines, see strategy below)
+  -- Strategy: induction on fuel.
+  -- Base: fuel = 0 → (slots, false). hProgress must give Right with existing entry.
+  --   But fuel = 0 means insertLoop returns slots unchanged, and existing entry with
+  --   key k may not have value v. So this case requires fuel > 0 from hProgress.
+  -- Step (fuel = n+1): case split on slots[idx%cap]:
+  --   none: set slot to ⟨k, v, d⟩. Position idx%cap has entry with key k (by BEq_refl), value v.
+  --   some e, e.key == k: set to {e with value := v}. Key matches, value = v.
+  --   some e, e.key ≠ k, e.dist < d: RH swap. Set idx%cap to ⟨k, v, d⟩.
+  --     Recursive insertLoop with (e.key, e.value) doesn't overwrite idx%cap because
+  --     it starts at idx%cap + 1 and any slot it writes has a different key.
+  --     (Prove: insertLoop with key ≠ k preserves entries with key k.)
+  --   some e, e.key ≠ k, e.dist ≥ d: recurse. IH gives result.
+
 /-- N2-E1: After inserting key `k` with value `v`, looking up `k` returns `v`.
     This is the fundamental correctness theorem for Robin Hood insertion. -/
 theorem RHTable.get_after_insert_eq [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insert k v).get? k = some v := by
-  sorry -- TPI-D4 getLoop finds placed entry via distCorrect + probeChainDominant
+  sorry -- TPI-D4: depends on getLoop_finds_present + insertLoop_places_key
 
 /-- N2-E2: Inserting key `k` does not affect lookups of other keys.
     This ensures insert doesn't corrupt existing mappings. -/

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-pr-invariant-proofs-84jZC",
-      "commit_sha": "feb61ce97723c242c52d18bedc27f3c7ae7652e6",
-      "tree_sha": "9d073adc785f68c08af45052f34f8ec660df2f7b",
-      "committed_at_utc": "2026-03-18T15:32:03+00:00"
+      "commit_sha": "cd74f41425bdbd9ca4fec00e6af8c2c49571e3f4",
+      "tree_sha": "db82cae473b2668756cfcd701ce5870173e7f659",
+      "committed_at_utc": "2026-03-18T15:33:44+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "24f3cd34d4abfa04e62979423ca2648a579f94946f884fc36e17ba504795ad40"
+    "source_digest": "ca33fc69c3daa219c26fea85b062d5c2618f93edfd7552f8a8a506560436340d"
   },
   "summary": {
     "module_count": 81,
-    "declaration_count": 2464
+    "declaration_count": 2470
   },
   "readme_sync": {
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 77,
-    "production_loc": 43284,
+    "production_loc": 43507,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1350,
+    "proved_theorem_lemma_decls": 1355,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9703,7 +9703,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Lookup",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-      "declaration_count": 8,
+      "declaration_count": 13,
       "declarations": [
         {
           "kind": "namespace",
@@ -9740,20 +9740,56 @@
         },
         {
           "kind": "theorem",
-          "name": "RHTable.get_after_insert_eq",
+          "name": "displacement_roundtrip'",
           "line": 306,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "offset_injective'",
+          "line": 325,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "disp_step'",
+          "line": 349,
+          "called": [
+            "displacement_roundtrip'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "getLoop_finds_present",
+          "line": 388,
+          "called": [
+            "disp_step'",
+            "displacement_roundtrip'",
+            "offset_injective'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertLoop_places_key",
+          "line": 478,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.get_after_insert_eq",
+          "line": 518,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.get_after_insert_ne",
-          "line": 313,
+          "line": 525,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 322,
+          "line": 534,
           "called": [
             "erase_removes_key",
             "getLoop_none_of_absent"
@@ -9764,7 +9800,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Preservation",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean",
-      "declaration_count": 53,
+      "declaration_count": 54,
       "declarations": [
         {
           "kind": "namespace",
@@ -10136,9 +10172,15 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "relaxedPCD",
+          "line": 1726,
+          "called": []
+        },
+        {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 1777,
+          "line": 1788,
           "called": [
             "probeChainDominant"
           ]
@@ -10146,19 +10188,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 1788,
+          "line": 1799,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 1797,
+          "line": 1808,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 1806,
+          "line": 1817,
           "called": []
         }
       ]
