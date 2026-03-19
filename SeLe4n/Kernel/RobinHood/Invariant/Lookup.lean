@@ -629,11 +629,11 @@ private theorem position_reachable
     have hb2 : idx % cap + (j - idx % cap) < cap := by omega
     rw [show j + cap - idx % cap = (j - idx % cap) + cap from by omega,
         Nat.add_mod_right, Nat.mod_eq_of_lt hb1]
-    rw [mod_add_mod_eq, show idx % cap + (j - idx % cap) = j from by omega,
+    rw [← mod_add_mod_eq, show idx % cap + (j - idx % cap) = j from by omega,
         Nat.mod_eq_of_lt hj]
   · simp only [Nat.not_le] at hge
     have hb1 : j + cap - idx % cap < cap := by omega
-    rw [Nat.mod_eq_of_lt hb1, mod_add_mod_eq]
+    rw [Nat.mod_eq_of_lt hb1, ← mod_add_mod_eq]
     by_cases hlt : idx % cap + (j + cap - idx % cap) < cap
     · omega
     · simp only [Nat.not_lt] at hlt
