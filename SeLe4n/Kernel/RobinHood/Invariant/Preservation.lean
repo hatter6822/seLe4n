@@ -352,7 +352,7 @@ theorem RHTable.erase_preserves_wf [BEq α] [Hashable α]
         rw [Array.size_set]; exact t.hSlotsLen
       have hGapNone : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
           rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-        simp [Array.getElem_set, Nat.mod_eq_of_lt (Nat.mod_lt _ t.hCapPos)]
+        simp
       have hBS := backshiftLoop_countOccupied t.capacity idx _ _ hLen' t.hCapPos hGapNone
       have hSlot' : t.slots[idx % t.capacity]'hIdxS = some e := by
         simp [Nat.mod_eq_of_lt hIdxLt]; exact hSlot
@@ -368,7 +368,7 @@ theorem RHTable.erase_preserves_wf [BEq α] [Hashable α]
 
 /-- Key modular arithmetic: incrementing displacement by 1 when advancing
     to the next probe position. Used in distCorrect preservation proofs. -/
-private theorem mod_succ_eq (x n : Nat) (hn : 0 < n) (hBound : x % n + 1 < n) :
+private theorem mod_succ_eq (x n : Nat) (_hn : 0 < n) (hBound : x % n + 1 < n) :
     x % n + 1 = (x + 1) % n := by
   have hDiv := Nat.div_add_mod x n
   have hDecomp : x + 1 = (x % n + 1) + n * (x / n) := by omega
@@ -482,7 +482,7 @@ theorem displacement_roundtrip
 
 /-- Two positions with the same displacement from a base are equal. -/
 private theorem same_displacement_eq
-    (i j h cap : Nat) (hCapPos : 0 < cap) (hi : i < cap) (hj : j < cap)
+    (i j h cap : Nat) (_hCapPos : 0 < cap) (hi : i < cap) (hj : j < cap)
     (hh : h < cap)
     (hEq : (i + cap - h) % cap = (j + cap - h) % cap) :
     i = j := by
@@ -567,7 +567,7 @@ theorem insertLoop_preserves_distCorrect [BEq α] [Hashable α]
         have hEd := hDist (idx % capacity) (Nat.mod_lt _ hCapPos) e hSlotCase
         exact set_dist { e with value := v } (by simp [hEd]) j hj e' hSlot
       else
-        simp only [hKey, ite_false] at hSlot
+        simp only [hKey] at hSlot
         if hRH : e.dist < d then
           simp only [hRH, ite_true] at hSlot
           have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size
@@ -775,10 +775,10 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
       · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
       · rename_i h1 hbNe; cases hA
         exact absurd (hKAbs b hb eb hB)
-          (by have := eq_of_beq hKeyEq; simp [this.symm, beq_self_eq_true])
+          (by have := eq_of_beq hKeyEq; simp [this.symm])
       · rename_i haNe h2; cases hB
         exact absurd (hKAbs a ha ea hA)
-          (by have := eq_of_beq hKeyEq; simp [this, beq_self_eq_true])
+          (by have := eq_of_beq hKeyEq; simp [this])
       · exact hNoDup a b ha hb ea eb hA hB hKeyEq
     | some e =>
       if hKey : e.key == k then
@@ -828,10 +828,10 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
             · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
             · rename_i h1 hbN; cases hI'
               exact absurd (hKAbs j' hj' ej' hJ') (by
-                have := eq_of_beq hKE'; simp [this.symm, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this.symm])
             · rename_i haN h2; cases hJ'
               exact absurd (hKAbs i' hi' ei' hI') (by
-                have := eq_of_beq hKE'; simp [this, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this])
             · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
           -- distCorrect for intermediate slots'
           have hDist' : ∀ j (hj : j < capacity) (e' : RHEntry α β),
@@ -1125,10 +1125,10 @@ private theorem insertLoop_preserves_pcd [BEq α] [Hashable α] [LawfulBEq α]
             · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
             · rename_i h1 hbN; cases hI'
               exact absurd (hKAbs j' hj' ej' hJ') (by
-                have := eq_of_beq hKE'; simp [this.symm, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this.symm])
             · rename_i haN h2; cases hJ'
               exact absurd (hKAbs i' hi' ei' hI') (by
-                have := eq_of_beq hKE'; simp [this, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this])
             · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
           have hDist' : ∀ j (hj : j < capacity) (e' : RHEntry α β),
               (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[j]'(by
@@ -1394,7 +1394,7 @@ theorem RHTable.insert_preserves_probeChainDominant [BEq α] [Hashable α] [Lawf
 /-- Clearing a slot preserves noDupKeys. -/
 private theorem noDupKeys_after_clear [BEq α]
     (slots : Array (Option (RHEntry α β)))
-    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (capacity : Nat) (hLen : slots.size = capacity) (_hCapPos : 0 < capacity)
     (idx : Nat) (hIdx : idx < slots.size)
     (hNoDup : ∀ (i j : Nat) (hi : i < capacity) (hj : j < capacity)
       (ei ej : RHEntry α β),
@@ -1458,7 +1458,7 @@ theorem backshiftLoop_preserves_noDupKeys [BEq α]
         -- Simplify backshiftLoop to the recursive call
         have hDistF : (nextE.dist == 0) = false := by
           cases h : nextE.dist == 0 <;> simp_all
-        simp only [backshiftLoop, hSlot, hDistF, ↓reduceIte] at hI hJ
+        simp only [backshiftLoop, hSlot, hDistF] at hI hJ
         -- Clean up remaining if false = true
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
           ite_false] at hI hJ
@@ -1616,7 +1616,7 @@ theorem backshiftLoop_preserves_distCorrect [Hashable α]
       else
         have hDistF : (nextE.dist == 0) = false := by
           cases h : nextE.dist == 0 <;> simp_all
-        simp only [backshiftLoop, hSlotCase, hDistF, ↓reduceIte] at hSlot
+        simp only [backshiftLoop, hSlotCase, hDistF] at hSlot
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
           ite_false] at hSlot
         have hNe : gapIdx % capacity ≠ (gapIdx + 1) % capacity := by
@@ -1691,7 +1691,7 @@ theorem RHTable.erase_preserves_distCorrect [BEq α] [Hashable α] [LawfulBEq α
       · exact hExt.2.1 j hj e hSlot
     have hGap : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
         rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-      simp [Array.getElem_set]
+      simp
     intro j hj e hSlot
     exact backshiftLoop_preserves_distCorrect t.capacity idx _ _ hLen' t.hCapPos
       hGap hDist' j hj e hSlot
@@ -1716,7 +1716,7 @@ theorem RHTable.erase_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
     -- gap is none in cleared array
     have hGap : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
         rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-      simp [Array.getElem_set]
+      simp
     -- Apply backshiftLoop_preserves_noDupKeys
     intro i j hi hj ei ej hI hJ hKeyEq
     exact backshiftLoop_preserves_noDupKeys t.capacity idx _ _ hLen' t.hCapPos
@@ -1876,7 +1876,7 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
     (gap : Nat) (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
     (nextE : RHEntry α β)
-    (hGapNone : slots[gap % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none)
+    (_hGapNone : slots[gap % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none)
     (hNextSome : slots[(gap + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some nextE)
     (hNextDist : 0 < nextE.dist)
     (hDist : ∀ (j : Nat) (hj : j < capacity) (e : RHEntry α β),
@@ -1900,7 +1900,7 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
   have hSlots'Next : _slots'[(gap + 1) % capacity]'(by rw [hSlotsLen']; exact Nat.mod_lt _ hCapPos) = none := by
     show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
       _hGapI).set ((gap + 1) % capacity) none _)[(gap + 1) % capacity]'_ = none
-    simp [Array.getElem_set]
+    simp
   have hSlots'Gap : _slots'[gap % capacity]'(by rw [hSlotsLen']; exact Nat.mod_lt _ hCapPos) =
       some { nextE with dist := nextE.dist - 1 } := by
     show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
@@ -1935,9 +1935,9 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
             show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
               _hGapI).set ((gap + 1) % capacity) none _)[(idealIndex e.key capacity hCapPos + d) % capacity]'_ = some e
             have hwGap' : (idealIndex e.key capacity hCapPos + d) % capacity = gap % capacity := hwGap
-            have hwNext' : ¬(gap + 1) % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
+            have _hwNext' : ¬(gap + 1) % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
               fun h => hwNext h.symm
-            simp only [Array.getElem_set, hwGap', hwNext', hNe.symm, ↓reduceIte]
+            simp only [Array.getElem_set, hwGap', hNe.symm, ↓reduceIte]
             exact congrArg some hEDef.symm
           · subst hEDef; omega
         · right
@@ -2006,9 +2006,9 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
                 _hGapI).set ((gap + 1) % capacity) none _)[(idealIndex e.key capacity hCapPos + d) % capacity]'_ =
                 some { nextE with dist := nextE.dist - 1 }
               have hwGap' : (idealIndex e.key capacity hCapPos + d) % capacity = gap % capacity := hwGap
-              have hwNext' : ¬(gap + 1) % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
+              have _hwNext' : ¬(gap + 1) % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
                 fun h => hwNext h.symm
-              simp only [Array.getElem_set, hwGap', hwNext', hNe.symm, ↓reduceIte]
+              simp only [Array.getElem_set, hwGap', hNe.symm, ↓reduceIte]
           · exfalso
             have hdeq : d = e.dist - 1 := by omega
             have hEDist := hDist p hp e hOrig
@@ -2105,7 +2105,7 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
           have hSame : slots[gapIdx % capacity]'hGapI =
               slots[(gapIdx + 1) % capacity]'hNextI := by congr 1
           rw [hGapNone, hSlot] at hSame; injection hSame
-        simp only [backshiftLoop, hSlot, hDistF, ↓reduceIte]
+        simp only [backshiftLoop, hSlot, hDistF]
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩, ite_false]
         -- Build intermediate array
         have hLen2 : ((slots.set (gapIdx % capacity)
@@ -2118,7 +2118,7 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
             ((gapIdx + 1) % capacity) none
             (by rw [Array.size_set]; exact hNextI))[((gapIdx + 1) % capacity) % capacity]'(by
               rw [hLen2]; exact Nat.mod_lt _ hCapPos) = none := by
-          simp only [Array.getElem_set, Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos), hNe, ↓reduceIte]
+          simp only [Array.getElem_set, Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos), ↓reduceIte]
         -- relaxedPCD step
         have hRelaxed2 := backshiftStep_relaxedPCD gapIdx slots capacity hLen hCapPos
           nextE hGapNone hSlot hNextDist hDist hNe hRelaxed
@@ -2216,7 +2216,7 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
               rw [Array.size_set, Array.size_set, hLen]; exact Nat.mod_lt _ hCapPos) = none := by
           have : (gapIdx + 1) % capacity % capacity = (gapIdx + 1) % capacity :=
             Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos)
-          simp [Array.getElem_set, this]
+          simp [this]
         have hMM : (gapIdx + 1) % capacity % capacity = (gapIdx + 1) % capacity :=
           Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos)
         -- relaxedPCD only uses gap in an equality check (= gap), no dependent array on gap
@@ -2311,7 +2311,7 @@ theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [Lawfu
     -- Gap is none in cleared array
     have hGap : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
         rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-      simp [Array.getElem_set]
+      simp
     -- distCorrect for cleared array
     have hDist' : ∀ (j : Nat) (hj : j < t.capacity) (e : RHEntry α β),
         (t.slots.set (idx % t.capacity) none hIdxS)[j]'(by

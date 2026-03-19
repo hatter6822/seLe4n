@@ -21,7 +21,7 @@ This module provides the bridge layer between the Robin Hood hash table
 3. **Filter support** (N3-C): `RHTable.filter` with preservation proofs
 4. **Convenience constructors**: `RHTable.ofList`
 
-Every theorem here is proved without `sorry` or `axiom`.
+Every theorem here is machine-checked with no admitted goals or postulated axioms.
 -/
 
 namespace SeLe4n.Kernel.RobinHood
@@ -68,7 +68,7 @@ theorem RHTable.getElem?_empty [BEq α] [Hashable α]
     have hSlot : (RHTable.empty cap hPos : RHTable α β).slots[idx % cap]'(by
         simp [RHTable.empty, Array.size]; exact Nat.mod_lt _ hPos) = none := by
       simp [RHTable.empty]
-    rw [hSlot]; rfl
+    rw [hSlot]
 
 -- ============================================================================
 -- N3-B1: getElem?_insert_self
@@ -121,22 +121,76 @@ theorem RHTable.size_erase_le [BEq α] [Hashable α]
     (t : RHTable α β) (k : α) :
     (t.erase k).size ≤ t.size := by
   unfold RHTable.erase
+  simp only
   split
   · exact Nat.le_refl _
-  · simp only; omega
+  · dsimp only; omega
+
+-- ============================================================================
+-- N3 helper: list_fold_insertNoResize_size_le
+-- ============================================================================
+
+/-- Folding `insertNoResize` over a list of option entries increases size by
+    at most the count of `some` entries. -/
+private theorem list_fold_insertNoResize_size_le [BEq α] [Hashable α]
+    (l : List (Option (RHEntry α β))) (acc : RHTable α β) :
+    (List.foldl (fun acc slot =>
+      match slot with
+      | none => acc
+      | some e => acc.insertNoResize e.key e.value) acc l).size
+    ≤ acc.size + l.countP (·.isSome) := by
+  induction l generalizing acc with
+  | nil => simp [List.countP_nil]
+  | cons hd tl ih =>
+    simp only [List.foldl_cons, List.countP_cons]
+    cases hd with
+    | none =>
+      simp only [Option.isSome, Bool.false_eq_true, ite_false]
+      exact ih acc
+    | some e =>
+      simp only [Option.isSome, ite_true]
+      calc (List.foldl _ (acc.insertNoResize e.key e.value) tl).size
+          ≤ (acc.insertNoResize e.key e.value).size + tl.countP (·.isSome) := ih _
+        _ ≤ (acc.size + 1) + tl.countP (·.isSome) :=
+            Nat.add_le_add_right (RHTable.insertNoResize_size_le _ _ _) _
+        _ = acc.size + (tl.countP (·.isSome) + 1) := by omega
+
+-- ============================================================================
+-- N3 helper: resize_size_le
+-- ============================================================================
+
+/-- Resizing a well-formed table does not increase its size. -/
+private theorem resize_size_le [BEq α] [Hashable α]
+    (t : RHTable α β) (hwf : t.WF) :
+    t.resize.size ≤ t.size := by
+  show (t.slots.foldl (fun acc slot =>
+      match slot with
+      | none => acc
+      | some e => acc.insertNoResize e.key e.value)
+    (RHTable.empty (t.capacity * 2) (Nat.mul_pos t.hCapPos (by omega))) : RHTable α β).size ≤ t.size
+  rw [← Array.foldl_toList]
+  have h := list_fold_insertNoResize_size_le t.slots.toList
+    (RHTable.empty (t.capacity * 2) (Nat.mul_pos t.hCapPos (by omega)) : RHTable α β)
+  have hEmpty : (RHTable.empty (t.capacity * 2) (Nat.mul_pos t.hCapPos (by omega))
+      : RHTable α β).size = 0 := by simp [RHTable.empty]
+  rw [hEmpty, Nat.zero_add] at h
+  rw [hwf.sizeCount]; unfold countOccupied; exact h
 
 -- ============================================================================
 -- N3-B7: size_insert_le
 -- ============================================================================
 
-/-- N3-B7: Inserting a key increases the table size by at most 1. -/
+/-- N3-B7: Inserting a key increases the table size by at most 1.
+    Requires well-formedness because the resize path must preserve the size
+    bound (resize rebuilds all entries via fold, adding at most `countOccupied`
+    = `t.size` entries). -/
 theorem RHTable.size_insert_le [BEq α] [Hashable α]
-    (t : RHTable α β) (k : α) (v : β) :
+    (t : RHTable α β) (k : α) (v : β) (hwf : t.WF) :
     (t.insert k v).size ≤ t.size + 1 := by
   unfold RHTable.insert
   split
   · exact Nat.le_trans (RHTable.insertNoResize_size_le _ _ _)
-      (Nat.add_le_add_right (by omega) 1)
+      (Nat.add_le_add_right (resize_size_le t hwf) 1)
   · exact RHTable.insertNoResize_size_le _ _ _
 
 -- ============================================================================
@@ -184,85 +238,82 @@ def RHTable.filter [BEq α] [Hashable α] (t : RHTable α β) (f : α → β →
     if f k v then acc.insertNoResize k v else acc
 
 -- ============================================================================
--- N3-B12: size_filter_le_size (with invExt hypothesis)
+-- N3 helper: list_fold_filter_size_le
+-- ============================================================================
+
+/-- Folding a filter step over a list of option entries increases size by at most
+    the count of `some` entries (regardless of predicate). -/
+private theorem list_fold_filter_size_le [BEq α] [Hashable α]
+    (l : List (Option (RHEntry α β))) (acc : RHTable α β)
+    (f : α → β → Bool) :
+    (List.foldl (fun acc slot =>
+      match slot with
+      | none => acc
+      | some e => if f e.key e.value then acc.insertNoResize e.key e.value else acc)
+      acc l).size
+    ≤ acc.size + l.countP (·.isSome) := by
+  induction l generalizing acc with
+  | nil => simp [List.countP_nil]
+  | cons hd tl ih =>
+    simp only [List.foldl_cons, List.countP_cons]
+    cases hd with
+    | none =>
+      simp only [Option.isSome, Bool.false_eq_true, ite_false]
+      exact ih acc
+    | some e =>
+      simp only [Option.isSome, ite_true]
+      by_cases hf : f e.key e.value
+      · simp only [hf, ite_true]
+        calc (List.foldl _ (acc.insertNoResize e.key e.value) tl).size
+            ≤ (acc.insertNoResize e.key e.value).size + tl.countP (·.isSome) := ih _
+          _ ≤ (acc.size + 1) + tl.countP (·.isSome) :=
+              Nat.add_le_add_right (RHTable.insertNoResize_size_le _ _ _) _
+          _ = acc.size + (tl.countP (·.isSome) + 1) := by omega
+      · simp only [show (f e.key e.value) = false from by simp [hf]]
+        calc (List.foldl _ acc tl).size
+            ≤ acc.size + tl.countP (·.isSome) := ih _
+          _ ≤ acc.size + (tl.countP (·.isSome) + 1) := by omega
+
+-- ============================================================================
+-- N3-B12: size_filter_le_capacity / size_filter_le_size
 -- ============================================================================
 
 /-- N3-B12 (weak): Filtering never exceeds original capacity. -/
 theorem RHTable.size_filter_le_capacity [BEq α] [Hashable α]
     (t : RHTable α β) (f : α → β → Bool) :
     (t.filter f).size ≤ t.capacity := by
-  unfold filter fold
-  have hStep : ∀ (i : Fin t.slots.size) (acc : RHTable α β),
-      acc.size ≤ i.val →
-      (match t.slots[i] with
-       | none => acc
-       | some e => if f e.key e.value then acc.insertNoResize e.key e.value else acc).size
-      ≤ i.val + 1 := by
-    intro i acc hAcc
-    split
-    · omega
-    · split
-      · exact Nat.le_trans (RHTable.insertNoResize_size_le _ _ _) (by omega)
-      · omega
-  have hInit : (RHTable.empty t.capacity t.hCapPos : RHTable α β).size ≤ 0 := by
+  show (t.slots.foldl (fun acc slot =>
+      match slot with
+      | none => acc
+      | some e => if f e.key e.value then acc.insertNoResize e.key e.value else acc)
+    (RHTable.empty t.capacity t.hCapPos) : RHTable α β).size ≤ t.capacity
+  rw [← Array.foldl_toList]
+  have h := list_fold_filter_size_le t.slots.toList
+    (RHTable.empty t.capacity t.hCapPos : RHTable α β) f
+  have hEmpty : (RHTable.empty t.capacity t.hCapPos : RHTable α β).size = 0 := by
     simp [RHTable.empty]
-  have hFinal := Array.foldl_induction
-    (motive := fun i (acc : RHTable α β) => acc.size ≤ i)
-    hInit hStep
-  rw [t.hSlotsLen] at hFinal; exact hFinal
-
-/-- Count of occupied (isSome) entries in the first `n` slots. -/
-private def countSomePrefix (slots : Array (Option γ)) (n : Nat) : Nat :=
-  slots.foldl (fun acc s => acc + if s.isSome then 1 else 0) 0 (stop := n)
-
-private theorem countSomePrefix_step (slots : Array (Option γ)) (i : Nat)
-    (hi : i < slots.size) :
-    countSomePrefix slots (i + 1) =
-      countSomePrefix slots i + if (slots[i]'hi).isSome then 1 else 0 := by
-  unfold countSomePrefix
-  rw [Array.foldl_loop_step hi]
-
-private theorem countSomePrefix_full_eq_countOccupied
-    (slots : Array (Option (RHEntry α β))) :
-    countSomePrefix slots slots.size = countOccupied slots := by
-  unfold countSomePrefix countOccupied
-  simp [Array.foldl_eq_foldl_toList, List.countP]
-  induction slots.toList with
-  | nil => rfl
-  | cons hd tl ih =>
-    simp [List.foldl, List.countP_cons]
-    cases hd <;> simp [ih]
+  rw [hEmpty, Nat.zero_add] at h
+  have hCount : t.slots.toList.countP (·.isSome) ≤ t.slots.toList.length :=
+    List.countP_le_length
+  rw [Array.length_toList, t.hSlotsLen] at hCount
+  exact Nat.le_trans h hCount
 
 /-- N3-B12 (tight): Filtering preserves size bound ≤ `t.size`. -/
 theorem RHTable.size_filter_le_size [BEq α] [Hashable α]
     (t : RHTable α β) (f : α → β → Bool) (hWF : t.WF) :
     (t.filter f).size ≤ t.size := by
-  unfold filter fold
-  have hStep : ∀ (i : Fin t.slots.size) (acc : RHTable α β),
-      acc.size ≤ countSomePrefix t.slots i.val →
-      (match t.slots[i] with
-       | none => acc
-       | some e => if f e.key e.value then acc.insertNoResize e.key e.value else acc).size
-      ≤ countSomePrefix t.slots (i.val + 1) := by
-    intro ⟨i, hi⟩ acc hAcc
-    rw [countSomePrefix_step t.slots i hi]
-    split
-    · -- none: acc unchanged, isSome = false, count unchanged
-      simp; omega
-    · -- some e: isSome = true, count +1
-      simp; split
-      · exact Nat.le_trans (RHTable.insertNoResize_size_le _ _ _) (by omega)
-      · omega
-  have hInit : (RHTable.empty t.capacity t.hCapPos : RHTable α β).size
-      ≤ countSomePrefix t.slots 0 := by
-    simp [RHTable.empty, countSomePrefix, Array.foldl]
-  have hFinal := Array.foldl_induction
-    (motive := fun i (acc : RHTable α β) => acc.size ≤ countSomePrefix t.slots i)
-    hInit hStep
-  -- hFinal : result.size ≤ countSomePrefix t.slots t.slots.size
-  --        = countOccupied t.slots = t.size (by WF)
-  rw [countSomePrefix_full_eq_countOccupied] at hFinal
-  rw [hWF.sizeCount]; exact hFinal
+  show (t.slots.foldl (fun acc slot =>
+      match slot with
+      | none => acc
+      | some e => if f e.key e.value then acc.insertNoResize e.key e.value else acc)
+    (RHTable.empty t.capacity t.hCapPos) : RHTable α β).size ≤ t.size
+  rw [← Array.foldl_toList]
+  have h := list_fold_filter_size_le t.slots.toList
+    (RHTable.empty t.capacity t.hCapPos : RHTable α β) f
+  have hEmpty : (RHTable.empty t.capacity t.hCapPos : RHTable α β).size = 0 := by
+    simp [RHTable.empty]
+  rw [hEmpty, Nat.zero_add] at h
+  rw [hWF.sizeCount]; unfold countOccupied; exact h
 
 -- ============================================================================
 -- N3-B11: filter_preserves_key
@@ -279,7 +330,7 @@ theorem RHTable.size_filter_le_size [BEq α] [Hashable α]
 --   If ∀ k' v, (k' == k) = true → f k' v = true and t.invExt, then
 --   (t.filter f).get? k = t.get? k
 --
--- This is not provided here as a zero-sorry theorem because the proof
+-- This is not provided here as a fully-proved theorem because the proof
 -- requires ~120 lines of fold invariant tracking. Phase N4 will prove
 -- the specific instances needed (revoke filter preserving source caps).
 

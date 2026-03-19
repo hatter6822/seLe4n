@@ -49,9 +49,9 @@ private theorem getLoop_none_of_absent [BEq α] [Hashable α]
       rename_i e hSlot
       have hKNe := hAbsent (idx % capacity) (Nat.mod_lt _ hCapPos) e hSlot
       if hDist : e.dist < d then
-        simp [getLoop, hSlot, hKNe, hDist]
+        simp [hKNe, hDist]
       else
-        simp only [getLoop, hSlot, hKNe, hDist, ite_false, ite_true]
+        simp only [hKNe, hDist, ite_false]
         exact ih (idx % capacity + 1) (d + 1)
 
 /-- When `findLoop` returns `none`, key `k` is absent from the table.
@@ -227,7 +227,7 @@ private theorem backshiftLoop_preserves_key_absence [BEq α]
         -- with dist decremented. The key is preserved (same nextE.key).
         have hDistF : (nextE.dist == 0) = false := by
           cases h : nextE.dist == 0 <;> simp_all
-        simp only [backshiftLoop, hNext, hDistF, ↓reduceIte] at hSlot
+        simp only [backshiftLoop, hNext, hDistF] at hSlot
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
           ite_false] at hSlot
         -- The intermediate array has the same keys (nextE.key moved, nextI cleared)
@@ -465,7 +465,7 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
     (hDLe : d ≤ e.dist) :
     getLoop fuel idx k d slots capacity hLen hCapPos = some v := by
   induction fuel generalizing idx d with
-  | zero => simp [getLoop] at hFuel hDLe ⊢ <;> omega
+  | zero => simp at hFuel hDLe ⊢ <;> omega
   | succ n ih =>
     unfold getLoop; simp only []
     have hIdxMod : idx % capacity < capacity := Nat.mod_lt _ hCapPos
@@ -516,7 +516,7 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
             rw [eq_of_beq hc, eq_of_beq hKey]; exact BEq.refl k
           have hIdxEqP := hNoDup (idx % capacity) p hIdxMod hp e' e he' hSlotP hBothK
           rw [hIdxEqP] at hD; exact hDeq (hD.trans hEDist.symm)
-      simp only [hKeyNe, ite_false]
+      simp only [hKeyNe]
       -- e'.dist ≥ d so the dist < d branch is false
       have hDistGe : ¬(e'.dist < d) := by omega
       simp only [hDistGe, ite_false]
@@ -555,7 +555,7 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
         simp only [hKey, ite_true]
         rw [Array.getElem_set]; simp [hjNe]
       else if hRH : e.dist < d then
-        simp only [hKey, ite_false, hRH, ite_true]
+        simp only [hKey, hRH, ite_true]
         have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size = capacity := by
           rw [Array.size_set]; exact hLen
         have hNR' : ∀ s, s < n → (idx % capacity + 1 + s) % capacity ≠ j := by
@@ -598,14 +598,14 @@ private theorem insertLoop_places_key [BEq α] [Hashable α] [LawfulBEq α]
     | none =>
       unfold insertLoop; simp only []; simp only [hSlot]
       exact ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩,
-        by simp [Array.getElem_set], BEq.refl k, rfl⟩
+        by simp, BEq.refl k, rfl⟩
     | some e =>
       simp only [insertLoop, hSlot]
       by_cases hKey : e.key == k
       · simp only [hKey, ite_true]
         exact ⟨idx % capacity, hIdxCap, { e with value := v },
-          by simp [Array.getElem_set], hKey, rfl⟩
-      · simp only [show (e.key == k) = false from by simp [hKey], ite_false]
+          by simp, hKey, rfl⟩
+      · simp only [show (e.key == k) = false from by simp [hKey]]
         -- Room at (idx+s)%cap is none. s ≥ 1 since idx%cap is some e (not none).
         obtain ⟨s, hs, hRoomNone⟩ := hRoom
         have hs_pos : 1 ≤ s := by
@@ -678,7 +678,7 @@ private theorem insertLoop_places_key [BEq α] [Hashable α] [LawfulBEq α]
           -- Set array has ⟨k, v, d⟩ at idx%cap
           have hSetEntry : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[
               idx % capacity]'(by rw [Array.size_set]; exact hIdx) =
-              some ⟨k, v, d⟩ := by simp [Array.getElem_set]
+              some ⟨k, v, d⟩ := by simp
           -- After insertLoop, still there
           refine ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩, ?_, BEq.refl k, rfl⟩
           -- Simplify remaining if-then-else from key check
@@ -724,7 +724,7 @@ private theorem list_exists_none_of_countP_lt :
   | some a :: tl, h => by
     have hLen : (some a :: tl).length = tl.length + 1 := rfl
     have hCnt : (some a :: tl).countP (·.isSome) = tl.countP (·.isSome) + 1 := by
-      simp [List.countP_cons]
+      simp
     rw [hLen, hCnt] at h
     have hTl : tl.countP (·.isSome) < tl.length := by omega
     have ⟨i, hi, hNone⟩ := list_exists_none_of_countP_lt tl hTl
@@ -922,7 +922,7 @@ private theorem insertLoop_absent_ne_key [BEq α] [Hashable α] [LawfulBEq α]
           exact hAbsent (idx % capacity) (Nat.mod_lt _ hCapPos) eOld hSlotCase
         · exact hAbsent j hj e hSlot
       else if hRH : eOld.dist < d then
-        simp only [hKey, ite_false, hRH, ite_true] at hSlot
+        simp only [hKey, hRH, ite_true] at hSlot
         have hLen' : (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx).size
             = capacity := by rw [Array.size_set]; exact hLen
         have hAbsent' : ∀ a (ha : a < capacity) (ea : RHEntry α β),
@@ -1043,7 +1043,7 @@ private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
           exact Or.inl ⟨hKey, rfl⟩
         · exact Or.inr ⟨j, hj, e, hSlotR, rfl, rfl⟩
       else if hRH : eOld.dist < d then
-        simp only [hKey, ite_false, hRH, ite_true] at hSlotR
+        simp only [hKey, hRH, ite_true] at hSlotR
         have hLen' : (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx).size
             = capacity := by rw [Array.size_set]; exact hLen
         have hIH := ih (idx % capacity + 1) eOld.key eOld.value (eOld.dist + 1)
@@ -1258,10 +1258,10 @@ private theorem insertLoop_preserves_ne_entry_new [BEq α] [Hashable α] [Lawful
               · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
               · rename_i h1 hbN; cases hI'
                 exact absurd (hKAbs j' hj' ej' hJ')
-                  (by have := eq_of_beq hKE'; simp [this.symm, beq_self_eq_true])
+                  (by have := eq_of_beq hKE'; simp [this.symm])
               · rename_i haN h2; cases hJ'
                 exact absurd (hKAbs i' hi' ei' hI')
-                  (by have := eq_of_beq hKE'; simp [this, beq_self_eq_true])
+                  (by have := eq_of_beq hKE'; simp [this])
               · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
             -- distCorrect for set array
             have hDistC' : ∀ j (hj : j < capacity) (e : RHEntry α β),
@@ -1518,7 +1518,7 @@ private theorem resize_preserves_entry [BEq α] [Hashable α] [LawfulBEq α]
           unfold RHTable.insertNoResize; simp only []
           have hD0 : 0 = (idealIndex eOrig.key acc.capacity acc.hCapPos % acc.capacity +
               acc.capacity - idealIndex eOrig.key acc.capacity acc.hCapPos) % acc.capacity := by
-            simp [Nat.mod_eq_of_lt (idealIndex_lt eOrig.key _ _), Nat.sub_self]
+            simp [Nat.mod_eq_of_lt (idealIndex_lt eOrig.key _ _)]
           have hRoom0 : ∃ sR, sR < acc.capacity ∧
               acc.slots[(idealIndex eOrig.key acc.capacity acc.hCapPos + sR) % acc.capacity]'(by
                 rw [acc.hSlotsLen]; exact Nat.mod_lt _ acc.hCapPos) = none :=
@@ -1735,7 +1735,7 @@ private theorem backshiftLoop_output_has_input_key_value [BEq α]
         intro hSlot; exact ⟨q, hq, e', hSlot, rfl, rfl⟩
       else
         have hDistF : (nextE.dist == 0) = false := by cases h : nextE.dist == 0 <;> simp_all
-        simp only [backshiftLoop, hNext, hDistF, ↓reduceIte]
+        simp only [backshiftLoop, hNext, hDistF]
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
           ite_false]
         have hLen2 : ((slots.set (gapIdx % capacity)
@@ -1792,7 +1792,7 @@ private theorem backshiftLoop_preserves_entry_presence [BEq α]
         simp [backshiftLoop, hNext, hDist]; exact ⟨p, hp, e, hSlotP, rfl, rfl⟩
       else
         have hDistF : (nextE.dist == 0) = false := by cases h : nextE.dist == 0 <;> simp_all
-        simp only [backshiftLoop, hNext, hDistF, ↓reduceIte]
+        simp only [backshiftLoop, hNext, hDistF]
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩, ite_false]
         -- Double-set: set gapIdx%cap to {nextE with dist-1}, set (gapIdx+1)%cap to none
         have hLen2 : ((slots.set (gapIdx % capacity)
@@ -1829,7 +1829,7 @@ private theorem backshiftLoop_preserves_entry_presence [BEq α]
               fun h => hGapNeNext h.symm
             have hNeq2 : ¬ (gapIdx + 1) % capacity = gapIdx % capacity :=
               fun h => hGapNeNext h
-            simp only [Array.getElem_set, hNeq1, hNeq2, ite_false, ite_true]
+            simp only [Array.getElem_set, hNeq2, ite_false, ite_true]
           -- Adapt hNewGap: IH wants [(gapIdx+1)%cap % cap] but hNewGap has [(gapIdx+1)%cap]
           have hModIdem : ((gapIdx + 1) % capacity) % capacity = (gapIdx + 1) % capacity :=
             Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos)
@@ -1861,7 +1861,7 @@ private theorem backshiftLoop_preserves_entry_presence [BEq α]
             have hNeN2 : ¬ (gapIdx + 1) % capacity = p := fun h => hpEqNext h.symm
             have hNeG1 : ¬ p = gapIdx % capacity := hpNeGap
             have hNeG2 : ¬ gapIdx % capacity = p := fun h => hpNeGap h.symm
-            simp only [Array.getElem_set, hNeN1, hNeN2, hNeG1, hNeG2, ite_false, hSlotP]
+            simp only [Array.getElem_set, hNeN2, hNeG2, ite_false, hSlotP]
           have hNewGap' : ((slots.set (gapIdx % capacity)
               (some { nextE with dist := nextE.dist - 1 }) hGapI).set
               ((gapIdx + 1) % capacity) none
@@ -1878,7 +1878,7 @@ private theorem backshiftLoop_preserves_entry_presence [BEq α]
 /-- N3-B4 helper: Erasing key `k` preserves entries with different keys. -/
 private theorem erase_preserves_ne_entry [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k k' : α) (hNe : ¬(k' == k) = true)
-    (hExt : t.invExt)
+    (_hExt : t.invExt)
     (p : Nat) (hp : p < t.capacity) (e : RHEntry α β)
     (hSlotP : t.slots[p]'(t.hSlotsLen ▸ hp) = some e)
     (hKey : (e.key == k') = true) :
