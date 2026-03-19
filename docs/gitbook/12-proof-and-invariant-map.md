@@ -192,11 +192,22 @@ by all operations. Preservation theorems proved: WF (all ops), distCorrect
 (all ops), noDupKeys (all ops), probeChainDominant (all ops). All 6 TPI-D
 items complete (D1–D6), ~3,600 LoC, zero sorry/axiom. **WS-N2 COMPLETE.**
 
-The WS-N workstream introduces a formally verified Robin Hood hash table
-with the following remaining planned theorems (N3–N5):
-- **Bridge lemmas** (N3, planned): 12 lemmas mirroring `Std.HashMap` proof patterns
-  used by kernel (`getElem?_insert_self/ne`, `getElem?_erase_self/ne`,
-  `size_erase_le`, `size_filter_le_size`, `mem_iff_isSome_getElem?`, etc.).
+**N3 delivered proof surface** (v0.17.3, `SeLe4n/Kernel/RobinHood/Bridge.lean`):
+
+- **Typeclass instances**: `Inhabited (RHTable α β)`, `BEq (RHTable α β)`
+- **Bridge lemmas** (10 core): `getElem?_empty`, `getElem?_insert_self/ne`,
+  `getElem?_erase_self/ne`, `size_erase_le`, `size_insert_le`,
+  `mem_iff_isSome_getElem?`, `getElem?_eq_some_getElem`, `fold_eq_slots_foldl`
+- **Filter support**: `RHTable.filter`, `size_filter_le_capacity`, `size_filter_le_size`
+- **Convenience**: `RHTable.ofList`, `empty_invExt'`
+- **Lookup.lean additions**: `get_after_erase_ne` + 3 helper lemmas
+  (`backshiftLoop_output_has_input_key_value`, `backshiftLoop_preserves_entry_presence`,
+  `erase_preserves_ne_entry`)
+
+~307 LoC Bridge.lean + ~247 LoC Lookup.lean additions, ~15 proved declarations,
+zero sorry/axiom. **WS-N3 COMPLETE.**
+
+Remaining planned theorems (N4–N5):
 - See [WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
   for full proof strategies, expanded pseudocode, and 122-subtask breakdown.
 
