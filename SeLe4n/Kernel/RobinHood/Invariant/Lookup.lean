@@ -14,6 +14,13 @@ namespace SeLe4n.Kernel.RobinHood
 -- N2-E: Lookup Correctness
 -- ============================================================================
 
+/-- `(a % n + b) % n = (a + b) % n` — modular addition absorbs inner mod. -/
+private theorem mod_add_mod_eq (a b n : Nat) :
+    (a % n + b) % n = (a + b) % n := by
+  conv => lhs; rw [Nat.add_mod]
+  conv => rhs; rw [Nat.add_mod]
+  rw [Nat.mod_mod]
+
 /-- If key `k` is absent from all slots, `getLoop` returns `none`.
     The argument is simple: at each step, the slot is either `none` (return none),
     has a different key (continue or early-terminate with none), or fuel exhausts
@@ -504,7 +511,7 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
       simp only [insertLoop, hSlot]
       rw [Array.getElem_set]; simp [hjNe]
     | some e =>
-      unfold insertLoop; simp only [hSlot]
+      unfold insertLoop; simp only []; simp only [hSlot]
       if hKey : e.key == k then
         simp only [hKey, ite_true]
         rw [Array.getElem_set]; simp [hjNe]
@@ -512,17 +519,21 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
         simp only [hKey, ite_false, hRH, ite_true]
         have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size = capacity := by
           rw [Array.size_set]; exact hLen
-        rw [ih (idx % capacity + 1) e.key e.value (e.dist + 1) _ hLen'
-          (by intro s hs
-              have := hNR (s + 1) (by omega)
-              rwa [show idx + (s + 1) = idx % capacity + 1 + s from by omega] at this)]
-        rw [Array.getElem_set]; simp [hjNe]
+        have hNR' : ∀ s, s < n → (idx % capacity + 1 + s) % capacity ≠ j := by
+          intro s hs
+          have h := hNR (s + 1) (by omega)
+          rw [show idx % capacity + 1 + s = idx % capacity + (s + 1) from by omega,
+              mod_add_mod_eq]; exact h
+        have hIH := ih (idx % capacity + 1) e.key e.value (e.dist + 1) _ hLen' hNR'
+        rw [hIH, Array.getElem_set]; simp [hjNe]
       else
         simp only [hKey, ite_false, hRH, ite_false]
-        exact ih (idx % capacity + 1) k v (d + 1) slots hLen
-          (by intro s hs
-              have := hNR (s + 1) (by omega)
-              rwa [show idx + (s + 1) = idx % capacity + 1 + s from by omega] at this)
+        have hNR' : ∀ s, s < n → (idx % capacity + 1 + s) % capacity ≠ j := by
+          intro s hs
+          have h := hNR (s + 1) (by omega)
+          rw [show idx % capacity + 1 + s = idx % capacity + (s + 1) from by omega,
+              mod_add_mod_eq]; exact h
+        exact ih (idx % capacity + 1) k v (d + 1) slots hLen hNR'
 
 /-- After `insertLoop` with fuel = capacity and d = 0, the result
     contains an entry with `key == k = true` and `value = v` at some position,
@@ -549,44 +560,48 @@ private theorem insertLoop_places_key [BEq α] [Hashable α] [LawfulBEq α]
     have hIdxCap : idx % capacity < capacity := Nat.mod_lt _ hCapPos
     cases hSlot : slots[idx % capacity]'hIdx with
     | none =>
-      unfold insertLoop; simp only [hSlot]
+      unfold insertLoop; simp only []; simp only [hSlot]
       exact ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩,
         by simp [Array.getElem_set], BEq.refl k, rfl⟩
     | some e =>
-      unfold insertLoop; simp only [hSlot]
-      if hKey : e.key == k then
-        simp only [hKey, ite_true]
+      simp only [insertLoop, hSlot]
+      split
+      · -- e.key == k = true: update in place
+        rename_i hKey
         exact ⟨idx % capacity, hIdxCap, { e with value := v },
           by simp [Array.getElem_set], hKey, rfl⟩
-      else if hRH : e.dist < d then
-        simp only [hKey, ite_false, hRH, ite_true]
-        have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size = capacity := by
-          rw [Array.size_set]; exact hLen
-        have hn_lt : n < capacity := by omega
-        have hPreserved := insertLoop_preserves_slot n (idx % capacity + 1) e.key e.value
-          (e.dist + 1) (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx) capacity hLen'
-          hCapPos (idx % capacity) hIdxCap
-          (by intro s hs
-              by_contra hEq
-              have : (idx % capacity + 1 + s) % capacity = idx % capacity := hEq
-              have h1s : 1 + s < capacity := by omega
-              rw [show idx % capacity + 1 + s = idx % capacity + (1 + s) from by omega,
-                  Nat.add_mod, Nat.mod_eq_of_lt hIdxCap, Nat.mod_eq_of_lt h1s] at this
-              by_cases hlt : idx % capacity + (1 + s) < capacity
-              · rw [Nat.mod_eq_of_lt hlt] at this; omega
-              · simp only [Nat.not_lt] at hlt
-                have hb : idx % capacity + (1 + s) - capacity < capacity := by omega
-                rw [show idx % capacity + (1 + s) = (idx % capacity + (1 + s) - capacity) +
-                  capacity from by omega, Nat.add_mod_right,
-                  Nat.mod_eq_of_lt hb] at this; omega)
-        have hSlotKV : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[idx % capacity]'(by
-            rw [Array.size_set]; exact hIdx) = some ⟨k, v, d⟩ := by
-          simp [Array.getElem_set]
-        rw [hSlotKV] at hPreserved
-        exact ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩,
-          hPreserved.symm, BEq.refl k, rfl⟩
-      else
-        simp only [hKey, ite_false, hRH, ite_false]
+      · -- e.key == k = false
+        rename_i hKey
+        split
+        · -- e.dist < d: Robin Hood swap
+          rename_i hRH
+          have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size = capacity := by
+            rw [Array.size_set]; exact hLen
+          have hn_lt : n < capacity := by omega
+          have hPreserved := insertLoop_preserves_slot n (idx % capacity + 1) e.key e.value
+            (e.dist + 1) (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx) capacity hLen'
+            hCapPos (idx % capacity) hIdxCap
+            (by intro s hs
+                by_contra hEq
+                have : (idx % capacity + 1 + s) % capacity = idx % capacity := hEq
+                have h1s : 1 + s < capacity := by omega
+                rw [show idx % capacity + 1 + s = idx % capacity + (1 + s) from by omega,
+                    Nat.add_mod, Nat.mod_eq_of_lt hIdxCap, Nat.mod_eq_of_lt h1s] at this
+                by_cases hlt : idx % capacity + (1 + s) < capacity
+                · rw [Nat.mod_eq_of_lt hlt] at this; omega
+                · simp only [Nat.not_lt] at hlt
+                  have hb : idx % capacity + (1 + s) - capacity < capacity := by omega
+                  rw [show idx % capacity + (1 + s) = (idx % capacity + (1 + s) - capacity) +
+                    capacity from by omega, Nat.add_mod_right,
+                    Nat.mod_eq_of_lt hb] at this; omega)
+          have hSlotKV : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[idx % capacity]'(by
+              rw [Array.size_set]; exact hIdx) = some ⟨k, v, d⟩ := by
+            simp [Array.getElem_set]
+          rw [hSlotKV] at hPreserved
+          exact ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩,
+            hPreserved.symm, BEq.refl k, rfl⟩
+      · -- e.dist ≥ d: continue probing
+        rename_i hRH
         -- Continue probing: need to show room still exists for recursive call
         obtain ⟨s, hs, hSlotS⟩ := hRoom
         have hRoom' : ∃ s', s' < n ∧
