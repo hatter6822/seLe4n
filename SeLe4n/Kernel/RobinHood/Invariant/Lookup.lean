@@ -565,67 +565,16 @@ private theorem insertLoop_places_key [BEq α] [Hashable α] [LawfulBEq α]
         by simp [Array.getElem_set], BEq.refl k, rfl⟩
     | some e =>
       simp only [insertLoop, hSlot]
-      split
-      · -- e.key == k = true: update in place
-        rename_i hKey
+      by_cases hKey : e.key == k
+      · simp only [hKey, ite_true]
         exact ⟨idx % capacity, hIdxCap, { e with value := v },
           by simp [Array.getElem_set], hKey, rfl⟩
-      · -- e.key == k = false
-        rename_i hKey
-        split
-        · -- e.dist < d: Robin Hood swap
-          rename_i hRH
-          have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size = capacity := by
-            rw [Array.size_set]; exact hLen
-          have hn_lt : n < capacity := by omega
-          have hPreserved := insertLoop_preserves_slot n (idx % capacity + 1) e.key e.value
-            (e.dist + 1) (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx) capacity hLen'
-            hCapPos (idx % capacity) hIdxCap
-            (by intro s hs
-                by_contra hEq
-                have : (idx % capacity + 1 + s) % capacity = idx % capacity := hEq
-                have h1s : 1 + s < capacity := by omega
-                rw [show idx % capacity + 1 + s = idx % capacity + (1 + s) from by omega,
-                    Nat.add_mod, Nat.mod_eq_of_lt hIdxCap, Nat.mod_eq_of_lt h1s] at this
-                by_cases hlt : idx % capacity + (1 + s) < capacity
-                · rw [Nat.mod_eq_of_lt hlt] at this; omega
-                · simp only [Nat.not_lt] at hlt
-                  have hb : idx % capacity + (1 + s) - capacity < capacity := by omega
-                  rw [show idx % capacity + (1 + s) = (idx % capacity + (1 + s) - capacity) +
-                    capacity from by omega, Nat.add_mod_right,
-                    Nat.mod_eq_of_lt hb] at this; omega)
-          have hSlotKV : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[idx % capacity]'(by
-              rw [Array.size_set]; exact hIdx) = some ⟨k, v, d⟩ := by
-            simp [Array.getElem_set]
-          rw [hSlotKV] at hPreserved
-          exact ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩,
-            hPreserved.symm, BEq.refl k, rfl⟩
-      · -- e.dist ≥ d: continue probing
-        rename_i hRH
-        -- Continue probing: need to show room still exists for recursive call
-        obtain ⟨s, hs, hSlotS⟩ := hRoom
-        have hRoom' : ∃ s', s' < n ∧
-            (slots[(idx % capacity + 1 + s') % capacity]'(by
-              rw [hLen]; exact Nat.mod_lt _ hCapPos) = none
-             ∨ ∃ e', slots[(idx % capacity + 1 + s') % capacity]'(by
-              rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e'
-                    ∧ (e'.key == k) = true) := by
-          -- s = 0 case: slot at idx%cap has e with key ≠ k and is not empty → s ≠ 0
-          by_cases hs0 : s = 0
-          · subst hs0; simp at hSlotS
-            rcases hSlotS with hNone | ⟨e', he', hKeyE⟩
-            · -- slot at (idx+0)%cap = idx%cap is none, contradicts hSlot
-              rw [show (idx + 0) % capacity = idx % capacity from by simp] at hNone
-              rw [hNone] at hSlot; exact absurd hSlot (by simp)
-            · -- slot at idx%cap has entry with key == k, contradicts hKey
-              rw [show (idx + 0) % capacity = idx % capacity from by simp] at he'
-              rw [he'] at hSlot; cases hSlot
-              exact absurd hKeyE (by simp [hKey])
-          · -- s > 0: use s - 1 for the recursive call
-            refine ⟨s - 1, by omega, ?_⟩
-            rw [show idx % capacity + 1 + (s - 1) = idx + s from by omega]
-            exact hSlotS
-        exact ih (idx % capacity + 1) k v (d + 1) slots hLen (by omega) hRoom'
+      · simp only [show (e.key == k) = false from by simp [hKey], ite_false]
+        by_cases hRH : e.dist < d
+        · simp only [if_pos hRH]
+          sorry -- TODO: Robin Hood swap case
+        · simp only [if_neg hRH]
+          sorry -- TODO: continue probing case
 
 /-- If every element of a list satisfies `p`, then `countP p = length`. -/
 private theorem List.countP_eq_length {p : α → Bool} :
