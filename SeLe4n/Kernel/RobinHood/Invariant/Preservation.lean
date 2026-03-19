@@ -1893,8 +1893,7 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
   intro p hp e hSlot d hd
   have hGapI : gap % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
   have hNextI : (gap + 1) % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
-  simp only [] at hSlot
-  simp only [Array.getElem_set] at hSlot
+  simp (config := { zetaDelta := true }) only [Array.getElem_set] at hSlot
   split at hSlot
   · simp at hSlot
   · rename_i hpNeNext
