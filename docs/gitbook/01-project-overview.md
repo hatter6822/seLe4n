@@ -73,12 +73,14 @@ M7 (audit remediation).
 
 ### What's next
 
-**WS-L** (IPC subsystem audit & remediation) is the active workstream — 5 phases
-covering performance optimization, code quality, proof strengthening, test
-coverage, and documentation. After WS-L: **Raspberry Pi 5 hardware binding (H3)**.
+**WS-N** (Robin Hood hashing verified implementation) is the active workstream — 5 phases
+(N1–N5, 122 subtasks). **N1 COMPLETED** (v0.17.1): core types + operations.
+**N2 COMPLETED** (v0.17.2): invariant proofs. **N3 COMPLETED** (v0.17.3): kernel
+API bridge. Remaining: N4 (CNode.slots integration), N5 (tests + documentation).
+After WS-N: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-L workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
+[WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 ## 5. Architecture mental model
 
