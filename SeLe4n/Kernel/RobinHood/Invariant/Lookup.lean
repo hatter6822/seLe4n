@@ -504,7 +504,7 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
       simp only [insertLoop, hSlot]
       rw [Array.getElem_set]; simp [hjNe]
     | some e =>
-      simp only [insertLoop, hSlot]
+      unfold insertLoop; simp only [hSlot]
       if hKey : e.key == k then
         simp only [hKey, ite_true]
         rw [Array.getElem_set]; simp [hjNe]
@@ -549,11 +549,11 @@ private theorem insertLoop_places_key [BEq α] [Hashable α] [LawfulBEq α]
     have hIdxCap : idx % capacity < capacity := Nat.mod_lt _ hCapPos
     cases hSlot : slots[idx % capacity]'hIdx with
     | none =>
-      simp only [insertLoop, hSlot]
+      unfold insertLoop; simp only [hSlot]
       exact ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩,
         by simp [Array.getElem_set], BEq.refl k, rfl⟩
     | some e =>
-      simp only [insertLoop, hSlot]
+      unfold insertLoop; simp only [hSlot]
       if hKey : e.key == k then
         simp only [hKey, ite_true]
         exact ⟨idx % capacity, hIdxCap, { e with value := v },
