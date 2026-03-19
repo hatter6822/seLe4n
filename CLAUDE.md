@@ -35,6 +35,38 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
 
+## Module build verification (mandatory)
+
+**Before committing any `.lean` file**, you MUST verify that the specific
+module compiles:
+
+```bash
+source ~/.elan/env && lake build <Module.Path>
+```
+
+For example, if you modified `SeLe4n/Kernel/RobinHood/Bridge.lean`:
+```bash
+lake build SeLe4n.Kernel.RobinHood.Bridge
+```
+
+**`lake build` (default target) is NOT sufficient.** The default target only
+builds modules reachable from `Main.lean` and test executables. Modules that
+are not yet imported by the main kernel (e.g., `RobinHood` before N4
+integration) will silently pass `lake build` even with broken proofs.
+
+A pre-commit hook enforces this automatically. Install it:
+```bash
+cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
+```
+
+The hook:
+1. Detects staged `.lean` files
+2. Builds each modified module via `lake build <Module.Path>`
+3. Checks for `sorry` in staged content
+4. **Blocks the commit** if any build fails or sorry is found
+
+Do NOT bypass the hook with `--no-verify`.
+
 ## Source layout
 
 ```
@@ -85,6 +117,7 @@ SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
     Invariant/Composition.lean   Trace composition, declassification
 SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
   Core.lean                      Types, operations, proofs (N1 complete)
+  Bridge.lean                    Kernel API bridge: instances, bridge lemmas, filter (N3)
   Invariant.lean                 Re-export hub (N2)
     Invariant/Defs.lean          Invariant definitions, empty table proofs, probeChainDominant
     Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops), helpers
@@ -386,7 +419,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-N (Robin Hood hashing verified implementation) — **ACTIVE** (v0.17.0+). **WS-N1 COMPLETED** (v0.17.1): core types + operations in `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines, zero sorry). **WS-N2 COMPLETED** (v0.17.2): invariant proofs in `SeLe4n/Kernel/RobinHood/Invariant/` (~3,600 lines). All 6 TPI-D items complete: D1 (noDupKeys), D2 (PCD insert), D3 (PCD erase via relaxedPCD), D4 (get_after_insert_eq), D5 (get_after_insert_ne), D6 (get_after_erase_eq). Zero sorry/axiom. Remaining: N3 (kernel API bridge), N4 (CNode.slots integration), N5 (tests + docs). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-N (Robin Hood hashing verified implementation) — **ACTIVE** (v0.17.0+). **WS-N1 COMPLETED** (v0.17.1): core types + operations in `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines, zero sorry). **WS-N2 COMPLETED** (v0.17.2): invariant proofs in `SeLe4n/Kernel/RobinHood/Invariant/` (~3,600 lines). All 6 TPI-D items complete: D1 (noDupKeys), D2 (PCD insert), D3 (PCD erase via relaxedPCD), D4 (get_after_insert_eq), D5 (get_after_insert_ne), D6 (get_after_erase_eq). Zero sorry/axiom. **WS-N3 COMPLETED** (v0.17.3): kernel API bridge in `SeLe4n/Kernel/RobinHood/Bridge.lean` (~307 lines). Inhabited/BEq instances, 10 bridge lemmas matching Std.HashMap patterns, filter support, ofList constructor, get_after_erase_ne proof (+247 lines in Lookup.lean). Zero sorry/axiom. Remaining: N4 (CNode.slots integration), N5 (tests + docs). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
 - **Most recently completed portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)

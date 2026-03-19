@@ -352,7 +352,7 @@ theorem RHTable.erase_preserves_wf [BEq α] [Hashable α]
         rw [Array.size_set]; exact t.hSlotsLen
       have hGapNone : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
           rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-        simp [Array.getElem_set, Nat.mod_eq_of_lt (Nat.mod_lt _ t.hCapPos)]
+        simp
       have hBS := backshiftLoop_countOccupied t.capacity idx _ _ hLen' t.hCapPos hGapNone
       have hSlot' : t.slots[idx % t.capacity]'hIdxS = some e := by
         simp [Nat.mod_eq_of_lt hIdxLt]; exact hSlot
@@ -368,7 +368,7 @@ theorem RHTable.erase_preserves_wf [BEq α] [Hashable α]
 
 /-- Key modular arithmetic: incrementing displacement by 1 when advancing
     to the next probe position. Used in distCorrect preservation proofs. -/
-private theorem mod_succ_eq (x n : Nat) (hn : 0 < n) (hBound : x % n + 1 < n) :
+private theorem mod_succ_eq (x n : Nat) (_hn : 0 < n) (hBound : x % n + 1 < n) :
     x % n + 1 = (x + 1) % n := by
   have hDiv := Nat.div_add_mod x n
   have hDecomp : x + 1 = (x % n + 1) + n * (x / n) := by omega
@@ -379,7 +379,7 @@ private theorem mod_succ_eq (x n : Nat) (hn : 0 < n) (hBound : x % n + 1 < n) :
 
 /-- Displacement at position (i+1)%cap equals displacement at i plus 1,
     modulo capacity, when the displacement is below cap-1. -/
-private theorem dist_step_mod (i h cap : Nat) (hCapPos : 0 < cap)
+theorem dist_step_mod (i h cap : Nat) (hCapPos : 0 < cap)
     (hi : i < cap) (hh : h < cap) (d : Nat)
     (hD : d = (i + cap - h) % cap) (hSmall : d + 1 < cap) :
     d + 1 = ((i + 1) % cap + cap - h) % cap := by
@@ -460,7 +460,7 @@ theorem RHTable.empty_invExt [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap)
 -- ============================================================================
 
 /-- If `d = (idx%cap + cap - h) % cap` then `(h + d) % cap = idx % cap`. -/
-private theorem displacement_roundtrip
+theorem displacement_roundtrip
     (idx h cap : Nat) (hCapPos : 0 < cap) (hh : h < cap)
     (d : Nat) (hD : d = (idx % cap + cap - h) % cap) (hd : d < cap) :
     (h + d) % cap = idx % cap := by
@@ -482,7 +482,7 @@ private theorem displacement_roundtrip
 
 /-- Two positions with the same displacement from a base are equal. -/
 private theorem same_displacement_eq
-    (i j h cap : Nat) (hCapPos : 0 < cap) (hi : i < cap) (hj : j < cap)
+    (i j h cap : Nat) (_hCapPos : 0 < cap) (hi : i < cap) (hj : j < cap)
     (hh : h < cap)
     (hEq : (i + cap - h) % cap = (j + cap - h) % cap) :
     i = j := by
@@ -567,7 +567,7 @@ theorem insertLoop_preserves_distCorrect [BEq α] [Hashable α]
         have hEd := hDist (idx % capacity) (Nat.mod_lt _ hCapPos) e hSlotCase
         exact set_dist { e with value := v } (by simp [hEd]) j hj e' hSlot
       else
-        simp only [hKey, ite_false] at hSlot
+        simp only [hKey] at hSlot
         if hRH : e.dist < d then
           simp only [hRH, ite_true] at hSlot
           have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size
@@ -634,7 +634,7 @@ private theorem getElem_idx_eq (slots : Array (Option (RHEntry α β)))
     - `d_k < d` → `hNotFound` at `d' = d_k` contradicts `e.key = k`.
     - `d_k = d` → position equality contradicts `hSlotWeak`.
     - `d_k > d` → PCD of `e` at distance `d` contradicts `hSlotWeak`. -/
-private theorem carried_key_absent [BEq α] [Hashable α] [LawfulBEq α]
+theorem carried_key_absent [BEq α] [Hashable α] [LawfulBEq α]
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
     (k : α) (d : Nat) (pos : Nat) (hPos : pos < capacity)
@@ -775,10 +775,10 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
       · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
       · rename_i h1 hbNe; cases hA
         exact absurd (hKAbs b hb eb hB)
-          (by have := eq_of_beq hKeyEq; simp [this.symm, beq_self_eq_true])
+          (by have := eq_of_beq hKeyEq; simp [this.symm])
       · rename_i haNe h2; cases hB
         exact absurd (hKAbs a ha ea hA)
-          (by have := eq_of_beq hKeyEq; simp [this, beq_self_eq_true])
+          (by have := eq_of_beq hKeyEq; simp [this])
       · exact hNoDup a b ha hb ea eb hA hB hKeyEq
     | some e =>
       if hKey : e.key == k then
@@ -828,10 +828,10 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
             · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
             · rename_i h1 hbN; cases hI'
               exact absurd (hKAbs j' hj' ej' hJ') (by
-                have := eq_of_beq hKE'; simp [this.symm, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this.symm])
             · rename_i haN h2; cases hJ'
               exact absurd (hKAbs i' hi' ei' hI') (by
-                have := eq_of_beq hKE'; simp [this, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this])
             · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
           -- distCorrect for intermediate slots'
           have hDist' : ∀ j (hj : j < capacity) (e' : RHEntry α β),
@@ -1125,10 +1125,10 @@ private theorem insertLoop_preserves_pcd [BEq α] [Hashable α] [LawfulBEq α]
             · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
             · rename_i h1 hbN; cases hI'
               exact absurd (hKAbs j' hj' ej' hJ') (by
-                have := eq_of_beq hKE'; simp [this.symm, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this.symm])
             · rename_i haN h2; cases hJ'
               exact absurd (hKAbs i' hi' ei' hI') (by
-                have := eq_of_beq hKE'; simp [this, beq_self_eq_true])
+                have := eq_of_beq hKE'; simp [this])
             · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
           have hDist' : ∀ j (hj : j < capacity) (e' : RHEntry α β),
               (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[j]'(by
@@ -1394,7 +1394,7 @@ theorem RHTable.insert_preserves_probeChainDominant [BEq α] [Hashable α] [Lawf
 /-- Clearing a slot preserves noDupKeys. -/
 private theorem noDupKeys_after_clear [BEq α]
     (slots : Array (Option (RHEntry α β)))
-    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (capacity : Nat) (hLen : slots.size = capacity) (_hCapPos : 0 < capacity)
     (idx : Nat) (hIdx : idx < slots.size)
     (hNoDup : ∀ (i j : Nat) (hi : i < capacity) (hj : j < capacity)
       (ei ej : RHEntry α β),
@@ -1458,7 +1458,7 @@ theorem backshiftLoop_preserves_noDupKeys [BEq α]
         -- Simplify backshiftLoop to the recursive call
         have hDistF : (nextE.dist == 0) = false := by
           cases h : nextE.dist == 0 <;> simp_all
-        simp only [backshiftLoop, hSlot, hDistF, ↓reduceIte] at hI hJ
+        simp only [backshiftLoop, hSlot, hDistF] at hI hJ
         -- Clean up remaining if false = true
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
           ite_false] at hI hJ
@@ -1616,7 +1616,7 @@ theorem backshiftLoop_preserves_distCorrect [Hashable α]
       else
         have hDistF : (nextE.dist == 0) = false := by
           cases h : nextE.dist == 0 <;> simp_all
-        simp only [backshiftLoop, hSlotCase, hDistF, ↓reduceIte] at hSlot
+        simp only [backshiftLoop, hSlotCase, hDistF] at hSlot
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
           ite_false] at hSlot
         have hNe : gapIdx % capacity ≠ (gapIdx + 1) % capacity := by
@@ -1691,7 +1691,7 @@ theorem RHTable.erase_preserves_distCorrect [BEq α] [Hashable α] [LawfulBEq α
       · exact hExt.2.1 j hj e hSlot
     have hGap : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
         rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-      simp [Array.getElem_set]
+      simp
     intro j hj e hSlot
     exact backshiftLoop_preserves_distCorrect t.capacity idx _ _ hLen' t.hCapPos
       hGap hDist' j hj e hSlot
@@ -1716,7 +1716,7 @@ theorem RHTable.erase_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq α]
     -- gap is none in cleared array
     have hGap : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
         rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-      simp [Array.getElem_set]
+      simp
     -- Apply backshiftLoop_preserves_noDupKeys
     intro i j hi hj ei ej hI hJ hKeyEq
     exact backshiftLoop_preserves_noDupKeys t.capacity idx _ _ hLen' t.hCapPos
@@ -1868,7 +1868,7 @@ private theorem pcd_to_relaxedPCD_after_clear [Hashable α]
       refine ⟨e', ?_, hge'⟩
       simp only [Array.getElem_set]
       split
-      · rename_i hEq; exact absurd hEq hWIdx
+      · rename_i hEq; exact absurd hEq.symm hWIdx
       · exact he'
 
 /-- One backshift step transforms relaxedPCD(gap%cap) to relaxedPCD((gap+1)%cap). -/
@@ -1876,7 +1876,7 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
     (gap : Nat) (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
     (nextE : RHEntry α β)
-    (hGapNone : slots[gap % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none)
+    (_hGapNone : slots[gap % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none)
     (hNextSome : slots[(gap + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some nextE)
     (hNextDist : 0 < nextE.dist)
     (hDist : ∀ (j : Nat) (hj : j < capacity) (e : RHEntry α β),
@@ -1884,49 +1884,89 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
       e.dist = (j + capacity - idealIndex e.key capacity hCapPos) % capacity)
     (hNe : gap % capacity ≠ (gap + 1) % capacity)
     (hRelaxed : relaxedPCD (gap % capacity) slots capacity hLen hCapPos) :
-    let hGapI := by rw [hLen]; exact Nat.mod_lt gap hCapPos
-    let hNextI := by rw [hLen]; exact Nat.mod_lt (gap + 1) hCapPos
+    let hGapI : gap % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt gap hCapPos
+    let hNextI : (gap + 1) % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt (gap + 1) hCapPos
     let slots' := (slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
       hGapI).set ((gap + 1) % capacity) none (by rw [Array.size_set]; exact hNextI)
     relaxedPCD ((gap + 1) % capacity) slots' capacity
       (by rw [Array.size_set, Array.size_set]; exact hLen) hCapPos := by
-  intro p hp e hSlot d hd
+  intro _hGapI _hNextI _slots' p hp e hSlot d hd
   have hGapI : gap % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
   have hNextI : (gap + 1) % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
-  simp only [Array.getElem_set] at hSlot
-  split at hSlot
-  · simp at hSlot
-  · rename_i hpNeNext
-    split at hSlot
-    · rename_i hpGap
-      -- p = gap%cap: entry is { nextE with dist := nextE.dist - 1 }
-      have hEDef : e = { nextE with dist := nextE.dist - 1 } := by cases hSlot; rfl
+  -- Helpers to avoid dependent-type motive errors with simp/rw at hSlot
+  have hSlotsLen' : _slots'.size = capacity := by
+    show ((slots.set _ _ _).set _ _ _).size = capacity
+    rw [Array.size_set, Array.size_set]; exact hLen
+  have hSlots'Next : _slots'[(gap + 1) % capacity]'(by rw [hSlotsLen']; exact Nat.mod_lt _ hCapPos) = none := by
+    show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
+      _hGapI).set ((gap + 1) % capacity) none _)[(gap + 1) % capacity]'_ = none
+    simp
+  have hSlots'Gap : _slots'[gap % capacity]'(by rw [hSlotsLen']; exact Nat.mod_lt _ hCapPos) =
+      some { nextE with dist := nextE.dist - 1 } := by
+    show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
+      _hGapI).set ((gap + 1) % capacity) none _)[gap % capacity]'_ =
+      some { nextE with dist := nextE.dist - 1 }
+    simp [Array.getElem_set, hNe.symm]
+  have hSlots'Other : ∀ (q : Nat) (hq : q < capacity),
+      q ≠ (gap + 1) % capacity → q ≠ gap % capacity →
+      _slots'[q]'(by rw [hSlotsLen']; exact hq) = slots[q]'(by rw [hLen]; exact hq) := by
+    intro q hq hqN hqG
+    show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
+      _hGapI).set ((gap + 1) % capacity) none _)[q]'_ = slots[q]'_
+    simp only [Array.getElem_set]
+    split
+    · rename_i h; exact absurd h.symm hqN
+    · split
+      · rename_i h; exact absurd h.symm hqG
+      · rfl
+  by_cases hpNext : p = (gap + 1) % capacity
+  · exfalso; subst hpNext; rw [hSlots'Next] at hSlot; exact absurd hSlot (by simp)
+  · by_cases hpGap : p = gap % capacity
+    · subst hpGap
+      have hEDef : e = { nextE with dist := nextE.dist - 1 } := by
+        rw [hSlots'Gap] at hSlot; exact Option.some.inj hSlot.symm
       let w := (idealIndex e.key capacity hCapPos + d) % capacity
       by_cases hwNext : w = (gap + 1) % capacity
       · left; exact hwNext
       · by_cases hwGap : w = gap % capacity
         · right
           refine ⟨e, ?_, ?_⟩
-          · simp only [Array.getElem_set]; split
-            · simp at hwNext
-            · split; · exact hSlot; · exact absurd hwGap (by assumption)
-          · rw [hEDef]; simp; omega
+          · -- _slots'[w] = some e, where w = gap%cap
+            show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
+              _hGapI).set ((gap + 1) % capacity) none _)[(idealIndex e.key capacity hCapPos + d) % capacity]'_ = some e
+            have hwGap' : (idealIndex e.key capacity hCapPos + d) % capacity = gap % capacity := hwGap
+            have _hwNext' : ¬(gap + 1) % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
+              fun h => hwNext h.symm
+            simp only [Array.getElem_set, hwGap', hNe.symm, ↓reduceIte]
+            exact congrArg some hEDef.symm
+          · subst hEDef; omega
         · right
           have hd' : d < nextE.dist := by rw [hEDef] at hd; simp at hd; omega
           have hR := hRelaxed ((gap + 1) % capacity) (Nat.mod_lt _ hCapPos)
             nextE hNextSome d hd'
           rcases hR with hExc | ⟨e', he', hge'⟩
-          · rw [hEDef] at *; simp at *; exact absurd hExc hwGap
+          · exfalso; apply hwGap
+            show (idealIndex e.key capacity hCapPos + d) % capacity = gap % capacity
+            have hKeyEq : idealIndex e.key capacity hCapPos = idealIndex nextE.key capacity hCapPos := by rw [hEDef]
+            rw [hKeyEq]; exact hExc
           · refine ⟨e', ?_, hge'⟩
-            simp only [Array.getElem_set]
-            split
-            · exact absurd (by assumption) hwNext
-            · split
-              · rename_i hq; exact absurd hq hwGap
-              · exact he'
-    · rename_i hpNeGap
-      -- p is neither gap nor gap+1: entry from original slots
-      have hOrig : slots[p]'(by rw [hLen]; exact hp) = some e := hSlot
+            show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
+              _hGapI).set ((gap + 1) % capacity) none _)[(idealIndex e.key capacity hCapPos + d) % capacity]'_ = some e'
+            have hKeyEq : idealIndex e.key capacity hCapPos = idealIndex nextE.key capacity hCapPos := by rw [hEDef]
+            have hwNext' : ¬(gap + 1) % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
+              fun h => hwNext h.symm
+            have hwGap' : ¬gap % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
+              fun h => hwGap h.symm
+            simp only [Array.getElem_set, hwNext', hwGap', ↓reduceIte]
+            -- Now goal is: slots[(idealIndex e.key ..+d)%cap] = some e'
+            -- he' : slots[(idealIndex nextE.key ..+d)%cap] = some e'
+            -- hKeyEq: idealIndex e.key = idealIndex nextE.key
+            -- Need: slots[f(e.key)] = slots[f(nextE.key)] since e.key = nextE.key (indices equal)
+            have hIdxEq : (idealIndex e.key capacity hCapPos + d) % capacity =
+                (idealIndex nextE.key capacity hCapPos + d) % capacity := by rw [hKeyEq]
+            simp only [hIdxEq]; exact he'
+    · have hOrig : slots[p]'(by rw [hLen]; exact hp) = some e := by
+        rw [hSlots'Other p hp hpNext hpGap] at hSlot; exact hSlot
       let w := (idealIndex e.key capacity hCapPos + d) % capacity
       by_cases hwNext : w = (gap + 1) % capacity
       · left; exact hwNext
@@ -1941,18 +1981,34 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
               calc ((idealIndex e.key capacity hCapPos + d) + 1) % capacity
                   = ((idealIndex e.key capacity hCapPos + d) % capacity +
                       1 % capacity) % capacity := Nat.add_mod _ 1 _
-                _ = (gap % capacity + 1 % capacity) % capacity := by rw [hwGap]
+                _ = (gap % capacity + 1 % capacity) % capacity := by
+                    have : (idealIndex e.key capacity hCapPos + d) % capacity = gap % capacity := hwGap
+                    rw [this]
                 _ = (gap + 1) % capacity := (Nat.add_mod gap 1 capacity).symm
             rcases hR2 with hExc2 | ⟨e2, he2, hge2⟩
-            · rw [hWitNext] at hExc2; exact absurd hExc2 hNe
+            · -- hExc2 : (ideal..+(d+1))%cap = gap%cap, hWitNext : (ideal..+(d+1))%cap = (gap+1)%cap
+              -- So gap%cap = (gap+1)%cap, contradicting hNe
+              exact absurd (hExc2.symm.trans hWitNext) hNe
             · have he2Eq : e2 = nextE := by
-                rw [hWitNext] at he2; exact Option.some.inj he2
+                -- he2 says slots[(idealIndex e.key...+(d+1))%cap] = some e2
+                -- hWitNext says that index = (gap+1)%cap
+                -- hNextSome says slots[(gap+1)%cap] = some nextE
+                have he2' : some e2 = some nextE := by
+                  have h1 : slots[(gap + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e2 := by
+                    have : (idealIndex e.key capacity hCapPos + (d + 1)) % capacity = (gap + 1) % capacity := hWitNext
+                    simp only [this] at he2; exact he2
+                  rw [← h1, ← hNextSome]
+                exact Option.some.inj he2'
               rw [he2Eq] at hge2
               refine ⟨{ nextE with dist := nextE.dist - 1 }, ?_, by simp; omega⟩
-              simp only [Array.getElem_set]
-              split
-              · exact absurd hwGap (by omega)
-              · split; · rfl; · exact absurd (by assumption) hpNeGap
+              -- goal: _slots'[w] = some {nextE with dist-1}, w = gap%cap
+              show ((slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
+                _hGapI).set ((gap + 1) % capacity) none _)[(idealIndex e.key capacity hCapPos + d) % capacity]'_ =
+                some { nextE with dist := nextE.dist - 1 }
+              have hwGap' : (idealIndex e.key capacity hCapPos + d) % capacity = gap % capacity := hwGap
+              have _hwNext' : ¬(gap + 1) % capacity = (idealIndex e.key capacity hCapPos + d) % capacity :=
+                fun h => hwNext h.symm
+              simp only [Array.getElem_set, hwGap', hNe.symm, ↓reduceIte]
           · exfalso
             have hdeq : d = e.dist - 1 := by omega
             have hEDist := hDist p hp e hOrig
@@ -1972,22 +2028,18 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
               calc ((idealIndex e.key capacity hCapPos + d) + 1) % capacity
                   = ((idealIndex e.key capacity hCapPos + d) % capacity +
                       1 % capacity) % capacity := Nat.add_mod _ 1 _
-                _ = (gap % capacity + 1 % capacity) % capacity := by rw [hwGap]
+                _ = (gap % capacity + 1 % capacity) % capacity := by
+                    have : (idealIndex e.key capacity hCapPos + d) % capacity = gap % capacity := hwGap
+                    rw [this]
                 _ = (gap + 1) % capacity := (Nat.add_mod gap 1 capacity).symm
-            rw [hPEq, hStep] at hpNeNext
-            exact hpNeNext rfl
+            rw [hPEq, hStep] at hpNext
+            exact hpNext rfl
         · right
           have hR := hRelaxed p hp e hOrig d hd
           rcases hR with hExc | ⟨e', he', hge'⟩
           · exact absurd hExc hwGap
           · refine ⟨e', ?_, hge'⟩
-            simp only [Array.getElem_set]
-            split
-            · exact absurd (by assumption) hwNext
-            · split
-              · rename_i hq; exact absurd hq hwGap
-              · exact he'
-
+            rw [hSlots'Other w (Nat.mod_lt _ hCapPos) hwNext hwGap]; exact he'
 -- ============================================================================
 -- Section 11c: backshiftLoop PCD preservation
 -- ============================================================================
@@ -2001,11 +2053,9 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
 -- property (which IS preserved) suffices for lookup correctness.
 
 /-- Modular arithmetic identity: `(a % n + b) % n = (a + b) % n`. -/
-private theorem mod_add_mod (a b n : Nat) (hn : 0 < n) :
-    (a % n + b) % n = (a + b) % n := by
-  conv_rhs => rw [show a = a % n + n * (a / n) from by omega]
-  rw [Nat.add_assoc, Nat.add_comm (n * (a / n)) b, ← Nat.add_assoc,
-      Nat.add_mul_mod_self_left]
+private theorem mod_add_mod (a b n : Nat) (_hn : 0 < n) :
+    (a % n + b) % n = (a + b) % n :=
+  Nat.mod_add_mod a n b
 
 /-- backshiftLoop preserves PCD given relaxedPCD + distCorrect + natural termination.
     The `hTerminate` hypothesis states there exists a position within `fuel` steps
@@ -2055,7 +2105,7 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
           have hSame : slots[gapIdx % capacity]'hGapI =
               slots[(gapIdx + 1) % capacity]'hNextI := by congr 1
           rw [hGapNone, hSlot] at hSame; injection hSame
-        simp only [backshiftLoop, hSlot, hDistF, ↓reduceIte]
+        simp only [backshiftLoop, hSlot, hDistF]
         simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩, ite_false]
         -- Build intermediate array
         have hLen2 : ((slots.set (gapIdx % capacity)
@@ -2068,7 +2118,7 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
             ((gapIdx + 1) % capacity) none
             (by rw [Array.size_set]; exact hNextI))[((gapIdx + 1) % capacity) % capacity]'(by
               rw [hLen2]; exact Nat.mod_lt _ hCapPos) = none := by
-          simp [Array.getElem_set, Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos)]
+          simp only [Array.getElem_set, Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos), ↓reduceIte]
         -- relaxedPCD step
         have hRelaxed2 := backshiftStep_relaxedPCD gapIdx slots capacity hLen hCapPos
           nextE hGapNone hSlot hNextDist hDist hNe hRelaxed
@@ -2099,32 +2149,35 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
           rcases hjTerm with hNone | ⟨ne, hne, hne0⟩
           · rw [hSlot] at hNone; exact absurd hNone (by simp)
           · rw [hSlot] at hne; have := Option.some.inj hne; subst this
-            simp at hne0; exact absurd hne0 (by omega)
+            exact absurd hne0 (by omega)
         -- Position identity: ((gapIdx+1)%cap + 1 + (j-1)) % cap = (gapIdx + 1 + j) % cap
         have hPosEq : ((gapIdx + 1) % capacity + 1 + (j - 1)) % capacity =
             (gapIdx + 1 + j) % capacity := by
-          rw [mod_add_mod (gapIdx + 1) (1 + (j - 1)) capacity hCapPos]
+          have hassoc : (gapIdx + 1) % capacity + 1 + (j - 1) =
+              (gapIdx + 1) % capacity + (1 + (j - 1)) := by omega
+          rw [hassoc, mod_add_mod (gapIdx + 1) (1 + (j - 1)) capacity hCapPos]
           congr 1; omega
         -- The position is not (gapIdx+1)%cap (the new gap after modding)
         have hjNeNext : (gapIdx + 1 + j) % capacity ≠ (gapIdx + 1) % capacity := by
           intro hEq
-          -- (gapIdx + 1 + j) % cap = (gapIdx + 1) % cap implies j % cap = 0
-          -- j ≥ 1 and j < n+1 ≤ capacity, so j cannot be 0 or capacity
-          have : (gapIdx + 1 + j) % capacity = (gapIdx + 1 + 0) % capacity := by
-            simp; exact hEq
-          have : j % capacity = 0 := by
-            have hM := Nat.add_mod (gapIdx + 1) j capacity
-            have hM0 := Nat.add_mod (gapIdx + 1) 0 capacity
-            simp at hM0; rw [hEq] at hM
-            have := hM.symm.trans hM0
-            omega
-          have : j = 0 ∨ j = capacity := by
-            have hjlt : j < capacity := by omega
-            have := Nat.eq_zero_of_dvd_of_lt (Nat.dvd_of_mod_eq_zero this) hjlt
-            left; exact this
-          rcases this with rfl | rfl
-          · exact hj0 rfl
-          · omega
+          have hM := Nat.add_mod (gapIdx + 1) j capacity
+          rw [hEq] at hM
+          -- hEq says (gapIdx+1+j)%cap = (gapIdx+1)%cap.
+          -- hjTerm says slot at that index is none or has dist=0.
+          -- But hSlot says it's some nextE with dist > 0. Contradiction.
+          -- hjTerm says slot at (gapIdx+1+j)%cap (= (gapIdx+1)%cap by hEq) is none or has dist=0
+          -- But hSlot says it's some nextE with dist > 0. Contradiction.
+          rcases hjTerm with hNone | ⟨ne, hne, hne0⟩
+          · -- hNone : slots[(gapIdx+1+j)%cap] = none
+            -- Since (gapIdx+1+j)%cap = (gapIdx+1)%cap, this contradicts hSlot
+            have : slots[(gapIdx + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none := by
+              simp only [hEq] at hNone; exact hNone
+            rw [hSlot] at this; exact absurd this (by simp)
+          · -- hne : slots[(gapIdx+1+j)%cap] = some ne with ne.dist = 0
+            have : slots[(gapIdx + 1) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some ne := by
+              simp only [hEq] at hne; exact hne
+            rw [hSlot] at this; have := Option.some.inj this; subst this
+            exact absurd hne0 (by omega)
         -- The position is not gapIdx%cap (preserved from hypothesis)
         -- Slot at this position in slots' = slot in original slots
         -- (because it's neither gapIdx%cap nor (gapIdx+1)%cap)
@@ -2137,9 +2190,9 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
             slots[(gapIdx + 1 + j) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) := by
           simp only [Array.getElem_set]
           split
-          · exact absurd (by assumption) hjNeNext
+          · rename_i h; exact absurd h.symm hjNeNext
           · split
-            · exact absurd (by assumption) hjNeGap
+            · rename_i _ h; exact absurd h.symm hjNeGap
             · rfl
         have hTerminate2 : ∃ j', j' < n ∧
             ((gapIdx + 1) % capacity + 1 + j') % capacity ≠ (gapIdx + 1) % capacity ∧
@@ -2152,39 +2205,90 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
                 (some { nextE with dist := nextE.dist - 1 }) hGapI).set
                 ((gapIdx + 1) % capacity) none
                 (by rw [Array.size_set]; exact hNextI))[((gapIdx + 1) % capacity + 1 + j') % capacity]'(by
-                  rw [hLen2]; exact Nat.mod_lt _ hCapPos) = some ne ∧ ne.dist = 0)) := by
+                  rw [hLen2]; exact Nat.mod_lt _ hCapPos) = some ne ∧ ne.dist = 0) := by
           refine ⟨j - 1, by omega, ?_, ?_⟩
           · rw [hPosEq]; exact hjNeNext
-          · rw [hPosEq, hSlotPreserved]; exact hjTerm
-        exact ih ((gapIdx + 1) % capacity) _ hLen2 hNewGap hDist2 hRelaxed2 hTerminate2
+          · simp only [hPosEq, hSlotPreserved]; exact hjTerm
+        have hNewGap'' : ((slots.set (gapIdx % capacity)
+            (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+            ((gapIdx + 1) % capacity) none
+            (by rw [Array.size_set]; exact hNextI))[(gapIdx + 1) % capacity % capacity]'(by
+              rw [Array.size_set, Array.size_set, hLen]; exact Nat.mod_lt _ hCapPos) = none := by
+          have : (gapIdx + 1) % capacity % capacity = (gapIdx + 1) % capacity :=
+            Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos)
+          simp [this]
+        have hMM : (gapIdx + 1) % capacity % capacity = (gapIdx + 1) % capacity :=
+          Nat.mod_eq_of_lt (Nat.mod_lt _ hCapPos)
+        -- relaxedPCD only uses gap in an equality check (= gap), no dependent array on gap
+        -- So we can rewrite the gap argument directly
+        have hRelaxed2' : relaxedPCD ((gapIdx + 1) % capacity % capacity)
+            ((slots.set (gapIdx % capacity)
+              (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+              ((gapIdx + 1) % capacity) none
+              (by rw [Array.size_set]; exact hNextI))
+            capacity (by rw [Array.size_set, Array.size_set]; exact hLen) hCapPos := by
+          intro p hp e hSlotE d hd
+          -- hSlotE uses hLen2 bound, hRelaxed2 expects a different bound
+          -- But relaxedPCD body only accesses slots[p] and slots[idealIndex..+d)%cap]
+          -- with bounds derived from hLen, and these are propositionally equal
+          have hSlotE' : ((slots.set (gapIdx % capacity)
+              (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+              ((gapIdx + 1) % capacity) none
+              (by rw [Array.size_set]; exact hNextI))[p]'(by
+                rw [Array.size_set, Array.size_set, hLen]; exact hp) = some e := hSlotE
+          have := hRelaxed2 p hp e hSlotE' d hd
+          rcases this with hGap | ⟨e', he', hge'⟩
+          · left; rw [hMM]; exact hGap
+          · right; exact ⟨e', he', hge'⟩
+        have hTerminate2' : ∃ j', j' < n ∧
+            ((gapIdx + 1) % capacity + 1 + j') % capacity ≠ (gapIdx + 1) % capacity % capacity ∧
+            (((slots.set (gapIdx % capacity)
+              (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+              ((gapIdx + 1) % capacity) none
+              (by rw [Array.size_set]; exact hNextI))[((gapIdx + 1) % capacity + 1 + j') % capacity]'(by
+                rw [Array.size_set, Array.size_set, hLen]; exact Nat.mod_lt _ hCapPos) = none ∨
+            ∃ ne, ((slots.set (gapIdx % capacity)
+              (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+              ((gapIdx + 1) % capacity) none
+              (by rw [Array.size_set]; exact hNextI))[((gapIdx + 1) % capacity + 1 + j') % capacity]'(by
+                rw [Array.size_set, Array.size_set, hLen]; exact Nat.mod_lt _ hCapPos) = some ne ∧
+              ne.dist = 0) := by
+          obtain ⟨j', hj'Lt, hj'Ne, hj'Term⟩ := hTerminate2
+          exact ⟨j', hj'Lt, by rwa [hMM], hj'Term⟩
+        exact ih ((gapIdx + 1) % capacity) _ hLen2 hNewGap'' hDist2 hRelaxed2' hTerminate2'
 
 /-- If countP isSome on a list is less than length, there exists an index with value
     that is not isSome (i.e., none). -/
 private theorem List.exists_none_of_countP_lt {l : List (Option γ)}
     (h : l.countP (·.isSome) < l.length) :
-    ∃ i (hi : i < l.length), l[i] = none := by
+    ∃ i, ∃ hi : i < l.length, l[i] = none := by
   induction l with
   | nil => simp at h
   | cons hd tl ih =>
     cases hd with
     | none => exact ⟨0, by simp, rfl⟩
     | some v =>
-      simp only [List.countP_cons, Option.isSome, List.length_cons,
-        decide_true, ite_true] at h
+      simp only [List.countP_cons, List.length_cons] at h
+      have : (fun (x : Option γ) => x.isSome) (some v) = true := rfl
+      simp only [this, ite_true] at h
       have htl := ih (by omega)
       obtain ⟨i, hi, hv⟩ := htl
-      exact ⟨i + 1, by omega, by simpa [List.getElem_cons_succ]⟩
+      exact ⟨i + 1, by simp; omega, by simpa [List.getElem_cons_succ]⟩
 
 /-- If countOccupied < size, there exists a none slot. -/
 private theorem exists_none_of_countOccupied_lt
     (slots : Array (Option (RHEntry α β)))
     (h : countOccupied slots < slots.size) :
-    ∃ i (hi : i < slots.size), slots[i]'hi = none := by
+    ∃ i, ∃ hi : i < slots.size, slots[i]'hi = none := by
   unfold countOccupied at h
-  have hList := List.exists_none_of_countP_lt (l := slots.toList) (by simp [Array.size] at h ⊢; exact h)
+  have hSzEq : slots.toList.length = slots.size := Array.length_toList
+  have hList := List.exists_none_of_countP_lt (l := slots.toList) (by rw [hSzEq]; exact h)
   obtain ⟨i, hi, hv⟩ := hList
-  refine ⟨i, by simp [Array.size]; exact hi, ?_⟩
-  simp [Array.getElem_eq_toList_getElem]; exact hv
+  have hi' : i < slots.size := by rw [← hSzEq]; exact hi
+  refine ⟨i, hi', ?_⟩
+  rw [show slots[i]'hi' = slots.toList[i]'(by rw [hSzEq]; exact hi') from
+    (Array.getElem_toList hi').symm]
+  exact hv
 
 /-- `erase` preserves probeChainDominant when the table is not full. -/
 theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [LawfulBEq α]
@@ -2207,7 +2311,7 @@ theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [Lawfu
     -- Gap is none in cleared array
     have hGap : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
         rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = none := by
-      simp [Array.getElem_set]
+      simp
     -- distCorrect for cleared array
     have hDist' : ∀ (j : Nat) (hj : j < t.capacity) (e : RHEntry α β),
         (t.slots.set (idx % t.capacity) none hIdxS)[j]'(by
@@ -2232,7 +2336,7 @@ theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [Lawfu
     have hqCap : q < t.capacity := by rw [← t.hSlotsLen]; exact hq
     -- q ≠ idx because slots[idx] = some foundE
     have hqNeIdx : q ≠ idx := by
-      intro heq; subst heq; rw [hIdxMod] at hFoundSlot; rw [hqNone] at hFoundSlot; simp at hFoundSlot
+      intro heq; subst heq; rw [hqNone] at hFoundSlot; simp at hFoundSlot
     -- q ≠ idx % capacity
     have hqNeIdxMod : q ≠ idx % t.capacity := by rw [hIdxMod]; exact hqNeIdx
     -- q is still none in the cleared array
@@ -2245,21 +2349,28 @@ theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [Lawfu
     -- Express q as (idx + 1 + j) % capacity for some j
     -- j = (q + capacity - (idx + 1) % capacity) % capacity
     let j := (q + t.capacity - (idx + 1) % t.capacity) % t.capacity
+    have j_def : j = (q + t.capacity - (idx + 1) % t.capacity) % t.capacity := rfl
     have hjLt : j < t.capacity := Nat.mod_lt _ t.hCapPos
     have hjPos : (idx + 1 + j) % t.capacity = q := by
-      simp only [j]
-      rw [mod_add_mod (idx + 1) ((q + t.capacity - (idx + 1) % t.capacity) % t.capacity) t.capacity t.hCapPos]
-      rw [show idx + 1 + (q + t.capacity - (idx + 1) % t.capacity) % t.capacity =
-          idx + 1 + (q + t.capacity - (idx + 1) % t.capacity) % t.capacity from rfl]
-      rw [mod_add_mod (idx + 1) (q + t.capacity - (idx + 1) % t.capacity) t.capacity t.hCapPos]
-      have hMod := Nat.mod_lt (idx + 1) t.hCapPos
-      rw [show idx + 1 + (q + t.capacity - (idx + 1) % t.capacity) =
-          q + t.capacity + (idx + 1 - (idx + 1) % t.capacity) from by omega]
-      rw [show idx + 1 - (idx + 1) % t.capacity = t.capacity * ((idx + 1) / t.capacity) from by
-        have := Nat.div_add_mod (idx + 1) t.capacity; omega]
-      rw [Nat.add_assoc, Nat.add_mul_mod_self_left]
-      rw [show q + t.capacity = q + 1 * t.capacity from by omega, Nat.add_mul_mod_self]
-      exact Nat.mod_eq_of_lt hqCap
+      rw [j_def]
+      have hR : (idx + 1) % t.capacity < t.capacity := Nat.mod_lt _ t.hCapPos
+      rw [(mod_add_mod (idx + 1) _ t.capacity t.hCapPos).symm]
+      by_cases hqr : q ≥ (idx + 1) % t.capacity
+      · have hd_val : (q + t.capacity - (idx + 1) % t.capacity) % t.capacity =
+            q - (idx + 1) % t.capacity := by
+          rw [show q + t.capacity - (idx + 1) % t.capacity =
+            (q - (idx + 1) % t.capacity) + t.capacity from by omega,
+              Nat.add_mod_right]; exact Nat.mod_eq_of_lt (by omega)
+        rw [hd_val, show (idx + 1) % t.capacity + (q - (idx + 1) % t.capacity) = q from by omega,
+            Nat.mod_eq_of_lt hqCap]
+      · have hqr' : q < (idx + 1) % t.capacity := by omega
+        have hd_val : (q + t.capacity - (idx + 1) % t.capacity) % t.capacity =
+            q + t.capacity - (idx + 1) % t.capacity := by
+          exact Nat.mod_eq_of_lt (by omega)
+        rw [hd_val,
+            show (idx + 1) % t.capacity + (q + t.capacity - (idx + 1) % t.capacity) =
+              q + t.capacity from by omega,
+            Nat.add_mod_right, Nat.mod_eq_of_lt hqCap]
     -- (idx + 1 + j) % cap = q ≠ idx % cap
     have hjNeGap : (idx + 1 + j) % t.capacity ≠ idx % t.capacity := by
       rw [hjPos]; exact hqNeIdxMod
@@ -2271,7 +2382,7 @@ theorem RHTable.erase_preserves_probeChainDominant [BEq α] [Hashable α] [Lawfu
          ∃ ne, (t.slots.set (idx % t.capacity) none hIdxS)[(idx + 1 + j') % t.capacity]'(by
           rw [hLen']; exact Nat.mod_lt _ t.hCapPos) = some ne ∧ ne.dist = 0) := by
       refine ⟨j, hjLt, hjNeGap, Or.inl ?_⟩
-      rw [hjPos]; exact hqNoneClear
+      simp only [hjPos]; exact hqNoneClear
     exact backshiftLoop_preserves_pcd t.capacity idx _ t.capacity hLen' t.hCapPos
       hGap hDist' hRelaxed hTerminate
 
