@@ -1893,8 +1893,8 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
   intro _hGapI _hNextI _slots' p hp e hSlot d hd
   have hGapI : gap % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
   have hNextI : (gap + 1) % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
-  simp only [Array.getElem_set] at hSlot
-  simp only [Array.getElem_set] at hSlot
+  -- Let-bound array: skip simp, use split directly
+  split at hSlot
   split at hSlot
   · simp at hSlot
   · rename_i hpNeNext
@@ -2098,7 +2098,7 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
           rcases hjTerm with hNone | ⟨ne, hne, hne0⟩
           · rw [hSlot] at hNone; exact absurd hNone (by simp)
           · rw [hSlot] at hne; have := Option.some.inj hne; subst this
-            simp at hne0; exact absurd hne0 (by omega)
+            exact absurd hne0 (by omega)
         -- Position identity: ((gapIdx+1)%cap + 1 + (j-1)) % cap = (gapIdx + 1 + j) % cap
         have hPosEq : ((gapIdx + 1) % capacity + 1 + (j - 1)) % capacity =
             (gapIdx + 1 + j) % capacity := by
