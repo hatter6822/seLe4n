@@ -1893,6 +1893,7 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
   intro p hp e hSlot d hd
   have hGapI : gap % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
   have hNextI : (gap + 1) % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+  simp only [] at hSlot
   simp only [Array.getElem_set] at hSlot
   split at hSlot
   · simp at hSlot
@@ -2003,7 +2004,8 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
 /-- Modular arithmetic identity: `(a % n + b) % n = (a + b) % n`. -/
 private theorem mod_add_mod (a b n : Nat) (hn : 0 < n) :
     (a % n + b) % n = (a + b) % n := by
-  conv_rhs => rw [show a = a % n + n * (a / n) from by omega]
+  have h : a = a % n + n * (a / n) := by omega
+  conv_rhs => rw [h]
   rw [Nat.add_assoc, Nat.add_comm (n * (a / n)) b, ← Nat.add_assoc,
       Nat.add_mul_mod_self_left]
 
