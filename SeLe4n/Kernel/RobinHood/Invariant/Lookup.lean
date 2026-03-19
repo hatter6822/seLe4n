@@ -1068,7 +1068,49 @@ private theorem backshiftLoop_output_has_input_key_value [BEq α]
         rw [backshiftLoop_preserves_len, hLen]; exact hq) = some e' →
       ∃ p, ∃ hp : p < capacity, ∃ e : RHEntry α β,
         slots[p]'(hLen ▸ hp) = some e ∧ e.key = e'.key ∧ e.value = e'.value := by
-  sorry -- TODO: backshiftLoop_output_has_input_key_value — rw motive on dependent arrays
+  induction fuel generalizing gapIdx slots hLen with
+  | zero =>
+    -- fuel = 0: backshiftLoop returns slots unchanged
+    simp [backshiftLoop]
+    intro q hq e' hSlot
+    exact ⟨q, hq, e', hSlot, rfl, rfl⟩
+  | succ n ih =>
+    have hGapI : gapIdx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    have hNextI : (gapIdx + 1) % capacity < slots.size := by
+      rw [hLen]; exact Nat.mod_lt _ hCapPos
+    intro q hq e'
+    match hNext : slots[(gapIdx + 1) % capacity]'hNextI with
+    | none =>
+      simp [backshiftLoop, hNext]
+      intro hSlot; exact ⟨q, hq, e', hSlot, rfl, rfl⟩
+    | some nextE =>
+      if hDist : nextE.dist == 0 then
+        simp [backshiftLoop, hNext, hDist]
+        intro hSlot; exact ⟨q, hq, e', hSlot, rfl, rfl⟩
+      else
+        have hDistF : (nextE.dist == 0) = false := by cases h : nextE.dist == 0 <;> simp_all
+        simp only [backshiftLoop, hNext, hDistF, ↓reduceIte]
+        simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
+          ite_false]
+        have hLen2 : ((slots.set (gapIdx % capacity)
+            (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+            ((gapIdx + 1) % capacity) none
+            (by rw [Array.size_set]; exact hNextI)).size = capacity := by
+          rw [Array.size_set, Array.size_set]; exact hLen
+        intro hSlot
+        -- By IH: e' came from the double-set array
+        have ⟨p', hp', eM, hSlotM, hKeyM, hValM⟩ := ih ((gapIdx + 1) % capacity)
+          _ hLen2 q hq e' hSlot
+        -- Track eM back to original slots through two sets
+        simp only [Array.getElem_set] at hSlotM
+        split at hSlotM
+        · simp at hSlotM  -- p' = nextI: set to none, contradiction
+        · -- p' ≠ nextI: hSlotM is about inner set
+          split at hSlotM
+          · rename_i hEqGap; cases hSlotM
+            exact ⟨(gapIdx + 1) % capacity, Nat.mod_lt _ hCapPos, nextE,
+              hNext, by rw [← hKeyM], by rw [← hValM]⟩
+          · exact ⟨p', hp', eM, hSlotM, hKeyM, hValM⟩
 
 /-- If an entry exists in the pre-backshift slots, then after backshift,
     some entry with the same key and value exists in the output. -/
