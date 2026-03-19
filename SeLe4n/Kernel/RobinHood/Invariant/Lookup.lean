@@ -61,7 +61,7 @@ private theorem findLoop_none_implies_absent [BEq α] [Hashable α] [LawfulBEq �
     (hFuel : d + fuel ≥ capacity)
     (hNone : findLoop fuel idx k d slots capacity hLen hCapPos = none) :
     ∀ j (hj : j < capacity) (e : RHEntry α β),
-      slots[j]'(by rw [hLen]; exact hj) = some e → (e.key == k) = false := by
+      slots[j]'(hLen ▸ hj) = some e → (e.key == k) = false := by
   revert idx d hD hNotFound hFuel hNone
   induction fuel with
   | zero =>
@@ -251,15 +251,16 @@ private theorem erase_removes_key [BEq α] [Hashable α] [LawfulBEq α]
     ∀ j (hj : j < (t.erase k).capacity) (e : RHEntry α β),
       (t.erase k).slots[j]'(by rw [(t.erase k).hSlotsLen]; exact hj) = some e →
       (e.key == k) = false := by
-  unfold RHTable.erase
-  cases hFind : findLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
-    t.slots t.capacity t.hSlotsLen t.hCapPos with
+  simp only [RHTable.erase]
+  generalize hFind : findLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos = result
+  cases result with
   | none =>
     -- Key not found: table unchanged. findLoop none → k absent via carried_key_absent.
     simp only []
     exact findLoop_none_implies_absent t.capacity _ k 0 t.slots t.capacity
       t.hSlotsLen t.hCapPos hExt.2.1 hExt.2.2.2
-      (by simp [idealIndex]; rw [Nat.mod_eq_of_lt (Nat.mod_lt _ t.hCapPos)])
+      (by simp [idealIndex])
       (by intro d' hd'; omega)
       (by omega)
       hFind
@@ -1357,9 +1358,10 @@ private theorem erase_preserves_ne_entry [BEq α] [Hashable α] [LawfulBEq α]
     ∃ q, ∃ hq : q < (t.erase k).capacity, ∃ e' : RHEntry α β,
       (t.erase k).slots[q]'((t.erase k).hSlotsLen ▸ hq) = some e' ∧
       (e'.key == k') = true ∧ e'.value = e.value := by
-  unfold RHTable.erase
-  cases hFind : findLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
-    t.slots t.capacity t.hSlotsLen t.hCapPos with
+  simp only [RHTable.erase]
+  generalize hFind : findLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos = result
+  cases result with
   | none => simp only []; exact ⟨p, hp, e, hSlotP, hKey, rfl⟩
   | some idx =>
     simp only []
