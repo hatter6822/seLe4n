@@ -524,8 +524,8 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
           have h := hNR (s + 1) (by omega)
           rw [show idx % capacity + 1 + s = idx % capacity + (s + 1) from by omega,
               mod_add_mod_eq]; exact h
-        have hIH := ih (idx % capacity + 1) e.key e.value (e.dist + 1) _ hLen' hNR'
-        rw [hIH, Array.getElem_set]; simp [hjNe]
+        exact (ih (idx % capacity + 1) e.key e.value (e.dist + 1) _ hLen' hNR').trans
+          (by rw [Array.getElem_set]; simp [hjNe])
       else
         simp only [hKey, ite_false, hRH, ite_false]
         have hNR' : ∀ s, s < n → (idx % capacity + 1 + s) % capacity ≠ j := by
@@ -629,12 +629,11 @@ private theorem position_reachable
     have hb2 : idx % cap + (j - idx % cap) < cap := by omega
     rw [show j + cap - idx % cap = (j - idx % cap) + cap from by omega,
         Nat.add_mod_right, Nat.mod_eq_of_lt hb1]
-    rw [Nat.add_mod, Nat.mod_eq_of_lt hm, Nat.mod_eq_of_lt hb2]
-    rw [show idx % cap + (j - idx % cap) = j from by omega, Nat.mod_eq_of_lt hj]
+    rw [mod_add_mod_eq, show idx % cap + (j - idx % cap) = j from by omega,
+        Nat.mod_eq_of_lt hj]
   · simp only [Nat.not_le] at hge
     have hb1 : j + cap - idx % cap < cap := by omega
-    rw [Nat.mod_eq_of_lt hb1]
-    rw [Nat.add_mod, Nat.mod_eq_of_lt hm]
+    rw [Nat.mod_eq_of_lt hb1, mod_add_mod_eq]
     by_cases hlt : idx % cap + (j + cap - idx % cap) < cap
     · omega
     · simp only [Nat.not_lt] at hlt
@@ -925,7 +924,7 @@ private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
         have hLen' : (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx).size
             = capacity := by rw [Array.size_set]; exact hLen
         have hIH := ih (idx % capacity + 1) eOld.key eOld.value (eOld.dist + 1)
-          (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx) hLen' hCapPos
+          (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx) hLen'
           j hj e hSlotR
         rcases hIH with ⟨hKeyE, hValE⟩ | ⟨q, hq, hSlotQ⟩
         · -- Entry has key == eOld.key and value == eOld.value.
