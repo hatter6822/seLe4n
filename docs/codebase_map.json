@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "main",
-      "commit_sha": "3cf6390e9932ccd0f04c90aaa69ff3dfb092e2bf",
-      "tree_sha": "56b0f98d994750efac2b7b95ff845055020898f0",
-      "committed_at_utc": "2026-03-19T15:16:35-04:00"
+      "commit_sha": "0fe5d52aeb03e1f8bfbee21818497d82d60c31f3",
+      "tree_sha": "a6f55c348677f3b17285e1b92b80514bd08c49e0",
+      "committed_at_utc": "2026-03-19T19:28:37-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "443688264514f234decf954056f34ccefc393d3975297842f1821be2d9f295ab"
+    "source_digest": "0e919e568ac225294c0f96eb39fdc381050c4f9052e1c2add5d5052350514fc3"
   },
   "summary": {
-    "module_count": 81,
-    "declaration_count": 2486
+    "module_count": 82,
+    "declaration_count": 2522
   },
   "readme_sync": {
     "version": "0.17.2",
     "lean_toolchain": "v4.28.0",
-    "production_files": 77,
-    "production_loc": 44655,
+    "production_files": 78,
+    "production_loc": 45943,
     "test_files": 4,
     "test_loc": 5256,
-    "proved_theorem_lemma_decls": 1371,
+    "proved_theorem_lemma_decls": 1402,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9355,6 +9355,147 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.RobinHood.Bridge",
+      "path": "SeLe4n/Kernel/RobinHood/Bridge.lean",
+      "declaration_count": 21,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.RobinHood",
+          "line": 27,
+          "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:33>",
+          "line": 33,
+          "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:42>",
+          "line": 42,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.getElem",
+          "line": 55,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.getElem",
+          "line": 78,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.getElem",
+          "line": 88,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.getElem",
+          "line": 99,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.getElem",
+          "line": 109,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.size_erase_le",
+          "line": 120,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "list_fold_insertNoResize_size_le",
+          "line": 135,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "resize_size_le",
+          "line": 163,
+          "called": [
+            "list_fold_insertNoResize_size_le"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.size_insert_le",
+          "line": 187,
+          "called": [
+            "resize_size_le"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.mem_iff_isSome_getElem",
+          "line": 201,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.getElem",
+          "line": 211,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.fold_eq_slots_foldl",
+          "line": 222,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.filter",
+          "line": 235,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "list_fold_filter_size_le",
+          "line": 246,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.size_filter_le_capacity",
+          "line": 282,
+          "called": [
+            "list_fold_filter_size_le"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.size_filter_le_size",
+          "line": 302,
+          "called": [
+            "list_fold_filter_size_le"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RHTable.ofList",
+          "line": 343,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.empty_invExt'",
+          "line": 353,
+          "called": []
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.RobinHood.Core",
       "path": "SeLe4n/Kernel/RobinHood/Core.lean",
       "declaration_count": 33,
@@ -9703,7 +9844,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Lookup",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean",
-      "declaration_count": 22,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -9713,47 +9854,68 @@
         },
         {
           "kind": "theorem",
+          "name": "getElem_idx_eq",
+          "line": 18,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "mod_add_mod_eq",
+          "line": 23,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "getLoop_none_of_absent",
-          "line": 21,
+          "line": 33,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "findLoop_none_implies_absent",
-          "line": 49,
+          "line": 61,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_key_absence",
-          "line": 189,
+          "line": 199,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "findLoop_some_has_key",
+          "line": 261,
+          "called": [
+            "getElem_idx_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "erase_removes_key",
-          "line": 251,
+          "line": 296,
           "called": [
             "backshiftLoop_preserves_key_absence",
-            "findLoop_none_implies_absent"
+            "findLoop_none_implies_absent",
+            "findLoop_some_has_key"
           ]
         },
         {
           "kind": "theorem",
           "name": "displacement_roundtrip'",
-          "line": 306,
+          "line": 355,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "offset_injective'",
-          "line": 325,
+          "line": 374,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "disp_step'",
-          "line": 349,
+          "line": 403,
           "called": [
             "displacement_roundtrip'"
           ]
@@ -9761,61 +9923,80 @@
         {
           "kind": "theorem",
           "name": "getLoop_finds_present",
-          "line": 388,
+          "line": 446,
           "called": [
             "disp_step'",
             "displacement_roundtrip'",
-            "offset_injective'"
+            "getElem_idx_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_slot",
-          "line": 478,
-          "called": []
+          "line": 533,
+          "called": [
+            "mod_add_mod_eq"
+          ]
         },
         {
           "kind": "theorem",
           "name": "insertLoop_places_key",
-          "line": 523,
+          "line": 580,
           "called": [
-            "insertLoop_preserves_slot"
+            "getElem_idx_eq",
+            "insertLoop_preserves_slot",
+            "mod_add_mod_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "List.countP_eq_length",
-          "line": 606,
+          "line": 704,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "list_exists_none_of_countP_lt",
+          "line": 718,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "exists_empty_slot",
-          "line": 619,
+          "line": 734,
           "called": [
-            "List.countP_eq_length"
+            "list_exists_none_of_countP_lt"
           ]
         },
         {
           "kind": "theorem",
           "name": "position_reachable",
-          "line": 647,
+          "line": 751,
+          "called": [
+            "mod_add_mod_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resize_size_le_capacity",
+          "line": 777,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "insert_has_key",
-          "line": 670,
+          "line": 791,
           "called": [
             "exists_empty_slot",
             "insertLoop_places_key",
-            "position_reachable"
+            "position_reachable",
+            "resize_size_le_capacity"
           ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_eq",
-          "line": 754,
+          "line": 856,
           "called": [
             "getLoop_finds_present",
             "insert_has_key"
@@ -9824,19 +10005,19 @@
         {
           "kind": "theorem",
           "name": "insertLoop_absent_ne_key",
-          "line": 787,
+          "line": 889,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "getLoop_some_implies_entry",
-          "line": 851,
+          "line": 952,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "resize_preserves_key_absence",
-          "line": 878,
+          "line": 979,
           "called": [
             "insertLoop_absent_ne_key"
           ]
@@ -9844,29 +10025,128 @@
         {
           "kind": "theorem",
           "name": "insertLoop_output_source",
-          "line": 912,
+          "line": 1011,
           "called": []
         },
         {
           "kind": "theorem",
-          "name": "RHTable.get_after_insert_ne",
-          "line": 986,
+          "name": "get_none_implies_absent",
+          "line": 1071,
           "called": [
-            "getLoop_finds_present",
-            "getLoop_none_of_absent",
-            "getLoop_some_implies_entry",
-            "insertLoop_absent_ne_key",
-            "insertLoop_output_source",
+            "getLoop_finds_present"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertNoResize_absent_ne_key",
+          "line": 1097,
+          "called": [
+            "insertLoop_absent_ne_key"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_absent_ne_key",
+          "line": 1110,
+          "called": [
+            "insertNoResize_absent_ne_key",
             "resize_preserves_key_absence"
           ]
         },
         {
           "kind": "theorem",
+          "name": "insertLoop_preserves_ne_entry_new",
+          "line": 1127,
+          "called": [
+            "disp_step'",
+            "displacement_roundtrip'",
+            "getElem_idx_eq",
+            "insertLoop_places_key",
+            "mod_add_mod_eq",
+            "offset_injective'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resize_preserves_entry",
+          "line": 1448,
+          "called": [
+            "exists_empty_slot",
+            "getElem_idx_eq",
+            "insertLoop_places_key",
+            "insertLoop_preserves_ne_entry_new",
+            "position_reachable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_preserves_ne_entry",
+          "line": 1539,
+          "called": [
+            "exists_empty_slot",
+            "insertLoop_preserves_ne_entry_new",
+            "position_reachable",
+            "resize_preserves_entry",
+            "resize_size_le_capacity"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.get_after_insert_ne",
+          "line": 1653,
+          "called": [
+            "getLoop_finds_present",
+            "getLoop_none_of_absent",
+            "getLoop_some_implies_entry",
+            "get_none_implies_absent",
+            "insert_absent_ne_key",
+            "insert_preserves_ne_entry"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 1195,
+          "line": 1698,
           "called": [
             "erase_removes_key",
             "getLoop_none_of_absent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftLoop_output_has_input_key_value",
+          "line": 1708,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "backshiftLoop_preserves_entry_presence",
+          "line": 1763,
+          "called": [
+            "getElem_idx_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "erase_preserves_ne_entry",
+          "line": 1879,
+          "called": [
+            "backshiftLoop_preserves_entry_presence",
+            "findLoop_some_has_key",
+            "getElem_idx_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.get_after_erase_ne",
+          "line": 1941,
+          "called": [
+            "backshiftLoop_output_has_input_key_value",
+            "erase_preserves_ne_entry",
+            "getLoop_finds_present",
+            "getLoop_none_of_absent",
+            "getLoop_some_implies_entry",
+            "get_none_implies_absent"
           ]
         }
       ]
@@ -10282,13 +10562,13 @@
         {
           "kind": "theorem",
           "name": "mod_add_mod",
-          "line": 2004,
+          "line": 2056,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_pcd",
-          "line": 2014,
+          "line": 2064,
           "called": [
             "backshiftStep_relaxedPCD",
             "displacement_backward",
@@ -10301,13 +10581,13 @@
         {
           "kind": "theorem",
           "name": "List.exists_none_of_countP_lt",
-          "line": 2163,
+          "line": 2262,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "exists_none_of_countOccupied_lt",
-          "line": 2179,
+          "line": 2279,
           "called": [
             "List.exists_none_of_countP_lt"
           ]
@@ -10315,7 +10595,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 2190,
+          "line": 2294,
           "called": [
             "backshiftLoop_preserves_pcd",
             "exists_none_of_countOccupied_lt",
@@ -10330,19 +10610,19 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 2283,
+          "line": 2394,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 2295,
+          "line": 2406,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 2304,
+          "line": 2415,
           "called": []
         }
       ]
