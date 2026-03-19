@@ -133,8 +133,8 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `tests/NegativeStateSuite.lean` (~1766 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~1207 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~1271 lines)
-- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~1933 lines)
-- `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~799 lines)
+- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2312 lines)
+- `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~1202 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1058 lines)
 - `SeLe4n/Model/State.lean` (~1073 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~893 lines)
@@ -156,7 +156,6 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~622 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~607 lines)
 - `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
-- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~601 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~544 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~724 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~519 lines)
@@ -387,7 +386,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-N (Robin Hood hashing verified implementation) — **ACTIVE** (v0.17.0+). **WS-N1 COMPLETED** (v0.17.1): core types + operations in `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines, zero sorry). **WS-N2 IN PROGRESS** (v0.17.2): invariant proofs in `SeLe4n/Kernel/RobinHood/Invariant/` (~2820 lines). Proven: WF, distCorrect, noDupKeys (D1), probeChainDominant (D2) preservation for all insert/resize ops; modular arithmetic helpers; key absence lemmas. Remaining: D3 (backshift PCD), D5 (insert non-interference); then N3 (kernel API bridge), N4 (CNode.slots integration), N5 (tests + docs). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-N (Robin Hood hashing verified implementation) — **ACTIVE** (v0.17.0+). **WS-N1 COMPLETED** (v0.17.1): core types + operations in `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines, zero sorry). **WS-N2 COMPLETED** (v0.17.2): invariant proofs in `SeLe4n/Kernel/RobinHood/Invariant/` (~3,600 lines). All 6 TPI-D items complete: D1 (noDupKeys), D2 (PCD insert), D3 (PCD erase via relaxedPCD), D4 (get_after_insert_eq), D5 (get_after_insert_ne), D6 (get_after_erase_eq). Zero sorry/axiom. Remaining: N3 (kernel API bridge), N4 (CNode.slots integration), N5 (tests + docs). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
 - **Most recently completed portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)
