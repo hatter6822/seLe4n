@@ -81,9 +81,16 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   Re-export hub: `SeLe4n/Kernel/RobinHood.lean`.
 - `SeLe4n/Kernel/RobinHood/Invariant/` — invariant proofs (WS-N2, v0.17.2):
   `distCorrect`/`noDupKeys`/`probeChainDominant` preservation through all ops;
-  lookup correctness (`get_after_insert_eq/ne`, `get_after_erase_eq`). All 6
+  lookup correctness (`get_after_insert_eq/ne`, `get_after_erase_eq/ne`). All 6
   TPI-D items complete, ~3,600 LoC, zero sorry.
   Re-export hub: `SeLe4n/Kernel/RobinHood/Invariant.lean`.
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` — kernel API bridge (WS-N3, v0.17.3):
+  `Inhabited`/`BEq` typeclass instances, 10 bridge lemmas (`getElem?_empty`,
+  `getElem?_insert_self/ne`, `getElem?_erase_self/ne`, `size_insert_le`,
+  `size_erase_le`, `mem_iff_isSome_getElem?`, `getElem?_eq_some_getElem`,
+  `fold_eq_slots_foldl`), `filter` support with 2 size theorems, `ofList`
+  constructor, `get_after_erase_ne` proof in Lookup.lean. ~358 LoC in
+  Bridge.lean + ~247 LoC additions to Lookup.lean. Zero sorry/axiom.
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,

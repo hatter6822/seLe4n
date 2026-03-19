@@ -63,7 +63,7 @@ architectural improvements compared to other microkernels:
 | **Test Lean LoC** | 5,256 across 4 test suites |
 | **Proved declarations** | 1,292 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) — Capability subsystem end-to-end audit |
+| **Latest audit** | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`
@@ -204,11 +204,12 @@ SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorem
   Invariant/Operations.lean      Per-operation NI proofs
   Invariant/Composition.lean     Trace composition, 33-constructor NonInterferenceStep
 SeLe4n/Kernel/RobinHood/*       Robin Hood hash table verified implementation
-  Core.lean                      Types, operations, proofs (N1)
+  Core.lean                      Types, operations, proofs (N1 complete)
+  Bridge.lean                    Kernel API bridge: instances, bridge lemmas, filter (N3 complete)
   Invariant.lean                 Re-export hub (N2)
-    Invariant/Defs.lean          Invariant definitions (distCorrect, noDupKeys, robinHoodOrdered)
-    Invariant/Preservation.lean  WF/distCorrect preservation, modular arithmetic helpers
-    Invariant/Lookup.lean        Lookup correctness theorem signatures
+    Invariant/Defs.lean          Invariant definitions (distCorrect, noDupKeys, probeChainDominant)
+    Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops)
+    Invariant/Lookup.lean        Functional correctness (get after insert/erase), key absence
 SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
 SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)
