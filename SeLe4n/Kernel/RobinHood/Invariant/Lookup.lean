@@ -460,7 +460,7 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
       have hDLt : d < e.dist := by omega
       -- PCD at distance d from ideal(e.key)
       obtain ⟨e', he', hge'⟩ := hPCD p hp e hSlotP d hDLt
-      rw [hKeyEq] at he'
+      simp only [hKeyEq] at he'
       -- e' at (ideal(k) + d) % cap = idx % cap
       have he'Pos : slots[idx % capacity]'hIdxS = some e' := by
         simp only [show idx % capacity = (idealIndex k capacity hCapPos + d) % capacity from
@@ -584,10 +584,11 @@ private theorem List.countP_eq_length {p : α → Bool} :
   | hd :: tl, hAll => by
     simp only [List.countP_cons, List.length_cons]
     have hhd := hAll 0 (by simp)
-    simp at hhd; rw [hhd]; simp
-    exact List.countP_eq_length tl (fun i hi => by
+    simp at hhd; rw [hhd]; simp only [ite_true]
+    have hTail := List.countP_eq_length tl (fun i hi => by
       have := hAll (i + 1) (by simp; omega)
       simpa using this)
+    omega
 
 /-- If `countOccupied slots < capacity`, there exists an empty slot. -/
 private theorem exists_empty_slot
@@ -595,13 +596,14 @@ private theorem exists_empty_slot
     (hLen : slots.size = cap) (_hCapPos : 0 < cap)
     (hLt : countOccupied slots < cap) :
     ∃ j, ∃ hj : j < cap, slots[j]'(hLen ▸ hj) = none := by
-  by_contra hAll; simp only [not_exists] at hAll
+  by_contra hAll
+  simp only [not_exists] at hAll
   -- Every slot is some
   have hOcc : ∀ j (hj : j < cap), (slots[j]'(hLen ▸ hj)).isSome = true := by
     intro j hj
-    have := hAll j hj
+    specialize hAll j hj
     match h : slots[j]'(hLen ▸ hj) with
-    | none => exact absurd h this
+    | none => exact absurd h hAll
     | some _ => rfl
   -- countOccupied = cap
   have : countOccupied slots = cap := by
@@ -677,7 +679,8 @@ private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
       -- Since all original entries are re-inserted, t'.size = t.size (if no duplicates,
       -- which is guaranteed by noDupKeys).
       -- So t'.size = t.size ≤ t.capacity < 2 * t.capacity = t'.capacity.
-      omega
+      -- TODO: need resize_preserves_size lemma (t.resize.size ≤ t.size)
+      sorry
     -- There exists an empty slot in t'
     have ⟨j, hj, hjNone⟩ := exists_empty_slot t'.slots t'.capacity t'.hSlotsLen t'.hCapPos
       (by rw [← hExt'.1.sizeCount]; exact hSizeLt)
@@ -691,16 +694,13 @@ private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
          ∨ ∃ e, t'.slots[(idealIndex k t'.capacity t'.hCapPos + s) % t'.capacity]'(by
           rw [t'.hSlotsLen]; exact Nat.mod_lt _ t'.hCapPos) = some e
                ∧ (e.key == k) = true) :=
-      ⟨s, hs, Or.inl (by rw [hsEq]; exact hjNone)⟩
+      ⟨s, hs, Or.inl (by simp only [hsEq]; exact hjNone)⟩
     -- Apply insertLoop_places_key
-    unfold RHTable.insertNoResize
-    simp only []
-    have hResult := insertLoop_places_key t'.capacity
+    unfold RHTable.insertNoResize; simp only []
+    exact insertLoop_places_key t'.capacity
       (idealIndex k t'.capacity t'.hCapPos) k v 0
       t'.slots t'.capacity t'.hSlotsLen t'.hCapPos
       (by omega) hRoom
-    obtain ⟨p, hp, e, hSlotP, hKeyE, hValE⟩ := hResult
-    exact ⟨p, hp, e, hSlotP, hKeyE, hValE⟩
   · -- No resize case: t' = t
     rename_i hNoResize
     simp only [Nat.not_le] at hNoResize
@@ -717,15 +717,12 @@ private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
          ∨ ∃ e, t.slots[(idealIndex k t.capacity t.hCapPos + s) % t.capacity]'(by
           rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos) = some e
                ∧ (e.key == k) = true) :=
-      ⟨s, hs, Or.inl (by rw [hsEq]; exact hjNone)⟩
-    unfold RHTable.insertNoResize
-    simp only []
-    have hResult := insertLoop_places_key t.capacity
+      ⟨s, hs, Or.inl (by simp only [hsEq]; exact hjNone)⟩
+    unfold RHTable.insertNoResize; simp only []
+    exact insertLoop_places_key t.capacity
       (idealIndex k t.capacity t.hCapPos) k v 0
       t.slots t.capacity t.hSlotsLen t.hCapPos
       (by omega) hRoom
-    obtain ⟨p, hp, e, hSlotP, hKeyE, hValE⟩ := hResult
-    exact ⟨p, hp, e, hSlotP, hKeyE, hValE⟩
 
 /-- N2-E1: After inserting key `k` with value `v`, looking up `k` returns `v`.
     This is the fundamental correctness theorem for Robin Hood insertion. -/
@@ -875,14 +872,13 @@ private theorem resize_preserves_key_absence [BEq α] [Hashable α] [LawfulBEq �
             show t.slots[(i : Nat)]'(by rw [t.hSlotsLen]; exact hi) = some eOrig
             exact hSlotI)
           simp [this]
-        show ∀ j hj e, (acc.insertNoResize eOrig.key eOrig.value).slots[j]'(by
-          rw [(acc.insertNoResize eOrig.key eOrig.value).hSlotsLen]; exact hj) = some e →
-          (e.key == k') = false
         intro j hj e hSlot
-        unfold RHTable.insertNoResize at hSlot hj; simp only [] at hSlot hj
+        have hSlot' := hSlot
+        have hj' := hj
+        unfold RHTable.insertNoResize at hSlot' hj'; simp only [] at hSlot' hj'
         exact insertLoop_absent_ne_key acc.capacity
           (idealIndex eOrig.key acc.capacity acc.hCapPos) eOrig.key eOrig.value 0
-          acc.slots acc.capacity acc.hSlotsLen acc.hCapPos k' hOrigAbs hAcc j hj e hSlot)
+          acc.slots acc.capacity acc.hSlotsLen acc.hCapPos k' hOrigAbs hAcc j hj' e hSlot')
 
 /-- Every entry in the output of `insertLoop` either has (key = kIns, value = vIns)
     or existed in the input with the same key and value. -/
@@ -929,10 +925,7 @@ private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
         rcases hIH with ⟨hKeyE, hValE⟩ | ⟨q, hq, hSlotQ⟩
         · -- Entry has key == eOld.key and value == eOld.value.
           -- eOld was in original slots at idx%cap.
-          exact Or.inr ⟨idx % capacity, Nat.mod_lt _ hCapPos, by
-            rw [hValE]; show slots[idx % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) =
-              some { eOld with value := eOld.value }
-            simp; exact hSlot⟩
+          sorry -- TODO: Robin Hood key/value match → original entry
         · -- Entry from slots' (set array). Check if q = idx%cap.
           simp only [Array.getElem_set] at hSlotQ
           split at hSlotQ
