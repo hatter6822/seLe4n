@@ -36,27 +36,33 @@
   `displacement_backward`, `backshiftLoop_preserves_distCorrect`,
   `erase_preserves_distCorrect`
 - Preservation theorems complete: WF (all ops), distCorrect (all ops),
-  noDupKeys (all ops)
+  noDupKeys (all ops), probeChainDominant (all ops)
 - TPI-D1 completed: `insertLoop_preserves_noDupKeys` — full fuel induction
   proving noDupKeys for insertLoop result (zero sorry)
 - TPI-D2 completed: `insertLoop_preserves_pcd` — full fuel induction proving
   probeChainDominant for insertLoop result (zero sorry)
-- Helper infrastructure added: `offset_injective` (modular offset injectivity),
-  `getElem_idx_eq` (array access proof irrelevance), `carried_key_absent`
-  (key absent if probe reached empty/swap position), `getLoop_none_of_absent`
-  (if key absent from all slots, getLoop returns none)
+- TPI-D3 completed: `erase_preserves_probeChainDominant` — relaxedPCD
+  framework proving PCD preservation through backshift-on-erase via
+  `pcd_to_relaxedPCD_after_clear`, `backshiftStep_relaxedPCD`,
+  `relaxedPCD_to_pcd_at_termination` (zero sorry)
 - TPI-D4 completed: `get_after_insert_eq` — insert lookup correctness via
   `getLoop_finds_present` + `insertLoop_places_key` (zero sorry)
+- TPI-D5 completed: `get_after_insert_ne` — insert non-interference via
+  `insertLoop_absent_ne_key` (none case) + `insertLoop_output_source` +
+  `resize_preserves_key_absence` (some case) (zero sorry)
 - TPI-D6 completed: `get_after_erase_eq` — erase lookup correctness via
   `erase_removes_key` + `getLoop_none_of_absent` (zero sorry)
-- Additional helpers: `findLoop_none_implies_absent`, `backshiftLoop_preserves_key_absence`,
-  `getLoop_finds_present`, `insertLoop_places_key`
+- Helper infrastructure: `offset_injective` (modular offset injectivity),
+  `getElem_idx_eq` (array access proof irrelevance), `carried_key_absent`
+  (key absent if probe reached empty/swap position), `getLoop_none_of_absent`,
+  `findLoop_none_implies_absent`, `backshiftLoop_preserves_key_absence`,
+  `getLoop_finds_present`, `insertLoop_places_key`, `displacement_backward`,
+  `relaxedPCD` (gap-excused PCD invariant)
 - Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
   `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
-  `RobinHood.lean`)
-- 2 TPI-D deferred items remaining: TPI-D3 (erase PCD preservation,
-  requires relaxedPCD invariant), TPI-D5 (insert non-interference)
-- Zero `sorry`/`axiom` in completed proofs; zero warnings; all test tiers pass
+  `RobinHood.lean`); ~3,600 LoC total
+- All 6 TPI-D items completed (D1–D6); WS-N2 COMPLETE
+- Zero `sorry`/`axiom`; zero warnings; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.2`
 
 ## [0.17.1] — WS-N1 Core Robin Hood Types + Operations

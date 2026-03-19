@@ -79,6 +79,11 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   `findLoop`/`backshiftLoop`, `insert`/`get?`/`erase`/`fold`/`resize` operations,
   `empty_wf`/`insertLoop_preserves_len`/`backshiftLoop_preserves_len` proofs.
   Re-export hub: `SeLe4n/Kernel/RobinHood.lean`.
+- `SeLe4n/Kernel/RobinHood/Invariant/` — invariant proofs (WS-N2, v0.17.2):
+  `distCorrect`/`noDupKeys`/`probeChainDominant` preservation through all ops;
+  lookup correctness (`get_after_insert_eq/ne`, `get_after_erase_eq`). All 6
+  TPI-D items complete, ~3,600 LoC, zero sorry.
+  Re-export hub: `SeLe4n/Kernel/RobinHood/Invariant.lean`.
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,
@@ -135,9 +140,12 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency.
   - `Invariant/Authority.lean` — authority reduction, attenuation, badge routing consistency.
   - `Invariant/Preservation.lean` — operation preservation, lifecycle integration, composed bundles.
-- **WS-N planned modules** (v0.17.0+, **ACTIVE**):
-  - `SeLe4n/Kernel/RobinHood/Core.lean` — Robin Hood hash table types (`RHEntry`, `RHTable`), fuel-bounded operations (`insert`, `get?`, `erase`, `fold`, `resize`), `GetElem?`/`Membership` instances, bridge lemmas. ~350 LoC planned.
-  - `SeLe4n/Kernel/RobinHood/Invariant.lean` — `wf`/`distCorrect`/`noDupKeys`/`robinHoodOrdered` predicates, preservation proofs, lookup soundness/completeness. ~500 LoC planned.
+- **WS-N modules** (v0.17.0+, **ACTIVE** — N1/N2 COMPLETED):
+  - `SeLe4n/Kernel/RobinHood/Core.lean` — Robin Hood hash table types (`RHEntry`, `RHTable`), fuel-bounded operations (`insert`, `get?`, `erase`, `fold`, `resize`), `GetElem?`/`Membership` instances. 379 LoC. **N1 COMPLETED** (v0.17.1).
+  - `SeLe4n/Kernel/RobinHood/Invariant/Defs.lean` — `distCorrect`/`noDupKeys`/`probeChainDominant` predicates, `invExt` bundle. 79 LoC.
+  - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` — WF/distCorrect/noDupKeys/PCD preservation through all ops, modular arithmetic helpers, relaxedPCD framework. 2,312 LoC.
+  - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` — Lookup correctness: `get_after_insert_eq/ne`, `get_after_erase_eq`. 1,202 LoC.
+  - `SeLe4n/Kernel/RobinHood/Invariant.lean` — Re-export hub. **N2 COMPLETED** (v0.17.2).
   - `SeLe4n/Kernel/RobinHood.lean` — Re-export hub.
   - See [WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) for full architecture and 122-subtask breakdown.
 - **WS-M audit** (v0.16.13–v0.17.0, **PORTFOLIO COMPLETE**): end-to-end audit identified 14 findings across Operations (740 LoC), Defs (741 LoC), Authority (634 LoC), and Preservation (1,383 LoC). Phase 1 (WS-M1, v0.16.14): proof strengthening — `resolveCapAddress_guard_match`, `cdtMintCompleteness`, `addEdge_preserves_edgeWellFounded_fresh`, `cspaceRevokeCdt_swallowed_error_consistent`. Phase 2 (WS-M2, v0.16.15): performance optimization — M2-A fused revoke (`revokeAndClearRefsState` single-pass), M2-B CDT `parentMap` index for O(1) `parentOf` lookup, M2-C reply lemma extraction and new field preservation lemmas for NI proofs; `parentMapConsistent` runtime check; findings M-P01/P02/P03/P05 resolved. Phase 3 (WS-M3, v0.16.17): IPC capability transfer completed — `CapTransferResult`/`CapTransferSummary` types, `ipcTransferSingleCap`/`ipcUnwrapCaps` operations with preservation proofs, `endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` wrappers, `decodeExtraCapAddrs`/`resolveExtraCaps` API wiring, `DerivationOp.ipcTransfer` CDT variant, IPC invariant preservation proofs for all wrappers, `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`, 4 test scenarios (basic, no-grant, full-CNode, badge+cap combined). Resolves M-D01/M-T03 (L-T03). Phase 4 (WS-M4, v0.16.18): test coverage expansion — 8 new test scenarios addressing M-T01/M-T02. Phase 5 (WS-M5, v0.16.19–v0.17.0): streaming BFS optimization — `processRevokeNode` shared helper (DRY), `streamingRevokeBFS`/`cspaceRevokeCdtStreaming` operations, `processRevokeNode_preserves_capabilityInvariantBundle` shared proof, 4 test scenarios; resolves M-P04. See [workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
