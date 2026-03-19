@@ -512,14 +512,14 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
         simp only [hKey, ite_false, hRH, ite_true]
         have hLen' : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx).size = capacity := by
           rw [Array.size_set]; exact hLen
-        rw [ih (idx % capacity + 1) e.key e.value (e.dist + 1) _ hLen' j hj
-          (by intro s hs; rw [show idx + (s + 1) = idx % capacity + 1 + s from by omega] at *
+        rw [ih (idx % capacity + 1) e.key e.value (e.dist + 1) _ hLen'
+          (by intro s hs
               have := hNR (s + 1) (by omega)
               rwa [show idx + (s + 1) = idx % capacity + 1 + s from by omega] at this)]
         rw [Array.getElem_set]; simp [hjNe]
       else
         simp only [hKey, ite_false, hRH, ite_false]
-        exact ih (idx % capacity + 1) k v (d + 1) slots hLen j hj
+        exact ih (idx % capacity + 1) k v (d + 1) slots hLen
           (by intro s hs
               have := hNR (s + 1) (by omega)
               rwa [show idx + (s + 1) = idx % capacity + 1 + s from by omega] at this)
@@ -528,7 +528,7 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
     contains an entry with `key == k = true` and `value = v` at some position,
     provided the table has a reachable empty slot or matching key within the
     probe chain (guaranteed by `countOccupied < capacity ∨ key already present`). -/
-private theorem insertLoop_places_key [BEq α] [Hashable α]
+private theorem insertLoop_places_key [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (k : α) (v : β) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
