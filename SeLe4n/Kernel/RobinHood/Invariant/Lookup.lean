@@ -499,13 +499,12 @@ private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
     have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
     have hjNe : idx % capacity ≠ j := by
       have := hNR 0 (by omega); simp at this; exact this
-    unfold insertLoop; simp only []
     cases hSlot : slots[idx % capacity]'hIdx with
     | none =>
-      simp only [hSlot]
+      simp only [insertLoop, hSlot]
       rw [Array.getElem_set]; simp [hjNe]
     | some e =>
-      simp only [hSlot]
+      simp only [insertLoop, hSlot]
       if hKey : e.key == k then
         simp only [hKey, ite_true]
         rw [Array.getElem_set]; simp [hjNe]
@@ -548,12 +547,13 @@ private theorem insertLoop_places_key [BEq α] [Hashable α]
   | succ n ih =>
     have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
     have hIdxCap : idx % capacity < capacity := Nat.mod_lt _ hCapPos
-    unfold insertLoop; simp only []
     cases hSlot : slots[idx % capacity]'hIdx with
     | none =>
+      simp only [insertLoop, hSlot]
       exact ⟨idx % capacity, hIdxCap, ⟨k, v, d⟩,
         by simp [Array.getElem_set], BEq.refl k, rfl⟩
     | some e =>
+      simp only [insertLoop, hSlot]
       if hKey : e.key == k then
         simp only [hKey, ite_true]
         exact ⟨idx % capacity, hIdxCap, { e with value := v },
@@ -815,10 +815,9 @@ private theorem insertLoop_absent_ne_key [BEq α] [Hashable α] [LawfulBEq α]
   | succ n ih =>
     have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
     intro j hj e hSlot
-    unfold insertLoop at hSlot; simp only [] at hSlot
     cases hSlotCase : slots[idx % capacity]'hIdx with
     | none =>
-      simp only [hSlotCase] at hSlot
+      simp only [insertLoop, hSlotCase] at hSlot
       simp only [Array.getElem_set] at hSlot
       split at hSlot
       · cases hSlot; simp only
@@ -827,7 +826,7 @@ private theorem insertLoop_absent_ne_key [BEq α] [Hashable α] [LawfulBEq α]
         | true => exact absurd h hNeIns
       · exact hAbsent j hj e hSlot
     | some eOld =>
-      simp only [hSlotCase] at hSlot
+      simp only [insertLoop, hSlotCase] at hSlot
       if hKey : eOld.key == kIns then
         simp only [hKey, ite_true] at hSlot
         simp only [Array.getElem_set] at hSlot
@@ -904,7 +903,7 @@ private theorem resize_preserves_key_absence [BEq α] [Hashable α] [LawfulBEq �
         acc.slots[j]'(by rw [acc.hSlotsLen]; exact hj) = some e → (e.key == k') = false)
     (by intro j hj e hSlot; simp [RHTable.empty] at hSlot)
     (fun i acc hAcc => by
-      cases hSlotI : t.slots[i] with
+      match hSlotI : t.slots[i] with
       | none => exact hAcc
       | some eOrig =>
         have hi : (i : Nat) < t.capacity := by rw [← t.hSlotsLen]; exact i.isLt
@@ -940,16 +939,15 @@ private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
   | succ n ih =>
     have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
     intro j hj e hSlotR
-    unfold insertLoop at hSlotR; simp only [] at hSlotR
     cases hSlot : slots[idx % capacity]'hIdx with
     | none =>
-      simp only [hSlot] at hSlotR
+      simp only [insertLoop, hSlot] at hSlotR
       simp only [Array.getElem_set] at hSlotR
       split at hSlotR
       · cases hSlotR; exact Or.inl ⟨BEq.refl kIns, rfl⟩
       · exact Or.inr ⟨j, hj, hSlotR⟩
     | some eOld =>
-      simp only [hSlot] at hSlotR
+      simp only [insertLoop, hSlot] at hSlotR
       if hKey : eOld.key == kIns then
         simp only [hKey, ite_true] at hSlotR
         simp only [Array.getElem_set] at hSlotR
@@ -1144,7 +1142,7 @@ theorem RHTable.get_after_insert_ne [BEq α] [Hashable α] [LawfulBEq α]
                   (ea.key == k') = true → ea.value = val)
               (by intro a ha ea hSlotA; simp [RHTable.empty] at hSlotA)
               (fun i acc hAcc => by
-                cases hSlotI : t.slots[i] with
+                match hSlotI : t.slots[i] with
                 | none => exact hAcc
                 | some eOrig =>
                   intro a ha ea hSlotA hKeyA
