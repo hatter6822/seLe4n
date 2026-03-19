@@ -400,10 +400,9 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
         hCapPos hp (idealIndex_lt k capacity hCapPos) e.dist hEDist hdk_lt
     by_cases hDeq : d = e.dist
     · -- At the target: idx % cap = p
-      have hIdxP : idx % capacity = p := by rw [← hRound, hDeq, hpRound]
-      sorry -- TODO: d = e.dist case — dependent array type issue
+      sorry -- TODO: d = e.dist — split on unfolded getLoop match
     · -- d < e.dist: not at target yet
-      sorry -- TODO: d < e.dist case — dependent array type issue
+      sorry -- TODO: d < e.dist — split on unfolded getLoop match
 
 /-- `insertLoop` never modifies slots unreachable within its fuel window.
     If position `j` cannot be reached from `idx` in fewer than `fuel` steps
