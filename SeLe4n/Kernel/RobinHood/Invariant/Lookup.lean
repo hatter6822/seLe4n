@@ -1199,4 +1199,251 @@ theorem RHTable.get_after_erase_eq [BEq α] [Hashable α] [LawfulBEq α]
   exact getLoop_none_of_absent _ _ _ _ _ _ _ _
     (erase_removes_key t k hExt)
 
+/-- Entries in `backshiftLoop` output came from the input (key/value preserved).
+    Every occupied slot in the output has an ancestor in the input with the
+    same key and value (only `dist` may change due to backward shift). -/
+private theorem backshiftLoop_output_has_input_key_value [BEq α]
+    (fuel gapIdx : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity) :
+    ∀ q (hq : q < capacity) (e' : RHEntry α β),
+      (backshiftLoop fuel gapIdx slots capacity hLen hCapPos)[q]'(by
+        rw [backshiftLoop_preserves_len, hLen]; exact hq) = some e' →
+      ∃ p (hp : p < capacity) (e : RHEntry α β),
+        slots[p]'(hLen ▸ hp) = some e ∧ e.key = e'.key ∧ e.value = e'.value := by
+  induction fuel generalizing gapIdx slots hLen with
+  | zero => simp [backshiftLoop]; intro q hq e' hSlot; exact ⟨q, hq, e', hSlot, rfl, rfl⟩
+  | succ n ih =>
+    have hGapI : gapIdx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    have hNextI : (gapIdx + 1) % capacity < slots.size := by
+      rw [hLen]; exact Nat.mod_lt _ hCapPos
+    intro q hq e' hSlot
+    match hNext : slots[(gapIdx + 1) % capacity]'hNextI with
+    | none =>
+      simp [backshiftLoop, hNext] at hSlot
+      exact ⟨q, hq, e', hSlot, rfl, rfl⟩
+    | some nextE =>
+      if hDist : nextE.dist == 0 then
+        simp [backshiftLoop, hNext, hDist] at hSlot
+        exact ⟨q, hq, e', hSlot, rfl, rfl⟩
+      else
+        have hDistF : (nextE.dist == 0) = false := by
+          cases h : nextE.dist == 0 <;> simp_all
+        simp only [backshiftLoop, hNext, hDistF, ↓reduceIte] at hSlot
+        simp only [show (false = true) ↔ False from ⟨Bool.noConfusion, False.elim⟩,
+          ite_false] at hSlot
+        have hLen2 : ((slots.set (gapIdx % capacity)
+            (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+            ((gapIdx + 1) % capacity) none
+            (by rw [Array.size_set]; exact hNextI)).size = capacity := by
+          rw [Array.size_set, Array.size_set]; exact hLen
+        obtain ⟨p, hp, eOrig, hSlotOrig, hKeyEq, hValEq⟩ :=
+          ih ((gapIdx + 1) % capacity) _ hLen2 q hq e' hSlot
+        simp only [Array.getElem_set] at hSlotOrig
+        split at hSlotOrig
+        · simp at hSlotOrig
+        · split at hSlotOrig
+          · have hEq := Option.some.inj hSlotOrig
+            rw [hEq] at hKeyEq hValEq; simp at hKeyEq hValEq
+            exact ⟨(gapIdx + 1) % capacity, Nat.mod_lt _ hCapPos, nextE, hNext,
+              hKeyEq.symm, hValEq.symm⟩
+          · exact ⟨p, hp, eOrig, hSlotOrig, hKeyEq, hValEq⟩
+
+/-- `backshiftLoop` preserves entry presence when the gap position is empty.
+    If an entry exists at position `p` in the input and the gap slot is `none`,
+    some entry with the same key and value exists in the output. -/
+private theorem backshiftLoop_preserves_entry_presence [BEq α]
+    (fuel gapIdx : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (hGapNone : slots[gapIdx % capacity]'(hLen ▸ Nat.mod_lt _ hCapPos) = none)
+    (p : Nat) (hp : p < capacity) (e : RHEntry α β)
+    (hSlotP : slots[p]'(hLen ▸ hp) = some e) :
+    ∃ q (hq : q < capacity) (e' : RHEntry α β),
+      (backshiftLoop fuel gapIdx slots capacity hLen hCapPos)[q]'(by
+        rw [backshiftLoop_preserves_len, hLen]; exact hq) = some e' ∧
+      e'.key = e.key ∧ e'.value = e.value := by
+  have hpNeGap : p ≠ gapIdx % capacity := by
+    intro hContra; rw [hContra] at hSlotP; rw [hSlotP] at hGapNone; simp at hGapNone
+  induction fuel generalizing gapIdx slots hLen with
+  | zero =>
+    simp [backshiftLoop]
+    exact ⟨p, hp, e, hSlotP, rfl, rfl⟩
+  | succ n ih =>
+    have hGapI : gapIdx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    have hNextI : (gapIdx + 1) % capacity < slots.size := by
+      rw [hLen]; exact Nat.mod_lt _ hCapPos
+    match hNext : slots[(gapIdx + 1) % capacity]'hNextI with
+    | none =>
+      simp [backshiftLoop, hNext]
+      exact ⟨p, hp, e, hSlotP, rfl, rfl⟩
+    | some nextE =>
+      if hDist : nextE.dist == 0 then
+        simp [backshiftLoop, hNext, hDist]
+        exact ⟨p, hp, e, hSlotP, rfl, rfl⟩
+      else
+        have hDistF : (nextE.dist == 0) = false := by
+          cases h : nextE.dist == 0 <;> simp_all
+        have hLen2 : ((slots.set (gapIdx % capacity)
+            (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+            ((gapIdx + 1) % capacity) none
+            (by rw [Array.size_set]; exact hNextI)).size = capacity := by
+          rw [Array.size_set, Array.size_set]; exact hLen
+        have hNewGapNone :
+            ((slots.set (gapIdx % capacity)
+              (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+              ((gapIdx + 1) % capacity) none
+              (by rw [Array.size_set]; exact hNextI))[(gapIdx + 1) % capacity]'(by
+                rw [Array.size_set, Array.size_set, hLen]; exact Nat.mod_lt _ hCapPos) =
+            none := by simp [Array.getElem_set]
+        by_cases hpNext : p = (gapIdx + 1) % capacity
+        · have hEq : e = nextE := by
+            rw [hpNext] at hSlotP; exact Option.some.inj (hSlotP.trans hNext.symm)
+          have hShiftedSlot :
+              ((slots.set (gapIdx % capacity)
+                (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+                ((gapIdx + 1) % capacity) none
+                (by rw [Array.size_set]; exact hNextI))[gapIdx % capacity]'(by
+                  rw [Array.size_set, Array.size_set, hLen]; exact Nat.mod_lt _ hCapPos) =
+              some { nextE with dist := nextE.dist - 1 } := by
+            simp only [Array.getElem_set]; split <;> simp [Array.getElem_set]
+          obtain ⟨q, hq, e', hSlotQ, hKeyEq, hValEq⟩ :=
+            ih ((gapIdx + 1) % capacity) _ hLen2 hNewGapNone (gapIdx % capacity)
+              (Nat.mod_lt _ hCapPos) { nextE with dist := nextE.dist - 1 } hShiftedSlot
+          exact ⟨q, hq, e', by
+            rw [show backshiftLoop (n + 1) gapIdx slots capacity hLen hCapPos =
+              backshiftLoop n ((gapIdx + 1) % capacity) _ capacity hLen2 hCapPos from by
+                simp [backshiftLoop, hNext, hDistF]]
+            exact hSlotQ, by rw [hKeyEq, hEq], by rw [hValEq, hEq]⟩
+        · have hShiftedSlot :
+              ((slots.set (gapIdx % capacity)
+                (some { nextE with dist := nextE.dist - 1 }) hGapI).set
+                ((gapIdx + 1) % capacity) none
+                (by rw [Array.size_set]; exact hNextI))[p]'(by
+                  rw [Array.size_set, Array.size_set, hLen]; exact hp) = some e := by
+            simp only [Array.getElem_set, show p = (gapIdx + 1) % capacity ↔ False from
+              ⟨fun h => hpNext h, False.elim⟩, show p = gapIdx % capacity ↔ False from
+              ⟨fun h => hpNeGap h, False.elim⟩, ite_false]
+            exact hSlotP
+          obtain ⟨q, hq, e', hSlotQ, hKeyEq, hValEq⟩ :=
+            ih ((gapIdx + 1) % capacity) _ hLen2 hNewGapNone p hp e hShiftedSlot
+          exact ⟨q, hq, e', by
+            rw [show backshiftLoop (n + 1) gapIdx slots capacity hLen hCapPos =
+              backshiftLoop n ((gapIdx + 1) % capacity) _ capacity hLen2 hCapPos from by
+                simp [backshiftLoop, hNext, hDistF]]
+            exact hSlotQ, hKeyEq, hValEq⟩
+
+/-- N3-B4 helper: Erasing key `k` preserves entries with different keys. -/
+private theorem erase_preserves_ne_entry [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k k' : α) (hNe : ¬(k' == k) = true)
+    (hExt : t.invExt)
+    (p : Nat) (hp : p < t.capacity) (e : RHEntry α β)
+    (hSlotP : t.slots[p]'(t.hSlotsLen ▸ hp) = some e)
+    (hKey : (e.key == k') = true) :
+    ∃ q (hq : q < (t.erase k).capacity) (e' : RHEntry α β),
+      (t.erase k).slots[q]'((t.erase k).hSlotsLen ▸ hq) = some e' ∧
+      (e'.key == k') = true ∧ e'.value = e.value := by
+  simp only [RHTable.erase]
+  split
+  · exact ⟨p, hp, e, hSlotP, hKey, rfl⟩
+  · rename_i idx hFound
+    have hIdxS : idx % t.capacity < t.slots.size := by
+      rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos
+    have hLen' : (t.slots.set (idx % t.capacity) none hIdxS).size = t.capacity := by
+      rw [Array.size_set]; exact t.hSlotsLen
+    have ⟨eFound, hSlotFound, hKeyFound⟩ := findLoop_correct t.capacity _ k 0
+      t.slots t.capacity t.hSlotsLen t.hCapPos idx hFound
+    have hpNeIdx : p ≠ idx % t.capacity := by
+      intro hContra
+      rw [hContra] at hSlotP; rw [hSlotP] at hSlotFound; cases hSlotFound
+      exact hNe (BEq.beq_trans hKey hKeyFound)
+    have hSlotP' : (t.slots.set (idx % t.capacity) none hIdxS)[p]'(by
+        rw [Array.size_set, t.hSlotsLen]; exact hp) = some e := by
+      simp [Array.getElem_set, hpNeIdx, hSlotP]
+    have hGapNone : (t.slots.set (idx % t.capacity) none hIdxS)[idx % t.capacity]'(by
+        rw [Array.size_set, t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos) = none := by
+      simp [Array.getElem_set]
+    obtain ⟨q, hq, e', hSlotQ, hKeyEq, hValEq⟩ :=
+      backshiftLoop_preserves_entry_presence t.capacity idx
+        (t.slots.set (idx % t.capacity) none hIdxS) t.capacity hLen' t.hCapPos
+        hGapNone p hp e hSlotP'
+    exact ⟨q, hq, e', hSlotQ, by rw [← hKeyEq]; exact hKey, hValEq.symm⟩
+
+/-- N3-B4/N2-E4: Erasing key `k` does not affect lookups of other keys.
+    If `¬(k == k')`, then `(t.erase k).get? k' = t.get? k'`. -/
+theorem RHTable.get_after_erase_ne [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k k' : α) (hNe : ¬(k == k') = true)
+    (hExt : t.invExt) (hSize : t.size < t.capacity) :
+    (t.erase k).get? k' = t.get? k' := by
+  have hEraseExt := t.erase_preserves_invExt k hExt hSize
+  have hNe' : ¬(k' == k) = true := fun h => hNe (BEq.comm k' k ▸ h)
+  cases hGet : t.get? k' with
+  | none =>
+    have hAbsOrig : ∀ j (hj : j < t.capacity) (e : RHEntry α β),
+        t.slots[j]'(t.hSlotsLen ▸ hj) = some e → (e.key == k') = false := by
+      intro j hj e hSlot
+      cases hKE : e.key == k' with
+      | false => rfl
+      | true =>
+        exfalso
+        have hde := hExt.2.1 j hj e hSlot
+        have hKeyEq : idealIndex e.key t.capacity t.hCapPos =
+            idealIndex k' t.capacity t.hCapPos := by rw [eq_of_beq hKE]
+        rw [hKeyEq] at hde
+        have hdk_lt : e.dist < t.capacity := by
+          have := Nat.mod_lt (j + t.capacity - idealIndex k' t.capacity t.hCapPos) t.hCapPos
+          omega
+        have hFound := getLoop_finds_present t.capacity
+          (idealIndex k' t.capacity t.hCapPos) k' 0 t.slots t.capacity
+          t.hSlotsLen t.hCapPos j hj e hSlot hKE rfl
+          hExt.2.1 hExt.2.2.2 hExt.2.2.1
+          (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)]) (by omega) (by omega)
+        rw [hFound] at hGet; simp at hGet
+    have hAbsErased : ∀ j (hj : j < (t.erase k).capacity) (e : RHEntry α β),
+        (t.erase k).slots[j]'((t.erase k).hSlotsLen ▸ hj) = some e →
+        (e.key == k') = false := by
+      intro j hj e hSlot
+      simp only [RHTable.erase] at hSlot hj
+      split at hSlot hj
+      · exact hAbsOrig j hj e hSlot
+      · rename_i idx hFound
+        have hIdxS : idx % t.capacity < t.slots.size := by
+          rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos
+        have hLen' : (t.slots.set (idx % t.capacity) none hIdxS).size = t.capacity := by
+          rw [Array.size_set]; exact t.hSlotsLen
+        obtain ⟨p, hp, eOrig, hSlotOrig, hKeyEq, _⟩ :=
+          backshiftLoop_output_has_input_key_value t.capacity idx
+            (t.slots.set (idx % t.capacity) none hIdxS) t.capacity hLen' t.hCapPos
+            j hj e hSlot
+        simp only [Array.getElem_set] at hSlotOrig
+        split at hSlotOrig
+        · simp at hSlotOrig
+        · rw [← hKeyEq]; exact hAbsOrig p hp eOrig hSlotOrig
+    unfold RHTable.get?
+    exact getLoop_none_of_absent _ _ _ _ _ _ _ _ hAbsErased
+  | some val =>
+    obtain ⟨p, hp, e, hSlotP, hKey, hVal⟩ :=
+      getLoop_some_implies_entry t.capacity _ k' 0 t.slots t.capacity t.hSlotsLen t.hCapPos
+        val (by unfold RHTable.get? at hGet; exact hGet)
+    obtain ⟨q, hq, e', hSlotQ, hKey', hVal'⟩ :=
+      erase_preserves_ne_entry t k k' hNe' hExt p hp e hSlotP hKey
+    have hVal'' : e'.value = val := by rw [hVal']; exact hVal.symm
+    have hDE' := hEraseExt.2.1 q hq e' hSlotQ
+    have hKeyEq : idealIndex e'.key (t.erase k).capacity (t.erase k).hCapPos =
+        idealIndex k' (t.erase k).capacity (t.erase k).hCapPos := by
+      rw [eq_of_beq hKey']
+    rw [hKeyEq] at hDE'
+    have hdk_lt : e'.dist < (t.erase k).capacity := by
+      have := Nat.mod_lt (q + (t.erase k).capacity -
+        idealIndex k' (t.erase k).capacity (t.erase k).hCapPos) (t.erase k).hCapPos
+      omega
+    unfold RHTable.get?
+    exact getLoop_finds_present (t.erase k).capacity
+      (idealIndex k' (t.erase k).capacity (t.erase k).hCapPos) k' 0
+      (t.erase k).slots (t.erase k).capacity (t.erase k).hSlotsLen (t.erase k).hCapPos
+      q hq e' hSlotQ hKey' hVal''
+      hEraseExt.2.1 hEraseExt.2.2.2 hEraseExt.2.2.1
+      (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
+      (by omega) (by omega)
+
 end SeLe4n.Kernel.RobinHood

@@ -7,3 +7,4 @@
 -/
 import SeLe4n.Kernel.RobinHood.Core
 import SeLe4n.Kernel.RobinHood.Invariant
+import SeLe4n.Kernel.RobinHood.Bridge
