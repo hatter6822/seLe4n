@@ -1893,8 +1893,11 @@ private theorem backshiftStep_relaxedPCD [Hashable α]
   intro _hGapI _hNextI _slots' p hp e hSlot d hd
   have hGapI : gap % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
   have hNextI : (gap + 1) % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
-  -- Let-bound array: skip simp, use split directly
-  split at hSlot
+  -- Unfold let-bound _slots' by re-asserting hSlot with explicit type
+  have hSlot_eq : _slots' = (slots.set (gap % capacity) (some { nextE with dist := nextE.dist - 1 })
+    _hGapI).set ((gap + 1) % capacity) none (by rw [Array.size_set]; exact _hNextI) := rfl
+  rw [hSlot_eq] at hSlot
+  simp only [Array.getElem_set] at hSlot
   split at hSlot
   · simp at hSlot
   · rename_i hpNeNext
@@ -2111,25 +2114,14 @@ private theorem backshiftLoop_preserves_pcd [Hashable α]
           intro hEq
           have hM := Nat.add_mod (gapIdx + 1) j capacity
           rw [hEq] at hM
-          have hR : (gapIdx + 1) % capacity < capacity := Nat.mod_lt _ hCapPos
-          have hS : j % capacity < capacity := Nat.mod_lt _ hCapPos
-          have hjMod : j % capacity = 0 := by
-            by_cases hlt : (gapIdx + 1) % capacity + j % capacity < capacity
-            · rw [Nat.mod_eq_of_lt hlt] at hM; omega
-            · have hge : capacity ≤ (gapIdx + 1) % capacity + j % capacity := by omega
-              have hsub : (gapIdx + 1) % capacity + j % capacity - capacity < capacity := by omega
-              have hRewrite : ((gapIdx + 1) % capacity + j % capacity) % capacity =
-                  (gapIdx + 1) % capacity + j % capacity - capacity := by
-                calc ((gapIdx + 1) % capacity + j % capacity) % capacity
-                    = (capacity + ((gapIdx + 1) % capacity + j % capacity - capacity)) % capacity := by
-                        congr 1; omega
-                  _ = ((gapIdx + 1) % capacity + j % capacity - capacity) % capacity := by
-                        rw [Nat.add_mod_left]
-                  _ = (gapIdx + 1) % capacity + j % capacity - capacity := by
-                        exact Nat.mod_eq_of_lt hsub
-              rw [hRewrite] at hM; omega
-          have hjlt : j < capacity := by omega
-          exact hj0 (Nat.eq_zero_of_dvd_of_lt (Nat.dvd_of_mod_eq_zero hjMod) hjlt)
+          -- hEq says (gapIdx+1+j)%cap = (gapIdx+1)%cap.
+          -- hjTerm says slot at that index is none or has dist=0.
+          -- But hSlot says it's some nextE with dist > 0. Contradiction.
+          rw [hEq] at hjTerm
+          rcases hjTerm with hNone | ⟨ne, hne, hne0⟩
+          · rw [hSlot] at hNone; exact absurd hNone (by simp)
+          · rw [hSlot] at hne; have := Option.some.inj hne; subst this
+            exact absurd hne0 (by omega)
         -- The position is not gapIdx%cap (preserved from hypothesis)
         -- Slot at this position in slots' = slot in original slots
         -- (because it's neither gapIdx%cap nor (gapIdx+1)%cap)
