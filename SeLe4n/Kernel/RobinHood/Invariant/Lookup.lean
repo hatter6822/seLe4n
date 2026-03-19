@@ -58,67 +58,38 @@ private theorem findLoop_none_implies_absent [BEq α] [Hashable α] [LawfulBEq �
     (hNotFound : ∀ d', d' < d →
       ∀ e', slots[(idealIndex k capacity hCapPos + d') % capacity]'(by
         rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' → (e'.key == k) = false)
+    (hFuel : d + fuel ≥ capacity)
     (hNone : findLoop fuel idx k d slots capacity hLen hCapPos = none) :
     ∀ j (hj : j < capacity) (e : RHEntry α β),
       slots[j]'(by rw [hLen]; exact hj) = some e → (e.key == k) = false := by
-  induction fuel generalizing idx d with
+  revert idx d hD hNotFound hFuel hNone
+  induction fuel with
   | zero =>
-    -- fuel = 0: findLoop returns none trivially; but we need key absence.
-    -- With fuel = 0, we haven't actually proven anything about the table.
-    -- However, at d = 0 (start), carried_key_absent needs hSlotWeak which
-    -- we don't have. At d > 0, we have hNotFound for all d' < d.
-    -- Actually, the caller always provides fuel = capacity, so fuel = 0
-    -- means capacity = 0, contradicting hCapPos. But we can also just
-    -- handle it: if d = 0, then hD says d = 0 = displacement, so we need
-    -- to check the slot at idx % cap. But we have no info about it.
-    -- For the general case with fuel = 0 and arbitrary d, this can't be
-    -- proved without more context. But the caller (erase) uses fuel = capacity,
-    -- so this path is unreachable when capacity > 0 and d = 0.
-    -- We handle it by noting that if findLoop with 0 fuel returns none,
-    -- we simply can't reach this case in practice. Use the PCD + distCorrect
-    -- structure: if fuel = 0, the only way findLoop returns none is trivially.
-    -- But we still need to prove absence. The key insight: if d > capacity,
-    -- hNotFound covers all possible positions (since displacements are < capacity).
-    -- If d ≤ capacity, we don't have enough coverage.
-    -- In practice, the erase function uses fuel = capacity starting at d = 0,
-    -- so fuel = 0 only if capacity = 0, contradicting hCapPos.
-    -- For a clean proof, handle this by noting fuel + d ≥ capacity in practice.
-    -- Here we just note: with 0 fuel and d ≥ capacity, every displacement is covered.
-    -- Otherwise this case doesn't arise from erase.
-    -- Simple approach: if d ≥ capacity, all displacements covered by hNotFound.
-    by_cases hd : d ≥ capacity
-    · intro j hj e hSlot
-      cases hContra : e.key == k with
-      | false => rfl
-      | true =>
-        exfalso
-        have hkj : e.key = k := eq_of_beq hContra
-        have hEd := hDist j hj e hSlot
-        have hIdK : idealIndex e.key capacity hCapPos = idealIndex k capacity hCapPos := by
-          rw [hkj]
-        rw [hIdK] at hEd
-        have hed_lt : e.dist < capacity := by
-          have := Nat.mod_lt (j + capacity - idealIndex k capacity hCapPos) hCapPos; omega
-        have hFalse := hNotFound e.dist (by omega) e (by
-          have hRt : (idealIndex k capacity hCapPos + e.dist) % capacity = j := by
-            have := displacement_roundtrip j (idealIndex k capacity hCapPos) capacity hCapPos
-              (idealIndex_lt k capacity hCapPos) e.dist
-              (by rw [Nat.mod_eq_of_lt hj]; exact hEd) hed_lt
-            rwa [Nat.mod_eq_of_lt hj] at this
-          rw [hRt]; exact hSlot)
-        simp [hContra] at hFalse
-    · -- d < capacity and fuel = 0: this case doesn't arise from erase
-      -- (which uses fuel = capacity starting at d = 0). We handle it by omega:
-      -- this is actually unreachable from the caller, but we can't prove absence
-      -- without more fuel. We use a structural argument:
-      -- Actually we can still use carried_key_absent if we can establish hSlotWeak.
-      -- But we have no info about the slot at position idx % cap.
-      -- Let's just use the fact that findLoop with 0 fuel = none always,
-      -- so hNone gives us no info. We need to fall back to a general argument.
-      -- Since the real call has fuel = capacity, this is dead code.
-      -- For now, prove by contradiction: in the actual call, d = 0 and fuel = cap > 0.
-      simp [findLoop] at hNone
+    intro idx d hD hNotFound hFuel hNone
+    -- fuel = 0 and d + 0 ≥ capacity → d ≥ capacity
+    have hd : d ≥ capacity := by omega
+    intro j hj e hSlot
+    cases hContra : e.key == k with
+    | false => rfl
+    | true =>
+      exfalso
+      have hkj : e.key = k := eq_of_beq hContra
+      have hEd := hDist j hj e hSlot
+      have hIdK : idealIndex e.key capacity hCapPos = idealIndex k capacity hCapPos := by
+        rw [hkj]
+      rw [hIdK] at hEd
+      have hed_lt : e.dist < capacity := by
+        have := Nat.mod_lt (j + capacity - idealIndex k capacity hCapPos) hCapPos; omega
+      have hFalse := hNotFound e.dist (by omega) e (by
+        have hRt : (idealIndex k capacity hCapPos + e.dist) % capacity = j := by
+          have := displacement_roundtrip j (idealIndex k capacity hCapPos) capacity hCapPos
+            (idealIndex_lt k capacity hCapPos) e.dist
+            (by rw [Nat.mod_eq_of_lt hj]; exact hEd) hed_lt
+          rwa [Nat.mod_eq_of_lt hj] at this
+        simp only [hRt]; exact hSlot)
+      simp [hContra] at hFalse
   | succ n ih =>
+    intro idx d hD hNotFound hFuel hNone
     unfold findLoop at hNone; simp only [] at hNone
     have hPos : idx % capacity < capacity := Nat.mod_lt _ hCapPos
     split at hNone
@@ -134,55 +105,82 @@ private theorem findLoop_none_implies_absent [BEq α] [Hashable α] [LawfulBEq �
       · split at hNone
         · -- e.dist < d and key ≠ k → carried_key_absent (dist too small)
           rename_i hKeyNe hDistLt
+          have hKeyF : (e.key == k) = false := by cases h : e.key == k <;> simp_all
           exact carried_key_absent slots capacity hLen hCapPos k d (idx % capacity) hPos
-            hD hDist hPCD hNotFound (Or.inr ⟨e, hSlot, hDistLt, hKeyNe⟩)
+            hD hDist hPCD hNotFound (Or.inr ⟨e, hSlot, hDistLt, hKeyF⟩)
         · -- Continue probing: key ≠ k, e.dist ≥ d → recurse
           rename_i hKeyNe hDistGe
+          have hKeyF : (e.key == k) = false := by cases h : e.key == k <;> simp_all
           have hDistGe' : ¬ e.dist < d := hDistGe
-          -- d + 1 = displacement at next position
-          have hD' : d + 1 = ((idx % capacity + 1) % capacity + capacity -
-              idealIndex k capacity hCapPos) % capacity := by
-            have hEd := hDist (idx % capacity) hPos e hSlot
-            -- d = displacement at idx % cap for key k
-            -- We need: d + 1 = displacement at (idx%cap + 1) % cap for key k
-            -- This follows from dist_step_mod if d + 1 < capacity
-            by_cases hSmall : d + 1 < capacity
-            · have := dist_step_mod (idx % capacity) (idealIndex k capacity hCapPos)
-                capacity hCapPos hPos (idealIndex_lt k capacity hCapPos) d hD hSmall
-              linarith
-            · -- d + 1 ≥ capacity → d = capacity - 1
-              -- displacement is always < capacity, so d < capacity
-              have hd_lt : d < capacity := by
-                have := Nat.mod_lt (idx % capacity + capacity -
-                  idealIndex k capacity hCapPos) hCapPos; omega
-              omega
-          -- Extend hNotFound: at distance d, the slot has key ≠ k
-          have hNotFound' : ∀ d', d' < d + 1 →
+          have hd_lt : d < capacity := by
+            have := Nat.mod_lt (idx % capacity + capacity -
+              idealIndex k capacity hCapPos) hCapPos; omega
+          -- Helper: displacement_roundtrip from d' = d
+          have hDispRt : ∀ d', d' = d → (idealIndex k capacity hCapPos + d') % capacity =
+              idx % capacity := by
+            intro d' hd'_eq; rw [hd'_eq]
+            have := displacement_roundtrip (idx % capacity)
+              (idealIndex k capacity hCapPos) capacity hCapPos
+              (idealIndex_lt k capacity hCapPos) d
+              (by rw [Nat.mod_eq_of_lt hPos]; exact hD) hd_lt
+            rwa [Nat.mod_eq_of_lt hPos] at this
+          -- Helper: slot at position d has key ≠ k
+          have hSlotD : ∀ d', d' = d →
               ∀ e', slots[(idealIndex k capacity hCapPos + d') % capacity]'(by
                 rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' →
               (e'.key == k) = false := by
-            intro d' hd' e' hSlot'
-            by_cases hd'_lt : d' < d
-            · exact hNotFound d' hd'_lt e' hSlot'
-            · -- d' = d
-              have hd'_eq : d' = d := by omega
-              subst hd'_eq
-              -- slot at (ideal + d) % cap = idx % cap (by displacement_roundtrip)
-              have hd_lt : d < capacity := by
-                have := Nat.mod_lt (idx % capacity + capacity -
-                  idealIndex k capacity hCapPos) hCapPos; omega
-              have hRt : (idealIndex k capacity hCapPos + d) % capacity =
-                  idx % capacity := by
-                exact displacement_roundtrip (idx % capacity)
-                  (idealIndex k capacity hCapPos) capacity hCapPos
-                  (idealIndex_lt k capacity hCapPos) d
-                  (by rwa [Nat.mod_eq_of_lt hPos] at hD) hd_lt
-              rw [hRt] at hSlot'
-              have : e' = e := by
-                have := hSlot'.symm.trans hSlot; exact Option.some.inj this
-              subst this
-              exact hKeyNe
-          exact ih (idx % capacity + 1) (d + 1) hD' hNotFound' hNone
+            intro d' hd'_eq e' hSlot'
+            have hSlotE : slots[idx % capacity]'(by rw [hLen]; exact hPos) = some e' := by
+              simp only [hDispRt d' hd'_eq] at hSlot'; exact hSlot'
+            have : e' = e := Option.some.inj (hSlotE.symm.trans hSlot)
+            subst this; exact hKeyF
+          by_cases hSmall : d + 1 < capacity
+          · -- Recurse
+            have hD' : d + 1 = ((idx % capacity + 1) % capacity + capacity -
+                idealIndex k capacity hCapPos) % capacity := by
+              have hEd := hDist (idx % capacity) hPos e hSlot
+              have := dist_step_mod (idx % capacity) (idealIndex k capacity hCapPos)
+                capacity hCapPos hPos (idealIndex_lt k capacity hCapPos) d hD hSmall
+              omega
+            have hNotFound' : ∀ d', d' < d + 1 →
+                ∀ e', slots[(idealIndex k capacity hCapPos + d') % capacity]'(by
+                  rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' →
+                (e'.key == k) = false := by
+              intro d' hd' e' hSlot'
+              by_cases hd'_lt : d' < d
+              · exact hNotFound d' hd'_lt e' hSlot'
+              · exact hSlotD d' (by omega) e' hSlot'
+            exact ih (idx % capacity + 1) (d + 1) hD' hNotFound' (by omega) hNone
+          · -- d + 1 ≥ capacity: all positions covered directly
+            have hFullCov : ∀ d', d' < capacity →
+                ∀ e', slots[(idealIndex k capacity hCapPos + d') % capacity]'(by
+                  rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e' →
+                (e'.key == k) = false := by
+              intro d' hd' e' hSlot'
+              by_cases hd'_lt : d' < d
+              · exact hNotFound d' hd'_lt e' hSlot'
+              · exact hSlotD d' (by omega) e' hSlot'
+            intro j hj eJ hSlotJ
+            cases hContraJ : eJ.key == k with
+            | false => rfl
+            | true =>
+              exfalso
+              have hkj : eJ.key = k := eq_of_beq hContraJ
+              have hEdJ := hDist j hj eJ hSlotJ
+              rw [show idealIndex eJ.key capacity hCapPos =
+                  idealIndex k capacity hCapPos from by rw [hkj]] at hEdJ
+              have hed_lt : eJ.dist < capacity := by
+                have := Nat.mod_lt (j + capacity - idealIndex k capacity hCapPos) hCapPos; omega
+              have hRtJ : (idealIndex k capacity hCapPos + eJ.dist) % capacity = j := by
+                have := displacement_roundtrip j (idealIndex k capacity hCapPos) capacity hCapPos
+                  (idealIndex_lt k capacity hCapPos) eJ.dist
+                  (by rw [Nat.mod_eq_of_lt hj]; exact hEdJ) hed_lt
+                rwa [Nat.mod_eq_of_lt hj] at this
+              have hSlotAtIdeal : slots[(idealIndex k capacity hCapPos + eJ.dist) % capacity]'(by
+                  rw [hLen]; exact Nat.mod_lt _ hCapPos) = some eJ := by
+                simp only [hRtJ]; exact hSlotJ
+              have := hFullCov eJ.dist hed_lt eJ hSlotAtIdeal
+              simp [hContraJ] at this
 
 /-- backshiftLoop does not introduce new keys: if key `k` is absent from all
     slots before the loop, it remains absent afterward. -/
@@ -239,7 +237,7 @@ private theorem backshiftLoop_preserves_key_absence [BEq α]
           · simp at hA  -- nextI set to none
           · split at hA
             · -- gapIdx set to {nextE with dist := nextE.dist - 1}
-              have : ea = { nextE with dist := nextE.dist - 1 } := Option.some.inj hA
+              have : ea = { nextE with dist := nextE.dist - 1 } := Option.some.inj hA.symm
               rw [this]; simp only
               -- nextE.key was in the original table at (gapIdx+1) % cap
               exact hAbsent ((gapIdx + 1) % capacity) (Nat.mod_lt _ hCapPos) nextE hNext
@@ -253,17 +251,22 @@ private theorem erase_removes_key [BEq α] [Hashable α] [LawfulBEq α]
     ∀ j (hj : j < (t.erase k).capacity) (e : RHEntry α β),
       (t.erase k).slots[j]'(by rw [(t.erase k).hSlotsLen]; exact hj) = some e →
       (e.key == k) = false := by
-  simp only [RHTable.erase]
-  split
-  · -- Key not found: table unchanged. findLoop none → k absent via carried_key_absent.
-    rename_i hNone
+  unfold RHTable.erase
+  cases hFind : findLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos with
+  | none =>
+    -- Key not found: table unchanged. findLoop none → k absent via carried_key_absent.
+    simp only []
     exact findLoop_none_implies_absent t.capacity _ k 0 t.slots t.capacity
       t.hSlotsLen t.hCapPos hExt.2.1 hExt.2.2.2
       (by simp [idealIndex]; rw [Nat.mod_eq_of_lt (Nat.mod_lt _ t.hCapPos)])
       (by intro d' hd'; omega)
-      hNone
-  · -- Key found at idx: clear + backshift
-    rename_i idx hFound
+      (by omega)
+      hFind
+  | some idx =>
+    -- Key found at idx: clear + backshift
+    simp only []
+    have hFound := hFind
     intro j hj e hSlot
     have hIdxS : idx % t.capacity < t.slots.size := by
       rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos
@@ -314,7 +317,7 @@ private theorem displacement_roundtrip'
           Nat.add_mod_right]
       exact Nat.mod_eq_of_lt (by omega)
     rw [hval, show h + (p - h) = p from by omega, Nat.mod_eq_of_lt hp]
-  · push_neg at hge
+  · simp only [Nat.not_le] at hge
     have hval : (p + cap - h) % cap = p + cap - h :=
       Nat.mod_eq_of_lt (by omega)
     rw [hval, show h + (p + cap - h) = p + cap from by omega,
@@ -327,22 +330,27 @@ private theorem offset_injective'
     (hEq : (h + d1) % cap = (h + d2) % cap) :
     d1 = d2 := by
   have hm : h % cap < cap := Nat.mod_lt h _hCapPos
-  rw [Nat.add_mod, Nat.mod_eq_of_lt hd1, Nat.add_mod, Nat.mod_eq_of_lt hd2] at hEq
+  conv at hEq => lhs; rw [Nat.add_mod, Nat.mod_eq_of_lt hd1]
+  conv at hEq => rhs; rw [Nat.add_mod, Nat.mod_eq_of_lt hd2]
   by_cases h1 : h % cap + d1 < cap <;> by_cases h2 : h % cap + d2 < cap
   · rw [Nat.mod_eq_of_lt h1, Nat.mod_eq_of_lt h2] at hEq; omega
-  · push_neg at h2
+  · simp only [Nat.not_lt] at h2
+    have hb : h % cap + d2 - cap < cap := by omega
     rw [Nat.mod_eq_of_lt h1,
         show h % cap + d2 = (h % cap + d2 - cap) + cap from by omega,
-        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hEq; omega
-  · push_neg at h1
+        Nat.add_mod_right, Nat.mod_eq_of_lt hb] at hEq; omega
+  · simp only [Nat.not_lt] at h1
+    have hb : h % cap + d1 - cap < cap := by omega
     rw [Nat.mod_eq_of_lt h2,
         show h % cap + d1 = (h % cap + d1 - cap) + cap from by omega,
-        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hEq; omega
-  · push_neg at h1 h2
+        Nat.add_mod_right, Nat.mod_eq_of_lt hb] at hEq; omega
+  · simp only [Nat.not_lt] at h1 h2
+    have hb1 : h % cap + d1 - cap < cap := by omega
+    have hb2 : h % cap + d2 - cap < cap := by omega
     rw [show h % cap + d1 = (h % cap + d1 - cap) + cap from by omega,
-        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega),
+        Nat.add_mod_right, Nat.mod_eq_of_lt hb1,
         show h % cap + d2 = (h % cap + d2 - cap) + cap from by omega,
-        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hEq; omega
+        Nat.add_mod_right, Nat.mod_eq_of_lt hb2] at hEq; omega
 
 /-- Displacement step: `d + 1 = ((idx + 1) % cap + cap - h) % cap`
     given `d = (idx + cap - h) % cap`, `idx < cap`, `d + 1 < cap`. -/
@@ -364,22 +372,26 @@ private theorem disp_step'
     -- if (h + x) % cap = y % cap and x < cap, then x = (y%cap + cap - h) % cap.
     have hNxt := Nat.mod_lt (idx + 1) hCapPos
     by_cases hge : (idx + 1) % cap ≥ h
-    · rw [show (idx + 1) % cap + cap - h = ((idx + 1) % cap - h) + cap from by omega,
-          Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
-      -- (h + (d+1)) % cap = (idx+1) % cap  and  (idx+1)%cap ≥ h
+    · have hb1 : (idx + 1) % cap - h < cap := by omega
+      rw [show (idx + 1) % cap + cap - h = ((idx + 1) % cap - h) + cap from by omega,
+          Nat.add_mod_right, Nat.mod_eq_of_lt hb1]
       by_cases hlt : h + (d + 1) < cap
       · rw [Nat.mod_eq_of_lt hlt] at hGoal; omega
-      · push_neg at hlt
+      · simp only [Nat.not_lt] at hlt
+        have hb2 : h + (d + 1) - cap < cap := by omega
         rw [show h + (d + 1) = (h + (d + 1) - cap) + cap from by omega,
-            Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hGoal; omega
-    · push_neg at hge
-      rw [Nat.mod_eq_of_lt (by omega)]
+            Nat.add_mod_right, Nat.mod_eq_of_lt hb2] at hGoal; omega
+    · simp only [Nat.not_le] at hge
+      have hb1 : (idx + 1) % cap + cap - h < cap := by omega
+      rw [Nat.mod_eq_of_lt hb1]
       by_cases hlt : h + (d + 1) < cap
       · rw [Nat.mod_eq_of_lt hlt] at hGoal; omega
-      · push_neg at hlt
+      · simp only [Nat.not_lt] at hlt
+        have hb2 : h + (d + 1) - cap < cap := by omega
         rw [show h + (d + 1) = (h + (d + 1) - cap) + cap from by omega,
-            Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)] at hGoal; omega
-  rw [show h + (d + 1) = (h + d) + 1 from by omega, Nat.add_mod, hRound, ← Nat.add_mod]
+            Nat.add_mod_right, Nat.mod_eq_of_lt hb2] at hGoal; omega
+  conv => lhs; rw [show h + (d + 1) = (h + d) + 1 from by omega, Nat.add_mod, hRound]
+  conv => rhs; rw [Nat.add_mod, Nat.mod_eq_of_lt hIdx]
 
 /-- If a table satisfies `distCorrect`, `PCD`, and `noDupKeys`, and there exists
     a position `p` with `slots[p] = some e` where `e.key == k = true` and
@@ -407,11 +419,11 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
     (hDLe : d ≤ e.dist) :
     getLoop fuel idx k d slots capacity hLen hCapPos = some v := by
   induction fuel generalizing idx d with
-  | zero => omega
+  | zero => simp [getLoop] at hFuel hDLe ⊢ <;> omega
   | succ n ih =>
     unfold getLoop; simp only []
     have hIdxMod : idx % capacity < capacity := Nat.mod_lt _ hCapPos
-    have hIdxS : idx % capacity < slots.size := hLen ▸ hIdxMod
+    have hIdxS : idx % capacity < slots.size := by rw [hLen]; exact hIdxMod
     have hd_lt_cap : d < capacity := by
       have := Nat.mod_lt (idx % capacity + capacity -
         idealIndex k capacity hCapPos) hCapPos; omega
@@ -425,8 +437,7 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
     -- (ideal(k) + d) % cap = idx % cap
     have hRound : (idealIndex k capacity hCapPos + d) % capacity = idx % capacity :=
       displacement_roundtrip' (idx % capacity) (idealIndex k capacity hCapPos) capacity
-        hCapPos hIdxMod (idealIndex_lt k capacity hCapPos) d
-        (by rwa [Nat.mod_eq_of_lt hIdxMod] at hD) hd_lt_cap
+        hCapPos hIdxMod (idealIndex_lt k capacity hCapPos) d hD hd_lt_cap
     -- (ideal(k) + e.dist) % cap = p
     have hpRound : (idealIndex k capacity hCapPos + e.dist) % capacity = p :=
       displacement_roundtrip' p (idealIndex k capacity hCapPos) capacity
@@ -435,11 +446,7 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
     · -- At the target: idx % cap = p
       have hIdxP : idx % capacity = p := by rw [← hRound, hDeq, hpRound]
       have hSlotP' : slots[idx % capacity]'hIdxS = some e := by
-        have : (hLen ▸ hp : p < slots.size) = hIdxS := by
-          exact Nat.lt_irrefl _ |>.elim ∘ fun h => by exact absurd rfl h |>.elim
-            |> fun _ => rfl |>.elim |> fun _ => by
-          simp [hIdxP]
-        conv_rhs => rw [← hSlotP]; congr 1; exact hIdxP.symm
+        simp only [hIdxP]; exact hSlotP
       rw [hSlotP']; simp [hKey, hVal]
     · -- d < e.dist: not at target yet
       have hDLt : d < e.dist := by omega
@@ -448,12 +455,13 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
       rw [hKeyEq] at he'
       -- e' at (ideal(k) + d) % cap = idx % cap
       have he'Pos : slots[idx % capacity]'hIdxS = some e' := by
-        conv_rhs => rw [← he']; congr 1; exact hRound.symm
+        simp only [show idx % capacity = (idealIndex k capacity hCapPos + d) % capacity from
+          hRound.symm]; exact he'
       rw [he'Pos]
       -- e'.key ≠ k: if e'.key == k, noDupKeys gives (ideal(k)+d)%cap = p,
       -- then d = e.dist by offset_injective', contradicting d < e.dist.
       have hKeyNe : (e'.key == k) = false := by
-        by_contra hContra; push_neg at hContra; simp at hContra
+        by_contra hContra; simp only [Bool.not_eq_false] at hContra
         have := hNoDup (idx % capacity) p hIdxMod hp e' e he'Pos hSlotP
           (by rw [hContra]; exact hKey)
         -- idx % cap = p → (ideal(k)+d)%cap = p = (ideal(k)+e.dist)%cap
@@ -469,7 +477,7 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
           idealIndex k capacity hCapPos) % capacity :=
         disp_step' (idx % capacity) (idealIndex k capacity hCapPos) capacity
           hCapPos hIdxMod (idealIndex_lt k capacity hCapPos) d
-          (by rwa [Nat.mod_eq_of_lt hIdxMod] at hD) (by omega)
+          hD (by omega)
       exact ih (idx % capacity + 1) (d + 1) hD' (by omega) (by omega)
 
 /-- `insertLoop` never modifies slots unreachable within its fuel window.
@@ -529,7 +537,7 @@ private theorem insertLoop_places_key [BEq α] [Hashable α]
       (slots[(idx + s) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none
        ∨ ∃ e, slots[(idx + s) % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = some e
              ∧ (e.key == k) = true)) :
-    ∃ p (hp : p < capacity),
+    ∃ p, ∃ hp : p < capacity,
       ∃ e : RHEntry α β,
         (insertLoop fuel idx k v d slots capacity hLen hCapPos).1[p]'(by
           rw [insertLoop_preserves_len, hLen]; exact hp) = some e
@@ -565,10 +573,11 @@ private theorem insertLoop_places_key [BEq α] [Hashable α]
                   Nat.add_mod, Nat.mod_eq_of_lt hIdxCap, Nat.mod_eq_of_lt h1s] at this
               by_cases hlt : idx % capacity + (1 + s) < capacity
               · rw [Nat.mod_eq_of_lt hlt] at this; omega
-              · push_neg at hlt
+              · simp only [Nat.not_lt] at hlt
+                have hb : idx % capacity + (1 + s) - capacity < capacity := by omega
                 rw [show idx % capacity + (1 + s) = (idx % capacity + (1 + s) - capacity) +
                   capacity from by omega, Nat.add_mod_right,
-                  Nat.mod_eq_of_lt (by omega)] at this; omega)
+                  Nat.mod_eq_of_lt hb] at this; omega)
         have hSlotKV : (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[idx % capacity]'(by
             rw [Array.size_set]; exact hIdx) = some ⟨k, v, d⟩ := by
           simp [Array.getElem_set]
@@ -620,8 +629,8 @@ private theorem exists_empty_slot
     (slots : Array (Option (RHEntry α β))) (cap : Nat)
     (hLen : slots.size = cap) (_hCapPos : 0 < cap)
     (hLt : countOccupied slots < cap) :
-    ∃ j (hj : j < cap), slots[j]'(hLen ▸ hj) = none := by
-  by_contra hAll; push_neg at hAll
+    ∃ j, ∃ hj : j < cap, slots[j]'(hLen ▸ hj) = none := by
+  by_contra hAll; simp only [not_exists] at hAll
   -- Every slot is some
   have hOcc : ∀ j (hj : j < cap), (slots[j]'(hLen ▸ hj)).isSome = true := by
     intro j hj
@@ -651,25 +660,29 @@ private theorem position_reachable
   refine ⟨(j + cap - idx % cap) % cap, Nat.mod_lt _ hCapPos, ?_⟩
   have hm := Nat.mod_lt idx hCapPos
   by_cases hge : j ≥ idx % cap
-  · rw [show j + cap - idx % cap = (j - idx % cap) + cap from by omega,
-        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
-    rw [Nat.add_mod, Nat.mod_eq_of_lt hm, Nat.mod_eq_of_lt (by omega)]
+  · have hb1 : j - idx % cap < cap := by omega
+    have hb2 : idx % cap + (j - idx % cap) < cap := by omega
+    rw [show j + cap - idx % cap = (j - idx % cap) + cap from by omega,
+        Nat.add_mod_right, Nat.mod_eq_of_lt hb1]
+    rw [Nat.add_mod, Nat.mod_eq_of_lt hm, Nat.mod_eq_of_lt hb2]
     rw [show idx % cap + (j - idx % cap) = j from by omega, Nat.mod_eq_of_lt hj]
-  · push_neg at hge
-    rw [Nat.mod_eq_of_lt (by omega)]
+  · simp only [Nat.not_le] at hge
+    have hb1 : j + cap - idx % cap < cap := by omega
+    rw [Nat.mod_eq_of_lt hb1]
     rw [Nat.add_mod, Nat.mod_eq_of_lt hm]
     by_cases hlt : idx % cap + (j + cap - idx % cap) < cap
-    · omega  -- impossible since j + cap - idx%cap ≥ cap - idx%cap and idx%cap < cap
-    · push_neg at hlt
+    · omega
+    · simp only [Nat.not_lt] at hlt
+      have hb2 : idx % cap + (j + cap - idx % cap) - cap < cap := by omega
       rw [show idx % cap + (j + cap - idx % cap) =
         (idx % cap + (j + cap - idx % cap) - cap) + cap from by omega,
-        Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+        Nat.add_mod_right, Nat.mod_eq_of_lt hb2]
       omega
 
 /-- After `insert k v`, the result table contains key k with value v. -/
 private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
-    ∃ p (hp : p < (t.insert k v).capacity),
+    ∃ p, ∃ hp : p < (t.insert k v).capacity,
       ∃ e : RHEntry α β,
         (t.insert k v).slots[p]'((t.insert k v).hSlotsLen ▸ hp) = some e
         ∧ (e.key == k) = true ∧ e.value = v := by
@@ -679,9 +692,10 @@ private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
   split
   · -- Resize case: t' = t.resize
     rename_i hResize
-    set t' := t.resize with ht'_def
+    let t' := t.resize
+    have ht'_def : t' = t.resize := rfl
     -- t'.invExt holds
-    have hExt' := t.resize_preserves_invExt (hExt := hExt)
+    have hExt' := t.resize_preserves_invExt
     rw [← ht'_def] at hExt'
     -- t' has size ≤ old capacity < 2 * old capacity = t'.capacity
     have hSizeLt : t'.size < t'.capacity := by
@@ -725,7 +739,7 @@ private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
     exact ⟨p, hp, e, hSlotP, hKeyE, hValE⟩
   · -- No resize case: t' = t
     rename_i hNoResize
-    push_neg at hNoResize
+    simp only [Nat.not_le] at hNoResize
     -- t.size * 4 < t.capacity * 3, so t.size < t.capacity
     have hSizeLt : t.size < t.capacity := by
       have := hExt.1.sizeBound; omega
@@ -854,13 +868,13 @@ private theorem getLoop_some_implies_entry [BEq α] [Hashable α]
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
     (val : β)
     (hGet : getLoop fuel idx k d slots capacity hLen hCapPos = some val) :
-    ∃ p (hp : p < capacity) (e : RHEntry α β),
+    ∃ p, ∃ hp : p < capacity, ∃ e : RHEntry α β,
       slots[p]'(hLen ▸ hp) = some e ∧ (e.key == k) = true ∧ e.value = val := by
   induction fuel generalizing idx d with
   | zero => simp [getLoop] at hGet
   | succ n ih =>
     unfold getLoop at hGet; simp only [] at hGet
-    have hIdx : idx % capacity < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
+    have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
     split at hGet
     · simp at hGet
     · rename_i e hSlot
@@ -886,7 +900,7 @@ private theorem resize_preserves_key_absence [BEq α] [Hashable α] [LawfulBEq �
   exact Array.foldl_induction
     (motive := fun _ (acc : RHTable α β) =>
       ∀ j (hj : j < acc.capacity) (e : RHEntry α β),
-        acc.slots[j]'(acc.hSlotsLen ▸ hj) = some e → (e.key == k') = false)
+        acc.slots[j]'(by rw [acc.hSlotsLen]; exact hj) = some e → (e.key == k') = false)
     (by intro j hj e hSlot; simp [RHTable.empty] at hSlot)
     (fun i acc hAcc => by
       cases hSlotI : t.slots[i] with
@@ -895,11 +909,11 @@ private theorem resize_preserves_key_absence [BEq α] [Hashable α] [LawfulBEq �
         have hi : (i : Nat) < t.capacity := by rw [← t.hSlotsLen]; exact i.isLt
         have hOrigAbs : ¬(eOrig.key == k') = true := by
           have := hAbsent i hi eOrig (by
-            show t.slots[(i : Nat)]'(t.hSlotsLen ▸ hi) = some eOrig
+            show t.slots[(i : Nat)]'(by rw [t.hSlotsLen]; exact hi) = some eOrig
             exact hSlotI)
           simp [this]
-        show ∀ j hj e, (acc.insertNoResize eOrig.key eOrig.value).slots[j]'(
-          (acc.insertNoResize eOrig.key eOrig.value).hSlotsLen ▸ hj) = some e →
+        show ∀ j hj e, (acc.insertNoResize eOrig.key eOrig.value).slots[j]'(by
+          rw [(acc.insertNoResize eOrig.key eOrig.value).hSlotsLen]; exact hj) = some e →
           (e.key == k') = false
         intro j hj e hSlot
         unfold RHTable.insertNoResize at hSlot hj; simp only [] at hSlot hj
@@ -917,13 +931,13 @@ private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
       (insertLoop fuel idx kIns vIns d slots capacity hLen hCapPos).1[j]'(by
         rw [insertLoop_preserves_len, hLen]; exact hj) = some e →
       ((e.key == kIns) = true ∧ e.value = vIns) ∨
-      (∃ q (hq : q < capacity), slots[q]'(hLen ▸ hq) = some e) := by
+      (∃ q, ∃ hq : q < capacity, slots[q]'(hLen ▸ hq) = some e) := by
   induction fuel generalizing idx kIns vIns d slots hLen with
   | zero =>
     intro j hj e hSlot; simp [insertLoop] at hSlot
     exact Or.inr ⟨j, hj, hSlot⟩
   | succ n ih =>
-    have hIdx : idx % capacity < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
+    have hIdx : idx % capacity < slots.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
     intro j hj e hSlotR
     unfold insertLoop at hSlotR; simp only [] at hSlotR
     cases hSlot : slots[idx % capacity]'hIdx with
@@ -948,13 +962,13 @@ private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
         have hLen' : (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx).size
             = capacity := by rw [Array.size_set]; exact hLen
         have hIH := ih (idx % capacity + 1) eOld.key eOld.value (eOld.dist + 1)
-          (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx) capacity hLen' hCapPos
+          (slots.set (idx % capacity) (some ⟨kIns, vIns, d⟩) hIdx) hLen' hCapPos
           j hj e hSlotR
         rcases hIH with ⟨hKeyE, hValE⟩ | ⟨q, hq, hSlotQ⟩
         · -- Entry has key == eOld.key and value == eOld.value.
           -- eOld was in original slots at idx%cap.
           exact Or.inr ⟨idx % capacity, Nat.mod_lt _ hCapPos, by
-            rw [hValE]; show slots[idx % capacity]'(hLen ▸ Nat.mod_lt _ hCapPos) =
+            rw [hValE]; show slots[idx % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) =
               some { eOld with value := eOld.value }
             simp; exact hSlot⟩
         · -- Entry from slots' (set array). Check if q = idx%cap.
@@ -966,7 +980,7 @@ private theorem insertLoop_output_source [BEq α] [Hashable α] [LawfulBEq α]
             exact Or.inr ⟨q, hq, hSlotQ⟩
       else
         simp only [hKey, ite_false, hRH, ite_false] at hSlotR
-        exact ih (idx % capacity + 1) kIns vIns (d + 1) slots hLen hCapPos j hj e hSlotR
+        exact ih (idx % capacity + 1) kIns vIns (d + 1) slots hLen j hj e hSlotR
 
 /-- N2-E2: Inserting key `k` does not affect lookups of other keys.
     This ensures insert doesn't corrupt existing mappings.
@@ -1011,7 +1025,7 @@ theorem RHTable.get_after_insert_ne [BEq α] [Hashable α] [LawfulBEq α]
           hExt.2.1 hExt.2.2.2 hExt.2.2.1
           (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
           (by omega) (by omega)
-        unfold RHTable.get? at hGet; rw [hFound] at hGet; exact Option.noConfusion hGet
+        unfold RHTable.get? at hGet; rw [hFound] at hGet; simp at hGet
     -- k' absent from (t.insert k v).slots via insertLoop_absent_ne_key
     have hAbsIns : ∀ j (hj : j < (t.insert k v).capacity) (e : RHEntry α β),
         (t.insert k v).slots[j]'((t.insert k v).hSlotsLen ▸ hj) = some e →
@@ -1038,16 +1052,16 @@ theorem RHTable.get_after_insert_ne [BEq α] [Hashable α] [LawfulBEq α]
       getLoop_some_implies_entry t.capacity _ k' 0 t.slots t.capacity t.hSlotsLen t.hCapPos val
         (by unfold RHTable.get? at hGet; exact hGet)
     -- Step 2: k' exists in result (by insertLoop_absent_ne_key contrapositive)
-    have hPresent : ∃ p' (hp' : p' < (t.insert k v).capacity) (e' : RHEntry α β),
+    have hPresent : ∃ p', ∃ hp' : p' < (t.insert k v).capacity, ∃ e' : RHEntry α β,
         (t.insert k v).slots[p']'((t.insert k v).hSlotsLen ▸ hp') = some e' ∧
         (e'.key == k') = true := by
-      by_contra hAll; push_neg at hAll
+      by_contra hAll; simp only [not_exists, not_and] at hAll
       -- k' would be absent from result → get? k' = none → contradicts hGet
       have hAbs : ∀ j (hj : j < (t.insert k v).capacity) (e : RHEntry α β),
           (t.insert k v).slots[j]'((t.insert k v).hSlotsLen ▸ hj) = some e →
           (e.key == k') = false := by
         intro j hj e hSlot
-        by_contra hNF; push_neg at hNF; simp at hNF
+        by_contra hNF; simp only [Bool.not_eq_false] at hNF
         exact hAll j hj e hSlot hNF
       have hNone : (t.insert k v).get? k' = none := by
         unfold RHTable.get?; exact getLoop_none_of_absent _ _ _ _ _ _ _ _ hAbs
@@ -1209,7 +1223,7 @@ private theorem backshiftLoop_output_has_input_key_value [BEq α]
     ∀ q (hq : q < capacity) (e' : RHEntry α β),
       (backshiftLoop fuel gapIdx slots capacity hLen hCapPos)[q]'(by
         rw [backshiftLoop_preserves_len, hLen]; exact hq) = some e' →
-      ∃ p (hp : p < capacity) (e : RHEntry α β),
+      ∃ p, ∃ hp : p < capacity, ∃ e : RHEntry α β,
         slots[p]'(hLen ▸ hp) = some e ∧ e.key = e'.key ∧ e.value = e'.value := by
   induction fuel generalizing gapIdx slots hLen with
   | zero => simp [backshiftLoop]; intro q hq e' hSlot; exact ⟨q, hq, e', hSlot, rfl, rfl⟩
@@ -1256,10 +1270,10 @@ private theorem backshiftLoop_preserves_entry_presence [BEq α]
     (fuel gapIdx : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
-    (hGapNone : slots[gapIdx % capacity]'(hLen ▸ Nat.mod_lt _ hCapPos) = none)
+    (hGapNone : slots[gapIdx % capacity]'(by rw [hLen]; exact Nat.mod_lt _ hCapPos) = none)
     (p : Nat) (hp : p < capacity) (e : RHEntry α β)
     (hSlotP : slots[p]'(hLen ▸ hp) = some e) :
-    ∃ q (hq : q < capacity) (e' : RHEntry α β),
+    ∃ q, ∃ hq : q < capacity, ∃ e' : RHEntry α β,
       (backshiftLoop fuel gapIdx slots capacity hLen hCapPos)[q]'(by
         rw [backshiftLoop_preserves_len, hLen]; exact hq) = some e' ∧
       e'.key = e.key ∧ e'.value = e.value := by
@@ -1340,13 +1354,16 @@ private theorem erase_preserves_ne_entry [BEq α] [Hashable α] [LawfulBEq α]
     (p : Nat) (hp : p < t.capacity) (e : RHEntry α β)
     (hSlotP : t.slots[p]'(t.hSlotsLen ▸ hp) = some e)
     (hKey : (e.key == k') = true) :
-    ∃ q (hq : q < (t.erase k).capacity) (e' : RHEntry α β),
+    ∃ q, ∃ hq : q < (t.erase k).capacity, ∃ e' : RHEntry α β,
       (t.erase k).slots[q]'((t.erase k).hSlotsLen ▸ hq) = some e' ∧
       (e'.key == k') = true ∧ e'.value = e.value := by
-  simp only [RHTable.erase]
-  split
-  · exact ⟨p, hp, e, hSlotP, hKey, rfl⟩
-  · rename_i idx hFound
+  unfold RHTable.erase
+  cases hFind : findLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos with
+  | none => simp only []; exact ⟨p, hp, e, hSlotP, hKey, rfl⟩
+  | some idx =>
+    simp only []
+    have hFound := hFind
     have hIdxS : idx % t.capacity < t.slots.size := by
       rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos
     have hLen' : (t.slots.set (idx % t.capacity) none hIdxS).size = t.capacity := by
@@ -1376,7 +1393,7 @@ theorem RHTable.get_after_erase_ne [BEq α] [Hashable α] [LawfulBEq α]
     (hExt : t.invExt) (hSize : t.size < t.capacity) :
     (t.erase k).get? k' = t.get? k' := by
   have hEraseExt := t.erase_preserves_invExt k hExt hSize
-  have hNe' : ¬(k' == k) = true := fun h => hNe (BEq.comm k' k ▸ h)
+  have hNe' : ¬(k' == k) = true := fun h => hNe (by rw [BEq.comm]; exact h)
   cases hGet : t.get? k' with
   | none =>
     have hAbsOrig : ∀ j (hj : j < t.capacity) (e : RHEntry α β),
@@ -1398,13 +1415,13 @@ theorem RHTable.get_after_erase_ne [BEq α] [Hashable α] [LawfulBEq α]
           t.hSlotsLen t.hCapPos j hj e hSlot hKE rfl
           hExt.2.1 hExt.2.2.2 hExt.2.2.1
           (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)]) (by omega) (by omega)
-        rw [hFound] at hGet; simp at hGet
+        unfold RHTable.get? at hGet; rw [hFound] at hGet; simp at hGet
     have hAbsErased : ∀ j (hj : j < (t.erase k).capacity) (e : RHEntry α β),
         (t.erase k).slots[j]'((t.erase k).hSlotsLen ▸ hj) = some e →
         (e.key == k') = false := by
       intro j hj e hSlot
       simp only [RHTable.erase] at hSlot hj
-      split at hSlot hj
+      split at hSlot
       · exact hAbsOrig j hj e hSlot
       · rename_i idx hFound
         have hIdxS : idx % t.capacity < t.slots.size := by
