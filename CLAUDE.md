@@ -35,6 +35,38 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
 
+## Module build verification (mandatory)
+
+**Before committing any `.lean` file**, you MUST verify that the specific
+module compiles:
+
+```bash
+source ~/.elan/env && lake build <Module.Path>
+```
+
+For example, if you modified `SeLe4n/Kernel/RobinHood/Bridge.lean`:
+```bash
+lake build SeLe4n.Kernel.RobinHood.Bridge
+```
+
+**`lake build` (default target) is NOT sufficient.** The default target only
+builds modules reachable from `Main.lean` and test executables. Modules that
+are not yet imported by the main kernel (e.g., `RobinHood` before N4
+integration) will silently pass `lake build` even with broken proofs.
+
+A pre-commit hook enforces this automatically. Install it:
+```bash
+cp scripts/pre-commit-lean-build.sh .git/hooks/pre-commit
+```
+
+The hook:
+1. Detects staged `.lean` files
+2. Builds each modified module via `lake build <Module.Path>`
+3. Checks for `sorry` in staged content
+4. **Blocks the commit** if any build fails or sorry is found
+
+Do NOT bypass the hook with `--no-verify`.
+
 ## Source layout
 
 ```
