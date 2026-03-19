@@ -1125,7 +1125,7 @@ private theorem backshiftLoop_preserves_entry_presence [BEq α]
       (backshiftLoop fuel gapIdx slots capacity hLen hCapPos)[q]'(by
         rw [backshiftLoop_preserves_len, hLen]; exact hq) = some e' ∧
       e'.key = e.key ∧ e'.value = e.value := by
-  sorry -- TODO: backshiftLoop_preserves_entry_presence — rw motive on dependent arrays
+  sorry -- TODO: backshiftLoop_preserves_entry_presence — fuel induction with dependent array sets
 /-- N3-B4 helper: Erasing key `k` preserves entries with different keys. -/
 private theorem erase_preserves_ne_entry [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k k' : α) (hNe : ¬(k' == k) = true)
