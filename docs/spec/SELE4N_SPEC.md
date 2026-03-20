@@ -51,7 +51,7 @@ enforcement, and scheduling.
 | **Package version** | `0.17.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 46,637 across 78 Lean files |
-| **Test LoC** | 5,556 across 5 Lean test suites |
+| **Test LoC** | 5,560 across 5 Lean test suites |
 | **Proved declarations** | 1,421 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |

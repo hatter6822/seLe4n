@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-test-coverage-docs-MZRdt",
-      "commit_sha": "61d9521b7862591640dd6186d4cfb7535f119928",
-      "tree_sha": "108d32c74f7fad4edf6a1fd30f32a983759e49f6",
-      "committed_at_utc": "2026-03-20T04:26:58+00:00"
+      "commit_sha": "21dbf6edbf70f1d1107e7e294f4c877f83791aec",
+      "tree_sha": "236bc2e25f7b34aeb3c7d89dadb4041e7f5b7f0d",
+      "committed_at_utc": "2026-03-20T04:54:06+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f0c51789f246e0aa506e344e4e735db6b1e99f4946cb163475d463807f2d0d9e"
+    "source_digest": "aaddf7a7f35e197a185bddfbd2dc2ac44e1404e0e1ca6f27a1e204204be1332d"
   },
   "summary": {
     "module_count": 83,
@@ -29,7 +29,7 @@
     "production_files": 78,
     "production_loc": 46637,
     "test_files": 5,
-    "test_loc": 5561,
+    "test_loc": 5560,
     "proved_theorem_lemma_decls": 1421,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -20691,19 +20691,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.RobinHoodSuite",
-          "line": 15,
+          "line": 14,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 17,
+          "line": 16,
           "called": []
         },
         {
           "kind": "def",
           "name": "rh001_emptyTable",
-          "line": 28,
+          "line": 27,
           "called": [
             "expect"
           ]
@@ -20711,7 +20711,7 @@
         {
           "kind": "def",
           "name": "rh002_singleInsertGet",
-          "line": 35,
+          "line": 34,
           "called": [
             "expect"
           ]
@@ -20719,7 +20719,7 @@
         {
           "kind": "def",
           "name": "rh003_insertErase",
-          "line": 42,
+          "line": 41,
           "called": [
             "expect"
           ]
@@ -20727,7 +20727,7 @@
         {
           "kind": "def",
           "name": "rh004_overwrite",
-          "line": 49,
+          "line": 48,
           "called": [
             "expect"
           ]
@@ -20735,7 +20735,7 @@
         {
           "kind": "def",
           "name": "rh005_multipleKeys",
-          "line": 55,
+          "line": 54,
           "called": [
             "expect"
           ]
@@ -20743,7 +20743,7 @@
         {
           "kind": "def",
           "name": "rh006_collisionHandling",
-          "line": 66,
+          "line": 65,
           "called": [
             "expect"
           ]
@@ -20751,7 +20751,7 @@
         {
           "kind": "def",
           "name": "rh007_robinHoodSwap",
-          "line": 81,
+          "line": 80,
           "called": [
             "expect"
           ]
@@ -20759,7 +20759,7 @@
         {
           "kind": "def",
           "name": "rh008_backwardShift",
-          "line": 96,
+          "line": 95,
           "called": [
             "expect"
           ]
@@ -20767,7 +20767,7 @@
         {
           "kind": "def",
           "name": "rh009_resizeTrigger",
-          "line": 112,
+          "line": 111,
           "called": [
             "expect"
           ]
@@ -20775,7 +20775,7 @@
         {
           "kind": "def",
           "name": "rh010_postResizeCorrectness",
-          "line": 125,
+          "line": 124,
           "called": [
             "expect"
           ]
@@ -20783,7 +20783,7 @@
         {
           "kind": "def",
           "name": "rh011_largeScale",
-          "line": 138,
+          "line": 137,
           "called": [
             "expect"
           ]
@@ -20791,7 +20791,7 @@
         {
           "kind": "def",
           "name": "rh012_foldToList",
-          "line": 164,
+          "line": 163,
           "called": [
             "expect"
           ]
@@ -20799,7 +20799,7 @@
         {
           "kind": "def",
           "name": "rhInt001_cnodeLookupInsertRemove",
-          "line": 187,
+          "line": 186,
           "called": [
             "expect"
           ]
@@ -20807,7 +20807,7 @@
         {
           "kind": "def",
           "name": "rhInt002_revokeTargetLocal",
-          "line": 204,
+          "line": 203,
           "called": [
             "expect"
           ]
@@ -20815,7 +20815,7 @@
         {
           "kind": "def",
           "name": "rhInt003_findFirstEmptySlot",
-          "line": 219,
+          "line": 218,
           "called": [
             "expect"
           ]
@@ -20823,7 +20823,7 @@
         {
           "kind": "def",
           "name": "rhInt004_slotCountBounded",
-          "line": 235,
+          "line": 234,
           "called": [
             "expect"
           ]
@@ -20831,7 +20831,7 @@
         {
           "kind": "def",
           "name": "rhInt005_cspaceResolution",
-          "line": 248,
+          "line": 247,
           "called": [
             "expect"
           ]
@@ -20839,7 +20839,7 @@
         {
           "kind": "def",
           "name": "rhInt006_cnodeBEq",
-          "line": 265,
+          "line": 264,
           "called": [
             "expect"
           ]
@@ -20847,7 +20847,7 @@
         {
           "kind": "def",
           "name": "runRobinHoodSuite",
-          "line": 275,
+          "line": 274,
           "called": [
             "rh001_emptyTable",
             "rh002_singleInsertGet",
@@ -20872,7 +20872,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 304,
+          "line": 303,
           "called": []
         }
       ]

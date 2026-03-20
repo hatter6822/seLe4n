@@ -60,7 +60,7 @@ architectural improvements compared to other microkernels:
 | **Version** | `0.17.5` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 46,637 across 78 files |
-| **Test Lean LoC** | 5,561 across 5 test suites |
+| **Test Lean LoC** | 5,560 across 5 test suites |
 | **Proved declarations** | 1,421 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |

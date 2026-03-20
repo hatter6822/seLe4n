@@ -296,7 +296,21 @@ seLe4n defines coverage as **obligation coverage**: every transition, error path
 
 Tier 3 is the key innovation: it checks that named theorems and definitions still exist after refactors. If you rename `chooseThread_preserves_schedulerInvariantBundle`, Tier 3 fails.
 
-## 10. Related chapters
+## 10. Robin Hood hashing design (WS-N)
+
+seLe4n's capability node (`CNode`) slots are backed by a formally verified Robin Hood hash table (`RHTable`), replacing the stdlib `Std.HashMap` used before v0.17.0. The design has four pillars:
+
+**Single-representation architecture.** The table is a single `Array (Option (RHEntry α β))` — one flat array with optional entries. Each `RHEntry` stores `key`, `value`, and `dist` (probe distance from ideal slot). There are no separate bucket lists, overflow chains, or pointer structures. This makes the table's memory layout fully transparent to Lean's type-checker and eliminates aliasing concerns.
+
+**Fuel-bounded recursion.** Every loop (`insertLoop`, `getLoop`, `findLoop`, `backshiftLoop`, `resizeLoop`) takes an explicit `fuel : Nat` parameter that decrements on each recursive call. When fuel reaches zero the function terminates with a safe default. This avoids the `partial` keyword entirely — all functions are total, which is required for use in theorem statements. The initial fuel is set to `capacity`, which is always sufficient for a well-formed table.
+
+**Cluster ordering (probe-chain dominance).** The Robin Hood invariant says: for any occupied slot at index `i` with probe distance `d`, the entry at `i-1` (if occupied) must have probe distance `≥ d-1`. This is captured by the `probeChainDominant` predicate in `Invariant/Defs.lean`. During insert, if a new entry's probe distance exceeds the resident entry's distance, they are swapped — this is the "Robin Hood" displacement that gives the algorithm its name. The result is bounded worst-case probe lengths and more uniform access times than standard linear probing.
+
+**Bounds-checked array access.** All array operations go through `getElem` with proof-carrying indices (`h : i < arr.size`). Out-of-bounds access is statically impossible. The `distCorrect` invariant ensures every entry's recorded `dist` field matches its actual displacement from the ideal slot, and `noDupKeys` ensures no two entries share the same key.
+
+The invariant bundle (`invExt`) composes four properties: `WF` (well-formedness: capacity > 0, array size = capacity), `distCorrect`, `noDupKeys`, and `probeChainDominant`. Every mutating operation (`insert`, `erase`, `resize`) preserves `invExt`, and functional correctness theorems (`get_after_insert`, `get_after_erase`, `absent_after_erase`) build on it. The bridge layer (`Bridge.lean`) provides `BEq`, `Inhabited`, `Hashable` instances and adapter lemmas for use in kernel CNode operations.
+
+## 11. Related chapters
 
 - [Architecture & Module Map](03-architecture-and-module-map.md) — module responsibilities and dependency flow
 - [Kernel Performance Optimization](08-kernel-performance-optimization.md) — WS-G technical breakdown

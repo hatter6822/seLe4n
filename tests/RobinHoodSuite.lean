@@ -7,7 +7,6 @@
 -/
 
 import SeLe4n
-import SeLe4n.Testing.StateBuilder
 
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Model
