@@ -1434,8 +1434,8 @@ See [workstream plan](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WO
 The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 
 **Layer-2 round-trip proofs** (SyscallArgDecode.lean, K-F):
-- `encodeCSpaceMintArgs`/`decodeCSpaceMintArgs` round-trip (and 6 analogous pairs)
-- `decode_layer2_roundtrip_all` — composed conjunction of all 7 round-trips
+- `encodeCSpaceMintArgs`/`decodeCSpaceMintArgs` round-trip (and 9 analogous pairs, WS-Q1: +`ServiceRegisterArgs`, `ServiceRevokeArgs`, `ServiceQueryArgs`)
+- `decode_layer2_roundtrip_all` — composed conjunction of all 10 round-trips
 
 **Layer-1 extraction round-trip** (RegisterDecode.lean, K-F):
 - `extractMessageRegisters_roundtrip` — closes layer-1 extraction gap
@@ -1456,7 +1456,7 @@ The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 - `syscallNI_coverage_witness` — exhaustive 34-constructor match
 
 **Error-exclusivity theorems** (SyscallArgDecode.lean, K-B):
-- 7 theorems: `decodeCSpaceMintArgs_error_iff` through `decodeVSpaceUnmapArgs_error_iff`
+- 10 theorems: `decodeCSpaceMintArgs_error_iff` through `decodeServiceQueryArgs_error_iff` (WS-Q1: +3 service decode structures)
 
 **Type tag and permissions** (Lifecycle/Operations.lean, Structures.lean, K-D):
 - `objectOfTypeTag_type`, `objectOfTypeTag_error_iff`, `objectOfTypeTag_deterministic`

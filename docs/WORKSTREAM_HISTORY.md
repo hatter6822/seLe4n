@@ -30,6 +30,10 @@ state. Key changes:
 - **Simplified**: `ServiceGraphEntry.status` field removed; `SyscallId`
   renumbered (14 valid IDs, 0..13); `projectServicePresence` replaces
   `projectServiceStatus` (returns `Bool` instead of `Option ServiceStatus`)
+- **Added (WS-Q1)**: `registerServiceChecked` policy-gated enforcement wrapper,
+  `ServiceRegisterArgs`/`ServiceRevokeArgs`/`ServiceQueryArgs` decode structures
+  in `SyscallArgDecode.lean`, `dispatchWithCap` service syscalls use decoded MR
+  arguments, SRG-001 through SRG-010 test scenarios
 - **Preserved**: `serviceRegisterDependency`, `serviceHasPathTo`,
   `hasIsolationEdge`, `lookupService`, `storeServiceEntry` — all graph
   invariants and acyclicity proofs intact
