@@ -83,10 +83,12 @@ operations (`registerIrq`, `registerService`, `addServiceGraph`,
 proved declarations, all tests pass.
 **WS-Q4** (v0.17.10) — CNode radix tree (verified) — **COMPLETED**:
 `CNodeRadix` flat radix array for CNode capability slots with O(1) zero-hash
-lookup via `extractBits` + direct array indexing. 12+ correctness proofs
-(lookup roundtrip, WF preservation, parameter invariance). `buildCNodeRadix`
-equivalence bridge (RHTable → CNodeRadix). Zero sorry/axiom, 1,508 proved
-declarations, all tests pass.
+lookup via `extractBits` + direct array indexing. 24 correctness proofs
+(lookup roundtrip, WF preservation, parameter invariance, size bounds,
+toList completeness/noDup, fold coverage). `buildCNodeRadix` equivalence
+bridge (RHTable → CNodeRadix), `freezeCNodeSlots` Q5 integration, 12-scenario
+test suite (43 checks). Zero admitted proofs, 1,527 proved declarations,
+all tests pass.
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully

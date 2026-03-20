@@ -57,11 +57,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.17.9` |
+| **Version** | `0.17.10` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 50,017 across 90 files |
-| **Test Lean LoC** | 5,513 across 5 test suites |
-| **Proved declarations** | 1,508 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 50,360 across 90 files |
+| **Test Lean LoC** | 5,710 across 6 test suites |
+| **Proved declarations** | 1,527 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -210,13 +210,17 @@ SeLe4n/Kernel/RobinHood/*       Robin Hood hash table verified implementation
     Invariant/Defs.lean          Invariant definitions (distCorrect, noDupKeys, probeChainDominant)
     Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops)
     Invariant/Lookup.lean        Functional correctness (get after insert/erase), key absence
+SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
+  Core.lean                      Types, operations (O(1) lookup/insert/erase via bit extraction)
+  Invariant.lean                 24 correctness proofs (lookup, WF, size, toList, fold)
+  Bridge.lean                    RHTable→CNodeRadix conversion, freeze integration
 SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
 SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)
 SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform stubs (BCM2712)
 SeLe4n/Testing/*                 Test harness, state builder, fixtures
 Main.lean                        Executable entry point
-tests/                           Negative-state suite, information-flow suite, trace probe
+tests/                           Negative-state, information-flow, trace probe, radix tree suites
 ```
 
 ### Comparison with seL4

@@ -140,19 +140,27 @@ frozen-phase CNode representation in Q5. Key changes:
   `lookup` (O(1) zero-hash via `extractBits` + direct array index), `insert` (O(1)
   array set), `erase` (O(1) set to `none`), `fold` (O(2^radixWidth) traversal),
   `toList`, `size`, `fanout`.
-- **Q4-C**: 12+ correctness proofs in `SeLe4n/Kernel/RadixTree/Invariant.lean` —
-  `lookup_empty`, `lookup_insert_self`, `lookup_insert_ne`, `lookup_erase_self`,
-  `lookup_erase_ne`, `insert_idempotent`, `insert_erase_cancel`, WF preservation
-  (`empty_wf`, `insert_wf`, `erase_wf`), parameter preservation (6 theorems for
-  guard/radix width invariance), `size_empty`, `fanout_eq_slots_size`.
+- **Q4-C**: 24 correctness proofs in `SeLe4n/Kernel/RadixTree/Invariant.lean` —
+  lookup roundtrips (`lookup_empty`, `lookup_insert_self`, `lookup_insert_ne`,
+  `lookup_erase_self`, `lookup_erase_ne`, `insert_idempotent`), WF preservation
+  (`wf_of_mk`, `empty_wf`, `insert_wf`, `erase_wf`), `insert_erase_cancel`,
+  parameter preservation (6 theorems for guard/radix width invariance across
+  insert/erase), size bounds (`size_empty`, `fanout_eq_slots_size`,
+  `size_insert_le`, `size_erase_le`), enumeration (`toList_complete`,
+  `toList_noDup`, `fold_visits_all`).
 - **Q4-D**: Builder equivalence bridge in `SeLe4n/Kernel/RadixTree/Bridge.lean` —
   `CNodeConfig` type, `buildCNodeRadix` function (RHTable → CNodeRadix via fold),
   `buildCNodeRadix_guardWidth/guardValue/radixWidth` preservation theorems,
   `buildCNodeRadix_wf` well-formedness, `buildCNodeRadix_deterministic`,
-  `CNodeConfig.ofCNode` and `CNodeRadix.ofCNode` convenience constructors.
+  `buildCNodeRadix_empty_lookup` (empty RHTable yields none),
+  `UniqueRadixIndices` predicate (Q6-B precondition),
+  `CNodeConfig.ofCNode` and `CNodeRadix.ofCNode` convenience constructors,
+  `freezeCNodeSlots` with 4 preservation theorems (Q5 integration point).
+- **Q4-T**: 12-scenario test suite in `tests/RadixTreeSuite.lean` (43 checks) —
+  core operation tests (RT-001 to RT-008) and bridge tests (RT-009 to RT-012).
 - **Re-export hub**: `SeLe4n/Kernel/RadixTree.lean` — imports Core, Invariant,
   Bridge for backward-compatible single-import usage.
-- **Proof surface**: Zero sorry/axiom, all 4 modules compile independently via
+- **Proof surface**: Zero admitted proofs, all 4 modules compile independently via
   `lake build SeLe4n.Kernel.RadixTree.Core`, etc. All test tiers pass.
 
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)

@@ -126,4 +126,86 @@ def CNodeConfig.ofCNode (cn : CNode) : CNodeConfig :=
 def CNodeRadix.ofCNode (cn : CNode) : CNodeRadix :=
   buildCNodeRadix cn.slots (CNodeConfig.ofCNode cn)
 
+-- ============================================================================
+-- Q4-D7: buildCNodeRadix from empty RHTable
+-- ============================================================================
+
+/-- Building from an empty RHTable yields an empty CNodeRadix. -/
+theorem buildCNodeRadix_empty_lookup (cap : Nat) (hPos : 0 < cap)
+    (config : CNodeConfig) (slot : SeLe4n.Slot) :
+    (buildCNodeRadix (RHTable.empty cap hPos) config).lookup slot = none := by
+  -- Use fold_preserves to show the result equals the initial empty tree
+  have hEq : (buildCNodeRadix (RHTable.empty cap hPos) config).lookup slot =
+      (CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth).lookup slot := by
+    unfold buildCNodeRadix
+    congr 1
+    unfold RHTable.fold
+    rw [← Array.foldl_toList]
+    unfold RHTable.empty
+    simp only []
+    clear hPos
+    induction cap with
+    | zero => rfl
+    | succ n ih =>
+      simp only [List.replicate_succ, List.foldl_cons]
+      exact ih
+  rw [hEq]
+  exact CNodeRadix.lookup_empty _ _ _ _
+
+-- ============================================================================
+-- Q4-D8: Unique radix index predicate
+-- ============================================================================
+
+/-- Predicate: all keys in the RHTable map to distinct radix indices. This is
+the precondition for `buildCNodeRadix_lookup_equiv` (Q6-B). In well-formed
+CNodes, slots are within `[0, 2^radixWidth)` so this is automatically
+satisfied. -/
+def UniqueRadixIndices (rt : RHTable SeLe4n.Slot Capability) (radixWidth : Nat) : Prop :=
+  ∀ s₁ s₂ : SeLe4n.Slot,
+    rt.get? s₁ ≠ none → rt.get? s₂ ≠ none → s₁ ≠ s₂ →
+    extractBits s₁.toNat 0 radixWidth ≠ extractBits s₂.toNat 0 radixWidth
+
+-- ============================================================================
+-- Q4-D9: Core equivalence theorem statement (proof in Q6-B)
+-- ============================================================================
+
+-- The full bidirectional equivalence:
+--   `rt.get? slot = (buildCNodeRadix rt config).lookup slot`
+-- requires connecting `RHTable.get?` to `RHTable.fold` membership, which is
+-- established in Q6-B (CNode Radix Lookup Equivalence) using the proven
+-- RHTable functional correctness lemmas from `Invariant/Lookup.lean`.
+-- Q4 provides the definitions, invariants, and bridge infrastructure that
+-- Q6-B builds upon.
+
+-- ============================================================================
+-- Q4-D10: freezeCNodeSlots — integration point for Q5
+-- ============================================================================
+
+/-- Convert a CNode's RHTable-backed slot store to a flat radix array.
+This is the integration point for Q5's freeze operation: during freeze,
+each CNode's `slots : RHTable Slot Capability` is converted to a
+`CNodeRadix` via this function. -/
+def freezeCNodeSlots (cn : CNode) : CNodeRadix :=
+  CNodeRadix.ofCNode cn
+
+/-- `freezeCNodeSlots` preserves guard parameters from the source CNode. -/
+theorem freezeCNodeSlots_guardWidth (cn : CNode) :
+    (freezeCNodeSlots cn).guardWidth = cn.guardWidth :=
+  buildCNodeRadix_guardWidth cn.slots (CNodeConfig.ofCNode cn)
+
+/-- `freezeCNodeSlots` preserves guard value from the source CNode. -/
+theorem freezeCNodeSlots_guardValue (cn : CNode) :
+    (freezeCNodeSlots cn).guardValue = cn.guardValue :=
+  buildCNodeRadix_guardValue cn.slots (CNodeConfig.ofCNode cn)
+
+/-- `freezeCNodeSlots` preserves radix width from the source CNode. -/
+theorem freezeCNodeSlots_radixWidth (cn : CNode) :
+    (freezeCNodeSlots cn).radixWidth = cn.radixWidth :=
+  buildCNodeRadix_radixWidth cn.slots (CNodeConfig.ofCNode cn)
+
+/-- `freezeCNodeSlots` produces a well-formed radix tree. -/
+theorem freezeCNodeSlots_wf (cn : CNode) :
+    (freezeCNodeSlots cn).WF :=
+  buildCNodeRadix_wf cn.slots (CNodeConfig.ofCNode cn)
+
 end SeLe4n.Kernel.RadixTree

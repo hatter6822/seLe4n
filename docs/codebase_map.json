@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-cnode-radix-tree-zxB7L",
-      "commit_sha": "f57d48820771540025532fdadbed47173c47012e",
-      "tree_sha": "124e9f5f6671e09bc4624dae8480c9925da6cad3",
-      "committed_at_utc": "2026-03-20T19:10:43+00:00"
+      "commit_sha": "ea16f1cd6a14f76670329fc67bad6439c051136f",
+      "tree_sha": "a97fccad329baa82e2ddcd077c964250b6d557b2",
+      "committed_at_utc": "2026-03-20T19:34:04+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "7e8b5804b210bcbf967485f749da4be619fd501e2b82b1843f380fcdb38df384"
+    "source_digest": "598c7fd6b42ba47b1cf15fb65adefc801b2af99a56c5acfa16f63c83fe5009cf"
   },
   "summary": {
-    "module_count": 95,
-    "declaration_count": 2747
+    "module_count": 96,
+    "declaration_count": 2786
   },
   "readme_sync": {
     "version": "0.17.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 90,
-    "production_loc": 50017,
-    "test_files": 5,
-    "test_loc": 5513,
-    "proved_theorem_lemma_decls": 1508,
+    "production_loc": 50360,
+    "test_files": 6,
+    "test_loc": 5710,
+    "proved_theorem_lemma_decls": 1527,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9551,7 +9551,7 @@
     {
       "module": "SeLe4n.Kernel.RadixTree.Bridge",
       "path": "SeLe4n/Kernel/RadixTree/Bridge.lean",
-      "declaration_count": 11,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
@@ -9642,6 +9642,69 @@
           "called": [
             "CNodeConfig.ofCNode",
             "buildCNodeRadix"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadix_empty_lookup",
+          "line": 134,
+          "called": [
+            "CNodeConfig",
+            "buildCNodeRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "UniqueRadixIndices",
+          "line": 163,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "freezeCNodeSlots",
+          "line": 188,
+          "called": [
+            "CNodeRadix.ofCNode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeCNodeSlots_guardWidth",
+          "line": 192,
+          "called": [
+            "CNodeConfig.ofCNode",
+            "buildCNodeRadix_guardWidth",
+            "freezeCNodeSlots"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeCNodeSlots_guardValue",
+          "line": 197,
+          "called": [
+            "CNodeConfig.ofCNode",
+            "buildCNodeRadix_guardValue",
+            "freezeCNodeSlots"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeCNodeSlots_radixWidth",
+          "line": 202,
+          "called": [
+            "CNodeConfig.ofCNode",
+            "buildCNodeRadix_radixWidth",
+            "freezeCNodeSlots"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeCNodeSlots_wf",
+          "line": 207,
+          "called": [
+            "CNodeConfig.ofCNode",
+            "buildCNodeRadix_wf",
+            "freezeCNodeSlots"
           ]
         }
       ]
@@ -9768,72 +9831,72 @@
     {
       "module": "SeLe4n.Kernel.RadixTree.Invariant",
       "path": "SeLe4n/Kernel/RadixTree/Invariant.lean",
-      "declaration_count": 23,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.RadixTree",
-          "line": 33,
+          "line": 49,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "extractBits_idx_eq",
-          "line": 41,
+          "line": 57,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.lookup_empty",
-          "line": 50,
+          "line": 66,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.lookup_insert_self",
-          "line": 59,
+          "line": 75,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.lookup_insert_ne",
-          "line": 70,
+          "line": 86,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.lookup_erase_self",
-          "line": 81,
+          "line": 97,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.lookup_erase_ne",
-          "line": 91,
+          "line": 107,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.insert_idempotent",
-          "line": 102,
+          "line": 118,
           "called": []
         },
         {
           "kind": "def",
           "name": "CNodeRadix.WF",
-          "line": 112,
+          "line": 128,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.wf_of_mk",
-          "line": 116,
+          "line": 132,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.empty_wf",
-          "line": 120,
+          "line": 136,
           "called": [
             "CNodeRadix.WF"
           ]
@@ -9841,7 +9904,7 @@
         {
           "kind": "theorem",
           "name": "CNodeRadix.insert_wf",
-          "line": 124,
+          "line": 140,
           "called": [
             "CNodeRadix.WF"
           ]
@@ -9849,7 +9912,7 @@
         {
           "kind": "theorem",
           "name": "CNodeRadix.erase_wf",
-          "line": 130,
+          "line": 146,
           "called": [
             "CNodeRadix.WF"
           ]
@@ -9857,55 +9920,55 @@
         {
           "kind": "theorem",
           "name": "CNodeRadix.insert_erase_cancel",
-          "line": 139,
+          "line": 155,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.insert_guardWidth",
-          "line": 149,
+          "line": 165,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.insert_guardValue",
-          "line": 154,
+          "line": 170,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.insert_radixWidth",
-          "line": 159,
+          "line": 175,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.erase_guardWidth",
-          "line": 164,
+          "line": 180,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.erase_guardValue",
-          "line": 168,
+          "line": 184,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.erase_radixWidth",
-          "line": 172,
+          "line": 188,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "list_foldl_replicate_none_count",
-          "line": 179,
+          "line": 195,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNodeRadix.size_empty",
-          "line": 188,
+          "line": 204,
           "called": [
             "list_foldl_replicate_none_count"
           ]
@@ -9913,7 +9976,135 @@
         {
           "kind": "theorem",
           "name": "CNodeRadix.fanout_eq_slots_size",
-          "line": 199,
+          "line": 215,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "countSome",
+          "line": 224,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_countSome_eq",
+          "line": 230,
+          "called": [
+            "countSome"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "size_eq_countSome",
+          "line": 241,
+          "called": [
+            "countSome"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "countSome_set_some_le",
+          "line": 256,
+          "called": [
+            "countSome"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "countSome_set_none_le",
+          "line": 275,
+          "called": [
+            "countSome"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.size_insert_le",
+          "line": 298,
+          "called": [
+            "countSome_set_some_le",
+            "size_eq_countSome"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.size_erase_le",
+          "line": 313,
+          "called": [
+            "countSome_set_none_le",
+            "size_eq_countSome"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "collectEntries",
+          "line": 328,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_collect_eq",
+          "line": 336,
+          "called": [
+            "collectEntries"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_eq_collectEntries",
+          "line": 357,
+          "called": [
+            "collectEntries",
+            "foldl_collect_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "collectEntries_mem",
+          "line": 369,
+          "called": [
+            "collectEntries"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.toList_complete",
+          "line": 396,
+          "called": [
+            "collectEntries_mem",
+            "toList_eq_collectEntries"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "collectEntries_keys_ge",
+          "line": 409,
+          "called": [
+            "collectEntries"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "collectEntries_noDup",
+          "line": 426,
+          "called": [
+            "collectEntries",
+            "collectEntries_keys_ge"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.toList_noDup",
+          "line": 447,
+          "called": [
+            "collectEntries_noDup",
+            "toList_eq_collectEntries"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.fold_visits_all",
+          "line": 459,
           "called": []
         }
       ]
@@ -22186,6 +22377,146 @@
           "kind": "def",
           "name": "main",
           "line": 1405,
+          "called": []
+        }
+      ]
+    },
+    {
+      "module": "tests.RadixTreeSuite",
+      "path": "tests/RadixTreeSuite.lean",
+      "declaration_count": 16,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.RadixTreeSuite",
+          "line": 16,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 18,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "rt001_emptyTree",
+          "line": 29,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt002_singleInsertLookup",
+          "line": 38,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt003_insertErase",
+          "line": 46,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt004_overwrite",
+          "line": 53,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt005_multipleSlots",
+          "line": 61,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt006_parameterPreservation",
+          "line": 77,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt007_toList",
+          "line": 90,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt008_fold",
+          "line": 112,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt009_buildEmpty",
+          "line": 130,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt010_buildWithEntries",
+          "line": 140,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt011_freezePreservation",
+          "line": 151,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rt012_determinism",
+          "line": 159,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRadixTreeSuite",
+          "line": 173,
+          "called": [
+            "rt001_emptyTree",
+            "rt002_singleInsertLookup",
+            "rt003_insertErase",
+            "rt004_overwrite",
+            "rt005_multipleSlots",
+            "rt006_parameterPreservation",
+            "rt007_toList",
+            "rt008_fold",
+            "rt009_buildEmpty",
+            "rt010_buildWithEntries",
+            "rt011_freezePreservation",
+            "rt012_determinism"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 196,
           "called": []
         }
       ]

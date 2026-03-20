@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 37,245 lines of production Lean across 69 files, 4,098 lines across 4 Lean test suites,
-1,198 theorem/lemma declarations, zero unsound constructs.
+Current state: 50,360 lines of production Lean across 90 files, 5,710 lines across 6 Lean test suites,
+1,527 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -82,7 +82,8 @@ simplification. **Q2 COMPLETED** (v0.17.8): universal RHTable migration — all
 **Q3 COMPLETED** (v0.17.9): IntermediateState formalization — builder-phase state
 with invariant witnesses, 7 builder operations, boot sequence.
 **Q4 COMPLETED** (v0.17.10): CNode radix tree — verified `CNodeRadix` flat array
-with O(1) zero-hash lookup, 12+ correctness proofs, `buildCNodeRadix` bridge.
+with O(1) zero-hash lookup, 24 correctness proofs, `buildCNodeRadix` bridge,
+`freezeCNodeSlots` Q5 integration, 12-scenario test suite.
 Remaining: Q5–Q9 (freeze, option slots, value-only maps, Rust wrappers, hardware).
 After WS-Q: **Raspberry Pi 5 hardware binding (H3)**.
 

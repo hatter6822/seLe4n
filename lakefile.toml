@@ -30,3 +30,7 @@ root = "tests.InformationFlowSuite"
 [[lean_exe]]
 name = "robin_hood_suite"
 root = "tests.RobinHoodSuite"
+
+[[lean_exe]]
+name = "radix_tree_suite"
+root = "tests.RadixTreeSuite"
