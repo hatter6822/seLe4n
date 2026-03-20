@@ -1,6 +1,7 @@
 # WS-Q Master Plan — Two-Phase Kernel State Architecture (v0.18.0+)
 
-**Created**: 2026-03-20
+**Revision**: 2 (post-audit refinement)
+**Created**: 2026-03-20 | **Revised**: 2026-03-20
 **Baseline version**: 0.17.4
 **Prior portfolios**: WS-N (v0.17.0–0.17.4, N1–N4 complete), WS-M (v0.17.0, complete)
 **Absorbed workstreams**: WS-P (Service Interface Layer), WS-O (Syscall Rust Wrappers)
@@ -15,156 +16,252 @@ This master plan unifies three architectural imperatives into a single coherent
 execution path for the seLe4n verified microkernel:
 
 1. **Two-Phase State Architecture** — A builder/freeze model that eliminates
-   `Std.HashMap` from the runtime kernel state, replacing it with dense arrays,
-   `Fin`-indexed access, and a verified CNode radix tree. The builder phase uses
-   the proven Robin Hood hash table (WS-N, ~4,300 LoC, zero sorry) for all
-   key/value stores during initialization; the freeze phase converts to a
-   cache-friendly, deterministic memory image for execution.
+   `Std.HashMap` and `Std.HashSet` from the kernel state, replacing them with
+   the proven Robin Hood hash table (WS-N, ~4,300 LoC, zero sorry) during
+   initialization, then converting to dense arrays with `Fin`-indexed access
+   and a verified CNode radix tree for execution.
 
 2. **Service Interface Simplification** (absorbs WS-P) — Replaces the
-   orchestration-focused service subsystem (~1,950 lines including ~1,110 lines
-   of in-kernel dependency graph acyclicity proofs tied to lifecycle management)
-   with a capability-indexed, formally verified interface enforcement layer.
-   Lifecycle management (start/stop/restart) moves to user space per the
-   microkernel principle of mechanism ≠ policy.
+   orchestration-focused service subsystem (~1,950 lines) with a capability-
+   indexed interface enforcement layer. Lifecycle management moves to user space.
 
 3. **Rust Syscall Wrappers** (absorbs WS-O) — A `no_std` userspace library
-   (`libsele4n`) exposing seLe4n's verified Lean syscall semantics as safe Rust
-   wrappers, encoding the finalized ABI surface after service interface changes.
-   Cross-validated against Lean trace output for register-by-register fidelity.
+   (`libsele4n`) exposing seLe4n's verified syscall semantics as safe Rust
+   wrappers, cross-validated against Lean trace output.
 
 **Why one plan?** These three efforts are deeply coupled:
-
-- WS-P changes the syscall surface (removes `serviceStart`/`serviceStop`, adds
-  `serviceRegister`/`serviceRevoke`/`serviceQuery`), which WS-O must encode.
-- The two-phase architecture replaces every `Std.HashMap` in `SystemState`,
-  which affects every subsystem including the new service registry from WS-P.
-- The CNode radix tree replaces the RHTable-backed `CNode.slots` (WS-N4), which
-  the Rust wrappers address through CSpace syscalls.
-
-Executing them independently would require three separate migrations of the same
-state types, three rounds of invariant proof repair, and three fixture updates.
-Unifying them into a single orchestrated plan eliminates redundant work and
-ensures each intermediate state compiles and passes tests.
+- WS-P changes the syscall surface, which WS-O must encode.
+- The two-phase architecture replaces every map in `SystemState`, affecting
+  every subsystem including the new service registry.
+- The CNode radix tree replaces `RHTable`-backed `CNode.slots` (WS-N4),
+  which the Rust wrappers address through CSpace syscalls.
 
 ---
 
-## 2. Motivation & Architecture
+## 2. Pre-Implementation Audit
 
-### 2.1 Problem Statement
+This section documents findings from a comprehensive audit of the v0.17.4
+codebase performed before finalizing this plan. Every issue identified below
+has a corresponding resolution in the phase plan.
 
-The current `SystemState` (defined in `SeLe4n/Model/State.lean`, ~1,073 lines)
-uses `Std.HashMap` for 10+ key/value stores:
+### 2.1 Complete Map Inventory
 
-| Field | Type | Concern |
-|-------|------|---------|
-| `objects` | `Std.HashMap ObjId KernelObject` | Unverified hash, nondeterministic iteration |
-| `services` | `Std.HashMap ServiceId ServiceGraphEntry` | Lifecycle policy in kernel |
-| `irqHandlers` | `Std.HashMap Irq ObjId` | Unverified hash |
-| `asidTable` | `Std.HashMap ASID ObjId` | Unverified hash |
-| `lifecycle.objectTypes` | `Std.HashMap ObjId KernelObjectType` | Unverified hash |
-| `lifecycle.capabilityRefs` | `Std.HashMap SlotRef CapTarget` | Unverified hash |
-| `cdtSlotNode` | `Std.HashMap SlotRef CdtNodeId` | Unverified hash |
-| `cdtNodeSlot` | `Std.HashMap CdtNodeId SlotRef` | Unverified hash |
-| `cdt.childMap` | `HashMap CdtNodeId (List CdtNodeId)` | Unverified hash |
-| `cdt.parentMap` | `HashMap CdtNodeId CdtNodeId` | Unverified hash |
-| `objectIndexSet` | `Std.HashSet ObjId` | Unverified hash |
-| `VSpaceRoot.mappings` | `Std.HashMap VAddr (PAddr × PagePerms)` | Unverified hash |
+The audit identified **17 map-like collections** across the kernel state
+hierarchy — 5 more than the original draft's 12:
 
-Only `CNode.slots` has been migrated to the verified `RHTable` (WS-N4). The
-remaining 12 stores use `Std.HashMap` with:
+**SystemState direct fields (9 maps):**
 
-- **Nondeterministic iteration order** — `Std.HashMap.fold` order depends on
-  internal hash table layout, which is implementation-defined and may vary
-  across Lean versions.
-- **Unverified hash function** — The hash function's collision behavior is not
-  formally analyzed; proofs cannot reason about lookup correctness.
-- **No cache-locality guarantees** — Pointer-chasing through hash buckets
-  produces unpredictable memory access patterns on ARM64.
-- **No formal bridge** — Unlike `RHTable` (10 bridge lemmas, `invExt` invariant,
-  3,600+ lines of proofs), `Std.HashMap` operations are trusted axiomatically.
+| # | Field | Type | Key → Value | Location |
+|---|-------|------|-------------|----------|
+| 1 | `objects` | `Std.HashMap` | `ObjId → KernelObject` | State.lean:129 |
+| 2 | `objectIndexSet` | `Std.HashSet` | `ObjId` | State.lean:151 |
+| 3 | `services` | `Std.HashMap` | `ServiceId → ServiceGraphEntry` | State.lean:152 |
+| 4 | `irqHandlers` | `Std.HashMap` | `Irq → ObjId` | State.lean:157 |
+| 5 | `asidTable` | `Std.HashMap` | `ASID → ObjId` | State.lean:163 |
+| 6 | `cdtSlotNode` | `Std.HashMap` | `SlotRef → CdtNodeId` | State.lean:165 |
+| 7 | `cdtNodeSlot` | `Std.HashMap` | `CdtNodeId → SlotRef` | State.lean:166 |
+| 8 | `lifecycle.objectTypes` | `Std.HashMap` | `ObjId → KernelObjectType` | State.lean:104 |
+| 9 | `lifecycle.capabilityRefs` | `Std.HashMap` | `SlotRef → CapTarget` | State.lean:105 |
 
-### 2.2 Two-Phase Architecture
+**Nested in CapDerivationTree (2 maps):**
+
+| # | Field | Type | Key → Value | Location |
+|---|-------|------|-------------|----------|
+| 10 | `cdt.childMap` | `Std.HashMap` | `CdtNodeId → List CdtNodeId` | Structures.lean:776 |
+| 11 | `cdt.parentMap` | `Std.HashMap` | `CdtNodeId → CdtNodeId` | Structures.lean:779 |
+
+**Nested in RunQueue (3 maps) — MISSED IN ORIGINAL DRAFT:**
+
+| # | Field | Type | Key → Value | Location |
+|---|-------|------|-------------|----------|
+| 12 | `runQueue.byPriority` | `Std.HashMap` | `Priority → List ThreadId` | RunQueue.lean |
+| 13 | `runQueue.threadPriority` | `Std.HashMap` | `ThreadId → Priority` | RunQueue.lean |
+| 14 | `runQueue.membership` | `Std.HashSet` | `ThreadId` | RunQueue.lean |
+
+**Per-object embedded maps (2 maps):**
+
+| # | Field | Type | Key → Value | Location |
+|---|-------|------|-------------|----------|
+| 15 | `CNode.slots` | `RHTable` | `Slot → Capability` | Structures.lean:346 |
+| 16 | `VSpaceRoot.mappings` | `Std.HashMap` | `VAddr → (PAddr × PagePerms)` | Structures.lean:87 |
+
+**Algorithm-local HashSets (not in state, but must be addressed):**
+
+| # | Usage | Type | Location | Count |
+|---|-------|------|----------|-------|
+| 17a | BFS visited set | `Std.HashSet` | Acyclicity.lean | 16 uses |
+| 17b | Observable filtering | `Std.HashSet` | Projection.lean | 8 uses |
+| 17c | BFS frontier | `Std.HashSet` | Service/Operations.lean | 2 uses |
+
+### 2.2 Callsite Impact Analysis
+
+| Pattern | Files | Occurrences | Highest-Impact File |
+|---------|-------|-------------|---------------------|
+| `Std.HashMap` | 12 | 78 | Prelude.lean (28) |
+| `Std.HashSet` | 8 | 57 | Acyclicity.lean (16) |
+| `.contains` | 15 | 122+ | RunQueue.lean (49) |
+| `.toList` | 14 | 35+ | RunQueue.lean (21) |
+| `.fold` | 19 | 35+ | State.lean (15) |
+| `[key]?` lookup | 44 | 100+ | Prelude.lean (13) |
+
+### 2.3 Prelude Utility Lemma Inventory
+
+`SeLe4n/Prelude.lean` contains **42 utility lemmas** that downstream proofs
+depend on:
+- **28 `Std.HashMap` lemmas**: get, insert, erase, filter, contains, fold
+  patterns used across all subsystem invariant proofs
+- **14 `Std.HashSet` lemmas**: contains, insert, erase, membership patterns
+  used in scheduler, service, and information flow proofs
+
+**Every one** of these lemmas must have a proven `RHTable`/`RHSet` equivalent
+before subsystem migration can begin. This is the critical path for Q2.
+
+### 2.4 Atomic Migration Groups
+
+The audit identified three groups of maps that **must migrate together** due
+to shared update functions:
+
+**Group A: Object Store (storeObject atomicity)**
+`storeObject` modifies `objects`, `objectIndex`, `objectIndexSet`,
+`lifecycle.objectTypes`, `lifecycle.capabilityRefs`, and `asidTable` in a
+single function (State.lean:219-244). These 6 fields must be migrated
+atomically or `storeObject` won't compile.
+
+**Group B: CDT Dual Index**
+`addEdge`, `removeAsChild`, `removeAsParent`, `removeNode` update `childMap`,
+`parentMap`, `cdtSlotNode`, and `cdtNodeSlot` together. These 4 fields form
+an atomic migration unit.
+
+**Group C: RunQueue Internals**
+`byPriority`, `threadPriority`, and `membership` are maintained in lockstep
+by RunQueue operations. All 3 must migrate together.
+
+### 2.5 Issues Resolved in This Revision
+
+| # | Issue | Resolution | Phase |
+|---|-------|------------|-------|
+| 1 | RunQueue maps missing from inventory | Added as maps 12-14; dedicated subphase Q2-G | Q2 |
+| 2 | No Prelude lemma migration strategy | Dedicated subphase Q2-A with 42 lemma targets | Q2 |
+| 3 | No RHSet type defined | Q2-B defines `RHSet κ` as wrapper around `RHTable κ Unit` | Q2 |
+| 4 | Q2 scope underestimated | Expanded to 10 subphases; revised to ~1,800 new lines | Q2 |
+| 5 | Algorithm-local HashSets unaddressed | Kept as `Std.HashSet` (temporary, not in state) | Q2 |
+| 6 | storeObject atomicity | Group A maps migrate in single subphase Q2-C | Q2 |
+| 7 | FrozenMap index contradicts "no hashing" | Clarified: hash at freeze-time only; runtime is array access | Q5 |
+| 8 | CDT retained as-is but uses HashMap | CDT maps freeze to FrozenMap in Q5 | Q5 |
+| 9 | SchedulerState retained as-is but RunQueue uses HashMap | RunQueue freezes to arrays in Q5 | Q5 |
+| 10 | Retype at runtime vs boot-only | Hybrid model: pre-allocated Option slots + overflow | Q7 |
+| 11 | Commutativity only for value mutations | Scoped to value-only ops; key-set ops are builder-only | Q7 |
+| 12 | RadixTree doesn't match resolveSlot | Aligned to existing guard+radix bit extraction | Q4 |
+| 13 | VSpaceRoot frozen representation vague | FrozenMap (consistent with other maps) | Q5 |
+| 14 | Q1-E too large (15 files) | Split into Q1-E1 (type removal) + Q1-E2 (NI proof repair) | Q1 |
+| 15 | CDT maps must migrate atomically | Group B maps in dedicated subphase Q2-F | Q2 |
+| 16 | No pre-allocation/sizing strategy | Explicit capacity planning in Q5 with upper bounds | Q5 |
+
+
+---
+
+## 3. Architecture
+
+### 3.1 Two-Phase State Model
 
 ```
-                    ┌─────────────────────────┐
-                    │     Boot / Init          │
-                    │  (Platform + Untyped)    │
-                    └───────────┬──────────────┘
-                                │
-                                ▼
-                    ┌─────────────────────────┐
-                    │   IntermediateState      │
-                    │   (Builder Phase)        │
-                    │                          │
-                    │  • RHTable for ALL maps  │
-                    │  • Fixed hash + seed     │
-                    │  • Deterministic probes  │
-                    │  • Dynamic allocation    │
-                    │  • Object retype fills   │
-                    └───────────┬──────────────┘
-                                │
-                          freeze(·)
-                                │
-                                ▼
-                    ┌─────────────────────────┐
-                    │   FrozenSystemState      │
-                    │   (Execution Phase)      │
-                    │                          │
-                    │  • Dense Array + Fin     │
-                    │  • CNode RadixTree       │
-                    │  • O(1) array indexing   │
-                    │  • No hashing at runtime │
-                    │  • Cache-friendly layout │
-                    │  • Deterministic image   │
-                    └─────────────────────────┘
+                    ┌──────────────────────────┐
+                    │     Boot / Init           │
+                    │  (Platform + Untyped)     │
+                    └────────────┬──────────────┘
+                                 │
+                                 ▼
+                    ┌──────────────────────────┐
+                    │   IntermediateState       │
+                    │   (Builder Phase)         │
+                    │                           │
+                    │  • RHTable for ALL maps   │
+                    │  • RHSet for ALL sets     │
+                    │  • Fixed hash function    │
+                    │  • Deterministic probes   │
+                    │  • Dynamic alloc (retype) │
+                    └────────────┬──────────────┘
+                                 │
+                           freeze(·)
+                                 │
+                                 ▼
+                    ┌──────────────────────────┐
+                    │   FrozenSystemState       │
+                    │   (Execution Phase)       │
+                    │                           │
+                    │  • Dense Array + Fin idx  │
+                    │  • CNode RadixTree        │
+                    │  • Pre-alloc Option slots │
+                    │  • O(1) array indexing    │
+                    │  • Hash at freeze only    │
+                    │  • Deterministic image    │
+                    └──────────────────────────┘
 ```
 
 **Builder Phase (IntermediateState):**
-- All key/value stores use `RHTable` with a **fixed** hash function, **fixed**
-  seed, and **fixed** probe sequence (Robin Hood linear probing).
-- The builder state supports dynamic object creation (retype), capability
-  minting, VSpace mapping, and all initialization operations.
-- Every RHTable instance satisfies `invExt` (well-formedness + probe chain
-  dominance + no duplicate keys) — proven in WS-N2.
-- Boot sequence constructs the builder state from platform configuration and
-  initial untyped memory regions.
+
+All 16 key/value stores (see §2.1) use `RHTable` with a fixed hash function
+(Lean's `Hashable` instances — deterministic for all `Nat`-wrapped kernel types),
+fixed probe sequence (linear probing with Robin Hood displacement), and
+75% load-factor-triggered resize. Every `RHTable` instance satisfies `invExt`
+(well-formedness + probe chain dominance + no duplicate keys) — proven in WS-N2
+(~3,600 LoC, zero sorry).
+
+All 2 `Std.HashSet` state fields use `RHSet` (a newtype wrapper around
+`RHTable κ Unit` defined in Q2-B) with identical hash and probe semantics.
+
+Algorithm-local `Std.HashSet` usage (BFS visited sets in Acyclicity.lean,
+observable filtering in Projection.lean) is **retained** — these are temporary
+values that exist only during a single function call and never persist in state.
 
 **Freeze Phase:**
-- `freeze : IntermediateState → FrozenSystemState` converts all RHTable maps
-  into dense arrays with `Fin`-indexed lookup tables.
-- For each map `RHTable K V`, freeze produces:
-  - `data : Array V` — packed contiguous values
-  - `index : K → Option (Fin data.size)` — key-to-index mapping
-- CNode slots receive special treatment: converted to a **verified radix tree**
-  with fixed fanout and bit-sliced traversal, matching seL4's CSpace addressing.
-- The freeze function enforces:
-  - **No duplicates** — guaranteed by `RHTable.invExt.noDupKeys`
-  - **Total index coverage** — every key in the RHTable maps to a valid `Fin`
-  - **Deterministic ordering** — sorted by key (via `Ord` instance) or by
-    insertion-order (via `RHTable.toList` stability)
+
+`freeze : IntermediateState → FrozenSystemState` converts each `RHTable K V`
+into a `FrozenMap K V`:
+
+```lean
+structure FrozenMap (κ : Type) (ν : Type) [BEq κ] [Hashable κ] where
+  data      : Array ν                        -- dense, contiguous values
+  indexMap  : RHTable κ (Fin data.size)      -- key → position (computed ONCE)
+  hInject   : ∀ k₁ k₂ i, indexMap.get? k₁ = some i →
+                          indexMap.get? k₂ = some i → k₁ == k₂
+  hCoverage : ∀ k, (∃ v, original.get? k = some v) →
+                   ∃ i, indexMap.get? k = some i
+```
+
+**Critical clarification (audit issue #7):** The `indexMap` is an `RHTable`
+that performs hash computation **once** during the `freeze` call. After freeze,
+all runtime lookups follow a two-step path:
+
+1. `indexMap.get? key` — O(1) amortized RHTable lookup (hashing happens here)
+2. `data[idx]` — O(1) array access via the returned `Fin`
+
+This means runtime lookups **do** involve one hash computation per access.
+The "no hashing at runtime" guarantee applies specifically to **CNode slot
+lookups**, which use the RadixTree (O(depth) with zero hashing). For
+non-CNode maps, the performance benefit comes from cache-friendly dense
+array storage and verified hash semantics, not from eliminating hashing.
 
 **Execution Phase (FrozenSystemState):**
-- All kernel operations (IPC, scheduling, capability lookup, VSpace resolution)
-  use `Fin`-indexed array access — no hashing, no probing, no dynamic allocation.
-- Object mutation is in-place: `objects[idx] := updated_obj` where `idx : Fin n`.
-- New object creation uses pre-allocated `Option` slots in the dense array,
-  filled during retype and cleared during delete.
-- Memory image is fully deterministic: identical boot configuration produces
-  identical `FrozenSystemState` byte-for-byte.
 
-### 2.3 CNode Radix Tree (SlotRef Handling)
+- **Object mutation**: In-place array update — `data[idx] := updatedObj`
+  where `idx : Fin n` is stable (index map never changes after freeze).
+- **Object creation at runtime (audit issue #10)**: Pre-allocated `Option`
+  slots in the dense array. During freeze, untyped memory regions are
+  enumerated to determine maximum object count. Each potential object gets
+  an `Option KernelObject` slot. Retype fills a `none` slot; delete clears
+  it back to `none`. The index map includes all potential keys at freeze time.
+- **CNode lookups**: RadixTree with fixed `2^radixWidth` fanout — O(depth),
+  zero hashing, cache-friendly array-backed nodes.
+- **Deterministic memory image**: Identical boot config → identical
+  `FrozenSystemState` byte-for-byte.
 
-The current `CNode.slots : RHTable Slot Capability` (WS-N4) is appropriate for
-the builder phase but suboptimal for execution:
+### 3.2 CNode Radix Tree
 
-- CNode addressing in seL4 is inherently a **bit-sliced tree traversal**: a
-  capability pointer is decoded by extracting `guardWidth` bits (guard match),
-  then `radixWidth` bits (child index), recursively through CNode levels.
-- A radix tree with `2^radixWidth` fanout at each level matches this addressing
-  scheme exactly, enabling O(depth) lookup with no hashing.
-- Array-backed radix nodes (`Array (Option Child) where Child.size = 2^radixWidth`)
-  are cache-friendly and `Fin`-indexable.
+CNode addressing in seL4 (and seLe4n) is inherently a bit-sliced tree
+traversal. The existing `resolveSlot` function (Structures.lean) extracts
+`guardWidth` bits for guard matching, then `radixWidth` bits for child
+indexing. A radix tree with `2^radixWidth` fanout matches this exactly.
 
 ```
 CPtr bit decomposition:
@@ -177,110 +274,82 @@ CPtr bit decomposition:
    CNode L1       child[i]      CNode L2         child[j] → Cap
 ```
 
-The radix tree replaces `RHTable Slot Capability` in the frozen CNode. The
-builder-phase CNode retains `RHTable` for flexibility during initialization.
-The freeze step proves lookup equivalence:
+The builder-phase CNode retains `RHTable Slot Capability` for flexibility.
+The freeze step converts to a radix tree and proves lookup equivalence:
+`∀ slot, rhTable.get? slot = radixTree.lookup slot`.
 
-```
-∀ slot cap, rhTable.get? slot = some cap ↔ radixTree.lookup slot = some cap
-```
-
-### 2.4 Service Interface (WS-P Absorption)
-
-The current service subsystem conflates mechanism with policy. This plan
-absorbs WS-P's redesign:
+### 3.3 Service Interface (WS-P Absorption)
 
 **Retained (mechanism):**
 - `serviceRegisterDependency` — dependency edge with cycle detection
 - `serviceHasPathTo` — DFS cycle detection
-- `serviceBfsFuel` — fuel bound for graph traversal
-- ~1,110 lines of acyclicity proofs
+- Acyclicity proofs (~1,110 lines, minus status-related frame lemmas)
 
-**Added (WS-P new):**
-- `InterfaceSpec` — concrete interface specification (method count, message bounds)
+**Added:**
+- `InterfaceSpec` — concrete interface spec (no universe polymorphism)
 - `ServiceRegistration` — capability-mediated service record
-- `registerInterface` / `registerService` / `lookupServiceByCap` / `revokeService`
-- Registry invariants: `registryEndpointValid`, `registryInterfaceValid`
+- 4 registry operations + invariants
 
 **Removed (policy → user space):**
-- `serviceStart` / `serviceStop` / `serviceRestart` — lifecycle management
-- `ServiceStatus` — runtime status tracking
-- `ServiceConfig` — policy gates (allowStart/allowStop)
-- Related frame lemmas and NI proofs
+- `serviceStart`/`serviceStop`/`serviceRestart`, `ServiceStatus`, `ServiceConfig`
 
-**Net effect:** ~600 line reduction with simpler invariants and a cleaner
-type hierarchy that maps naturally to the two-phase architecture.
+### 3.4 Rust Syscall Wrappers (WS-O Absorption)
 
-### 2.5 Rust Syscall Wrappers (WS-O Absorption)
-
-WS-O delivers `libsele4n`, a `no_std` Rust userspace library with three crates:
-
-| Crate | Purpose | Unsafe |
-|-------|---------|--------|
-| `sele4n-types` | Core typed identifiers, error types, access rights | None (`#![deny(unsafe_code)]`) |
-| `sele4n-abi` | Register encoding, MessageInfo bitfield, `svc` trap | One block (inline `svc #0`) |
-| `sele4n-sys` | Safe high-level syscall wrappers, IPC helpers, phantom-typed caps | None |
-
-**Key dependency on Q1:** WS-O encodes the finalized syscall ID enumeration.
-After Q1, the syscall surface changes:
-- **Removed:** `serviceStart` (ID 11), `serviceStop` (ID 12)
-- **Added:** `serviceRegister` (ID 11), `serviceRevoke` (ID 12), `serviceQuery` (ID 13)
-
-WS-O is otherwise independent of the internal state architecture (Q2–Q7),
-since Rust wrappers operate at the register ABI level. This enables Q8 to
-execute in parallel with Q4–Q7.
+Three `no_std` crates — `sele4n-types`, `sele4n-abi`, `sele4n-sys` — encoding
+the finalized ABI surface (14 syscalls post-Q1). Cross-validated against Lean
+trace output. Single `unsafe` block: inline ARM64 `svc #0`. Independent of
+internal state architecture (Q2–Q7), enabling parallel execution.
 
 ---
 
-## 3. Phase Plan Overview
+## 4. Phase Plan Overview
 
-| Phase | ID | Focus | Deps | Target |
-|-------|----|-------|------|--------|
-| 1 | **Q1** | Service interface simplification (WS-P) | — | v0.18.0 |
-| 2 | **Q2** | Universal RHTable migration | Q1 | v0.19.0 |
-| 3 | **Q3** | IntermediateState formalization | Q2 | v0.19.1 |
-| 4 | **Q4** | CNode radix tree (verified) | Q2 | v0.20.0 |
-| 5 | **Q5** | FrozenSystemState + freeze | Q3, Q4 | v0.21.0 |
-| 6 | **Q6** | Freeze correctness proofs | Q5 | v0.21.1 |
-| 7 | **Q7** | Frozen kernel operations | Q6 | v0.22.0 |
-| 8 | **Q8** | Rust syscall wrappers (WS-O) | Q1 | v0.22.0 ∥ |
-| 9 | **Q9** | Integration testing + documentation | Q7, Q8 | v0.23.0 |
+| Phase | ID | Focus | Sub-phases | Deps | Target |
+|-------|----|-------|------------|------|--------|
+| 1 | **Q1** | Service interface simplification | 7 (A–G) | — | v0.18.0 |
+| 2 | **Q2** | Universal RHTable migration | 10 (A–J) | Q1 | v0.19.0 |
+| 3 | **Q3** | IntermediateState formalization | 3 (A–C) | Q2 | v0.19.1 |
+| 4 | **Q4** | CNode radix tree (verified) | 4 (A–D) | Q2 | v0.20.0 |
+| 5 | **Q5** | FrozenSystemState + freeze | 4 (A–D) | Q3, Q4 | v0.21.0 |
+| 6 | **Q6** | Freeze correctness proofs | 4 (A–D) | Q5 | v0.21.1 |
+| 7 | **Q7** | Frozen kernel operations | 5 (A–E) | Q6 | v0.22.0 |
+| 8 | **Q8** | Rust syscall wrappers (WS-O) | 4 (A–D) | Q1 | v0.22.0 ∥ |
+| 9 | **Q9** | Integration testing + documentation | 4 (A–D) | Q7, Q8 | v0.23.0 |
 
-**∥** = Q8 executes in parallel with Q4–Q7 (independent of internal state changes).
+**Total sub-phases**: 45 atomic units of work.
 
 ```
-Q1 ──→ Q2 ──→ Q3 ──→ Q5 ──→ Q6 ──→ Q7 ──→ Q9
-  │           │                              ▲
-  │           └──→ Q4 ──┘                    │
-  │                                          │
-  └──────────────→ Q8 ───────────────────────┘
+Q1 ──→ Q2 ──→ Q3 ──┬──→ Q5 ──→ Q6 ──→ Q7 ──→ Q9
+  │                 │                           ▲
+  │                 └──→ Q4 ──┘                 │
+  │                                             │
+  └──────────────→ Q8 ──────────────────────────┘
 ```
+
+**Critical path**: Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → Q9
+**Parallel path**: Q1 → Q8 → Q9
 
 
 ---
 
-## 4. Detailed Phase Plans
+## 5. Detailed Phase Plans
 
 ### Phase Q1: Service Interface Simplification
 
 **Absorbs**: WS-P phases P1–P5
 **Target version**: v0.18.0
 **Goal**: Replace lifecycle-focused service orchestration with capability-indexed
-interface enforcement. This simplifies the type surface before the universal
+interface enforcement, simplifying the type surface before the universal
 RHTable migration in Q2.
 
-#### Q1-A: Foundation Types (WS-P P1)
+#### Q1-A: Foundation Types
 
-**New files:**
-- `SeLe4n/Kernel/Service/Interface.lean` — `InterfaceSpec`, `ServiceRegistration`
-
-**Modified files:**
-- `SeLe4n/Prelude.lean` — Add `InterfaceId` typed wrapper
-- `SeLe4n/Model/Object/Types.lean` — Add `ServiceRegistration` structure
+**New file**: `SeLe4n/Kernel/Service/Interface.lean`
+**Modified files**: `SeLe4n/Prelude.lean`, `SeLe4n/Model/Object/Types.lean`
 
 **Tasks:**
-1. `InterfaceId` in Prelude.lean: `Hashable`, `BEq`, `ofNat`/`toNat`/`sentinel`
-2. `InterfaceSpec` with concrete fields (no universe polymorphism):
+1. Define `InterfaceId` in Prelude.lean: `Hashable`, `BEq`, `ofNat`/`toNat`/`sentinel`
+2. Define `InterfaceSpec` (concrete, no universe polymorphism):
    ```lean
    structure InterfaceSpec where
      ifaceId         : InterfaceId
@@ -289,230 +358,366 @@ RHTable migration in Q2.
      maxResponseSize : Nat
      requiresGrant   : Bool
    ```
-3. `ServiceRegistration` with `sid`, `iface : InterfaceSpec`, `endpointCap : Capability`
-4. `InterfaceId` roundtrip theorems matching `ServiceId` pattern
-5. Verify `lake build` succeeds (purely additive, zero sorry)
+3. Define `ServiceRegistration` with `sid`, `iface`, `endpointCap`
+4. Prove `InterfaceId` roundtrip theorems
 
-**Acceptance gate:** `lake build` + `test_fast.sh`
+**Gate**: `lake build` + `test_fast.sh`
 
-#### Q1-B: Registry State and Operations (WS-P P2)
+#### Q1-B: Registry State and Operations
 
-**New file:**
-- `SeLe4n/Kernel/Service/Registry.lean` — 4 operations + 8 theorems
-
-**Modified files:**
-- `SeLe4n/Model/State.lean` — Add `serviceRegistry`, `interfaceRegistry` fields
+**New file**: `SeLe4n/Kernel/Service/Registry.lean` (4 operations + 8 theorems)
+**Modified**: `SeLe4n/Model/State.lean` (add `serviceRegistry`, `interfaceRegistry`)
 
 **Operations:**
+- `registerInterface` — register concrete spec | error: `illegalState` (dup)
+- `registerService` — capability-mediated | errors: `illegalState`, `objectNotFound`, `invalidCapability`
+- `lookupServiceByCap` — read-only lookup | error: `objectNotFound`
+- `revokeService` — remove by ServiceId | error: `objectNotFound`
 
-| Operation | Purpose | Error Conditions |
-|-----------|---------|------------------|
-| `registerInterface` | Register concrete interface spec | `illegalState` (duplicate) |
-| `registerService` | Capability-mediated registration | `illegalState` (dup), `objectNotFound` (unknown iface), `invalidCapability` (bad endpoint) |
-| `lookupServiceByCap` | Capability-indexed lookup (read-only) | `objectNotFound` |
-| `revokeService` | Remove registration by ServiceId | `objectNotFound` |
+**Minimum 8 theorems**: error conditions, success post-conditions, frame lemmas.
 
-**Minimum 8 theorems:** Error conditions, `registerService_ok_implies_registered`,
-`revokeService_removes_registration`, `lookupServiceByCap_state_unchanged`,
-frame lemmas (`_preserves_objects`, `_preserves_scheduler`).
+**Gate**: `lake build` + `test_smoke.sh`
 
-**Acceptance gate:** `lake build` + `test_smoke.sh`
+#### Q1-C: Registry Invariants
 
-#### Q1-C: Registry Invariants (WS-P P3)
+**New file**: `SeLe4n/Kernel/Service/Registry/Invariant.lean`
 
-**New file:**
-- `SeLe4n/Kernel/Service/Registry/Invariant.lean`
+**Definitions**: `registryEndpointValid`, `registryInterfaceValid`, `registryInvariant`
 
-**Invariant definitions:**
-```lean
-def registryEndpointValid (st : SystemState) : Prop :=
-  ∀ sid reg, st.serviceRegistry[sid]? = some reg →
-    match reg.endpointCap.target with
-    | .object epId => ∃ ep, st.objects[epId]? = some (.endpoint ep)
-    | _ => False
+**Proofs**: preservation under all 4 operations, cross-subsystem preservation
+(lifecycle, capability, scheduler, IPC), `default_registryInvariant`,
+`apiInvariantBundle` extension.
 
-def registryInterfaceValid (st : SystemState) : Prop :=
-  ∀ sid reg, st.serviceRegistry[sid]? = some reg →
-    st.interfaceRegistry.contains reg.iface.ifaceId
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
 
-def registryInvariant (st : SystemState) : Prop :=
-  registryEndpointValid st ∧ registryInterfaceValid st
-```
+#### Q1-D: API Integration and Syscall Dispatch
 
-**Proof obligations:**
-- `registerService_preserves_registryInvariant`
-- `revokeService_preserves_registryInvariant`
-- `registerInterface_preserves_registryInvariant`
-- Cross-subsystem preservation (lifecycle, capability, scheduler, IPC)
-- `default_registryInvariant`
-- `apiInvariantBundle` extension with `registryInvariant`
-
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry
-
-#### Q1-D: API Integration and Syscall Dispatch (WS-P P4)
-
-**Modified files (6):**
+**Modified files (6)**:
 - `SeLe4n/Kernel/API.lean` — `apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`
 - `SeLe4n/Model/Object/Types.lean` — `SyscallId` variants: `.serviceRegister` (11), `.serviceRevoke` (12), `.serviceQuery` (13)
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — Extend `SyscallId.toNat`/`ofNat?`
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` — Decode functions for new syscalls
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — `SyscallId.toNat`/`ofNat?` extension
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` — new decode functions
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` — `registerServiceChecked`
-- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` — Operation catalog update
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` — catalog update
 
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
 
-#### Q1-E: Legacy Deprecation (WS-P P5)
+#### Q1-E1: Legacy Type Removal
 
-**Strategy:** Rename `services` → `servicesLegacy` to surface all callsites via
-compile errors, then fix each individually.
+**Strategy**: Rename `services` → `servicesLegacy` to surface all callsites
+via compile errors.
 
-**Removals:**
-- `serviceStart`, `serviceStop`, `serviceRestart` (lifecycle → user space)
-- `ServiceStatus` enum (runtime status → user space)
-- `ServiceConfig` structure (policy gates → user space)
-- `setServiceStatusState`, `dependenciesSatisfied` helpers
-- Status-related frame lemmas in `Acyclicity.lean`
-- Related NI proofs in Information Flow subsystem
+**Modified files (~8)**:
+- `SeLe4n/Model/Object/Types.lean` — Remove `ServiceStatus`, simplify `ServiceGraphEntry` (drop `status`)
+- `SeLe4n/Model/State.lean` — Remove `ServiceConfig`, `serviceConfig` field, `setServiceStatusState`, `dependenciesSatisfied`
+- `SeLe4n/Kernel/Service/Operations.lean` — Remove `serviceStart`, `serviceStop`, `serviceRestart` + 11 associated theorems
+- `SeLe4n/Kernel/Service/Invariant/Policy.lean` — Remove lifecycle bundle, add registry-policy bridge
+- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` — Remove status-related frame lemmas
+- `SeLe4n/Kernel/API.lean` — Remove `apiServiceStart`/`apiServiceStop`, old dispatch arms
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` — Remove old `SyscallId` variants
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` — Remove old decode functions
 
-**Retained:**
-- `serviceRegisterDependency`, `serviceHasPathTo`, `serviceBfsFuel`
-- All acyclicity proofs (~1,110 lines, minus status-related frame lemmas)
-- `ServiceGraphEntry` (simplified: drops `status` field)
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
 
-**Modified files (~15):** Types, State, Operations, Policy, Acyclicity, API,
-Wrappers, Projection, Operations (NI), Composition (NI), Helpers (NI),
-Soundness, RegisterDecode, SyscallArgDecode.
+#### Q1-E2: Information Flow Proof Repair
 
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry + no
-`ServiceStatus`/`ServiceConfig`/`serviceStart`/`serviceStop` in kernel
+**Modified files (~7)** — separated from Q1-E1 to keep each unit small:
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` — Remove `serviceRestartChecked`
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` — Replace `projectServiceStatus`
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — Replace legacy NI proofs
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` — Replace NI step constructors
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` — Update frame lemmas
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` — Update catalog
+- `SeLe4n/Kernel/Service/Invariant.lean` — Import updates
+
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry + no `ServiceStatus`/
+`ServiceConfig`/`serviceStart`/`serviceStop`/`serviceRestart` anywhere in kernel
 
 #### Q1-F: Test Migration
 
-**Modified files (7):** MainTraceHarness, StateBuilder, NegativeStateSuite,
-OperationChainSuite, InformationFlowSuite, fixtures.
+**Modified files (7)**: MainTraceHarness, StateBuilder, NegativeStateSuite,
+OperationChainSuite, InformationFlowSuite, fixtures (2).
 
-**New test scenarios (SRG-001 through SRG-010):** Register/revoke/lookup with
-valid and invalid inputs, dependency cycle detection continuity.
+**New test scenarios (SRG-001 through SRG-010):**
 
-**Acceptance gate:** `test_smoke.sh` + `test_full.sh` + zero sorry
+| ID | Description | Expected |
+|----|-------------|----------|
+| SRG-001 | Register service with valid endpoint + interface | success |
+| SRG-002 | Duplicate service registration | illegalState |
+| SRG-003 | Register with unknown interface | objectNotFound |
+| SRG-004 | Register with invalid endpoint | invalidCapability |
+| SRG-005 | Revoke registered service | success |
+| SRG-006 | Revoke non-existent | objectNotFound |
+| SRG-007 | Lookup by matching capability | success |
+| SRG-008 | Lookup by non-matching capability | objectNotFound |
+| SRG-009 | Register interface + service chain | success |
+| SRG-010 | Dependency cycle detection still works | cyclicDependency |
+
+**Gate**: `test_smoke.sh` + `test_full.sh` + zero sorry
+
+#### Q1-G: Documentation
+
+Update WORKSTREAM_HISTORY.md, SELE4N_SPEC.md, DEVELOPMENT.md,
+CLAIM_EVIDENCE_INDEX.md, affected GitBook chapters. Regenerate codebase map.
+
+**Gate**: `test_full.sh` + `generate_codebase_map.py --pretty --check`
 
 ---
 
 ### Phase Q2: Universal RHTable Migration
 
 **Target version**: v0.19.0
-**Goal**: Replace every `Std.HashMap` and `Std.HashSet` in `SystemState` with
-the verified `RHTable`, establishing the builder-phase representation.
+**Goal**: Replace every `Std.HashMap` and `Std.HashSet` in kernel state with
+`RHTable`/`RHSet`, establishing the builder-phase representation.
 
-#### Q2-A: Hash Function Standardization
+**Scope (post-audit)**: 16 map fields + 2 set fields across 6 structures,
+touching 30+ files, requiring 42+ new Prelude lemmas. This is the largest
+and highest-risk phase — broken into 10 atomic subphases with strict ordering.
 
-**Objective:** Fix a single deterministic hash function, seed, and probe
-sequence for all `RHTable` instantiations in the kernel.
+#### Q2-A: Prelude Lemma Foundation
 
-**Design:**
-- **Hash function**: Use Lean's existing `Hashable` instances for all key types
-  (already deterministic for `Nat`-wrapped types like `ObjId`, `ThreadId`, etc.)
-- **Seed**: Not applicable — Robin Hood uses `(hash k).toNat % capacity` directly
-- **Probe sequence**: Linear probing with Robin Hood displacement (already fixed
-  in `RHTable.nextIndex`)
+**Critical path**: All subsequent subphases depend on these lemmas.
 
-**Verification:**
-- Prove `idealIndex` is deterministic: same key + same capacity → same index
-- Prove `insertLoop`/`getLoop` sequences are deterministic given fixed capacity
-- Document that `Hashable` instances for all kernel types produce identical
-  hashes across Lean compilations (by construction — they delegate to `Nat` hash)
+**Modified file**: `SeLe4n/Prelude.lean`
 
-**New file:**
-- `SeLe4n/Kernel/RobinHood/HashPolicy.lean` — Determinism proofs, hash policy docs
+**Task**: Create `RHTable` equivalents for all 28 `Std.HashMap` utility lemmas
+currently in Prelude.lean. These lemmas are referenced by proofs across every
+subsystem. Many will be thin wrappers around existing Bridge.lean theorems.
 
-**Acceptance gate:** `lake build` + determinism proofs compile
+**Target lemmas (28)** — grouped by operation:
 
-#### Q2-B: Core State Migration
+| Category | Count | Examples |
+|----------|-------|---------|
+| `get?`/`getElem?` | 6 | `get_eq_getElem?`, `getElem?_some_implies_contains` |
+| `insert` | 5 | `insert_overrides`, `insert_preserves_other`, `contains_insert_self` |
+| `erase` | 4 | `erase_absent_noop`, `erase_preserves_other`, `contains_erase_self` |
+| `contains` | 4 | `contains_iff_get_some`, `not_contains_iff_get_none` |
+| `filter` | 3 | `filter_subset`, `filter_preserves_match` |
+| `fold`/`toList` | 4 | `fold_comm`, `toList_complete`, `toList_noDup` |
+| `size` | 2 | `size_insert_bound`, `size_erase_bound` |
 
-**Target maps (in order of migration):**
+**Strategy**: Most bridge lemmas already exist in `Bridge.lean`. The Prelude
+equivalents will:
+1. Re-export bridge lemmas under the naming convention used by downstream proofs
+2. Add `[simp]` attributes where appropriate
+3. Provide `Std.HashMap`-compatible signatures to minimize downstream churn
 
-| # | Field | From | To | Bridge Lemmas Needed |
-|---|-------|------|----|---------------------|
-| 1 | `objects` | `Std.HashMap ObjId KernelObject` | `RHTable ObjId KernelObject` | get?, insert, erase, fold, contains |
-| 2 | `irqHandlers` | `Std.HashMap Irq ObjId` | `RHTable Irq ObjId` | get?, insert, erase |
-| 3 | `asidTable` | `Std.HashMap ASID ObjId` | `RHTable ASID ObjId` | get?, insert, erase, contains |
-| 4 | `objectIndexSet` | `Std.HashSet ObjId` | Derived from `objects.contains` | membership |
-| 5 | `VSpaceRoot.mappings` | `Std.HashMap VAddr (PAddr × PagePerms)` | `RHTable VAddr (PAddr × PagePerms)` | get?, insert, erase |
+**Gate**: `lake build SeLe4n.Prelude` + zero sorry
 
-**Strategy per map:**
-1. Change the type declaration in `State.lean` or `Structures.lean`
-2. Update all call sites (primarily in operations files)
-3. Verify existing theorems still hold (bridge lemmas match `Std.HashMap` API)
-4. Run `test_smoke.sh` after each map migration
+#### Q2-B: RHSet Type Definition
 
-**objectIndexSet elimination:** Currently `objectIndexSet : Std.HashSet ObjId`
-provides O(1) membership. After migration, `objects.contains k` provides the
-same guarantee via `RHTable.contains` (O(1) amortized). The separate
-`objectIndexSet` can be eliminated if all uses go through `objects.contains`.
-The `objectIndex : List ObjId` monotonic proof anchor is retained.
+**New file**: `SeLe4n/Kernel/RobinHood/Set.lean`
 
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry
-
-#### Q2-C: Metadata and CDT Migration
-
-| # | Field | From | To |
-|---|-------|------|----|
-| 6 | `lifecycle.objectTypes` | `Std.HashMap ObjId KernelObjectType` | `RHTable ObjId KernelObjectType` |
-| 7 | `lifecycle.capabilityRefs` | `Std.HashMap SlotRef CapTarget` | `RHTable SlotRef CapTarget` |
-| 8 | `cdtSlotNode` | `Std.HashMap SlotRef CdtNodeId` | `RHTable SlotRef CdtNodeId` |
-| 9 | `cdtNodeSlot` | `Std.HashMap CdtNodeId SlotRef` | `RHTable CdtNodeId SlotRef` |
-| 10 | `cdt.childMap` | `HashMap CdtNodeId (List CdtNodeId)` | `RHTable CdtNodeId (List CdtNodeId)` |
-| 11 | `cdt.parentMap` | `HashMap CdtNodeId CdtNodeId` | `RHTable CdtNodeId CdtNodeId` |
-
-**Prerequisite:** `SlotRef` and `CdtNodeId` must have `Hashable` and `BEq`
-instances. `SlotRef` is a pair `(ObjId × Slot)` — derive or define instances
-compositionally.
-
-**CDT considerations:** The `CapDerivationTree` structure uses both `childMap`
-and `parentMap` for O(1) traversal. Both must migrate together to maintain
-consistency. The `addEdge`/`removeAsChild`/`removeAsParent` operations update
-both maps atomically.
-
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry
-
-#### Q2-D: Service Registry Migration
-
-| # | Field | From | To |
-|---|-------|------|----|
-| 12 | `serviceRegistry` | `Std.HashMap ServiceId ServiceRegistration` | `RHTable ServiceId ServiceRegistration` |
-| 13 | `interfaceRegistry` | `Std.HashMap InterfaceId InterfaceSpec` | `RHTable InterfaceId InterfaceSpec` |
-| 14 | `services` (legacy graph) | `Std.HashMap ServiceId ServiceGraphEntry` | `RHTable ServiceId ServiceGraphEntry` |
-
-**Note:** Fields 12–13 are introduced in Q1. Field 14 is the retained
-dependency graph (simplified in Q1-E). If Q1 and Q2 execute sequentially,
-fields 12–13 can be introduced as `RHTable` from the start (no migration needed).
-
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry
-
-#### Q2-E: Invariant Repair
-
-After all maps are migrated, verify:
-- All subsystem invariants (scheduler, capability, IPC, lifecycle, information
-  flow, service) still hold with `RHTable` backing
-- All frame lemmas compile
-- `apiInvariantBundle_default` holds
-- The `invExt` meta-invariant is maintained for every `RHTable` instance
-  (add `allTablesInvExt` predicate to `SystemState`)
-
-**New predicate:**
+**Definition**:
 ```lean
-def SystemState.allTablesInvExt (st : SystemState) : Prop :=
-  st.objects.invExt ∧ st.irqHandlers.invExt ∧ st.asidTable.invExt ∧
-  st.cdtSlotNode.invExt ∧ st.cdtNodeSlot.invExt ∧
-  st.cdt.childMap.invExt ∧ st.cdt.parentMap.invExt ∧
-  st.lifecycle.objectTypes.invExt ∧ st.lifecycle.capabilityRefs.invExt ∧
-  st.serviceRegistry.invExt ∧ st.interfaceRegistry.invExt ∧
-  st.services.invExt
-  -- CNode.slots.invExt handled per-object by slotsUnique
-  -- VSpaceRoot.mappings.invExt handled per-object
+/-- A verified hash set backed by RHTable. -/
+structure RHSet (κ : Type) [BEq κ] [Hashable κ] where
+  table : RHTable κ Unit
+
+def RHSet.empty (cap : Nat := 16) (h : 0 < cap := by omega) : RHSet κ :=
+  ⟨RHTable.empty cap h⟩
+
+def RHSet.contains (s : RHSet κ) (k : κ) : Bool := s.table.contains k
+def RHSet.insert (s : RHSet κ) (k : κ) : RHSet κ := ⟨s.table.insert k ()⟩
+def RHSet.erase (s : RHSet κ) (k : κ) : RHSet κ := ⟨s.table.erase k⟩
+def RHSet.toList (s : RHSet κ) : List κ := s.table.toList.map (·.1)
+def RHSet.fold (s : RHSet κ) (init : β) (f : β → κ → β) : β :=
+  s.table.fold init (fun acc k _ => f acc k)
 ```
 
-**Acceptance gate:** `lake build` + `test_full.sh` + zero sorry
+**Bridge lemmas (14)** — matching Prelude's `Std.HashSet` lemma signatures:
+
+| Category | Count | Examples |
+|----------|-------|---------|
+| `contains` | 5 | `contains_insert_self`, `contains_insert_ne`, `contains_erase_self`, `contains_erase_ne`, `contains_empty` |
+| `insert`/`erase` | 4 | `insert_idempotent`, `erase_absent_noop` |
+| `membership` | 3 | `mem_iff_contains`, `toList_contains` |
+| `invariant` | 2 | `insert_preserves_invExt`, `erase_preserves_invExt` |
+
+**Instances**: `Inhabited`, `BEq`, `Membership`, `EmptyCollection`
+
+**Gate**: `lake build SeLe4n.Kernel.RobinHood.Set` + zero sorry
+
+#### Q2-C: Core SystemState Maps + Object Store
+
+**Migration group A** (storeObject atomicity — must migrate together):
+- `objects : Std.HashMap ObjId KernelObject` → `RHTable ObjId KernelObject`
+- `objectIndexSet : Std.HashSet ObjId` → `RHSet ObjId`
+- `lifecycle.objectTypes : Std.HashMap ObjId KernelObjectType` → `RHTable ObjId KernelObjectType`
+- `lifecycle.capabilityRefs : Std.HashMap SlotRef CapTarget` → `RHTable SlotRef CapTarget`
+- `asidTable : Std.HashMap ASID ObjId` → `RHTable ASID ObjId`
+
+**Prerequisite**: `SlotRef` must have `Hashable` and `BEq` instances. Currently
+has a hash instance via `mixHash` (State.lean:93-94) — verify it works with RHTable.
+
+**Modified files (~12)**:
+- `SeLe4n/Model/State.lean` — field type changes + `storeObject` rewrite
+- `SeLe4n/Model/Object/Structures.lean` — if LifecycleMetadata is defined here
+- All files that call `storeObject`, `lookupObject`, or access these fields
+  directly (Scheduler, IPC, Capability, Lifecycle, API subsystems)
+
+**Strategy**: Change field types, then fix every compile error. Most errors
+will be `Std.HashMap.get?` → `RHTable.get?` (same signature). The `[key]?`
+bracket notation is provided by `GetElem?` instance (already in RHTable).
+
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
+
+#### Q2-D: Per-Object Maps (VSpaceRoot.mappings)
+
+**Migration**:
+- `VSpaceRoot.mappings : Std.HashMap VAddr (PAddr × PagePerms)` → `RHTable VAddr (PAddr × PagePerms)`
+
+**Modified files (~6)**:
+- `SeLe4n/Model/Object/Structures.lean` — VSpaceRoot type + operations (lookup, mapPage, unmapPage, noVirtualOverlap, BEq)
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` — 6 HashMap references in invariant proofs
+- `SeLe4n/Kernel/Architecture/VSpaceBackend.lean` — interface documentation
+- `SeLe4n/Testing/StateBuilder.lean` — VSpaceRoot fixture builders
+- Test files referencing VSpaceRoot construction
+
+**Prerequisite**: `VAddr` must have `Hashable` and `BEq` instances (already
+present — VAddr wraps Nat).
+
+**Note**: VSpaceRoot is embedded per-object, not at SystemState level. Each
+VSpaceRoot in the `objects` map has its own `mappings` RHTable. The `invExt`
+predicate for these is tracked per-object in `IntermediateState.hPerObjectMappings`.
+
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
+
+#### Q2-E: IRQ Handler Map
+
+**Migration**: `irqHandlers : Std.HashMap Irq ObjId` → `RHTable Irq ObjId`
+
+**Modified files (~3)**:
+- `SeLe4n/Model/State.lean` — field type
+- `SeLe4n/Platform/RPi5/BootContract.lean` — IRQ initialization
+- `SeLe4n/Platform/Sim/BootContract.lean` — simulation IRQ setup
+
+**Gate**: `lake build` + `test_smoke.sh`
+
+#### Q2-F: CDT Maps (Atomic Group B)
+
+**Migration group B** (CDT dual index — must migrate together):
+- `cdt.childMap : Std.HashMap CdtNodeId (List CdtNodeId)` → `RHTable CdtNodeId (List CdtNodeId)`
+- `cdt.parentMap : Std.HashMap CdtNodeId CdtNodeId` → `RHTable CdtNodeId CdtNodeId`
+- `cdtSlotNode : Std.HashMap SlotRef CdtNodeId` → `RHTable SlotRef CdtNodeId`
+- `cdtNodeSlot : Std.HashMap CdtNodeId SlotRef` → `RHTable CdtNodeId SlotRef`
+
+**Modified files (~5)**:
+- `SeLe4n/Model/Object/Structures.lean` — CapDerivationTree type + operations
+  (addEdge, childrenOf, parentOf, removeAsChild, removeAsParent, removeNode,
+  descendantsOf)
+- `SeLe4n/Model/State.lean` — cdtSlotNode/cdtNodeSlot fields + CDT helpers
+  (lookupCdtNodeOfSlot, lookupCdtSlotOfNode, attachSlotToCdtNode,
+  detachSlotFromCdt, ensureCdtNodeForSlot)
+- `SeLe4n/Kernel/Capability/Operations.lean` — CDT manipulation in cap ops
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` — CDT invariant definitions
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` — CDT edge creation during retype
+
+**Prerequisite**: `CdtNodeId` already has `Hashable`/`BEq` instances
+(Structures.lean:718-745).
+
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
+
+#### Q2-G: RunQueue Internals (Atomic Group C)
+
+**Migration group C** (RunQueue — must migrate together):
+- `runQueue.byPriority : Std.HashMap Priority (List ThreadId)` → `RHTable Priority (List ThreadId)`
+- `runQueue.threadPriority : Std.HashMap ThreadId Priority` → `RHTable ThreadId Priority`
+- `runQueue.membership : Std.HashSet ThreadId` → `RHSet ThreadId`
+
+**Modified files (~4)**:
+- `SeLe4n/Kernel/Scheduler/RunQueue.lean` — **49** `.contains` + **21** `.toList` + **8** HashMap + **14** HashSet = **92 callsites**. This is the single highest-density migration target.
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` — scheduler transitions
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` — thread selection
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` — **2,170 lines** of invariant proofs
+
+**Risk**: RunQueue.lean has the highest callsite density in the codebase.
+Scheduler preservation proofs (2,170 lines) depend heavily on HashMap/HashSet
+membership semantics.
+
+**Mitigation**: The bridge lemmas from Q2-A/Q2-B provide matching API.
+Migrate RunQueue.lean first (internal types), then fix operations, then
+preservation proofs. Run `lake build SeLe4n.Kernel.Scheduler.Operations.Preservation`
+after each file to catch regressions early.
+
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
+
+#### Q2-H: Service Maps
+
+**Migration** (note: fields 12-13 from §2.1 are introduced in Q1 and can be
+`RHTable` from the start if Q1 and Q2 are sequential):
+- `services : Std.HashMap ServiceId ServiceGraphEntry` → `RHTable ServiceId ServiceGraphEntry`
+- `serviceRegistry : Std.HashMap → RHTable` (if not already RHTable from Q1)
+- `interfaceRegistry : Std.HashMap → RHTable` (if not already RHTable from Q1)
+
+**Modified files (~4)**:
+- `SeLe4n/Model/State.lean` — service field types
+- `SeLe4n/Kernel/Service/Operations.lean` — service transitions
+- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` — cycle detection
+  (uses `Std.HashSet` for BFS visited set — this is **algorithm-local** and
+  retained as `Std.HashSet`, not migrated)
+- `SeLe4n/Kernel/Service/Invariant/Policy.lean` — policy predicates
+
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
+
+#### Q2-I: Std.HashMap/HashSet Elimination Verification
+
+**Task**: Grep the entire codebase for remaining `Std.HashMap` and `Std.HashSet`
+in state-persistent positions. Algorithm-local uses are permitted.
+
+**Verification script**:
+```bash
+# State-persistent HashMap — should return ZERO matches (excluding algorithm-local)
+grep -rn "Std\.HashMap" SeLe4n/ --include="*.lean" | grep -v "-- algorithm-local"
+
+# State-persistent HashSet — should return ZERO in state definitions
+grep -rn "Std\.HashSet" SeLe4n/Model/ SeLe4n/Kernel/Scheduler/RunQueue.lean
+```
+
+**Permitted remaining `Std.HashSet` locations** (algorithm-local only):
+- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` — BFS visited set
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` — observable filtering
+- `SeLe4n/Kernel/Service/Operations.lean` — BFS frontier
+
+**Gate**: Zero state-persistent `Std.HashMap`/`Std.HashSet` + `test_smoke.sh`
+
+#### Q2-J: allTablesInvExt Invariant
+
+**New predicate** (in `SeLe4n/Model/State.lean` or new file):
+
+```lean
+def SystemState.allTablesInvExt (st : SystemState) : Prop :=
+  -- SystemState direct fields
+  st.objects.invExt ∧
+  st.irqHandlers.invExt ∧
+  st.asidTable.invExt ∧
+  st.cdtSlotNode.invExt ∧
+  st.cdtNodeSlot.invExt ∧
+  -- LifecycleMetadata
+  st.lifecycle.objectTypes.invExt ∧
+  st.lifecycle.capabilityRefs.invExt ∧
+  -- CDT
+  st.cdt.childMap.invExt ∧
+  st.cdt.parentMap.invExt ∧
+  -- Service (post-Q1)
+  st.serviceRegistry.invExt ∧
+  st.interfaceRegistry.invExt ∧
+  st.services.invExt ∧
+  -- RunQueue
+  st.scheduler.runQueue.byPriority.invExt ∧
+  st.scheduler.runQueue.threadPriority.invExt ∧
+  -- RHSet invExt (via table field)
+  st.objectIndexSet.table.invExt ∧
+  st.scheduler.runQueue.membership.table.invExt
+```
+
+**Proof obligations**:
+- `default_allTablesInvExt` — default SystemState satisfies (all tables empty)
+- `storeObject_preserves_allTablesInvExt` — main state update preserves
+- Per-subsystem: each operation preserves `allTablesInvExt`
+
+**Gate**: `lake build` + `test_full.sh` + zero sorry
+
 
 ---
 
@@ -524,390 +729,394 @@ explicit invariant contracts and builder operations.
 
 #### Q3-A: IntermediateState Type
 
-**New file:**
-- `SeLe4n/Model/IntermediateState.lean`
-
-**Design:** `IntermediateState` is a refinement of `SystemState` that bundles
-the RHTable-backed state with its invariant witness:
+**New file**: `SeLe4n/Model/IntermediateState.lean`
 
 ```lean
+/-- Builder-phase state: all maps verified, all invariants carried. -/
 structure IntermediateState where
   state : SystemState
   hAllTables : state.allTablesInvExt
-  hPerObjectSlots : ∀ id cn, state.objects[id]? = some (.cnode cn) →
+  hPerObjectSlots : ∀ id cn, state.objects.get? id = some (.cnode cn) →
     cn.slotsUnique
-  hPerObjectMappings : ∀ id vs, state.objects[id]? = some (.vspaceRoot vs) →
+  hPerObjectMappings : ∀ id vs, state.objects.get? id = some (.vspaceRoot vs) →
     vs.mappings.invExt
+  hLifecycleConsistent : state.lifecycleMetadataConsistent
 ```
 
-This ensures every RHTable in the system satisfies its well-formedness,
-probe-chain-dominance, and no-duplicate-keys invariants at all times during
-the builder phase.
+This ensures every `RHTable` and `RHSet` in the system satisfies its
+invariants at all times during the builder phase.
+
+**Gate**: `lake build SeLe4n.Model.IntermediateState`
 
 #### Q3-B: Builder Operations
 
-**New file:**
-- `SeLe4n/Model/Builder.lean`
+**New file**: `SeLe4n/Model/Builder.lean`
 
 Builder operations wrap existing kernel operations with `IntermediateState`
-preservation:
+preservation. Each takes and returns `IntermediateState`, carrying the
+invariant witness forward.
 
-| Operation | Wraps | Proves |
+| Builder Op | Wraps | Proves |
 |-----------|-------|--------|
-| `Builder.createObject` | `storeObject` | `allTablesInvExt` preserved |
-| `Builder.deleteObject` | object removal | `allTablesInvExt` preserved |
-| `Builder.registerIrq` | IRQ handler insert | `allTablesInvExt` preserved |
-| `Builder.mapPage` | VSpace page map | per-object `mappings.invExt` preserved |
+| `Builder.createObject` | `storeObject` | `allTablesInvExt` + per-object preserved |
+| `Builder.deleteObject` | object erase | `allTablesInvExt` preserved |
+| `Builder.registerIrq` | IRQ insert | `allTablesInvExt` preserved |
+| `Builder.mapPage` | VSpace insert | per-object `mappings.invExt` preserved |
 | `Builder.insertCap` | CNode slot insert | per-object `slotsUnique` preserved |
 | `Builder.registerService` | service registration | `allTablesInvExt` preserved |
+| `Builder.addCdtEdge` | CDT edge add | CDT map `invExt` preserved |
 
-Each builder operation returns `IntermediateState` (not `SystemState`), carrying
-the invariant witness forward.
+**Gate**: `lake build SeLe4n.Model.Builder` + zero sorry
 
 #### Q3-C: Boot Sequence
 
-**New file:**
-- `SeLe4n/Platform/Boot.lean`
-
-The boot sequence constructs an `IntermediateState` from platform configuration:
+**New file**: `SeLe4n/Platform/Boot.lean`
 
 ```lean
+def IntermediateState.empty : IntermediateState where
+  state := default  -- all RHTables empty, all RHSets empty
+  hAllTables := default_allTablesInvExt
+  hPerObjectSlots := by intro id cn h; simp [RHTable.getElem?_empty] at h
+  hPerObjectMappings := by intro id vs h; simp [RHTable.getElem?_empty] at h
+  hLifecycleConsistent := by ...
+
 def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
-  let initial := IntermediateState.empty  -- all tables empty, trivially invExt
+  let initial := IntermediateState.empty
   let withIrqs := config.irqTable.foldl (fun st (irq, handler) =>
     Builder.registerIrq st irq handler) initial
   let withObjects := config.initialObjects.foldl (fun st (id, obj) =>
     Builder.createObject st id obj) withIrqs
-  -- ... additional initialization
   withObjects
 ```
 
-**Proof obligation:** `IntermediateState.empty` satisfies all invariants
-(trivially — all RHTables are empty, `invExt` holds for empty tables by
-`RHTable.empty_invExt`).
-
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry
-
+**Gate**: `lake build SeLe4n.Platform.Boot` + `test_smoke.sh` + zero sorry
 
 ---
 
 ### Phase Q4: CNode Radix Tree (Verified)
 
 **Target version**: v0.20.0
-**Goal**: Implement a verified radix tree with fixed fanout and bit-sliced
-traversal for CNode capability addressing. This replaces `RHTable Slot Capability`
-in the frozen CNode representation.
+**Goal**: Implement a verified radix tree matching seLe4n's existing CNode
+addressing semantics (guard match + radix bit extraction from `resolveSlot`
+in Structures.lean).
 
 #### Q4-A: Radix Tree Core Types
 
-**New file:**
-- `SeLe4n/Kernel/RadixTree/Core.lean`
+**New file**: `SeLe4n/Kernel/RadixTree/Core.lean`
 
-**Type definitions:**
+The design aligns with the existing `CNode.resolveSlot` implementation, which:
+1. Extracts `guardWidth` bits and compares against `guardValue`
+2. Extracts `radixWidth` bits as the child index
+3. Returns the slot index from the child array
 
 ```lean
-/-- A radix tree node with fixed 2^width fanout. -/
-inductive RadixNode (α : Type) : Nat → Type where
-  | leaf (slot : Fin (2^width)) (value : Option α) : RadixNode α 0
-  | branch (children : Array (Option (RadixNode α (depth - 1))))
-           (hSize : children.size = 2^width) : RadixNode α depth
+/-- Bit extraction: get `width` bits starting at `offset` from a slot value. -/
+def extractBits (val : Nat) (offset width : Nat) : Fin (2 ^ width) :=
+  ⟨(val >>> offset) % (2 ^ width), Nat.mod_lt _ (Nat.two_pow_pos width)⟩
 
-/-- A CNode radix tree: guard + radix addressing. -/
-structure CNodeTree (α : Type) where
+/-- A single radix node with fixed 2^radixWidth children. -/
+structure RadixNode (α : Type) where
   guardWidth  : Nat
   guardValue  : Nat
   radixWidth  : Nat
-  depth       : Nat
-  root        : RadixNode α depth
-  hRadixFanout : ∀ node ∈ allNodes root, nodeWidth node = 2^radixWidth
+  children    : Array (Option α)
+  hChildSize  : children.size = 2 ^ radixWidth
+
+/-- A CNode radix tree: flat array of capability slots. -/
+structure CNodeRadix where
+  guardWidth  : Nat
+  guardValue  : Nat
+  radixWidth  : Nat
+  slots       : Array (Option Capability)
+  hSlotSize   : slots.size = 2 ^ radixWidth
 ```
 
-**Design decisions:**
-- **Fixed fanout**: Every internal node has exactly `2^radixWidth` children,
-  matching seL4's CNode structure. No variable-width nodes.
-- **Bit-sliced traversal**: Lookup extracts `radixWidth` bits at each level,
-  indexing directly into the child array via `Fin (2^radixWidth)`.
-- **Guard matching**: Before descending into children, verify that the guard
-  bits in the key match `guardValue`. Mismatch → `none`.
-- **Array-backed**: Each node's children array is `Array (Option child)`,
-  providing cache-friendly sequential memory layout.
+**Design note**: seLe4n CNodes are **single-level** — each CNode has one
+guard and one radix level. Multi-level CSpace resolution chains through
+multiple CNode objects (via `resolveSlot` → lookup → recurse). The radix
+tree therefore models a single CNode as a flat `2^radixWidth`-entry array,
+not a deep tree. This is simpler than the original draft proposed and
+matches the actual codebase semantics exactly.
 
 #### Q4-B: Radix Tree Operations
 
-**Operations:**
-
 | Operation | Signature | Complexity |
 |-----------|-----------|------------|
-| `RadixTree.empty` | `(guardW radixW depth : Nat) → CNodeTree α` | O(2^radixW × depth) |
-| `RadixTree.lookup` | `(tree : CNodeTree α) → (key : Slot) → Option α` | O(depth) |
-| `RadixTree.insert` | `(tree : CNodeTree α) → (key : Slot) → (val : α) → CNodeTree α` | O(depth) |
-| `RadixTree.erase` | `(tree : CNodeTree α) → (key : Slot) → CNodeTree α` | O(depth) |
-| `RadixTree.fold` | `(tree : CNodeTree α) → (init : β) → (f : β → Slot → α → β) → β` | O(n) |
-| `RadixTree.toList` | `(tree : CNodeTree α) → List (Slot × α)` | O(n) |
+| `CNodeRadix.empty` | `(guardW guardV radixW : Nat) → CNodeRadix` | O(2^radixW) |
+| `CNodeRadix.lookup` | `(tree : CNodeRadix) → (slot : Slot) → Option Capability` | O(1) |
+| `CNodeRadix.insert` | `(tree : CNodeRadix) → (slot : Slot) → (cap : Capability) → CNodeRadix` | O(1) |
+| `CNodeRadix.erase` | `(tree : CNodeRadix) → (slot : Slot) → CNodeRadix` | O(1) |
+| `CNodeRadix.fold` | `(tree : CNodeRadix) → (init : β) → (f : β → Slot → Capability → β) → β` | O(2^radixW) |
+| `CNodeRadix.toList` | `(tree : CNodeRadix) → List (Slot × Capability)` | O(2^radixW) |
 
-**Bit extraction helper:**
+**Lookup implementation**:
 ```lean
-/-- Extract `width` bits starting at bit position `offset` from a slot. -/
-def extractBits (slot : Slot) (offset width : Nat) : Fin (2^width) :=
-  ⟨(slot.toNat >>> offset) % (2^width), Nat.mod_lt _ (Nat.pos_of_pow2 width)⟩
+def CNodeRadix.lookup (tree : CNodeRadix) (slot : Slot) : Option Capability :=
+  let idx := extractBits slot.toNat 0 tree.radixWidth
+  tree.slots[idx.val]'(by rw [tree.hSlotSize]; exact idx.isLt)
 ```
 
-**Lookup implementation (structural recursion on depth):**
-```lean
-def lookupRec (node : RadixNode α depth) (slot : Slot) (bitPos : Nat) 
-    (radixW : Nat) : Option α :=
-  match depth, node with
-  | 0, .leaf idx val => if extractBits slot bitPos radixW = idx then val else none
-  | n+1, .branch children _ =>
-    let idx := extractBits slot bitPos radixW
-    match children[idx.val]'(by omega) with
-    | none => none
-    | some child => lookupRec child slot (bitPos + radixW) radixW
-```
+This is a single array access — O(1), zero hashing, Fin-bounded.
 
-**Acceptance gate:** `lake build` + all operations compile + zero sorry
+**Gate**: `lake build SeLe4n.Kernel.RadixTree.Core` + zero sorry
 
-#### Q4-C: Radix Tree Invariants
+#### Q4-C: Radix Tree Invariants and Proofs
 
-**New file:**
-- `SeLe4n/Kernel/RadixTree/Invariant.lean`
+**New file**: `SeLe4n/Kernel/RadixTree/Invariant.lean`
 
-**Invariant definitions:**
+**Proof obligations (12)**:
+- `lookup_insert_self` — after insert, lookup returns inserted value
+- `lookup_insert_ne` — insert at slot `s` doesn't affect lookup at `s'` when `s ≠ s'`
+- `lookup_erase_self` — after erase, lookup returns `none`
+- `lookup_erase_ne` — erase doesn't affect other slots
+- `lookup_empty` — empty tree always returns `none`
+- `insert_idempotent` — inserting same value twice is identity
+- `fold_visits_all` — fold visits every occupied slot exactly once
+- `toList_complete` — toList contains every occupied entry
+- `toList_noDup` — toList has no duplicate keys
+- `size_insert_le` — size increases by at most 1
+- `size_erase_le` — size only decreases
+- `WF_preserved` — well-formedness preserved by all operations
 
-```lean
-/-- Well-formedness: all arrays have correct size, depth is consistent. -/
-def RadixTree.WF (tree : CNodeTree α) : Prop := ...
+These proofs are substantially simpler than Robin Hood proofs because:
+- No displacement, no backshift, no load factor
+- Fixed-size array (no resize)
+- Direct indexing via `extractBits` (no probing)
 
-/-- No duplicate keys: each slot maps to at most one value. -/
-def RadixTree.noDupKeys (tree : CNodeTree α) : Prop :=
-  ∀ s v₁ v₂, tree.lookup s = some v₁ → tree.lookup s = some v₂ → v₁ = v₂
-
-/-- Deterministic traversal: lookup is a total function. -/
-def RadixTree.deterministic (tree : CNodeTree α) : Prop :=
-  ∀ s, ∃! result, tree.lookup s = result
-```
-
-**Proof obligations:**
-- `lookup_insert_self`: After `insert k v`, `lookup k = some v`
-- `lookup_insert_ne`: Insert at `k` doesn't affect `lookup k'` when `k ≠ k'`
-- `lookup_erase_self`: After `erase k`, `lookup k = none`
-- `lookup_erase_ne`: Erase at `k` doesn't affect `lookup k'` when `k ≠ k'`
-- `WF_preserved_insert`: Insert preserves well-formedness
-- `WF_preserved_erase`: Erase preserves well-formedness
-- `fold_complete`: `fold` visits every occupied slot exactly once
-
-**Acceptance gate:** `lake build` + all proofs compile + zero sorry
+**Gate**: `lake build SeLe4n.Kernel.RadixTree.Invariant` + zero sorry
 
 #### Q4-D: Builder Equivalence Bridge
 
-**New file:**
-- `SeLe4n/Kernel/RadixTree/Bridge.lean`
+**New file**: `SeLe4n/Kernel/RadixTree/Bridge.lean`
 
-**Core proof obligation:**
-
+**Construction function**:
 ```lean
-/-- Lookup equivalence between RHTable (builder) and RadixTree (frozen). -/
-theorem radix_rhtable_equiv
-    (rt : RHTable Slot Capability) (tree : CNodeTree Capability)
-    (hBuild : tree = buildRadixTree rt cnodeConfig) :
-    ∀ slot, rt.get? slot = tree.lookup slot := by ...
+def buildCNodeRadix (rt : RHTable Slot Capability) (config : CNodeConfig) :
+    CNodeRadix :=
+  let empty := CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth
+  rt.fold empty (fun tree slot cap => tree.insert slot cap)
 ```
 
-**Construction function:**
+**Core equivalence theorem**:
 ```lean
-/-- Build a radix tree from an RHTable, preserving all entries. -/
-def buildRadixTree (rt : RHTable Slot Capability) (config : CNodeConfig) :
-    CNodeTree Capability :=
-  rt.fold (RadixTree.empty config.guardWidth config.radixWidth config.depth)
-    (fun tree slot cap => tree.insert slot cap)
+theorem buildCNodeRadix_lookup_equiv
+    (rt : RHTable Slot Capability) (config : CNodeConfig) (slot : Slot)
+    (hInvExt : rt.invExt) (hNoDup : rt.invExt.noDupKeys)
+    (hBound : ∀ s, rt.contains s → extractBits s.toNat 0 config.radixWidth
+              unique for all keys in rt) :
+    rt.get? slot = (buildCNodeRadix rt config).lookup slot
 ```
 
-**Additional bridge lemmas:**
-- `buildRadixTree_preserves_size`: Entry count is preserved
-- `buildRadixTree_preserves_membership`: `rt.contains k ↔ tree.lookup k ≠ none`
-- `buildRadixTree_deterministic`: Same RHTable + same config → same tree
+**Additional bridge lemmas**:
+- `buildCNodeRadix_preserves_size` — entry count preserved
+- `buildCNodeRadix_preserves_membership` — `rt.contains k ↔ tree.lookup k ≠ none`
+- `buildCNodeRadix_deterministic` — same RHTable + config → same tree
 
-**Acceptance gate:** `lake build` + equivalence proof compiles + zero sorry
+**Gate**: `lake build SeLe4n.Kernel.RadixTree.Bridge` + zero sorry
 
 ---
 
 ### Phase Q5: FrozenSystemState + Freeze
 
 **Target version**: v0.21.0
-**Goal**: Define the frozen execution-phase state representation with dense
-arrays and `Fin`-indexed access. Implement the `freeze` function.
+**Goal**: Define the frozen execution-phase state representation and implement
+the `freeze` function with explicit capacity planning.
 
-#### Q5-A: Dense Array Representation
+#### Q5-A: FrozenMap and FrozenSet Types
 
-**New file:**
-- `SeLe4n/Model/FrozenState.lean`
-
-**Core type:**
+**New file**: `SeLe4n/Model/FrozenState.lean`
 
 ```lean
-/-- A frozen key-value store: dense array + index map. -/
+/-- A frozen key-value store: dense array + pre-computed index. -/
 structure FrozenMap (κ : Type) (ν : Type) [BEq κ] [Hashable κ] where
-  data    : Array ν
-  index   : RHTable κ (Fin data.size)
-  hInject : ∀ k₁ k₂ i, index.get? k₁ = some i → index.get? k₂ = some i → k₁ == k₂
-  hTotal  : ∀ k i, index.get? k = some i → i.val < data.size
+  data     : Array ν
+  indexMap  : RHTable κ (Fin data.size)
+  hInject  : ∀ k₁ k₂ i, indexMap.get? k₁ = some i →
+                         indexMap.get? k₂ = some i → k₁ == k₂
+  hCoverage: ∀ k v, (∃ orig_v, ...) → ∃ i, indexMap.get? k = some i
+
+/-- Runtime lookup: index lookup + array access. -/
+def FrozenMap.get? (fm : FrozenMap κ ν) (k : κ) : Option ν :=
+  match fm.indexMap.get? k with
+  | none => none
+  | some idx => some fm.data[idx]
+
+/-- Runtime mutation: in-place array update at existing index. -/
+def FrozenMap.set (fm : FrozenMap κ ν) (k : κ) (v : ν) :
+    Option (FrozenMap κ ν) :=
+  match fm.indexMap.get? k with
+  | none => none
+  | some idx => some { fm with data := fm.data.set idx v }
+
+/-- A frozen set: membership via FrozenMap's index. -/
+def FrozenSet (κ : Type) [BEq κ] [Hashable κ] := FrozenMap κ Unit
 ```
 
-**Note on the index map:** The index map itself is an `RHTable`, which may
-seem contradictory to "no hashing at runtime." The critical distinction is:
-- The index map is computed **once** during `freeze` and never modified
-- Runtime lookups use the pre-computed `Fin` index to access the dense array
-- The hash computation happens at freeze time, not at syscall time
-- For truly zero-hash runtime, the index map can be replaced with a sorted
-  array + binary search, or a perfect hash function computed at freeze time
-
-**FrozenSystemState:**
+#### Q5-B: FrozenSystemState Definition
 
 ```lean
 structure FrozenSystemState where
-  objects         : FrozenMap ObjId KernelObject
-  irqHandlers     : FrozenMap Irq ObjId
-  asidTable       : FrozenMap ASID ObjId
-  serviceRegistry : FrozenMap ServiceId ServiceRegistration
+  -- Core maps (FrozenMap)
+  objects           : FrozenMap ObjId KernelObject
+  irqHandlers       : FrozenMap Irq ObjId
+  asidTable         : FrozenMap ASID ObjId
+  serviceRegistry   : FrozenMap ServiceId ServiceRegistration
   interfaceRegistry : FrozenMap InterfaceId InterfaceSpec
-  scheduler       : SchedulerState
-  cdt             : CapDerivationTree  -- retained as-is (traversal structure)
-  machine         : MachineState
-  objectIndex     : List ObjId         -- monotonic proof anchor (retained)
+  services          : FrozenMap ServiceId ServiceGraphEntry
 
-  -- Per-object frozen structures
-  -- CNode: slots as RadixTree (from Q4)
-  -- VSpaceRoot: mappings as sorted array or FrozenMap
+  -- CDT (FrozenMap — dual index)
+  cdtChildMap       : FrozenMap CdtNodeId (List CdtNodeId)
+  cdtParentMap      : FrozenMap CdtNodeId CdtNodeId
+  cdtSlotNode       : FrozenMap SlotRef CdtNodeId
+  cdtNodeSlot       : FrozenMap CdtNodeId SlotRef
+  cdtEdges          : List CapDerivationEdge  -- proof anchor (retained)
+  cdtNextNode       : CdtNodeId
+
+  -- Scheduler (FrozenMap for RunQueue)
+  scheduler         : FrozenSchedulerState
+
+  -- Lifecycle metadata (FrozenMap)
+  objectTypes       : FrozenMap ObjId KernelObjectType
+  capabilityRefs    : FrozenMap SlotRef CapTarget
+
+  -- Non-map fields (retained as-is)
+  machine           : MachineState
+  objectIndex       : List ObjId
+
+structure FrozenSchedulerState where
+  byPriority      : FrozenMap Priority (List ThreadId)
+  threadPriority  : FrozenMap ThreadId Priority
+  membership      : FrozenSet ThreadId
+  current         : Option ThreadId
+  activeDomain    : DomainId
+  domainTimeRemaining : Nat
+  domainSchedule  : List DomainScheduleEntry
+  domainScheduleIndex : Nat
 ```
 
-#### Q5-B: Freeze Function
+**Per-object frozen structures** (embedded in `FrozenMap ObjId KernelObject`):
+- CNode: `slots` field is `CNodeRadix` (from Q4) instead of `RHTable`
+- VSpaceRoot: `mappings` field is `FrozenMap VAddr (PAddr × PagePerms)`
 
-**Implementation:**
+This requires a `FrozenKernelObject` variant or a `freezeObject` function
+that converts per-object embedded maps.
+
+#### Q5-C: Freeze Function
 
 ```lean
 /-- Convert a builder-phase RHTable to a frozen dense array + index. -/
 def freezeMap [BEq κ] [Hashable κ] (rt : RHTable κ ν) (h : rt.invExt) :
     FrozenMap κ ν :=
-  let entries := rt.toList  -- deterministic iteration (slot order)
+  let entries := rt.toList
   let data := entries.map (·.2) |>.toArray
-  let index := entries.enum.foldl (fun idx (i, (k, _)) =>
+  let indexMap := entries.enum.foldl (fun idx (i, (k, _)) =>
     idx.insert k ⟨i, by omega⟩) (RHTable.empty 16)
-  { data, index,
-    hInject := by ... -- follows from noDupKeys
-    hTotal := by ... }
+  { data, indexMap, hInject := by ..., hCoverage := by ... }
 
-/-- Freeze a CNode's slots into a radix tree. -/
-def freezeCNode (cn : CNode) (h : cn.slotsUnique) : FrozenCNode :=
-  { cn with slots := buildRadixTree cn.slots cn.config }
+/-- Freeze a CNode's slots into a radix array. -/
+def freezeCNodeSlots (cn : CNode) (h : cn.slotsUnique) : CNodeRadix :=
+  buildCNodeRadix cn.slots ⟨cn.guardWidth, cn.guardValue, cn.radixWidth⟩
 
-/-- The master freeze function. -/
-def freeze (ist : IntermediateState) : FrozenSystemState :=
-  { objects := freezeMap ist.state.objects ist.hAllTables.1
-  , irqHandlers := freezeMap ist.state.irqHandlers ist.hAllTables.2.1
-  , asidTable := freezeMap ist.state.asidTable ist.hAllTables.2.2.1
-  , serviceRegistry := freezeMap ist.state.serviceRegistry ...
-  , interfaceRegistry := freezeMap ist.state.interfaceRegistry ...
-  , scheduler := ist.state.scheduler
-  , cdt := ist.state.cdt
-  , machine := ist.state.machine
-  , objectIndex := ist.state.objectIndex
-  }
+/-- Freeze an individual kernel object. -/
+def freezeObject (obj : KernelObject) : FrozenKernelObject :=
+  match obj with
+  | .cnode cn => .cnode (freezeCNode cn)
+  | .vspaceRoot vs => .vspaceRoot (freezeVSpaceRoot vs)
+  | other => other  -- TCB, Endpoint, Notification, Untyped unchanged
+
+/-- Master freeze function. -/
+def freeze (ist : IntermediateState) : FrozenSystemState := ...
 ```
 
-#### Q5-C: Frozen Lookup Operations
+#### Q5-D: Capacity Planning
+
+**Pre-allocation strategy (audit issue #10, #16)**:
+
+During freeze, the dense arrays are sized based on current population plus
+headroom for runtime object creation:
 
 ```lean
-/-- O(1) lookup in a frozen map (index lookup + array access). -/
-def FrozenMap.get? (fm : FrozenMap κ ν) (k : κ) : Option ν :=
-  match fm.index.get? k with
-  | none => none
-  | some idx => some fm.data[idx]
-
-/-- O(1) membership check. -/
-def FrozenMap.contains (fm : FrozenMap κ ν) (k : κ) : Bool :=
-  fm.index.contains k
+def objectCapacity (ist : IntermediateState) : Nat :=
+  -- Count available untyped memory slots as potential future objects
+  let untypedSlots := ist.state.objects.fold 0 (fun acc _ obj =>
+    match obj with
+    | .untyped u => acc + (u.regionSize / minObjectSize)
+    | _ => acc)
+  ist.state.objects.size + untypedSlots
 ```
 
-**Acceptance gate:** `lake build` + `test_smoke.sh` + zero sorry
+For maps that don't grow at runtime (irqHandlers, asidTable), the frozen
+array is sized exactly to current population.
+
+For maps that may grow (objects, serviceRegistry), the frozen array includes
+pre-allocated `none` slots for potential future entries, and the index map
+includes mappings for all potential keys.
+
+**Gate**: `lake build` + `test_smoke.sh` + zero sorry
 
 ---
 
 ### Phase Q6: Freeze Correctness Proofs
 
 **Target version**: v0.21.1
-**Goal**: Prove that the freeze function preserves all lookup semantics —
-every query that succeeds in the builder state produces identical results
-in the frozen state.
+**Goal**: Prove that freeze preserves all lookup semantics and kernel invariants.
 
-#### Q6-A: Core Lookup Equivalence
+#### Q6-A: Per-Map Lookup Equivalence (6+ theorems)
 
-**New file:**
-- `SeLe4n/Model/FreezeProofs.lean`
+**New file**: `SeLe4n/Model/FreezeProofs.lean`
 
-**Primary theorem:**
+For each map type, prove:
 
 ```lean
-/-- The fundamental correctness theorem: freeze preserves all lookups. -/
-theorem lookup_freeze_equiv
-    (ist : IntermediateState) (k : ObjId) :
-    ist.state.objects.get? k = (freeze ist).objects.get? k := by
-  unfold freeze freezeMap FrozenMap.get?
-  -- Key insight: toList preserves all entries (from RHTable bridge lemmas)
-  -- Index construction maps each key to its position in toList
-  -- Array access at that position returns the corresponding value
-  ...
+theorem lookup_freeze_objects (ist : IntermediateState) (k : ObjId) :
+    ist.state.objects.get? k = (freeze ist).objects.get? k
+
+theorem lookup_freeze_irqHandlers (ist : IntermediateState) (k : Irq) :
+    ist.state.irqHandlers.get? k = (freeze ist).irqHandlers.get? k
+
+-- ... analogous for asidTable, serviceRegistry, interfaceRegistry,
+--     services, cdtChildMap, cdtParentMap, cdtSlotNode, cdtNodeSlot,
+--     objectTypes, capabilityRefs (12 theorems total)
 ```
 
-**Per-map equivalence (6 theorems):**
-- `lookup_freeze_objects` — ObjId → KernelObject
-- `lookup_freeze_irqHandlers` — Irq → ObjId
-- `lookup_freeze_asidTable` — ASID → ObjId
-- `lookup_freeze_serviceRegistry` — ServiceId → ServiceRegistration
-- `lookup_freeze_interfaceRegistry` — InterfaceId → InterfaceSpec
-- `lookup_freeze_cnode_slots` — Slot → Capability (RHTable → RadixTree)
+**Proof strategy**: Each follows the same pattern:
+1. `freezeMap` constructs data/index from `toList`
+2. `toList` preserves all entries (by `RHTable` bridge lemma `toList_complete`)
+3. Index construction maps each key to its `toList` position
+4. Array access at that position returns the corresponding value
 
-#### Q6-B: CNode Radix Tree Equivalence
+#### Q6-B: CNode Radix Lookup Equivalence
 
 ```lean
-/-- CNode slot lookup is preserved through radix tree conversion. -/
-theorem lookup_freeze_cnode
-    (cn : CNode) (slot : Slot) (h : cn.slotsUnique) :
-    cn.slots.get? slot = (freezeCNode cn h).slots.lookup slot := by
-  -- Follows from radix_rhtable_equiv (Q4-D)
-  exact radix_rhtable_equiv cn.slots (buildRadixTree cn.slots cn.config) rfl slot
+theorem lookup_freeze_cnode (cn : CNode) (slot : Slot) (h : cn.slotsUnique) :
+    cn.slots.get? slot = (freezeCNodeSlots cn h).lookup slot
 ```
 
-#### Q6-C: Structural Properties
+Follows from `buildCNodeRadix_lookup_equiv` (Q4-D).
 
-**Theorems:**
-- `freeze_no_duplicates`: Frozen maps contain no duplicate keys
-  (by construction from `invExt.noDupKeys`)
-- `freeze_total_coverage`: Every key in builder state maps to a valid `Fin`
-  (by construction from `toList` completeness)
-- `freeze_deterministic`: Same `IntermediateState` → same `FrozenSystemState`
-  (by determinism of `toList` order + `fold` order)
-- `freeze_preserves_size`: `(freeze ist).objects.data.size = ist.state.objects.size`
-- `freeze_preserves_membership`:
-  `ist.state.objects.contains k ↔ (freeze ist).objects.contains k`
+#### Q6-C: Structural Properties (5 theorems)
 
-#### Q6-D: Cross-Subsystem Invariant Preservation
+- `freeze_deterministic` — same IntermediateState → same FrozenSystemState
+- `freeze_preserves_size` — entry counts preserved for each map
+- `freeze_preserves_membership` — contains equivalence for each map
+- `freeze_no_duplicates` — follows from `invExt.noDupKeys`
+- `freeze_total_coverage` — every builder key maps to a valid `Fin`
 
-**Theorem:**
+#### Q6-D: Invariant Transfer
+
+**Keystone theorem**:
 ```lean
-/-- All kernel invariants are preserved through freeze. -/
-theorem freeze_preserves_invariants
-    (ist : IntermediateState)
+theorem freeze_preserves_invariants (ist : IntermediateState)
     (hInv : apiInvariantBundle ist.state) :
-    apiInvariantBundle_frozen (freeze ist) := by
-  -- Each invariant references state through lookups
-  -- Lookup equivalence (Q6-A) transfers each invariant
-  ...
+    apiInvariantBundle_frozen (freeze ist)
 ```
 
-This is the keystone proof: it establishes that the frozen state inherits all
-safety properties from the builder state.
+Each invariant predicate references state through lookups. Since lookup
+equivalence is proven (Q6-A/Q6-B), each invariant transfers automatically.
+Define `apiInvariantBundle_frozen` that mirrors `apiInvariantBundle` but
+over `FrozenSystemState`.
 
-**Acceptance gate:** `lake build` + all proofs compile + zero sorry
+**Gate**: `lake build` + all proofs compile + zero sorry
 
 
 ---
@@ -915,20 +1124,17 @@ safety properties from the builder state.
 ### Phase Q7: Frozen Kernel Operations
 
 **Target version**: v0.22.0
-**Goal**: Rewrite all kernel transition functions to operate on
-`FrozenSystemState`, using `Fin`-indexed array access with no runtime hashing
-and no dynamic allocation.
+**Goal**: Rewrite kernel transition functions to operate on `FrozenSystemState`,
+using `Fin`-indexed array access. Establish the commutativity property between
+builder and frozen operations.
 
 #### Q7-A: Frozen Kernel Monad
 
-**New file:**
-- `SeLe4n/Model/FrozenKernel.lean`
+**New file**: `SeLe4n/Model/FrozenKernel.lean`
 
 ```lean
-/-- Kernel monad over frozen state. -/
 abbrev FrozenKernel := KernelM FrozenSystemState KernelError
 
-/-- Lift a frozen lookup into the kernel monad. -/
 def FrozenKernel.lookupObject (id : ObjId) : FrozenKernel KernelObject :=
   fun st =>
     match st.objects.get? id with
@@ -936,92 +1142,114 @@ def FrozenKernel.lookupObject (id : ObjId) : FrozenKernel KernelObject :=
     | none => .error .objectNotFound st
 ```
 
-**Design constraint:** Every frozen kernel operation must:
-1. Use `FrozenMap.get?` (index lookup + array access) — never raw hash
-2. Mutate via `FrozenMap.set` (array set at existing index) — never insert/erase
-3. Preserve the `Fin` index mapping invariant
-4. Terminate without fuel (structural recursion or `Fin` bounds)
+**Design constraints**:
+1. Use `FrozenMap.get?` for all lookups (index + array access)
+2. Use `FrozenMap.set` for mutations (in-place array update at existing index)
+3. Index map is **never modified** after freeze
+4. All `Fin` accesses are within bounds by construction
+5. No fuel needed (no dynamic resizing, no probing)
 
-#### Q7-B: Object Mutation in Frozen State
+#### Q7-B: Object Mutation Model
 
-Objects in `FrozenSystemState` are stored in a dense `Array KernelObject`.
-Mutations (e.g., updating a TCB's scheduling state during IPC) use in-place
-array updates:
+`FrozenMap.set` updates the dense array at an existing index without
+modifying the index map:
 
 ```lean
-/-- Update an object at its frozen index. -/
 def FrozenMap.set (fm : FrozenMap κ ν) (k : κ) (v : ν) :
     Option (FrozenMap κ ν) :=
-  match fm.index.get? k with
-  | none => none
+  match fm.indexMap.get? k with
+  | none => none  -- key not in frozen state → error
   | some idx => some { fm with data := fm.data.set idx v }
 ```
 
-**Critical guarantee:** `set` does not modify the index map. The `Fin` mapping
-is immutable after freeze. This means:
-- No new objects can be created (retype is a builder-phase operation)
-- No objects can be destroyed (delete is a builder-phase operation)
-- All runtime operations are pure state transformations on existing objects
+**Value-only mutations (audit issue #11)**:
 
-**Object lifecycle model:**
-- **Boot (builder phase):** Retype creates objects, populating the RHTable
-- **Freeze:** Converts to dense array, assigns `Fin` indices
-- **Runtime (frozen phase):** All operations mutate existing objects in-place
-- **If dynamic creation is needed:** Return to builder phase (unfreeze → modify → refreeze)
+The commutativity diagram `f(freeze(s)) = freeze(f(s))` holds **only** for
+operations that modify values at existing keys, not operations that add or
+remove keys from a map. This scopes the frozen operations:
 
-This matches seL4's model where the capability space is configured at boot
-time by the initial task, and runtime operations modify existing objects.
+| Operation Type | Examples | Frozen Support | Commutativity |
+|---------------|----------|----------------|---------------|
+| **Value update** | TCB state change (IPC), endpoint queue update, notification badge | Yes | Proven |
+| **Key addition** | `storeObject` (new object), CNode slot insert | Conditional | Pre-allocated slots only |
+| **Key removal** | Object deletion, CNode slot erase | Yes (set to `none`) | Proven |
+| **Builder-only** | `lifecycleRetype` (new untyped carve-out) | No | N/A |
+
+For **key addition** in frozen state: the object already has a pre-allocated
+`none` slot in the dense array (from Q5-D capacity planning). "Adding" an
+object is setting its slot from `none` to `some obj`. The index map already
+contains the key (mapped at freeze time to a `none` slot).
 
 #### Q7-C: Per-Subsystem Frozen Operations
 
 Each kernel subsystem gets a frozen counterpart:
 
-| Subsystem | Builder Operation | Frozen Operation | Change |
-|-----------|-------------------|------------------|--------|
-| Scheduler | `schedule` | `frozenSchedule` | `objects.get?` → `FrozenMap.get?` |
-| IPC | `endpointSend` | `frozenEndpointSend` | Array mutation via `FrozenMap.set` |
-| Capability | `cspaceLookup` | `frozenCspaceLookup` | CNode lookup via `RadixTree.lookup` |
-| VSpace | `vspaceResolve` | `frozenVspaceResolve` | Sorted array or FrozenMap lookup |
-| Lifecycle | `lifecycleRetype` | N/A (builder-only) | Not available in frozen phase |
-| Service | `lookupServiceByCap` | `frozenLookupServiceByCap` | `FrozenMap.get?` |
+| Subsystem | Builder Operation | Frozen Operation | Key Change |
+|-----------|-------------------|------------------|------------|
+| **Scheduler** | `schedule` | `frozenSchedule` | `FrozenMap.get?` for objects |
+| **Scheduler** | `handleYield` | `frozenHandleYield` | RunQueue via `FrozenMap` |
+| **Scheduler** | `timerTick` | `frozenTimerTick` | Array-indexed thread lookup |
+| **IPC** | `endpointSend` | `frozenEndpointSend` | Queue update via `FrozenMap.set` |
+| **IPC** | `endpointReceive` | `frozenEndpointReceive` | Message transfer via arrays |
+| **IPC** | `endpointCall` | `frozenEndpointCall` | Combined send+receive |
+| **IPC** | `endpointReply` | `frozenEndpointReply` | Reply cap resolution |
+| **Capability** | `cspaceLookup` | `frozenCspaceLookup` | `CNodeRadix.lookup` (O(1)) |
+| **Capability** | `cspaceMint` | `frozenCspaceMint` | Radix insert + `FrozenMap.set` |
+| **Capability** | `cspaceDelete` | `frozenCspaceDelete` | Radix erase + `FrozenMap.set` |
+| **VSpace** | `vspaceResolve` | `frozenVspaceResolve` | `FrozenMap.get?` for mappings |
+| **Service** | `lookupServiceByCap` | `frozenLookupServiceByCap` | `FrozenMap.get?` |
+| **Lifecycle** | `lifecycleRetype` | N/A | Builder-only operation |
 
-**CNode frozen lookup (radix tree):**
+**CNode frozen lookup** (key optimization):
 ```lean
 def frozenCspaceLookup (st : FrozenSystemState) (cptr : CPtr) (rootId : ObjId) :
     FrozenKernel Capability :=
   match st.objects.get? rootId with
   | some (.cnode cn) =>
-    match cn.frozenSlots.lookup (extractSlot cptr cn) with
+    let slotIdx := extractBits cptr.toNat 0 cn.radixWidth
+    match cn.frozenSlots.lookup slotIdx with
     | some cap => .ok cap st
     | none => .error .invalidCapability st
   | _ => .error .objectNotFound st
 ```
 
-#### Q7-D: Frozen Invariant Proofs
+#### Q7-D: Commutativity Proofs
 
-For each frozen operation, prove:
-1. **Correctness:** Same observable behavior as the builder-phase operation
-2. **Index preservation:** `FrozenMap.set` does not modify the index map
-3. **Bound safety:** All `Fin` accesses are within bounds (by construction)
-4. **Subsystem invariant preservation:** Scheduler, IPC, capability, etc.
+For each frozen operation, prove the commutativity diagram:
 
-**Theorem pattern:**
 ```lean
-theorem frozenEndpointSend_equiv
-    (ist : IntermediateState) (tid : ThreadId) (ep : ObjId) (msg : IpcMessage)
-    (hInv : apiInvariantBundle ist.state) :
-    let builderResult := endpointSend ist.state tid ep msg
-    let frozenResult := frozenEndpointSend (freeze ist) tid ep msg
-    builderResult.map freeze = frozenResult := by ...
+/-- Generic commutativity for value-only mutations. -/
+theorem frozenOp_commutes_with_freeze
+    (ist : IntermediateState) (op_builder : SystemState → SystemState)
+    (op_frozen : FrozenSystemState → FrozenSystemState)
+    (hValueOnly : ∀ k, (op_builder ist.state).objects.contains k =
+                       ist.state.objects.contains k)
+    (hEquiv : ∀ k, (op_builder ist.state).objects.get? k =
+                   match ist.state.objects.get? k with
+                   | some v => some (transform v)
+                   | none => none) :
+    op_frozen (freeze ist) = freeze (op_builder ist.state) := by ...
 ```
 
-This establishes that running an operation on the builder state then freezing
-is equivalent to freezing first then running the frozen operation — the
-**commutativity diagram** that proves the two-phase model is semantically
-transparent.
+**Strategy**: Prove a generic `set_freeze_commute` lemma once:
+```lean
+theorem FrozenMap.set_freeze_commute (rt : RHTable κ ν) (k : κ) (v : ν) :
+    (freezeMap rt).set k v = freezeMap (rt.insert k v)
+```
+Then instantiate per-operation.
 
-**Acceptance gate:** `lake build` + `test_full.sh` + zero sorry +
-all commutativity diagrams proven
+#### Q7-E: Frozen Invariant Preservation
+
+For each frozen operation, prove subsystem invariants are preserved:
+- `frozenEndpointSend_preserves_ipcInvariant`
+- `frozenSchedule_preserves_schedulerInvariant`
+- `frozenCspaceMint_preserves_capabilityInvariant`
+- etc.
+
+These follow from the commutativity proofs + builder-phase preservation proofs.
+
+**Gate**: `lake build` + `test_full.sh` + zero sorry + all commutativity
+diagrams proven for value-update operations
 
 ---
 
@@ -1029,531 +1257,499 @@ all commutativity diagrams proven
 
 **Absorbs**: WS-O phases O1–O8
 **Target version**: v0.22.0 (parallel with Q4–Q7)
-**Goal**: Deliver `libsele4n`, a `no_std` Rust userspace library exposing
-seLe4n's verified Lean syscall semantics as safe Rust wrappers.
+**Goal**: Deliver `libsele4n`, a `no_std` Rust userspace library with safe
+syscall wrappers for all 14 seLe4n syscalls.
 
-**Dependency note:** Q8 depends only on Q1 (finalized syscall surface). It is
-independent of Q2–Q7 (internal state architecture), since Rust wrappers operate
-at the register ABI level. This enables parallel execution.
+**Dependency**: Q8 depends only on Q1 (finalized syscall surface). It is
+independent of Q2–Q7, enabling parallel execution.
 
-#### Q8-A: Foundation Crate — `sele4n-types` (WS-O O1)
+#### Q8-A: Foundation Crate — `sele4n-types`
 
-**New directory:** `rust/sele4n-types/`
+**New directory**: `rust/sele4n-types/`
 
-**Deliverables:**
 - 14 newtype wrappers: `ObjId`, `ThreadId`, `CPtr`, `Slot`, `DomainId`,
   `Priority`, `Deadline`, `Irq`, `ServiceId`, `Badge`, `Asid`, `VAddr`,
   `PAddr`, `RegValue`
-- `KernelError` enum with 1:1 variant mapping from Lean (13+ variants)
+- `KernelError` enum (13+ variants, 1:1 mapping from Lean)
 - `AccessRight` enum (5 rights) + `AccessRights` bitmask
-- `SyscallId` enum with **14 variants** (updated from WS-O's 13):
-  - IPC: `Send(0)`, `Receive(1)`, `Call(2)`, `Reply(3)`
-  - CSpace: `CSpaceMint(4)`, `CSpaceCopy(5)`, `CSpaceMove(6)`, `CSpaceDelete(7)`
-  - Lifecycle: `LifecycleRetype(8)`
-  - VSpace: `VSpaceMap(9)`, `VSpaceUnmap(10)`
-  - Service: `ServiceRegister(11)`, `ServiceRevoke(12)`, `ServiceQuery(13)`
-- `#![no_std]`, `#![deny(unsafe_code)]`, zero external dependencies
+- `SyscallId` enum (14 variants — updated post-Q1):
+  IPC: Send(0), Receive(1), Call(2), Reply(3);
+  CSpace: Mint(4), Copy(5), Move(6), Delete(7);
+  Lifecycle: Retype(8); VSpace: Map(9), Unmap(10);
+  Service: Register(11), Revoke(12), Query(13)
+- `#![no_std]`, `#![deny(unsafe_code)]`, zero external deps
 
-#### Q8-B: ABI Crate — `sele4n-abi` (WS-O O2–O3)
+**Gate**: `cargo build --target aarch64-unknown-none`
 
-**New directory:** `rust/sele4n-abi/`
+#### Q8-B: ABI Crate — `sele4n-abi`
 
-**Deliverables:**
-- `MessageInfo` bitfield: encode/decode with validated bounds (length ≤ 120,
-  extra_caps ≤ 3)
-- `SyscallRequest` / `SyscallResponse` register structures
-- ARM64 register layout:
-  ```
-  x0: CPtr, x1: MessageInfo, x2-x5: msg_regs[0..3],
-  x7: reply badge/status, x8: SyscallId
-  ```
-- `raw_syscall`: inline `svc #0` assembly (the **single** `unsafe` block)
-- `invoke_syscall`: safe wrapper around `raw_syscall`
-- Per-syscall argument structures: `CSpaceMintArgs`, `CSpaceCopyArgs`,
-  `CSpaceMoveArgs`, `CSpaceDeleteArgs`, `LifecycleRetypeArgs`,
-  `VSpaceMapArgs`, `VSpaceUnmapArgs`, `ServiceRegisterArgs`,
-  `ServiceRevokeArgs`, `ServiceQueryArgs`
-- `TypeTag` enum (6 variants), `PagePerms` bitmask with W^X enforcement
-- Round-trip property tests for all encode/decode pairs
-- Mock `svc` for host-side testing (`#[cfg(not(target_arch = "aarch64"))]`)
+**New directory**: `rust/sele4n-abi/`
 
-#### Q8-C: Syscall Crate — `sele4n-sys` (WS-O O4–O7)
+- `MessageInfo` bitfield (length ≤ 120, extra_caps ≤ 3)
+- `SyscallRequest`/`SyscallResponse` register structures
+- ARM64 register layout: x0=CPtr, x1=MessageInfo, x2-x5=msg_regs,
+  x7=reply/status, x8=SyscallId
+- `raw_syscall`: inline `svc #0` (the **single** `unsafe` block)
+- `invoke_syscall`: safe wrapper
+- Per-syscall argument structures (10 types)
+- `TypeTag` enum (6 variants), `PagePerms` bitmask (W^X)
+- Round-trip property tests + mock `svc` for host testing
 
-**New directory:** `rust/sele4n-sys/`
+**Gate**: `cargo test --features std` passes
 
-**Deliverables:**
-- `IpcMessage` builder: `push_reg`, `push_cap`, bounds checking (≤ 120 regs, ≤ 3 caps)
-- IPC wrappers: `endpoint_send`, `endpoint_receive`, `endpoint_call`,
-  `endpoint_reply`, `endpoint_reply_receive`
-- Notification wrappers: `notification_signal` (badge OR accumulation),
-  `notification_wait`
-- CSpace wrappers: `cspace_mint` (rights subsetting), `cspace_copy`,
-  `cspace_move`, `cspace_delete`
-- Lifecycle wrapper: `lifecycle_retype` with `TypeTag` + convenience constructors
-- VSpace wrappers: `vspace_map` (W^X pre-check), `vspace_unmap`, `PagePerms` builders
-- Service wrappers: `service_register`, `service_revoke`, `service_query`
-- Phantom-typed capability handles: `Cap<Obj, Rts>` with compile-time rights
-  enforcement via sealed traits (`HasRead`, `HasWrite`, `HasGrant`)
-- Rights downgrading: `Cap::downgrade::<NewRts>()` with `SubsetOf` verification
-- `CSpaceBuilder` for initialization ergonomics
-- Zero `unsafe` in this crate; `#[must_use]` on all `KernelResult` returns
+#### Q8-C: Syscall Crate — `sele4n-sys`
 
-#### Q8-D: Conformance Testing (WS-O O8)
+**New directory**: `rust/sele4n-sys/`
 
-**Deliverables:**
-- Lean cross-validation: extend `MainTraceHarness.lean` with register encoding
-  test vectors (`[RUST-XVAL-*]` format)
-- `rust/tests/conformance.rs`: reads Lean trace output, verifies register-by-register
-  encoding equality for all 14 syscalls
-- `scripts/test_rust.sh`: Cargo build + unit tests + conformance tests
-- Integration into test tier system (Tier 2 in `test_smoke.sh`)
-- Compile-fail tests via `trybuild` for phantom type safety
-- Property tests via `proptest` for encode/decode roundtrips
+- `IpcMessage` builder (≤ 120 regs, ≤ 3 caps)
+- IPC: `endpoint_send`, `receive`, `call`, `reply`, `reply_receive`
+- Notification: `signal` (badge OR), `wait`
+- CSpace: `mint` (rights subsetting), `copy`, `move`, `delete`
+- Lifecycle: `retype` + convenience constructors
+- VSpace: `map` (W^X pre-check), `unmap`
+- Service: `register`, `revoke`, `query`
+- Phantom-typed caps: `Cap<Obj, Rts>` with sealed traits
+- Rights downgrading: `Cap::downgrade::<NewRts>()`
+- Zero `unsafe`; `#[must_use]` on all `KernelResult`
 
-**Acceptance gate:** All 14 syscalls wrapped, `cargo build --target aarch64-unknown-none`
-succeeds, conformance tests pass, exactly one `unsafe` block, zero sorry in Lean
+**Gate**: All 14 syscalls wrapped, `cargo test --features std`
+
+#### Q8-D: Conformance Testing + CI
+
+- Extend `MainTraceHarness.lean` with `[RUST-XVAL-*]` test vectors
+- `rust/tests/conformance.rs` — register-by-register ABI validation
+- `scripts/test_rust.sh` — Cargo build + test + conformance
+- Integrate into test_smoke.sh (Tier 2)
+- `trybuild` compile-fail tests for phantom type safety
+- `proptest` property tests for encode/decode roundtrips
+
+**Gate**: Conformance passes for all 14 syscalls, `test_smoke.sh` includes Rust
 
 ---
 
 ### Phase Q9: Integration Testing + Documentation
 
 **Target version**: v0.23.0
-**Goal**: Comprehensive testing of the two-phase architecture, full documentation
-sync across all canonical files.
+**Goal**: Comprehensive testing of the two-phase architecture, full
+documentation sync.
 
 #### Q9-A: Two-Phase Architecture Tests
-
-**New test scenarios:**
 
 | ID | Description | Phase | Expected |
 |----|-------------|-------|----------|
 | TPH-001 | Build IntermediateState from empty + objects | Builder | allTablesInvExt |
 | TPH-002 | Freeze empty IntermediateState | Freeze | empty FrozenSystemState |
 | TPH-003 | Freeze populated state, verify lookup equiv | Freeze | all lookups match |
-| TPH-004 | CNode RHTable → RadixTree lookup equiv | Freeze | slot-by-slot match |
+| TPH-004 | CNode RHTable → CNodeRadix lookup equiv | Freeze | slot-by-slot match |
 | TPH-005 | Frozen IPC send/receive | Execution | correct message transfer |
 | TPH-006 | Frozen scheduler tick | Execution | correct thread selection |
-| TPH-007 | Frozen CSpace lookup (radix tree) | Execution | correct capability |
+| TPH-007 | Frozen CSpace lookup (radix) | Execution | correct capability |
 | TPH-008 | Frozen VSpace resolve | Execution | correct page mapping |
 | TPH-009 | Frozen service query | Execution | correct registration |
-| TPH-010 | Round-trip: builder op then freeze = freeze then frozen op | Both | commutativity |
-| TPH-011 | Determinism: freeze twice → identical result | Freeze | byte-equal |
-| TPH-012 | Negative: frozen retype attempt → error | Execution | builderOnlyOp |
+| TPH-010 | Commutativity: builder then freeze = freeze then frozen | Both | equal states |
+| TPH-011 | Determinism: freeze twice → identical | Freeze | byte-equal |
+| TPH-012 | Pre-allocated slot: retype in frozen state | Execution | slot fills correctly |
+| TPH-013 | Delete in frozen state: slot cleared to none | Execution | lookup returns none |
+| TPH-014 | RunQueue operations in frozen state | Execution | correct scheduling |
 
-#### Q9-B: Service Interface Tests (WS-P P6 absorption)
+#### Q9-B: Rust Conformance Tests (RUST-XVAL-001 through XVAL-014)
 
-Test scenarios SRG-001 through SRG-010 (defined in Q1-F) integrated into
-the two-phase test suite.
+Register-by-register ABI validation for all 14 syscalls.
 
-#### Q9-C: Rust Cross-Validation Tests (WS-O O8 absorption)
+#### Q9-C: Service Interface Tests (SRG-001 through SRG-010)
 
-RUST-XVAL test vectors for all 14 syscalls, verified register-by-register
-against Lean trace output.
+Integrated from Q1-F into the two-phase test suite.
 
 #### Q9-D: Documentation Sync
 
-**Modified files (15+):**
+**Modified files (15+)**:
 
 | File | Update |
 |------|--------|
-| `docs/WORKSTREAM_HISTORY.md` | Add WS-Q entry (absorbs WS-P, WS-O) |
+| `docs/WORKSTREAM_HISTORY.md` | WS-Q entry (absorbs WS-P, WS-O) |
 | `docs/spec/SELE4N_SPEC.md` | Two-phase architecture, service interface, Rust wrappers |
 | `docs/DEVELOPMENT.md` | Builder/freeze workflow, Rust build instructions |
-| `docs/CLAIM_EVIDENCE_INDEX.md` | WS-Q claims (freeze equivalence, radix tree correctness) |
-| `README.md` | Metrics sync (line counts, theorem counts, Rust crate stats) |
-| `CLAUDE.md` | Source layout (new files), active workstream update |
-| `docs/gitbook/03-architecture-and-module-map.md` | Two-phase architecture diagram |
+| `docs/CLAIM_EVIDENCE_INDEX.md` | Freeze-equivalence claims, radix tree correctness |
+| `README.md` | Metrics sync |
+| `CLAUDE.md` | Source layout update, active workstream |
+| `docs/gitbook/03-architecture-and-module-map.md` | Two-phase diagram |
 | `docs/gitbook/04-project-design-deep-dive.md` | Builder/freeze design rationale |
-| `docs/gitbook/05-specification-and-roadmap.md` | Updated milestone table |
-| `docs/gitbook/12-proof-and-invariant-map.md` | Freeze proofs, radix tree invariants |
-| `docs/gitbook/15-rust-syscall-wrappers.md` | New chapter: Rust library docs |
-| `docs/codebase_map.json` | Regenerate with new modules |
-| `scripts/website_link_manifest.txt` | Verify/update protected paths |
-| `scripts/test_smoke.sh` | Integrate Rust tests (Tier 2) |
-| `scripts/test_full.sh` | Integrate two-phase tests (Tier 3) |
+| `docs/gitbook/05-specification-and-roadmap.md` | Milestone table |
+| `docs/gitbook/12-proof-and-invariant-map.md` | Freeze proofs, radix invariants |
+| `docs/gitbook/15-rust-syscall-wrappers.md` | New chapter |
+| `docs/codebase_map.json` | Regenerate |
+| `scripts/website_link_manifest.txt` | Verify/update |
+| `scripts/test_smoke.sh` | Rust integration (Tier 2) |
+| `scripts/test_full.sh` | Two-phase tests (Tier 3) |
 
-**Acceptance gate:** `test_full.sh` + `generate_codebase_map.py --pretty --check` +
-all documentation reviewed
+**Gate**: `test_full.sh` + `generate_codebase_map.py --pretty --check`
 
-
----
-
-## 5. Estimated Scope
-
-| Phase | New Lines | Removed Lines | Modified Files | New Files | New Dirs |
-|-------|-----------|---------------|----------------|-----------|----------|
-| Q1 | ~1,150 | ~800 | ~22 | 3 | 1 |
-| Q2 | ~600 | ~200 | ~30 | 1 | 0 |
-| Q3 | ~400 | 0 | 2 | 3 | 0 |
-| Q4 | ~1,200 | 0 | 2 | 3 | 1 |
-| Q5 | ~500 | 0 | 3 | 2 | 0 |
-| Q6 | ~800 | 0 | 2 | 1 | 0 |
-| Q7 | ~1,500 | ~300 | ~20 | 2 | 0 |
-| Q8 | ~3,000 | 0 | 3 | ~20 | 4 |
-| Q9 | ~500 | ~200 | ~18 | 2 | 0 |
-| **Total** | **~9,650** | **~1,500** | **~50 unique** | **~37** | **6** |
-
-**Net effect**: ~8,150 new lines across Lean and Rust, with a substantially
-simpler and more principled kernel state architecture.
-
-**Lean proof surface expansion**: ~3,500 lines of new invariant and equivalence
-proofs (Q3, Q4-C, Q6, Q7-D).
-
-**Rust library**: ~3,000 lines across 3 crates (types, ABI, syscall wrappers).
 
 ---
 
-## 6. Dependency Graph (Detailed)
+## 6. Estimated Scope (Revised)
+
+| Phase | Sub-phases | New Lines | Removed | Modified Files | New Files |
+|-------|-----------|-----------|---------|----------------|-----------|
+| Q1 | 7 | ~1,150 | ~800 | ~22 | 3 |
+| Q2 | 10 | ~1,800 | ~300 | ~35 | 2 |
+| Q3 | 3 | ~400 | 0 | 2 | 3 |
+| Q4 | 4 | ~800 | 0 | 2 | 3 |
+| Q5 | 4 | ~600 | 0 | 3 | 2 |
+| Q6 | 4 | ~900 | 0 | 2 | 1 |
+| Q7 | 5 | ~1,800 | ~300 | ~20 | 2 |
+| Q8 | 4 | ~3,000 | 0 | 3 | ~20 |
+| Q9 | 4 | ~500 | ~200 | ~18 | 2 |
+| **Total** | **45** | **~10,950** | **~1,600** | **~55 unique** | **~38** |
+
+**Comparison to Rev 1**: +1,300 new lines (primarily Q2 Prelude lemmas + RHSet +
+RunQueue migration), reflecting the true scope discovered during audit.
+
+**Lean proof surface expansion**: ~4,100 lines of new proofs
+(Q2-A/B: ~500, Q3: ~300, Q4-C/D: ~600, Q6: ~900, Q7-D/E: ~1,800).
+
+**Rust library**: ~3,000 lines across 3 crates (unchanged from Rev 1).
+
+---
+
+## 7. Dependency Graph
 
 ```
-                    Q1 (Service Interface)
-                    │
-          ┌─────────┼──────────┐
-          │         │          │
-          ▼         │          ▼
-    Q2 (RHTable     │    Q8 (Rust Wrappers)
-     Migration)     │     ║  O1→O2→O3
-          │         │     ║  O4 ∥ O5 ∥ O6
-          ▼         │     ║  O7→O8
-    Q3 (Intermediate│     ║
-     State)         │     ║
-          │         │     ║
-     ┌────┴────┐    │     ║
-     │         │    │     ║
-     ▼         ▼    │     ║
-   Q4 (Radix  Q5*   │     ║
-    Tree)     waits  │     ║
-     │    for Q4     │     ║
-     │    ┌────┘     │     ║
-     ▼    ▼          │     ║
-    Q5 (Frozen       │     ║
-     State)          │     ║
-          │          │     ║
-          ▼          │     ║
-    Q6 (Freeze       │     ║
-     Proofs)         │     ║
-          │          │     ║
-          ▼          │     ║
-    Q7 (Frozen       │     ║
-     Operations)     │     ║
-          │          │     ║
-          └──────────┴─────╝
-                     │
-                     ▼
-               Q9 (Testing +
-                Documentation)
+Q1-A → Q1-B → Q1-C → Q1-D → Q1-E1 → Q1-E2 → Q1-F → Q1-G
+  │                                                      │
+  └─────────────────────────────→ Q8-A → Q8-B → Q8-C → Q8-D ──┐
+                                                                │
+Q2-A ──→ Q2-B ──→ Q2-C ──→ Q2-D ──→ Q2-E ──→ Q2-F            │
+                    │                   │                       │
+                    │                   └──→ Q2-G ──→ Q2-H     │
+                    │                                   │       │
+                    └────────────────────────────────→ Q2-I     │
+                                                        │       │
+                                                      Q2-J      │
+                                                        │       │
+                                                      Q3-A      │
+                                                        │       │
+                                            ┌──→ Q3-B ──┤       │
+                                            │     │     │       │
+                                            │   Q3-C    │       │
+                                            │           │       │
+                                          Q4-A ──→ Q4-B │       │
+                                            │       │   │       │
+                                          Q4-C ──→ Q4-D │       │
+                                            │           │       │
+                                            └──→ Q5-A ──┘       │
+                                                  │             │
+                                            Q5-B → Q5-C → Q5-D │
+                                                        │       │
+                                                      Q6-A      │
+                                                        │       │
+                                                Q6-B → Q6-C     │
+                                                        │       │
+                                                      Q6-D      │
+                                                        │       │
+                                            Q7-A → Q7-B → Q7-C │
+                                                        │       │
+                                                Q7-D → Q7-E     │
+                                                        │       │
+                                                        └───┬───┘
+                                                            │
+                                                    Q9-A → Q9-D
 ```
 
-**Critical path**: Q1 → Q2 → Q3 → Q4 → Q5 → Q6 → Q7 → Q9
-**Parallel path**: Q1 → Q8 → Q9 (joins at Q9)
+**Critical path length**: 36 sub-phases (Q1×7 → Q2×10 → Q3×3 → Q4×4 →
+Q5×4 → Q6×4 → Q7×5 → Q9 selective)
 
-**Phase Q4 and Q3 parallelism**: Q4 (radix tree) depends on Q2 (RHTable
-migration) for the builder-phase CNode representation, but its core type
-definitions and proofs can begin in parallel with Q3 (IntermediateState
-formalization). Q5 must wait for both Q3 and Q4.
+**Parallel path**: Q8×4 (runs alongside Q2–Q7, joins at Q9)
+
+**Q2 internal parallelism**: After Q2-C, subphases Q2-D/Q2-E/Q2-F/Q2-G can
+proceed in parallel (they touch disjoint file sets). Q2-H depends on Q2-C
+(service maps reference objects map). Q2-I waits for all map migrations.
 
 ---
 
-## 7. Risk Analysis
+## 8. Risk Analysis
 
-### Risk 1: Universal RHTable Migration Breadth (HIGH)
+### Risk 1: Q2 Migration Breadth (CRITICAL)
 
-**Description**: Q2 touches 30+ files across every subsystem, replacing
-`Std.HashMap` with `RHTable` at every occurrence. Any missed call site or
-API mismatch produces compile errors across the entire proof surface.
+**Description**: Q2 touches 35+ files, 78 HashMap + 57 HashSet occurrences,
+requires 42+ new Prelude lemmas. This is the single largest risk in the plan.
+
+**Likelihood**: HIGH | **Impact**: HIGH
+
+**Mitigation**:
+- Q2-A (Prelude lemmas) is the critical enabler — complete it first
+- Migrate one atomic group at a time (A→B→C→D→E→F→G→H→I→J)
+- Run `lake build` after each file change, not just each subphase
+- The WS-N4 CNode migration (20+ files) provides a proven template
+- RunQueue (Q2-G) is highest-density: isolate it and test exhaustively
+
+### Risk 2: RunQueue Proof Repair (HIGH)
+
+**Description**: RunQueue.lean has 92 callsites and Preservation.lean has
+2,170 lines of proofs depending on HashMap/HashSet membership semantics.
 
 **Likelihood**: MEDIUM | **Impact**: HIGH
 
 **Mitigation**:
-- Migrate one map at a time, running `lake build` after each
-- The existing bridge lemmas (10 in Bridge.lean) match `Std.HashMap` API patterns
-- Use `Grep` for `Std.HashMap` to find all remaining occurrences
-- `test_smoke.sh` at each intermediate commit
-- The WS-N4 CNode migration (20+ files, ~25 theorems) provides a proven template
+- RHTable/RHSet bridge lemmas (Q2-A/Q2-B) provide matching API signatures
+- Most proofs use `contains_insert_self`/`contains_erase_ne` patterns that
+  map directly to existing bridge lemmas
+- Budget extra time for Q2-G — it may be the longest single subphase
 
-### Risk 2: Freeze Function Complexity (HIGH)
+### Risk 3: Freeze Function Correctness (HIGH)
 
-**Description**: The `freeze` function must produce a well-formed
-`FrozenSystemState` where every `Fin` index is valid and every lookup is
-equivalent. The proof of `lookup_freeze_equiv` is non-trivial — it requires
-reasoning about `toList` ordering, `enum` indexing, and `foldl` accumulation.
+**Description**: `freezeMap` must produce well-formed `FrozenMap` where every
+`Fin` index is valid and every lookup is equivalent. Proof of `lookup_freeze_equiv`
+requires reasoning about `toList` ordering, enumeration indexing, and fold
+accumulation.
 
 **Likelihood**: MEDIUM | **Impact**: HIGH
 
 **Mitigation**:
-- Build `freezeMap` as a standalone, generic function with its own proof module
-- Prove `toList`/`fold` completeness lemmas in `RHTable.Bridge` first
-- Use `decide` or `native_decide` for finite-domain equivalence checks in tests
-- The `invExt.noDupKeys` invariant simplifies many proof steps
+- Build `freezeMap` as standalone generic function with its own proof module
+- Prove `toList` completeness in Bridge.lean first (extend existing bridge)
+- Use `native_decide` for finite-domain equivalence checks in tests
+- `invExt.noDupKeys` simplifies injection proofs
 
-### Risk 3: Radix Tree Verification Effort (MEDIUM)
+### Risk 4: CNode Radix Simplification (LOW — improved from Rev 1)
 
-**Description**: The CNode radix tree is a new verified data structure requiring
-~1,200 lines of proofs. Structural recursion on depth is clean but array bounds
-reasoning can be tedious in Lean 4.
-
-**Likelihood**: MEDIUM | **Impact**: MEDIUM
-
-**Mitigation**:
-- The radix tree is structurally simpler than Robin Hood (no displacement, no
-  backshift, no load factor) — proofs should be more straightforward
-- Fixed fanout (2^radixWidth) simplifies bounds reasoning
-- The `extractBits` + `Fin` pattern provides type-level bounds automatically
-- Incremental delivery: core types (Q4-A) → operations (Q4-B) → proofs (Q4-C)
-  → bridge (Q4-D), each independently compilable
-
-### Risk 4: Frozen Operation Commutativity (MEDIUM)
-
-**Description**: Q7-D requires proving that `f(freeze(s)) = freeze(f(s))` for
-every kernel operation `f`. This commutativity diagram is the formal guarantee
-that the two-phase model is semantically transparent, but proving it for ~20
-operations is substantial.
-
-**Likelihood**: MEDIUM | **Impact**: MEDIUM
-
-**Mitigation**:
-- Most operations only modify one or two objects — the commutativity proof
-  reduces to showing that `FrozenMap.set` at a valid index commutes with
-  `freeze` applied to an `RHTable.insert` at the same key
-- Prove a generic `set_freeze_commute` lemma once, instantiate per-operation
-- Operations that don't modify state (lookups) commute trivially
-
-### Risk 5: WS-O ABI Drift (LOW)
-
-**Description**: Q1 changes the syscall ID enumeration. If Q8 begins before
-Q1 is finalized, the Rust encoding may not match.
+**Description**: Rev 1 proposed a deep recursive radix tree. The audit revealed
+that seLe4n CNodes are single-level (guard + one radix level). Rev 2 uses a
+flat `2^radixWidth`-entry array, which is dramatically simpler.
 
 **Likelihood**: LOW | **Impact**: LOW
 
-**Mitigation**:
-- Q8 depends on Q1 — Rust work begins only after syscall surface is stable
-- Conformance tests (Q8-D) catch any encoding drift automatically
-- Version pinning: `sele4n-abi` version tracks the Lean model version
+**Mitigation**: Flat array proofs are trivial (direct `Fin` indexing, no
+recursion, no displacement). Most proofs will close with `simp` + `omega`.
 
-### Risk 6: Builder-Only Operations at Runtime (LOW)
+### Risk 5: FrozenMap Index Hashing (MEDIUM — new in Rev 2)
 
-**Description**: The frozen phase deliberately excludes `lifecycleRetype` and
-`objectCreate`. If user space needs to create objects at runtime, the kernel
-must support an unfreeze → modify → refreeze cycle, which adds complexity.
+**Description**: The `FrozenMap.indexMap` is an `RHTable` that performs hash
+computation at lookup time, contradicting the "no runtime hashing" goal for
+non-CNode maps.
 
-**Likelihood**: LOW (seL4 model: all objects created at boot by initial task)
+**Likelihood**: HIGH (by design) | **Impact**: LOW
 
-**Mitigation**:
-- seL4's actual model: all untyped memory is partitioned at boot time; retype
-  is invoked by the root task during initialization, not during steady-state
-  operation. The frozen phase matches this model.
-- If dynamic retype is needed (future requirement), it can be modeled as a
-  special transition that extends the dense array (append + index update) rather
-  than a full unfreeze/refreeze cycle.
+**Mitigation**: This is an accepted trade-off documented in §3.1. CNode
+lookups (the hottest path) use zero-hash radix indexing. Object/service/IRQ
+lookups use verified RHTable hashing, which is still O(1) amortized and
+superior to `Std.HashMap` (verified vs unverified). Future optimization:
+replace `indexMap` with perfect hash function computed at freeze time.
 
-### Risk 7: `objectIndex` Monotonicity in Frozen State (LOW)
+### Risk 6: Pre-Allocation Sizing (MEDIUM)
 
-**Description**: The `objectIndex : List ObjId` monotonic proof anchor is
-retained in `FrozenSystemState`. Since the frozen phase doesn't create new
-objects, monotonicity is trivially preserved (the list never changes). But
-the list is still carried as proof infrastructure.
+**Description**: Q5-D pre-allocates `Option` slots for potential future objects.
+If the capacity estimate is too small, runtime retype operations fail. If too
+large, memory is wasted.
 
-**Likelihood**: LOW | **Impact**: LOW
+**Likelihood**: MEDIUM | **Impact**: MEDIUM
 
-**Mitigation**: No action needed — monotonicity is a "for free" property in
-the frozen phase. The list is retained for cross-phase proof continuity.
+**Mitigation**: Capacity is derived from actual untyped memory regions (known
+at boot time). Over-allocation by a small constant factor (1.1×) provides
+headroom. seL4's model bounds total objects by physical memory.
+
+### Risk 7: Commutativity Scope (LOW — scoped in Rev 2)
+
+**Description**: The commutativity diagram only holds for value-update
+operations (audit issue #11). Key-set operations are builder-only.
+
+**Likelihood**: LOW (by design) | **Impact**: LOW
+
+**Mitigation**: Rev 2 explicitly scopes commutativity to value-update
+operations. Key-set operations (retype, delete) use the pre-allocation
+model (setting `none` ↔ `some`), which is a value update on the `Option`
+wrapper. No structural key-set changes occur in frozen state.
 
 ---
 
-## 8. Success Criteria
+## 9. Success Criteria
 
-### 8.1 Architectural
+### 9.1 Architectural
+- [ ] Zero `Std.HashMap`/`Std.HashSet` in any kernel state type
+- [ ] Algorithm-local `Std.HashSet` permitted (documented)
+- [ ] `IntermediateState` uses `RHTable`/`RHSet` exclusively
+- [ ] `FrozenSystemState` uses `FrozenMap`/`FrozenSet` + `CNodeRadix`
+- [ ] All 16 RHTable + 2 RHSet instances satisfy `invExt`
+- [ ] `allTablesInvExt` predicate defined and proven for default state
+- [ ] Service lifecycle removed from kernel; registration is capability-mediated
+- [ ] CNode frozen lookup uses O(1) radix indexing (zero hashing)
+- [ ] Rust library compiles for `aarch64-unknown-none`
 
-- [ ] No `Std.HashMap` or `Std.HashSet` in any kernel state type
-- [ ] `IntermediateState` uses `RHTable` exclusively for all maps
-- [ ] `FrozenSystemState` uses dense arrays + `Fin` indexing for all maps
-- [ ] CNode slots use verified radix tree in frozen state
-- [ ] All RHTable instances satisfy `invExt` (WF + PCD + noDupKeys)
-- [ ] Fixed hash function, fixed seed, fixed probe sequence — no nondeterminism
-- [ ] No pointer-heavy structures in frozen execution path
-- [ ] Service lifecycle (start/stop/restart) removed from kernel
-- [ ] Service registration is capability-mediated
-- [ ] Rust syscall library compiles for `aarch64-unknown-none`
-
-### 8.2 Formal
-
-- [ ] `lookup_freeze_equiv` proven for all 6+ map types
-- [ ] `lookup_freeze_cnode` proven (RHTable → RadixTree equivalence)
-- [ ] `freeze_deterministic` — same builder state → same frozen state
-- [ ] `freeze_preserves_invariants` — all `apiInvariantBundle` properties transfer
-- [ ] Commutativity: `f(freeze(s)) = freeze(f(s))` for all frozen operations
-- [ ] RadixTree lookup/insert/erase correctness proven
-- [ ] Registry invariants (`registryEndpointValid`, `registryInterfaceValid`) proven
+### 9.2 Formal
+- [ ] 42+ Prelude lemma equivalents proven for RHTable/RHSet
+- [ ] 12+ `lookup_freeze_*` theorems proven (one per map)
+- [ ] `lookup_freeze_cnode` (RHTable → CNodeRadix equivalence)
+- [ ] `freeze_deterministic`, `freeze_preserves_size`, `freeze_preserves_membership`
+- [ ] `freeze_preserves_invariants` (apiInvariantBundle transfer)
+- [ ] Commutativity proven for all value-update frozen operations
+- [ ] CNodeRadix: 12 correctness proofs (lookup/insert/erase/fold)
+- [ ] RHSet: 14 bridge lemmas
+- [ ] Registry invariants proven (registryEndpointValid, registryInterfaceValid)
 - [ ] Zero `sorry`/`axiom` in production proof surface
-- [ ] All `invExt` preservation proofs for new RHTable instances
 
-### 8.3 Runtime
-
-- [ ] O(1) object lookup in frozen state (array indexing via `Fin`)
-- [ ] O(depth) CNode capability lookup (radix tree traversal)
-- [ ] No runtime hash computation in frozen kernel operations
+### 9.3 Runtime
+- [ ] O(1) object lookup in frozen state (FrozenMap: index + array)
+- [ ] O(1) CNode slot lookup (CNodeRadix: direct array access)
 - [ ] No dynamic memory allocation in frozen kernel operations
-- [ ] Cache-friendly memory layout (dense arrays, radix tree nodes)
-- [ ] Deterministic memory image (identical boot → identical frozen state)
+- [ ] Cache-friendly dense array storage for all frozen maps
+- [ ] Pre-allocated Option slots for runtime object creation
+- [ ] Deterministic memory image (identical boot → identical state)
 
-### 8.4 Rust Library
-
-- [ ] All 14 syscalls have safe Rust wrappers
-- [ ] `cargo build --target aarch64-unknown-none` compiles all three crates
-- [ ] Exactly one `unsafe` block (inline `svc #0` in `sele4n-abi`)
-- [ ] Cross-validation confirms register-by-register ABI match with Lean
-- [ ] Phantom-typed capability handles prevent wrong-rights usage at compile time
+### 9.4 Rust Library
+- [ ] 14 syscalls wrapped (updated from WS-O's 13)
+- [ ] `cargo build --target aarch64-unknown-none` succeeds
+- [ ] Exactly one `unsafe` block (inline `svc #0`)
+- [ ] Cross-validation: register-by-register ABI match with Lean
+- [ ] Phantom-typed `Cap<Obj, Rts>` prevents wrong-rights at compile time
 - [ ] `#[must_use]` on all `KernelResult` returns
 - [ ] Zero external dependencies in `sele4n-types`
 
-### 8.5 Documentation
-
-- [ ] `WORKSTREAM_HISTORY.md` updated with WS-Q entry
-- [ ] `SELE4N_SPEC.md` reflects two-phase architecture
-- [ ] `DEVELOPMENT.md` updated with builder/freeze workflow
-- [ ] `CLAIM_EVIDENCE_INDEX.md` updated with freeze-equivalence claims
-- [ ] GitBook chapters updated (architecture, design, roadmap, proof map)
-- [ ] New GitBook chapter for Rust syscall wrappers
-- [ ] `codebase_map.json` regenerated
+### 9.5 Documentation
+- [ ] WORKSTREAM_HISTORY.md updated with WS-Q entry
+- [ ] SELE4N_SPEC.md reflects two-phase architecture
+- [ ] DEVELOPMENT.md updated with builder/freeze workflow + Rust build
+- [ ] CLAIM_EVIDENCE_INDEX.md updated with freeze-equivalence claims
+- [ ] GitBook chapters updated (5 existing + 1 new Rust chapter)
+- [ ] codebase_map.json regenerated
 - [ ] Website link manifest verified
 
 ---
 
-## 9. Verification Commands
+## 10. Verification Commands
 
-**After each phase:**
+**After each sub-phase**:
 ```bash
-source ~/.elan/env && lake build          # Must succeed
-./scripts/test_fast.sh                     # Tier 0+1
-./scripts/test_smoke.sh                    # Tier 0-2 (minimum before PR)
+source ~/.elan/env && lake build <Module.Path>  # Mandatory per-module
+./scripts/test_fast.sh                           # Tier 0+1
 ```
 
-**After Q7 (frozen operations complete):**
+**After each phase**:
 ```bash
-./scripts/test_full.sh                     # Tier 0-3
+./scripts/test_smoke.sh                          # Tier 0-2 (minimum)
 ```
 
-**After Q8 (Rust wrappers):**
+**After Q7 (frozen operations complete)**:
 ```bash
-cd rust && cargo build --target aarch64-unknown-none  # Cross-compile
-cd rust && cargo test --features std                   # Host tests
-./scripts/test_rust.sh                                 # Conformance
+./scripts/test_full.sh                           # Tier 0-3
 ```
 
-**After Q9 (documentation):**
+**After Q8 (Rust wrappers)**:
 ```bash
-./scripts/generate_codebase_map.py --pretty --check   # Metrics sync
-./scripts/test_full.sh                                 # Full validation
+cd rust && cargo build --target aarch64-unknown-none
+cd rust && cargo test --features std
+./scripts/test_rust.sh
 ```
 
-**Module-level verification (mandatory for all `.lean` changes):**
+**After Q9 (documentation)**:
 ```bash
-source ~/.elan/env && lake build <Module.Path>
+./scripts/generate_codebase_map.py --pretty --check
+./scripts/test_full.sh
 ```
 
 ---
 
-## 10. New Source Layout (Post WS-Q)
+## 11. New Source Layout (Post WS-Q)
 
 ```
 SeLe4n/
-├── Prelude.lean                          Extended: InterfaceId
+├── Prelude.lean                          Extended: InterfaceId, RHTable lemmas
 ├── Machine.lean                          Unchanged
 ├── Model/
 │   ├── Object/
 │   │   ├── Types.lean                    Updated: ServiceRegistration, no ServiceStatus
-│   │   └── Structures.lean              Updated: CNode with RadixTree option
-│   ├── State.lean                        Updated: all RHTable, no Std.HashMap
-│   ├── IntermediateState.lean            NEW: builder state with invariant witness
-│   ├── FrozenState.lean                  NEW: FrozenMap, FrozenSystemState
-│   ├── FreezeProofs.lean                 NEW: lookup equivalence proofs
-│   ├── FrozenKernel.lean                 NEW: frozen kernel monad
+│   │   └── Structures.lean               Updated: CNode with CNodeRadix option
+│   ├── State.lean                        Updated: all RHTable/RHSet, no Std.HashMap
+│   ├── IntermediateState.lean            NEW: builder state + invariant witness
+│   ├── FrozenState.lean                  NEW: FrozenMap, FrozenSet, FrozenSystemState
+│   ├── FreezeProofs.lean                 NEW: 12+ lookup equivalence proofs
+│   ├── FrozenKernel.lean                 NEW: frozen kernel monad + ops
 │   └── Builder.lean                      NEW: builder operations
 ├── Kernel/
-│   ├── RobinHood/                        Existing (WS-N)
+│   ├── RobinHood/
 │   │   ├── Core.lean                     Unchanged
 │   │   ├── Bridge.lean                   Extended: toList completeness
+│   │   ├── Set.lean                      NEW: RHSet type + 14 bridge lemmas
 │   │   ├── HashPolicy.lean               NEW: determinism proofs
 │   │   └── Invariant/                    Unchanged
 │   ├── RadixTree/                        NEW (Q4)
-│   │   ├── Core.lean                     Types + operations
-│   │   ├── Invariant.lean                Correctness proofs
-│   │   └── Bridge.lean                   RHTable ↔ RadixTree equivalence
+│   │   ├── Core.lean                     CNodeRadix type + O(1) operations
+│   │   ├── Invariant.lean                12 correctness proofs
+│   │   └── Bridge.lean                   RHTable ↔ CNodeRadix equivalence
 │   ├── Service/
-│   │   ├── Interface.lean                NEW (Q1): InterfaceSpec, ServiceRegistration
-│   │   ├── Registry.lean                 NEW (Q1): 4 registry operations
-│   │   ├── Registry/Invariant.lean       NEW (Q1): registry invariants
+│   │   ├── Interface.lean                NEW: InterfaceSpec, ServiceRegistration
+│   │   ├── Registry.lean                 NEW: 4 registry operations
+│   │   ├── Registry/Invariant.lean       NEW: registry invariants
 │   │   ├── Operations.lean               Updated: lifecycle ops removed
 │   │   └── Invariant/                    Updated: simplified
-│   ├── Scheduler/                        Updated: frozen operations (Q7)
-│   ├── IPC/                              Updated: frozen operations (Q7)
-│   ├── Capability/                       Updated: radix tree CNode lookup (Q7)
-│   ├── Lifecycle/                        Updated: builder-only annotation (Q7)
-│   ├── Architecture/                     Updated: new SyscallIds (Q1)
-│   ├── InformationFlow/                  Updated: service NI proofs (Q1)
-│   └── API.lean                          Updated: new service API (Q1)
+│   ├── Scheduler/                        Updated: RHTable/RHSet + frozen ops
+│   ├── IPC/                              Updated: frozen operations
+│   ├── Capability/                       Updated: CNodeRadix lookup
+│   ├── Lifecycle/                        Updated: builder-only annotation
+│   ├── Architecture/                     Updated: new SyscallIds
+│   ├── InformationFlow/                  Updated: service NI proofs
+│   └── API.lean                          Updated: new service API
 ├── Platform/
-│   ├── Boot.lean                         NEW (Q3): boot → IntermediateState
+│   ├── Boot.lean                         NEW: boot → IntermediateState
 │   └── ...                               Existing
 └── Testing/                              Updated: two-phase + service tests
 
 rust/                                      NEW (Q8)
 ├── Cargo.toml                            Workspace root
-├── sele4n-types/                         Core types crate
-├── sele4n-abi/                           Register ABI crate
-├── sele4n-sys/                           Syscall wrappers crate
-└── tests/conformance.rs                  Cross-validation
+├── sele4n-types/                         Core types (no_std, no unsafe)
+├── sele4n-abi/                           Register ABI (1 unsafe block)
+├── sele4n-sys/                           Safe wrappers (no unsafe)
+└── tests/conformance.rs                  Lean cross-validation
 ```
 
 ---
 
-## 11. Relationship to Hardware Binding (H3)
+## 12. Relationship to Hardware Binding (H3)
 
-The two-phase architecture directly supports the Raspberry Pi 5 hardware target:
+The two-phase architecture directly enables the Raspberry Pi 5 hardware target:
 
-- **Builder phase**: Runs during boot on the BCM2712 SoC. Platform configuration
-  (GIC-400 IRQ table, MMIO regions, initial memory layout) populates the
-  `IntermediateState`.
-- **Freeze**: Executed once, producing a `FrozenSystemState` with deterministic
-  memory layout. On ARM64, this maps naturally to a contiguous memory region
-  that can be identity-mapped during early boot.
-- **Execution phase**: All kernel operations use cache-friendly array access,
-  critical for the Cortex-A76 cores' L1/L2 cache hierarchy. No hash table
-  probing or pointer chasing during syscall handling.
-- **Rust wrappers**: `sele4n-abi` encodes the ARM64 `svc #0` trap interface.
-  The `raw_syscall` function is the exact userspace entry point for RPi5
-  applications. H3 builds the kernel-side trap handler that decodes these
-  registers using the same ABI.
+- **Builder phase**: Runs during boot on BCM2712. Platform config (GIC-400 IRQ
+  table, MMIO regions, initial memory layout) populates `IntermediateState`
+  via builder operations.
+- **Freeze**: Executed once after boot, producing a `FrozenSystemState` with
+  deterministic, contiguous memory layout suitable for identity-mapping during
+  early boot on Cortex-A76.
+- **Execution phase**: Dense array access is cache-friendly for the Cortex-A76
+  L1/L2 hierarchy. CNode radix lookups are O(1) with no probing. RunQueue
+  operations use pre-computed frozen arrays.
+- **Rust wrappers**: `sele4n-abi` encodes the ARM64 `svc #0` trap. H3 builds
+  the kernel-side trap handler using the same register ABI.
 
 ---
 
-## 12. Design Principles
+## 13. Design Principles
 
 > **P1. The kernel enforces constraints — it does not decide behavior.**
-> Service lifecycle, dependency ordering, naming, and discovery are policy
-> decisions that belong in user space.
+> Service lifecycle belongs in user space. The kernel enforces capability
+> safety and interface contracts.
 
-> **P2. Every data structure in the kernel execution path must be verified.**
-> No `Std.HashMap`, no `partial`, no `get!`/`set!`, no axioms. Every lookup,
-> insertion, and deletion has a machine-checked correctness proof.
+> **P2. Every data structure in the kernel state must be verified.**
+> No `Std.HashMap` in state, no `partial`, no `get!`/`set!`, no axioms.
+> Algorithm-local `Std.HashSet` for transient computation is the sole
+> documented exception.
 
 > **P3. The two-phase model separates flexibility from performance.**
-> The builder phase prioritizes expressiveness (RHTable with dynamic resizing).
-> The frozen phase prioritizes performance (dense arrays with Fin indexing).
-> The freeze function is the formally verified bridge between them.
+> Builder: RHTable/RHSet (dynamic, verified). Frozen: dense arrays + radix
+> trees (O(1), cache-friendly). The freeze function is the formal bridge.
 
 > **P4. Determinism is non-negotiable.**
-> Fixed hash function, fixed seed, fixed probe sequence, deterministic
-> iteration order, deterministic freeze. Identical boot configuration produces
-> an identical byte-level memory image. This is essential for formal reasoning
-> and for reproducible hardware deployment.
+> Fixed hash, fixed probe sequence, deterministic iteration order,
+> deterministic freeze. Identical boot → identical memory image.
 
 > **P5. The Rust ABI is a contract, not an implementation detail.**
-> Register layout, syscall IDs, error codes, and message encoding are formally
-> specified in Lean and mechanically cross-validated against Rust. ABI drift
-> is caught by conformance tests, not by debugging deployed hardware.
+> Register layout, syscall IDs, error codes, and message encoding are
+> formally specified in Lean and mechanically cross-validated in Rust.
+
+> **P6. Break large migrations into atomic groups.**
+> Maps that are updated together (storeObject's 6 fields, CDT's 4 maps,
+> RunQueue's 3 maps) must migrate together. All other migrations are
+> independent and can proceed in parallel.
 
 ---
 
-**END OF MASTER PLAN**
+**END OF MASTER PLAN (Rev 2)**
 
