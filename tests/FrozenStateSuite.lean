@@ -154,6 +154,10 @@ private def fs011_freezeEmpty : IO Unit := do
   expect "FS-011c frozen ASID table empty" (fss.asidTable.data.size == 0)
   expect "FS-011d objectIndex empty" (fss.objectIndex.length == 0)
   expect "FS-011e CDT edges empty" (fss.cdtEdges.length == 0)
+  expect "FS-011f objectIndexSet empty" (fss.objectIndexSet.data.size == 0)
+  expect "FS-011g scheduler current is none" (fss.scheduler.current == none)
+  expect "FS-011h scheduler byPriority empty" (fss.scheduler.byPriority.data.size == 0)
+  expect "FS-011i scheduler threadPriority empty" (fss.scheduler.threadPriority.data.size == 0)
 
 /-- FS-012: freeze deterministic — same input yields same output -/
 private def fs012_freezeDeterministic : IO Unit := do
@@ -170,6 +174,33 @@ private def fs013_objectCapacity : IO Unit := do
   let ist := mkEmptyIntermediateState
   let cap := objectCapacity ist
   expect "FS-013a empty capacity is 0" (cap == 0)
+
+/-- FS-014: FrozenMap.set preserves data size -/
+private def fs014_frozenMapSetSize : IO Unit := do
+  let rt := ((RHTable.empty 16 : RHTable ObjId Nat).insert ⟨1⟩ 10)
+    |>.insert ⟨2⟩ 20
+  let fm := freezeMap rt
+  let origSize := fm.data.size
+  match fm.set ⟨1⟩ 99 with
+  | none => throw <| IO.userError "FS-014a set should succeed"
+  | some fm' =>
+    expect "FS-014a set preserves data size" (fm'.data.size == origSize)
+    expect "FS-014b set updates value" (fm'.get? ⟨1⟩ == some 99)
+    expect "FS-014c set preserves other value" (fm'.get? ⟨2⟩ == some 20)
+
+/-- FS-015: freezeMap data size matches source entry count -/
+private def fs015_freezeMapDataSize : IO Unit := do
+  let rt := ((RHTable.empty 16 : RHTable ObjId Nat).insert ⟨1⟩ 10)
+    |>.insert ⟨2⟩ 20
+    |>.insert ⟨3⟩ 30
+    |>.insert ⟨4⟩ 40
+    |>.insert ⟨5⟩ 50
+  let fm := freezeMap rt
+  expect "FS-015a data size is 5" (fm.data.size == 5)
+  -- Verify round-trip: all keys accessible
+  expect "FS-015b all 5 keys accessible" (
+    (fm.get? ⟨1⟩).isSome && (fm.get? ⟨2⟩).isSome && (fm.get? ⟨3⟩).isSome &&
+    (fm.get? ⟨4⟩).isSome && (fm.get? ⟨5⟩).isSome)
 
 -- ============================================================================
 -- Main test runner
@@ -201,7 +232,9 @@ def main : IO Unit := do
   fs011_freezeEmpty
   fs012_freezeDeterministic
   fs013_objectCapacity
+  fs014_frozenMapSetSize
+  fs015_freezeMapDataSize
 
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 13 frozen-state tests passed!"
+  IO.println "  All 15 frozen-state tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

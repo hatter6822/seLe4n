@@ -50,9 +50,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.17.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 50,834 across 91 Lean files |
-| **Test LoC** | 5,917 across 7 Lean test suites |
-| **Proved declarations** | 1,550 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 50,891 across 91 Lean files |
+| **Test LoC** | 5,950 across 7 Lean test suites |
+| **Proved declarations** | 1,558 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
 | **Next workstreams** | **WS-Q** Kernel State Architecture (absorbs WS-P, WS-O). **WS-Q1 COMPLETED** (v0.17.7) — service interface simplification. **WS-Q2 COMPLETED** (v0.17.8) — universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet` across 16 state fields, 30+ files, 10 atomic subphases). **WS-Q3 COMPLETED** (v0.17.9) — IntermediateState formalization (builder-phase state with invariant witnesses, 7 builder ops, boot sequence). **WS-Q4 COMPLETED** (v0.17.10) — CNode radix tree verified implementation (`CNodeRadix` flat array, `extractBits`, 12+ correctness proofs, `buildCNodeRadix` equivalence bridge). **WS-Q5 COMPLETED** (v0.17.11) — FrozenSystemState + freeze (FrozenMap/FrozenSet types, per-object frozen representations, `freeze` function, capacity planning, 15+ theorems). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md). **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Q6–Q9 (freeze correctness proofs, frozen operations, Rust wrappers, hardware binding), then Raspberry Pi 5 hardware binding** |

@@ -258,6 +258,9 @@ structure FrozenSystemState where
   -- Non-map fields (retained as-is)
   machine           : SeLe4n.MachineState
   objectIndex       : List SeLe4n.ObjId
+  /-- WS-G2/F-P10: Frozen shadow set for O(1) objectIndex membership checks.
+  Mirrors `SystemState.objectIndexSet` (RHSet → FrozenSet). -/
+  objectIndexSet    : FrozenSet SeLe4n.ObjId
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -272,9 +275,10 @@ structure FrozenSystemState where
 3. Each key is mapped to its sequential position in a fresh `RHTable κ Nat`
 
 **Safety**: `FrozenMap.get?` performs a runtime bounds check on the index
-value, so the frozen map is memory-safe by construction. For well-formed
-inputs (RHTable with `invExt`), all indices are guaranteed in-bounds
-(proven in `freezeMap_indices_valid`). -/
+value, so the frozen map is memory-safe by construction. The structural
+property `freezeMap_data_size` proves the data array size equals the
+number of source entries, and `freezeMap_foldl_counter` establishes the
+index counter invariant. -/
 def freezeMap [BEq κ] [Hashable κ] (rt : RHTable κ ν) : FrozenMap κ ν :=
   let entries := rt.toList
   let data := (entries.map (·.2)).toArray
@@ -362,7 +366,8 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     objectTypes := freezeMap st.lifecycle.objectTypes
     capabilityRefs := freezeMap st.lifecycle.capabilityRefs
     machine := st.machine
-    objectIndex := st.objectIndex }
+    objectIndex := st.objectIndex
+    objectIndexSet := freezeMap st.objectIndexSet.table }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -432,6 +437,58 @@ private theorem freezeMap_foldl_counter [BEq κ] [Hashable κ]
   | cons hd tl ih =>
     simp only [List.foldl, List.length_cons]
     rw [ih]; omega
+
+-- ============================================================================
+-- Q5-C: Additional Structural Theorems
+-- ============================================================================
+
+/-- Q5-C helper: `toList` on an empty RHTable yields `[]`. -/
+private theorem toList_empty [BEq κ] [Hashable κ] (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable κ ν).toList = [] := by
+  unfold RHTable.toList RHTable.fold
+  simp only [RHTable.empty]
+  rw [← Array.foldl_toList]
+  exact fold_none_replicate cap []
+
+/-- Q5-C: Freezing an empty RHTable produces a FrozenMap with empty data. -/
+theorem freezeMap_empty [BEq κ] [Hashable κ] (cap : Nat) (hPos : 0 < cap := by omega) :
+    (freezeMap (RHTable.empty cap hPos : RHTable κ ν)).data.size = 0 := by
+  rw [freezeMap_data_size, toList_empty]; simp
+
+/-- Q5-C: `freezeObject` passes through TCB unchanged. -/
+theorem freezeObject_tcb_passthrough (t : TCB) :
+    freezeObject (.tcb t) = .tcb t := rfl
+
+/-- Q5-C: `freezeObject` passes through Endpoint unchanged. -/
+theorem freezeObject_endpoint_passthrough (e : Endpoint) :
+    freezeObject (.endpoint e) = .endpoint e := rfl
+
+/-- Q5-C: `freezeObject` passes through Notification unchanged. -/
+theorem freezeObject_notification_passthrough (n : Notification) :
+    freezeObject (.notification n) = .notification n := rfl
+
+/-- Q5-C: `freezeObject` passes through UntypedObject unchanged. -/
+theorem freezeObject_untyped_passthrough (u : UntypedObject) :
+    freezeObject (.untyped u) = .untyped u := rfl
+
+/-- Q5-C: `FrozenMap.set` preserves `data.size`. -/
+theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ]
+    (fm : FrozenMap κ ν) (k : κ) (v : ν) (fm' : FrozenMap κ ν)
+    (h : fm.set k v = some fm') :
+    fm'.data.size = fm.data.size := by
+  unfold FrozenMap.set at h
+  split at h
+  · cases h
+  · rename_i idx hGet
+    split at h
+    · rename_i hBound
+      cases h
+      simp [Array.size_set]
+    · cases h
+
+/-- Q5-C: `freeze` preserves the objectIndexSet (frozen version). -/
+theorem freeze_preserves_objectIndexSet (ist : IntermediateState) :
+    (freeze ist).objectIndexSet = freezeMap ist.state.objectIndexSet.table := rfl
 
 -- ============================================================================
 -- Q5-D: Capacity Planning

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-phase-q5-frozen-state-RiNmA",
-      "commit_sha": "d3af76da4da75036cb78550fdd5f2b59b5d4f8dc",
-      "tree_sha": "377031d7854b83fe458daed30906645c7b5c4f1a",
-      "committed_at_utc": "2026-03-20T21:12:33+00:00"
+      "commit_sha": "bf4023b002b4da7f46d0b9f285c1ed2b893f1cc7",
+      "tree_sha": "7a4302ea20dc2b963ec6c006214579bd5c728bed",
+      "committed_at_utc": "2026-03-20T21:57:41+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9bbe9f434762c1453be377c01cb167d1a11600bbdcc191afcf169ee953a00812"
+    "source_digest": "4ca258ad96a564506b60ce3d05c6f95add34a6deffe4a9875ff447cfff98ee1d"
   },
   "summary": {
     "module_count": 98,
-    "declaration_count": 2848
+    "declaration_count": 2858
   },
   "readme_sync": {
     "version": "0.17.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 91,
-    "production_loc": 50834,
+    "production_loc": 50891,
     "test_files": 7,
-    "test_loc": 5917,
-    "proved_theorem_lemma_decls": 1550,
+    "test_loc": 5950,
+    "proved_theorem_lemma_decls": 1558,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -15427,7 +15427,7 @@
     {
       "module": "SeLe4n.Model.FrozenState",
       "path": "SeLe4n/Model/FrozenState.lean",
-      "declaration_count": 46,
+      "declaration_count": 54,
       "declarations": [
         {
           "kind": "namespace",
@@ -15610,13 +15610,14 @@
           "called": [
             "FrozenKernelObject",
             "FrozenMap",
-            "FrozenSchedulerState"
+            "FrozenSchedulerState",
+            "FrozenSet"
           ]
         },
         {
           "kind": "def",
           "name": "freezeMap",
-          "line": 278,
+          "line": 282,
           "called": [
             "FrozenMap"
           ]
@@ -15624,7 +15625,7 @@
         {
           "kind": "def",
           "name": "freezeCNode",
-          "line": 287,
+          "line": 291,
           "called": [
             "FrozenCNode"
           ]
@@ -15632,7 +15633,7 @@
         {
           "kind": "def",
           "name": "freezeVSpaceRoot",
-          "line": 295,
+          "line": 299,
           "called": [
             "FrozenVSpaceRoot",
             "freezeMap"
@@ -15641,7 +15642,7 @@
         {
           "kind": "def",
           "name": "freezeObject",
-          "line": 301,
+          "line": 305,
           "called": [
             "FrozenKernelObject",
             "freezeCNode",
@@ -15651,7 +15652,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_preserves_type",
-          "line": 311,
+          "line": 315,
           "called": [
             "freezeObject"
           ]
@@ -15659,7 +15660,7 @@
         {
           "kind": "def",
           "name": "freezeScheduler",
-          "line": 316,
+          "line": 320,
           "called": [
             "FrozenSchedulerState",
             "freezeMap"
@@ -15668,7 +15669,7 @@
         {
           "kind": "def",
           "name": "freeze",
-          "line": 338,
+          "line": 342,
           "called": [
             "FrozenKernelObject",
             "FrozenMap",
@@ -15681,7 +15682,7 @@
         {
           "kind": "theorem",
           "name": "freeze_deterministic",
-          "line": 372,
+          "line": 377,
           "called": [
             "freeze"
           ]
@@ -15689,7 +15690,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_objectIndex",
-          "line": 376,
+          "line": 381,
           "called": [
             "freeze"
           ]
@@ -15697,7 +15698,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_cdtEdges",
-          "line": 380,
+          "line": 385,
           "called": [
             "freeze"
           ]
@@ -15705,7 +15706,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_cdtNextNode",
-          "line": 384,
+          "line": 389,
           "called": [
             "freeze"
           ]
@@ -15713,7 +15714,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_machine",
-          "line": 388,
+          "line": 393,
           "called": [
             "freeze"
           ]
@@ -15721,7 +15722,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_current",
-          "line": 392,
+          "line": 397,
           "called": [
             "freeze"
           ]
@@ -15729,7 +15730,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_activeDomain",
-          "line": 396,
+          "line": 401,
           "called": [
             "freeze"
           ]
@@ -15737,7 +15738,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_domainSchedule",
-          "line": 400,
+          "line": 405,
           "called": [
             "freeze"
           ]
@@ -15745,13 +15746,13 @@
         {
           "kind": "theorem",
           "name": "fold_none_replicate",
-          "line": 405,
+          "line": 410,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "freezeMap_data_size",
-          "line": 415,
+          "line": 420,
           "called": [
             "freezeMap"
           ]
@@ -15759,19 +15760,87 @@
         {
           "kind": "theorem",
           "name": "freezeMap_foldl_counter",
-          "line": 424,
+          "line": 429,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_empty",
+          "line": 446,
+          "called": [
+            "fold_none_replicate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_empty",
+          "line": 454,
+          "called": [
+            "freezeMap",
+            "freezeMap_data_size",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeObject_tcb_passthrough",
+          "line": 459,
+          "called": [
+            "freezeObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeObject_endpoint_passthrough",
+          "line": 463,
+          "called": [
+            "freezeObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeObject_notification_passthrough",
+          "line": 467,
+          "called": [
+            "freezeObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeObject_untyped_passthrough",
+          "line": 471,
+          "called": [
+            "freezeObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenMap_set_preserves_size",
+          "line": 475,
+          "called": [
+            "FrozenMap",
+            "FrozenMap.set"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freeze_preserves_objectIndexSet",
+          "line": 490,
+          "called": [
+            "freeze",
+            "freezeMap"
+          ]
         },
         {
           "kind": "def",
           "name": "minObjectSize",
-          "line": 443,
+          "line": 500,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectCapacity",
-          "line": 454,
+          "line": 511,
           "called": [
             "minObjectSize"
           ]
@@ -15779,7 +15848,7 @@
         {
           "kind": "theorem",
           "name": "objectCapacity_ge_size",
-          "line": 464,
+          "line": 521,
           "called": [
             "objectCapacity"
           ]
@@ -15787,7 +15856,7 @@
         {
           "kind": "theorem",
           "name": "objectCapacity_deterministic",
-          "line": 471,
+          "line": 528,
           "called": [
             "objectCapacity"
           ]
@@ -21965,7 +22034,7 @@
     {
       "module": "tests.FrozenStateSuite",
       "path": "tests/FrozenStateSuite.lean",
-      "declaration_count": 16,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
@@ -22070,7 +22139,7 @@
         {
           "kind": "def",
           "name": "fs012_freezeDeterministic",
-          "line": 159,
+          "line": 163,
           "called": [
             "expect"
           ]
@@ -22078,7 +22147,23 @@
         {
           "kind": "def",
           "name": "fs013_objectCapacity",
-          "line": 169,
+          "line": 173,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fs014_frozenMapSetSize",
+          "line": 179,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fs015_freezeMapDataSize",
+          "line": 192,
           "called": [
             "expect"
           ]
@@ -22086,7 +22171,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 181,
+          "line": 212,
           "called": [
             "fs001_emptyFrozenMap",
             "fs002_singleEntry",
@@ -22100,7 +22185,9 @@
             "fs010_freezeVSpaceRoot",
             "fs011_freezeEmpty",
             "fs012_freezeDeterministic",
-            "fs013_objectCapacity"
+            "fs013_objectCapacity",
+            "fs014_frozenMapSetSize",
+            "fs015_freezeMapDataSize"
           ]
         }
       ]

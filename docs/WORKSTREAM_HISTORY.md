@@ -186,11 +186,14 @@ and implements the `freeze` function that transforms an `IntermediateState`
   via Q4 bridge), `freezeScheduler`, `freeze` (IntermediateState → FrozenSystemState).
 - **Q5-D**: Capacity planning — `minObjectSize` constant, `objectCapacity`
   (current objects + potential from untyped memory).
-- **Q5-T**: 13-scenario test suite in `tests/FrozenStateSuite.lean` (40 checks):
+- **Q5-T**: 15-scenario test suite in `tests/FrozenStateSuite.lean` (49 checks):
   FrozenMap core (FS-001 to FS-007), FrozenKernelObject (FS-008 to FS-010),
-  freeze integration (FS-011 to FS-013).
-- **Proof surface**: 15+ theorems including `freeze_deterministic`,
-  `freeze_preserves_machine`, `freezeMap_data_size`, `freezeObject_preserves_type`,
+  freeze integration (FS-011 to FS-015) including objectIndexSet, scheduler
+  freeze, FrozenMap.set size preservation, and data size round-trip.
+- **Proof surface**: 20+ theorems including `freeze_deterministic`,
+  `freeze_preserves_machine`, `freeze_preserves_objectIndexSet`,
+  `freezeMap_empty`, `freezeMap_data_size`, `freezeObject_preserves_type`,
+  `freezeObject_tcb_passthrough`, `frozenMap_set_preserves_size`,
   `objectCapacity_ge_size`. Zero admitted proofs, all modules compile independently.
 
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)

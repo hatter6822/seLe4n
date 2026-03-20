@@ -1730,9 +1730,9 @@ Phase Q5 defines the frozen execution-phase state representation and the
   `RHTable.toList`, building dense array + index simultaneously.
 
 Key theorems:
-- `freezeMap_empty` — freezing empty RHTable yields empty FrozenMap,
+- `toList_empty` — `toList` on an empty RHTable yields `[]`,
+- `freezeMap_empty` — freezing empty RHTable yields empty FrozenMap (via `toList_empty`),
 - `freezeMap_data_size` — `fm.data.size = rt.toList.length`,
-- `freezeMap_get?_some` — successful RHTable lookup implies successful FrozenMap lookup,
 - `frozenMap_set_preserves_size` — `set` preserves `data.size`.
 
 #### Q5-B: Per-object frozen types

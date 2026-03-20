@@ -18,14 +18,17 @@
   `freeze` (IntermediateState → FrozenSystemState, full 19-field conversion)
 - Q5-D: Capacity planning — `minObjectSize` constant, `objectCapacity`
   (current objects + potential from untyped memory / minObjectSize)
-- 15+ theorems: `freeze_deterministic`, `freeze_preserves_machine`,
+- 20+ theorems: `freeze_deterministic`, `freeze_preserves_machine`,
   `freeze_preserves_objectIndex`, `freeze_preserves_cdtEdges`,
-  `freezeMap_empty`, `freezeMap_data_size`, `freezeObject_preserves_type`,
-  `freezeObject_tcb_passthrough`, `freezeMap_get?_some`,
+  `freeze_preserves_objectIndexSet`, `freezeMap_empty` (with `toList_empty`
+  helper), `freezeMap_data_size`, `freezeObject_preserves_type`,
+  `freezeObject_tcb_passthrough`, `freezeObject_endpoint_passthrough`,
+  `freezeObject_notification_passthrough`, `freezeObject_untyped_passthrough`,
   `frozenMap_set_preserves_size`, `objectCapacity_ge_size`, and more
-- Q5-T: 13-scenario test suite in `tests/FrozenStateSuite.lean` (40 checks):
+- Q5-T: 15-scenario test suite in `tests/FrozenStateSuite.lean` (49 checks):
   FrozenMap core (FS-001 to FS-007), FrozenKernelObject (FS-008 to FS-010),
-  freeze integration (FS-011 to FS-013)
+  freeze integration (FS-011 to FS-015) including objectIndexSet, scheduler
+  freeze, FrozenMap.set size preservation, and data size round-trip
 - Files: 1 new (`FrozenState.lean`), 1 new test (`FrozenStateSuite.lean`),
   docs + codebase map updated, `lakefile.toml` version bumped
 - All test tiers pass; zero `sorry`/`axiom`

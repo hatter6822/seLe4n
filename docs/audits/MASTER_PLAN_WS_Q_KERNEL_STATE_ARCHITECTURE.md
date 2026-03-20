@@ -923,7 +923,8 @@ theorem buildCNodeRadix_lookup_equiv
 **Goal**: Define the frozen execution-phase state representation and implement
 the `freeze` function with explicit capacity planning.
 **Status**: COMPLETED — all sub-phases (Q5-A through Q5-D) implemented with
-zero sorry/axiom, 15+ theorems, 13-scenario test suite (40 checks).
+zero sorry/axiom, 20+ theorems, 15-scenario test suite (49 checks).
+Full `SystemState` field parity (18 fields including `objectIndexSet`).
 
 #### Q5-A: FrozenMap and FrozenSet Types
 
