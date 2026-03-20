@@ -104,7 +104,7 @@ boot. Key changes:
 - **Q3-A**: `IntermediateState` type in `SeLe4n/Model/IntermediateState.lean` —
   bundles `SystemState` with `allTablesInvExt`, `perObjectSlotsInvariant`,
   `perObjectMappingsInvariant`, `lifecycleMetadataConsistent` witnesses.
-  `mkEmptyIntermediateState` constructor with `emptyIntermediate_valid` proof.
+  `mkEmptyIntermediateState` constructor with `mkEmptyIntermediateState_valid` proof.
   Named predicates `perObjectSlotsInvariant`, `perObjectMappingsInvariant` with
   default-state theorems.
 - **Q3-B**: 7 builder operations in `SeLe4n/Model/Builder.lean`:

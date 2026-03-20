@@ -1649,7 +1649,7 @@ Definitions:
 - `mkEmptyIntermediateState` — constructs empty `IntermediateState` from
   `default` SystemState with all invariants proved vacuously
   (`RHTable.getElem?_empty`).
-- `emptyIntermediate_valid` — 4-conjunct validity theorem for the empty state.
+- `mkEmptyIntermediateState_valid` — 4-conjunct validity theorem for the empty state.
 
 ### Q3-B: Builder operations (`Model/Builder.lean`)
 

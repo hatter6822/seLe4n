@@ -4,10 +4,10 @@
   IntermediateState formalization with builder-phase invariant witnesses
 - Q3-A: `IntermediateState` type definition in `SeLe4n/Model/IntermediateState.lean`
   — wraps `SystemState` with four machine-checked invariant witnesses:
-  `allTablesInvExt` (all 16 RHTable + 2 RHSet), `perObjectSlotsInvariant`
+  `allTablesInvExt` (14 RHTable maps + 2 RHSet fields), `perObjectSlotsInvariant`
   (CNode `slotsUnique`), `perObjectMappingsInvariant` (VSpaceRoot
   `mappings.invExt`), `lifecycleMetadataConsistent`
-- Q3-A: `mkEmptyIntermediateState` with `emptyIntermediate_valid` proof
+- Q3-A: `mkEmptyIntermediateState` with `mkEmptyIntermediateState_valid` proof
 - Q3-A: Named predicates `perObjectSlotsInvariant`, `perObjectMappingsInvariant`
   with default-state proofs
 - Q3-B: 7 builder operations in `SeLe4n/Model/Builder.lean`, each carrying

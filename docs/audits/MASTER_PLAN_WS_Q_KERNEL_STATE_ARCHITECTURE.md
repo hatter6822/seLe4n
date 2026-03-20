@@ -765,7 +765,7 @@ invariant witness forward.
 | `Builder.mapPage` | VSpace insert | per-object `mappings.invExt` preserved |
 | `Builder.insertCap` | CNode slot insert | per-object `slotsUnique` preserved |
 | `Builder.registerService` | service registration | `allTablesInvExt` preserved |
-| `Builder.addCdtEdge` | CDT edge add | CDT map `invExt` preserved |
+| `Builder.addServiceGraph` | service graph add | `allTablesInvExt` preserved |
 
 **Gate**: `lake build SeLe4n.Model.Builder` + zero sorry
 
