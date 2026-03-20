@@ -93,12 +93,12 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
   objectIds.foldr (fun oid acc =>
     match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
-        cn.slots.fold (fun inner slot cap =>
+        cn.slots.fold acc (fun inner slot cap =>
           let ok := match cap.target with
             | .object targetId => (st.objects[targetId]?).isSome
             | .cnodeSlot cnId _ => (st.objects[cnId]?).isSome
             | .replyCap tid => (st.objects[tid.toObjId]?).isSome
-          (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner) acc
+          (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner)
     | _ => acc) []
 
 /-- M-11 Capability rights attenuation: minted (badge-carrying) capabilities must have
@@ -109,11 +109,11 @@ private def capabilityRightsStructuralChecks (objectIds : List SeLe4n.ObjId) (st
   objectIds.foldr (fun oid acc =>
     match (st.objects[oid]? : Option KernelObject) with
     | some (.cnode cn) =>
-        cn.slots.fold (fun inner slot cap =>
+        cn.slots.fold acc (fun inner slot cap =>
           let ok := match cap.badge with
             | some _ => cap.rights.bits != 0  -- WS-F5/D2: non-empty rights (bitmask)
             | none => true
-          (s!"capability badge implies non-empty rights: oid={oid} slot={slot}", ok) :: inner) acc
+          (s!"capability badge implies non-empty rights: oid={oid} slot={slot}", ok) :: inner)
     | _ => acc) []
 
 /-- M-11 Lifecycle metadata consistency: when lifecycle objectType metadata is present

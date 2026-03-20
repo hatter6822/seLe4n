@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Machine
+import SeLe4n.Kernel.RobinHood
 
 namespace SeLe4n.Model
 
@@ -334,14 +335,15 @@ A large `guardWidth` compresses an unbranched path prefix into a single
 guard comparison, avoiding chains of intermediate CNodes (Patricia-trie
 optimisation matching seL4's real CSpace implementation).
 
-`slots` is backed by `Std.HashMap Slot Capability` for O(1) amortized
-lookup, insert, and delete. HashMap key uniqueness is structural. -/
+`slots` is backed by `RHTable Slot Capability` — a formally verified Robin Hood
+hash table providing O(1) amortized lookup, insert, and delete with machine-checked
+proofs (WS-N). Key uniqueness is enforced by the `noDupKeys` invariant. -/
 structure CNode where
   depth      : Nat          -- maximum remaining depth in bits from this node to any leaf
   guardWidth : Nat          -- width of guard field in bits
   guardValue : Nat          -- expected guard value to match
   radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
-  slots      : Std.HashMap SeLe4n.Slot Capability
+  slots      : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.Slot Capability
   deriving Repr
 
 /-- Maximum CSpace address width (matching ARM64 word size). -/

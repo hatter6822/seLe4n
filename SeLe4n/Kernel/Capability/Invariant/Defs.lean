@@ -580,14 +580,24 @@ private theorem CNode.remove_guardWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
 private theorem CNode.remove_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
     (cn.remove slot).radixWidth = cn.radixWidth := rfl
 
-private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot) :
+private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot)
+    (hUniq : cn.slotsUnique) :
     ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.remove slot).slots[s]? = some cap → cn.slots[s]? = some cap := by
   intro s cap hLookup
-  simp [CNode.remove] at hLookup
-  rw [Std.HashMap.getElem?_erase] at hLookup
+  simp only [CNode.remove] at hLookup
+  -- Convert [·]? bracket notation to .get? for bridge lemma compatibility
+  change (cn.slots.erase slot).get? s = some cap at hLookup
   by_cases h : (slot == s) = true
-  · simp [h] at hLookup
-  · simp [h] at hLookup; exact hLookup
+  · -- s = slot: erase returns none, contradicting some cap
+    have hEq : slot = s := eq_of_beq h
+    rw [← hEq] at hLookup
+    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self cn.slots slot hUniq.1
+    rw [this] at hLookup; exact absurd hLookup (by simp)
+  · -- s ≠ slot: erase preserves lookup
+    have hNe : slot ≠ s := fun heq => h (beq_iff_eq.mpr heq)
+    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne cn.slots slot s
+      (fun hb => hNe (eq_of_beq hb)) hUniq.1 hUniq.2.1
+    rw [this] at hLookup; change cn.slots.get? s = some cap at hLookup; exact hLookup
 
 /-- WS-H13: CNode.revokeTargetLocal preserves depth/guardWidth/radixWidth and has slot subset. -/
 private theorem CNode.revokeTargetLocal_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
@@ -599,24 +609,13 @@ private theorem CNode.revokeTargetLocal_guardWidth_eq (cn : CNode) (slot : SeLe4
 private theorem CNode.revokeTargetLocal_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
     (cn.revokeTargetLocal slot target).radixWidth = cn.radixWidth := rfl
 
-private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) :
+private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (hUniq : cn.slotsUnique) :
     ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.revokeTargetLocal sourceSlot target).slots[s]? = some cap → cn.slots[s]? = some cap := by
   intro s cap hLookup
   simp only [CNode.revokeTargetLocal] at hLookup
-  -- Filter only keeps entries from the original map
-  have hMem : s ∈ cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)) :=
-    Std.HashMap.mem_iff_isSome_getElem?.mpr (by rw [hLookup]; rfl)
-  have hMemOrig : s ∈ cn.slots := Std.HashMap.mem_of_mem_filter hMem
-  -- Reconstruct the value
-  have h1 : (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)))[s]? =
-      some ((cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target)))[s]) :=
-    Std.HashMap.getElem?_eq_some_getElem hMem
-  have h2 : cn.slots[s]? = some cn.slots[s] := Std.HashMap.getElem?_eq_some_getElem hMemOrig
-  rw [h1] at hLookup
-  have hCapEq := (Option.some.inj hLookup).symm
-  rw [hCapEq, Std.HashMap.getElem_filter (m := cn.slots)
-    (f := fun s c => s == sourceSlot || !(c.target == target))]
-  exact h2
+  change (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target))).get? s = some cap at hLookup
+  exact SeLe4n.Kernel.RobinHood.RHTable.filter_get_subset cn.slots _ s cap hUniq.1 hLookup
 
 /-- WS-H13: CNode.insert preserves depth/guardWidth/radixWidth. -/
 private theorem CNode.insert_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :

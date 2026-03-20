@@ -16,6 +16,7 @@ open SeLe4n.Model
 private theorem cspaceDeleteSlot_authority_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
   rcases addr with ⟨cnodeId, slot⟩
@@ -29,10 +30,11 @@ private theorem cspaceDeleteSlot_authority_reduction
       | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
       | untyped _ => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
-
+          have hUniq := hSlotUniq cnodeId cn hObj
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
-          simp [SystemState.lookupSlotCap, SystemState.lookupCNode, SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none]
+          simp [SystemState.lookupSlotCap, SystemState.lookupCNode,
+            SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none cn slot hUniq]
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
 the revoked target. -/
@@ -40,6 +42,7 @@ theorem cspaceRevoke_local_target_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (parent : Capability)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceRevoke addr st = .ok ((), st'))
     (hParent : cspaceLookupSlot addr st = .ok (parent, st))
     (slot : SeLe4n.Slot)
@@ -91,28 +94,18 @@ theorem cspaceRevoke_local_target_reduction
               have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
                 { cnode := addr.cnode, slot := slot } hObjEq
               simpa [hEq] using hLookup
-            -- WS-G5: With HashMap-backed slots, CNode.lookup delegates to getElem?.
-            -- Extract that the filtered HashMap lookup succeeds at `slot`.
+            have hUniq := hSlotUniq addr.cnode cn hObj
+            -- Extract that the filtered table lookup succeeds at `slot`
             have hFilterLookup : (cn.revokeTargetLocal addr.slot parent.target).lookup slot = some cap := by
               simp [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
                 CNode.lookup] at hLookupStored
               exact hLookupStored
-            -- revokeTargetLocal filters with: fun s c => s == addr.slot || !(c.target == parent.target)
-            have hMemFilter : slot ∈ cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target)) := by
-              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-              exact Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [hFilterLookup])
-            -- By mem_filter, the filter predicate holds for the stored key and value.
-            have ⟨hMemOrig, hPredTrue⟩ := Std.HashMap.mem_filter.mp hMemFilter
-            -- Normalize: getKey slot ≈ slot, and the stored value cn.slots[slot] = cap
-            have hKeyEq : cn.slots.getKey slot hMemOrig = slot := eq_of_beq (Std.HashMap.getKey_beq hMemOrig)
-            have hValEq : cn.slots[slot] = cap := by
-              have h1 := @Std.HashMap.getElem_filter _ _ _ _ cn.slots _ _ _ slot hMemFilter
-              have h2 := Std.HashMap.getElem?_eq_some_getElem hMemFilter
-              rw [h1] at h2
-              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
-              rw [hFilterLookup] at h2
-              exact (Option.some.inj h2).symm
-            rw [hKeyEq, hValEq] at hPredTrue
+            -- Convert to get? form for RHTable bridge lemmas
+            have hFilterGet : (cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target))).get? slot = some cap := by
+              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup; exact hFilterLookup
+            -- By filter_get_pred, the predicate holds for (slot, cap)
+            have hPredTrue := SeLe4n.Kernel.RobinHood.RHTable.filter_get_pred cn.slots
+              (fun s c => s == addr.slot || !(c.target == parent.target)) slot cap hUniq.1 hFilterGet
             -- hPredTrue : (slot == addr.slot || !(cap.target == parent.target)) = true
             by_cases hSlot : slot = addr.slot
             · exact hSlot
@@ -140,6 +133,7 @@ private theorem cspaceInsertSlot_lookup_eq
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .ok (cap, st') := by
   rcases addr with ⟨cnodeId, slot⟩
@@ -153,27 +147,31 @@ private theorem cspaceInsertSlot_lookup_eq
       | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
       | untyped _ => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
+          have hUniq := hSlotUniq cnodeId cn hObj
           simp [cspaceInsertSlot, hObj] at hStep
           cases hLookupGuard : cn.lookup slot with
           | some _ => simp [hLookupGuard] at hStep
           | none =>
               simp [hLookupGuard] at hStep
               cases hStep
-              simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode, CNode.lookup, CNode.insert]
+              simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
+                CNode.lookup_insert_eq cn slot cap hUniq]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     SystemState.ownsSlot st' addr.cnode addr := by
   have hLookup : cspaceLookupSlot addr st' = .ok (cap, st') :=
-    cspaceInsertSlot_lookup_eq st st' addr cap hStep
+    cspaceInsertSlot_lookup_eq st st' addr cap hSlotUniq hStep
   exact cspaceLookupSlot_ok_implies_ownsSlot st' addr cap hLookup
 
 theorem cspaceDeleteSlot_lookup_eq_none
     (st st' : SystemState)
     (addr : CSpaceAddr)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
   rcases addr with ⟨cnodeId, slot⟩
@@ -187,15 +185,16 @@ theorem cspaceDeleteSlot_lookup_eq_none
       | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
       | untyped _ => simp [cspaceDeleteSlot, hObj] at hStep
       | cnode cn =>
-
+          have hUniq := hSlotUniq cnodeId cn hObj
           simp [cspaceDeleteSlot, hObj] at hStep
           cases hStep
           simp [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none]
+            SystemState.detachSlotFromCdt_objects_eq, CNode.lookup_remove_eq_none cn slot hUniq]
 
 theorem cspaceRevoke_preserves_source
     (st st' : SystemState)
     (addr : CSpaceAddr)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     ∃ cap, cspaceLookupSlot addr st' = .ok (cap, st') := by
   unfold cspaceRevoke at hStep
@@ -215,6 +214,7 @@ theorem cspaceRevoke_preserves_source
           | vspaceRoot root => simp [hLookup, hObj] at hStep
           | untyped _ => simp [hLookup, hObj] at hStep
           | cnode cn =>
+              have hUniq := hSlotUniq addr.cnode cn hObj
               let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
               let storedState : SystemState :=
                 { st with
@@ -244,9 +244,10 @@ theorem cspaceRevoke_preserves_source
                   unfold storeObject at hStore; cases hStore; simp_all [storedState, revokedObj]
                 have hCap : SystemState.lookupSlotCap st addr = some parent :=
                   (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
+                have hRevokePres := CNode.lookup_revokeTargetLocal_source_eq_lookup cn addr.slot parent.target hUniq
                 have hCapStored : SystemState.lookupSlotCap storedState addr = some parent := by
                   simpa [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                    Std.HashMap.getElem?_insert, CNode.lookup_revokeTargetLocal_source_eq_lookup, hObj] using hCap
+                    Std.HashMap.getElem?_insert, hRevokePres, hObj] using hCap
                 have hCapFinal : SystemState.lookupSlotCap st' addr = some parent := by
                   have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState addr hObjEq
                   simpa [hEq] using hCapStored
@@ -307,6 +308,7 @@ theorem cspaceMint_child_attenuates
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
       cspaceLookupSlot src st = .ok (parent, st) ∧
@@ -328,7 +330,7 @@ theorem cspaceMint_child_attenuates
             simpa [hSrc, hMint] using hStep
           refine ⟨parent, child, ?_, ?_, hAtt⟩
           · rfl
-          · exact cspaceInsertSlot_lookup_eq st st' dst child hInsert
+          · exact cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hInsert
 
 /-- Composed badge-override safety for `cspaceMint`: after a successful mint with
 arbitrary badge override, the derived capability in the destination slot has the
@@ -341,13 +343,14 @@ theorem cspaceMint_badge_override_safe
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
       cspaceLookupSlot src st = .ok (parent, st) ∧
       cspaceLookupSlot dst st' = .ok (child, st') ∧
       child.target = parent.target ∧
       (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
-  rcases cspaceMint_child_attenuates st st' src dst rights badge hStep with
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hStep with
     ⟨parent, child, hSrc, hDst, hAtt⟩
   exact ⟨parent, child, hSrc, hDst, hAtt.1, hAtt.2⟩
 
@@ -374,6 +377,7 @@ theorem cspaceMint_child_badge_preserved
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : SeLe4n.Badge)
+    (hSlotUniq : cspaceSlotUnique st)
     (hStep : cspaceMint src dst rights (some badge) st = .ok ((), st')) :
     ∃ child,
       cspaceLookupSlot dst st' = .ok (child, st') ∧
@@ -390,7 +394,7 @@ theorem cspaceMint_child_badge_preserved
       | error e => simp [hMint] at hStep
       | ok child =>
           simp [hMint] at hStep
-          have hDst := cspaceInsertSlot_lookup_eq st st' dst child hStep
+          have hDst := cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hStep
           refine ⟨child, hDst, ?_⟩
           unfold mintDerivedCap at hMint
           by_cases hRights : rightsSubset rights parent.rights
@@ -607,13 +611,14 @@ theorem cspaceAttenuationRule_holds :
   exact mintDerivedCap_attenuates parent child rights badge hMint
 
 
-theorem lifecycleAuthorityMonotonicity_holds (st : SystemState) :
+theorem lifecycleAuthorityMonotonicity_holds (st : SystemState)
+    (hSlotUniq : cspaceSlotUnique st) :
     lifecycleAuthorityMonotonicity st := by
   refine ⟨?_, ?_⟩
   · intro addr st' hDelete
-    exact cspaceDeleteSlot_authority_reduction st st' addr hDelete
+    exact cspaceDeleteSlot_authority_reduction st st' addr hSlotUniq hDelete
   · intro addr st' parent hRevoke hParent slot cap hLookup hTarget
-    exact cspaceRevoke_local_target_reduction st st' addr parent hRevoke hParent slot cap hLookup hTarget
+    exact cspaceRevoke_local_target_reduction st st' addr parent hSlotUniq hRevoke hParent slot cap hLookup hTarget
 
 /-- Establish the capability invariant bundle from a slot-index uniqueness witness.
 Unlike the prior tautological version, this requires a genuine hypothesis:

@@ -207,7 +207,19 @@ items complete (D1–D6), ~3,600 LoC, zero sorry/axiom. **WS-N2 COMPLETE.**
 ~307 LoC Bridge.lean + ~247 LoC Lookup.lean additions, ~15 proved declarations,
 zero sorry/axiom. **WS-N3 COMPLETE.**
 
-Remaining planned theorems (N4–N5):
+**WS-N4 (v0.17.4) — COMPLETED:** Kernel integration (CNode.slots migration):
+- `filter_fold_absent_by_pred` — predicate-gated fold induction: if entries
+  matching key `k` fail predicate `f`, filter result has `get? k = none`
+- `filter_get_pred` — filter lookup implies predicate holds: if
+  `(t.filter f).get? k = some v` then `f k v = true`
+- `filter_filter_getElem?` — filter idempotence: `((t.filter f).filter f).get? k
+  = (t.filter f).get? k` (used for `projectKernelObject_idempotent`)
+- `slotsUnique` repurposed from `True` to substantive invariant
+  `invExt ∧ size < capacity ∧ 4 ≤ capacity`, propagated via `cspaceSlotUnique`
+  through Capability and InformationFlow subsystem theorems
+- 20+ files updated, zero sorry/axiom. **WS-N4 COMPLETE.**
+
+Remaining planned theorems (N5):
 - See [WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
   for full proof strategies, expanded pseudocode, and 122-subtask breakdown.
 

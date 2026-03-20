@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.17.0.
+Lean 4.28.0 toolchain, Lake build system, version 0.17.4.
 
 ## Build and run
 
@@ -419,7 +419,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-N (Robin Hood hashing verified implementation) — **ACTIVE** (v0.17.0+). **WS-N1 COMPLETED** (v0.17.1): core types + operations in `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines, zero sorry). **WS-N2 COMPLETED** (v0.17.2): invariant proofs in `SeLe4n/Kernel/RobinHood/Invariant/` (~3,600 lines). All 6 TPI-D items complete: D1 (noDupKeys), D2 (PCD insert), D3 (PCD erase via relaxedPCD), D4 (get_after_insert_eq), D5 (get_after_insert_ne), D6 (get_after_erase_eq). Zero sorry/axiom. **WS-N3 COMPLETED** (v0.17.3): kernel API bridge in `SeLe4n/Kernel/RobinHood/Bridge.lean` (~307 lines). Inhabited/BEq instances, 10 bridge lemmas matching Std.HashMap patterns, filter support, ofList constructor, get_after_erase_ne proof (+247 lines in Lookup.lean). Zero sorry/axiom. Remaining: N4 (CNode.slots integration), N5 (tests + docs). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-N (Robin Hood hashing verified implementation) — **ACTIVE** (v0.17.0+). **WS-N1 COMPLETED** (v0.17.1): core types + operations in `SeLe4n/Kernel/RobinHood/Core.lean` (379 lines, zero sorry). **WS-N2 COMPLETED** (v0.17.2): invariant proofs in `SeLe4n/Kernel/RobinHood/Invariant/` (~3,600 lines). All 6 TPI-D items complete: D1 (noDupKeys), D2 (PCD insert), D3 (PCD erase via relaxedPCD), D4 (get_after_insert_eq), D5 (get_after_insert_ne), D6 (get_after_erase_eq). Zero sorry/axiom. **WS-N3 COMPLETED** (v0.17.3): kernel API bridge in `SeLe4n/Kernel/RobinHood/Bridge.lean` (~307 lines). Inhabited/BEq instances, 10 bridge lemmas matching Std.HashMap patterns, filter support, ofList constructor, get_after_erase_ne proof (+247 lines in Lookup.lean). Zero sorry/axiom. **WS-N4 COMPLETED** (v0.17.4): kernel integration (CNode.slots) — replaced `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`, updated CNode operations, ~25 theorems, ~15 invariant proofs, `slotsUnique` repurposed as substantive `invExt` invariant, 3 new bridge lemmas, 20+ files modified. Zero sorry/axiom. Remaining: N5 (tests + docs). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
 - **Most recently completed portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)

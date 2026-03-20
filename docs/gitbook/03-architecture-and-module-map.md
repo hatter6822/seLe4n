@@ -116,8 +116,8 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
     protocol fields, Notification, UntypedObject, `SyscallId` inductive (13
     modeled syscalls with round-trip/injectivity proofs), `MessageInfo` structure
     (seL4 message-info bit-field layout), `SyscallDecodeResult` with `msgRegs : Array RegValue` field (WS-J1-B; extended WS-K-A v0.16.0).
-  - `Object/Structures.lean` — CNode `Std.HashMap Slot Capability` slot store and
-    local revoke helper (WS-G5), VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)`
+  - `Object/Structures.lean` — CNode `RHTable Slot Capability` verified Robin Hood
+    hash table slot store (WS-G5, WS-N4), VSpaceRoot `Std.HashMap VAddr (PAddr × PagePermissions)`
     mapping store with O(1) lookup/map/unmap and W^X enforcement (WS-G6/WS-H11),
     `CdtNodeId` typed wrapper with full instance suite (WS-J1-F),
     `KernelObject` discriminated union.

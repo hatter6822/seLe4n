@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.17.3` |
+| Version | `0.17.4` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 41,057 across 73 files |
+| Production LoC | 46,637 across 78 files |
 | Test LoC | 5,256 across 4 suites |
-| Proved declarations | 1,292 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 1,421 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |
-| Next workstreams | **WS-N** Robin Hood hashing verified implementation — **ACTIVE** (v0.17.0+). 5 phases (N1–N5, 122 subtasks): **WS-N1 COMPLETED** (v0.17.1), **WS-N2 COMPLETED** (v0.17.2), **WS-N3 COMPLETED** (v0.17.3). See [workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **After WS-N: Raspberry Pi 5 hardware binding** |
+| Next workstreams | **WS-N** Robin Hood hashing verified implementation — **ACTIVE** (v0.17.0+). 5 phases (N1–N5, 122 subtasks): **WS-N1 COMPLETED** (v0.17.1), **WS-N2 COMPLETED** (v0.17.2), **WS-N3 COMPLETED** (v0.17.3), **WS-N4 COMPLETED** (v0.17.4). See [workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **After WS-N: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -68,7 +68,7 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-M3 (IPC cap transfer, v0.16.17) — COMPLETED.** →
 **WS-M4 (test coverage expansion, v0.16.18) — COMPLETED.** →
 **WS-M5 (streaming BFS optimization, v0.16.19–v0.17.0) — COMPLETED. WS-M PORTFOLIO COMPLETE.** →
-**WS-N (Robin Hood hashing verified implementation, v0.17.0+) — ACTIVE. N1 COMPLETED (v0.17.1). N2 COMPLETED (v0.17.2). N3 COMPLETED (v0.17.3). 5 phases (N1–N5), 122 subtasks.**
+**WS-N (Robin Hood hashing verified implementation, v0.17.0+) — ACTIVE. N1 COMPLETED (v0.17.1). N2 COMPLETED (v0.17.2). N3 COMPLETED (v0.17.3). N4 COMPLETED (v0.17.4). 5 phases (N1–N5), 122 subtasks.**
 
 ## Active: WS-N Robin Hood Hashing Verified Implementation (v0.17.0+)
 
@@ -102,6 +102,16 @@ typeclass instances, 10 bridge lemmas matching `Std.HashMap` patterns
 `size_filter_le_capacity`/`size_filter_le_size`, `ofList` constructor,
 `get_after_erase_ne` proof (+247 lines in Lookup.lean). ~358 LoC in
 `SeLe4n/Kernel/RobinHood/Bridge.lean`. Zero sorry/axiom.
+
+**WS-N4 (v0.17.4) — COMPLETED:** Kernel integration (first site — CNode.slots)
+— replaced `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot
+Capability` across the entire kernel. Updated CNode operations (`lookup`,
+`insert`, `remove`, `revokeTargetLocal`), `slotsUnique` repurposed from `True`
+to substantive `invExt ∧ size < capacity ∧ 4 ≤ capacity` invariant, ~25
+CNode/capability theorems updated, ~15 invariant proofs across
+Capability/InformationFlow subsystems, 3 new bridge lemmas
+(`filter_fold_absent_by_pred`, `filter_get_pred`, `filter_filter_getElem?`),
+all test fixtures updated. 20+ files modified. Zero sorry/axiom.
 
 ## Completed: WS-M Capability Subsystem Audit & Remediation (v0.16.13–v0.17.0, PORTFOLIO COMPLETE)
 

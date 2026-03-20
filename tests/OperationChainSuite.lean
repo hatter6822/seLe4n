@@ -74,7 +74,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 1
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         })
@@ -171,7 +171,7 @@ private def chain5CopyMoveDelete : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 2
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -322,12 +322,12 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         })
-      |>.withObject childCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
-      |>.withObject grandCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {} })
+      |>.withObject childCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.withObject grandCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
       |>.build)
 
   let (_, st1) ← expectOkState "chain9: mint root→child with CDT"
@@ -391,7 +391,7 @@ private def buildParameterizedTopology
     (List.range threadCount).map fun i =>
       (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
   let cnodeObj : KernelObject :=
-    .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := Std.HashMap.ofList cnodeSlots }
+    .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩
@@ -423,7 +423,7 @@ private def schedulerStressChecks : IO Unit := do
 
   let samePrioState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨260⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := {} })
+      |>.withObject ⟨260⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
       |>.withObject ⟨3000⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
       |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
@@ -461,7 +461,7 @@ private def schedulerStressChecks : IO Unit := do
     (List.range 16).map fun i => ⟨4200 + i⟩
   let domainStateBaseBuilder :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨4000⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := {} })
+      |>.withObject ⟨4000⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
       |>.withObject ⟨4100⟩ (.vspaceRoot { asid := ⟨4⟩, mappings := {} })
       |>.withObject ⟨4101⟩ (.vspaceRoot { asid := ⟨5⟩, mappings := {} })
       |>.withObject ⟨4102⟩ (.vspaceRoot { asid := ⟨6⟩, mappings := {} })
@@ -545,7 +545,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, { target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
           (⟨1⟩, { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none })
         ]
@@ -617,7 +617,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, { target := .object epId,
                    rights := AccessRightSet.ofList [.read, .write],
                    badge := some badgeVal })
@@ -683,7 +683,7 @@ private def chain12IpcCapTransfer : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, cap1),
             (⟨1⟩, cap2),
             (⟨2⟩, cap3)
@@ -691,7 +691,7 @@ private def chain12IpcCapTransfer : IO Unit := do
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := {}
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
@@ -739,11 +739,11 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := Std.HashMap.ofList [(⟨0⟩, cap1)]
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap1)]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := {}
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
@@ -795,14 +795,14 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
       |>.withObject targetObj2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, cap1),
             (⟨1⟩, cap2)
           ]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := {}
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
@@ -870,13 +870,13 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
   for cid in childIds do
     builder := builder.withObject cid (.cnode {
-      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {}
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
   let st0 := builder.build
 
@@ -947,13 +947,13 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
   for cid in childIds do
     builder := builder.withObject cid (.cnode {
-      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := {}
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
   let st0 := builder.build
 
@@ -1065,10 +1065,10 @@ private def chain17StrictRevokeOrdering : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        Std.HashMap.ofList [
+        SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
-      else {}
+      else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
   let st0 := builder.build
 
@@ -1179,10 +1179,10 @@ private def chain18StreamingRevokeBFS : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        Std.HashMap.ofList [
+        SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
-      else {}
+      else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
   let st0 := builder.build
 
@@ -1241,7 +1241,7 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
@@ -1280,10 +1280,10 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        Std.HashMap.ofList [
+        SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
-      else {}
+      else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
   let st0 := builder.build
 
@@ -1338,10 +1338,10 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
       builder := builder.withObject cid (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := if cid = rootCNode then
-          Std.HashMap.ofList [
+          SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
-        else {}
+        else SeLe4n.Kernel.RobinHood.RHTable.empty 16
       })
     let st0 := builder.build
     let (_, st1) ← expectOkState "chain21: mint root→A"
