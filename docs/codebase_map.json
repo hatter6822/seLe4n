@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-q1-service-interface-CPo3U",
-      "commit_sha": "2c747a6b0ace9e964f80a986eec0c151e3ff5e6d",
-      "tree_sha": "94efb88fda20dfa08e07e9ff6c4d23048b9d27a7",
-      "committed_at_utc": "2026-03-20T05:53:11+00:00"
+      "commit_sha": "bc0797d4b26da376871c352b0843a16a903b230f",
+      "tree_sha": "07780d707ed1c4921c05eb416ab9a9bb7523a10e",
+      "committed_at_utc": "2026-03-20T07:25:56+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0f9bfac29ae214e17b638b5969f8efd0a72b20a2e3c2cc4f25b894c3c5ed952f"
+    "source_digest": "5ef8db31d56e746e97e2822ab1b101f91c0a8cfa8a2a96264d1f44f5ea5fdcda"
   },
   "summary": {
     "module_count": 86,
-    "declaration_count": 2553
+    "declaration_count": 2572
   },
   "readme_sync": {
     "version": "0.17.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 81,
-    "production_loc": 46016,
+    "production_loc": 46390,
     "test_files": 5,
     "test_loc": 5513,
-    "proved_theorem_lemma_decls": 1397,
+    "proved_theorem_lemma_decls": 1408,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -267,7 +267,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 553,
+          "line": 567,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -278,7 +278,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 582,
+          "line": 596,
           "called": [
             "dispatchSyscall",
             "lookupThreadRegisterContext"
@@ -287,7 +287,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 602,
+          "line": 616,
           "called": [
             "lookupThreadRegisterContext",
             "syscallEntry"
@@ -296,7 +296,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 630,
+          "line": 644,
           "called": [
             "dispatchSyscall",
             "dispatchWithCap",
@@ -307,7 +307,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 669,
+          "line": 683,
           "called": [
             "dispatchSyscall_requires_right",
             "lookupThreadRegisterContext",
@@ -318,7 +318,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 704,
+          "line": 718,
           "called": [
             "lookupThreadRegisterContext"
           ]
@@ -326,7 +326,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 714,
+          "line": 728,
           "called": [
             "syscallRequiredRight"
           ]
@@ -334,7 +334,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 724,
+          "line": 738,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -343,7 +343,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 741,
+          "line": 755,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -352,7 +352,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 756,
+          "line": 770,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -361,7 +361,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 771,
+          "line": 785,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -370,7 +370,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 789,
+          "line": 803,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -379,15 +379,6 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 804,
-          "called": [
-            "SyscallGate",
-            "dispatchWithCap"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "dispatchWithCap_vspaceUnmap_delegates",
           "line": 818,
           "called": [
             "SyscallGate",
@@ -396,8 +387,17 @@
         },
         {
           "kind": "theorem",
+          "name": "dispatchWithCap_vspaceUnmap_delegates",
+          "line": 832,
+          "called": [
+            "SyscallGate",
+            "dispatchWithCap"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 835,
+          "line": 849,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -407,7 +407,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 854,
+          "line": 868,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -417,7 +417,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 873,
+          "line": 887,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -426,7 +426,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 888,
+          "line": 902,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -436,7 +436,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 897,
+          "line": 911,
           "called": [
             "syscallEntry"
           ]
@@ -444,7 +444,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 907,
+          "line": 921,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -453,7 +453,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 924,
+          "line": 938,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -463,13 +463,13 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 954,
+          "line": 968,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 963,
+          "line": 977,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -478,7 +478,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 974,
+          "line": 988,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -487,7 +487,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 989,
+          "line": 1003,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -497,7 +497,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 1004,
+          "line": 1018,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -507,7 +507,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 1027,
+          "line": 1041,
           "called": [
             "syscallEntry"
           ]
@@ -515,7 +515,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 1042,
+          "line": 1056,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -525,13 +525,13 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1070,
+          "line": 1084,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1096,
+          "line": 1110,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -1345,7 +1345,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
       "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
-      "declaration_count": 53,
+      "declaration_count": 66,
       "declarations": [
         {
           "kind": "namespace",
@@ -1776,9 +1776,121 @@
           ]
         },
         {
+          "kind": "structure",
+          "name": "ServiceRegisterArgs",
+          "line": 502,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "ServiceRevokeArgs",
+          "line": 512,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "ServiceQueryArgs",
+          "line": 519,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "decodeServiceRegisterArgs",
+          "line": 529,
+          "called": [
+            "ServiceRegisterArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeServiceRevokeArgs",
+          "line": 544,
+          "called": [
+            "ServiceRevokeArgs",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeServiceRegisterArgs",
+          "line": 555,
+          "called": [
+            "ServiceRegisterArgs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeServiceRevokeArgs",
+          "line": 561,
+          "called": [
+            "ServiceRevokeArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeServiceRegisterArgs_deterministic",
+          "line": 568,
+          "called": [
+            "decodeServiceRegisterArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeServiceRevokeArgs_deterministic",
+          "line": 571,
+          "called": [
+            "decodeServiceRevokeArgs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeServiceRegisterArgs_error_iff",
+          "line": 579,
+          "called": [
+            "decodeServiceRegisterArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeServiceRevokeArgs_error_iff",
+          "line": 612,
+          "called": [
+            "decodeServiceRevokeArgs",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeServiceRegisterArgs_roundtrip",
+          "line": 633,
+          "called": [
+            "ServiceRegisterArgs",
+            "decodeServiceRegisterArgs",
+            "encodeServiceRegisterArgs",
+            "requireMsgReg",
+            "stubDecoded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeServiceRevokeArgs_roundtrip",
+          "line": 642,
+          "called": [
+            "ServiceRevokeArgs",
+            "decodeServiceRevokeArgs",
+            "encodeServiceRevokeArgs",
+            "stubDecoded"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "decode_layer2_roundtrip_all",
-          "line": 498,
+          "line": 649,
           "called": [
             "decodeCSpaceCopyArgs",
             "decodeCSpaceCopyArgs_roundtrip",
@@ -1790,6 +1902,10 @@
             "decodeCSpaceMoveArgs_roundtrip",
             "decodeLifecycleRetypeArgs",
             "decodeLifecycleRetypeArgs_roundtrip",
+            "decodeServiceRegisterArgs",
+            "decodeServiceRegisterArgs_roundtrip",
+            "decodeServiceRevokeArgs",
+            "decodeServiceRevokeArgs_roundtrip",
             "decodeVSpaceMapArgs",
             "decodeVSpaceMapArgs_roundtrip",
             "decodeVSpaceUnmapArgs",
@@ -1799,6 +1915,8 @@
             "encodeCSpaceMintArgs",
             "encodeCSpaceMoveArgs",
             "encodeLifecycleRetypeArgs",
+            "encodeServiceRegisterArgs",
+            "encodeServiceRevokeArgs",
             "encodeVSpaceMapArgs",
             "encodeVSpaceUnmapArgs",
             "stubDecoded"
@@ -1807,13 +1925,13 @@
         {
           "kind": "def",
           "name": "decodeExtraCapAddrs",
-          "line": 528,
+          "line": 683,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "decodeExtraCapAddrs_deterministic",
-          "line": 536,
+          "line": 691,
           "called": [
             "decodeExtraCapAddrs"
           ]
@@ -6344,7 +6462,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Enforcement.Soundness",
       "path": "SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean",
-      "declaration_count": 32,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -6449,21 +6567,53 @@
           "called": []
         },
         {
+          "kind": "theorem",
+          "name": "registerServiceChecked_eq_registerService_when_allowed",
+          "line": 238,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "registerServiceChecked_flowDenied",
+          "line": 252,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "registerServiceChecked_denied_preserves_state",
+          "line": 265,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "enforcement_sufficiency_registerService",
+          "line": 276,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "enforcementSoundness_registerServiceChecked",
+          "line": 289,
+          "called": [
+            "registerServiceChecked_flowDenied"
+          ]
+        },
+        {
           "kind": "def",
           "name": "enforcementBoundaryExtended",
-          "line": 246,
+          "line": 316,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointSendDualChecked",
-          "line": 277,
+          "line": 348,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationSignalChecked",
-          "line": 294,
+          "line": 365,
           "called": [
             "notificationSignalChecked_flowDenied"
           ]
@@ -6471,7 +6621,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceCopyChecked",
-          "line": 307,
+          "line": 378,
           "called": [
             "cspaceCopyChecked_flowDenied"
           ]
@@ -6479,7 +6629,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMoveChecked",
-          "line": 319,
+          "line": 390,
           "called": [
             "cspaceMoveChecked_flowDenied"
           ]
@@ -6487,7 +6637,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReceiveDualChecked",
-          "line": 331,
+          "line": 402,
           "called": [
             "endpointReceiveDualChecked_flowDenied"
           ]
@@ -6495,13 +6645,13 @@
         {
           "kind": "def",
           "name": "declassifyStore",
-          "line": 369,
+          "line": 440,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "declassifyStore_eq_storeObject_when_authorized",
-          "line": 386,
+          "line": 457,
           "called": [
             "declassifyStore"
           ]
@@ -6509,7 +6659,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_normal_allowed",
-          "line": 400,
+          "line": 471,
           "called": [
             "declassifyStore"
           ]
@@ -6517,7 +6667,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_declass_denied",
-          "line": 413,
+          "line": 484,
           "called": [
             "declassifyStore"
           ]
@@ -6525,7 +6675,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_denied_no_state_change",
-          "line": 427,
+          "line": 498,
           "called": [
             "declassifyStore"
           ]
@@ -6533,7 +6683,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_declassifyStore",
-          "line": 441,
+          "line": 512,
           "called": [
             "declassifyStore"
           ]
@@ -6541,13 +6691,13 @@
         {
           "kind": "structure",
           "name": "InformationFlowConfigInvariant",
-          "line": 488,
+          "line": 559,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "defaultConfigInvariant",
-          "line": 499,
+          "line": 570,
           "called": [
             "InformationFlowConfigInvariant"
           ]
@@ -6555,7 +6705,7 @@
         {
           "kind": "theorem",
           "name": "kernelTransition_preserves_ifConfigInvariant",
-          "line": 516,
+          "line": 587,
           "called": [
             "InformationFlowConfigInvariant"
           ]
@@ -6565,30 +6715,30 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers",
       "path": "SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean",
-      "declaration_count": 17,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 14,
+          "line": 15,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointSendDualChecked",
-          "line": 27,
+          "line": 28,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceMintChecked",
-          "line": 49,
+          "line": 50,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_eq_endpointSendDual_when_allowed",
-          "line": 68,
+          "line": 69,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -6596,7 +6746,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_flowDenied",
-          "line": 94,
+          "line": 95,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -6604,7 +6754,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_eq_cspaceMint_when_allowed",
-          "line": 113,
+          "line": 114,
           "called": [
             "cspaceMintChecked"
           ]
@@ -6612,7 +6762,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_flowDenied",
-          "line": 128,
+          "line": 129,
           "called": [
             "cspaceMintChecked"
           ]
@@ -6620,23 +6770,24 @@
         {
           "kind": "inductive",
           "name": "EnforcementClass",
-          "line": 171,
+          "line": 172,
           "called": []
         },
         {
           "kind": "def",
           "name": "enforcementBoundary",
-          "line": 178,
+          "line": 179,
           "called": [
             "EnforcementClass",
             "cspaceMintChecked",
-            "endpointSendDualChecked"
+            "endpointSendDualChecked",
+            "registerServiceChecked"
           ]
         },
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_denied_preserves_state",
-          "line": 204,
+          "line": 206,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -6644,7 +6795,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_denied_preserves_state",
-          "line": 220,
+          "line": 222,
           "called": [
             "cspaceMintChecked"
           ]
@@ -6652,7 +6803,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_endpointSendDual",
-          "line": 237,
+          "line": 239,
           "called": [
             "endpointSendDualChecked"
           ]
@@ -6660,7 +6811,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_cspaceMint",
-          "line": 258,
+          "line": 260,
           "called": [
             "cspaceMintChecked"
           ]
@@ -6668,25 +6819,31 @@
         {
           "kind": "def",
           "name": "notificationSignalChecked",
-          "line": 294,
+          "line": 296,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceCopyChecked",
-          "line": 315,
+          "line": 317,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceMoveChecked",
-          "line": 331,
+          "line": 333,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointReceiveDualChecked",
-          "line": 350,
+          "line": 352,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "registerServiceChecked",
+          "line": 377,
           "called": []
         }
       ]
@@ -19429,7 +19586,7 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 389,
+          "line": 496,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -19443,7 +19600,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 496,
+          "line": 603,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -19453,7 +19610,7 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 548,
+          "line": 655,
           "called": [
             "checkInvariants",
             "mkRunQueue"
@@ -19462,7 +19619,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 619,
+          "line": 726,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -19471,7 +19628,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 781,
+          "line": 888,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -19480,7 +19637,7 @@
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 855,
+          "line": 962,
           "called": [
             "checkInvariants",
             "demoUntyped",
@@ -19492,7 +19649,7 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 944,
+          "line": 1051,
           "called": [
             "checkInvariants"
           ]
@@ -19500,7 +19657,7 @@
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1002,
+          "line": 1109,
           "called": [
             "checkInvariants"
           ]
@@ -19508,7 +19665,7 @@
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1046,
+          "line": 1153,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -19517,7 +19674,7 @@
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1092,
+          "line": 1199,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -19527,7 +19684,7 @@
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1164,
+          "line": 1271,
           "called": [
             "checkInvariants"
           ]
@@ -19535,7 +19692,7 @@
         {
           "kind": "def",
           "name": "runRegisterDecodeTrace",
-          "line": 1207,
+          "line": 1314,
           "called": [
             "checkInvariants"
           ]
@@ -19543,7 +19700,7 @@
         {
           "kind": "def",
           "name": "runSyscallDispatchTrace",
-          "line": 1343,
+          "line": 1450,
           "called": [
             "checkInvariants"
           ]
@@ -19551,7 +19708,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1525,
+          "line": 1632,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -19560,7 +19717,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 1609,
+          "line": 1716,
           "called": [
             "checkInvariants"
           ]
@@ -19568,7 +19725,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 1707,
+          "line": 1814,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -19577,7 +19734,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1787,
+          "line": 1894,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -19607,13 +19764,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1830,
+          "line": 1937,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1881,
+          "line": 1988,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -19621,7 +19778,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 1895,
+          "line": 2002,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -19629,7 +19786,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 1903,
+          "line": 2010,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",

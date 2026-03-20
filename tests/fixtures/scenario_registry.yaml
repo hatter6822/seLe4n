@@ -133,6 +133,56 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service isolation api↔db: false"
+  SRG-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register service with valid endpoint + interface"
+  SRG-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "duplicate service registration rejected"
+  SRG-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register with unknown interface rejected"
+  SRG-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register with invalid endpoint rejected"
+  SRG-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "revoke registered service"
+  SRG-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "revoke non-existent service rejected"
+  SRG-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "lookup by matching capability"
+  SRG-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "lookup by non-matching capability rejected"
+  SRG-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register interface + service chain"
+  SRG-010:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "dependency cycle detection still works"
   SST-021:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace

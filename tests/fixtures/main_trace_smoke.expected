@@ -28,6 +28,16 @@ SST-009 | Service | register self-loop dependency: SeLe4n.Model.KernelError.cycl
 SST-011 | Service | service path svcApi→svcDb: true
 SST-013 | Service | service isolation api↔denied: true
 SST-014 | Service | service isolation api↔db: false
+SRG-001 | ServiceRegistry | register service success: true
+SRG-002 | ServiceRegistry | duplicate register: SeLe4n.Model.KernelError.illegalState
+SRG-005 | ServiceRegistry | revoke service success: true
+SRG-007 | ServiceRegistry | lookup by cap found sid: 501
+SRG-008 | ServiceRegistry | lookup non-matching: SeLe4n.Model.KernelError.objectNotFound
+SRG-003 | ServiceRegistry | unknown interface: SeLe4n.Model.KernelError.objectNotFound
+SRG-004 | ServiceRegistry | invalid endpoint: SeLe4n.Model.KernelError.invalidCapability
+SRG-006 | ServiceRegistry | revoke non-existent: SeLe4n.Model.KernelError.objectNotFound
+SRG-009 | ServiceRegistry | chain success: iface=true svc=true
+SRG-010 | ServiceRegistry | cycle detection: SeLe4n.Model.KernelError.cyclicDependency
 SST-021 | Service | deep cnode radix fixture: some 12
 SST-023 | Service | deep cnode path lookup rights: { bits := 3 }
 SST-024 | Service | deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
@@ -145,7 +155,7 @@ MEI-003 | IPC | multi-ep endpoint1 queues empty: true
 MEI-004 | IPC | multi-ep ep3 out-of-order recv registers: some [55, 66]
 MEI-005 | IPC | multi-ep ep1 FIFO second recv registers: some [77, 88]
 MEI-006 | IPC | multi-ep all 3 endpoints drained: true
-ITR-001 | Testing | inter-transition invariant checks: 22 passed
+ITR-001 | Testing | inter-transition invariant checks: 24 passed
 PTY-001 | Testing | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 PTY-001 | Testing | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 PTY-001 | Testing | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

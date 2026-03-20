@@ -10,6 +10,7 @@ import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Service.Operations
+import SeLe4n.Kernel.Service.Registry
 
 namespace SeLe4n.Kernel
 
@@ -152,7 +153,7 @@ enforcement boundary.
 
 | Category | Operations |
 |---|---|
-| **Policy-gated** (2) | `endpointSendDualChecked`, `cspaceMintChecked` |
+| **Policy-gated** (3) | `endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked` |
 | **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `cspaceCopy`, `cspaceMove`, `notificationSignal` |
 | **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
 | **Internal/lifecycle** (3) | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
@@ -174,10 +175,11 @@ inductive EnforcementClass where
   | readOnly (name : String)
   deriving Repr
 
-/-- WS-E5/M-07: Canonical enforcement boundary classification table (17 entries). -/
+/-- WS-E5/M-07/Q1-D: Canonical enforcement boundary classification table (17 entries). -/
 def enforcementBoundary : List EnforcementClass :=
   [ .policyGated "endpointSendDualChecked"
   , .policyGated "cspaceMintChecked"
+  , .policyGated "registerServiceChecked"
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
   , .capabilityOnly "cspaceDeleteSlot"
@@ -356,6 +358,31 @@ def endpointReceiveDualChecked
     let receiverLabel := ctx.threadLabelOf receiver
     if securityFlowsTo endpointLabel receiverLabel then
       endpointReceiveDual endpointId receiver st
+    else
+      .error .flowDenied
+
+-- ============================================================================
+-- WS-Q1: Service registration enforcement wrapper
+-- ============================================================================
+
+/-- WS-Q1/Q1-D: Policy-checked service registration: verifies that information
+may flow from the registering thread's security domain to the service's security
+domain before delegating to `registerService`.
+
+Service registration binds a service identity to an endpoint capability,
+creating a persistent mapping that reveals the registrar's intent. The wrapper
+gates on `securityFlowsTo` from the thread's domain to the service's domain.
+
+Returns `flowDenied` when `securityFlowsTo threadLabel serviceLabel = false`. -/
+def registerServiceChecked
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId)
+    (reg : ServiceRegistration) : Kernel Unit :=
+  fun st =>
+    let threadLabel := ctx.threadLabelOf caller
+    let serviceLabel := ctx.serviceLabelOf reg.sid
+    if securityFlowsTo threadLabel serviceLabel then
+      registerService reg st
     else
       .error .flowDenied
 

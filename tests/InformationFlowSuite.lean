@@ -377,9 +377,9 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-E5/M-07: Enforcement boundary classification checks
   -- =========================================================================
 
-  expect "M-07 enforcement boundary: 2 policy-gated operations defined"
+  expect "M-07/Q1: enforcement boundary: 3 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 2)
+      match c with | .policyGated _ => true | _ => false)).length == 3)
 
   expect "M-07 enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -389,8 +389,8 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  expect "M-07 enforcement boundary: total 16 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 16)
+  expect "M-07 enforcement boundary: total 17 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 17)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
@@ -756,8 +756,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "WS-H8: enforcement boundary has 6 policy-gated ops"
-    (policyGatedCount = 6)
+  expect "WS-H8/Q1: enforcement boundary has 7 policy-gated ops"
+    (policyGatedCount = 7)
 
   IO.println "WS-H8 enforcement boundary classification verified"
 

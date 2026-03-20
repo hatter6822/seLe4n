@@ -263,6 +263,113 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   IO.println s!"[SST-020] service lookup svcBroken deps: {reprStr <| (SeLe4n.Model.lookupService st1 svcBroken).map ServiceGraphEntry.dependencies}"
   checkInvariants counter "post-service-registry" st1
 
+  -- =========================================================================
+  -- WS-Q1-F: Service Registry Tests (SRG-001 through SRG-010)
+  -- =========================================================================
+
+  -- SRG-001: Register service with valid endpoint + interface
+  let srgIfaceId : SeLe4n.InterfaceId := ⟨500⟩
+  let srgIface : InterfaceSpec := {
+    ifaceId := srgIfaceId, methodCount := 3,
+    maxMessageSize := 4, maxResponseSize := 4, requiresGrant := false
+  }
+  match SeLe4n.Kernel.registerInterface srgIface st1 with
+  | .error err => IO.println s!"[SRG-001] register interface error: {reprStr err}"
+  | .ok (_, stIface) =>
+    let srgSid : ServiceId := ⟨501⟩
+    let srgCap : Capability := { target := .object demoEndpoint, rights := .empty }
+    let srgReg : ServiceRegistration := {
+      sid := srgSid, iface := srgIface, endpointCap := srgCap
+    }
+    match SeLe4n.Kernel.registerService srgReg stIface with
+    | .error err => IO.println s!"[SRG-001] register service error: {reprStr err}"
+    | .ok (_, stSvc) =>
+      IO.println s!"[SRG-001] register service success: {stSvc.serviceRegistry[srgSid]? != none}"
+      checkInvariants counter "post-SRG-001" stSvc
+
+      -- SRG-002: Duplicate service registration
+      match SeLe4n.Kernel.registerService srgReg stSvc with
+      | .error err => IO.println s!"[SRG-002] duplicate register: {reprStr err}"
+      | .ok _ => IO.println "[SRG-002] unexpected duplicate success"
+
+      -- SRG-005: Revoke registered service
+      match SeLe4n.Kernel.revokeService srgSid stSvc with
+      | .error err => IO.println s!"[SRG-005] revoke service error: {reprStr err}"
+      | .ok (_, stRevoked) =>
+        IO.println s!"[SRG-005] revoke service success: {stRevoked.serviceRegistry[srgSid]? == none}"
+
+      -- SRG-007: Lookup by matching capability
+      match SeLe4n.Kernel.lookupServiceByCap demoEndpoint stSvc with
+      | .error err => IO.println s!"[SRG-007] lookup by cap error: {reprStr err}"
+      | .ok (reg, _) =>
+        IO.println s!"[SRG-007] lookup by cap found sid: {reg.sid.toNat}"
+
+      -- SRG-008: Lookup by non-matching capability
+      match SeLe4n.Kernel.lookupServiceByCap ⟨9999⟩ stSvc with
+      | .error err => IO.println s!"[SRG-008] lookup non-matching: {reprStr err}"
+      | .ok _ => IO.println "[SRG-008] unexpected lookup success"
+
+  -- SRG-003: Register with unknown interface
+  let srgBadIface : InterfaceSpec := {
+    ifaceId := ⟨999⟩, methodCount := 1,
+    maxMessageSize := 1, maxResponseSize := 1, requiresGrant := false
+  }
+  let srgBadReg : ServiceRegistration := {
+    sid := ⟨502⟩, iface := srgBadIface,
+    endpointCap := { target := .object demoEndpoint, rights := .empty }
+  }
+  match SeLe4n.Kernel.registerService srgBadReg st1 with
+  | .error err => IO.println s!"[SRG-003] unknown interface: {reprStr err}"
+  | .ok _ => IO.println "[SRG-003] unexpected success with unknown interface"
+
+  -- SRG-004: Register with invalid endpoint (non-object target)
+  let srgInvalidCap : Capability := { target := .cnodeSlot ⟨10⟩ ⟨0⟩, rights := .empty }
+  match SeLe4n.Kernel.registerInterface srgIface st1 with
+  | .error _ => IO.println "[SRG-004] skipped (interface already tested)"
+  | .ok (_, stIface4) =>
+    let srgInvalidReg : ServiceRegistration := {
+      sid := ⟨503⟩, iface := srgIface,
+      endpointCap := srgInvalidCap
+    }
+    match SeLe4n.Kernel.registerService srgInvalidReg stIface4 with
+    | .error err => IO.println s!"[SRG-004] invalid endpoint: {reprStr err}"
+    | .ok _ => IO.println "[SRG-004] unexpected success with invalid endpoint"
+
+  -- SRG-006: Revoke non-existent service
+  match SeLe4n.Kernel.revokeService ⟨9998⟩ st1 with
+  | .error err => IO.println s!"[SRG-006] revoke non-existent: {reprStr err}"
+  | .ok _ => IO.println "[SRG-006] unexpected revoke success"
+
+  -- SRG-009: Register interface + service chain (end-to-end)
+  let srgChainIface : InterfaceSpec := {
+    ifaceId := ⟨600⟩, methodCount := 2,
+    maxMessageSize := 2, maxResponseSize := 2, requiresGrant := true
+  }
+  match SeLe4n.Kernel.registerInterface srgChainIface st1 with
+  | .error err => IO.println s!"[SRG-009] chain interface error: {reprStr err}"
+  | .ok (_, stChainIface) =>
+    let srgChainReg : ServiceRegistration := {
+      sid := ⟨601⟩, iface := srgChainIface,
+      endpointCap := { target := .object demoEndpoint, rights := .empty }
+    }
+    match SeLe4n.Kernel.registerService srgChainReg stChainIface with
+    | .error err => IO.println s!"[SRG-009] chain service error: {reprStr err}"
+    | .ok (_, stChain) =>
+      let chainIfaceId : SeLe4n.InterfaceId := ⟨600⟩
+      let chainSvcId : ServiceId := ⟨601⟩
+      IO.println s!"[SRG-009] chain success: iface={stChain.interfaceRegistry[chainIfaceId]? != none} svc={stChain.serviceRegistry[chainSvcId]? != none}"
+
+  -- SRG-010: Dependency cycle detection still works
+  match SeLe4n.Kernel.serviceRegisterDependency svcDb svcApi st1 with
+  | .error err => IO.println s!"[SRG-010] cycle detection: {reprStr err}"
+  | .ok (_, stDepOk) =>
+    -- Now try to create a cycle: svcApi already depends on svcDb (from SST-007 path),
+    -- but in st1 there's no edge yet. Register svcApi→svcDb then try svcDb→svcApi.
+    match SeLe4n.Kernel.serviceRegisterDependency svcApi svcDb stDepOk with
+    | .error err => IO.println s!"[SRG-010] reverse edge: {reprStr err}"
+    | .ok _ => IO.println "[SRG-010] unexpected cycle allowed"
+  checkInvariants counter "post-SRG-tests" st1
+
   let deepRadixCNode : CNode := {
     depth := 14
     guardWidth := 2

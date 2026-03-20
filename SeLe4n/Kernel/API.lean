@@ -517,24 +517,38 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .ok args =>
             Architecture.vspaceUnmapPage args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
-  -- WS-Q1-D: Service register — register a service with the endpoint cap.
+  -- WS-Q1-D: Service register — decode interface spec from message registers,
+  -- construct ServiceRegistration, and register the service.
   | .serviceRegister =>
     match cap.target with
     | .object epId =>
-      let reg : ServiceRegistration := {
-        sid := ServiceId.ofNat epId.toNat
-        iface := default
-        endpointCap := cap
-      }
-      registerService reg
+      fun st => match decodeServiceRegisterArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          let iface : InterfaceSpec := {
+            ifaceId         := args.interfaceId
+            methodCount     := args.methodCount
+            maxMessageSize  := args.maxMessageSize
+            maxResponseSize := args.maxResponseSize
+            requiresGrant   := args.requiresGrant
+          }
+          let reg : ServiceRegistration := {
+            sid := ServiceId.ofNat epId.toNat
+            iface := iface
+            endpointCap := cap
+          }
+          registerService reg st
     | _ => fun _ => .error .invalidCapability
-  -- WS-Q1-D: Service revoke — remove a service registration.
+  -- WS-Q1-D: Service revoke — decode service ID from message registers.
   | .serviceRevoke =>
     match cap.target with
-    | .object objId =>
-      revokeService (ServiceId.ofNat objId.toNat)
+    | .object _ =>
+      fun st => match decodeServiceRevokeArgs decoded with
+      | .error e => .error e
+      | .ok args => revokeService args.targetService st
     | _ => fun _ => .error .invalidCapability
-  -- WS-Q1-D: Service query — lookup by endpoint capability.
+  -- WS-Q1-D: Service query — lookup by endpoint capability target.
+  -- The endpoint object ID comes from the capability target (no MR decode needed).
   | .serviceQuery =>
     match cap.target with
     | .object epId =>
