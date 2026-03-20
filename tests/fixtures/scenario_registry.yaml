@@ -763,3 +763,93 @@ scenarios:
     function: chain14IpcBadgeAndCapTransfer
     subsystem: IPC
     description: "IPC badge propagation and cap transfer combined: badge 0xCAFE + 2 caps"
+  RH-001:
+    source: tests/RobinHoodSuite.lean
+    function: rh001_emptyTable
+    subsystem: RobinHood
+    description: "empty table: get? returns none, size = 0, contains = false"
+  RH-002:
+    source: tests/RobinHoodSuite.lean
+    function: rh002_singleInsertGet
+    subsystem: RobinHood
+    description: "single insert/get roundtrip"
+  RH-003:
+    source: tests/RobinHoodSuite.lean
+    function: rh003_insertErase
+    subsystem: RobinHood
+    description: "insert/erase/get: erase then get returns none"
+  RH-004:
+    source: tests/RobinHoodSuite.lean
+    function: rh004_overwrite
+    subsystem: RobinHood
+    description: "overwrite: insert same key twice, get returns latest value"
+  RH-005:
+    source: tests/RobinHoodSuite.lean
+    function: rh005_multipleKeys
+    subsystem: RobinHood
+    description: "multiple distinct keys: insert 10, verify all retrievable"
+  RH-006:
+    source: tests/RobinHoodSuite.lean
+    function: rh006_collisionHandling
+    subsystem: RobinHood
+    description: "collision handling: keys with same hash mod capacity, all retrievable"
+  RH-007:
+    source: tests/RobinHoodSuite.lean
+    function: rh007_robinHoodSwap
+    subsystem: RobinHood
+    description: "Robin Hood swap: insert sequence triggers displacement, all findable"
+  RH-008:
+    source: tests/RobinHoodSuite.lean
+    function: rh008_backwardShift
+    subsystem: RobinHood
+    description: "backward-shift: erase from cluster, remaining keys accessible"
+  RH-009:
+    source: tests/RobinHoodSuite.lean
+    function: rh009_resizeTrigger
+    subsystem: RobinHood
+    description: "resize trigger: 75% load triggers capacity doubling"
+  RH-010:
+    source: tests/RobinHoodSuite.lean
+    function: rh010_postResizeCorrectness
+    subsystem: RobinHood
+    description: "post-resize correctness: all entries accessible after resize"
+  RH-011:
+    source: tests/RobinHoodSuite.lean
+    function: rh011_largeScale
+    subsystem: RobinHood
+    description: "large-scale: 200 inserts, all retrievable, 100 erases, remaining present"
+  RH-012:
+    source: tests/RobinHoodSuite.lean
+    function: rh012_foldToList
+    subsystem: RobinHood
+    description: "fold/toList: fold visits all entries, toList contains all pairs"
+  RH-INT-001:
+    source: tests/RobinHoodSuite.lean
+    function: rhInt001_cnodeLookupInsertRemove
+    subsystem: Capability
+    description: "CNode lookup/insert/remove with RHTable-backed slots"
+  RH-INT-002:
+    source: tests/RobinHoodSuite.lean
+    function: rhInt002_revokeTargetLocal
+    subsystem: Capability
+    description: "CNode.revokeTargetLocal with RHTable filter"
+  RH-INT-003:
+    source: tests/RobinHoodSuite.lean
+    function: rhInt003_findFirstEmptySlot
+    subsystem: Capability
+    description: "CNode.findFirstEmptySlot with RHTable-backed slots"
+  RH-INT-004:
+    source: tests/RobinHoodSuite.lean
+    function: rhInt004_slotCountBounded
+    subsystem: Capability
+    description: "CNode slotCountBounded after insert sequence"
+  RH-INT-005:
+    source: tests/RobinHoodSuite.lean
+    function: rhInt005_cspaceResolution
+    subsystem: Capability
+    description: "multi-level CSpace resolution with RHTable-backed CNodes"
+  RH-INT-006:
+    source: tests/RobinHoodSuite.lean
+    function: rhInt006_cnodeBEq
+    subsystem: Capability
+    description: "CNode BEq comparison with RHTable slots"

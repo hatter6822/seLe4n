@@ -20,5 +20,6 @@ ensure_lake_available
 run_check "TRACE" lake env lean --run tests/NegativeStateSuite.lean
 run_check "TRACE" lake env lean --run tests/OperationChainSuite.lean
 run_check "TRACE" lake env lean --run tests/InformationFlowSuite.lean
+run_check "TRACE" lake env lean --run tests/RobinHoodSuite.lean
 
 finalize_report

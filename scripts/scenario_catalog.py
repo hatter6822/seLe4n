@@ -89,7 +89,8 @@ def nightly_seeds(catalog: dict) -> list[int]:
     return sorted(seeds)
 
 
-def validate_registry(fixture_path: Path, registry_path: Path) -> list[str]:
+def validate_registry(fixture_path: Path, registry_path: Path,
+                      extra_fixture_paths: list[Path] | None = None) -> list[str]:
     """WS-I1/R-03: Validate that fixture scenario IDs and registry are consistent."""
     import re
 
@@ -102,16 +103,20 @@ def validate_registry(fixture_path: Path, registry_path: Path) -> list[str]:
         errors.append(f"fixture not found: {fixture_path}")
         return errors
 
-    # Parse scenario IDs from fixture (pipe-delimited lines)
+    # Parse scenario IDs from all fixture files (pipe-delimited lines)
     fixture_ids: set[str] = set()
-    fixture_text = fixture_path.read_text(encoding="utf-8")
-    for line in fixture_text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+    all_fixture_paths = [fixture_path] + (extra_fixture_paths or [])
+    for fp in all_fixture_paths:
+        if not fp.exists():
             continue
-        parts = line.split("|")
-        if len(parts) >= 3:
-            fixture_ids.add(parts[0].strip())
+        fixture_text = fp.read_text(encoding="utf-8")
+        for line in fixture_text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("|")
+            if len(parts) >= 3:
+                fixture_ids.add(parts[0].strip())
 
     # Parse scenario IDs from registry (YAML-like: "  ID:" lines)
     registry_ids: set[str] = set()
@@ -152,6 +157,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="tests/fixtures/scenario_registry.yaml",
         help="Scenario registry path for validate-registry",
     )
+    parser.add_argument(
+        "--extra-fixtures",
+        nargs="*",
+        default=[],
+        help="Additional fixture files for validate-registry (e.g., suite-specific fixtures)",
+    )
     return parser
 
 
@@ -189,7 +200,8 @@ def main() -> int:
 
     if args.command == "validate-registry":
         registry_path = Path(args.registry)
-        errors = validate_registry(fixture_path, registry_path)
+        extra_fixtures = [Path(p) for p in args.extra_fixtures]
+        errors = validate_registry(fixture_path, registry_path, extra_fixtures)
         if errors:
             print("scenario registry validation failed:", file=sys.stderr)
             for error in errors:

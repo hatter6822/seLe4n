@@ -1,3 +1,56 @@
+## [0.17.5] — WS-N5 Test Coverage + Documentation
+
+- Completed Phase 5 (WS-N5) of the Robin Hood hashing workstream: test coverage
+  and documentation sync. WS-N portfolio **COMPLETE** (v0.17.0–v0.17.5)
+- N5-A: 12 standalone Robin Hood test scenarios in `tests/RobinHoodSuite.lean`:
+  RH-001 (empty table), RH-002 (insert/get roundtrip), RH-003 (insert/erase),
+  RH-004 (overwrite), RH-005 (10 distinct keys), RH-006 (collision handling),
+  RH-007 (Robin Hood swap), RH-008 (backward-shift after erase), RH-009
+  (resize trigger at 75% load), RH-010 (post-resize correctness), RH-011
+  (large-scale 200 inserts + 100 erases), RH-012 (fold/toList)
+- N5-B: 6 CNode integration regression tests: RH-INT-001 (lookup/insert/remove),
+  RH-INT-002 (revokeTargetLocal with filter), RH-INT-003 (findFirstEmptySlot),
+  RH-INT-004 (slotCountBounded), RH-INT-005 (CSpace resolution), RH-INT-006
+  (BEq comparison)
+- N5-C: Test infrastructure — `robin_hood_suite` executable in `lakefile.toml`,
+  added to Tier 2 test script (`test_tier2_negative.sh`), 18 scenario IDs
+  registered in `tests/fixtures/scenario_registry.yaml`
+- N5-D: Full documentation sync across 8 canonical files (README.md,
+  DEVELOPMENT.md, SELE4N_SPEC.md, CLAIM_EVIDENCE_INDEX.md, WORKSTREAM_HISTORY.md,
+  CLAUDE.md, CHANGELOG.md, website_link_manifest.txt) + 4 GitBook chapters
+  (03-architecture, 04-design-deep-dive, 05-specification, 12-proof-invariant-map)
+- Files: 1 new (`tests/RobinHoodSuite.lean`), 15+ modified
+- All test tiers pass; zero `sorry`/`axiom`
+- Bumped `lakefile.toml` version to `0.17.5`
+
+## [0.17.4] — WS-N4 Kernel Integration (CNode.slots)
+
+- Completed Phase 4 (WS-N4): replaced `CNode.slots : Std.HashMap Slot Capability`
+  with `RHTable Slot Capability` across the kernel
+- Updated CNode operations, ~25 CNode/capability theorems, ~15 invariant proofs
+  across Capability/InformationFlow subsystems
+- `slotsUnique` repurposed from `True` to substantive `invExt ∧ size < capacity
+  ∧ 4 ≤ capacity` invariant
+- 3 new bridge lemmas: `filter_fold_absent_by_pred`, `filter_get_pred`,
+  `filter_filter_getElem?`
+- 20+ files modified; test fixtures updated; zero `sorry`/`axiom`
+- Bumped `lakefile.toml` version to `0.17.4`
+
+## [0.17.3] — WS-N3 Kernel API Bridge
+
+- Completed Phase 3 (WS-N3): kernel API bridge in
+  `SeLe4n/Kernel/RobinHood/Bridge.lean` (~307 lines)
+- N3-A: `Inhabited`/`BEq` typeclass instances for `RHTable`
+- N3-B: 10 bridge lemmas matching `Std.HashMap` patterns (`getElem?_insert_self`,
+  `getElem?_insert_ne`, `getElem?_erase_self`, `getElem?_erase_ne`,
+  `getElem?_empty`, `size_erase_le`, `size_insert_le`,
+  `mem_iff_isSome_getElem?`, `getElem?_eq_some_getElem`, `fold_eq_slots_foldl`)
+- N3-C: `RHTable.filter` with `size_filter_le_size` preservation
+- `RHTable.ofList` constructor, `get_after_erase_ne` proof (+247 lines in
+  `Lookup.lean`)
+- Zero `sorry`/`axiom`; all test tiers pass
+- Bumped `lakefile.toml` version to `0.17.3`
+
 ## [0.17.2] — WS-N2 Robin Hood Invariant Proofs
 
 - Completed Phase 2 (WS-N2) of the Robin Hood hashing workstream: invariant

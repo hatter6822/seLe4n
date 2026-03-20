@@ -123,12 +123,14 @@ seLe4n uses `Std.HashMap` and `Std.HashSet` for all kernel hot paths. This is a 
 | Data structure | seL4 | seLe4n |
 |----------------|------|--------|
 | Object store | Array indexed by ID | `HashMap ObjId KernelObject` |
-| CNode slots | Array indexed by slot | `HashMap Slot Capability` |
+| CNode slots | Array indexed by slot | `RHTable Slot Capability` (verified Robin Hood hash table, WS-N4) |
 | VSpace mappings | Page table tree | `HashMap VAddr (PAddr × PagePermissions)` with W^X enforcement |
 | Run queue | Linked list | `HashMap Priority (List ThreadId)` + `HashSet ThreadId` with dequeue-on-dispatch (WS-H12b) |
 | CDT children | Linked list | `HashMap CdtNodeId (List CdtNodeId)` |
 
 HashMap key uniqueness is structural (guaranteed by the data structure), so properties like `slotsUnique` become trivially true. This eliminated entire classes of proof obligations during the WS-G migration.
+
+CNode slots were further migrated from `Std.HashMap` to a formally verified `RHTable` (Robin Hood hash table) in WS-N (v0.17.0–v0.17.5). The `RHTable` uses single-representation architecture (one `Array (Option (RHEntry α β))`), fuel-bounded recursion (no `partial` functions), bounds-checked array access, and machine-checked proofs for all invariants. The `slotsUnique` predicate was repurposed from trivial `True` to a substantive `invExt ∧ size < capacity ∧ 4 ≤ capacity` invariant.
 
 ## 3. IPC design: intrusive dual-queue
 
