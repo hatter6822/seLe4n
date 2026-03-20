@@ -79,7 +79,7 @@ A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo`
 
 **Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 13 syscalls are fully wired — zero `.illegalState` stubs remain.
 
-**Service policy:** `ServiceConfig` in `SystemState` holds policy predicates (`allowStart`, `allowStop`) for service start/stop operations, replacing the original permissive `(fun _ => true)` stubs with configuration-sourced, auditable predicates.
+**Service registry (WS-Q1):** The service subsystem uses a stateless registry model — services are registered entries with identity, dependencies, and isolation edges. No `ServiceStatus` lifecycle state or `ServiceConfig` policy predicates. Graph invariants (acyclicity, bounded service count) are preserved by `serviceRegisterDependency`.
 
 **IPC message population:** `extractMessageRegisters` converts `Array RegValue` → `Array Nat` with a triple bound (info.length, maxMessageRegisters, msgRegs.size). IPC send/call/reply dispatch arms populate message bodies from decoded registers instead of empty arrays.
 
@@ -263,10 +263,9 @@ constructors (dedicated `invalidTypeTag` error variant for unrecognized tags);
 double lookup); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
 round-trip proof. 3 delegation theorems proved (`lifecycleRetype`, `vspaceMap`,
 `vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`.
-**Layer 5 (completed, K-E v0.16.4):** Service policy and IPC message population.
-`ServiceConfig` in `SystemState` replaces `(fun _ => true)` stubs — service
-start/stop dispatch reads configurable policy predicates from
-`st.serviceConfig.allowStart`/`allowStop`. `extractMessageRegisters` converts
+**Layer 5 (completed, K-E v0.16.4; updated WS-Q1):** IPC message population.
+*(WS-Q1: `ServiceConfig` and service start/stop dispatch removed — registry-only model.)*
+`extractMessageRegisters` converts
 decoded `Array RegValue` to `Array Nat` (matching `IpcMessage.registers` type)
 with triple bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`); `.send`,
 `.call`, `.reply` dispatch arms now populate message bodies instead of empty arrays.

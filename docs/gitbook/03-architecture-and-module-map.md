@@ -97,9 +97,9 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvoke`,
   - `dispatchWithCap` — per-syscall routing for all 13 kernel operations; accepts
     `SyscallDecodeResult` (WS-K-C); all 13 syscalls fully dispatch with zero
-    `.illegalState` stubs (WS-K-C/K-D); `ServiceConfig`-sourced policy for
-    service start/stop (WS-K-E); IPC message body population from decoded
-    registers via `extractMessageRegisters` (WS-K-E),
+    `.illegalState` stubs (WS-K-C/K-D); IPC message body population from decoded
+    registers via `extractMessageRegisters` (WS-K-E). *(WS-Q1: `ServiceConfig`-sourced
+    policy for service start/stop removed — registry-only model.)*
   - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight`,
   - soundness theorems: `syscallEntry_requires_valid_decode`,
     `syscallEntry_implies_capability_held`, `dispatchSyscall_requires_right`,
@@ -204,14 +204,14 @@ reasoning about dependency satisfaction, isolation enforcement, and lifecycle
 determinism. See `Service/Operations.lean` for the full design rationale.
 
 - `SeLe4n/Kernel/Service/Operations.lean`
-  - deterministic orchestration transitions (`serviceStart`, `serviceStop`, `serviceRestart`),
-  - explicit `policyDenied`, `dependencyViolation`, and `illegalState` branches,
-  - staged-order theorem surface for restart composition.
+  - registry operations (`lookupService`, `storeServiceEntry`, `serviceRegisterDependency`),
+  - graph queries (`serviceHasPathTo`, `hasIsolationEdge`, `serviceBfsFuel`),
+  - explicit `cyclicDependency` and error branches.
+  *(WS-Q1: `serviceStart`/`serviceStop`/`serviceRestart` lifecycle transitions removed.)*
 - `SeLe4n/Kernel/Service/Invariant.lean` (re-export hub)
   - `Invariant/Policy.lean` — reusable policy predicate components and
     `servicePolicySurfaceInvariant`, bridge lemmas connecting service policy
-    assumptions to lifecycle/capability bundles, explicit policy-denial
-    check-vs-mutation theorem entrypoints.
+    assumptions to lifecycle/capability bundles.
   - `Invariant/Acyclicity.lean` — dependency acyclicity proofs (TPI-D07).
 
 ### Architecture subsystem

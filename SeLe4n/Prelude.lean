@@ -251,6 +251,34 @@ instance : ToString ServiceId where
 
 end ServiceId
 
+/-- Identifier for interface specifications in the service registry. -/
+structure InterfaceId where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+@[inline] instance : Hashable InterfaceId where
+  hash a := hash a.val
+
+namespace InterfaceId
+
+@[inline] def ofNat (n : Nat) : InterfaceId := ⟨n⟩
+@[inline] def toNat (id : InterfaceId) : Nat := id.val
+
+instance : ToString InterfaceId where
+  toString id := toString id.toNat
+
+@[inline] def isReserved (id : InterfaceId) : Bool := id.val = 0
+@[inline] def sentinel : InterfaceId := ⟨0⟩
+
+/-- Round-trip: ofNat then toNat is identity. -/
+theorem toNat_ofNat (n : Nat) : (InterfaceId.ofNat n).toNat = n := rfl
+
+/-- Round-trip: toNat then ofNat is identity. -/
+theorem ofNat_toNat (id : InterfaceId) : InterfaceId.ofNat id.toNat = id := by
+  cases id; rfl
+
+end InterfaceId
+
 /-- Capability-space pointer value. -/
 structure CPtr where
   val : Nat

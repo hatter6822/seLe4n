@@ -95,21 +95,6 @@ inductive NonInterferenceStep
       (hDstHigh : objectObservable ctx observer dst.cnode = false)
       (hStep : cspaceInsertSlot dst cap st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
-  | serviceStart
-      (sid : ServiceId) (policy : ServicePolicy)
-      (hSvcHigh : serviceObservable ctx observer sid = false)
-      (hStep : SeLe4n.Kernel.serviceStart sid policy st = .ok ((), st'))
-    : NonInterferenceStep ctx observer st st'
-  | serviceStop
-      (sid : ServiceId) (policy : ServicePolicy)
-      (hSvcHigh : serviceObservable ctx observer sid = false)
-      (hStep : SeLe4n.Kernel.serviceStop sid policy st = .ok ((), st'))
-    : NonInterferenceStep ctx observer st st'
-  | serviceRestart
-      (sid : ServiceId) (policyStop policyStart : ServicePolicy)
-      (hSvcHigh : serviceObservable ctx observer sid = false)
-      (hStep : SeLe4n.Kernel.serviceRestart sid policyStop policyStart st = .ok ((), st'))
-    : NonInterferenceStep ctx observer st st'
   | schedule
       (hCurrentHigh : ∀ t, st.scheduler.current = some t →
           threadObservable ctx observer t = false)
@@ -277,7 +262,7 @@ theorem step_preserves_projection
       · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · funext sid
-        simp only [projectServiceStatus, lookupService,
+        simp only [projectServicePresence, lookupService,
           cspaceInsertSlot_preserves_services st st' dst c hInsert]
       · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · funext irq; simp only [projectIrqHandlers]
@@ -313,7 +298,7 @@ theorem step_preserves_projection
       · simp [projectObjects, hObs]
     · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
-    · funext sid; simp only [projectServiceStatus, lookupService,
+    · funext sid; simp only [projectServicePresence, lookupService,
         cspaceInsertSlot_preserves_services st st' dst cap hOp]
     · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · funext irq; simp only [projectIrqHandlers]
@@ -324,105 +309,6 @@ theorem step_preserves_projection
     · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp,
             cspaceInsertSlot_preserves_machine st st' dst cap hOp]
-  | serviceStart sid policy hSH hOp =>
-    simp only [projectState]; congr 1
-    · funext oid; simp only [projectObjects]
-      by_cases hObs : objectObservable ctx observer oid
-      · simp [hObs]; rw [serviceStart_preserves_objects st st' sid policy hOp]
-      · simp [hObs]
-    · simp [projectRunnable, serviceStart_preserves_scheduler st st' sid policy hOp]
-    · simp [projectCurrent, serviceStart_preserves_scheduler st st' sid policy hOp]
-    · funext s; simp only [projectServiceStatus]
-      by_cases hObs : serviceObservable ctx observer s
-      · simp [hObs]; by_cases hEq : s = sid
-        · subst hEq; simp [hSH] at hObs
-        · rw [serviceStart_preserves_lookupService_ne st st' sid policy s hEq hOp]
-      · simp [hObs]
-    · simp [projectActiveDomain, serviceStart_preserves_scheduler st st' sid policy hOp]
-    · funext irq; simp only [projectIrqHandlers]
-      rw [serviceStart_preserves_irqHandlers st st' sid policy hOp]
-    · simp only [projectObjectIndex]
-      rw [serviceStart_preserves_objectIndex st st' sid policy hOp]
-    · simp [projectDomainTimeRemaining, serviceStart_preserves_scheduler st st' sid policy hOp]
-    · simp [projectDomainSchedule, serviceStart_preserves_scheduler st st' sid policy hOp]
-    · simp [projectDomainScheduleIndex, serviceStart_preserves_scheduler st st' sid policy hOp]
-    · simp [projectMachineRegs, serviceStart_preserves_scheduler st st' sid policy hOp,
-            serviceStart_preserves_machine st st' sid policy hOp]
-  | serviceStop sid policy hSH hOp =>
-    simp only [projectState]; congr 1
-    · funext oid; simp only [projectObjects]
-      by_cases hObs : objectObservable ctx observer oid
-      · simp [hObs]; rw [serviceStop_preserves_objects st st' sid policy hOp]
-      · simp [hObs]
-    · simp [projectRunnable, serviceStop_preserves_scheduler st st' sid policy hOp]
-    · simp [projectCurrent, serviceStop_preserves_scheduler st st' sid policy hOp]
-    · funext s; simp only [projectServiceStatus]
-      by_cases hObs : serviceObservable ctx observer s
-      · simp [hObs]; by_cases hEq : s = sid
-        · subst hEq; simp [hSH] at hObs
-        · rw [serviceStop_preserves_lookupService_ne st st' sid policy s hEq hOp]
-      · simp [hObs]
-    · simp [projectActiveDomain, serviceStop_preserves_scheduler st st' sid policy hOp]
-    · funext irq; simp only [projectIrqHandlers]
-      rw [serviceStop_preserves_irqHandlers st st' sid policy hOp]
-    · simp only [projectObjectIndex]
-      rw [serviceStop_preserves_objectIndex st st' sid policy hOp]
-    · simp [projectDomainTimeRemaining, serviceStop_preserves_scheduler st st' sid policy hOp]
-    · simp [projectDomainSchedule, serviceStop_preserves_scheduler st st' sid policy hOp]
-    · simp [projectDomainScheduleIndex, serviceStop_preserves_scheduler st st' sid policy hOp]
-    · simp [projectMachineRegs, serviceStop_preserves_scheduler st st' sid policy hOp,
-            serviceStop_preserves_machine st st' sid policy hOp]
-  | serviceRestart sid policyStop policyStart hSH hOp =>
-    rcases serviceRestart_decompose st st' sid policyStop policyStart hOp with ⟨mid, hStop, hStart⟩
-    have hMid : projectState ctx observer mid = projectState ctx observer st := by
-      simp only [projectState]; congr 1
-      · funext oid; simp only [projectObjects]
-        by_cases hObs : objectObservable ctx observer oid
-        · simp [hObs]; rw [serviceStop_preserves_objects st mid sid policyStop hStop]
-        · simp [hObs]
-      · simp [projectRunnable, serviceStop_preserves_scheduler st mid sid policyStop hStop]
-      · simp [projectCurrent, serviceStop_preserves_scheduler st mid sid policyStop hStop]
-      · funext s; simp only [projectServiceStatus]
-        by_cases hObs : serviceObservable ctx observer s
-        · simp [hObs]; by_cases hEq : s = sid
-          · subst hEq; simp [hSH] at hObs
-          · rw [serviceStop_preserves_lookupService_ne st mid sid policyStop s hEq hStop]
-        · simp [hObs]
-      · simp [projectActiveDomain, serviceStop_preserves_scheduler st mid sid policyStop hStop]
-      · funext irq; simp only [projectIrqHandlers]
-        rw [serviceStop_preserves_irqHandlers st mid sid policyStop hStop]
-      · simp only [projectObjectIndex]
-        rw [serviceStop_preserves_objectIndex st mid sid policyStop hStop]
-      · simp [projectDomainTimeRemaining, serviceStop_preserves_scheduler st mid sid policyStop hStop]
-      · simp [projectDomainSchedule, serviceStop_preserves_scheduler st mid sid policyStop hStop]
-      · simp [projectDomainScheduleIndex, serviceStop_preserves_scheduler st mid sid policyStop hStop]
-      · simp [projectMachineRegs, serviceStop_preserves_scheduler st mid sid policyStop hStop,
-              serviceStop_preserves_machine st mid sid policyStop hStop]
-    have hFinal : projectState ctx observer st' = projectState ctx observer mid := by
-      simp only [projectState]; congr 1
-      · funext oid; simp only [projectObjects]
-        by_cases hObs : objectObservable ctx observer oid
-        · simp [hObs]; rw [serviceStart_preserves_objects mid st' sid policyStart hStart]
-        · simp [hObs]
-      · simp [projectRunnable, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
-      · simp [projectCurrent, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
-      · funext s; simp only [projectServiceStatus]
-        by_cases hObs : serviceObservable ctx observer s
-        · simp [hObs]; by_cases hEq : s = sid
-          · subst hEq; simp [hSH] at hObs
-          · rw [serviceStart_preserves_lookupService_ne mid st' sid policyStart s hEq hStart]
-        · simp [hObs]
-      · simp [projectActiveDomain, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
-      · funext irq; simp only [projectIrqHandlers]
-        rw [serviceStart_preserves_irqHandlers mid st' sid policyStart hStart]
-      · simp only [projectObjectIndex]
-        rw [serviceStart_preserves_objectIndex mid st' sid policyStart hStart]
-      · simp [projectDomainTimeRemaining, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
-      · simp [projectDomainSchedule, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
-      · simp [projectDomainScheduleIndex, serviceStart_preserves_scheduler mid st' sid policyStart hStart]
-      · simp [projectMachineRegs, serviceStart_preserves_scheduler mid st' sid policyStart hStart,
-              serviceStart_preserves_machine mid st' sid policyStart hStart]
-    rw [hFinal, hMid]
   | schedule hCurH hAllR hOp =>
     exact schedule_preserves_projection ctx observer st st' hCurH hAllR hOp
   | vspaceMapPage asid vaddr paddr hRH hOp =>
@@ -623,7 +509,7 @@ The 34 constructors (lines 34–248) cover every operation reachable from
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
 - Lifecycle: `.lifecycleRetype`, `.lifecycleRevokeDeleteRetype`
 - VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
-- Service: `.serviceStart`, `.serviceStop`
+- Service: (lifecycle operations removed in Q1 simplification)
 - IPC: `.endpointSendDual`, `.endpointCallHigh`, `.endpointReply`,
        `.endpointReceiveDualHigh`
 - Entry: `.syscallDecodeError` (decode failure), `.syscallDispatchHigh`

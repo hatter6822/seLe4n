@@ -20,17 +20,14 @@ CAT-025 | Architecture | vspace mapChecked valid address accepted
 CAT-026 | Architecture | TLB flush entry count: 0
 CAT-028 | Architecture | adapter register write success path value: 99
 CAT-029 | Architecture | adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
-SST-002 | Service | service start api status: some (SeLe4n.Model.ServiceStatus.running)
-SST-003 | Service | service start denied branch: SeLe4n.Model.KernelError.policyDenied
-SST-005 | Service | service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation
-SST-008 | Service | service restart status: some (SeLe4n.Model.ServiceStatus.running)
-SST-009 | Service | service stop denied branch: SeLe4n.Model.KernelError.policyDenied
-SST-011 | Service | service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState
-SST-013 | Service | service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied
-SST-015 | Service | service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation
-SST-017 | Service | service start missing-backing branch: SeLe4n.Model.KernelError.backingObjectMissing
-SST-019 | Service | service isolation api↔denied: true
-SST-020 | Service | service isolation api↔db: false
+SST-001 | Service | service lookup svcApi: some { sid := { val := 101 }, backingObject := { val := 1 }, owner := { val := 10 } }
+SST-003 | Service | service lookup absent ⟨9998⟩: none
+SST-006 | Service | store service entry lookup: some { sid := { val := 200 }, backingObject := { val := 12 }, owner := { val := 10 } }
+SST-008 | Service | register dependency result: some [{ val := 100 }]
+SST-009 | Service | register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency
+SST-011 | Service | service path svcApi→svcDb: true
+SST-013 | Service | service isolation api↔denied: true
+SST-014 | Service | service isolation api↔db: false
 SST-021 | Service | deep cnode radix fixture: some 12
 SST-023 | Service | deep cnode path lookup rights: { bits := 3 }
 SST-024 | Service | deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
@@ -39,7 +36,7 @@ SST-028 | Service | large runnable queue length: 2
 SST-030 | Service | large queue scheduled current: some 1
 SST-032 | Service | context switch regs match incoming: true
 SST-037 | Service | multi-endpoint receive senders: 1, 12
-SST-039 | Service | service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)
+SST-038 | Service | service dependency chain path chainTop→chainRoot: true
 SST-041 | Service | boundary memory low-address byte: 0
 SST-043 | Service | boundary memory high-address byte: 0
 LEP-001 | Lifecycle | lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
@@ -129,7 +126,7 @@ KSD-002 | Architecture | cspaceCopy via decoded regs target matches: true
 KSD-003 | Architecture | cspaceDelete via decoded regs slot cleared: true
 KSD-004 | Lifecycle | lifecycle retype via decoded regs new type: some (SeLe4n.Model.KernelObjectType.notification)
 KSD-005 | Architecture | vspaceMap via decoded regs paddr: 8192
-KSD-006 | Service | serviceStart config-sourced policy status: some (SeLe4n.Model.ServiceStatus.running)
+KSD-006 | Service | service registry lookup present: true
 KSD-007 | IPC | IPC message body from registers: #[111, 222, 333, 444]
 KSD-008 | Architecture | round-trip decode msgRegs.size=4 first=10
 RRC-001 | IPC | replyRecv caller state after receive: blockedOnReply

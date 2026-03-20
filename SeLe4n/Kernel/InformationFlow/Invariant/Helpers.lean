@@ -90,7 +90,7 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     congrArg ObservableState.runnable hLow
   have hCurLow : projectCurrent ctx observer s₁ = projectCurrent ctx observer s₂ :=
     congrArg ObservableState.current hLow
-  have hSvcLow : projectServiceStatus ctx observer s₁ = projectServiceStatus ctx observer s₂ :=
+  have hSvcLow : projectServicePresence ctx observer s₁ = projectServicePresence ctx observer s₂ :=
     congrArg ObservableState.services hLow
   have hDomLow : projectActiveDomain ctx observer s₁ = projectActiveDomain ctx observer s₂ :=
     congrArg ObservableState.activeDomain hLow
@@ -122,10 +122,10 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
     have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
     simpa [projectCurrent, hSched₁, hSched₂] using hCurLow
-  have hSvc' : projectServiceStatus ctx observer s₁' = projectServiceStatus ctx observer s₂' := by
+  have hSvc' : projectServicePresence ctx observer s₁' = projectServicePresence ctx observer s₂' := by
     unfold storeObject at hStore₁ hStore₂
     cases hStore₁; cases hStore₂
-    simpa [projectServiceStatus] using hSvcLow
+    simpa [projectServicePresence] using hSvcLow
   have hDom' : projectActiveDomain ctx observer s₁' = projectActiveDomain ctx observer s₂' := by
     have hSched₁ := storeObject_scheduler_eq s₁ s₁' targetId obj₁ hStore₁
     have hSched₂ := storeObject_scheduler_eq s₂ s₂' targetId obj₂ hStore₂
@@ -177,7 +177,7 @@ theorem revokeAndClearRefsState_preserves_projectState
   · funext oid; simp [projectObjects, revokeAndClearRefsState_preserves_objects]
   · simp [projectRunnable, revokeAndClearRefsState_preserves_scheduler]
   · simp [projectCurrent, revokeAndClearRefsState_preserves_scheduler]
-  · funext sid; simp [projectServiceStatus, revokeAndClearRefsState_lookupService]
+  · funext sid; simp [projectServicePresence, revokeAndClearRefsState_lookupService]
   · simp [projectActiveDomain, revokeAndClearRefsState_preserves_scheduler]
   · funext irq; simp [projectIrqHandlers, revokeAndClearRefsState_preserves_irqHandlers]
   · simp [projectObjectIndex, revokeAndClearRefsState_preserves_objectIndex]
@@ -239,8 +239,8 @@ theorem removeRunnable_preserves_projection
       · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
       · rw [if_neg hEq]
   have hObj : projectObjects ctx observer (removeRunnable st tid) = projectObjects ctx observer st := rfl
-  have hSvc : projectServiceStatus ctx observer (removeRunnable st tid) =
-      projectServiceStatus ctx observer st := funext fun _ => rfl
+  have hSvc : projectServicePresence ctx observer (removeRunnable st tid) =
+      projectServicePresence ctx observer st := funext fun _ => rfl
   have hDom : projectActiveDomain ctx observer (removeRunnable st tid) =
       projectActiveDomain ctx observer st := rfl
   have hIrq : projectIrqHandlers ctx observer (removeRunnable st tid) =
@@ -328,7 +328,7 @@ private theorem storeTcbIpcState_preserves_projection
         simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · -- projectCurrent: scheduler preserved by storeObject
         simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
-      · -- projectServiceStatus: services unchanged
+      · -- projectServicePresence: services unchanged
         unfold storeObject at hStore; cases hStore; funext sid; rfl
       · -- activeDomain: scheduler preserved by storeObject
         simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
@@ -524,7 +524,7 @@ theorem cspaceMint_preserves_lowEquivalent
       · simpa [projectRunnable, hSched₁, hSched₂] using hRunLow
       · simpa [projectCurrent, hSched₁, hSched₂] using hCurLow
       · funext sid
-        simp only [projectServiceStatus, lookupService]
+        simp only [projectServicePresence, lookupService]
         rw [show s₁'.services = s₁.services from hSvc₁, show s₂'.services = s₂.services from hSvc₂]
         have hBase := congrArg ObservableState.services hLow
         exact congrFun hBase sid
@@ -619,10 +619,8 @@ theorem cspaceRevoke_preserves_lowEquivalent
                 rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 simpa [projectCurrent] using hCurLow
               · funext sid
-                simp only [projectServiceStatus, revokeAndClearRefsState_lookupService]
-                have hBase := congrArg ObservableState.services hLow
-                have hSidBase := congrFun hBase sid
-                simpa [projectServiceStatus] using hSidBase
+                simp only [projectServicePresence, revokeAndClearRefsState_lookupService]
+                exact congrFun (congrArg ObservableState.services hLow) sid
               · -- activeDomain
                 simp only [projectActiveDomain]
                 rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
@@ -872,10 +870,10 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
     · simp [projectObjects, hObs]
   · simpa [projectRunnable, hSched₁, hSched₂] using congrArg ObservableState.runnable hLow
   · simpa [projectCurrent, hSched₁, hSched₂] using congrArg ObservableState.current hLow
-  · funext sid; simp only [projectServiceStatus, lookupService]
+  · funext sid; simp only [projectServicePresence, lookupService]
     rw [show s₁'.services = s₁.services from hSvc₁, show s₂'.services = s₂.services from hSvc₂]
     have h := congrFun (congrArg ObservableState.services hLow) sid
-    simp only [projectState, projectServiceStatus] at h
+    simp only [projectState, projectServicePresence] at h
     exact h
   · simpa [projectActiveDomain, hSched₁, hSched₂] using congrArg ObservableState.activeDomain hLow
   · funext irq; simp only [projectIrqHandlers]

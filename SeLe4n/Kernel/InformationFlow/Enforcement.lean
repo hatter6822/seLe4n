@@ -13,7 +13,7 @@ import SeLe4n.Kernel.InformationFlow.Enforcement.Soundness
 
 Decomposed into:
 - **Wrappers**: Policy-gated operation wrappers (endpointSendDualChecked,
-  cspaceMintChecked, serviceRestartChecked, notificationSignalChecked,
+  cspaceMintChecked, notificationSignalChecked,
   cspaceCopyChecked, cspaceMoveChecked, endpointReceiveDualChecked) and
   enforcement boundary specification.
 - **Soundness**: Correctness theorems, enforcement soundness meta-theorem,

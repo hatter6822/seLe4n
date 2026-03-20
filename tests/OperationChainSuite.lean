@@ -56,8 +56,6 @@ private def expectError
       else
         throw <| IO.userError s!"{label}: expected {reprStr expected}, got {reprStr err}"
 
-private def allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
-
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
 
@@ -131,7 +129,7 @@ private def chain3MapLookupUnmapLookup : IO Unit := do
   expectError "chain3: lookup after unmap"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid vaddr st2) .translationFault
 
-private def chain4ServiceStartDependentStop : IO Unit := do
+private def chain4ServiceRegistryDependencyGraph : IO Unit := do
   let baseSid : ServiceId := ⟨230⟩
   let depSid : ServiceId := ⟨231⟩
   let st0 :=
@@ -140,22 +138,21 @@ private def chain4ServiceStartDependentStop : IO Unit := do
       |>.withObject ⟨501⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withService baseSid {
           identity := { sid := baseSid, backingObject := ⟨500⟩, owner := ⟨1⟩ }
-          status := .stopped
           dependencies := []
           isolatedFrom := [] }
       |>.withService depSid {
           identity := { sid := depSid, backingObject := ⟨501⟩, owner := ⟨1⟩ }
-          status := .stopped
           dependencies := [baseSid]
           isolatedFrom := [] }
       |>.build)
-  let (_, st1) ← expectOkState "chain4: start base" (SeLe4n.Kernel.serviceStart baseSid allowAll st0)
-  let (_, st2) ← expectOkState "chain4: start dependent" (SeLe4n.Kernel.serviceStart depSid allowAll st1)
-  let (_, st3) ← expectOkState "chain4: stop base" (SeLe4n.Kernel.serviceStop baseSid allowAll st2)
-  let depStatus := (st3.services[depSid]?).map ServiceGraphEntry.status
-  expect "chain4: dependent remains running" (depStatus = some .running)
-  expectError "chain4: restarting dependent while base stopped fails"
-    (SeLe4n.Kernel.serviceRestart depSid allowAll allowAll st3) .dependencyViolation
+  -- Q1: Service lifecycle removed — test dependency graph operations
+  expect "chain4: depSid depends on baseSid" ((SeLe4n.Model.lookupService st0 depSid).map ServiceGraphEntry.dependencies = some [baseSid])
+  -- Register a new dependency: depSid → baseSid already exists, add baseSid → depSid to form a cycle rejection
+  expectError "chain4: cyclic dependency registration rejected"
+    (SeLe4n.Kernel.serviceRegisterDependency baseSid depSid st0) .cyclicDependency
+  -- Self-loop rejection
+  expectError "chain4: self-loop dependency rejected"
+    (SeLe4n.Kernel.serviceRegisterDependency baseSid baseSid st0) .cyclicDependency
 
 private def chain5CopyMoveDelete : IO Unit := do
   let cnodeId : SeLe4n.ObjId := ⟨240⟩
@@ -1382,7 +1379,7 @@ private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
   chain3MapLookupUnmapLookup
-  chain4ServiceStartDependentStop
+  chain4ServiceRegistryDependencyGraph
   chain5CopyMoveDelete
   chain6NotificationBadgeAccumulation
   chain7VSpaceMultiAsidSharedPage

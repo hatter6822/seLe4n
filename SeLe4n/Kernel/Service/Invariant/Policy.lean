@@ -125,68 +125,49 @@ theorem servicePolicySurfaceInvariant_of_lifecycleInvariant
   intro hRef
   exact policyOwnerAuthoritySlotPresent_of_lifecycleInvariant st svc hLifecycle hRef
 
-/-- Policy-denial branch remains a check-only outcome (no state mutation step). -/
-theorem serviceStart_policyDenied_separates_check_from_mutation
-    (st : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStart : ServicePolicy)
-    (svc : ServiceGraphEntry)
-    (hSvc : lookupService st sid = some svc)
-    (hStopped : svc.status = .stopped)
-    (hBacking : st.objects[svc.identity.backingObject]? ≠ none)
-    (hDenied : policyAllowsStart svc = false) :
-    serviceStart sid policyAllowsStart st = .error .policyDenied := by
-  exact serviceStart_error_policyDenied st sid policyAllowsStart svc hSvc hStopped hBacking hDenied
+/-- `storeServiceState` preserves the service policy surface invariant.
 
-/-- Stop-policy denial branch remains a check-only outcome (no state mutation step). -/
-theorem serviceStop_policyDenied_separates_check_from_mutation
-    (st : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (svc : ServiceGraphEntry)
-    (hSvc : lookupService st sid = some svc)
-    (hRunning : svc.status = .running)
-    (hBacking : st.objects[svc.identity.backingObject]? ≠ none)
-    (hDenied : policyAllowsStop svc = false) :
-    serviceStop sid policyAllowsStop st = .error .policyDenied := by
-  exact serviceStop_error_policyDenied st sid policyAllowsStop svc hSvc hRunning hBacking hDenied
-
+`storeServiceState` only modifies the `services` field. Identity, backing object,
+and owner references are preserved when updating a service entry. -/
 theorem storeServiceState_preserves_servicePolicySurfaceInvariant
     (st : SystemState)
     (sid : ServiceId)
-    (svc : ServiceGraphEntry)
-    (newStatus : ServiceStatus)
-    (hSvc : lookupService st sid = some svc)
+    (entry : ServiceGraphEntry)
+    (hSvc : lookupService st sid ≠ none)
+    (hIdentityEq : ∀ svc, lookupService st sid = some svc → entry.identity = svc.identity)
     (hPolicy : servicePolicySurfaceInvariant st) :
-    servicePolicySurfaceInvariant (storeServiceState sid { svc with status := newStatus } st) := by
+    servicePolicySurfaceInvariant (storeServiceState sid entry st) := by
   intro sid' svc' hLookup
   by_cases hSid : sid' = sid
   · subst sid'
-    have hLookupEq :
-        lookupService (storeServiceState sid { svc with status := newStatus } st) sid =
-          some { svc with status := newStatus } :=
-      storeServiceState_lookup_eq st sid { svc with status := newStatus }
-    rw [hLookupEq] at hLookup
-    cases hLookup
-    rcases hPolicy sid svc hSvc with ⟨hTyped, hBridge⟩
-    refine ⟨?_, ?_⟩
-    · simpa [policyBackingObjectTyped] using hTyped
-    · intro hRef
-      have hRefOld : policyOwnerAuthorityRefRecorded st svc := by
-        simpa [policyOwnerAuthorityRefRecorded] using hRef
-      have hPresentOld : policyOwnerAuthoritySlotPresent st svc := hBridge hRefOld
-      simpa [policyOwnerAuthoritySlotPresent] using hPresentOld
-  · have hLookupNe := storeServiceState_lookup_ne st sid sid' { svc with status := newStatus } hSid
+    have hLookupEq := storeServiceState_lookup_eq st sid entry
+    rw [hLookupEq] at hLookup; cases hLookup
+    cases hOld : lookupService st sid with
+    | none => exact absurd hOld hSvc
+    | some svc =>
+      have hIdEq := hIdentityEq svc hOld
+      rcases hPolicy sid svc hOld with ⟨hTyped, hBridge⟩
+      refine ⟨?_, ?_⟩
+      · simpa [policyBackingObjectTyped, hIdEq] using hTyped
+      · intro hRef
+        have hRefOld : policyOwnerAuthorityRefRecorded st svc := by
+          simpa [policyOwnerAuthorityRefRecorded, hIdEq] using hRef
+        have hPresentOld : policyOwnerAuthoritySlotPresent st svc := hBridge hRefOld
+        simpa [policyOwnerAuthoritySlotPresent, hIdEq] using hPresentOld
+  · have hLookupNe := storeServiceState_lookup_ne st sid sid' entry hSid
     have hLookupOld : lookupService st sid' = some svc' := by simpa [hLookupNe] using hLookup
     exact hPolicy sid' svc' hLookupOld
 
+/-- `storeServiceState` preserves the lifecycle invariant bundle.
+
+`storeServiceState` only modifies the `services` field, leaving objects,
+lifecycle metadata, and capabilities unchanged. -/
 theorem storeServiceState_preserves_lifecycleInvariantBundle
     (st : SystemState)
     (sid : ServiceId)
-    (svc : ServiceGraphEntry)
-    (newStatus : ServiceStatus)
+    (entry : ServiceGraphEntry)
     (hLifecycle : lifecycleInvariantBundle st) :
-    lifecycleInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
+    lifecycleInvariantBundle (storeServiceState sid entry st) := by
   simpa [lifecycleInvariantBundle, lifecycleIdentityAliasingInvariant, lifecycleIdentityTypeExact,
     lifecycleIdentityNoTypeAliasConflict, lifecycleCapabilityReferenceInvariant,
     lifecycleCapabilityRefExact, lifecycleCapabilityRefObjectTargetBacked, storeServiceState,
@@ -201,10 +182,9 @@ unchanged. Therefore CNode slot-index uniqueness transfers directly from the pre
 theorem storeServiceState_preserves_capabilityInvariantBundle
     (st : SystemState)
     (sid : ServiceId)
-    (svc : ServiceGraphEntry)
-    (newStatus : ServiceStatus)
+    (entry : ServiceGraphEntry)
     (hInv : capabilityInvariantBundle st) :
-    capabilityInvariantBundle (storeServiceState sid { svc with status := newStatus } st) := by
+    capabilityInvariantBundle (storeServiceState sid entry st) := by
   rcases hInv with ⟨hUnique, hSound, hBounded, hComp, hAcyclic, hDepth⟩
   refine ⟨?_, ?_, hBounded, hComp, hAcyclic, hDepth⟩
   · intro cnodeId cn hCn
@@ -213,164 +193,3 @@ theorem storeServiceState_preserves_capabilityInvariantBundle
     have hSlot := hSound cnodeId cn slot cap hCn hMem
     simp only [SystemState.lookupSlotCap, storeServiceState] at hSlot ⊢
     exact hSlot
-
-theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
-    (st st' : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStart : ServicePolicy)
-    (hInv : serviceLifecycleCapabilityInvariantBundle st)
-    (hStep : serviceStart sid policyAllowsStart st = .ok ((), st')) :
-    serviceLifecycleCapabilityInvariantBundle st' := by
-  rcases hInv with ⟨hPolicy, hLifecycle, hCap⟩
-  unfold serviceStart at hStep
-  cases hLookup : lookupService st sid with
-  | none => simp [hLookup] at hStep
-  | some svc =>
-      have hSvc : lookupService st sid = some svc := hLookup
-      by_cases hStopped : svc.status = .stopped
-      · simp [hLookup, hStopped] at hStep
-        split at hStep <;> try (simp at hStep)
-        by_cases hAllow : policyAllowsStart svc
-        · by_cases hDeps : dependenciesSatisfied st sid
-          · unfold storeServiceEntry at hStep
-            simp [hAllow, hDeps, storeServiceState] at hStep
-            cases hStep
-            exact ⟨
-              storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .running hSvc hPolicy,
-              storeServiceState_preserves_lifecycleInvariantBundle st sid svc .running hLifecycle,
-              storeServiceState_preserves_capabilityInvariantBundle st sid svc .running hCap
-            ⟩
-          · simp [hAllow, hDeps] at hStep
-        · simp [hAllow] at hStep
-      · simp [hLookup, hStopped] at hStep
-
-theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
-    (st st' : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (hInv : serviceLifecycleCapabilityInvariantBundle st)
-    (hStep : serviceStop sid policyAllowsStop st = .ok ((), st')) :
-    serviceLifecycleCapabilityInvariantBundle st' := by
-  rcases hInv with ⟨hPolicy, hLifecycle, hCap⟩
-  unfold serviceStop at hStep
-  cases hLookup : lookupService st sid with
-  | none => simp [hLookup] at hStep
-  | some svc =>
-      have hSvc : lookupService st sid = some svc := hLookup
-      by_cases hRunning : svc.status = .running
-      · by_cases hBacking : st.objects[svc.identity.backingObject]? = none
-        · simp [hLookup, hRunning, hBacking] at hStep
-        · by_cases hAllow : policyAllowsStop svc
-          · unfold storeServiceEntry at hStep
-            simp [hLookup, hRunning, hBacking, hAllow, storeServiceState] at hStep
-            cases hStep
-            exact ⟨
-              storeServiceState_preserves_servicePolicySurfaceInvariant st sid svc .stopped hSvc hPolicy,
-              storeServiceState_preserves_lifecycleInvariantBundle st sid svc .stopped hLifecycle,
-              storeServiceState_preserves_capabilityInvariantBundle st sid svc .stopped hCap
-            ⟩
-          · simp [hLookup, hRunning, hBacking, hAllow] at hStep
-      · simp [hLookup, hRunning] at hStep
-
-theorem serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle
-    (st st' : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (policyAllowsStart : ServicePolicy)
-    (hInv : serviceLifecycleCapabilityInvariantBundle st)
-    (hStep : serviceRestart sid policyAllowsStop policyAllowsStart st = .ok ((), st')) :
-    serviceLifecycleCapabilityInvariantBundle st' := by
-  rcases serviceRestart_ok_implies_staged_steps st st' sid policyAllowsStop policyAllowsStart hStep with
-    ⟨stStopped, hStop, hStart⟩
-  have hStoppedInv : serviceLifecycleCapabilityInvariantBundle stStopped :=
-    serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
-      st stStopped sid policyAllowsStop hInv hStop
-  exact serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle
-    stStopped st' sid policyAllowsStart hStoppedInv hStart
-
-theorem serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle
-    (st : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStart : ServicePolicy)
-    (e : KernelError)
-    (hInv : serviceLifecycleCapabilityInvariantBundle st)
-    (_hStep : serviceStart sid policyAllowsStart st = .error e) :
-    serviceLifecycleCapabilityInvariantBundle st := by
-  exact hInv
-
-theorem serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle
-    (st : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (e : KernelError)
-    (hInv : serviceLifecycleCapabilityInvariantBundle st)
-    (_hStep : serviceStop sid policyAllowsStop st = .error e) :
-    serviceLifecycleCapabilityInvariantBundle st := by
-  exact hInv
-
-theorem serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle
-    (st : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (policyAllowsStart : ServicePolicy)
-    (e : KernelError)
-    (hInv : serviceLifecycleCapabilityInvariantBundle st)
-    (_hStep : serviceRestart sid policyAllowsStop policyAllowsStart st = .error e)
-    (_hStop : serviceStop sid policyAllowsStop st = .error e) :
-    serviceLifecycleCapabilityInvariantBundle st := by
-  exact hInv
-
-theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle
-    (st stStopped : SystemState)
-    (sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (policyAllowsStart : ServicePolicy)
-    (e : KernelError)
-    (hInv : serviceLifecycleCapabilityInvariantBundle st)
-    (hStop : serviceStop sid policyAllowsStop st = .ok ((), stStopped))
-    (_hStart : serviceStart sid policyAllowsStart stStopped = .error e) :
-    serviceLifecycleCapabilityInvariantBundle stStopped := by
-  exact serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle
-    st stStopped sid policyAllowsStop hInv hStop
-
--- ============================================================================
--- F-07: Service dependency acyclicity invariant (WS-D4, TPI-D07)
--- ============================================================================
-
-/-!
-## TPI-D07 proof infrastructure plan
-
-### Definitions (Layer 0)
-- `serviceEdge` — direct dependency edge relation
-- `serviceReachable` — reflexive-transitive closure of serviceEdge
-- `serviceHasNontrivialPath` — path of length ≥ 1
-- `serviceDependencyAcyclicDecl` — declarative acyclicity (no non-trivial self-loops)
-
-### Structural lemmas (Layer 1)
-- `serviceEdge_iff_mem` — definitional unfolding
-- `serviceReachable_trans` — path concatenation
-- `serviceReachable_of_edge` — single-edge path
-- `serviceReachable_step_right` — right-append edge
-- `serviceHasNontrivialPath_of_edge` — edge implies nontrivial path
-- `storeServiceState_objectIndex_eq` — objectIndex frame condition
-- `serviceBfsFuel_storeServiceState_eq` — fuel frame condition
-- `serviceEdge_storeServiceState_eq` — edge at updated service
-- `serviceEdge_storeServiceState_ne` — edge at non-updated service
-- `serviceEdge_post_insert` — edge characterization after insertion
-
-### Graph traversal soundness (Layer 2)
-- `serviceHasPathTo_true_implies_reachable` — traversal true → declarative path
-- `serviceHasPathTo_go_invariant` — traversal loop invariant
-- `serviceBfsFuel_sufficient` — fuel adequacy
-- `serviceHasPathTo_false_implies_not_reachable` — traversal false → no path
-
-### Edge insertion (Layer 3)
-- `serviceEdge_post_cases` — post-state edge decomposition
-- `serviceReachable_post_insert_cases` — post-state path decomposition
-- `nontrivial_cycle_post_insert_implies_pre_reach` — cycle → pre-state reachability
-- `serviceDependencyAcyclicDecl_preserved` — declarative acyclicity preserved
-
-### Final closure (Layer 4)
-- `serviceDependencyAcyclic_implies_acyclicDecl` — traversal → declarative equivalence
-- `serviceDependencyAcyclicDecl_implies_acyclic` — declarative → traversal equivalence
--/

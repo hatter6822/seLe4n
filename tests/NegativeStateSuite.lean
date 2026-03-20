@@ -954,13 +954,11 @@ private def runNegativeChecks : IO Unit := do
   let svcIdB : ServiceId := ⟨101⟩
   let svcEntryA : ServiceGraphEntry := {
     identity := { sid := svcIdA, backingObject := ⟨200⟩, owner := ⟨300⟩ }
-    status := .stopped
     dependencies := []
     isolatedFrom := []
   }
   let svcEntryB : ServiceGraphEntry := {
     identity := { sid := svcIdB, backingObject := ⟨201⟩, owner := ⟨301⟩ }
-    status := .stopped
     dependencies := []
     isolatedFrom := []
   }
@@ -1412,43 +1410,44 @@ def runWSH11Checks : IO Unit := do
 
   IO.println "all WS-H11 VSpace & Architecture checks passed"
 
-/-- WS-H13: Service backing-object and restart negative tests. -/
+/-- WS-H13/Q1: Service registry negative tests (lifecycle ops removed). -/
 private def runWSH13Checks : IO Unit := do
-  -- H13-NEG-01: serviceStart with missing backing object
-  let svcMissing : ServiceId := ⟨700⟩
-  let svcMissingState : SystemState :=
+  -- H13-NEG-01: Self-loop dependency rejection
+  let svcA : ServiceId := ⟨700⟩
+  let svcSelfLoopState : SystemState :=
     (BootstrapBuilder.empty
-      |>.withService svcMissing {
-        identity := { sid := svcMissing, backingObject := ⟨9999⟩, owner := ⟨10⟩ }
-        status := .stopped
+      |>.withService svcA {
+        identity := { sid := svcA, backingObject := ⟨9999⟩, owner := ⟨10⟩ }
         dependencies := []
         isolatedFrom := []
       }
       |>.build)
-  let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
-  expectError "H13 serviceStart with missing backing object"
-    (SeLe4n.Kernel.serviceStart svcMissing allowAll svcMissingState)
-    .backingObjectMissing
+  expectError "H13 self-loop dependency rejection"
+    (SeLe4n.Kernel.serviceRegisterDependency svcA svcA svcSelfLoopState)
+    .cyclicDependency
 
-  -- H13-NEG-02: serviceRestart where stop succeeds but start fails (dependency violation)
-  let svcRestart : ServiceId := ⟨701⟩
-  let svcRestartState : SystemState :=
+  -- H13-NEG-02: Cyclic dependency rejection
+  let svcB : ServiceId := ⟨701⟩
+  let svcCyclicState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.tcb {
         tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
         cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
         ipcState := .ready })
-      |>.withService svcRestart {
-        identity := { sid := svcRestart, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-        status := .running
-        dependencies := [⟨999⟩]  -- non-existent dependency
+      |>.withService svcA {
+        identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
+        dependencies := [svcB]
+        isolatedFrom := []
+      }
+      |>.withService svcB {
+        identity := { sid := svcB, backingObject := ⟨1⟩, owner := ⟨10⟩ }
+        dependencies := []
         isolatedFrom := []
       }
       |>.build)
-  -- Restart should fail at start-stage with dependency violation
-  expectError "H13 serviceRestart start-stage failure (dep violation)"
-    (SeLe4n.Kernel.serviceRestart svcRestart allowAll allowAll svcRestartState)
-    .dependencyViolation
+  expectError "H13 cyclic dependency rejection"
+    (SeLe4n.Kernel.serviceRegisterDependency svcB svcA svcCyclicState)
+    .cyclicDependency
 
   IO.println "all WS-H13 service negative checks passed"
 
@@ -1807,9 +1806,9 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
-  -- SyscallId covers 0..12; value 13 is the first invalid number.
-  expectError "J1 decodeSyscallId invalid (13)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨13⟩)
+  -- Q1: SyscallId covers 0..13 (count=14); value 14 is the first invalid number.
+  expectError "J1 decodeSyscallId invalid (14)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨14⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
@@ -1817,7 +1816,7 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨9999⟩)
     .invalidSyscallNumber
 
-  -- J1-NEG-06: decodeSyscallId with valid boundary (12 = serviceStop) → success
+  -- J1-NEG-06: decodeSyscallId with valid boundary (12 = serviceRevoke) → success
   let _ ← expectOk "J1 decodeSyscallId valid boundary (12)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨12⟩)
 
@@ -2071,10 +2070,10 @@ def runWSKGChecks : IO Unit := do
 
   -- ---- K-G3: Service policy and IPC boundary tests ----
 
-  -- K-G-NEG-14: serviceStart denied by policy
+  -- K-G-NEG-14: Service registry: store and lookup roundtrip
   let svcPolicyId : ServiceId := ⟨800⟩
   let svcBackingId : SeLe4n.ObjId := ⟨801⟩
-  let denyStartState : SystemState :=
+  let registryState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject svcBackingId (.tcb {
         tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
@@ -2082,34 +2081,18 @@ def runWSKGChecks : IO Unit := do
         ipcState := .ready })
       |>.withService svcPolicyId {
         identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
-        status := .stopped
         dependencies := []
         isolatedFrom := []
       }
-      |>.withServiceConfig { allowStart := fun _ => false, allowStop := fun _ => true }
       |>.build)
-  expectError "K-G-NEG-14 serviceStart policy denied"
-    (SeLe4n.Kernel.serviceStart svcPolicyId (fun _ => false) denyStartState)
-    .policyDenied
+  unless (SeLe4n.Model.lookupService registryState svcPolicyId).isSome do
+    throw <| IO.userError "K-G-NEG-14: expected service to be present in registry"
+  IO.println "negative check passed [K-G-NEG-14 service registry lookup present]"
 
-  -- K-G-NEG-15: serviceStop denied by policy
-  let denyStopState : SystemState :=
-    (BootstrapBuilder.empty
-      |>.withObject svcBackingId (.tcb {
-        tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
-        ipcState := .ready })
-      |>.withService svcPolicyId {
-        identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
-        status := .running
-        dependencies := []
-        isolatedFrom := []
-      }
-      |>.withServiceConfig { allowStart := fun _ => true, allowStop := fun _ => false }
-      |>.build)
-  expectError "K-G-NEG-15 serviceStop policy denied"
-    (SeLe4n.Kernel.serviceStop svcPolicyId (fun _ => false) denyStopState)
-    .policyDenied
+  -- K-G-NEG-15: Service dependency self-loop rejection
+  expectError "K-G-NEG-15 self-loop dependency rejection"
+    (SeLe4n.Kernel.serviceRegisterDependency svcPolicyId svcPolicyId registryState)
+    .cyclicDependency
 
   -- K-G-NEG-16: extractMessageRegisters with empty msgRegs → empty result
   let emptyExtract := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters

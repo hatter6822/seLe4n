@@ -41,7 +41,7 @@
         "policy"
       ],
       "replay_tier": "smoke",
-      "expected_trace_fragment": "service start denied branch: SeLe4n.Model.KernelError.policyDenied"
+      "expected_trace_fragment": "register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency"
     },
     {
       "id": "SCN-CSPACE-DEEP-RADIX",
@@ -81,7 +81,7 @@
         "scale"
       ],
       "replay_tier": "smoke",
-      "expected_trace_fragment": "service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus.running)"
+      "expected_trace_fragment": "service dependency chain path chainTop→chainRoot: true"
     },
     {
       "id": "SCN-ARCH-HIGH-ADDRESS",

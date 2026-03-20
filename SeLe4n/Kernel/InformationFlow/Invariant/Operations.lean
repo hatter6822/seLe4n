@@ -35,171 +35,6 @@ with CDT-specific frame lemmas.
 -/
 
 -- ============================================================================
--- WS-F3: Service operation NI theorems
--- ============================================================================
-
-/-- WS-F3: serviceStart at a non-observable service preserves low-equivalence.
-Service operations only modify the service store, not objects or scheduler. -/
-private theorem serviceStart_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (sid : ServiceId) (policy : ServicePolicy)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hSvcHigh : serviceObservable ctx observer sid = false)
-    (hStep₁ : serviceStart sid policy s₁ = .ok ((), s₁'))
-    (hStep₂ : serviceStart sid policy s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  -- serviceStart only modifies services via storeServiceState
-  -- Objects, scheduler, irqHandlers, objectIndex are unchanged
-  unfold lowEquivalent projectState; congr 1
-  · -- objects unchanged by service ops
-    have h₁ := serviceStart_preserves_objects s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_objects s₂ s₂' sid policy hStep₂
-    funext oid; simp only [projectObjects]
-    by_cases hObs : objectObservable ctx observer oid
-    · simp [hObs]; rw [h₁, h₂]
-      have h := congrFun (congrArg ObservableState.objects hLow) oid
-      simp only [projectState, projectObjects, hObs, ite_true] at h
-      exact h
-    · simp [hObs]
-  · have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectRunnable, h₁, h₂] using congrArg ObservableState.runnable hLow
-  · have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectCurrent, h₁, h₂] using congrArg ObservableState.current hLow
-  · -- services: only sid changes, and sid is non-observable
-    funext s
-    simp only [projectServiceStatus]
-    by_cases hObs : serviceObservable ctx observer s
-    · simp [hObs]
-      by_cases hEq : s = sid
-      · subst hEq; simp [hSvcHigh] at hObs
-      · rw [serviceStart_preserves_lookupService_ne s₁ s₁' sid policy s hEq hStep₁,
-            serviceStart_preserves_lookupService_ne s₂ s₂' sid policy s hEq hStep₂]
-        have h := congrFun (congrArg ObservableState.services hLow) s
-        simp only [projectState, projectServiceStatus, hObs, ite_true] at h
-        exact h
-    · simp [hObs]
-  · have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectActiveDomain, h₁, h₂] using congrArg ObservableState.activeDomain hLow
-  · funext irq; simp only [projectIrqHandlers]
-    rw [serviceStart_preserves_irqHandlers s₁ s₁' sid policy hStep₁,
-        serviceStart_preserves_irqHandlers s₂ s₂' sid policy hStep₂]
-    exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
-  · simp only [projectObjectIndex]
-    rw [serviceStart_preserves_objectIndex s₁ s₁' sid policy hStep₁,
-        serviceStart_preserves_objectIndex s₂ s₂' sid policy hStep₂]
-    exact congrArg ObservableState.objectIndex hLow
-  · -- domainTimeRemaining
-    have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectDomainTimeRemaining, h₁, h₂] using congrArg ObservableState.domainTimeRemaining hLow
-  · -- domainSchedule
-    have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectDomainSchedule, h₁, h₂] using congrArg ObservableState.domainSchedule hLow
-  · -- domainScheduleIndex
-    have h₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectDomainScheduleIndex, h₁, h₂] using congrArg ObservableState.domainScheduleIndex hLow
-  · -- machineRegs
-    have h₁ := serviceStart_preserves_machine s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStart_preserves_machine s₂ s₂' sid policy hStep₂
-    have hs₁ := serviceStart_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have hs₂ := serviceStart_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simp [projectMachineRegs, h₁, h₂, hs₁, hs₂]
-    exact congrArg ObservableState.machineRegs hLow
-
-/-- WS-F3: serviceStop at a non-observable service preserves low-equivalence. -/
-private theorem serviceStop_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (sid : ServiceId) (policy : ServicePolicy)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hSvcHigh : serviceObservable ctx observer sid = false)
-    (hStep₁ : serviceStop sid policy s₁ = .ok ((), s₁'))
-    (hStep₂ : serviceStop sid policy s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  unfold lowEquivalent projectState; congr 1
-  · have h₁ := serviceStop_preserves_objects s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_objects s₂ s₂' sid policy hStep₂
-    funext oid; simp only [projectObjects]
-    by_cases hObs : objectObservable ctx observer oid
-    · simp [hObs]; rw [h₁, h₂]
-      have h := congrFun (congrArg ObservableState.objects hLow) oid
-      simp only [projectState, projectObjects, hObs, ite_true] at h
-      exact h
-    · simp [hObs]
-  · have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectRunnable, h₁, h₂] using congrArg ObservableState.runnable hLow
-  · have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectCurrent, h₁, h₂] using congrArg ObservableState.current hLow
-  · funext s; simp only [projectServiceStatus]
-    by_cases hObs : serviceObservable ctx observer s
-    · simp [hObs]
-      by_cases hEq : s = sid
-      · subst hEq; simp [hSvcHigh] at hObs
-      · rw [serviceStop_preserves_lookupService_ne s₁ s₁' sid policy s hEq hStep₁,
-            serviceStop_preserves_lookupService_ne s₂ s₂' sid policy s hEq hStep₂]
-        have h := congrFun (congrArg ObservableState.services hLow) s
-        simp only [projectState, projectServiceStatus, hObs, ite_true] at h
-        exact h
-    · simp [hObs]
-  · have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectActiveDomain, h₁, h₂] using congrArg ObservableState.activeDomain hLow
-  · funext irq; simp only [projectIrqHandlers]
-    rw [serviceStop_preserves_irqHandlers s₁ s₁' sid policy hStep₁,
-        serviceStop_preserves_irqHandlers s₂ s₂' sid policy hStep₂]
-    exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
-  · simp only [projectObjectIndex]
-    rw [serviceStop_preserves_objectIndex s₁ s₁' sid policy hStep₁,
-        serviceStop_preserves_objectIndex s₂ s₂' sid policy hStep₂]
-    exact congrArg ObservableState.objectIndex hLow
-  · -- domainTimeRemaining
-    have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectDomainTimeRemaining, h₁, h₂] using congrArg ObservableState.domainTimeRemaining hLow
-  · -- domainSchedule
-    have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectDomainSchedule, h₁, h₂] using congrArg ObservableState.domainSchedule hLow
-  · -- domainScheduleIndex
-    have h₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simpa [projectDomainScheduleIndex, h₁, h₂] using congrArg ObservableState.domainScheduleIndex hLow
-  · -- machineRegs
-    have h₁ := serviceStop_preserves_machine s₁ s₁' sid policy hStep₁
-    have h₂ := serviceStop_preserves_machine s₂ s₂' sid policy hStep₂
-    have hs₁ := serviceStop_preserves_scheduler s₁ s₁' sid policy hStep₁
-    have hs₂ := serviceStop_preserves_scheduler s₂ s₂' sid policy hStep₂
-    simp [projectMachineRegs, h₁, h₂, hs₁, hs₂]
-    exact congrArg ObservableState.machineRegs hLow
-
-/-- WS-F3: serviceRestart at a non-observable service preserves low-equivalence. -/
-theorem serviceRestart_preserves_lowEquivalent
-    (ctx : LabelingContext) (observer : IfObserver)
-    (sid : ServiceId)
-    (policyStop policyStart : ServicePolicy)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hSvcHigh : serviceObservable ctx observer sid = false)
-    (hStep₁ : serviceRestart sid policyStop policyStart s₁ = .ok ((), s₁'))
-    (hStep₂ : serviceRestart sid policyStop policyStart s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  -- serviceRestart = serviceStop + serviceStart
-  rcases serviceRestart_decompose s₁ s₁' sid policyStop policyStart hStep₁ with ⟨mid₁, hStop₁, hStart₁⟩
-  rcases serviceRestart_decompose s₂ s₂' sid policyStop policyStart hStep₂ with ⟨mid₂, hStop₂, hStart₂⟩
-  have hMid := serviceStop_preserves_lowEquivalent ctx observer sid policyStop
-    s₁ s₂ mid₁ mid₂ hLow hSvcHigh hStop₁ hStop₂
-  exact serviceStart_preserves_lowEquivalent ctx observer sid policyStart
-    mid₁ mid₂ s₁' s₂' hMid hSvcHigh hStart₁ hStart₂
-
--- ============================================================================
 -- WS-F3/F-20: Enforcement-NI bridge theorems
 -- ============================================================================
 
@@ -227,29 +62,6 @@ theorem cspaceMintChecked_NI
   rw [cspaceMintChecked_eq_cspaceMint_when_allowed ctx src dst rights badge s₂ hFlow₁] at hStep₂
   exact cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
     s₁ s₂ s₁' s₂' hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hStep₁ hStep₂
-
-/-- WS-F3/F-20: If serviceRestartChecked succeeds, the resulting state transition
-preserves low-equivalence. -/
-theorem serviceRestartChecked_NI
-    (ctx : LabelingContext) (observer : IfObserver)
-    (orchestrator sid : ServiceId)
-    (policyStop policyStart : ServicePolicy)
-    (s₁ s₂ s₁' s₂' : SystemState)
-    (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hSvcHigh : serviceObservable ctx observer sid = false)
-    (hStep₁ : serviceRestartChecked ctx orchestrator sid policyStop policyStart s₁ = .ok ((), s₁'))
-    (hStep₂ : serviceRestartChecked ctx orchestrator sid policyStop policyStart s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow : securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) = true := by
-    cases h : securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) with
-    | false =>
-      have := serviceRestartChecked_flowDenied ctx orchestrator sid policyStop policyStart s₁ h
-      rw [this] at hStep₁; simp at hStep₁
-    | true => rfl
-  rw [serviceRestartChecked_eq_serviceRestart_when_allowed ctx orchestrator sid policyStop policyStart s₁ hFlow] at hStep₁
-  rw [serviceRestartChecked_eq_serviceRestart_when_allowed ctx orchestrator sid policyStop policyStart s₂ hFlow] at hStep₂
-  exact serviceRestart_preserves_lowEquivalent ctx observer sid policyStop policyStart
-    s₁ s₂ s₁' s₂' hLow hSvcHigh hStep₁ hStep₂
 
 -- ============================================================================
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
@@ -1044,7 +856,7 @@ private theorem cdt_only_preserves_projection
   · funext oid; simp only [projectObjects, hObjects]
   · simp [projectRunnable, hScheduler]
   · simp [projectCurrent, hScheduler]
-  · funext sid; simp only [projectServiceStatus, lookupService, hServices]
+  · funext sid; simp only [projectServicePresence, lookupService, hServices]
   · simp [projectActiveDomain, hScheduler]
   · funext irq; simp only [projectIrqHandlers, hIrq]
   · simp only [projectObjectIndex, hObjIdx]
@@ -1091,7 +903,7 @@ private theorem cspaceInsertSlot_preserves_projection
     · simp [projectObjects, hObs]
   · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
-  · funext sid; simp only [projectServiceStatus, lookupService,
+  · funext sid; simp only [projectServicePresence, lookupService,
       cspaceInsertSlot_preserves_services st st' dst cap hStep]
   · simp [projectActiveDomain, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · funext irq; simp only [projectIrqHandlers,

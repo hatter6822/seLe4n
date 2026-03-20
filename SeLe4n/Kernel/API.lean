@@ -17,6 +17,7 @@ import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.Lifecycle.Invariant
 import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Service.Invariant
+import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Kernel.InformationFlow.Projection
 import SeLe4n.Kernel.InformationFlow.Invariant
@@ -59,18 +60,18 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Stable |
 | `lifecycleRetypeWithCleanup` | Lifecycle (WS-H2) | Stable |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
-| `serviceStart`, `serviceStop`, `serviceRestart` | Service | Stable |
+| `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
 | `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
-| `cspaceMintChecked`, `serviceRestartChecked` | Info-flow | Stable |
+| `cspaceMintChecked` | Info-flow | Stable |
 | `apiEndpointSend`, `apiEndpointReceive` | Syscall IPC (WS-H15c) | Stable |
 | `apiEndpointCall`, `apiEndpointReply` | Syscall IPC (WS-H15c) | Stable |
 | `apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove` | Syscall Capability (WS-H15c) | Stable |
 | `apiCspaceDelete` | Syscall Capability (WS-H15c) | Stable |
 | `apiLifecycleRetype` | Syscall Lifecycle (WS-H15c) | Stable |
 | `apiVspaceMap`, `apiVspaceUnmap` | Syscall VSpace (WS-H15c) | Stable |
-| `apiServiceStart`, `apiServiceStop` | Syscall Service (WS-H15c) | Stable |
+| `apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery` | Syscall Service (WS-Q1-D) | Stable |
 | `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable |
 | `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
 | `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable |
@@ -301,15 +302,22 @@ def apiVspaceUnmap (gate : SyscallGate) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAd
   syscallInvoke { gate with requiredRight := .write } fun _ =>
     Architecture.vspaceUnmapPage asid vaddr
 
-/-- WS-H15c/A-42: Capability-gated service start. Requires `.write` right. -/
-def apiServiceStart (gate : SyscallGate) (svcId : ServiceId) (policy : ServicePolicy) : Kernel Unit :=
+/-- WS-Q1-D: Capability-gated service registration. Requires `.write` right. -/
+def apiServiceRegister (gate : SyscallGate) (reg : ServiceRegistration) : Kernel Unit :=
   syscallInvoke { gate with requiredRight := .write } fun _ =>
-    serviceStart svcId policy
+    registerService reg
 
-/-- WS-H15c/A-42: Capability-gated service stop. Requires `.write` right. -/
-def apiServiceStop (gate : SyscallGate) (svcId : ServiceId) (policy : ServicePolicy) : Kernel Unit :=
+/-- WS-Q1-D: Capability-gated service revocation. Requires `.write` right. -/
+def apiServiceRevoke (gate : SyscallGate) (svcId : ServiceId) : Kernel Unit :=
   syscallInvoke { gate with requiredRight := .write } fun _ =>
-    serviceStop svcId policy
+    revokeService svcId
+
+/-- WS-Q1-D: Capability-gated service query. Requires `.read` right. -/
+def apiServiceQuery (gate : SyscallGate) (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
+  fun st =>
+    match syscallLookupCap { gate with requiredRight := .read } st with
+    | .error e => .error e
+    | .ok (_cap, st') => lookupServiceByCap epId st'
 
 -- ============================================================================
 -- WS-J1-C: Syscall entry point and dispatch
@@ -355,8 +363,9 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .lifecycleRetype => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
-  | .serviceStart    => .write
-  | .serviceStop     => .write
+  | .serviceRegister => .write
+  | .serviceRevoke   => .write
+  | .serviceQuery    => .read
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -508,19 +517,31 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .ok args =>
             Architecture.vspaceUnmapPage args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
-  -- WS-K-E: Service start — policy sourced from SystemState.serviceConfig.
-  | .serviceStart =>
+  -- WS-Q1-D: Service register — register a service with the endpoint cap.
+  | .serviceRegister =>
     match cap.target with
-    | .object objId =>
-      fun st => serviceStart (ServiceId.ofNat objId.toNat)
-                  st.serviceConfig.allowStart st
+    | .object epId =>
+      let reg : ServiceRegistration := {
+        sid := ServiceId.ofNat epId.toNat
+        iface := default
+        endpointCap := cap
+      }
+      registerService reg
     | _ => fun _ => .error .invalidCapability
-  -- WS-K-E: Service stop — policy sourced from SystemState.serviceConfig.
-  | .serviceStop =>
+  -- WS-Q1-D: Service revoke — remove a service registration.
+  | .serviceRevoke =>
     match cap.target with
     | .object objId =>
-      fun st => serviceStop (ServiceId.ofNat objId.toNat)
-                  st.serviceConfig.allowStop st
+      revokeService (ServiceId.ofNat objId.toNat)
+    | _ => fun _ => .error .invalidCapability
+  -- WS-Q1-D: Service query — lookup by endpoint capability.
+  | .serviceQuery =>
+    match cap.target with
+    | .object epId =>
+      fun st =>
+        match lookupServiceByCap epId st with
+        | .ok (_, st') => .ok ((), st')
+        | .error e => .error e
     | _ => fun _ => .error .invalidCapability
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -808,30 +829,6 @@ theorem dispatchWithCap_vspaceUnmap_delegates
 -- ============================================================================
 -- WS-K-E: Service policy and IPC message population delegation theorems
 -- ============================================================================
-
-/-- WS-K-E: When serviceStart dispatch is invoked, the policy is sourced from
-`st.serviceConfig.allowStart` — not a hardcoded `(fun _ => true)` stub. -/
-theorem dispatchWithCap_serviceStart_uses_config
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (hSyscall : decoded.syscallId = .serviceStart)
-    (hTarget : cap.target = .object objId) :
-    dispatchWithCap decoded tid gate cap =
-      fun st => serviceStart (ServiceId.ofNat objId.toNat)
-                  st.serviceConfig.allowStart st := by
-  simp [dispatchWithCap, hSyscall, hTarget]
-
-/-- WS-K-E: When serviceStop dispatch is invoked, the policy is sourced from
-`st.serviceConfig.allowStop` — not a hardcoded `(fun _ => true)` stub. -/
-theorem dispatchWithCap_serviceStop_uses_config
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (hSyscall : decoded.syscallId = .serviceStop)
-    (hTarget : cap.target = .object objId) :
-    dispatchWithCap decoded tid gate cap =
-      fun st => serviceStop (ServiceId.ofNat objId.toNat)
-                  st.serviceConfig.allowStop st := by
-  simp [dispatchWithCap, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01: When send dispatch is invoked, the IPC message includes
 resolved extra capabilities and uses the WithCaps send path. -/

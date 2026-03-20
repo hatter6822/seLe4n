@@ -36,7 +36,6 @@ private def admin : SeLe4n.Kernel.IfObserver :=
 private def sampleServiceEntry : ServiceGraphEntry :=
   {
     identity := { sid := ⟨1⟩, backingObject := ⟨1⟩, owner := ⟨1⟩ }
-    status := .running
     dependencies := []
     isolatedFrom := []
   }
@@ -45,7 +44,6 @@ private def sampleServiceEntry : ServiceGraphEntry :=
 private def publicServiceEntry : ServiceGraphEntry :=
   {
     identity := { sid := ⟨2⟩, backingObject := ⟨3⟩, owner := ⟨3⟩ }
-    status := .running
     dependencies := []
     isolatedFrom := []
   }
@@ -163,41 +161,27 @@ def runInformationFlowChecks : IO Unit := do
 
   IO.println "information-flow check passed [lowEquivalent distinct-state witness (replaces reflexive tautology)]"
 
-  -- === F-04 fix: Service projection with visible service below observer ===
+  -- === F-04/Q1 fix: Service projection with visible service below observer ===
   -- Service 2 has publicLabel in sampleLabeling, so it IS visible to the reviewer (public observer).
-  -- This tests that projectServiceStatus returns meaningful data (not always none).
-  let publicServiceProjection := SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState
+  -- Q1: projectServicePresence returns Bool (service presence), not Option ServiceStatus.
+  let publicServiceProjection := SeLe4n.Kernel.projectServicePresence sampleLabeling reviewer sampleState
 
-  expect "public observer CAN see public service status"
-    ((publicServiceProjection ⟨2⟩).isSome)
-
-  match publicServiceProjection ⟨2⟩ with
-  | some status =>
-      expect "public service status is running"
-        (status = .running)
-  | none =>
-      throw <| IO.userError "information-flow check failed [public service should be visible to public observer]"
+  expect "public observer CAN see public service presence"
+    (publicServiceProjection ⟨2⟩ = true)
 
   -- Secret service (sid=1) should still be hidden from public observer
-  expect "public observer cannot see secret service status"
-    ((publicServiceProjection ⟨1⟩).isNone)
+  expect "public observer cannot see secret service presence"
+    (publicServiceProjection ⟨1⟩ = false)
 
-  -- === F-04 fix: Explicit projectServiceStatus coverage ===
-  -- Verify projectServiceStatus returns correct status for admin observer on secret service
-  let adminServiceProjection := SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState
-  expect "admin observer can see secret service status"
-    ((adminServiceProjection ⟨1⟩).isSome)
-
-  match adminServiceProjection ⟨1⟩ with
-  | some status =>
-      expect "secret service status is running for admin"
-        (status = .running)
-  | none =>
-      throw <| IO.userError "information-flow check failed [admin should see secret service status]"
+  -- === F-04/Q1 fix: Explicit projectServicePresence coverage ===
+  -- Verify projectServicePresence returns true for admin observer on secret service
+  let adminServiceProjection := SeLe4n.Kernel.projectServicePresence sampleLabeling admin sampleState
+  expect "admin observer can see secret service presence"
+    (adminServiceProjection ⟨1⟩ = true)
 
   -- Admin can also see public service
-  expect "admin observer can see public service status"
-    ((adminServiceProjection ⟨2⟩).isSome)
+  expect "admin observer can see public service presence"
+    (adminServiceProjection ⟨2⟩ = true)
 
   -- === F-04 fix: Observer discrimination test ===
   -- High-clearance observer (admin) sees MORE than low-clearance observer (reviewer) on the same state.
@@ -216,16 +200,16 @@ def runInformationFlowChecks : IO Unit := do
     (adminProjection.current.isSome && publicProjection.current.isNone)
 
   -- Admin sees secret service that public cannot
-  let adminSvc1 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState) ⟨1⟩
-  let publicSvc1 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState) ⟨1⟩
+  let adminSvc1 := (SeLe4n.Kernel.projectServicePresence sampleLabeling admin sampleState) ⟨1⟩
+  let publicSvc1 := (SeLe4n.Kernel.projectServicePresence sampleLabeling reviewer sampleState) ⟨1⟩
   expect "admin sees secret service that public cannot"
-    (adminSvc1.isSome && publicSvc1.isNone)
+    (adminSvc1 && !publicSvc1)
 
   -- Both see public service (no discrimination on public data)
-  let adminSvc2 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling admin sampleState) ⟨2⟩
-  let publicSvc2 := (SeLe4n.Kernel.projectServiceStatus sampleLabeling reviewer sampleState) ⟨2⟩
+  let adminSvc2 := (SeLe4n.Kernel.projectServicePresence sampleLabeling admin sampleState) ⟨2⟩
+  let publicSvc2 := (SeLe4n.Kernel.projectServicePresence sampleLabeling reviewer sampleState) ⟨2⟩
   expect "both observers see public service"
-    (adminSvc2.isSome && publicSvc2.isSome)
+    (adminSvc2 && publicSvc2)
 
   -- === WS-D2 enforcement boundary checks (F-02) ===
 
@@ -393,9 +377,9 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-E5/M-07: Enforcement boundary classification checks
   -- =========================================================================
 
-  expect "M-07 enforcement boundary: 3 policy-gated operations defined"
+  expect "M-07 enforcement boundary: 2 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 3)
+      match c with | .policyGated _ => true | _ => false)).length == 2)
 
   expect "M-07 enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -405,8 +389,8 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  expect "M-07 enforcement boundary: total 17 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 17)
+  expect "M-07 enforcement boundary: total 16 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 16)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
@@ -604,54 +588,43 @@ def runInformationFlowChecks : IO Unit := do
 
   IO.println "WS-F3 full 7-field low-equivalence check passed"
 
-  -- ---------- serviceRestartChecked enforcement (WS-F3) ----------
-  -- Build a state with a running service for restart testing.
-  let restartServiceEntry : ServiceGraphEntry :=
+  -- ---------- Q1: Service registry projection (serviceRestartChecked removed) ----------
+  -- Build a state with a registered service for presence projection testing.
+  let registryServiceEntry : ServiceGraphEntry :=
     { identity := { sid := ⟨10⟩, backingObject := ⟨20⟩, owner := ⟨1⟩ }
-      status := .running
       dependencies := []
       isolatedFrom := [] }
 
-  let restartState :=
+  let registryState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨20⟩ (.endpoint {})
-      |>.withService ⟨10⟩ restartServiceEntry
-      |>.withService ⟨5⟩ { identity := { sid := ⟨5⟩, backingObject := ⟨25⟩, owner := ⟨1⟩ }, status := .running, dependencies := [], isolatedFrom := [] }
+      |>.withService ⟨10⟩ registryServiceEntry
+      |>.withService ⟨5⟩ { identity := { sid := ⟨5⟩, backingObject := ⟨25⟩, owner := ⟨1⟩ }, dependencies := [], isolatedFrom := [] }
       |>.build)
 
-  let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
-
-  -- Same-domain restart (orchestrator sid=5, target sid=10, both public)
-  let sameDomainRestartCtx : SeLe4n.Kernel.LabelingContext :=
+  -- Same-domain projection: public observer can see public service presence
+  let sameDomainRegistryCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let checkedRestart := SeLe4n.Kernel.serviceRestartChecked sameDomainRestartCtx ⟨5⟩ ⟨10⟩ allowAll allowAll restartState
-  let uncheckedRestart := SeLe4n.Kernel.serviceRestart ⟨10⟩ allowAll allowAll restartState
+  let publicPresence := SeLe4n.Kernel.projectServicePresence sameDomainRegistryCtx reviewer registryState
+  expect "WS-F3/Q1: public observer sees registered service presence"
+    (publicPresence ⟨10⟩ = true)
 
-  expect "WS-F3: same-domain serviceRestartChecked matches unchecked"
-    (match checkedRestart, uncheckedRestart with
-      | .ok ((), s₁), .ok ((), s₂) =>
-          (s₁.services[(⟨10⟩ : ServiceId)]?).map ServiceGraphEntry.status = (s₂.services[(⟨10⟩ : ServiceId)]?).map ServiceGraphEntry.status
-      | .error e₁, .error e₂ => e₁ = e₂
-      | _, _ => false)
-
-  -- Cross-domain restart (secret orchestrator → public service) should be denied
-  let crossDomainRestartCtx : SeLe4n.Kernel.LabelingContext :=
+  -- Cross-domain projection: public observer cannot see secret-domain service
+  let crossDomainRegistryCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
       threadLabelOf := fun _ => publicLabel
       endpointLabelOf := fun _ => publicLabel
-      serviceLabelOf := fun sid => if sid = ⟨5⟩ then secretLabel else publicLabel }
+      serviceLabelOf := fun sid => if sid = ⟨10⟩ then secretLabel else publicLabel }
 
-  let deniedRestart := SeLe4n.Kernel.serviceRestartChecked crossDomainRestartCtx ⟨5⟩ ⟨10⟩ allowAll allowAll restartState
-  expect "WS-F3: cross-domain serviceRestartChecked returns flowDenied"
-    (match deniedRestart with
-      | .error .flowDenied => true
-      | _ => false)
+  let hiddenPresence := SeLe4n.Kernel.projectServicePresence crossDomainRegistryCtx reviewer registryState
+  expect "WS-F3/Q1: public observer cannot see secret-domain service"
+    (hiddenPresence ⟨10⟩ = false)
 
-  IO.println "WS-F3 serviceRestartChecked enforcement checks passed"
+  IO.println "WS-F3/Q1 service registry projection checks passed"
   IO.println "all WS-F3 information-flow completeness checks passed"
 
   -- ========================================================================
@@ -783,8 +756,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "WS-H8: enforcement boundary has 7 policy-gated ops"
-    (policyGatedCount = 7)
+  expect "WS-H8: enforcement boundary has 6 policy-gated ops"
+    (policyGatedCount = 6)
 
   IO.println "WS-H8 enforcement boundary classification verified"
 

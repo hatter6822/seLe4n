@@ -233,9 +233,12 @@ theorem enforcement_sufficiency_endpointReceiveDual
 -- WS-H8: Updated enforcement boundary classification (21 operations)
 -- ============================================================================
 
-/-- WS-H8: Updated enforcement boundary — 7 policy-gated operations (up from 3).
+/-- WS-H8/Q1: Updated enforcement boundary — 6 policy-gated operations.
 
-Extends the canonical classification with 4 new policy-gated wrappers:
+Q1 removed `serviceRestartChecked` (service lifecycle simplification).
+Remaining policy-gated wrappers:
+- `endpointSendDualChecked` — sender→endpoint flow
+- `cspaceMintChecked` — source CNode→destination CNode flow
 - `notificationSignalChecked` — signaler→notification flow
 - `cspaceCopyChecked` — source CNode→destination CNode flow
 - `cspaceMoveChecked` — source CNode→destination CNode flow
@@ -243,7 +246,6 @@ Extends the canonical classification with 4 new policy-gated wrappers:
 def enforcementBoundaryExtended : List EnforcementClass :=
   [ .policyGated "endpointSendDualChecked"
   , .policyGated "cspaceMintChecked"
-  , .policyGated "serviceRestartChecked"
   , .policyGated "notificationSignalChecked"
   , .policyGated "cspaceCopyChecked"
   , .policyGated "cspaceMoveChecked"

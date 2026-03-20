@@ -180,7 +180,7 @@ run_check "INVARIANT" rg -n '^def apiEndpointSend' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def apiCspaceMint' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def apiLifecycleRetype' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def apiVspaceMap' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def apiServiceStart' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def apiServiceRegister' SeLe4n/Kernel/API.lean
 
 # WS-H15d: AdapterProofHooks concrete instantiation (Sim + RPi5)
 run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
@@ -355,17 +355,11 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalState' 
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalAuthority' SeLe4n/Kernel/Lifecycle/Operations.lean
 run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_success_updates_object' SeLe4n/Kernel/Lifecycle/Operations.lean
 
-# M5-B orchestration transition anchors must remain present.
-run_check "INVARIANT" rg -n '^def serviceStart' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceStop' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceRestart' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_error_policyDenied' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_error_dependencyViolation' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_error_policyDenied' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_error_illegalState' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_error_of_stop_error' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_error_of_start_error' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_ok_implies_staged_steps' SeLe4n/Kernel/Service/Operations.lean
+# M5-B/Q1: Service registry transition anchors (lifecycle ops removed in Q1).
+run_check "INVARIANT" rg -n '^def storeServiceEntry' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceHasPathTo' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceRegisterDependency' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^\s*\| policyDenied' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/State.lean
 
@@ -379,19 +373,12 @@ run_check "INVARIANT" rg -n '^theorem policyBackingObjectTyped_of_lifecycleInvar
 run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
 run_check "INVARIANT" rg -n '^theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup' SeLe4n/Kernel/Service/Invariant/Policy.lean
 run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_policyDenied_separates_check_from_mutation' SeLe4n/Kernel/Service/Invariant/Policy.lean
-
-# M5-D proof-package anchors must remain present.
+# M5-D/Q1: proof-package anchors (lifecycle preservation theorems removed in Q1).
 run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
 run_check "INVARIANT" rg -n '^theorem serviceLifecycleCapabilityInvariantBundle_of_components' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_servicePolicySurfaceInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
 
 # WS-D3 F-06/TPI-D04 badge-override safety anchors must remain present.
 run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rights_attenuated_with_badge_override' SeLe4n/Kernel/Capability/Invariant/Authority.lean
@@ -423,9 +410,9 @@ run_check "INVARIANT" rg -n '^\s*\| cyclicDependency' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
-# WS-D4 F-11 serviceRestart failure-semantics anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem serviceRestart_error_discards_state' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_error_from_start_phase' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+# WS-D4 F-11/Q1: serviceRestart failure anchors removed in Q1; replaced with graph invariant anchors.
+run_check "INVARIANT" rg -n 'theorem serviceGraphInvariant_of_storeServiceState_sameDeps' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_serviceGraphInvariant' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-D4 F-12 double-wait prevention + uniqueness invariant anchors must remain present.
 run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/State.lean
@@ -502,25 +489,17 @@ run_check "TRACE" rg -n 'adapter register write unsupported branch: SeLe4n.Model
 run_check "TRACE" rg -n 'endpointReceiveDual demoEndpoint ⟨12⟩' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'handshake send matched waiting receiver' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'serviceStart svcApi allowAll' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service start denied branch' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service start dependency branch' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service restart status' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service stop denied branch' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service stop illegal-state branch' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service restart stop-stage failure' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service restart start-stage failure' SeLe4n/Testing/MainTraceHarness.lean
+# Q1: Service lifecycle trace anchors replaced with registry trace anchors.
+run_check "TRACE" rg -n 'service lookup svcApi' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'store service entry' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'register dependency' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'register self-loop dependency' SeLe4n/Testing/MainTraceHarness.lean
+run_check "TRACE" rg -n 'service path svcApi' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'service isolation api↔denied' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'service isolation api↔db' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'service start denied branch: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'service restart status: some' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'service stop denied branch: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied' tests/fixtures/main_trace_smoke.expected
-run_check "TRACE" rg -n 'service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolation' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service isolation api↔denied: true' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'service isolation api↔db: false' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'lifecycle retype unauthorized branch' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'lifecycle retype illegal-state branch' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'lifecycle retype success object kind' SeLe4n/Testing/MainTraceHarness.lean
@@ -620,12 +599,10 @@ run_check "INVARIANT" rg -n '^theorem projectKernelObject_objectType' SeLe4n/Ker
 # NI theorems (CRIT-03/F-21):
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestart_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
-# Enforcement-NI bridge (F-20):
+# Enforcement-NI bridge (F-20/Q1: serviceRestartChecked removed):
 run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceMintChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRestartChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # Composed NI framework (H-05):
 run_check "INVARIANT" rg -n '^inductive NonInterferenceStep' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
@@ -633,7 +610,7 @@ run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace' SeLe4n/Kern
 run_check "TRACE" rg -n 'WS-F3.*activeDomain' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'WS-F3.*IRQ handler' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'WS-F3/F-22.*CNode' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n 'WS-F3.*serviceRestartChecked' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'Q1.*Service registry projection' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'WS-F3.*7-field low-equivalence' tests/InformationFlowSuite.lean
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
@@ -874,14 +851,11 @@ run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff' SeLe4n/Ker
 run_check "INVARIANT" rg -n '^theorem decodeVSpaceMapArgs_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
-# WS-K-E: Service policy configuration and IPC message population anchors.
-run_check "INVARIANT" rg -n '^structure ServiceConfig' SeLe4n/Model/State.lean
+# WS-K-E/Q1: IPC message population anchors (ServiceConfig and serviceStart/Stop dispatch removed in Q1).
 run_check "INVARIANT" rg -n 'def extractMessageRegisters' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_ipc_bounded' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_deterministic' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_serviceStart_uses_config' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_serviceStop_uses_config' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_uses_withCaps' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_uses_withCaps' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg' SeLe4n/Kernel/API.lean
@@ -928,7 +902,7 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.cspaceRevoke_preserves_capabilityInvariantBundle
 #check @SeLe4n.Kernel.endpointSendDual_preserves_ipcInvariant
 #check @SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle
-#check @SeLe4n.Kernel.serviceStart_preserves_serviceGraphInvariant
+#check @SeLe4n.Kernel.serviceRegisterDependency_preserves_serviceGraphInvariant
 #check @SeLe4n.Kernel.Architecture.vspaceMapPage_success_preserves_vspaceInvariantBundle
 #check @SeLe4n.Kernel.step_preserves_projection
 #check @SeLe4n.Kernel.composedNonInterference_step
@@ -992,14 +966,11 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates
--- WS-K-E: Service policy and IPC message population
-#check @SeLe4n.Model.ServiceConfig
+-- WS-K-E/Q1: IPC message population (ServiceConfig, serviceStart/Stop dispatch removed in Q1)
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_length
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_ipc_bounded
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_deterministic
-#check @SeLe4n.Kernel.dispatchWithCap_serviceStart_uses_config
-#check @SeLe4n.Kernel.dispatchWithCap_serviceStop_uses_config
 #check @SeLe4n.Kernel.dispatchWithCap_send_uses_withCaps
 #check @SeLe4n.Kernel.dispatchWithCap_call_uses_withCaps
 #check @SeLe4n.Kernel.dispatchWithCap_reply_populates_msg
