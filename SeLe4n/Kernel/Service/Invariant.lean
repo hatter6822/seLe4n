@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.Service.Invariant.Policy
 import SeLe4n.Kernel.Service.Invariant.Acyclicity
+import SeLe4n.Kernel.Service.Registry.Invariant
 
 /-! # Service Invariant Preservation — Re-export Hub (seLe4n Extension)
 
@@ -19,4 +20,6 @@ Decomposed into:
   invariant bundles, and cross-subsystem composition.
 - **Acyclicity**: Service dependency acyclicity proofs (TPI-D07), BFS
   completeness bridge, graph traversal, and preservation under registration.
+- **Registry/Invariant**: WS-Q1-C registry invariant (endpoint/interface
+  validity) and preservation under registry operations.
 -/

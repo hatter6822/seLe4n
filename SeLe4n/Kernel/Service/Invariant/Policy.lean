@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.Service.Operations
+import SeLe4n.Kernel.Service.Registry.Invariant
 import SeLe4n.Kernel.Capability.Invariant
 
 /-! # Service Policy Invariants — seLe4n Extension
@@ -53,17 +54,20 @@ def servicePolicySurfaceInvariant (st : SystemState) : Prop :=
       policyBackingObjectTyped st svc ∧
       (policyOwnerAuthorityRefRecorded st svc → policyOwnerAuthoritySlotPresent st svc)
 
-/-- Cross-subsystem M5 proof-package bundle over service policy + lifecycle + capability surfaces. -/
+/-- Cross-subsystem M5/Q1 proof-package bundle over service policy + lifecycle + capability
++ registry surfaces. WS-Q1-C: `registryInvariant` added for capability-indexed registry. -/
 def serviceLifecycleCapabilityInvariantBundle (st : SystemState) : Prop :=
-  servicePolicySurfaceInvariant st ∧ lifecycleInvariantBundle st ∧ capabilityInvariantBundle st
+  servicePolicySurfaceInvariant st ∧ lifecycleInvariantBundle st ∧
+  capabilityInvariantBundle st ∧ registryInvariant st
 
 theorem serviceLifecycleCapabilityInvariantBundle_of_components
     (st : SystemState)
     (hPolicy : servicePolicySurfaceInvariant st)
     (hLifecycle : lifecycleInvariantBundle st)
-    (hCap : capabilityInvariantBundle st) :
+    (hCap : capabilityInvariantBundle st)
+    (hReg : registryInvariant st) :
     serviceLifecycleCapabilityInvariantBundle st := by
-  exact ⟨hPolicy, hLifecycle, hCap⟩
+  exact ⟨hPolicy, hLifecycle, hCap, hReg⟩
 
 /-- Bridge lemma: lifecycle typing assumptions imply policy backing-object typing. -/
 theorem policyBackingObjectTyped_of_lifecycleInvariant

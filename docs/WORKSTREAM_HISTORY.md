@@ -36,7 +36,7 @@ state. Key changes:
 - **Test migration**: All trace harnesses, negative-state tests, information
   flow tests, operation chain tests updated; fixture files synchronized
 - **Proof surface**: Zero sorry, all invariant preservation theorems intact,
-  enforcement boundary reduced from 7 to 6 policy-gated operations
+  enforcement boundary updated: 3 policy-gated in base, 7 in extended (WS-Q1: `registerServiceChecked` added)
 
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).

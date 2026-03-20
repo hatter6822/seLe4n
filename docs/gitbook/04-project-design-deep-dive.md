@@ -63,7 +63,7 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 
 **Layer 1 — RegisterDecode.lean:** Converts the raw register file (x0–x7) into a flat `SyscallDecodeResult` containing `capAddr : CPtr`, `msgInfo : MessageInfo`, `syscallId : SyscallId`, and `msgRegs : Array RegValue`. This layer handles architecture-specific register layout via `SyscallRegisterLayout` and provides total decode with explicit `Except` errors. Round-trip, determinism, and error-exclusivity theorems are proved at this layer.
 
-**Layer 2 — SyscallArgDecode.lean:** Converts the `msgRegs` array within `SyscallDecodeResult` into per-syscall typed argument structures. Seven structures cover the syscall families:
+**Layer 2 — SyscallArgDecode.lean:** Converts the `msgRegs` array within `SyscallDecodeResult` into per-syscall typed argument structures. Ten structures cover the syscall families:
 
 | Syscall family | Structure | Min regs | Fields |
 |---|---|---|---|
@@ -74,8 +74,11 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 | Lifecycle retype | `LifecycleRetypeArgs` | 3 | targetObj, newType, size |
 | VSpace map | `VSpaceMapArgs` | 4 | asid, vaddr, paddr, perms |
 | VSpace unmap | `VSpaceUnmapArgs` | 2 | asid, vaddr |
+| Service register | `ServiceRegisterArgs` | 2 | serviceId, dependencies |
+| Service revoke | `ServiceRevokeArgs` | 1 | serviceId |
+| Service query | `ServiceQueryArgs` | 1 | serviceId |
 
-A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Seven encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
+A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Ten encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
 
 **Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 13 syscalls are fully wired — zero `.illegalState` stubs remain.
 

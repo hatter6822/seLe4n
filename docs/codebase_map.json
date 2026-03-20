@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-q1-service-interface-CPo3U",
-      "commit_sha": "bc0797d4b26da376871c352b0843a16a903b230f",
-      "tree_sha": "07780d707ed1c4921c05eb416ab9a9bb7523a10e",
-      "committed_at_utc": "2026-03-20T07:25:56+00:00"
+      "commit_sha": "cba68f79e8687337ba18cbad4305bd81f6cb3ed4",
+      "tree_sha": "0b598b49ecb570dc198de7ff38563c1739bfd169",
+      "committed_at_utc": "2026-03-20T07:52:09+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5ef8db31d56e746e97e2822ab1b101f91c0a8cfa8a2a96264d1f44f5ea5fdcda"
+    "source_digest": "4f4d59fdc95797acc2b436ba21233c11b02aa9a68454aa0e88ac4c668507d852"
   },
   "summary": {
     "module_count": 86,
@@ -27,7 +27,7 @@
     "version": "0.17.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 81,
-    "production_loc": 46390,
+    "production_loc": 46399,
     "test_files": 5,
     "test_loc": 5513,
     "proved_theorem_lemma_decls": 1408,
@@ -1019,7 +1019,7 @@
         {
           "kind": "theorem",
           "name": "deterministicTimerProgress_consumed_by_advanceTimer",
-          "line": 368,
+          "line": 369,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -1028,7 +1028,7 @@
         {
           "kind": "theorem",
           "name": "deterministicRegisterContext_consumed_by_writeRegister",
-          "line": 381,
+          "line": 382,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -1037,7 +1037,7 @@
         {
           "kind": "theorem",
           "name": "memoryAccessSafety_consumed_by_readMemory",
-          "line": 394,
+          "line": 395,
           "called": [
             "AdapterProofHooks",
             "proofLayerInvariantBundle"
@@ -1046,19 +1046,19 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_capabilityInvariantBundle",
-          "line": 436,
+          "line": 437,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_ipcInvariantFull",
-          "line": 444,
+          "line": 445,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
-          "line": 451,
+          "line": 452,
           "called": [
             "advanceTimerState_preserves_capabilityInvariantBundle",
             "advanceTimerState_preserves_ipcInvariantFull",
@@ -1069,13 +1069,13 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 507,
+          "line": 509,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 513,
+          "line": 515,
           "called": [
             "registerDecodeConsistent"
           ]
@@ -1083,7 +1083,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 520,
+          "line": 522,
           "called": [
             "proofLayerInvariantBundle",
             "registerDecodeConsistent"
@@ -1092,7 +1092,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 534,
+          "line": 536,
           "called": [
             "registerDecodeConsistent"
           ]
@@ -1100,7 +1100,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 542,
+          "line": 544,
           "called": [
             "registerDecodeConsistent"
           ]
@@ -12974,19 +12974,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 24,
+          "line": 25,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "ServicePolicyPredicate",
-          "line": 29,
+          "line": 30,
           "called": []
         },
         {
           "kind": "def",
           "name": "policyBackingObjectTyped",
-          "line": 32,
+          "line": 33,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -12994,7 +12994,7 @@
         {
           "kind": "def",
           "name": "policyOwnerAuthorityRefRecorded",
-          "line": 36,
+          "line": 37,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -13002,7 +13002,7 @@
         {
           "kind": "def",
           "name": "policyOwnerAuthoritySlotPresent",
-          "line": 43,
+          "line": 44,
           "called": [
             "ServicePolicyPredicate"
           ]
@@ -13010,7 +13010,7 @@
         {
           "kind": "def",
           "name": "servicePolicySurfaceInvariant",
-          "line": 50,
+          "line": 51,
           "called": [
             "policyBackingObjectTyped",
             "policyOwnerAuthorityRefRecorded",
@@ -13020,7 +13020,7 @@
         {
           "kind": "def",
           "name": "serviceLifecycleCapabilityInvariantBundle",
-          "line": 57,
+          "line": 59,
           "called": [
             "servicePolicySurfaceInvariant"
           ]
@@ -13028,7 +13028,7 @@
         {
           "kind": "theorem",
           "name": "serviceLifecycleCapabilityInvariantBundle_of_components",
-          "line": 60,
+          "line": 63,
           "called": [
             "serviceLifecycleCapabilityInvariantBundle",
             "servicePolicySurfaceInvariant"
@@ -13037,7 +13037,7 @@
         {
           "kind": "theorem",
           "name": "policyBackingObjectTyped_of_lifecycleInvariant",
-          "line": 69,
+          "line": 73,
           "called": [
             "policyBackingObjectTyped"
           ]
@@ -13045,7 +13045,7 @@
         {
           "kind": "theorem",
           "name": "policyOwnerAuthoritySlotPresent_of_lifecycleInvariant",
-          "line": 83,
+          "line": 87,
           "called": [
             "policyOwnerAuthorityRefRecorded",
             "policyOwnerAuthoritySlotPresent"
@@ -13054,7 +13054,7 @@
         {
           "kind": "theorem",
           "name": "policyOwnerAuthoritySlotPresent_of_capabilityLookup",
-          "line": 97,
+          "line": 101,
           "called": [
             "policyOwnerAuthoritySlotPresent"
           ]
@@ -13062,7 +13062,7 @@
         {
           "kind": "theorem",
           "name": "servicePolicySurfaceInvariant_of_lifecycleInvariant",
-          "line": 115,
+          "line": 119,
           "called": [
             "policyBackingObjectTyped_of_lifecycleInvariant",
             "policyOwnerAuthoritySlotPresent_of_lifecycleInvariant",
@@ -13072,7 +13072,7 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_servicePolicySurfaceInvariant",
-          "line": 132,
+          "line": 136,
           "called": [
             "policyBackingObjectTyped",
             "policyOwnerAuthorityRefRecorded",
@@ -13083,13 +13083,13 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_lifecycleInvariantBundle",
-          "line": 165,
+          "line": 169,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeServiceState_preserves_capabilityInvariantBundle",
-          "line": 182,
+          "line": 186,
           "called": []
         }
       ]

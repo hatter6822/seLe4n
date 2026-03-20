@@ -290,10 +290,10 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     domain-gated `machineRegs` (WS-H10), domain timing metadata (WS-H8),
     `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
-  - `Enforcement/Wrappers.lean` — 8 policy-checked wrappers (WS-H8 additions:
-    `notificationSignalChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`,
-    `endpointReceiveDualChecked`) wiring `securityFlowsTo` policy into
-    enforcement boundaries.
+  - `Enforcement/Wrappers.lean` — 7 policy-checked wrappers (`endpointSendDualChecked`,
+    `endpointReceiveDualChecked`, `cspaceMintChecked`, `cspaceCopyChecked`,
+    `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`)
+    wiring `securityFlowsTo` policy into enforcement boundaries.
   - `Enforcement/Soundness.lean` — correctness theorems, soundness proofs,
     declassification.
 - `SeLe4n/Kernel/InformationFlow/Invariant.lean` (re-export hub)

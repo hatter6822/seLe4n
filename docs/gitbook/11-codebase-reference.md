@@ -103,7 +103,7 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
   - `Enforcement/Wrappers.lean` — 7 policy-checked wrappers (`endpointSendDualChecked`,
     `endpointReceiveDualChecked`, `cspaceMintChecked`, `cspaceCopyChecked`,
-    `cspaceMoveChecked`, `notificationSignalChecked`, `serviceRestartChecked`)
+    `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`)
     wiring `securityFlowsTo` policy into enforcement boundaries.
   - `Enforcement/Soundness.lean` — correctness theorems, soundness, declassification.
 - `SeLe4n/Kernel/InformationFlow/Invariant.lean` (re-export hub)

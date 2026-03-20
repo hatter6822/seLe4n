@@ -160,8 +160,8 @@ Delivered anchors (WS-E5 closeout):
 **M-07 — Enforcement boundary specification** (`Enforcement.lean`):
 
 - `EnforcementClass` — canonical classification (policyGated / capabilityOnly / readOnly),
-- `enforcementBoundary` — 17-entry canonical operation classification table,
-- denial-preserves-state theorems for all 3 checked operations,
+- `enforcementBoundary` — 17-entry canonical operation classification table (3 policy-gated),
+- denial-preserves-state theorems for all 3 base checked operations (7 in extended boundary),
 - `enforcement_sufficiency_*` — gateway equivalence theorems for all checked operations.
 
 ## WS-F3 closeout — Information-flow completeness ✅ completed

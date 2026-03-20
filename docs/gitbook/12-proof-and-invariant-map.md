@@ -731,10 +731,10 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 17-entry classification table,
-- `enforcementBoundaryExtended` — WS-H8 extended 19-entry table (8 policy-gated),
-- `denied_preserves_state_*` — denial preservation for all 7 checked operations,
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 7 checked operations.
+- `enforcementBoundary` — exhaustive 17-entry classification table (3 policy-gated),
+- `enforcementBoundaryExtended` — extended table (7 policy-gated),
+- `denied_preserves_state_*` — denial preservation for all 7 policy-gated operations,
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 7 policy-gated operations.
 
 **WS-H8/A-36 — Projection hardening:**
 
@@ -1359,9 +1359,10 @@ validate-and-read message registers in a single `Array.mapM` pass.
 `decodeMsgRegs_roundtrip` and extended `decode_components_roundtrip` proved.
 `encodeMsgRegs` identity helper added for proof surface completeness.
 
-**Completed — K-B (v0.16.1):** `SyscallArgDecode.lean` defines per-syscall typed
+**Completed — K-B (v0.16.1), extended WS-Q1:** `SyscallArgDecode.lean` defines per-syscall typed
 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
-`CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`)
+`CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`,
+`ServiceRegisterArgs`, `ServiceRevokeArgs`, `ServiceQueryArgs`)
 and total decode functions via shared `requireMsgReg` bounds-checked helper.
 7 determinism theorems (trivially `rfl`), 7 error-exclusivity theorems
 (decode fails iff `msgRegs.size < required`), `requireMsgReg_error_iff` and
@@ -1595,7 +1596,7 @@ objects outside the observer's clearance are filtered out by projection.
                      ▼
 ┌─────────────────────────────────────────────────────┐
 │ Layer 2: Enforcement/Wrappers.lean + Soundness.lean │
-│   7 policy-gated wrappers + transparency/safety     │
+│   7 policy-gated wrappers (incl. registerServiceChecked) │
 │   theorems (only safe calls proceed)                │
 └────────────────────┬────────────────────────────────┘
                      │ safe calls reach the kernel
