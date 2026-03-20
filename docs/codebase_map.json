@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-q3-workstream-FTLe6",
-      "commit_sha": "6a4183b8507ef0d3480aeab4c23561bbef455a92",
-      "tree_sha": "43cf827d3a59de4b22237dfeaee63afa711f1480",
-      "committed_at_utc": "2026-03-20T16:53:54+00:00"
+      "branch": "main",
+      "commit_sha": "c0c40c381768d7723f4c4ce10801a7608ceb4b2f",
+      "tree_sha": "d763b20e9cd5f93a08ec2e4b4184c02d1081e37b",
+      "committed_at_utc": "2026-03-20T15:10:32-04:00"
     }
   },
   "source_sync": {
