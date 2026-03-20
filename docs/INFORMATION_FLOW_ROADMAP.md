@@ -200,7 +200,8 @@ Delivered (WS-F3 closeout):
 
 - `endpointSendChecked_NI` — bridges checked send to NI domain-separation,
 - `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
-- `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
+- `registerServiceChecked_NI` — bridges checked service registration to NI domain-separation.
+*(WS-Q1: replaces `serviceRestartChecked_NI`.)*
 
 **Testing:** 39 WS-F3 tests in `InformationFlowSuite.lean`, 22 Tier-3 anchors.
 

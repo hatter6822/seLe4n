@@ -830,7 +830,8 @@ backward-preservation and frame lemmas.
 
 - `endpointSendDualChecked_NI` — bridges checked send to NI domain-separation,
 - `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
-- `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
+- `registerServiceChecked_NI` — bridges checked service registration to NI domain-separation.
+*(WS-Q1: replaces `serviceRestartChecked_NI` — service lifecycle simplified to registry model.)*
 
 ## 18. WS-F4 proof gap closure
 
