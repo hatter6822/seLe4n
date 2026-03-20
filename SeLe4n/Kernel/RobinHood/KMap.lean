@@ -148,7 +148,7 @@ theorem KMap.get?_insert_ne [BEq κ] [Hashable κ] [LawfulBEq κ]
   simp only [KMap.insert, KMap.get?]
   exact RHTable.getElem?_insert_ne m.table k k' v hNe m.hInv
 
-/-- Combined insert lookup characterization (matches HashMap_getElem?_insert). -/
+/-- Combined insert lookup characterization. -/
 theorem KMap.getElem?_insert [BEq κ] [Hashable κ] [LawfulBEq κ]
     (m : KMap κ ν) (k : κ) (v : ν) (a : κ) :
     (m.insert k v).get? a = if k == a then some v else m.get? a := by
@@ -167,7 +167,7 @@ theorem KMap.get?_erase_self [BEq κ] [Hashable κ] [LawfulBEq κ]
   simp only [KMap.erase, KMap.get?]
   exact RHTable.getElem?_erase_self m.table k m.hInv
 
-/-- Combined erase lookup characterization (matches HashMap_getElem?_erase). -/
+/-- Combined erase lookup characterization. -/
 theorem KMap.getElem?_erase [BEq κ] [Hashable κ] [LawfulBEq κ]
     (m : KMap κ ν) (k : κ) (a : κ) :
     (m.erase k).get? a = if k == a then none else m.get? a := by

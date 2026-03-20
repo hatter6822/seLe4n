@@ -12,6 +12,15 @@ seLe4n invariants are intentionally layered:
 
 This keeps proof scripts reviewable and reduces blast radius when adding new transitions.
 
+**WS-Q2 migration note (v0.19.0):** All `Std.HashMap` fields in kernel state
+have been replaced with verified `RHTable` (Robin Hood hash table), and all
+`Std.HashSet` fields with `RHSet`. Historical references to `Std.HashMap`/
+`Std.HashSet` below describe the pre-Q2 architecture. The global invariant
+`allTablesInvExt` (State.lean) ensures all 16 map + 2 set fields satisfy
+`invExt` (WF + distCorrect + noDupKeys + probeChainDominant). Algorithm-local
+`Std.HashSet` usage (BFS visited sets in Acyclicity.lean, observable filtering
+in Projection.lean) is intentionally retained.
+
 ## 2. Scheduler invariants (M1)
 
 Component level:

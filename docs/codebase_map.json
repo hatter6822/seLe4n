@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-rhtable-migration-pP996",
-      "commit_sha": "28a4b889248b236ce170f7f4ebabf4cc916e90a7",
-      "tree_sha": "422c78da94552450cadc81258241d5cee34424d4",
-      "committed_at_utc": "2026-03-20T08:00:25+00:00"
+      "commit_sha": "c4d1597d12cbcc2f4d83ca5695fd056a1ebc88a8",
+      "tree_sha": "2fcb803f3a757debaf783e80cfecdfb18bbb0f8a",
+      "committed_at_utc": "2026-03-20T16:02:08+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9291dcba02525dbf339663d4b56deacb84a576e31c7aea49eb723b2d8793e309"
+    "source_digest": "630142f39f9c87a23f1499a07af6b7018d0af1180e814dad246349927972e2d0"
   },
   "summary": {
     "module_count": 88,
-    "declaration_count": 2669
+    "declaration_count": 2659
   },
   "readme_sync": {
     "version": "0.19.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 83,
-    "production_loc": 49025,
+    "production_loc": 48925,
     "test_files": 5,
     "test_loc": 5513,
-    "proved_theorem_lemma_decls": 1469,
+    "proved_theorem_lemma_decls": 1459,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -17811,7 +17811,7 @@
     {
       "module": "SeLe4n.Prelude",
       "path": "SeLe4n/Prelude.lean",
-      "declaration_count": 284,
+      "declaration_count": 274,
       "declarations": [
         {
           "kind": "namespace",
@@ -19201,106 +19201,32 @@
         },
         {
           "kind": "theorem",
-          "name": "HashMap_get",
-          "line": 707,
-          "called": [
-            "get"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_get",
-          "line": 713,
-          "called": [
-            "get",
-            "none"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_get",
-          "line": 718,
-          "called": [
-            "get",
-            "none"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_getElem",
-          "line": 725,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_getElem",
-          "line": 731,
-          "called": [
-            "none"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_getElem",
-          "line": 736,
-          "called": [
-            "none"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_getElem",
-          "line": 743,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_get",
-          "line": 747,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_filter_preserves_key",
-          "line": 757,
-          "called": [
-            "none"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "HashMap_filter_filter_getElem",
-          "line": 781,
-          "called": []
-        },
-        {
-          "kind": "theorem",
           "name": "HashSet_contains_empty",
-          "line": 807,
+          "line": 707,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "HashSet_contains_insert_iff",
-          "line": 813,
+          "line": 713,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "HashSet_not_contains_insert",
-          "line": 827,
+          "line": 727,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "HashSet_contains_insert_self",
-          "line": 842,
+          "line": 742,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_get",
-          "line": 855,
+          "line": 755,
           "called": [
             "get",
             "none"
@@ -19309,7 +19235,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_get",
-          "line": 862,
+          "line": 762,
           "called": [
             "get"
           ]
@@ -19317,7 +19243,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_get",
-          "line": 869,
+          "line": 769,
           "called": [
             "get"
           ]
@@ -19325,7 +19251,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_get",
-          "line": 877,
+          "line": 777,
           "called": [
             "get",
             "none"
@@ -19334,7 +19260,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_get",
-          "line": 884,
+          "line": 784,
           "called": [
             "get"
           ]
@@ -19342,7 +19268,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_getElem",
-          "line": 893,
+          "line": 793,
           "called": [
             "get"
           ]
@@ -19350,7 +19276,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_getElem",
-          "line": 906,
+          "line": 806,
           "called": [
             "get",
             "none"
@@ -19359,13 +19285,13 @@
         {
           "kind": "theorem",
           "name": "RHTable_contains_iff_get_some",
-          "line": 918,
+          "line": 818,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_not_contains_iff_get_none",
-          "line": 925,
+          "line": 825,
           "called": [
             "none"
           ]
@@ -19373,13 +19299,13 @@
         {
           "kind": "theorem",
           "name": "RHTable_getElem",
-          "line": 934,
+          "line": 834,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_contains_insert_self",
-          "line": 939,
+          "line": 839,
           "called": [
             "RHTable_get"
           ]
@@ -19387,7 +19313,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_contains_erase_self",
-          "line": 946,
+          "line": 846,
           "called": [
             "RHTable_get"
           ]
@@ -19395,31 +19321,31 @@
         {
           "kind": "theorem",
           "name": "RHTable_insert_preserves_invExt",
-          "line": 953,
+          "line": 853,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_erase_preserves_invExt",
-          "line": 960,
+          "line": 860,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_empty_invExt",
-          "line": 968,
+          "line": 868,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_filter_preserves_invExt",
-          "line": 975,
+          "line": 875,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_filter_preserves_key",
-          "line": 982,
+          "line": 882,
           "called": [
             "get"
           ]
@@ -19427,7 +19353,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_filter_filter_getElem",
-          "line": 991,
+          "line": 891,
           "called": [
             "get"
           ]
@@ -19435,43 +19361,43 @@
         {
           "kind": "theorem",
           "name": "RHTable_size_insert_bound",
-          "line": 999,
+          "line": 899,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_size_erase_bound",
-          "line": 1006,
+          "line": 906,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RHTable_fold_preserves",
-          "line": 1013,
+          "line": 913,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "List.foldl_preserves_contains",
-          "line": 1026,
+          "line": 926,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "List.foldl_not_contains_when_absent",
-          "line": 1040,
+          "line": 940,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "List.foldl_preserves_when_pred_false",
-          "line": 1060,
+          "line": 960,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ObjId.default_eq_sentinel",
-          "line": 1088,
+          "line": 988,
           "called": [
             "ObjId"
           ]
@@ -19479,7 +19405,7 @@
         {
           "kind": "theorem",
           "name": "ThreadId.default_eq_sentinel",
-          "line": 1091,
+          "line": 991,
           "called": [
             "ThreadId"
           ]
@@ -19487,19 +19413,19 @@
         {
           "kind": "theorem",
           "name": "ObjId.sentinel_isReserved",
-          "line": 1094,
+          "line": 994,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ThreadId.sentinel_isReserved",
-          "line": 1097,
+          "line": 997,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ObjId.valid_iff_not_reserved",
-          "line": 1100,
+          "line": 1000,
           "called": [
             "ObjId"
           ]
@@ -19507,7 +19433,7 @@
         {
           "kind": "theorem",
           "name": "ServiceId.default_eq_sentinel",
-          "line": 1105,
+          "line": 1005,
           "called": [
             "ServiceId"
           ]
@@ -19515,13 +19441,13 @@
         {
           "kind": "theorem",
           "name": "ServiceId.sentinel_isReserved",
-          "line": 1108,
+          "line": 1008,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ObjId.toNat_ofNat",
-          "line": 1115,
+          "line": 1015,
           "called": [
             "toNat"
           ]
@@ -19529,7 +19455,7 @@
         {
           "kind": "theorem",
           "name": "ObjId.ofNat_toNat",
-          "line": 1117,
+          "line": 1017,
           "called": [
             "ObjId"
           ]
@@ -19537,13 +19463,13 @@
         {
           "kind": "theorem",
           "name": "ObjId.ofNat_injective",
-          "line": 1119,
+          "line": 1019,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ObjId.ext",
-          "line": 1122,
+          "line": 1022,
           "called": [
             "ObjId"
           ]
@@ -19551,7 +19477,7 @@
         {
           "kind": "theorem",
           "name": "ThreadId.toNat_ofNat",
-          "line": 1126,
+          "line": 1026,
           "called": [
             "toNat"
           ]
@@ -19559,7 +19485,7 @@
         {
           "kind": "theorem",
           "name": "ThreadId.ofNat_toNat",
-          "line": 1128,
+          "line": 1028,
           "called": [
             "ThreadId"
           ]
@@ -19567,13 +19493,13 @@
         {
           "kind": "theorem",
           "name": "ThreadId.ofNat_injective",
-          "line": 1130,
+          "line": 1030,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "DomainId.toNat_ofNat",
-          "line": 1134,
+          "line": 1034,
           "called": [
             "toNat"
           ]
@@ -19581,7 +19507,7 @@
         {
           "kind": "theorem",
           "name": "DomainId.ofNat_toNat",
-          "line": 1136,
+          "line": 1036,
           "called": [
             "DomainId"
           ]
@@ -19589,13 +19515,13 @@
         {
           "kind": "theorem",
           "name": "DomainId.ofNat_injective",
-          "line": 1138,
+          "line": 1038,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "DomainId.ext",
-          "line": 1141,
+          "line": 1041,
           "called": [
             "DomainId"
           ]
@@ -19603,7 +19529,7 @@
         {
           "kind": "theorem",
           "name": "Priority.toNat_ofNat",
-          "line": 1145,
+          "line": 1045,
           "called": [
             "toNat"
           ]
@@ -19611,7 +19537,7 @@
         {
           "kind": "theorem",
           "name": "Priority.ofNat_toNat",
-          "line": 1147,
+          "line": 1047,
           "called": [
             "Priority"
           ]
@@ -19619,13 +19545,13 @@
         {
           "kind": "theorem",
           "name": "Priority.ofNat_injective",
-          "line": 1149,
+          "line": 1049,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "Priority.ext",
-          "line": 1152,
+          "line": 1052,
           "called": [
             "Priority"
           ]
@@ -19633,7 +19559,7 @@
         {
           "kind": "theorem",
           "name": "Deadline.toNat_ofNat",
-          "line": 1156,
+          "line": 1056,
           "called": [
             "toNat"
           ]
@@ -19641,7 +19567,7 @@
         {
           "kind": "theorem",
           "name": "Deadline.ofNat_toNat",
-          "line": 1158,
+          "line": 1058,
           "called": [
             "Deadline"
           ]
@@ -19649,13 +19575,13 @@
         {
           "kind": "theorem",
           "name": "Deadline.ofNat_injective",
-          "line": 1160,
+          "line": 1060,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "Deadline.ext",
-          "line": 1163,
+          "line": 1063,
           "called": [
             "Deadline"
           ]
@@ -19663,7 +19589,7 @@
         {
           "kind": "theorem",
           "name": "Irq.toNat_ofNat",
-          "line": 1167,
+          "line": 1067,
           "called": [
             "toNat"
           ]
@@ -19671,7 +19597,7 @@
         {
           "kind": "theorem",
           "name": "Irq.ofNat_toNat",
-          "line": 1169,
+          "line": 1069,
           "called": [
             "Irq"
           ]
@@ -19679,13 +19605,13 @@
         {
           "kind": "theorem",
           "name": "Irq.ofNat_injective",
-          "line": 1171,
+          "line": 1071,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "Irq.ext",
-          "line": 1174,
+          "line": 1074,
           "called": [
             "Irq"
           ]
@@ -19693,7 +19619,7 @@
         {
           "kind": "theorem",
           "name": "ServiceId.toNat_ofNat",
-          "line": 1178,
+          "line": 1078,
           "called": [
             "toNat"
           ]
@@ -19701,7 +19627,7 @@
         {
           "kind": "theorem",
           "name": "ServiceId.ofNat_toNat",
-          "line": 1180,
+          "line": 1080,
           "called": [
             "ServiceId"
           ]
@@ -19709,13 +19635,13 @@
         {
           "kind": "theorem",
           "name": "ServiceId.ofNat_injective",
-          "line": 1182,
+          "line": 1082,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ServiceId.ext",
-          "line": 1185,
+          "line": 1085,
           "called": [
             "ServiceId"
           ]
@@ -19723,7 +19649,7 @@
         {
           "kind": "theorem",
           "name": "CPtr.toNat_ofNat",
-          "line": 1189,
+          "line": 1089,
           "called": [
             "toNat"
           ]
@@ -19731,7 +19657,7 @@
         {
           "kind": "theorem",
           "name": "CPtr.ofNat_toNat",
-          "line": 1191,
+          "line": 1091,
           "called": [
             "CPtr"
           ]
@@ -19739,13 +19665,13 @@
         {
           "kind": "theorem",
           "name": "CPtr.ofNat_injective",
-          "line": 1193,
+          "line": 1093,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CPtr.ext",
-          "line": 1196,
+          "line": 1096,
           "called": [
             "CPtr"
           ]
@@ -19753,7 +19679,7 @@
         {
           "kind": "theorem",
           "name": "Slot.toNat_ofNat",
-          "line": 1200,
+          "line": 1100,
           "called": [
             "toNat"
           ]
@@ -19761,7 +19687,7 @@
         {
           "kind": "theorem",
           "name": "Slot.ofNat_toNat",
-          "line": 1202,
+          "line": 1102,
           "called": [
             "Slot"
           ]
@@ -19769,13 +19695,13 @@
         {
           "kind": "theorem",
           "name": "Slot.ofNat_injective",
-          "line": 1204,
+          "line": 1104,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "Slot.ext",
-          "line": 1207,
+          "line": 1107,
           "called": [
             "Slot"
           ]
@@ -19783,7 +19709,7 @@
         {
           "kind": "theorem",
           "name": "Badge.toNat_ofNat",
-          "line": 1211,
+          "line": 1111,
           "called": [
             "toNat"
           ]
@@ -19791,7 +19717,7 @@
         {
           "kind": "theorem",
           "name": "Badge.ofNat_toNat",
-          "line": 1213,
+          "line": 1113,
           "called": [
             "Badge"
           ]
@@ -19799,13 +19725,13 @@
         {
           "kind": "theorem",
           "name": "Badge.ofNat_injective",
-          "line": 1215,
+          "line": 1115,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "Badge.ext",
-          "line": 1218,
+          "line": 1118,
           "called": [
             "Badge"
           ]
@@ -19813,7 +19739,7 @@
         {
           "kind": "theorem",
           "name": "ASID.toNat_ofNat",
-          "line": 1222,
+          "line": 1122,
           "called": [
             "toNat"
           ]
@@ -19821,7 +19747,7 @@
         {
           "kind": "theorem",
           "name": "ASID.ofNat_toNat",
-          "line": 1224,
+          "line": 1124,
           "called": [
             "ASID"
           ]
@@ -19829,13 +19755,13 @@
         {
           "kind": "theorem",
           "name": "ASID.ofNat_injective",
-          "line": 1226,
+          "line": 1126,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ASID.ext",
-          "line": 1229,
+          "line": 1129,
           "called": [
             "ASID"
           ]
@@ -19843,7 +19769,7 @@
         {
           "kind": "theorem",
           "name": "VAddr.toNat_ofNat",
-          "line": 1233,
+          "line": 1133,
           "called": [
             "toNat"
           ]
@@ -19851,7 +19777,7 @@
         {
           "kind": "theorem",
           "name": "VAddr.ofNat_toNat",
-          "line": 1235,
+          "line": 1135,
           "called": [
             "VAddr"
           ]
@@ -19859,13 +19785,13 @@
         {
           "kind": "theorem",
           "name": "VAddr.ofNat_injective",
-          "line": 1237,
+          "line": 1137,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "VAddr.ext",
-          "line": 1240,
+          "line": 1140,
           "called": [
             "VAddr"
           ]
@@ -19873,7 +19799,7 @@
         {
           "kind": "theorem",
           "name": "PAddr.toNat_ofNat",
-          "line": 1244,
+          "line": 1144,
           "called": [
             "toNat"
           ]
@@ -19881,7 +19807,7 @@
         {
           "kind": "theorem",
           "name": "PAddr.ofNat_toNat",
-          "line": 1246,
+          "line": 1146,
           "called": [
             "PAddr"
           ]
@@ -19889,13 +19815,13 @@
         {
           "kind": "theorem",
           "name": "PAddr.ofNat_injective",
-          "line": 1248,
+          "line": 1148,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "PAddr.ext",
-          "line": 1251,
+          "line": 1151,
           "called": [
             "PAddr"
           ]
@@ -19903,7 +19829,7 @@
         {
           "kind": "def",
           "name": "ThreadId.valid",
-          "line": 1259,
+          "line": 1159,
           "called": [
             "ThreadId"
           ]
@@ -19911,7 +19837,7 @@
         {
           "kind": "theorem",
           "name": "ThreadId.valid_iff_not_reserved",
-          "line": 1262,
+          "line": 1162,
           "called": [
             "ThreadId",
             "ThreadId.valid"
@@ -19920,7 +19846,7 @@
         {
           "kind": "theorem",
           "name": "ThreadId.sentinel_not_valid",
-          "line": 1267,
+          "line": 1167,
           "called": [
             "ThreadId.valid"
           ]
@@ -19928,7 +19854,7 @@
         {
           "kind": "def",
           "name": "ServiceId.valid",
-          "line": 1271,
+          "line": 1171,
           "called": [
             "ServiceId"
           ]
@@ -19936,7 +19862,7 @@
         {
           "kind": "theorem",
           "name": "ServiceId.valid_iff_not_reserved",
-          "line": 1274,
+          "line": 1174,
           "called": [
             "ServiceId",
             "ServiceId.valid"
@@ -19945,7 +19871,7 @@
         {
           "kind": "theorem",
           "name": "ServiceId.sentinel_not_valid",
-          "line": 1279,
+          "line": 1179,
           "called": [
             "ServiceId.valid"
           ]
@@ -19953,7 +19879,7 @@
         {
           "kind": "def",
           "name": "CPtr.valid",
-          "line": 1283,
+          "line": 1183,
           "called": [
             "CPtr"
           ]
@@ -19961,7 +19887,7 @@
         {
           "kind": "theorem",
           "name": "CPtr.valid_iff_not_reserved",
-          "line": 1286,
+          "line": 1186,
           "called": [
             "CPtr",
             "CPtr.valid"
@@ -19970,7 +19896,7 @@
         {
           "kind": "theorem",
           "name": "CPtr.sentinel_not_valid",
-          "line": 1291,
+          "line": 1191,
           "called": [
             "CPtr.valid"
           ]
@@ -19978,7 +19904,7 @@
         {
           "kind": "theorem",
           "name": "ObjId.sentinel_not_valid",
-          "line": 1295,
+          "line": 1195,
           "called": []
         }
       ]

@@ -318,7 +318,7 @@ theorem endpointQueuePopHead_preserves_objects_invExt
             have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
             cases hNext : tcb.queueNext with
             | none =>
-              simp only [hNext]
+              simp only []
               cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
               | error e => simp
               | ok st3 =>
@@ -326,11 +326,11 @@ theorem endpointQueuePopHead_preserves_objects_invExt
                 intro ⟨_, _, rfl⟩
                 exact storeTcbQueueLinks_preserves_objects_invExt _ _ headTid _ _ _ hInv1 hFinal
             | some nextTid =>
-              simp only [hNext]
+              simp only []
               cases hLookupNext : lookupTcb pair.2 nextTid with
-              | none => simp [hLookupNext]
+              | none => simp
               | some nextTcb =>
-                simp only [hLookupNext]
+                simp only []
                 cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
                 | error e => simp
                 | ok st2 =>

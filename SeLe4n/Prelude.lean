@@ -699,109 +699,9 @@ instance : LawfulBEq PAddr where
   rfl := beq_self_eq_true _
 
 -- ============================================================================
--- WS-G2: HashMap/HashSet bridge lemmas for proof ergonomics
+-- WS-G2: HashSet bridge lemmas for algorithm-local proof ergonomics
+-- (HashMap lemmas removed in Q2 — all state maps now use RHTable/KMap)
 -- ============================================================================
-
-/-- WS-G2: Bridge lemma for `HashMap.get?` after `insert`. Maps to the underlying
-    `DHashMap.Const.get?_insert` for types with `EquivBEq` and `LawfulHashable`. -/
-theorem HashMap_get?_insert {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} {v : β} :
-    (m.insert k v).get? a = if k == a then some v else m.get? a :=
-  Std.DHashMap.Const.get?_insert
-
-/-- WS-G2: Bridge lemma for `HashMap.get?` on empty. -/
-theorem HashMap_get?_empty {α β : Type} [BEq α] [Hashable α]
-    {a : α} : (∅ : Std.HashMap α β).get? a = none :=
-  Std.DHashMap.Const.get?_empty
-
-/-- WS-G2: Bridge lemma for `HashMap.get?` after `erase`. -/
-theorem HashMap_get?_erase {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} :
-    (m.erase k).get? a = if k == a then none else m.get? a :=
-  Std.DHashMap.Const.get?_erase
-
-/-- WS-G2: Bridge lemma for `HashMap[k]?` after `insert` (getElem? notation).
-    Matches goals where `simp` has normalized `.get?` to `[k]?`. -/
-theorem HashMap_getElem?_insert {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} {v : β} :
-    (m.insert k v)[a]? = if k == a then some v else m[a]? :=
-  Std.HashMap.getElem?_insert
-
-/-- WS-G2: Bridge lemma for `HashMap[k]?` on empty (getElem? notation). -/
-theorem HashMap_getElem?_empty {α β : Type} [BEq α] [Hashable α]
-    {a : α} : (∅ : Std.HashMap α β)[a]? = none :=
-  Std.HashMap.getElem?_empty
-
-/-- WS-G2: Bridge lemma for `HashMap[k]?` after `erase` (getElem? notation). -/
-theorem HashMap_getElem?_erase {α β : Type} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    {m : Std.HashMap α β} {k a : α} :
-    (m.erase k)[a]? = if k == a then none else m[a]? :=
-  Std.HashMap.getElem?_erase
-
-/-- WS-G2: Equate `HashMap[k]?` (getElem?) and `.get?` — use explicitly, not
-    as `@[simp]` (conflicts with `Std.HashMap.get?_eq_getElem?`). -/
-theorem HashMap_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α]
-    (m : Std.HashMap α β) (k : α) : m[k]? = m.get? k := rfl
-
-/-- WS-G2: Equate `.get?` and `HashMap[k]?` — use explicitly in rewrites. -/
-theorem HashMap_get?_eq_getElem? {α β : Type} [BEq α] [Hashable α]
-    (m : Std.HashMap α β) (k : α) : m.get? k = m[k]? := rfl
-
-/-- WS-G5: Bridge lemma for `HashMap.filter` key preservation.
-When the filter predicate `f` is guaranteed to return `true` for key `k`
-(and any BEq-equivalent key), `filter` does not remove `k`'s entry.
-
-This bridges over the dependent `Option.pfilter` that `Std.HashMap.getElem?_filter`
-produces, which is difficult to work with directly due to the membership proof
-in `getKey`. -/
-theorem HashMap_filter_preserves_key
-    {α β : Type _} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    (m : Std.HashMap α β) (f : α → β → Bool) (k : α)
-    (hTrue : ∀ (k' : α) (v : β), (k' == k) = true → f k' v = true) :
-    (m.filter f)[k]? = m[k]? := by
-  simp only [Std.HashMap.getElem?_filter]
-  suffices h : ∀ (o : Option β) (p : (a : β) → o = some a → Bool),
-      (∀ a (h : o = some a), p a h = true) → o.pfilter p = o by
-    apply h
-    intro a ha
-    have hMem : k ∈ m := Std.HashMap.mem_iff_isSome_getElem?.mpr (by simp [ha])
-    exact hTrue _ _ (Std.HashMap.getKey_beq hMem)
-  intro o p hp
-  cases o with
-  | none => rfl
-  | some v => simp [hp]
-
-/-- WS-G5: Lookup-level filter idempotency for HashMap.
-For a predicate that ignores the key (depends only on the value),
-double-filtering is lookup-equivalent to single-filtering.
-
-This avoids the need for structural `HashMap.filter_filter` (which is
-unavailable in Lean 4.28.0's Std library due to `AssocList.filter`
-internal bucket-ordering differences). -/
-theorem HashMap_filter_filter_getElem?
-    {α β : Type _} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
-    (m : Std.HashMap α β) (f : α → β → Bool) (k : α) :
-    ((m.filter f).filter f)[k]? = (m.filter f)[k]? := by
-  by_cases hMem : k ∈ m.filter f
-  · -- k is in m.filter f; the value there already satisfies f,
-    -- so the second filter preserves the same entry.
-    have ⟨_, hF⟩ := Std.HashMap.mem_filter.mp hMem
-    have hMemFF : k ∈ (m.filter f).filter f := by
-      rw [Std.HashMap.mem_filter]
-      refine ⟨hMem, ?_⟩
-      rw [Std.HashMap.getKey_filter]
-      rw [Std.HashMap.getElem_filter]
-      exact hF
-    have h1 := Std.HashMap.getElem?_eq_some_getElem hMemFF
-    have h2 := Std.HashMap.getElem?_eq_some_getElem hMem
-    have h3 : ((m.filter f).filter f)[k] = (m.filter f)[k] :=
-      Std.HashMap.getElem_filter
-    rw [h1, h2, h3]
-  · -- k ∉ m.filter f ⇒ k ∉ (m.filter f).filter f ⇒ both sides are none
-    have hNotMemFF : k ∉ (m.filter f).filter f :=
-      fun h => hMem (Std.HashMap.mem_of_mem_filter h)
-    rw [Std.HashMap.getElem?_eq_none hNotMemFF,
-        Std.HashMap.getElem?_eq_none hMem]
 
 /-- WS-G2: Bridge lemma for `HashSet.contains` on empty. -/
 theorem HashSet_contains_empty {α : Type} [BEq α] [Hashable α]
@@ -888,8 +788,8 @@ theorem RHTable_get?_erase_ne {α β : Type} [BEq α] [Hashable α] [LawfulBEq �
   RHTable.getElem?_erase_ne t k k' hNe hExt hSize
 
 open SeLe4n.Kernel.RobinHood in
-/-- Q2-A: Combined insert lookup characterization (matches HashMap_getElem?_insert).
-    Drop-in replacement: `rw [HashMap_getElem?_insert]` → `rw [RHTable_getElem?_insert hInv]`. -/
+/-- Q2-A: Combined insert lookup characterization.
+    Provides `if k == a then some v else t.get? a` for insert lookups. -/
 theorem RHTable_getElem?_insert {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) (a : α) :
     (t.insert k v).get? a = if k == a then some v else t.get? a := by
@@ -901,8 +801,8 @@ theorem RHTable_getElem?_insert {α β : Type} [BEq α] [Hashable α] [LawfulBEq
     exact RHTable.getElem?_insert_ne t k a v h hExt
 
 open SeLe4n.Kernel.RobinHood in
-/-- Q2-A: Combined erase lookup characterization (matches HashMap_getElem?_erase).
-    Drop-in replacement: `rw [HashMap_getElem?_erase]` → `rw [RHTable_getElem?_erase hInv hSize]`. -/
+/-- Q2-A: Combined erase lookup characterization.
+    Provides `if k == a then none else t.get? a` for erase lookups. -/
 theorem RHTable_getElem?_erase {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (hExt : t.invExt) (hSize : t.size < t.capacity) (a : α) :
     (t.erase k).get? a = if k == a then none else t.get? a := by

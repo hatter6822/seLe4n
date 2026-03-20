@@ -78,9 +78,9 @@ theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :
 This intentionally models only one-level deterministic lookup semantics for WS-B1.
 Hierarchical page-table levels are deferred behind this stable executable surface.
 
-`mappings` is backed by `Std.HashMap VAddr (PAddr × PagePermissions)` for O(1)
-amortized lookup, insert, and erase. HashMap key uniqueness is structural,
-making `noVirtualOverlap` trivially true.
+`mappings` is backed by `RHTable VAddr (PAddr × PagePermissions)` for O(1)
+amortized lookup, insert, and erase. RHTable key uniqueness is structural
+(noDupKeys invariant), making `noVirtualOverlap` trivially true.
 
 WS-H11/H-02: Enriched with per-page permissions (read/write/execute/user/cacheable). -/
 structure VSpaceRoot where
@@ -327,7 +327,7 @@ mapping entries. The proof relies on HashMap key uniqueness: size equality +
 forward containment guarantees bidirectional equality.
 
 Note: The full `beq_correct` biconditional (`(a == b) = true ↔ a = b`) requires
-HashMap extensional equality axioms beyond Lean's Std.HashMap surface. We prove
+extensional equality axioms beyond the RHTable surface. We prove
 the forward (soundness) direction; the reverse follows from `BEq.refl` when the
 structures are definitionally equal. -/
 theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
@@ -1363,10 +1363,10 @@ def projectObservedEdges
 
 end CapDerivationTree
 
-/-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is now
-`Std.HashMap Slot Capability` which does not have a `DecidableEq` instance.
+/-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is
+`RHTable Slot Capability` which does not have a `DecidableEq` instance.
 `Repr` is retained for trace output. `BEq` is provided manually via entry-wise
-HashMap comparison for runtime test assertions. -/
+comparison for runtime test assertions. -/
 inductive KernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)

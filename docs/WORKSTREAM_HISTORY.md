@@ -91,7 +91,7 @@ modified, 10 atomic subphases. Key changes:
   `.fold` → `.toList.foldl` (universe constraint workaround)
 - **Test migration**: NegativeStateSuite, TraceSequenceProbe updated to use
   `RHTable`/`RHSet` constructors; all test suites pass
-- **Proof surface**: Zero sorry, 1,469 proved declarations, 168 build jobs
+- **Proof surface**: Zero sorry, 1,459 proved declarations, 168 build jobs
 
 ### WS-N workstream (Robin Hood hashing verified implementation)
 

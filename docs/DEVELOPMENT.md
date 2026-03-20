@@ -72,7 +72,7 @@ every `Std.HashMap` and `Std.HashSet` in kernel state (16 map fields + 2 set
 fields across 6 structures, 30+ files) with formally verified `RHTable`/`RHSet`.
 10 atomic subphases (Q2-A through Q2-J) including `RHSet` type definition,
 `allTablesInvExt` global invariant predicate, and `invExt` proof threading
-across all subsystem invariant files. Zero sorry/axiom, 1,469 proved
+across all subsystem invariant files. Zero sorry/axiom, 1,459 proved
 declarations, all tests pass.
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 

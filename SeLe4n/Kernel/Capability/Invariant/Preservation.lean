@@ -267,10 +267,10 @@ private theorem cspaceDeleteSlot_preserves_cdtNodeSlot
           unfold SystemState.detachSlotFromCdt
           cases hLookup : stRef.cdtSlotNode[addr]? with
           | none =>
-            simp only [hLookup]
+            simp only []
             exact ⟨hRefEqSt ▸ hNodeSlotInv, by rw [hRefEqSt]; exact hNodeSlotSize⟩
           | some origNode =>
-            simp only [hLookup]
+            simp only []
             have hInvRef : stRef.cdtNodeSlot.invExt := hRefEqSt ▸ hNodeSlotInv
             have hSzRef : stRef.cdtNodeSlot.size < stRef.cdtNodeSlot.capacity := by
               rw [hRefEqSt]; exact hNodeSlotSize
@@ -681,14 +681,14 @@ private theorem processRevokeNode_preserves_cdtNodeSlot
     (processRevokeNode st node).cdtNodeSlot.size < (processRevokeNode st node).cdtNodeSlot.capacity := by
   unfold processRevokeNode
   cases hSlot : SystemState.lookupCdtSlotOfNode st node with
-  | none => simp only [hSlot]; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
+  | none => simp only []; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
   | some descAddr =>
-    simp only [hSlot]
+    simp only []
     cases hDel : cspaceDeleteSlot descAddr st with
-    | error _ => simp only [hDel]; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
+    | error _ => simp only []; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
-      simp only [hDel]
+      simp only []
       have ⟨hInvDel, hSzDel⟩ := cspaceDeleteSlot_preserves_cdtNodeSlot st stDel descAddr
         hNodeSlotInv hNodeSlotSize hDel
       -- The result is { stDetached with cdt := ... } where stDetached = detachSlotFromCdt stDel descAddr
@@ -700,9 +700,9 @@ private theorem processRevokeNode_preserves_cdtNodeSlot
           (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.capacity := by
         unfold SystemState.detachSlotFromCdt
         cases hLookup : stDel.cdtSlotNode[descAddr]? with
-        | none => simp only [hLookup]; exact ⟨hInvDel, hSzDel⟩
+        | none => simp only []; exact ⟨hInvDel, hSzDel⟩
         | some origNode =>
-          simp only [hLookup]
+          simp only []
           exact ⟨stDel.cdtNodeSlot.erase_preserves_invExt origNode hInvDel hSzDel,
                  SeLe4n.Kernel.RobinHood.RHTable.erase_size_lt_capacity stDel.cdtNodeSlot origNode hSzDel⟩
       exact hDetachNS
@@ -1018,9 +1018,9 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
                   (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.capacity := by
                 unfold SystemState.detachSlotFromCdt
                 cases hL : stDel.cdtSlotNode[descAddr]? with
-                | none => simp only [hL]; exact ⟨hNSInvDel, hNSSzDel⟩
+                | none => simp only []; exact ⟨hNSInvDel, hNSSzDel⟩
                 | some origNode =>
-                  simp only [hL]
+                  simp only []
                   exact ⟨stDel.cdtNodeSlot.erase_preserves_invExt origNode hNSInvDel hNSSzDel,
                          SeLe4n.Kernel.RobinHood.RHTable.erase_size_lt_capacity stDel.cdtNodeSlot origNode hNSSzDel⟩
               exact ih _ _ (capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
