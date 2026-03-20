@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Service.Registry
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.RobinHood
 
 /-- Every registered service's endpoint targets an existing kernel object. -/
 def registryEndpointValid (st : SystemState) : Prop :=
@@ -36,11 +37,15 @@ theorem default_registryInvariant :
     registryInvariant (default : SystemState) := by
   constructor
   · intro sid reg h
-    have : (default : SystemState).serviceRegistry = {} := rfl
-    rw [this] at h; simp at h
+    simp only [RHTable_getElem?_eq_get?] at h
+    have : (default : SystemState).serviceRegistry.get? sid = none :=
+      RHTable.getElem?_empty 16 (by omega) sid
+    simp [this] at h
   · intro sid reg h
-    have : (default : SystemState).serviceRegistry = {} := rfl
-    rw [this] at h; simp at h
+    simp only [RHTable_getElem?_eq_get?] at h
+    have : (default : SystemState).serviceRegistry.get? sid = none :=
+      RHTable.getElem?_empty 16 (by omega) sid
+    simp [this] at h
 
 -- ============================================================================
 -- registerInterface
@@ -68,7 +73,8 @@ theorem registerInterface_preserves_registryEndpointValid
 theorem registerInterface_preserves_registryInterfaceValid
     (st st' : SystemState) (spec : InterfaceSpec)
     (hStep : registerInterface spec st = .ok ((), st'))
-    (hInv : registryInterfaceValid st) :
+    (hInv : registryInterfaceValid st)
+    (hIfaceInv : st.interfaceRegistry.invExt) :
     registryInterfaceValid st' := by
   unfold registerInterface at hStep
   split at hStep
@@ -80,7 +86,8 @@ theorem registerInterface_preserves_registryInterfaceValid
     have ⟨specOld, hSpec⟩ := hInv sid reg hReg
     refine ⟨?_, ?_⟩
     · exact if h : spec.ifaceId == reg.iface.ifaceId then spec else specOld
-    · simp only [Std.HashMap.getElem?_insert]
+    · simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable_getElem?_insert st.interfaceRegistry spec.ifaceId spec hIfaceInv]
       split
       · rfl
       · exact hSpec
@@ -92,7 +99,8 @@ theorem registerInterface_preserves_registryInterfaceValid
 theorem registerService_preserves_registryEndpointValid
     (st st' : SystemState) (newReg : ServiceRegistration)
     (hStep : registerService newReg st = .ok ((), st'))
-    (hInv : registryEndpointValid st) :
+    (hInv : registryEndpointValid st)
+    (hSvcInv : st.serviceRegistry.invExt) :
     registryEndpointValid st' := by
   have hObjEq := registerService_preserves_objects st st' newReg hStep
   unfold registerService at hStep
@@ -108,19 +116,21 @@ theorem registerService_preserves_registryEndpointValid
         · rename_i hEpExists
           simp at hStep; subst st'
           intro sid reg hReg
-          simp only [Std.HashMap.getElem?_insert] at hReg
+          simp only [RHTable_getElem?_eq_get?] at hReg
+          rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
           split at hReg
           · cases hReg
             refine ⟨epId, hTarget, ?_⟩
             rwa [← hObjEq]
-          · exact hObjEq ▸ hInv sid reg hReg
+          · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
 theorem registerService_preserves_registryInterfaceValid
     (st st' : SystemState) (newReg : ServiceRegistration)
     (hStep : registerService newReg st = .ok ((), st'))
-    (hInv : registryInterfaceValid st) :
+    (hInv : registryInterfaceValid st)
+    (hSvcInv : st.serviceRegistry.invExt) :
     registryInterfaceValid st' := by
   unfold registerService at hStep
   split at hStep
@@ -137,7 +147,8 @@ theorem registerService_preserves_registryInterfaceValid
         · simp at hStep; subst st'
           -- interfaceRegistry unchanged, serviceRegistry has insert
           intro sid reg hReg
-          simp only [Std.HashMap.getElem?_insert] at hReg
+          simp only [RHTable_getElem?_eq_get?] at hReg
+          rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
           split at hReg
           · cases hReg
             -- reg = newReg, interfaceRegistry unchanged in st'
@@ -147,7 +158,7 @@ theorem registerService_preserves_registryInterfaceValid
             cases hIface : st.interfaceRegistry[newReg.iface.ifaceId]? with
             | none => exact absurd hIface hHasIface
             | some s => exact ⟨s, rfl⟩
-          · exact hInv sid reg hReg
+          · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -158,7 +169,9 @@ theorem registerService_preserves_registryInterfaceValid
 theorem revokeService_preserves_registryEndpointValid
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st'))
-    (hInv : registryEndpointValid st) :
+    (hInv : registryEndpointValid st)
+    (hSvcInv : st.serviceRegistry.invExt)
+    (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) :
     registryEndpointValid st' := by
   have hObjEq := revokeService_preserves_objects st st' sid hStep
   unfold revokeService at hStep
@@ -168,16 +181,19 @@ theorem revokeService_preserves_registryEndpointValid
     intro sid' reg hReg
     -- serviceRegistry.erase sid, need sid' ≠ sid
     have hOrig : st.serviceRegistry[sid']? = some reg := by
-      simp only [Std.HashMap.getElem?_erase] at hReg
+      simp only [RHTable_getElem?_eq_get?] at hReg
+      rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg
       split at hReg
       · simp at hReg
-      · exact hReg
+      · simp only [RHTable_getElem?_eq_get?]; exact hReg
     exact hObjEq ▸ hInv sid' reg hOrig
 
 theorem revokeService_preserves_registryInterfaceValid
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st'))
-    (hInv : registryInterfaceValid st) :
+    (hInv : registryInterfaceValid st)
+    (hSvcInv : st.serviceRegistry.invExt)
+    (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) :
     registryInterfaceValid st' := by
   unfold revokeService at hStep
   split at hStep
@@ -185,10 +201,11 @@ theorem revokeService_preserves_registryInterfaceValid
   · simp at hStep; subst st'
     intro sid' reg hReg
     have hOrig : st.serviceRegistry[sid']? = some reg := by
-      simp only [Std.HashMap.getElem?_erase] at hReg
+      simp only [RHTable_getElem?_eq_get?] at hReg
+      rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg
       split at hReg
       · simp at hReg
-      · exact hReg
+      · simp only [RHTable_getElem?_eq_get?]; exact hReg
     exact hInv sid' reg hOrig
 
 -- ============================================================================
@@ -198,22 +215,26 @@ theorem revokeService_preserves_registryInterfaceValid
 theorem registerInterface_preserves_registryInvariant
     (st st' : SystemState) (spec : InterfaceSpec)
     (hStep : registerInterface spec st = .ok ((), st'))
-    (hInv : registryInvariant st) : registryInvariant st' :=
+    (hInv : registryInvariant st)
+    (hIfaceInv : st.interfaceRegistry.invExt) : registryInvariant st' :=
   ⟨registerInterface_preserves_registryEndpointValid st st' spec hStep hInv.1,
-   registerInterface_preserves_registryInterfaceValid st st' spec hStep hInv.2⟩
+   registerInterface_preserves_registryInterfaceValid st st' spec hStep hInv.2 hIfaceInv⟩
 
 theorem registerService_preserves_registryInvariant
     (st st' : SystemState) (newReg : ServiceRegistration)
     (hStep : registerService newReg st = .ok ((), st'))
-    (hInv : registryInvariant st) : registryInvariant st' :=
-  ⟨registerService_preserves_registryEndpointValid st st' newReg hStep hInv.1,
-   registerService_preserves_registryInterfaceValid st st' newReg hStep hInv.2⟩
+    (hInv : registryInvariant st)
+    (hSvcInv : st.serviceRegistry.invExt) : registryInvariant st' :=
+  ⟨registerService_preserves_registryEndpointValid st st' newReg hStep hInv.1 hSvcInv,
+   registerService_preserves_registryInterfaceValid st st' newReg hStep hInv.2 hSvcInv⟩
 
 theorem revokeService_preserves_registryInvariant
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st'))
-    (hInv : registryInvariant st) : registryInvariant st' :=
-  ⟨revokeService_preserves_registryEndpointValid st st' sid hStep hInv.1,
-   revokeService_preserves_registryInterfaceValid st st' sid hStep hInv.2⟩
+    (hInv : registryInvariant st)
+    (hSvcInv : st.serviceRegistry.invExt)
+    (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) : registryInvariant st' :=
+  ⟨revokeService_preserves_registryEndpointValid st st' sid hStep hInv.1 hSvcInv hSize,
+   revokeService_preserves_registryInterfaceValid st st' sid hStep hInv.2 hSvcInv hSize⟩
 
 end SeLe4n.Kernel

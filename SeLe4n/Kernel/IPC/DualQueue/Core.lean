@@ -41,6 +41,7 @@ theorem storeTcbQueueLinks_preserves_objects_ne
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     st'.objects[oid]? = st.objects[oid]? := by
   unfold storeTcbQueueLinks at hStep
@@ -53,7 +54,7 @@ theorem storeTcbQueueLinks_preserves_objects_ne
     | ok pair =>
       simp only [hStore] at hStep
       have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
-      exact storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hStore
+      exact storeObject_objects_ne' st tid.toObjId oid _ pair hNe hObjInv hStore
 
 /-- WS-F1: storeTcbQueueLinks does not modify the scheduler. -/
 theorem storeTcbQueueLinks_scheduler_eq
@@ -78,6 +79,7 @@ theorem storeTcbQueueLinks_endpoint_backward
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
@@ -92,14 +94,15 @@ theorem storeTcbQueueLinks_endpoint_backward
       | ok pair =>
         simp only [hStore] at hStep
         have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hEp; cases hEp
-  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep] at hEp; exact hEp
+        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hEp; cases hEp
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep] at hEp; exact hEp
 
 /-- WS-F1: storeTcbQueueLinks backward notification preservation. -/
 theorem storeTcbQueueLinks_notification_backward
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
@@ -114,8 +117,8 @@ theorem storeTcbQueueLinks_notification_backward
       | ok pair =>
         simp only [hStore] at hStep
         have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hNtfn; cases hNtfn
-  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep] at hNtfn; exact hNtfn
+        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep] at hNtfn; exact hNtfn
 
 /-- WS-F1: For any TCB in the post-storeTcbQueueLinks state, a TCB with the same
 ipcState exists in the pre-state. At non-target ObjIds the TCB is identical;
@@ -123,6 +126,7 @@ at the target, only queue link fields change. -/
 theorem storeTcbQueueLinks_tcb_ipcState_backward
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
@@ -139,12 +143,11 @@ theorem storeTcbQueueLinks_tcb_ipcState_backward
       | ok pair =>
         simp only [hStore] at hStep
         have := Except.ok.inj hStep; subst this
-        rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hTcb'
+        rw [hEq, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
         simp at hTcb'; subst hTcb'
-        -- (tcbWithQueueLinks origTcb ...).ipcState = origTcb.ipcState by defn
         exact ⟨origTcb, hEq ▸ lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
   · -- Non-target: object unchanged
-    rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next anyTid.toObjId hEq hStep] at hTcb'
+    rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next anyTid.toObjId hEq hObjInv hStep] at hTcb'
     exact ⟨tcb', hTcb', rfl⟩
 
 /-- WS-F1: storeTcbQueueLinks forward-preserves TCB existence. If a TCB exists
@@ -153,6 +156,7 @@ theorem storeTcbQueueLinks_tcb_forward
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (oid : SeLe4n.ObjId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
@@ -166,8 +170,8 @@ theorem storeTcbQueueLinks_tcb_forward
       | error e => simp [hStore] at hStep
       | ok pair =>
         simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
-        exact ⟨_, storeObject_objects_eq st pair.2 tid.toObjId _ hStore⟩
-  · exact ⟨tcb, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep]; exact hTcb⟩
+        exact ⟨_, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore⟩
+  · exact ⟨tcb, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep]; exact hTcb⟩
 
 /-- WS-L3/L3-C: storeTcbQueueLinks forward-preserves endpoint existence.
 An endpoint at any ObjId in the pre-state survives storeTcbQueueLinks. -/
@@ -175,17 +179,36 @@ theorem storeTcbQueueLinks_endpoint_forward
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
     (hEp : st.objects[oid]? = some (.endpoint ep)) :
     ∃ ep', st'.objects[oid]? = some (.endpoint ep') := by
   by_cases hEq : oid = tid.toObjId
-  · -- If oid = tid.toObjId, then st.objects[oid]? is both endpoint and TCB — contradiction
-    subst hEq; unfold storeTcbQueueLinks at hStep
+  · subst hEq; unfold storeTcbQueueLinks at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep
     | some tcb =>
       rw [lookupTcb_some_objects st tid tcb hLookup] at hEp; cases hEp
-  · exact ⟨ep, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hStep]; exact hEp⟩
+  · exact ⟨ep, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep]; exact hEp⟩
+
+/-- storeTcbQueueLinks preserves objects.invExt. -/
+theorem storeTcbQueueLinks_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    st'.objects.invExt := by
+  unfold storeTcbQueueLinks at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
+      exact storeObject_preserves_objects_invExt' st tid.toObjId _ pair hObjInv hStore
 
 -- WS-L1/L1-A: Return type includes pre-dequeue TCB. Non-queue fields
 -- (ipcState, pendingMessage, priority, domain) are accurate; queue link
@@ -265,4 +288,108 @@ def endpointQueueEnqueue
                         | .ok st2 => storeTcbQueueLinks st2 tid (some tailTid) (some (.tcbNext tailTid)) none
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
+
+/-- endpointQueuePopHead preserves objects.invExt. -/
+theorem endpointQueuePopHead_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    st'.objects.invExt := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only [hNext]
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact storeTcbQueueLinks_preserves_objects_invExt _ _ headTid _ _ _ hInv1 hFinal
+            | some nextTid =>
+              simp only [hNext]
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp [hLookupNext]
+              | some nextTcb =>
+                simp only [hLookupNext]
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact storeTcbQueueLinks_preserves_objects_invExt _ _ headTid _ _ _ hInv2 hFinal
+
+/-- endpointQueueEnqueue preserves objects.invExt. -/
+theorem endpointQueueEnqueue_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    st'.objects.invExt := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                intro hStep
+                exact storeTcbQueueLinks_preserves_objects_invExt _ _ tid _ _ _ hInv1 hStep
+            | some tailTid =>
+              cases hLookupT : lookupTcb st tailTid
+              · simp [hLookupT]
+              · rename_i tailTcb
+                simp only [hLookupT]
+                cases hStore : storeObject endpointId _ st
+                · simp
+                · rename_i pair
+                  simp only []
+                  have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid _ _ (some tid)
+                  · simp
+                  · rename_i st2
+                    simp only []
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                    intro hStep
+                    exact storeTcbQueueLinks_preserves_objects_invExt _ _ tid _ _ _ hInv2 hStep
 

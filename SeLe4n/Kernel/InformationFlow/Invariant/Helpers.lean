@@ -81,6 +81,8 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hTargetHigh : objectObservable ctx observer targetId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStore₁ : storeObject targetId obj₁ s₁ = .ok ((), s₁'))
     (hStore₂ : storeObject targetId obj₂ s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -104,9 +106,9 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     · by_cases hEq : oid = targetId
       · subst hEq; simp [hTargetHigh] at hObs
       · have hObj₁ : s₁'.objects[oid]? = s₁.objects[oid]? :=
-          storeObject_objects_ne s₁ s₁' targetId oid obj₁ hEq hStore₁
+          storeObject_objects_ne s₁ s₁' targetId oid obj₁ hEq hObjInv₁ hStore₁
         have hObj₂ : s₂'.objects[oid]? = s₂.objects[oid]? :=
-          storeObject_objects_ne s₂ s₂' targetId oid obj₂ hEq hStore₂
+          storeObject_objects_ne s₂ s₂' targetId oid obj₂ hEq hObjInv₂ hStore₂
         have hObjBase : (s₁.objects[oid]?).map (projectKernelObject ctx observer) =
             (s₂.objects[oid]?).map (projectKernelObject ctx observer) := by
           have hBase := congrFun hObjLow oid
@@ -301,6 +303,7 @@ private theorem storeTcbIpcState_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold storeTcbIpcState at hStep
@@ -322,7 +325,7 @@ private theorem storeTcbIpcState_preserves_projection
           by_cases hEq : oid = tid.toObjId
           · subst hEq; simp [hTidObjHigh] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
-              (storeObject_objects_ne st pair.2 tid.toObjId oid _ hEq hStore)
+              (storeObject_objects_ne st pair.2 tid.toObjId oid _ hEq hObjInv hStore)
         · simp [projectObjects, hObs]
       · -- projectRunnable: scheduler preserved by storeObject
         simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
@@ -351,6 +354,7 @@ private theorem storeTcbPendingMessage_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbPendingMessage st tid msg = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold storeTcbPendingMessage at hStep
@@ -368,7 +372,7 @@ private theorem storeTcbPendingMessage_preserves_projection
           by_cases hEq : oid = tid.toObjId
           · subst hEq; simp [hTidObjHigh] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
-              (storeObject_objects_ne st pair.2 tid.toObjId oid _ hEq hStore)
+              (storeObject_objects_ne st pair.2 tid.toObjId oid _ hEq hObjInv hStore)
         · simp [projectObjects, hObs]
       · simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
@@ -388,6 +392,7 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold storeTcbIpcStateAndMessage at hStep
@@ -406,7 +411,7 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
           by_cases hEq : oid = tid.toObjId
           · subst hEq; simp [hTidObjHigh] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
-              (storeObject_objects_ne st pair.2 tid.toObjId oid _ hEq hStore)
+              (storeObject_objects_ne st pair.2 tid.toObjId oid _ hEq hObjInv hStore)
         · simp [projectObjects, hObs]
       · simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
@@ -425,6 +430,7 @@ theorem storeObject_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hOidHigh : objectObservable ctx observer oid = false)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [projectState]; congr 1
@@ -434,7 +440,7 @@ theorem storeObject_preserves_projection
       by_cases hEq : o = oid
       · subst hEq; simp [hOidHigh] at hObs
       · exact congrArg (Option.map (projectKernelObject ctx observer))
-          (storeObject_objects_ne st st' oid o obj hEq hStore)
+          (storeObject_objects_ne st st' oid o obj hEq hObjInv hStore)
     · simp [projectObjects, hObs]
   · simp [projectRunnable, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectCurrent, storeObject_scheduler_eq st st' oid obj hStore]
@@ -484,12 +490,14 @@ theorem cspaceMint_preserves_lowEquivalent
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hSlotUniq₁ : cspaceSlotUnique s₁)
     (hSlotUniq₂ : cspaceSlotUnique s₂)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceMint src dst rights badge s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceMint src dst rights badge s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  rcases cspaceMint_child_attenuates s₁ s₁' src dst rights badge hSlotUniq₁ hStep₁ with
+  rcases cspaceMint_child_attenuates s₁ s₁' src dst rights badge hSlotUniq₁ hObjInv₁ hStep₁ with
     ⟨parent₁, child₁, hLookup₁, _, _⟩
-  rcases cspaceMint_child_attenuates s₂ s₂' src dst rights badge hSlotUniq₂ hStep₂ with
+  rcases cspaceMint_child_attenuates s₂ s₂' src dst rights badge hSlotUniq₂ hObjInv₂ hStep₂ with
     ⟨parent₂, child₂, hLookup₂, _, _⟩
   unfold cspaceMint at hStep₁ hStep₂
   rw [hLookup₁] at hStep₁; rw [hLookup₂] at hStep₂
@@ -513,8 +521,8 @@ theorem cspaceMint_preserves_lowEquivalent
       · funext oid
         by_cases hObs : objectObservable ctx observer oid
         · have hNeDst : oid ≠ dst.cnode := by intro hEq; subst hEq; simp [hDstHigh] at hObs
-          have hObj₁ := cspaceInsertSlot_preserves_objects_ne s₁ s₁' dst c₁ oid hNeDst hInsert₁
-          have hObj₂ := cspaceInsertSlot_preserves_objects_ne s₂ s₂' dst c₂ oid hNeDst hInsert₂
+          have hObj₁ := cspaceInsertSlot_preserves_objects_ne s₁ s₁' dst c₁ oid hNeDst hObjInv₁ hInsert₁
+          have hObj₂ := cspaceInsertSlot_preserves_objects_ne s₂ s₂' dst c₂ oid hNeDst hObjInv₂ hInsert₂
           simp only [projectObjects, hObs, ite_true]
           rw [hObj₁, hObj₂]
           have hBase := congrFun hObjLow oid
@@ -564,6 +572,8 @@ theorem cspaceRevoke_preserves_lowEquivalent
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hCNodeHigh : objectObservable ctx observer addr.cnode = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceRevoke addr s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceRevoke addr s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -609,7 +619,9 @@ theorem cspaceRevoke_preserves_lowEquivalent
                     congrFun hObjLow oid
                   simp [projectObjects, hObs] at hBase ⊢
                   rw [revokeAndClearRefsState_preserves_objects, revokeAndClearRefsState_preserves_objects]
-                  simp [HashMap_getElem?_insert, Ne.symm hNe]
+                  simp only [RHTable_getElem?_eq_get?]
+                  rw [RHTable_getElem?_insert _ _ _ hObjInv₁, RHTable_getElem?_insert _ _ _ hObjInv₂]
+                  simp [Ne.symm hNe]
                   exact hBase
                 · simp [projectObjects, hObs]
               · simp only [projectRunnable]
@@ -673,6 +685,8 @@ theorem lifecycleRetypeObject_preserves_lowEquivalent
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hTargetHigh : objectObservable ctx observer target = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : lifecycleRetypeObject authority target newObj s₁ = .ok ((), s₁'))
     (hStep₂ : lifecycleRetypeObject authority target newObj s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -681,7 +695,7 @@ theorem lifecycleRetypeObject_preserves_lowEquivalent
   rcases lifecycleRetypeObject_ok_as_storeObject s₂ s₂' authority target newObj hStep₂ with
     ⟨_, _, _, _, _, _, hStore₂⟩
   exact storeObject_at_unobservable_preserves_lowEquivalent
-    ctx observer target newObj newObj s₁ s₂ s₁' s₂' hLow hTargetHigh hStore₁ hStore₂
+    ctx observer target newObj newObj s₁ s₂ s₁' s₂' hLow hTargetHigh hObjInv₁ hObjInv₂ hStore₁ hStore₂
 
 -- ============================================================================
 -- WS-F3/F-21: notificationSignal non-interference
@@ -698,6 +712,7 @@ theorem notificationSignal_projection_preserved
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+    (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold notificationSignal at hStep
@@ -712,7 +727,7 @@ theorem notificationSignal_projection_preserved
       | nil =>
         -- No waiters: just storeObject on notification
         simp [hWaiters] at hStep
-        exact storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hStep
+        exact storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hObjInv hStep
       | cons waiter rest =>
         simp [hWaiters] at hStep
         -- Waiter path: storeObject + storeTcbIpcState + ensureRunnable
@@ -727,9 +742,10 @@ theorem notificationSignal_projection_preserved
           | error e => simp
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+            have hObjInvMid := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
             rw [ensureRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
-                storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hTcb,
-                storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hStore]
+                storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hObjInvMid hTcb,
+                storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
 /-- WS-F3/F-21: notificationSignal preserves low-equivalence. -/
 theorem notificationSignal_preserves_lowEquivalent
@@ -745,6 +761,8 @@ theorem notificationSignal_preserves_lowEquivalent
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
     (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationSignal notificationId badge s₁ = .ok ((), s₁'))
     (hStep₂ : notificationSignal notificationId badge s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -752,9 +770,9 @@ theorem notificationSignal_preserves_lowEquivalent
     suffices h₂ : projectState ctx observer s₂' = projectState ctx observer s₂ by
       unfold lowEquivalent; rw [h₁, h₂]; exact hLow
     exact notificationSignal_projection_preserved ctx observer notificationId badge s₂ s₂'
-      hNtfnHigh hCoherent hWaiterDomain₂ hStep₂
+      hNtfnHigh hCoherent hWaiterDomain₂ hObjInv₂ hStep₂
   exact notificationSignal_projection_preserved ctx observer notificationId badge s₁ s₁'
-    hNtfnHigh hCoherent hWaiterDomain₁ hStep₁
+    hNtfnHigh hCoherent hWaiterDomain₁ hObjInv₁ hStep₁
 
 -- ============================================================================
 -- WS-F3/F-21: notificationWait non-interference
@@ -769,6 +787,7 @@ theorem notificationWait_projection_preserved
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
     (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold notificationWait at hStep
@@ -791,8 +810,9 @@ theorem notificationWait_projection_preserved
           | error e => simp
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-            rw [storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hTcb,
-                storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hStore]
+            have hObjInvMid := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+            rw [storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hObjInvMid hTcb,
+                storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
       | none =>
         -- WS-G7: Block path: lookupTcb → ipcState check → storeObject + storeTcbIpcState + removeRunnable
         simp [hBadge] at hStep
@@ -808,15 +828,16 @@ theorem notificationWait_projection_preserved
             | error e => simp
             | ok pair =>
               simp only []
-              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hStore
+              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
               simp only [storeTcbIpcState_fromTcb_eq hLk']
               cases hTcb : storeTcbIpcState pair.2 waiter _ with
               | error e => simp
               | ok st2 =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+                have hObjInvMid := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
                 rw [removeRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
-                    storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hTcb,
-                    storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hStore]
+                    storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hObjInvMid hTcb,
+                    storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
 /-- WS-F3/F-21: notificationWait preserves low-equivalence. -/
 theorem notificationWait_preserves_lowEquivalent
@@ -828,6 +849,8 @@ theorem notificationWait_preserves_lowEquivalent
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
     (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationWait notificationId waiter s₁ = .ok (result₁, s₁'))
     (hStep₂ : notificationWait notificationId waiter s₂ = .ok (result₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -835,9 +858,9 @@ theorem notificationWait_preserves_lowEquivalent
     suffices h₂ : projectState ctx observer s₂' = projectState ctx observer s₂ by
       unfold lowEquivalent; rw [h₁, h₂]; exact hLow
     exact notificationWait_projection_preserved ctx observer notificationId waiter result₂ s₂ s₂'
-      hNtfnHigh hWaiterHigh hWaiterObjHigh hStep₂
+      hNtfnHigh hWaiterHigh hWaiterObjHigh hObjInv₂ hStep₂
   exact notificationWait_projection_preserved ctx observer notificationId waiter result₁ s₁ s₁'
-    hNtfnHigh hWaiterHigh hWaiterObjHigh hStep₁
+    hNtfnHigh hWaiterHigh hWaiterObjHigh hObjInv₁ hStep₁
 
 -- ============================================================================
 -- WS-F3/CRIT-03: Additional NI theorems for API coverage
@@ -850,6 +873,8 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceInsertSlot dst cap s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceInsertSlot dst cap s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -862,8 +887,8 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
     by_cases hObs : objectObservable ctx observer oid
     · have hNe : oid ≠ dst.cnode := by intro hEq; subst hEq; simp [hDstHigh] at hObs
       simp only [projectObjects, hObs, ite_true]
-      rw [cspaceInsertSlot_preserves_objects_ne s₁ s₁' dst cap oid hNe hStep₁,
-          cspaceInsertSlot_preserves_objects_ne s₂ s₂' dst cap oid hNe hStep₂]
+      rw [cspaceInsertSlot_preserves_objects_ne s₁ s₁' dst cap oid hNe hObjInv₁ hStep₁,
+          cspaceInsertSlot_preserves_objects_ne s₂ s₂' dst cap oid hNe hObjInv₂ hStep₂]
       have h := congrFun (congrArg ObservableState.objects hLow) oid
       simp only [projectState, projectObjects, hObs, ite_true] at h
       exact h

@@ -209,7 +209,12 @@ theorem runQueueThreadPriorityConsistent_default :
   · intro tid hMem
     exact absurd hMem (RunQueue.not_mem_empty tid)
   · intro tid hPrio
-    simp [default, Inhabited.default, RunQueue.empty] at hPrio
+    exfalso; apply hPrio
+    have : (∅ : SeLe4n.Kernel.RobinHood.RHTable ThreadId Priority).get? tid = none :=
+      RHTable_get?_empty 16 (by omega)
+    simp only [default, Inhabited.default, SeLe4n.Kernel.RunQueue.empty,
+               RHTable_getElem?_eq_get?, EmptyCollection.emptyCollection] at this ⊢
+    exact this
 
 -- ============================================================================
 -- WS-H6: Full scheduler invariant bundle

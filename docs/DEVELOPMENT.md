@@ -62,41 +62,28 @@ extraction, unified BFS revocation proofs, edge-case test expansion). All 14
 audit findings resolved. Zero sorry/axiom.
 See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
-The **active workstream** is **WS-N** (Robin Hood hashing verified
-implementation) — a formally verified Robin Hood hash table to close the trust
-gap between seLe4n's machine-checked proofs and the unverified `Std.HashMap`
-library type. 5 phases (N1–N5, 122 subtasks). **WS-N1** (v0.17.1) —
-core types + operations — **COMPLETED**. **WS-N2** (v0.17.2) — invariant
-proofs — **COMPLETED**: invariant definitions (`distCorrect`, `noDupKeys`,
-`probeChainDominant`, `RHTable.invExt` bundle), preservation through all ops
-(WF, distCorrect, noDupKeys, probeChainDominant), lookup correctness (insert
-same-key, insert different-key, erase). All 6 TPI-D items complete (D1–D6),
-~4,655 LoC, zero sorry/axiom. Major finding: `robinHoodOrdered` is NOT
-preserved by backshift-on-erase; `invExt` bundle uses `probeChainDominant`
-instead (relaxedPCD framework for erase proofs). **WS-N3** (v0.17.3) — kernel
-API bridge — **COMPLETED**: `Inhabited`/`BEq` typeclass instances, 12 bridge
-lemmas matching `Std.HashMap` patterns (`getElem?_insert_self/ne`,
-`getElem?_erase_self/ne`, `getElem?_empty`, `size_erase_le`, `size_insert_le`,
-`mem_iff_isSome_getElem?`, `getElem?_eq_some_getElem`, `fold_eq_slots_foldl`),
-`RHTable.filter` with `size_filter_le_size` preservation, `RHTable.ofList`
-constructor, plus `get_after_erase_ne` correctness proof. ~307 LoC in
-`Bridge.lean`, ~247 LoC additions to `Lookup.lean`, zero sorry/axiom.
-**WS-N4** (v0.17.4) — kernel integration (first site — CNode.slots) —
-**COMPLETED**: replaced `CNode.slots : Std.HashMap Slot Capability` with
-`RHTable Slot Capability`, updated CNode operations, ~25 theorems, ~15
-invariant proofs, `slotsUnique` repurposed as substantive `invExt` invariant,
-3 new bridge lemmas, 20+ files modified, zero sorry/axiom.
-**WS-N5** (v0.17.5) — test coverage + documentation — **COMPLETED**: 12
-standalone Robin Hood test scenarios (RH-001 through RH-012: empty table, insert/get
-roundtrip, erase, overwrite, multiple keys, collision handling, Robin Hood swap,
-backward-shift, resize trigger, post-resize correctness, large-scale 200-entry
-stress, fold/toList) + 6 CNode integration tests (RH-INT-001 through RH-INT-006:
-lookup/insert/remove, revokeTargetLocal filter, findFirstEmptySlot, slotCountBounded,
-CSpace resolution, BEq comparison). Full documentation sync across 8 canonical files
-+ 4 GitBook chapters. WS-N portfolio **COMPLETE**.
+The **active workstream** is **WS-Q** (Kernel State Architecture) — a
+multi-phase plan unifying two-phase state architecture, service interface
+simplification, and Rust syscall wrappers into a single execution path.
+**WS-Q1** (v0.18.0) — service interface simplification — **COMPLETED**:
+stateless registry model replacing lifecycle-based `ServiceStatus`/`ServiceConfig`.
+**WS-Q2** (v0.19.0) — universal RHTable migration — **COMPLETED**: replaced
+every `Std.HashMap` and `Std.HashSet` in kernel state (16 map fields + 2 set
+fields across 6 structures, 30+ files) with formally verified `RHTable`/`RHSet`.
+10 atomic subphases (Q2-A through Q2-J) including `RHSet` type definition,
+`allTablesInvExt` global invariant predicate, and `invExt` proof threading
+across all subsystem invariant files. Zero sorry/axiom, 1,469 proved
+declarations, all tests pass.
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
+
+The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully
+complete** (v0.17.0–v0.17.5) — 5 phases (N1–N5, 122 subtasks): core types +
+operations (N1, v0.17.1), invariant proofs (N2, v0.17.2), kernel API bridge
+(N3, v0.17.3), CNode.slots integration (N4, v0.17.4), test coverage +
+documentation (N5, v0.17.5). ~4,655 LoC, zero sorry/axiom.
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
-The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:
+The **next major milestone** after WS-Q is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing
 ARMv8 multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
 binding, and verified boot sequence construction.

@@ -8,6 +8,7 @@
 
 import Std.Data.HashMap
 import Std.Data.HashSet
+import SeLe4n.Kernel.RobinHood.Bridge
 
 namespace SeLe4n
 
@@ -842,6 +843,179 @@ theorem HashSet_contains_insert_self {α : Type} [BEq α] [Hashable α] [LawfulB
     (s : Std.HashSet α) (a : α) :
     (s.insert a).contains a = true := by
   rw [Std.HashSet.contains_insert]; simp
+
+-- ============================================================================
+-- Q2-A: RHTable bridge lemmas for universal migration
+-- Re-export Bridge.lean theorems under naming conventions used by downstream
+-- proofs. These provide drop-in replacements for the HashMap lemmas above.
+-- ============================================================================
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Lookup in empty RHTable returns none. -/
+theorem RHTable_get?_empty {α β : Type} [BEq α] [Hashable α]
+    (cap : Nat) (hPos : 0 < cap) {a : α} :
+    (RHTable.empty cap hPos : RHTable α β).get? a = none :=
+  RHTable.getElem?_empty cap hPos a
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: After inserting key `k` with value `v`, lookup returns `some v`. -/
+theorem RHTable_get?_insert_self {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insert k v).get? k = some v :=
+  RHTable.getElem?_insert_self t k v hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Inserting key `k` does not affect lookups of other keys. -/
+theorem RHTable_get?_insert_ne {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k k' : α) (v : β) (hNe : ¬(k == k') = true)
+    (hExt : t.invExt) :
+    (t.insert k v).get? k' = t.get? k' :=
+  RHTable.getElem?_insert_ne t k k' v hNe hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: After erasing key `k`, lookup returns `none`. -/
+theorem RHTable_get?_erase_self {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
+    (t.erase k).get? k = none :=
+  RHTable.getElem?_erase_self t k hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Erasing key `k` does not affect lookups of other keys. -/
+theorem RHTable_get?_erase_ne {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k k' : α) (hNe : ¬(k == k') = true)
+    (hExt : t.invExt) (hSize : t.size < t.capacity) :
+    (t.erase k).get? k' = t.get? k' :=
+  RHTable.getElem?_erase_ne t k k' hNe hExt hSize
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Combined insert lookup characterization (matches HashMap_getElem?_insert).
+    Drop-in replacement: `rw [HashMap_getElem?_insert]` → `rw [RHTable_getElem?_insert hInv]`. -/
+theorem RHTable_getElem?_insert {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) (a : α) :
+    (t.insert k v).get? a = if k == a then some v else t.get? a := by
+  by_cases h : (k == a) = true
+  · simp only [h, ite_true]
+    have hka : a = k := (eq_of_beq h).symm; subst hka
+    exact RHTable.getElem?_insert_self t a v hExt
+  · simp only [show (k == a) = false from Bool.eq_false_iff.mpr h]
+    exact RHTable.getElem?_insert_ne t k a v h hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Combined erase lookup characterization (matches HashMap_getElem?_erase).
+    Drop-in replacement: `rw [HashMap_getElem?_erase]` → `rw [RHTable_getElem?_erase hInv hSize]`. -/
+theorem RHTable_getElem?_erase {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hExt : t.invExt) (hSize : t.size < t.capacity) (a : α) :
+    (t.erase k).get? a = if k == a then none else t.get? a := by
+  by_cases h : (k == a) = true
+  · simp only [h, ite_true]
+    have hka : a = k := (eq_of_beq h).symm; subst hka
+    exact RHTable.getElem?_erase_self t a hExt
+  · simp only [show (k == a) = false from Bool.eq_false_iff.mpr h]
+    exact RHTable.getElem?_erase_ne t k a h hExt hSize
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Membership is equivalent to `get?` returning `some`. -/
+theorem RHTable_contains_iff_get_some {α β : Type} [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) :
+    t.contains k = true ↔ (t.get? k).isSome = true := by
+  simp [RHTable.contains]
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Not contained iff get? returns none. -/
+theorem RHTable_not_contains_iff_get_none {α β : Type} [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) :
+    t.contains k = false ↔ t.get? k = none := by
+  simp [RHTable.contains]
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Bracket notation `t[k]?` is definitionally `t.get? k` for RHTable.
+    This simp lemma allows rewrite lemmas stated in terms of `.get?` to fire
+    on goals containing bracket notation. -/
+theorem RHTable_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) : t[k]? = t.get? k := rfl
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Contains after insert self. -/
+theorem RHTable_contains_insert_self {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insert k v).contains k = true := by
+  simp [RHTable.contains, RHTable_get?_insert_self t k v hExt]
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Contains after erase self. -/
+theorem RHTable_contains_erase_self {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hExt : t.invExt) :
+    (t.erase k).contains k = false := by
+  simp [RHTable.contains, RHTable_get?_erase_self t k hExt]
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Insert preserves invExt. -/
+theorem RHTable_insert_preserves_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
+    (t.insert k v).invExt :=
+  t.insert_preserves_invExt k v hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Erase preserves invExt. -/
+theorem RHTable_erase_preserves_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hExt : t.invExt)
+    (hSize : t.size < t.capacity) :
+    (t.erase k).invExt :=
+  t.erase_preserves_invExt k hExt hSize
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Empty table satisfies invExt. -/
+theorem RHTable_empty_invExt {α β : Type} [BEq α] [Hashable α]
+    (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable α β).invExt :=
+  RHTable.empty_invExt cap hPos
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Filter preserves invExt. -/
+theorem RHTable_filter_preserves_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (hExt : t.invExt) :
+    (t.filter f).invExt :=
+  RHTable.filter_preserves_invExt t f hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Filter preserves key when predicate is true for that key. -/
+theorem RHTable_filter_preserves_key {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (k : α)
+    (hTrue : ∀ (k' : α) (v : β), (k' == k) = true → f k' v = true)
+    (hExt : t.invExt) :
+    (t.filter f).get? k = t.get? k :=
+  RHTable.filter_preserves_key t f k hTrue hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Filter idempotence at a key. -/
+theorem RHTable_filter_filter_getElem? {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (k : α)
+    (hExt : t.invExt) :
+    ((t.filter f).filter f).get? k = (t.filter f).get? k :=
+  RHTable.filter_filter_getElem? t f k hExt
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Inserting a key increases table size by at most 1. -/
+theorem RHTable_size_insert_bound {α β : Type} [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β) (hwf : t.WF) :
+    (t.insert k v).size ≤ t.size + 1 :=
+  RHTable.size_insert_le t k v hwf
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Erasing a key does not increase table size. -/
+theorem RHTable_size_erase_bound {α β : Type} [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) :
+    (t.erase k).size ≤ t.size :=
+  RHTable.size_erase_le t k
+
+open SeLe4n.Kernel.RobinHood in
+/-- Q2-A: Fold preserves a property through all entries. -/
+theorem RHTable_fold_preserves {α β γ : Type} [BEq α] [Hashable α]
+    (t : RHTable α β) (init : γ) (f : γ → α → β → γ)
+    (P : γ → Prop) (hInit : P init)
+    (hStep : ∀ acc k v, P acc → P (f acc k v)) :
+    P (t.fold init f) :=
+  RHTable.fold_preserves t init f P hInit hStep
 
 -- ============================================================================
 -- WS-G9: List.foldl HashSet bridge lemmas for observable-set precomputation

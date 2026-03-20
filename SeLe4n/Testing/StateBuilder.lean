@@ -82,23 +82,23 @@ private def lookupThreadPriority (objects : List (SeLe4n.ObjId × KernelObject))
 def build (builder : BootstrapBuilder) : SystemState :=
   {
     machine := builder.machine
-    objects := Std.HashMap.ofList builder.objects
+    objects := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.objects
     objectIndex := builder.objects.map Prod.fst
-    objectIndexSet := Std.HashSet.ofList (builder.objects.map Prod.fst)
-    services := Std.HashMap.ofList builder.services
+    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (builder.objects.map Prod.fst)
+    services := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.services
     scheduler := {
       -- WS-G4 fix: use actual TCB priorities for RunQueue bucketing
       runQueue := SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>
         (tid, lookupThreadPriority builder.objects tid)))
       current := builder.current
     }
-    irqHandlers := Std.HashMap.ofList builder.irqHandlers
+    irqHandlers := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.irqHandlers
     lifecycle := {
-      objectTypes := Std.HashMap.ofList builder.lifecycleObjectTypes
-      capabilityRefs := Std.HashMap.ofList builder.lifecycleCapabilityRefs
+      objectTypes := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleObjectTypes
+      capabilityRefs := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleCapabilityRefs
     }
     -- WS-G3/F-P06: Populate ASID table from VSpaceRoot objects
-    asidTable := Std.HashMap.ofList (builder.objects.filterMap fun (oid, obj) =>
+    asidTable := SeLe4n.Kernel.RobinHood.RHTable.ofList (builder.objects.filterMap fun (oid, obj) =>
       match obj with
       | .vspaceRoot root => some (root.asid, oid)
       | _ => none)

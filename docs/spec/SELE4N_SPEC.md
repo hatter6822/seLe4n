@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.17.5` (`lakefile.toml`) |
+| **Package version** | `0.19.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 46,637 across 78 Lean files |
-| **Test LoC** | 5,560 across 5 Lean test suites |
-| **Proved declarations** | 1,421 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 49,025 across 83 Lean files |
+| **Test LoC** | 5,513 across 5 Lean test suites |
+| **Proved declarations** | 1,469 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |
-| **Next workstreams** | **WS-N** Robin Hood hashing verified implementation — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). 5 phases (N1–N5, 122 subtasks): **WS-N1 COMPLETED** (v0.17.1) — core types + operations; **WS-N2 COMPLETED** (v0.17.2) — invariant proofs; **WS-N3 COMPLETED** (v0.17.3) — kernel API bridge; **WS-N4 COMPLETED** (v0.17.4) — kernel integration (CNode.slots); **WS-N5 COMPLETED** (v0.17.5) — test coverage + documentation (12 standalone + 6 integration tests, full doc sync). See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Raspberry Pi 5 hardware binding** |
+| **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
+| **Next workstreams** | **WS-Q** Kernel State Architecture (absorbs WS-P, WS-O). **WS-Q1 COMPLETED** (v0.18.0) — service interface simplification. **WS-Q2 COMPLETED** (v0.19.0) — universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet` across 16 state fields, 30+ files, 10 atomic subphases). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md). **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Q3–Q9 (IntermediateState, CNode radix tree, freeze, Rust wrappers), then Raspberry Pi 5 hardware binding** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

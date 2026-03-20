@@ -120,39 +120,41 @@ theorem serviceNontrivialPath_step_right {st : SystemState} {a b c : ServiceId}
 
 /-- Edge at a non-updated service is unchanged after storeServiceState. -/
 theorem serviceEdge_storeServiceState_ne {st : SystemState} {svcId : ServiceId}
-    {entry : ServiceGraphEntry} {a b : ServiceId} (ha : a ≠ svcId) :
+    {entry : ServiceGraphEntry} {a b : ServiceId} (ha : a ≠ svcId)
+    (hSvcInv : st.services.invExt) :
     serviceEdge (storeServiceState svcId entry st) a b ↔ serviceEdge st a b := by
   constructor
   · rintro ⟨svc', hLookup, hMem⟩
-    rw [storeServiceState_lookup_ne st svcId a entry ha] at hLookup
+    rw [storeServiceState_lookup_ne st svcId a entry ha hSvcInv] at hLookup
     exact ⟨svc', hLookup, hMem⟩
   · rintro ⟨svc', hLookup, hMem⟩
-    rw [← storeServiceState_lookup_ne st svcId a entry ha] at hLookup
+    rw [← storeServiceState_lookup_ne st svcId a entry ha hSvcInv] at hLookup
     exact ⟨svc', hLookup, hMem⟩
 
 /-- Edge from the updated service reflects the new entry's dependencies. -/
 theorem serviceEdge_storeServiceState_updated {st : SystemState} {svcId : ServiceId}
-    {entry : ServiceGraphEntry} {b : ServiceId} :
+    {entry : ServiceGraphEntry} {b : ServiceId}
+    (hSvcInv : st.services.invExt) :
     serviceEdge (storeServiceState svcId entry st) svcId b ↔ b ∈ entry.dependencies := by
   constructor
   · rintro ⟨svc', hLookup, hMem⟩
-    rw [storeServiceState_lookup_eq] at hLookup
+    rw [storeServiceState_lookup_eq st svcId entry hSvcInv] at hLookup
     cases hLookup
     exact hMem
   · intro hMem
-    exact ⟨entry, storeServiceState_lookup_eq st svcId entry, hMem⟩
+    exact ⟨entry, storeServiceState_lookup_eq st svcId entry hSvcInv, hMem⟩
 
 /-- Edge characterization after inserting depId into svcId's dependency list. -/
 theorem serviceEdge_post_insert {st : SystemState} {svcId depId : ServiceId}
     {svc : ServiceGraphEntry} (hSvc : lookupService st svcId = some svc)
-    {a b : ServiceId} :
+    {a b : ServiceId} (hSvcInv : st.services.invExt) :
     serviceEdge (storeServiceState svcId { svc with dependencies := svc.dependencies ++ [depId] } st) a b ↔
     ((a = svcId ∧ (b ∈ svc.dependencies ∨ b = depId)) ∨ (a ≠ svcId ∧ serviceEdge st a b)) := by
   by_cases ha : a = svcId
   · subst ha
-    rw [serviceEdge_storeServiceState_updated]
+    rw [serviceEdge_storeServiceState_updated hSvcInv]
     simp [List.mem_append]
-  · rw [serviceEdge_storeServiceState_ne ha]
+  · rw [serviceEdge_storeServiceState_ne ha hSvcInv]
     constructor
     · intro h; exact Or.inr ⟨ha, h⟩
     · rintro (⟨hEq, _⟩ | ⟨_, h⟩)
@@ -493,13 +495,14 @@ theorem nontrivialPath_post_insert_cases
     {st : SystemState} {svcId depId : ServiceId}
     {svc : ServiceGraphEntry} (hSvc : lookupService st svcId = some svc)
     {a b : ServiceId}
+    (hSvcInv : st.services.invExt)
     (hPath : serviceNontrivialPath
       (storeServiceState svcId { svc with dependencies := svc.dependencies ++ [depId] } st) a b) :
     serviceNontrivialPath st a b ∨
     (serviceReachable st a svcId ∧ serviceReachable st depId b) := by
   induction hPath with
   | single hedge =>
-    rcases (serviceEdge_post_insert hSvc).mp hedge with ⟨rfl, hOr⟩ | ⟨hNe, hOld⟩
+    rcases (serviceEdge_post_insert hSvc hSvcInv).mp hedge with ⟨rfl, hOr⟩ | ⟨hNe, hOld⟩
     · rcases hOr with hOld | rfl
       · -- Old edge from svcId
         exact Or.inl (.single ⟨svc, hSvc, hOld⟩)
@@ -507,7 +510,7 @@ theorem nontrivialPath_post_insert_cases
         exact Or.inr ⟨.refl, .refl⟩
     · exact Or.inl (.single hOld)
   | cons hedge _ ih =>
-    rcases (serviceEdge_post_insert hSvc).mp hedge with ⟨rfl, hOr⟩ | ⟨hNe, hOld⟩
+    rcases (serviceEdge_post_insert hSvc hSvcInv).mp hedge with ⟨rfl, hOr⟩ | ⟨hNe, hOld⟩
     · rcases hOr with hOld | rfl
       · -- Old edge from svcId → mid, then path mid →+ b
         rcases ih with hPre | ⟨hReach1, hReach2⟩
@@ -544,7 +547,8 @@ theorem serviceRegisterDependency_preserves_acyclicity
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
     (hAcyc : serviceDependencyAcyclic st)
-    (hBound : serviceCountBounded st) :
+    (hBound : serviceCountBounded st)
+    (hSvcInv : st.services.invExt) :
     serviceDependencyAcyclic st' := by
   unfold serviceRegisterDependency at hReg
   cases hSvc : lookupService st svcId with
@@ -573,7 +577,7 @@ theorem serviceRegisterDependency_preserves_acyclicity
             -- Goal: serviceDependencyAcyclic (storeServiceState svcId {svc with ...} st)
             -- Strategy: suppose a post-state cycle, decompose, derive contradiction
             intro sid hCycleSid
-            rcases nontrivialPath_post_insert_cases hSvc hCycleSid with hPre | ⟨hReach1, hReach2⟩
+            rcases nontrivialPath_post_insert_cases hSvc hSvcInv hCycleSid with hPre | ⟨hReach1, hReach2⟩
             · -- Case 1: cycle uses only old edges → pre-state cycle
               exact hAcyc sid hPre
             · -- Case 2: cycle uses new edge → pre-state path depId →* svcId
@@ -624,41 +628,44 @@ private theorem serviceEdge_of_storeServiceState_sameDeps
     {st : SystemState} {svcId : ServiceId} {svc : ServiceGraphEntry}
     (hSvc : lookupService st svcId = some svc)
     {entry : ServiceGraphEntry} (hDeps : entry.dependencies = svc.dependencies)
+    (hSvcInv : st.services.invExt)
     {a b : ServiceId} :
     serviceEdge (storeServiceState svcId entry st) a b ↔ serviceEdge st a b := by
   by_cases ha : a = svcId
   · subst ha
-    rw [serviceEdge_storeServiceState_updated]
+    rw [serviceEdge_storeServiceState_updated hSvcInv]
     constructor
     · intro h; exact ⟨svc, hSvc, hDeps ▸ h⟩
     · rintro ⟨svc', hL, hM⟩; rw [hSvc] at hL; cases hL; rw [hDeps]; exact hM
-  · exact serviceEdge_storeServiceState_ne ha
+  · exact serviceEdge_storeServiceState_ne ha hSvcInv
 
 /-- Nontrivial paths are preserved through same-deps store. -/
 private theorem serviceNontrivialPath_of_storeServiceState_sameDeps
     {st : SystemState} {svcId : ServiceId} {svc : ServiceGraphEntry}
     (hSvc : lookupService st svcId = some svc)
     {entry : ServiceGraphEntry} (hDeps : entry.dependencies = svc.dependencies)
+    (hSvcInv : st.services.invExt)
     {a b : ServiceId} :
     serviceNontrivialPath (storeServiceState svcId entry st) a b ↔
     serviceNontrivialPath st a b := by
   constructor
   · intro h; induction h with
-    | single he => exact .single ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps).mp he)
-    | cons he _ ih => exact .cons ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps).mp he) ih
+    | single he => exact .single ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps hSvcInv).mp he)
+    | cons he _ ih => exact .cons ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps hSvcInv).mp he) ih
   · intro h; induction h with
-    | single he => exact .single ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps).mpr he)
-    | cons he _ ih => exact .cons ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps).mpr he) ih
+    | single he => exact .single ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps hSvcInv).mpr he)
+    | cons he _ ih => exact .cons ((serviceEdge_of_storeServiceState_sameDeps hSvc hDeps hSvcInv).mpr he) ih
 
 /-- Acyclicity is preserved through same-deps store. -/
 private theorem serviceDependencyAcyclic_of_storeServiceState_sameDeps
     {st : SystemState} {svcId : ServiceId} {svc : ServiceGraphEntry}
     (hSvc : lookupService st svcId = some svc)
     {entry : ServiceGraphEntry} (hDeps : entry.dependencies = svc.dependencies)
+    (hSvcInv : st.services.invExt)
     (hAcyc : serviceDependencyAcyclic st) :
     serviceDependencyAcyclic (storeServiceState svcId entry st) := by
   intro sid hPath
-  exact hAcyc sid ((serviceNontrivialPath_of_storeServiceState_sameDeps hSvc hDeps).mp hPath)
+  exact hAcyc sid ((serviceNontrivialPath_of_storeServiceState_sameDeps hSvc hDeps hSvcInv).mp hPath)
 
 -- ============================================================================
 -- WS-H13/M-17: serviceCountBounded invariant integration
@@ -680,22 +687,23 @@ private theorem bfsUniverse_of_storeServiceState_sameDeps
     {st : SystemState} {svcId : ServiceId} {svc : ServiceGraphEntry}
     (hSvc : lookupService st svcId = some svc)
     {entry : ServiceGraphEntry} (hDeps : entry.dependencies = svc.dependencies)
+    (hSvcInv : st.services.invExt)
     {ns : List ServiceId} (hU : bfsUniverse st ns) :
     bfsUniverse (storeServiceState svcId entry st) ns := by
   refine ⟨hU.1, ?_, ?_⟩
   · intro sid' hLookup'
     by_cases hEq : sid' = svcId
     · exact hU.2.1 sid' (by rw [hEq, hSvc]; exact Option.some_ne_none _)
-    · rw [storeServiceState_lookup_ne st svcId sid' entry hEq] at hLookup'
+    · rw [storeServiceState_lookup_ne st svcId sid' entry hEq hSvcInv] at hLookup'
       exact hU.2.1 sid' hLookup'
   · intro sid' hMem dep hDepIn
     unfold lookupDeps at hDepIn
     by_cases hEq : sid' = svcId
-    · rw [hEq, storeServiceState_lookup_eq] at hDepIn
+    · rw [hEq, storeServiceState_lookup_eq st svcId entry hSvcInv] at hDepIn
       simp at hDepIn; rw [hDeps] at hDepIn
       exact hU.2.2 sid' hMem dep
         (by unfold lookupDeps; rw [hEq, hSvc]; exact hDepIn)
-    · rw [storeServiceState_lookup_ne st svcId sid' entry hEq] at hDepIn
+    · rw [storeServiceState_lookup_ne st svcId sid' entry hEq hSvcInv] at hDepIn
       exact hU.2.2 sid' hMem dep (by unfold lookupDeps; exact hDepIn)
 
 /-- serviceCountBounded is preserved through same-deps storeServiceState. -/
@@ -703,10 +711,11 @@ private theorem serviceCountBounded_of_storeServiceState_sameDeps
     {st : SystemState} {svcId : ServiceId} {svc : ServiceGraphEntry}
     (hSvc : lookupService st svcId = some svc)
     {entry : ServiceGraphEntry} (hDeps : entry.dependencies = svc.dependencies)
+    (hSvcInv : st.services.invExt)
     (hBound : serviceCountBounded st) :
     serviceCountBounded (storeServiceState svcId entry st) := by
   obtain ⟨ns, hU, hLen⟩ := hBound
-  refine ⟨ns, bfsUniverse_of_storeServiceState_sameDeps hSvc hDeps hU, ?_⟩
+  refine ⟨ns, bfsUniverse_of_storeServiceState_sameDeps hSvc hDeps hSvcInv hU, ?_⟩
   simp [serviceBfsFuel, storeServiceState]; exact hLen
 
 /-- serviceGraphInvariant is preserved through same-deps storeServiceState. -/
@@ -714,10 +723,11 @@ private theorem serviceGraphInvariant_of_storeServiceState_sameDeps
     {st : SystemState} {svcId : ServiceId} {svc : ServiceGraphEntry}
     (hSvc : lookupService st svcId = some svc)
     {entry : ServiceGraphEntry} (hDeps : entry.dependencies = svc.dependencies)
+    (hSvcInv : st.services.invExt)
     (hInv : serviceGraphInvariant st) :
     serviceGraphInvariant (storeServiceState svcId entry st) := by
-  exact ⟨serviceDependencyAcyclic_of_storeServiceState_sameDeps hSvc hDeps hInv.1,
-         serviceCountBounded_of_storeServiceState_sameDeps hSvc hDeps hInv.2⟩
+  exact ⟨serviceDependencyAcyclic_of_storeServiceState_sameDeps hSvc hDeps hSvcInv hInv.1,
+         serviceCountBounded_of_storeServiceState_sameDeps hSvc hDeps hSvcInv hInv.2⟩
 
 /-- WS-H13: `serviceRegisterDependency` preserves the service graph invariant.
 This closes the gap where `serviceCountBounded` was required as a hypothesis
@@ -725,11 +735,12 @@ but never proved as a maintained invariant. -/
 theorem serviceRegisterDependency_preserves_serviceGraphInvariant
     (svcId depId : ServiceId) (st st' : SystemState)
     (hReg : serviceRegisterDependency svcId depId st = .ok ((), st'))
-    (hInv : serviceGraphInvariant st) :
+    (hInv : serviceGraphInvariant st)
+    (hSvcInv : st.services.invExt) :
     serviceGraphInvariant st' := by
   obtain ⟨hAcyc, hBound⟩ := hInv
   constructor
-  · exact serviceRegisterDependency_preserves_acyclicity svcId depId st st' hReg hAcyc hBound
+  · exact serviceRegisterDependency_preserves_acyclicity svcId depId st st' hReg hAcyc hBound hSvcInv
   · -- serviceCountBounded transfers: storeServiceState only changes services,
     -- not objectIndex, so serviceBfsFuel is preserved. The universe list
     -- is extended at most by one node (the updated service entry).
@@ -761,13 +772,13 @@ theorem serviceRegisterDependency_preserves_serviceGraphInvariant
                     by_cases hEq : sid' = svcId
                     · exact hU.2.1 sid' (by
                         rw [hEq, hSvc]; exact Option.some_ne_none _)
-                    · rw [storeServiceState_lookup_ne st svcId sid' _ hEq] at hLookup'
+                    · rw [storeServiceState_lookup_ne st svcId sid' _ hEq hSvcInv] at hLookup'
                       exact hU.2.1 sid' hLookup'
                   · -- Dependency closure: new dep list for svcId includes depId
                     intro sid' hMem dep hDepMem
                     unfold lookupDeps at hDepMem
                     by_cases hEq : sid' = svcId
-                    · rw [hEq, storeServiceState_lookup_eq] at hDepMem
+                    · rw [hEq, storeServiceState_lookup_eq st svcId _ hSvcInv] at hDepMem
                       simp at hDepMem
                       cases hDepMem with
                       | inl h =>
@@ -775,7 +786,7 @@ theorem serviceRegisterDependency_preserves_serviceGraphInvariant
                             (by unfold lookupDeps; rw [hEq, hSvc]; exact h)
                       | inr h =>
                           exact hU.2.1 dep (by rw [h, hDep]; exact Option.some_ne_none _)
-                    · rw [storeServiceState_lookup_ne st svcId sid' _ hEq] at hDepMem
+                    · rw [storeServiceState_lookup_ne st svcId sid' _ hEq hSvcInv] at hDepMem
                       exact hU.2.2 sid' hMem dep (by unfold lookupDeps; exact hDepMem)
                   · -- Fuel preserved: objectIndex unchanged
                     simp [storeServiceState, serviceBfsFuel] at hLen ⊢; exact hLen
@@ -790,7 +801,7 @@ include), and `[].length = 0 ≤ serviceBfsFuel default`. -/
 private theorem default_lookupService_none (sid : ServiceId) :
     lookupService default sid = none := by
   unfold lookupService
-  exact @HashMap_getElem?_empty ServiceId ServiceGraphEntry _ _ sid
+  exact RHTable_get?_empty 16 (by omega)
 
 theorem default_serviceCountBounded : serviceCountBounded default := by
   refine ⟨[], ⟨List.nodup_nil, ?_, ?_⟩, ?_⟩

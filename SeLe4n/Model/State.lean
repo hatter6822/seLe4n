@@ -10,8 +10,11 @@ import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Kernel.Scheduler.RunQueue
 import SeLe4n.Kernel.Service.Interface
+import SeLe4n.Kernel.RobinHood.Set
 
 namespace SeLe4n.Model
+
+open SeLe4n.Kernel.RobinHood
 
 inductive KernelError where
   | invalidCapability
@@ -102,15 +105,14 @@ named by each populated capability slot reference.
 WS-G2/WS-H7: metadata maps are HashMap-backed for O(1) amortized lookup,
 eliminating closure-chain growth from repeated updates. -/
 structure LifecycleMetadata where
-  objectTypes : Std.HashMap SeLe4n.ObjId KernelObjectType
-  capabilityRefs : Std.HashMap SlotRef CapTarget
+  objectTypes : RHTable SeLe4n.ObjId KernelObjectType
+  capabilityRefs : RHTable SlotRef CapTarget
 
 structure SystemState where
   machine : SeLe4n.MachineState
-  /-- WS-G2/F-P01: Object store backed by `Std.HashMap` for O(1) amortized lookup.
-      Replaces the closure-chain `ObjId → Option KernelObject` that accumulated
-      nested closures on every `storeObject` call (O(k) per lookup after k stores). -/
-  objects : Std.HashMap SeLe4n.ObjId KernelObject
+  /-- Q2-C: Object store backed by `RHTable` (verified Robin Hood hash table)
+      for O(1) amortized lookup with machine-checked invariants. -/
+  objects : RHTable SeLe4n.ObjId KernelObject
   /-- L-05/WS-E6: Monotonic append-only index of all object IDs that have been
       stored. This list is intentionally never pruned — `storeObject` prepends
       new IDs and never removes old ones.
@@ -132,23 +134,23 @@ structure SystemState where
       Maintained in parallel with `objectIndex` — `storeObject` inserts into
       both. The list remains the proof anchor (monotonic, append-only);
       this set is the runtime fast path. -/
-  objectIndexSet : Std.HashSet SeLe4n.ObjId := {}
-  services : Std.HashMap ServiceId ServiceGraphEntry
+  objectIndexSet : RHSet SeLe4n.ObjId := default
+  services : RHTable ServiceId ServiceGraphEntry
   scheduler : SchedulerState
-  irqHandlers : Std.HashMap SeLe4n.Irq SeLe4n.ObjId
+  irqHandlers : RHTable SeLe4n.Irq SeLe4n.ObjId
   lifecycle : LifecycleMetadata
   /-- WS-G3/F-P06: ASID→ObjId resolution table for O(1) VSpace lookups.
       Maintained by `storeObject` — insertions on `.vspaceRoot` stores, erasures
       when a VSpaceRoot is overwritten. Replaces the O(n) `objectIndex.findSome?`
       scan in `resolveAsidRoot`. -/
-  asidTable : Std.HashMap SeLe4n.ASID SeLe4n.ObjId := {}
+  asidTable : RHTable SeLe4n.ASID SeLe4n.ObjId := {}
   /-- WS-Q1-B: Registry of concrete interface specifications keyed by InterfaceId. -/
-  interfaceRegistry : Std.HashMap SeLe4n.InterfaceId InterfaceSpec := {}
+  interfaceRegistry : RHTable SeLe4n.InterfaceId InterfaceSpec := {}
   /-- WS-Q1-B: Registry of capability-mediated service registrations keyed by ServiceId. -/
-  serviceRegistry : Std.HashMap ServiceId ServiceRegistration := {}
+  serviceRegistry : RHTable ServiceId ServiceRegistration := {}
   cdt : CapDerivationTree := .empty   -- WS-E4/C-03: node-based Capability Derivation Tree
-  cdtSlotNode : Std.HashMap SlotRef CdtNodeId := {}
-  cdtNodeSlot : Std.HashMap CdtNodeId SlotRef := {}
+  cdtSlotNode : RHTable SlotRef CdtNodeId := {}
+  cdtNodeSlot : RHTable CdtNodeId SlotRef := {}
   cdtNextNode : CdtNodeId := ⟨0⟩
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
@@ -162,7 +164,7 @@ instance : Inhabited SystemState where
     machine := default
     objects := {}
     objectIndex := []
-    objectIndexSet := {}
+    objectIndexSet := default
     services := {}
     scheduler := default
     irqHandlers := {}
@@ -178,6 +180,54 @@ instance : Inhabited SystemState where
     cdtNodeSlot := {}
     cdtNextNode := ⟨0⟩
   }
+
+/-- Q2-J: Predicate asserting that every RHTable and RHSet in the system state
+satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys ∧
+probeChainDominant). This is the global well-formedness condition for the
+builder-phase state representation. -/
+def SystemState.allTablesInvExt (st : SystemState) : Prop :=
+  -- SystemState direct fields
+  st.objects.invExt ∧
+  st.irqHandlers.invExt ∧
+  st.asidTable.invExt ∧
+  st.cdtSlotNode.invExt ∧
+  st.cdtNodeSlot.invExt ∧
+  -- LifecycleMetadata
+  st.lifecycle.objectTypes.invExt ∧
+  st.lifecycle.capabilityRefs.invExt ∧
+  -- CDT
+  st.cdt.childMap.invExt ∧
+  st.cdt.parentMap.invExt ∧
+  -- Service and registry
+  st.services.invExt ∧
+  st.interfaceRegistry.invExt ∧
+  st.serviceRegistry.invExt ∧
+  -- RunQueue
+  st.scheduler.runQueue.byPriority.invExt ∧
+  st.scheduler.runQueue.threadPriority.invExt ∧
+  -- RHSet invExt (via table field)
+  st.objectIndexSet.table.invExt ∧
+  st.scheduler.runQueue.membership.table.invExt
+
+/-- The default SystemState satisfies `allTablesInvExt` because all tables are
+empty, and empty RHTables trivially satisfy `invExt`. -/
+theorem default_allTablesInvExt : (default : SystemState).allTablesInvExt := by
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExt
+  exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExt
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
@@ -448,22 +498,23 @@ def storeServiceState (sid : ServiceId) (entry : ServiceGraphEntry) (st : System
 theorem storeServiceState_lookup_eq
     (st : SystemState)
     (sid : ServiceId)
-    (entry : ServiceGraphEntry) :
+    (entry : ServiceGraphEntry)
+    (hInv : st.services.invExt) :
     lookupService (storeServiceState sid entry st) sid = some entry := by
-  simp [lookupService, storeServiceState]
+  simp only [lookupService, storeServiceState]
+  exact RHTable.getElem?_insert_self st.services sid entry hInv
 
 theorem storeServiceState_lookup_ne
     (st : SystemState)
     (sid sid' : ServiceId)
     (entry : ServiceGraphEntry)
-    (hNe : sid' ≠ sid) :
+    (hNe : sid' ≠ sid)
+    (hInv : st.services.invExt) :
     lookupService (storeServiceState sid entry st) sid' = lookupService st sid' := by
-  simp [lookupService, storeServiceState]
-  rw [HashMap_getElem?_insert]
+  simp only [lookupService, storeServiceState]
   have hNeBeq : ¬((sid == sid') = true) := by
-    intro hEq
-    exact hNe (eq_of_beq hEq).symm
-  simp [hNeBeq]
+    intro hEq; exact hNe (eq_of_beq hEq).symm
+  exact RHTable.getElem?_insert_ne st.services sid sid' entry hNeBeq hInv
 
 theorem storeObject_preserves_services
     (st st' : SystemState)
@@ -536,6 +587,7 @@ theorem storeCapabilityRef_lookup_eq
     (st st' : SystemState)
     (ref : SlotRef)
     (target : Option CapTarget)
+    (hCapRefsInv : st.lifecycle.capabilityRefs.invExt)
     (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
     st'.lifecycle.capabilityRefs[ref]? = target := by
   unfold storeCapabilityRef at hStep
@@ -543,37 +595,69 @@ theorem storeCapabilityRef_lookup_eq
   | none =>
       simp [hTarget] at hStep
       cases hStep
-      rw [HashMap_getElem?_erase]
-      simp
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable.getElem?_erase_self _ _ hCapRefsInv
   | some t =>
       simp [hTarget] at hStep
       cases hStep
-      rw [HashMap_getElem?_insert]
-      simp
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable.getElem?_insert_self _ _ _ hCapRefsInv
 
+
+theorem storeObject_objects_eq'
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.objects[id]? = some obj := by
+  unfold storeObject at hStore
+  cases hStore
+  exact RHTable.getElem?_insert_self _ _ _ hObjInv
 
 theorem storeObject_objects_eq
     (st st' : SystemState)
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects[id]? = some obj := by
+    st'.objects[id]? = some obj :=
+  storeObject_objects_eq' st id obj ((), st') hObjInv hStore
+
+theorem storeObject_objects_ne'
+    (st : SystemState)
+    (id oid : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hNe : oid ≠ id)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.objects[oid]? = st.objects[oid]? := by
   unfold storeObject at hStore
   cases hStore
-  rw [HashMap_getElem?_insert]; simp
+  have hNeBeq : ¬((id == oid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
+  exact RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hObjInv
 
 theorem storeObject_objects_ne
     (st st' : SystemState)
     (id oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hNe : oid ≠ id)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objects[oid]? = st.objects[oid]? := by
+    st'.objects[oid]? = st.objects[oid]? :=
+  storeObject_objects_ne' st id oid obj ((), st') hNe hObjInv hStore
+
+theorem storeObject_preserves_objects_invExt'
+    (st : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok pair) :
+    pair.2.objects.invExt := by
   unfold storeObject at hStore
   cases hStore
-  rw [HashMap_getElem?_insert]
-  have : ¬((id == oid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
-  simp [this]
+  exact RHTable_insert_preserves_invExt st.objects id obj hObjInv
 
 theorem storeObject_scheduler_eq
     (st st' : SystemState)
@@ -605,6 +689,15 @@ theorem storeObject_machine_eq
   cases hStore
   rfl
 
+theorem storeObject_preserves_objects_invExt
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objects.invExt :=
+  storeObject_preserves_objects_invExt' st id obj ((), st') hObjInv hStore
+
 -- WS-E4/C-03: storeObject preserves the CDT (it only touches objects/lifecycle/index)
 theorem storeObject_cdt_eq
     (st st' : SystemState)
@@ -623,12 +716,15 @@ theorem storeObject_cdt_eq
 /-- WS-G3: After storing a VSpaceRoot, the ASID table maps the new root's ASID to `id`. -/
 theorem storeObject_asidTable_vspaceRoot
     (st st' : SystemState) (id : SeLe4n.ObjId) (newRoot : VSpaceRoot)
+    (hAsidInv : (match st.objects[id]? with
+      | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+      | _ => st.asidTable).invExt)
     (hStore : storeObject id (.vspaceRoot newRoot) st = .ok ((), st')) :
     st'.asidTable[newRoot.asid]? = some id := by
   unfold storeObject at hStore
   cases hStore
   simp only []
-  rw [HashMap_getElem?_insert]; simp
+  exact RHTable.getElem?_insert_self _ _ _ hAsidInv
 
 /-- WS-G3: After storing a VSpaceRoot, a different ASID's table entry is unchanged
     unless it was the old root's ASID that got erased. -/
@@ -636,6 +732,9 @@ theorem storeObject_asidTable_vspaceRoot_ne
     (st st' : SystemState) (id : SeLe4n.ObjId) (newRoot : VSpaceRoot)
     (asid : SeLe4n.ASID)
     (hNe : asid ≠ newRoot.asid)
+    (hAsidInv : (match st.objects[id]? with
+      | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+      | _ => st.asidTable).invExt)
     (hStore : storeObject id (.vspaceRoot newRoot) st = .ok ((), st')) :
     st'.asidTable[asid]? =
       (match st.objects[id]? with
@@ -644,15 +743,19 @@ theorem storeObject_asidTable_vspaceRoot_ne
   unfold storeObject at hStore
   cases hStore
   simp only []
-  rw [HashMap_getElem?_insert]
   have hNeBeq : ¬((newRoot.asid == asid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
-  simp only [hNeBeq]
   cases hOld : st.objects[id]? with
-  | none => rfl
+  | none =>
+    simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
+    rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
   | some obj =>
-      cases obj with
-      | vspaceRoot _ => rfl
-      | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ => rfl
+    cases obj with
+    | vspaceRoot oldRoot =>
+      simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
+      rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
+    | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ =>
+      simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
+      rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
 
 /-- WS-G3: After storing a non-VSpaceRoot, the ASID table only changes if the old
     object was a VSpaceRoot (in which case the old ASID is erased). -/
@@ -689,11 +792,12 @@ theorem storeObject_updates_objectTypeMeta
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     st'.lifecycle.objectTypes[oid]? = some obj.objectType := by
   unfold storeObject at hStep
   cases hStep
-  rw [HashMap_getElem?_insert]; simp
+  simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjTypesInv]
 
 namespace SystemState
 
@@ -863,6 +967,8 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hConsistent : SystemState.objectTypeMetadataConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     SystemState.objectTypeMetadataConsistent st' := by
   intro oid'
@@ -871,10 +977,14 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
   simp only [SystemState.lookupObjectTypeMeta] at *
   by_cases hEq : oid' = oid
   · subst hEq
-    rw [HashMap_getElem?_insert, HashMap_getElem?_insert]; simp
-  · rw [HashMap_getElem?_insert, HashMap_getElem?_insert]
-    have h1 : ¬((oid == oid') = true) := by intro heq; exact hEq (eq_of_beq heq).symm
-    simp [h1]; exact hConsistent oid'
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable.getElem?_insert_self _ _ _ hObjTypesInv,
+        RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
+  · have h1 : ¬((oid == oid') = true) := by intro heq; exact hEq (eq_of_beq heq).symm
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable.getElem?_insert_ne _ _ _ _ h1 hObjTypesInv,
+        RHTable.getElem?_insert_ne _ _ _ _ h1 hObjInv]
+    exact hConsistent oid'
 
 theorem storeObject_preserves_capabilityRefMetadataConsistent
     (st st' : SystemState)
@@ -891,10 +1001,12 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hConsistent : SystemState.lifecycleMetadataConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     SystemState.lifecycleMetadataConsistent st' := by
   rcases hConsistent with ⟨hObjType, hCapRef⟩
-  exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hStep,
+  exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hObjInv hObjTypesInv hStep,
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
 
 -- ============================================================================
@@ -912,9 +1024,9 @@ theorem default_systemState_lifecycleConsistent :
     intro oid
     simp only [SystemState.lookupObjectTypeMeta]
     have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none :=
-      HashMap_getElem?_empty
+      RHTable.getElem?_empty _ _ _
     have h₂ : (default : SystemState).objects[oid]? = none :=
-      HashMap_getElem?_empty
+      RHTable.getElem?_empty _ _ _
     rw [h₁, h₂]; rfl
   · -- capabilityRefMetadataConsistent: `lookupCapabilityRefMeta` is definitionally exact.
     intro ref
@@ -931,9 +1043,10 @@ theorem storeObject_metadata_sync_type_change
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     st'.lifecycle.objectTypes[oid]? = some obj.objectType :=
-  storeObject_updates_objectTypeMeta st st' oid obj hStep
+  storeObject_updates_objectTypeMeta st st' oid obj hObjTypesInv hStep
 
 /-- M-09/WS-E3: `storeObject` correctly synchronizes capability-reference metadata
 when the stored object changes from a CNode to a non-CNode (or vice versa).
@@ -949,6 +1062,7 @@ theorem storeObject_metadata_sync_capref_at_stored
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (slot : SeLe4n.Slot)
+    (hObjInv : st.objects.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     SystemState.lookupCapabilityRefMeta st' { cnode := oid, slot := slot } =
       match obj with
@@ -957,7 +1071,7 @@ theorem storeObject_metadata_sync_capref_at_stored
   unfold SystemState.lookupCapabilityRefMeta SystemState.lookupSlotCap SystemState.lookupCNode
   unfold storeObject at hStep
   cases hStep
-  rw [HashMap_getElem?_insert]
+  simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]
   cases obj <;> simp [CNode.lookup]
 
 -- ============================================================================
@@ -1011,6 +1125,7 @@ theorem storeObject_preserves_objectIndexLive
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hLive : objectIndexLive st)
+    (hObjInv : st.objects.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     objectIndexLive st' := by
   unfold storeObject at hStep
@@ -1022,18 +1137,21 @@ theorem storeObject_preserves_objectIndexLive
     simp [h] at hMem
     cases hMem with
     | inl heq =>
-      subst heq; simp
+      subst heq
+      simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
     | inr hOld =>
       have hOldLive := hLive id hOld
-      simp [Std.HashMap.getElem?_insert]
-      split
-      · simp
-      · exact hOldLive
+      by_cases hEq : (oid == id) = true
+      · have : oid = id := eq_of_beq hEq; subst this
+        simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
+      · simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_ne _ _ _ _ hEq hObjInv]
+        exact hOldLive
   · -- oid was already in objectIndexSet, so objectIndex unchanged
     simp [h] at hMem
-    simp [Std.HashMap.getElem?_insert]
-    split
-    · simp
-    · exact hLive id hMem
+    by_cases hEq : (oid == id) = true
+    · have : oid = id := eq_of_beq hEq; subst this
+      simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
+    · simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_ne _ _ _ _ hEq hObjInv]
+      exact hLive id hMem
 
 end SeLe4n.Model

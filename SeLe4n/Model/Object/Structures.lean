@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Model.Object.Types
+import SeLe4n.Kernel.RobinHood.Bridge
 
 namespace SeLe4n.Model
 
@@ -84,7 +85,7 @@ making `noVirtualOverlap` trivially true.
 WS-H11/H-02: Enriched with per-page permissions (read/write/execute/user/cacheable). -/
 structure VSpaceRoot where
   asid : SeLe4n.ASID
-  mappings : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  mappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
   deriving Repr
 
 namespace VSpaceRoot
@@ -137,10 +138,12 @@ theorem noVirtualOverlap_empty (asid : SeLe4n.ASID) :
     noVirtualOverlap { asid := asid, mappings := {} } :=
   noVirtualOverlap_trivial _
 
-/-- WS-G6: After unmapping vaddr, lookup returns none. Maps to `HashMap.getElem?_erase`. -/
+/-- WS-G6: After unmapping vaddr, lookup returns none. Maps to `RHTable.getElem?_erase_self`.
+Requires `invExt` for RHTable erase correctness. -/
 theorem lookup_unmapPage_eq_none
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
+    (hExt : root.mappings.invExt)
     (hUnmap : root.unmapPage vaddr = some root') :
     root'.lookup vaddr = none := by
   unfold unmapPage at hUnmap
@@ -149,15 +152,17 @@ theorem lookup_unmapPage_eq_none
   | some p =>
       simp [hLookup] at hUnmap
       cases hUnmap
-      simp [lookup]
+      simp only [lookup]
+      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self root.mappings vaddr hExt
 
 /-- WS-G6/WS-H11: After mapping vaddr→paddr with perms, lookup returns the entry.
-Maps to `HashMap.getElem?_insert`. -/
+Maps to `RHTable.getElem?_insert_self`. Requires `invExt` for RHTable correctness. -/
 theorem lookup_mapPage_eq
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
     (perms : PagePermissions)
+    (hExt : root.mappings.invExt)
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.lookup vaddr = some (paddr, perms) := by
   unfold mapPage at hMap
@@ -166,17 +171,20 @@ theorem lookup_mapPage_eq
   | none =>
       simp [hLookup] at hMap
       cases hMap
-      simp [lookup]
+      simp only [lookup]
+      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self root.mappings vaddr (paddr, perms) hExt
 
-/-- WS-H11: After mapping vaddr→paddr with default perms, lookupAddr returns paddr. -/
+/-- WS-H11: After mapping vaddr→paddr with default perms, lookupAddr returns paddr.
+Requires `invExt` for RHTable correctness. -/
 theorem lookupAddr_mapPage_eq
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
     (perms : PagePermissions)
+    (hExt : root.mappings.invExt)
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.lookupAddr vaddr = some paddr := by
-  simp [lookupAddr, lookup_mapPage_eq root root' vaddr paddr perms hMap]
+  simp [lookupAddr, lookup_mapPage_eq root root' vaddr paddr perms hExt hMap]
 
 /-- F-08 helper: `mapPage` preserves the VSpace root ASID. -/
 theorem mapPage_asid_eq
@@ -204,12 +212,29 @@ theorem unmapPage_asid_eq
   | some _ =>
       simp [hLookup] at hUnmap; cases hUnmap; rfl
 
-/-- WS-G6: If `lookup` returns `none`, the vaddr has no mapping in the HashMap. -/
+/-- WS-G6: If `lookup` returns `none`, the vaddr has no mapping in the RHTable. -/
 theorem lookup_eq_none_iff
     (root : VSpaceRoot)
     (vaddr : SeLe4n.VAddr) :
     root.lookup vaddr = none ↔ vaddr ∉ root.mappings := by
-  simp [lookup]
+  constructor
+  · -- lookup = none → vaddr ∉ mappings
+    intro h hMem
+    simp only [lookup] at h
+    change root.mappings.get? vaddr = none at h
+    have hIsSome := (SeLe4n.Kernel.RobinHood.RHTable.mem_iff_isSome_getElem?
+      root.mappings vaddr).mp hMem
+    rw [h] at hIsSome; exact absurd hIsSome (by simp)
+  · -- vaddr ∉ mappings → lookup = none
+    intro h
+    simp only [lookup]
+    show root.mappings.get? vaddr = none
+    cases hc : root.mappings.get? vaddr with
+    | none => rfl
+    | some v =>
+      exfalso; apply h
+      exact (SeLe4n.Kernel.RobinHood.RHTable.mem_iff_isSome_getElem? root.mappings vaddr).mpr
+        (by simp [hc])
 
 /-- WS-G6: A successful `mapPage` preserves the no-virtual-overlap invariant.
 With HashMap-backed mappings, `noVirtualOverlap` is trivially true by key uniqueness. -/
@@ -244,13 +269,15 @@ theorem unmapPage_noVirtualOverlap
       exact noVirtualOverlap_trivial _
 
 /-- TPI-001 helper: mapping vaddr does not affect lookup of a different vaddr'.
-Maps to `HashMap.getElem?_insert` with the inequality hypothesis. -/
+Maps to `RHTable.getElem?_insert_ne` with the inequality hypothesis.
+Requires `invExt` for RHTable correctness. -/
 theorem lookup_mapPage_ne
     (root root' : VSpaceRoot)
     (vaddr vaddr' : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
     (perms : PagePermissions)
     (hNe : vaddr ≠ vaddr')
+    (hExt : root.mappings.invExt)
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.lookup vaddr' = root.lookup vaddr' := by
   unfold mapPage at hMap
@@ -258,17 +285,19 @@ theorem lookup_mapPage_ne
   | some _ => simp [hLookup] at hMap
   | none =>
       simp [hLookup] at hMap; cases hMap
-      simp only [lookup, HashMap_getElem?_insert]
-      have : ¬((vaddr == vaddr') = true) := by
-        intro h; exact hNe (eq_of_beq h)
-      simp [this]
+      simp only [lookup]
+      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne root.mappings vaddr vaddr'
+        (paddr, perms) (fun h => hNe (eq_of_beq h)) hExt
 
 /-- TPI-001 helper: unmapPage at vaddr does not affect lookup of a different vaddr'.
-Maps to `HashMap.getElem?_erase` with the inequality hypothesis. -/
+Maps to `RHTable.getElem?_erase_ne` with the inequality hypothesis.
+Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
 theorem lookup_unmapPage_ne
     (root root' : VSpaceRoot)
     (vaddr vaddr' : SeLe4n.VAddr)
     (hNe : vaddr ≠ vaddr')
+    (hExt : root.mappings.invExt)
+    (hSize : root.mappings.size < root.mappings.capacity)
     (hUnmap : root.unmapPage vaddr = some root') :
     root'.lookup vaddr' = root.lookup vaddr' := by
   unfold unmapPage at hUnmap
@@ -276,10 +305,9 @@ theorem lookup_unmapPage_ne
   | none => simp [hLookup] at hUnmap
   | some _ =>
       simp [hLookup] at hUnmap; cases hUnmap
-      simp only [lookup, HashMap_getElem?_erase]
-      have : ¬((vaddr == vaddr') = true) := by
-        intro h; exact hNe (eq_of_beq h)
-      simp [this]
+      simp only [lookup]
+      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne root.mappings vaddr vaddr'
+        (fun h => hNe (eq_of_beq h)) hExt hSize
 
 end VSpaceRoot
 
@@ -773,10 +801,10 @@ structure CapDerivationTree where
   /-- WS-G8/F-P14: Parent-indexed child map for O(1) `childrenOf` lookup.
   Runtime index maintained in parallel with `edges`; `edges` remains the
   proof anchor. -/
-  childMap : Std.HashMap CdtNodeId (List CdtNodeId) := {}
+  childMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId) := {}
   /-- M-P02: Child-indexed parent map for O(1) `parentOf` lookup.
   Maps each child node to its unique parent. Symmetric to `childMap`. -/
-  parentMap : Std.HashMap CdtNodeId CdtNodeId := {}
+  parentMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId := {}
   deriving Repr
 
 namespace CapDerivationTree
@@ -1014,50 +1042,57 @@ theorem empty_childMapConsistent : CapDerivationTree.empty.childMapConsistent :=
   intro parent child
   simp only [CapDerivationTree.empty]
   constructor
-  · intro h; rw [HashMap_get?_empty] at h; simp at h
+  · intro h
+    have : ({} : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId)).get? parent = none :=
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) parent
+    rw [this] at h; simp at h
   · rintro ⟨_, hMem, _⟩; cases hMem
 
 theorem addEdge_childMapConsistent (cdt : CapDerivationTree)
     (p c : CdtNodeId) (op : DerivationOp)
-    (hCon : cdt.childMapConsistent) :
+    (hCon : cdt.childMapConsistent)
+    (hExt : cdt.childMap.invExt) :
     (cdt.addEdge p c op).childMapConsistent := by
   intro parent child
   constructor
   · -- Forward: child in new childMap → edge exists
     intro hIn
     simp only [addEdge] at hIn
-    rw [HashMap_get?_insert] at hIn
-    split at hIn
+    by_cases heq : (p == parent) = true
     · -- p == parent is true
-      rename_i heq
       have hPeq : p = parent := eq_of_beq heq
+      subst hPeq
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt] at hIn
       simp only [Option.getD] at hIn
       rcases List.mem_cons.mp hIn with hChildEq | hTail
-      · exact ⟨⟨p, c, op⟩, .head _, hPeq, hChildEq.symm⟩
-      · have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp (hPeq ▸ hTail)
+      · exact ⟨⟨p, c, op⟩, .head _, rfl, hChildEq.symm⟩
+      · have ⟨e, heMem, hep, hec⟩ := (hCon p child).mp hTail
         exact ⟨e, List.mem_cons_of_mem _ heMem, hep, hec⟩
     · -- p == parent is false
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt] at hIn
       have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
       exact ⟨e, List.mem_cons_of_mem _ heMem, hep, hec⟩
   · -- Backward: edge exists → child in new childMap
     rintro ⟨e, heMem, hep, hec⟩
     simp only [addEdge]
-    rw [HashMap_get?_insert]
     rcases List.mem_cons.mp heMem with heq | hTail
     · -- e is the new edge
       subst heq
       simp only at hep hec
       subst hep; subst hec
-      simp only [beq_self_eq_true, ↓reduceIte, Option.getD]
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt]
+      simp only [Option.getD]
       exact .head _
     · -- e is from existing edges
-      split
+      by_cases heq : (p == parent) = true
       · -- p == parent is true
-        rename_i heq
         have hPeq : p = parent := eq_of_beq heq
+        subst hPeq
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt]
         simp only [Option.getD]
-        exact List.mem_cons_of_mem _ (hPeq ▸ (hCon p child).mpr ⟨e, hTail, hPeq ▸ hep, hec⟩)
+        exact List.mem_cons_of_mem _ ((hCon p child).mpr ⟨e, hTail, hep, hec⟩)
       · -- p == parent is false
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt]
         exact (hCon parent child).mpr ⟨e, hTail, hep, hec⟩
 
 /-- M-P02: Consistency invariant — `parentMap` mirrors the child→parent
@@ -1071,43 +1106,50 @@ theorem empty_parentMapConsistent : CapDerivationTree.empty.parentMapConsistent 
   intro child parent
   simp only [CapDerivationTree.empty]
   constructor
-  · intro h; rw [HashMap_getElem?_empty] at h; cases h
+  · intro h
+    have : ({} : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId)[child]? = none :=
+      SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) child
+    rw [this] at h; cases h
   · rintro ⟨_, hMem, _⟩; cases hMem
 
 theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
     (p c : CdtNodeId) (op : DerivationOp)
     (hCon : cdt.parentMapConsistent)
-    (hFresh : cdt.parentMap[c]? = none) :
+    (hFresh : cdt.parentMap[c]? = none)
+    (hExt : cdt.parentMap.invExt) :
     (cdt.addEdge p c op).parentMapConsistent := by
   intro child parent
   constructor
   · -- Forward: parentMap entry → edge exists
     intro hIn
     simp only [addEdge] at hIn
-    rw [HashMap_getElem?_insert] at hIn
-    split at hIn
+    -- Normalize [k]? to get? for RHTable rewriting
+    change (cdt.parentMap.insert c p).get? child = some parent at hIn
+    by_cases heq : (c == child) = true
     · -- c == child is true
-      rename_i heq
       have hCeq : c = child := eq_of_beq heq
+      subst hCeq
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt] at hIn
       cases hIn
-      exact ⟨⟨p, c, op⟩, .head _, rfl, hCeq⟩
+      exact ⟨⟨p, c, op⟩, .head _, rfl, rfl⟩
     · -- c == child is false
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt] at hIn
       have ⟨e, heMem, hep, hec⟩ := (hCon child parent).mp hIn
       exact ⟨e, List.mem_cons_of_mem _ heMem, hep, hec⟩
   · -- Backward: edge exists → parentMap entry
     rintro ⟨e, heMem, hep, hec⟩
     simp only [addEdge]
-    rw [HashMap_getElem?_insert]
+    -- Normalize [k]? to get? for RHTable rewriting
+    show (cdt.parentMap.insert c p).get? child = some parent
     rcases List.mem_cons.mp heMem with heq | hTail
     · -- e is the new edge
       subst heq
       simp only at hep hec
       subst hep; subst hec
-      simp only [beq_self_eq_true, ↓reduceIte]
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hExt]
     · -- e is from existing edges
-      split
+      by_cases heq : (c == child) = true
       · -- c == child is true
-        rename_i heq
         have hCeq : c = child := eq_of_beq heq
         subst hCeq
         -- child = c, but hFresh says parentMap[c]? = none
@@ -1115,12 +1157,15 @@ theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
         have := (hCon c e.parent).mpr ⟨e, hTail, rfl, hec⟩
         rw [hFresh] at this; cases this
       · -- c == child is false
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt]
         exact (hCon child parent).mpr ⟨e, hTail, hep, hec⟩
 
-/-- M-P02: Helper — `foldl erase` preserves entries for keys not in the list. -/
+/-- M-P02: Helper — `foldl erase` preserves entries for keys not in the list.
+Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
 private theorem foldl_erase_preserves
-    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
-    (hNotAny : ∀ c ∈ xs, (c == k) = false) :
+    (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (hNotAny : ∀ c ∈ xs, (c == k) = false)
+    (hExt : m.invExt) (hSize : m.size < m.capacity) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = m[k]? := by
   induction xs generalizing m with
   | nil => rfl
@@ -1129,38 +1174,56 @@ private theorem foldl_erase_preserves
     have hxk : (x == k) = false := hNotAny x (.head _)
     have hRest : ∀ c ∈ rest, (c == k) = false :=
       fun c hc => hNotAny c (.tail _ hc)
-    rw [ih _ hRest, HashMap_getElem?_erase, if_neg (by simp [hxk])]
+    have hExtE := m.erase_preserves_invExt x hExt hSize
+    have hSizeE := m.erase_size_lt_capacity x hSize
+    have h1 := ih _ hRest hExtE hSizeE
+    have h2 := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne m x k (by simp [hxk]) hExt hSize
+    -- h1 : foldl[k]? = (m.erase x)[k]?, h2 : (m.erase x).get? k = m.get? k
+    -- Both [k]? and .get? are definitionally equal for RHTable
+    exact h1.trans h2
 
-/-- M-P02: Helper — once `[k]? = none`, further `foldl erase` keeps it none. -/
+/-- M-P02: Helper — once `[k]? = none`, further `foldl erase` keeps it none.
+Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
 private theorem foldl_erase_none
-    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
-    (hNone : m[k]? = none) :
+    (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (hNone : m[k]? = none)
+    (hExt : m.invExt) (hSize : m.size < m.capacity) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
   induction xs generalizing m with
   | nil => exact hNone
   | cons x rest ih =>
     simp only [List.foldl_cons]
-    apply ih
-    rw [HashMap_getElem?_erase]
-    split
-    · rfl
-    · exact hNone
+    have hExtE := m.erase_preserves_invExt x hExt hSize
+    have hSizeE := m.erase_size_lt_capacity x hSize
+    apply ih _ _ hExtE hSizeE
+    show (m.erase x).get? k = none
+    by_cases hxk : (x == k) = true
+    · have hkEq : x = k := eq_of_beq hxk
+      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hExt
+    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne m x k hxk hExt hSize]; exact hNone
 
-/-- M-P02: Helper — `foldl erase` erases entries for keys in the list. -/
+/-- M-P02: Helper — `foldl erase` erases entries for keys in the list.
+Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
 private theorem foldl_erase_mem
-    (xs : List CdtNodeId) (m : Std.HashMap CdtNodeId CdtNodeId) (k : CdtNodeId)
-    (hMem : ∃ c ∈ xs, (c == k) = true) :
+    (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
+    (hMem : ∃ c ∈ xs, (c == k) = true)
+    (hExt : m.invExt) (hSize : m.size < m.capacity) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
   induction xs generalizing m with
   | nil => obtain ⟨_, hMem, _⟩ := hMem; cases hMem
   | cons x rest ih =>
     simp only [List.foldl_cons]
+    have hExtE := m.erase_preserves_invExt x hExt hSize
+    have hSizeE := m.erase_size_lt_capacity x hSize
     obtain ⟨c, hcMem, hck⟩ := hMem
-    rcases List.mem_cons.mp hcMem with rfl | hTail
+    rcases List.mem_cons.mp hcMem with hcx | hTail
     · -- c = x, so x == k is true
-      apply foldl_erase_none
-      rw [HashMap_getElem?_erase]; simp [hck]
-    · exact ih _ ⟨c, hTail, hck⟩
+      have hxk : (x == k) = true := hcx ▸ hck
+      have hkEq : x = k := eq_of_beq hxk
+      apply foldl_erase_none _ _ _ _ hExtE hSizeE
+      show (m.erase x).get? k = none
+      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hExt
+    · exact ih _ ⟨c, hTail, hck⟩ hExtE hSizeE
 
 /-- M-P02: `removeNode` preserves `parentMapConsistent`.
 
@@ -1171,26 +1234,57 @@ The proof shows that after removing all edges mentioning `node`:
 theorem removeNode_parentMapConsistent
     (cdt : CapDerivationTree) (node : CdtNodeId)
     (hCon : cdt.parentMapConsistent)
-    (hChildCon : cdt.childMapConsistent) :
+    (hChildCon : cdt.childMapConsistent)
+    (hExt : cdt.parentMap.invExt) (hSizePM : cdt.parentMap.size < cdt.parentMap.capacity) :
     (cdt.removeNode node).parentMapConsistent := by
   intro child parent
   simp only [removeNode]
+  -- Establish invExt/size for the fold result via auxiliary lemma
+  have foldl_erase_invExt : ∀ (xs : List CdtNodeId)
+      (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId),
+      m.invExt → m.size < m.capacity →
+      (xs.foldl (fun acc c => acc.erase c) m).invExt ∧
+      (xs.foldl (fun acc c => acc.erase c) m).size <
+      (xs.foldl (fun acc c => acc.erase c) m).capacity := by
+    intro xs
+    induction xs with
+    | nil => intro m hE hS; exact ⟨hE, hS⟩
+    | cons x rest ih =>
+      intro m hE hS
+      simp only [List.foldl_cons]
+      exact ih _ (m.erase_preserves_invExt x hE hS) (m.erase_size_lt_capacity x hS)
+  have hFoldBoth := foldl_erase_invExt
+    ((cdt.childMap.get? node).getD []) cdt.parentMap hExt hSizePM
+  have hFoldExt := hFoldBoth.1
+  have hFoldSize := hFoldBoth.2
   constructor
   · -- Forward: parentMapFinal[child]? = some parent → surviving edge exists
     intro hIn
-    rw [HashMap_getElem?_erase] at hIn
-    split at hIn
-    · cases hIn
-    · -- child ≠ node (as BEq)
-      rename_i hNeNode
+    -- Normalize [k]? to .get? for RHTable rewriting
+    change ((List.foldl (fun m c => m.erase c) cdt.parentMap
+      ((cdt.childMap.get? node).getD [])).erase node).get? child = some parent at hIn
+    by_cases hNeNodeBool : (node == child) = true
+    · -- node == child: erase_self gives none, contradicts some parent
+      have hNodeEq : node = child := eq_of_beq hNeNodeBool
+      subst hNodeEq
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ node hFoldExt] at hIn
+      cases hIn
+    · -- child ≠ node
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node child hNeNodeBool
+        hFoldExt hFoldSize] at hIn
       have hNotChild : ∀ c ∈ (cdt.childMap.get? node).getD [], (c == child) = false := by
         intro c hc
         cases h : (c == child)
         · rfl
         · exfalso
-          have hNone := foldl_erase_mem _ cdt.parentMap child ⟨c, hc, h⟩
+          have hNone : (List.foldl (fun acc c => acc.erase c) cdt.parentMap
+            ((cdt.childMap.get? node).getD [])).get? child = none :=
+            foldl_erase_mem _ cdt.parentMap child ⟨c, hc, h⟩ hExt hSizePM
           rw [hNone] at hIn; exact absurd hIn (by simp)
-      rw [foldl_erase_preserves _ _ _ hNotChild] at hIn
+      have hPreserves : (List.foldl (fun acc c => acc.erase c) cdt.parentMap
+        ((cdt.childMap.get? node).getD [])).get? child = cdt.parentMap.get? child :=
+        foldl_erase_preserves _ _ _ hNotChild hExt hSizePM
+      rw [hPreserves] at hIn
       have ⟨e, heMem, hep, hec⟩ := (hCon child parent).mp hIn
       refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
       simp only [decide_eq_true_eq]
@@ -1209,25 +1303,26 @@ theorem removeNode_parentMapConsistent
         have hChildEqNode : e.child = node := of_decide_eq_true hChild
         have : child = node := hec.symm.trans hChildEqNode
         subst this
-        simp at hNeNode
+        simp at hNeNodeBool
   · -- Backward: surviving edge → parentMapFinal[child]? = some parent
     rintro ⟨e, heMem, hep, hec⟩
     have ⟨heMemOrig, hFilter⟩ := List.mem_filter.mp heMem
     simp only [decide_eq_true_eq] at hFilter
     have ⟨hNotParent, hNotChild⟩ := hFilter
-    rw [HashMap_getElem?_erase]
     -- child ≠ node
-    have hNeNode : (node == child) = false := by
-      cases h : (node == child)
-      · rfl
-      · exfalso
-        have hNodeEqChild : node = child := eq_of_beq h
-        simp only [CapDerivationEdge.isChildOf] at hNotChild
-        exact hNotChild (decide_eq_true (by rw [hec, hNodeEqChild]))
-    simp [hNeNode]
-    -- Bridge .get? vs [_]? notation
+    have hNeNode : ¬(node == child) = true := by
+      intro h
+      have hNodeEqChild : node = child := eq_of_beq h
+      simp only [CapDerivationEdge.isChildOf] at hNotChild
+      exact hNotChild (decide_eq_true (by rw [hec, hNodeEqChild]))
+    -- Normalize [k]? to .get? for RHTable rewriting
+    show ((List.foldl (fun m c => m.erase c) cdt.parentMap
+      ((cdt.childMap.get? node).getD [])).erase node).get? child = some parent
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node child hNeNode
+      hFoldExt hFoldSize]
+    -- Now goal is foldl result .get? child = some parent
     show (List.foldl (fun m c => m.erase c) cdt.parentMap
-      ((cdt.childMap.get? node).getD []))[child]? = some parent
+      ((cdt.childMap.get? node).getD [])).get? child = some parent
     -- child not in children list
     have hNotInChildren : ∀ c ∈ (cdt.childMap.get? node).getD [], (c == child) = false := by
       intro c hc
@@ -1244,7 +1339,10 @@ theorem removeNode_parentMapConsistent
         cases hParentFromEdge
         simp only [CapDerivationEdge.isParentOf] at hNotParent
         exact hNotParent (decide_eq_true hep)
-    rw [foldl_erase_preserves _ _ _ hNotInChildren]
+    have hPreserves : (List.foldl (fun m c => m.erase c) cdt.parentMap
+      ((cdt.childMap.get? node).getD [])).get? child = cdt.parentMap.get? child :=
+      foldl_erase_preserves _ _ _ hNotInChildren hExt hSizePM
+    rw [hPreserves]
     exact (hCon child parent).mpr ⟨e, heMemOrig, hep, hec⟩
 
 /-- Slot-address view of a CDT edge (projection through slot backpointers). -/

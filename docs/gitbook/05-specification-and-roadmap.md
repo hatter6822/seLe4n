@@ -68,16 +68,32 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-M3 (IPC cap transfer, v0.16.17) — COMPLETED.** →
 **WS-M4 (test coverage expansion, v0.16.18) — COMPLETED.** →
 **WS-M5 (streaming BFS optimization, v0.16.19–v0.17.0) — COMPLETED. WS-M PORTFOLIO COMPLETE.** →
-**WS-N (Robin Hood hashing verified implementation, v0.17.0+) — ACTIVE. N1 COMPLETED (v0.17.1). N2 COMPLETED (v0.17.2). N3 COMPLETED (v0.17.3). N4 COMPLETED (v0.17.4). 5 phases (N1–N5), 122 subtasks.**
+**WS-N (Robin Hood hashing, v0.17.0–v0.17.5) — PORTFOLIO COMPLETE.** →
+**WS-Q1 (Service interface simplification, v0.18.0) — COMPLETED.** →
+**WS-Q2 (Universal RHTable migration, v0.19.0) — COMPLETED.**
 
-## Active: WS-N Robin Hood Hashing Verified Implementation (v0.17.0+)
+## Active: WS-Q Kernel State Architecture (v0.18.0+)
 
-Formally verified Robin Hood hash table to close the trust gap between seLe4n's
-machine-checked proof surface and the unverified `Std.HashMap` library type used
-across 14 production source files. Single-representation architecture with
-fuel-bounded recursion, bounds-checked array access, and per-cluster modular-
-arithmetic ordering. Phase N1 (core types + operations), N2 (invariant proofs),
-N3 (kernel API bridge), N4 (CNode.slots integration), N5 (tests + docs).
+Multi-phase plan unifying two-phase state architecture, service interface
+simplification (WS-P absorbed), and Rust syscall wrappers (WS-O absorbed).
+9 phases (Q1–Q9, 45 atomic units). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
+
+**WS-Q1 (v0.18.0) — COMPLETED:** Service interface simplification. Stateless
+registry model replacing lifecycle-based `ServiceStatus`/`ServiceConfig`.
+
+**WS-Q2 (v0.19.0) — COMPLETED:** Universal RHTable migration. Replaced all
+`Std.HashMap`/`Std.HashSet` in kernel state with verified `RHTable`/`RHSet`.
+16 map fields + 2 set fields across 6 structures, 30+ files, 10 atomic
+subphases (Q2-A through Q2-J). `allTablesInvExt` global invariant predicate.
+Zero sorry/axiom, 1,469 proved declarations, all tests pass.
+
+## Completed: WS-N Robin Hood Hashing (v0.17.0–v0.17.5)
+
+Formally verified Robin Hood hash table closing the trust gap between seLe4n's
+machine-checked proof surface and the unverified `Std.HashMap` library type.
+Single-representation architecture with fuel-bounded recursion, bounds-checked
+array access, and per-cluster modular-arithmetic ordering. 5 phases (N1–N5,
+122 subtasks). Portfolio **COMPLETE**.
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 **WS-N1 (v0.17.1) — COMPLETED:** `RHEntry`/`RHTable` core types, `idealIndex`/

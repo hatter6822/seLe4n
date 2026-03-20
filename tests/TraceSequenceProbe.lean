@@ -63,7 +63,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   { (default : SystemState) with
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList allEntries
     objectIndex := allEntries.map Prod.fst
-    objectIndexSet := Std.HashSet.ofList (allEntries.map Prod.fst)
+    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (allEntries.map Prod.fst)
     scheduler := { (default : SchedulerState) with
       runQueue := SeLe4n.Kernel.RunQueue.ofList (runnableThreads.map (fun tid => (tid, ⟨0⟩)))
     }

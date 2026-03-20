@@ -45,6 +45,54 @@ state. Key changes:
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).
 
+### WS-Q2 workstream (Universal RHTable Migration)
+
+WS-Q2 is a **completed** workstream (v0.19.0), the second phase of WS-Q (Kernel
+State Architecture). It replaces every `Std.HashMap` and `Std.HashSet` in kernel
+state with the formally verified `RHTable`/`RHSet` (Robin Hood hash table from
+WS-N), establishing the builder-phase representation for the two-phase state
+architecture. Scope: 16 map fields + 2 set fields across 6 structures, 30+ files
+modified, 10 atomic subphases. Key changes:
+
+- **Q2-A**: Prelude lemma foundation — `RHTable` equivalents for all 28
+  `Std.HashMap` utility lemmas used by downstream proofs (re-exported from
+  Bridge.lean with `[simp]` attributes)
+- **Q2-B**: `RHSet` type definition — newtype wrapper around `RHTable κ Unit`
+  with 14 bridge lemmas (`contains`, `insert`, `erase`, `membership`, `invExt`
+  preservation), `Inhabited`/`BEq`/`Membership`/`EmptyCollection` instances,
+  `ofList` constructor
+- **Q2-C**: Core SystemState maps + object store (atomic group A) — `objects`,
+  `objectIndexSet`, `lifecycle.objectTypes`, `lifecycle.capabilityRefs`,
+  `asidTable` migrated to `RHTable`/`RHSet`; `storeObject` rewritten;
+  `invExt` threading through all state-modifying operations
+- **Q2-D**: Per-object maps — `VSpaceRoot.mappings` migrated to `RHTable`
+- **Q2-E**: IRQ handler map — `irqHandlers` migrated to `RHTable`
+- **Q2-F**: CDT maps (atomic group B) — `cdt.childMap`, `cdt.parentMap`,
+  `cdtSlotNode`, `cdtNodeSlot` migrated to `RHTable`
+- **Q2-G**: RunQueue internals (atomic group C) — `byPriority`,
+  `threadPriority` migrated to `RHTable`; `membership` migrated to `RHSet`
+- **Q2-H**: Service maps — `services`, `interfaceRegistry`, `serviceRegistry`
+  migrated to `RHTable`
+- **Q2-I**: Elimination verification — zero state-persistent `Std.HashMap`/
+  `Std.HashSet` remaining (algorithm-local uses permitted in Acyclicity.lean,
+  Projection.lean, Service/Operations.lean)
+- **Q2-J**: `allTablesInvExt` predicate — global well-formedness condition
+  asserting all 16 RHTable/RHSet fields satisfy `invExt`; proven for default
+  state via `default_allTablesInvExt`
+- **invExt threading**: Every theorem calling a state-modifying bridge lemma
+  (`storeObject_*`, `storeTcbIpcState_*`, `endpointQueuePopHead_*`, etc.)
+  gained an `hObjInv : st.objects.invExt` parameter, cascading across
+  EndpointPreservation (~25 theorems), NotificationPreservation (~67 fixes),
+  CallReplyRecv (~72 fixes), Structural (~103 fixes), Capability Preservation,
+  Authority, Defs, Policy, Acyclicity, Architecture Invariant, and all
+  InformationFlow invariant files
+- **Proof patterns**: `HashMap_getElem?_empty` → `RHTable_get?_empty 16 (by omega)`;
+  `HashMap_getElem?_insert` → `simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert]`;
+  `.fold` → `.toList.foldl` (universe constraint workaround)
+- **Test migration**: NegativeStateSuite, TraceSequenceProbe updated to use
+  `RHTable`/`RHSet` constructors; all test suites pass
+- **Proof surface**: Zero sorry, 1,469 proved declarations, 168 build jobs
+
 ### WS-N workstream (Robin Hood hashing verified implementation)
 
 WS-N is a **completed** workstream (v0.17.0–v0.17.5), created to close the trust gap
