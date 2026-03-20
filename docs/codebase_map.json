@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-kernel-integration-YrXqC",
-      "commit_sha": "0b54a55fc91f0d471db9b2e26b6de4500db213d0",
-      "tree_sha": "99dc3177760a162c6f1970e743a6e575a167245b",
-      "committed_at_utc": "2026-03-19T23:45:13+00:00"
+      "branch": "main",
+      "commit_sha": "ba4d885356c1039646af115c9951955373ab812a",
+      "tree_sha": "45230ee21948a89e754707d2e554821f079eb7c5",
+      "committed_at_utc": "2026-03-20T00:26:47-04:00"
     }
   },
   "source_sync": {
