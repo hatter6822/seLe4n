@@ -1,3 +1,36 @@
+## [0.17.9] — WS-Q3 IntermediateState Formalization
+
+- Completed Phase 3 (WS-Q3) of the Kernel State Architecture workstream:
+  IntermediateState formalization with builder-phase invariant witnesses
+- Q3-A: `IntermediateState` type definition in `SeLe4n/Model/IntermediateState.lean`
+  — wraps `SystemState` with four machine-checked invariant witnesses:
+  `allTablesInvExt` (all 16 RHTable + 2 RHSet), `perObjectSlotsInvariant`
+  (CNode `slotsUnique`), `perObjectMappingsInvariant` (VSpaceRoot
+  `mappings.invExt`), `lifecycleMetadataConsistent`
+- Q3-A: `mkEmptyIntermediateState` with `emptyIntermediate_valid` proof
+- Q3-A: Named predicates `perObjectSlotsInvariant`, `perObjectMappingsInvariant`
+  with default-state proofs
+- Q3-B: 7 builder operations in `SeLe4n/Model/Builder.lean`, each carrying
+  forward all four invariant witnesses:
+  - `registerIrq` — IRQ handler insertion
+  - `registerService` — service registry insertion
+  - `addServiceGraph` — service graph entry insertion
+  - `createObject` — simplified boot-time object creation with per-object proofs
+  - `deleteObject` — object erasure with erase preservation
+  - `insertCap` — CNode slot capability insertion (delegates to `createObject`)
+  - `mapPage` — VSpaceRoot page mapping insertion (delegates to `createObject`)
+- Q3-B: Helper theorem `insert_capacity_ge4` for capacity preservation
+- Q3-C: Boot sequence in `SeLe4n/Platform/Boot.lean`:
+  - `PlatformConfig`, `IrqEntry`, `ObjectEntry` types
+  - `foldIrqs`, `foldObjects` fold helpers
+  - `bootFromPlatform` — deterministic boot from platform configuration
+  - `bootFromPlatform_valid` — master validity theorem (all four witnesses)
+  - `bootFromPlatform_deterministic`, `bootFromPlatform_empty` properties
+- Files: 3 new (`IntermediateState.lean`, `Builder.lean`, `Boot.lean`), 3+
+  modified (docs, codebase map, lakefile)
+- All test tiers pass; zero `sorry`/`axiom`
+- Bumped `lakefile.toml` version to `0.17.9`
+
 ## [0.17.5] — WS-N5 Test Coverage + Documentation
 
 - Completed Phase 5 (WS-N5) of the Robin Hood hashing workstream: test coverage

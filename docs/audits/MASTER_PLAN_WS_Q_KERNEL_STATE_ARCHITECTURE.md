@@ -721,11 +721,12 @@ def SystemState.allTablesInvExt (st : SystemState) : Prop :=
 
 ---
 
-### Phase Q3: IntermediateState Formalization
+### Phase Q3: IntermediateState Formalization — **COMPLETED** (v0.17.9)
 
-**Target version**: v0.19.1
+**Target version**: v0.19.1 → **Delivered**: v0.17.9
 **Goal**: Define `IntermediateState` as the well-typed builder state with
 explicit invariant contracts and builder operations.
+**Status**: All 3 sub-phases (Q3-A, Q3-B, Q3-C) completed with zero sorry/axiom.
 
 #### Q3-A: IntermediateState Type
 

@@ -93,6 +93,39 @@ modified, 10 atomic subphases. Key changes:
   `RHTable`/`RHSet` constructors; all test suites pass
 - **Proof surface**: Zero sorry, 1,459 proved declarations, 168 build jobs
 
+### WS-Q3 workstream (IntermediateState Formalization)
+
+WS-Q3 is a **completed** workstream (v0.17.9), the third phase of WS-Q (Kernel
+State Architecture). It defines the `IntermediateState` type — a wrapper around
+`SystemState` that carries four machine-checked invariant witnesses — and
+implements builder operations that construct valid intermediate states during
+boot. Key changes:
+
+- **Q3-A**: `IntermediateState` type in `SeLe4n/Model/IntermediateState.lean` —
+  bundles `SystemState` with `allTablesInvExt`, `perObjectSlotsInvariant`,
+  `perObjectMappingsInvariant`, `lifecycleMetadataConsistent` witnesses.
+  `mkEmptyIntermediateState` constructor with `emptyIntermediate_valid` proof.
+  Named predicates `perObjectSlotsInvariant`, `perObjectMappingsInvariant` with
+  default-state theorems.
+- **Q3-B**: 7 builder operations in `SeLe4n/Model/Builder.lean`:
+  `registerIrq`, `registerService`, `addServiceGraph`, `createObject`,
+  `deleteObject`, `insertCap`, `mapPage`. Each carries forward all four
+  invariant witnesses through machine-checked proofs. `insertCap` and `mapPage`
+  delegate to `createObject` with per-object proof obligations.
+  Helper theorem `insert_capacity_ge4` for capacity preservation.
+- **Q3-C**: Boot sequence in `SeLe4n/Platform/Boot.lean` — `PlatformConfig`
+  type with `IrqEntry` and `ObjectEntry`, `bootFromPlatform` function that
+  folds IRQ entries and initial objects through builder operations.
+  Master validity theorem `bootFromPlatform_valid` proves the booted state
+  satisfies all four IntermediateState invariant witnesses.
+  `bootFromPlatform_deterministic` and `bootFromPlatform_empty` properties.
+- **Proof surface**: Zero sorry, all three modules compile independently via
+  `lake build SeLe4n.Model.IntermediateState`, `lake build SeLe4n.Model.Builder`,
+  `lake build SeLe4n.Platform.Boot`. All test tiers pass.
+
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+for the full WS-Q plan (phases Q1–Q9).
+
 ### WS-N workstream (Robin Hood hashing verified implementation)
 
 WS-N is a **completed** workstream (v0.17.0–v0.17.5), created to close the trust gap
