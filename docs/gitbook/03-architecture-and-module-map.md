@@ -128,6 +128,17 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `lookupObject` / `storeObject` / `setCurrentThread`,
   - typed CSpace lookup/ownership helpers and supporting lemmas.
 
+- `SeLe4n/Model/IntermediateState.lean` (Q3-A)
+  - `IntermediateState` — builder-phase state wrapping `SystemState` with four
+    invariant witnesses (`allTablesInvExt`, `perObjectSlotsInvariant`,
+    `perObjectMappingsInvariant`, `lifecycleMetadataConsistent`).
+  - `mkEmptyIntermediateState` — empty state constructor.
+
+- `SeLe4n/Model/Builder.lean` (Q3-B)
+  - 7 builder operations for invariant-preserving state construction:
+    `registerIrq`, `registerService`, `addServiceGraph`, `createObject`,
+    `deleteObject`, `insertCap`, `mapPage`.
+
 ### Scheduler subsystem
 
 - `SeLe4n/Kernel/Scheduler/Invariant.lean`
@@ -268,6 +279,11 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - `PlatformBinding` typeclass: formal interface for hardware targets bundling
     `MachineConfig`, `RuntimeBoundaryContract`, `BootBoundaryContract`, and
     `InterruptBoundaryContract`.
+- `SeLe4n/Platform/Boot.lean`
+  - `PlatformConfig`, `IrqEntry`, `ObjectEntry`, `bootFromPlatform` boot
+    sequence from platform configuration to `IntermediateState`. Master validity
+    theorem `bootFromPlatform_valid`, determinism proof `bootFromPlatform_deterministic`,
+    empty-config identity `bootFromPlatform_empty`. (WS-Q3-C)
 - `SeLe4n/Platform/Sim/{RuntimeContract,BootContract,Contract}.lean`
   - Simulation platform binding (`SimPlatform`) with permissive/restrictive
     runtime contracts, trivially-true boot and interrupt contracts, and an
@@ -351,6 +367,7 @@ SeLe4n.lean
     ├── Kernel/Architecture/{Assumptions,Adapter,VSpace,VSpaceBackend,VSpaceInvariant,Invariant}.lean
     └── Kernel/InformationFlow/{Policy,Projection,Enforcement,Invariant}.lean
 ├── Platform/Contract.lean
+├── Platform/Boot.lean
 ├── Platform/Sim/{RuntimeContract,BootContract,Contract}.lean
 └── Platform/RPi5/{Board,RuntimeContract,BootContract,Contract}.lean
 ```

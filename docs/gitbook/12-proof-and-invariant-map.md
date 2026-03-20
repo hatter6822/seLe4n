@@ -1627,3 +1627,61 @@ objects outside the observer's clearance are filtered out by projection.
 - `InformationFlow/Invariant/Helpers.lean` — shared frame lemmas
 - `InformationFlow/Invariant/Operations.lean` — per-operation NI proofs
 - `InformationFlow/Invariant/Composition.lean` — trace-level IF-M4
+
+## 32. WS-Q3 IntermediateState formalization (v0.17.9)
+
+WS-Q3 introduces the builder-phase state model: a dependently-typed wrapper
+around `SystemState` that carries four invariant witnesses through every
+construction step, ensuring all hash tables, per-object structures, and
+lifecycle metadata are well-formed at all times during boot.
+
+### Q3-A: IntermediateState type (`Model/IntermediateState.lean`)
+
+Definitions:
+
+- `perObjectSlotsInvariant` — for all CNodes in `objects`, `cn.slotsUnique` holds
+  (invExt + size < capacity + 4 ≤ capacity).
+- `perObjectMappingsInvariant` — for all VSpaceRoots in `objects`,
+  `vs.mappings.invExt` holds.
+- `IntermediateState` — structure carrying `SystemState` + 4 proof witnesses:
+  `hAllTables` (16 maps + 2 sets satisfy `invExt`), `hPerObjectSlots`,
+  `hPerObjectMappings`, `hLifecycleConsistent`.
+- `mkEmptyIntermediateState` — constructs empty `IntermediateState` from
+  `default` SystemState with all invariants proved vacuously
+  (`RHTable.getElem?_empty`).
+- `mkEmptyIntermediateState_valid` — 4-conjunct validity theorem for the empty state.
+
+### Q3-B: Builder operations (`Model/Builder.lean`)
+
+Seven builder operations, each taking and returning `IntermediateState` with
+all four invariant witnesses preserved:
+
+| Builder Op | Mutates | Key proof obligation |
+|-----------|---------|---------------------|
+| `Builder.registerIrq` | `irqHandlers` | `allTablesInvExt` via `RHTable_insert_preserves_invExt` |
+| `Builder.registerService` | `services` | `allTablesInvExt` via `RHTable_insert_preserves_invExt` |
+| `Builder.addServiceGraph` | `services` | `allTablesInvExt` via `RHTable_insert_preserves_invExt` |
+| `Builder.createObject` | `objects`, `lifecycle.objectTypes` | `allTablesInvExt` + per-object by-cases on id equality |
+| `Builder.deleteObject` | `objects`, `lifecycle.objectTypes` | `allTablesInvExt` via `RHTable_erase_preserves_invExt` |
+| `Builder.insertCap` | `objects` (CNode update) | per-object `slotsUnique` + capacity ≥ 4 after insert |
+| `Builder.mapPage` | `objects` (VSpaceRoot update) | per-object `mappings.invExt` preservation |
+
+Helper theorem: `insert_capacity_ge4` — capacity bound monotonicity through
+`RHTable.insert` (via `insertNoResize_capacity` + `resize_fold_capacity`).
+
+Per-object proof pattern: by-cases on `id = oid` with `RHTable_getElem?_eq_get?`
+normalization to convert between `[k]?` and `.get?` notations.
+
+### Q3-C: Boot sequence (`Platform/Boot.lean`)
+
+- `PlatformConfig` — platform configuration: `irqTable : Array IrqEntry`,
+  `initialObjects : Array ObjectEntry`.
+- `IrqEntry` — `(irq : Irq, handler : ObjId)`.
+- `ObjectEntry` — `(id : ObjId, obj : KernelObject)` + proof obligations for
+  CNode `slotsUnique` and VSpaceRoot `mappings.invExt`.
+- `bootFromPlatform` — folds IRQs then objects over empty `IntermediateState`.
+- `bootFromPlatform_valid` — master validity: all 4 invariant witnesses hold
+  after boot.
+- `bootFromPlatform_deterministic` — determinism: identical configs produce
+  identical states.
+- `bootFromPlatform_empty` — identity: empty config yields empty state.

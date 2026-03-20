@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.17.8` |
+| Version | `0.17.9` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 48,925 across 83 Lean files |
+| Production LoC | 49,498 across 86 Lean files |
 | Test LoC | 5,513 across 5 suites |
-| Proved declarations | 1,459 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 1,479 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
-| Active workstream | **WS-Q** Kernel State Architecture — **WS-Q1 COMPLETED** (v0.17.7), **WS-Q2 COMPLETED** (v0.17.8). Next: Q3–Q9. Prior: **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Q3–Q9, then Raspberry Pi 5 hardware binding** |
+| Active workstream | **WS-Q** Kernel State Architecture — **WS-Q1 COMPLETED** (v0.17.7), **WS-Q2 COMPLETED** (v0.17.8), **WS-Q3 COMPLETED** (v0.17.9). Next: Q4–Q9. Prior: **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Q4–Q9, then Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -70,7 +70,8 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-M5 (streaming BFS optimization, v0.16.19–v0.17.0) — COMPLETED. WS-M PORTFOLIO COMPLETE.** →
 **WS-N (Robin Hood hashing, v0.17.0–v0.17.5) — PORTFOLIO COMPLETE.** →
 **WS-Q1 (Service interface simplification, v0.17.7) — COMPLETED.** →
-**WS-Q2 (Universal RHTable migration, v0.17.8) — COMPLETED.**
+**WS-Q2 (Universal RHTable migration, v0.17.8) — COMPLETED.** →
+**WS-Q3 (IntermediateState formalization, v0.17.9) — COMPLETED.**
 
 ## Active: WS-Q Kernel State Architecture (v0.17.7+)
 
@@ -85,7 +86,15 @@ registry model replacing lifecycle-based `ServiceStatus`/`ServiceConfig`.
 `Std.HashMap`/`Std.HashSet` in kernel state with verified `RHTable`/`RHSet`.
 16 map fields + 2 set fields across 6 structures, 30+ files, 10 atomic
 subphases (Q2-A through Q2-J). `allTablesInvExt` global invariant predicate.
-Zero sorry/axiom, 1,459 proved declarations, all tests pass.
+Zero sorry/axiom, all tests pass.
+
+**WS-Q3 (v0.17.9) — COMPLETED:** IntermediateState formalization. `IntermediateState`
+type wrapping `SystemState` with four invariant witnesses (`allTablesInvExt`,
+`perObjectSlotsInvariant`, `perObjectMappingsInvariant`, `lifecycleMetadataConsistent`).
+7 builder operations (`registerIrq`, `registerService`, `addServiceGraph`,
+`createObject`, `deleteObject`, `insertCap`, `mapPage`). Boot sequence
+(`bootFromPlatform`) with master validity theorem. Zero sorry/axiom, 1,479
+proved declarations, all tests pass.
 
 ## Completed: WS-N Robin Hood Hashing (v0.17.0–v0.17.5)
 

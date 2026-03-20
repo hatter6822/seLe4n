@@ -79,7 +79,9 @@ and Rust syscall wrappers. **Q1 COMPLETED** (v0.17.7): service interface
 simplification. **Q2 COMPLETED** (v0.17.8): universal RHTable migration — all
 `Std.HashMap`/`Std.HashSet` in kernel state replaced with verified
 `RHTable`/`RHSet` (16 map fields + 2 set fields, 30+ files, 10 subphases).
-Remaining: Q3–Q9 (IntermediateState, CNode radix tree, freeze, Rust wrappers).
+**Q3 COMPLETED** (v0.17.9): IntermediateState formalization — builder-phase state
+with invariant witnesses, 7 builder operations, boot sequence.
+Remaining: Q4–Q9 (CNode radix tree, freeze, Rust wrappers).
 After WS-Q: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "8b5f7a476ff278eb416cb811f0a59474d8dbc1c4",
-      "tree_sha": "132933cc52fd21d22fd1f0d9f5f735e6524d028d",
-      "committed_at_utc": "2026-03-20T12:53:40-04:00"
+      "branch": "claude/review-q3-workstream-FTLe6",
+      "commit_sha": "6a4183b8507ef0d3480aeab4c23561bbef455a92",
+      "tree_sha": "43cf827d3a59de4b22237dfeaee63afa711f1480",
+      "committed_at_utc": "2026-03-20T16:53:54+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "630142f39f9c87a23f1499a07af6b7018d0af1180e814dad246349927972e2d0"
+    "source_digest": "72fb23f7facf6b3eb18565094d84b08d48e6bbbcbd67f664569881f034569577"
   },
   "summary": {
-    "module_count": 88,
-    "declaration_count": 2659
+    "module_count": 91,
+    "declaration_count": 2699
   },
   "readme_sync": {
-    "version": "0.17.8",
+    "version": "0.17.9",
     "lean_toolchain": "v4.28.0",
-    "production_files": 83,
-    "production_loc": 48925,
+    "production_files": 86,
+    "production_loc": 49498,
     "test_files": 5,
     "test_loc": 5513,
-    "proved_theorem_lemma_decls": 1459,
+    "proved_theorem_lemma_decls": 1479,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14732,6 +14732,202 @@
       ]
     },
     {
+      "module": "SeLe4n.Model.Builder",
+      "path": "SeLe4n/Model/Builder.lean",
+      "declaration_count": 18,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Model.Builder",
+          "line": 21,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_objects",
+          "line": 31,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_irqHandlers",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_services",
+          "line": 39,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_serviceRegistry",
+          "line": 43,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_interfaceRegistry",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_objectTypes",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_capabilityRefs",
+          "line": 55,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_objectIndexSet",
+          "line": 59,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "allTablesInvExt_asidTable",
+          "line": 63,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "registerIrq",
+          "line": 72,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "registerService",
+          "line": 96,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "addServiceGraph",
+          "line": 122,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "createObject",
+          "line": 156,
+          "called": [
+            "allTablesInvExt_objectTypes",
+            "allTablesInvExt_objects"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "deleteObject",
+          "line": 230,
+          "called": [
+            "allTablesInvExt_objectTypes",
+            "allTablesInvExt_objects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_capacity_ge4",
+          "line": 304,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "insertCap",
+          "line": 311,
+          "called": [
+            "createObject",
+            "insert_capacity_ge4"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mapPage",
+          "line": 335,
+          "called": [
+            "createObject"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Model.IntermediateState",
+      "path": "SeLe4n/Model/IntermediateState.lean",
+      "declaration_count": 8,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Model",
+          "line": 31,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "perObjectSlotsInvariant",
+          "line": 37,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "perObjectMappingsInvariant",
+          "line": 43,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "IntermediateState",
+          "line": 58,
+          "called": [
+            "perObjectMappingsInvariant",
+            "perObjectSlotsInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perObjectSlotsInvariant_default",
+          "line": 67,
+          "called": [
+            "perObjectSlotsInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perObjectMappingsInvariant_default",
+          "line": 77,
+          "called": [
+            "perObjectMappingsInvariant"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkEmptyIntermediateState",
+          "line": 86,
+          "called": [
+            "IntermediateState",
+            "perObjectMappingsInvariant_default",
+            "perObjectSlotsInvariant_default"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mkEmptyIntermediateState_valid",
+          "line": 94,
+          "called": [
+            "mkEmptyIntermediateState",
+            "perObjectMappingsInvariant",
+            "perObjectSlotsInvariant"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
       "declaration_count": 119,
@@ -17383,6 +17579,132 @@
             "SystemState",
             "objectIndexLive",
             "storeObject"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.Boot",
+      "path": "SeLe4n/Platform/Boot.lean",
+      "declaration_count": 14,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.Boot",
+          "line": 24,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "IrqEntry",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "ObjectEntry",
+          "line": 40,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "PlatformConfig",
+          "line": 51,
+          "called": [
+            "IrqEntry",
+            "ObjectEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "foldIrqs",
+          "line": 56,
+          "called": [
+            "IrqEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "foldObjects",
+          "line": 61,
+          "called": [
+            "ObjectEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootFromPlatform",
+          "line": 73,
+          "called": [
+            "PlatformConfig",
+            "foldIrqs",
+            "foldObjects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_deterministic",
+          "line": 79,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_empty",
+          "line": 83,
+          "called": [
+            "bootFromPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_allTablesInvExt",
+          "line": 88,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_perObjectSlots",
+          "line": 93,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_perObjectMappings",
+          "line": 98,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_lifecycleConsistent",
+          "line": 103,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_valid",
+          "line": 108,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatform",
+            "bootFromPlatform_allTablesInvExt",
+            "bootFromPlatform_lifecycleConsistent",
+            "bootFromPlatform_perObjectMappings",
+            "bootFromPlatform_perObjectSlots"
           ]
         }
       ]

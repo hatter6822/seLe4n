@@ -199,6 +199,50 @@ The `PlatformBinding` typeclass decouples kernel semantics from hardware:
 
 The simulation platform (`Platform/Sim/`) provides permissive contracts for testing. The RPi5 platform (`Platform/RPi5/`) provides substantive hardware-specific contracts (WS-H15b: SP-preservation register stability, GIC-400 IRQ range validation, MMIO disjointness proof, empty-initial-state boot checks). Both platforms provide concrete `AdapterProofHooks` instantiations (WS-H15d) grounding the adapter preservation chain end-to-end. Kernel logic is identical in both — only platform contracts differ.
 
+## 7b. Two-phase boot: IntermediateState and builder pattern (WS-Q3)
+
+The kernel uses a **two-phase state architecture**: a builder phase constructs
+the initial `SystemState` with all invariants proven at each step, then the
+execution phase (future Q5) freezes the state into dense arrays.
+
+### IntermediateState
+
+`IntermediateState` (defined in `Model/IntermediateState.lean`) is a
+dependently-typed wrapper around `SystemState` carrying four invariant witnesses:
+
+1. **`hAllTables`** — all 16 `RHTable` and 2 `RHSet` fields satisfy `invExt`
+   (WF + distCorrect + noDupKeys + probeChainDominant).
+2. **`hPerObjectSlots`** — every CNode in the object store has `slotsUnique`
+   (invExt + size < capacity + 4 ≤ capacity).
+3. **`hPerObjectMappings`** — every VSpaceRoot's `mappings` satisfies `invExt`.
+4. **`hLifecycleConsistent`** — lifecycle metadata (objectTypes, capabilityRefs)
+   is consistent with the object store.
+
+Because Lean erases proofs at runtime, `IntermediateState` has exactly the same
+runtime representation as `SystemState` — the witnesses exist only for the
+type-checker.
+
+### Builder operations
+
+Seven pure builder operations (`Model/Builder.lean`) each take and return
+`IntermediateState`, threading proof witnesses through every mutation. The key
+proof pattern is by-cases on id equality: when inserting or deleting an object,
+the per-object invariants for all *other* objects are unchanged (via
+`RHTable.getElem?_insert_ne` / `_erase_ne`), and the modified object's
+invariant is proved from the operation's preconditions.
+
+### Boot sequence
+
+`Platform/Boot.lean` defines `bootFromPlatform`, which folds a
+`PlatformConfig` (IRQ table + initial objects) over the empty
+`IntermediateState`. The master validity theorem `bootFromPlatform_valid`
+guarantees all four invariant witnesses hold after boot. Determinism and
+empty-config identity are also proved.
+
+This design means the kernel enters execution with *proven* invariants rather
+than assumed ones — the type system enforces that no unverified state can leak
+into the execution phase.
+
 ## 8. Syscall argument decode: register-sourced authority (WS-J1)
 
 The current model passes syscall arguments as pre-typed Lean parameters directly
