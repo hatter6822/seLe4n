@@ -1713,3 +1713,57 @@ normalization to convert between `[k]?` and `.get?` notations.
 - `bootFromPlatform_deterministic` — determinism: identical configs produce
   identical states.
 - `bootFromPlatform_empty` — identity: empty config yields empty state.
+
+### Q5: FrozenSystemState + Freeze (`Model/FrozenState.lean`)
+
+Phase Q5 defines the frozen execution-phase state representation and the
+`freeze` transformation from `IntermediateState` (builder phase) to
+`FrozenSystemState` (execution phase).
+
+#### Q5-A: FrozenMap and FrozenSet
+
+- `FrozenMap κ ν` — dense `Array ν` value store + `RHTable κ Nat` index
+  mapping. Runtime bounds-checked `get?` (safe-by-construction), `set`
+  (update existing key only), `contains`, `fold`.
+- `FrozenSet κ` — `FrozenMap κ Unit` with `FrozenSet.mem` membership check.
+- `freezeMap` — converts `RHTable κ ν` to `FrozenMap κ ν` via fold over
+  `RHTable.toList`, building dense array + index simultaneously.
+
+Key theorems:
+- `toList_empty` — `toList` on an empty RHTable yields `[]`,
+- `freezeMap_empty` — freezing empty RHTable yields empty FrozenMap (via `toList_empty`),
+- `freezeMap_data_size` — `fm.data.size = rt.toList.length`,
+- `frozenMap_set_preserves_size` — `set` preserves `data.size`.
+
+#### Q5-B: Per-object frozen types
+
+- `FrozenCNode` — uses `CNodeRadix` (from Q4) for O(1) zero-hash slot lookup,
+- `FrozenVSpaceRoot` — uses `FrozenMap VAddr (PAddr × PagePermissions)`,
+- `FrozenKernelObject` — 6-variant inductive matching `KernelObject`,
+- `FrozenSchedulerState` — FrozenMap-based RunQueue fields + scalar metadata,
+- `FrozenSystemState` — 19 fields mirroring `SystemState` with all `RHTable`
+  fields replaced by `FrozenMap`.
+
+Key theorem:
+- `freezeObject_preserves_type` — frozen object type matches source object type.
+
+#### Q5-C: Freeze function
+
+- `freezeObject` — per-object freeze (CNode→CNodeRadix via Q4 bridge,
+  VSpaceRoot→FrozenMap, others pass-through),
+- `freezeScheduler` — scheduler state freeze,
+- `freeze` — full 19-field `IntermediateState → FrozenSystemState` conversion.
+
+Key theorems:
+- `freeze_deterministic` — same input yields same output,
+- `freeze_preserves_machine` — machine state unchanged,
+- `freeze_preserves_objectIndex` — object index list preserved,
+- `freeze_preserves_cdtEdges` — CDT edge list preserved.
+
+#### Q5-D: Capacity planning
+
+- `minObjectSize` — minimum object size constant (16),
+- `objectCapacity` — `currentObjects + untypedMemory / minObjectSize`.
+
+Key theorem:
+- `objectCapacity_ge_size` — capacity ≥ current object count.

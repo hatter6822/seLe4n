@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.17.10"
+version = "0.17.11"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -34,3 +34,7 @@ root = "tests.RobinHoodSuite"
 [[lean_exe]]
 name = "radix_tree_suite"
 root = "tests.RadixTreeSuite"
+
+[[lean_exe]]
+name = "frozen_state_suite"
+root = "tests.FrozenStateSuite"

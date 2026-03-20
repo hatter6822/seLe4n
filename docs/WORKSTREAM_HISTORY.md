@@ -166,6 +166,39 @@ frozen-phase CNode representation in Q5. Key changes:
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).
 
+### WS-Q5 workstream (FrozenSystemState + Freeze)
+
+WS-Q5 is a **completed** workstream (v0.17.11), the fifth phase of WS-Q (Kernel
+State Architecture). It defines the frozen execution-phase state representation
+and implements the `freeze` function that transforms an `IntermediateState`
+(builder phase) into a `FrozenSystemState` (execution phase). Key changes:
+
+- **Q5-A**: `FrozenMap` and `FrozenSet` types in `SeLe4n/Model/FrozenState.lean`
+  — dense `Array ν` value store + `RHTable κ Nat` index mapping. Runtime
+  bounds-checked `get?` (safe-by-construction), `set` (update-only), `contains`,
+  `fold` operations. `FrozenSet κ` defined as `FrozenMap κ Unit`.
+- **Q5-B**: Per-object frozen types — `FrozenCNode` (uses `CNodeRadix` from Q4
+  for O(1) zero-hash slot lookup), `FrozenVSpaceRoot` (uses `FrozenMap` for
+  page mappings), `FrozenKernelObject` inductive (6 variants), `FrozenSchedulerState`,
+  `FrozenSystemState` (19 fields mirroring `SystemState`).
+- **Q5-C**: Freeze functions — `freezeMap` (RHTable → FrozenMap via fold),
+  `freezeCNode`, `freezeVSpaceRoot`, `freezeObject` (per-object with CNode→CNodeRadix
+  via Q4 bridge), `freezeScheduler`, `freeze` (IntermediateState → FrozenSystemState).
+- **Q5-D**: Capacity planning — `minObjectSize` constant, `objectCapacity`
+  (current objects + potential from untyped memory).
+- **Q5-T**: 15-scenario test suite in `tests/FrozenStateSuite.lean` (49 checks):
+  FrozenMap core (FS-001 to FS-007), FrozenKernelObject (FS-008 to FS-010),
+  freeze integration (FS-011 to FS-015) including objectIndexSet, scheduler
+  freeze, FrozenMap.set size preservation, and data size round-trip.
+- **Proof surface**: 20+ theorems including `freeze_deterministic`,
+  `freeze_preserves_machine`, `freeze_preserves_objectIndexSet`,
+  `freezeMap_empty`, `freezeMap_data_size`, `freezeObject_preserves_type`,
+  `freezeObject_tcb_passthrough`, `frozenMap_set_preserves_size`,
+  `objectCapacity_ge_size`. Zero admitted proofs, all modules compile independently.
+
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+for the full WS-Q plan (phases Q1–Q9).
+
 ### WS-N workstream (Robin Hood hashing verified implementation)
 
 WS-N is a **completed** workstream (v0.17.0–v0.17.5), created to close the trust gap
