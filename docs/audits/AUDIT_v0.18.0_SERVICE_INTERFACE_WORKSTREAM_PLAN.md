@@ -1,4 +1,4 @@
-# WS-P Workstream Plan — Verified Service Interface Layer (v0.18.0)
+# WS-P Workstream Plan — Verified Service Interface Layer (v0.17.7)
 
 **Created**: 2026-03-18
 **Baseline version**: 0.17.1
@@ -188,7 +188,7 @@ def registryInvariant (st : SystemState) : Prop :=
 
 ## 4. Phase Plan
 
-### Phase P1: Foundation Types (v0.18.0)
+### Phase P1: Foundation Types (v0.17.7)
 
 **Goal:** Introduce `InterfaceId`, `InterfaceSpec` (concrete), and `ServiceRegistration` types.
 

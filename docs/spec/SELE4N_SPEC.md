@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.19.0` (`lakefile.toml`) |
+| **Package version** | `0.17.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 48,925 across 83 Lean files |
 | **Test LoC** | 5,513 across 5 Lean test suites |
 | **Proved declarations** | 1,459 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
-| **Next workstreams** | **WS-Q** Kernel State Architecture (absorbs WS-P, WS-O). **WS-Q1 COMPLETED** (v0.18.0) — service interface simplification. **WS-Q2 COMPLETED** (v0.19.0) — universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet` across 16 state fields, 30+ files, 10 atomic subphases). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md). **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Q3–Q9 (IntermediateState, CNode radix tree, freeze, Rust wrappers), then Raspberry Pi 5 hardware binding** |
+| **Next workstreams** | **WS-Q** Kernel State Architecture (absorbs WS-P, WS-O). **WS-Q1 COMPLETED** (v0.17.7) — service interface simplification. **WS-Q2 COMPLETED** (v0.17.8) — universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet` across 16 state fields, 30+ files, 10 atomic subphases). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md). **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **Next: Q3–Q9 (IntermediateState, CNode radix tree, freeze, Rust wrappers), then Raspberry Pi 5 hardware binding** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

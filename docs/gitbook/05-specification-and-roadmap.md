@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.19.0` |
+| Version | `0.17.8` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 48,925 across 83 Lean files |
 | Test LoC | 5,513 across 5 suites |
 | Proved declarations | 1,459 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
-| Active workstream | **WS-Q** Kernel State Architecture — **WS-Q1 COMPLETED** (v0.18.0), **WS-Q2 COMPLETED** (v0.19.0). Next: Q3–Q9. Prior: **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Q3–Q9, then Raspberry Pi 5 hardware binding** |
+| Active workstream | **WS-Q** Kernel State Architecture — **WS-Q1 COMPLETED** (v0.17.7), **WS-Q2 COMPLETED** (v0.17.8). Next: Q3–Q9. Prior: **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Q3–Q9, then Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -69,19 +69,19 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-M4 (test coverage expansion, v0.16.18) — COMPLETED.** →
 **WS-M5 (streaming BFS optimization, v0.16.19–v0.17.0) — COMPLETED. WS-M PORTFOLIO COMPLETE.** →
 **WS-N (Robin Hood hashing, v0.17.0–v0.17.5) — PORTFOLIO COMPLETE.** →
-**WS-Q1 (Service interface simplification, v0.18.0) — COMPLETED.** →
-**WS-Q2 (Universal RHTable migration, v0.19.0) — COMPLETED.**
+**WS-Q1 (Service interface simplification, v0.17.7) — COMPLETED.** →
+**WS-Q2 (Universal RHTable migration, v0.17.8) — COMPLETED.**
 
-## Active: WS-Q Kernel State Architecture (v0.18.0+)
+## Active: WS-Q Kernel State Architecture (v0.17.7+)
 
 Multi-phase plan unifying two-phase state architecture, service interface
 simplification (WS-P absorbed), and Rust syscall wrappers (WS-O absorbed).
 9 phases (Q1–Q9, 45 atomic units). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
-**WS-Q1 (v0.18.0) — COMPLETED:** Service interface simplification. Stateless
+**WS-Q1 (v0.17.7) — COMPLETED:** Service interface simplification. Stateless
 registry model replacing lifecycle-based `ServiceStatus`/`ServiceConfig`.
 
-**WS-Q2 (v0.19.0) — COMPLETED:** Universal RHTable migration. Replaced all
+**WS-Q2 (v0.17.8) — COMPLETED:** Universal RHTable migration. Replaced all
 `Std.HashMap`/`Std.HashSet` in kernel state with verified `RHTable`/`RHSet`.
 16 map fields + 2 set fields across 6 structures, 30+ files, 10 atomic
 subphases (Q2-A through Q2-J). `allTablesInvExt` global invariant predicate.

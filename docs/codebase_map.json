@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-rhtable-migration-pP996",
-      "commit_sha": "c4d1597d12cbcc2f4d83ca5695fd056a1ebc88a8",
-      "tree_sha": "2fcb803f3a757debaf783e80cfecdfb18bbb0f8a",
-      "committed_at_utc": "2026-03-20T16:02:08+00:00"
+      "commit_sha": "95412bf4a2ee3926867dbb44bfce6429b9f853d3",
+      "tree_sha": "fa43675d3031a2e101b99c2eac4792b1b04165ac",
+      "committed_at_utc": "2026-03-20T16:38:23+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 2659
   },
   "readme_sync": {
-    "version": "0.19.0",
+    "version": "0.17.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 83,
     "production_loc": 48925,

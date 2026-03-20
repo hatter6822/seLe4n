@@ -17,7 +17,7 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 
-WS-Q1 is a **completed** workstream (v0.18.0), the first phase of WS-Q (Kernel
+WS-Q1 is a **completed** workstream (v0.17.7), the first phase of WS-Q (Kernel
 State Architecture). It simplifies the service subsystem from a lifecycle-based
 model (`serviceStart`/`serviceStop`/`serviceRestart` with `ServiceStatus` and
 `ServiceConfig`) to a stateless registry model where services are registered
@@ -47,7 +47,7 @@ for the full WS-Q plan (phases Q1–Q9).
 
 ### WS-Q2 workstream (Universal RHTable Migration)
 
-WS-Q2 is a **completed** workstream (v0.19.0), the second phase of WS-Q (Kernel
+WS-Q2 is a **completed** workstream (v0.17.8), the second phase of WS-Q (Kernel
 State Architecture). It replaces every `Std.HashMap` and `Std.HashSet` in kernel
 state with the formally verified `RHTable`/`RHSet` (Robin Hood hash table from
 WS-N), establishing the builder-phase representation for the two-phase state

@@ -75,8 +75,8 @@ M7 (audit remediation).
 
 **WS-Q** (Kernel State Architecture) is the active workstream — a multi-phase
 plan unifying two-phase state architecture, service interface simplification,
-and Rust syscall wrappers. **Q1 COMPLETED** (v0.18.0): service interface
-simplification. **Q2 COMPLETED** (v0.19.0): universal RHTable migration — all
+and Rust syscall wrappers. **Q1 COMPLETED** (v0.17.7): service interface
+simplification. **Q2 COMPLETED** (v0.17.8): universal RHTable migration — all
 `Std.HashMap`/`Std.HashSet` in kernel state replaced with verified
 `RHTable`/`RHSet` (16 map fields + 2 set fields, 30+ files, 10 subphases).
 Remaining: Q3–Q9 (IntermediateState, CNode radix tree, freeze, Rust wrappers).

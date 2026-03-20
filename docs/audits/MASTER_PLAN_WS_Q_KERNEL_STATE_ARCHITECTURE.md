@@ -1,4 +1,4 @@
-# WS-Q Master Plan — Two-Phase Kernel State Architecture (v0.18.0+)
+# WS-Q Master Plan — Two-Phase Kernel State Architecture (v0.17.7+)
 
 **Revision**: 2 (post-audit refinement)
 **Created**: 2026-03-20 | **Revised**: 2026-03-20
@@ -306,15 +306,15 @@ internal state architecture (Q2–Q7), enabling parallel execution.
 
 | Phase | ID | Focus | Sub-phases | Deps | Target |
 |-------|----|-------|------------|------|--------|
-| 1 | **Q1** | Service interface simplification | 7 (A–G) | — | v0.18.0 |
-| 2 | **Q2** | Universal RHTable migration | 10 (A–J) | Q1 | v0.19.0 |
-| 3 | **Q3** | IntermediateState formalization | 3 (A–C) | Q2 | v0.19.1 |
-| 4 | **Q4** | CNode radix tree (verified) | 4 (A–D) | Q2 | v0.20.0 |
-| 5 | **Q5** | FrozenSystemState + freeze | 4 (A–D) | Q3, Q4 | v0.21.0 |
-| 6 | **Q6** | Freeze correctness proofs | 4 (A–D) | Q5 | v0.21.1 |
-| 7 | **Q7** | Frozen kernel operations | 5 (A–E) | Q6 | v0.22.0 |
-| 8 | **Q8** | Rust syscall wrappers (WS-O) | 4 (A–D) | Q1 | v0.22.0 ∥ |
-| 9 | **Q9** | Integration testing + documentation | 4 (A–D) | Q7, Q8 | v0.23.0 |
+| 1 | **Q1** | Service interface simplification | 7 (A–G) | — | v0.17.7 |
+| 2 | **Q2** | Universal RHTable migration | 10 (A–J) | Q1 | v0.17.8 |
+| 3 | **Q3** | IntermediateState formalization | 3 (A–C) | Q2 | v0.17.9 |
+| 4 | **Q4** | CNode radix tree (verified) | 4 (A–D) | Q2 | v0.17.10 |
+| 5 | **Q5** | FrozenSystemState + freeze | 4 (A–D) | Q3, Q4 | v0.17.11 |
+| 6 | **Q6** | Freeze correctness proofs | 4 (A–D) | Q5 | v0.17.12 |
+| 7 | **Q7** | Frozen kernel operations | 5 (A–E) | Q6 | v0.17.13 |
+| 8 | **Q8** | Rust syscall wrappers (WS-O) | 4 (A–D) | Q1 | v0.17.13 ∥ |
+| 9 | **Q9** | Integration testing + documentation | 4 (A–D) | Q7, Q8 | v0.17.14 |
 
 **Total sub-phases**: 45 atomic units of work.
 
@@ -337,7 +337,7 @@ Q1 ──→ Q2 ──→ Q3 ──┬──→ Q5 ──→ Q6 ──→ Q7 ─
 ### Phase Q1: Service Interface Simplification
 
 **Absorbs**: WS-P phases P1–P5
-**Target version**: v0.18.0
+**Target version**: v0.17.7
 **Goal**: Replace lifecycle-focused service orchestration with capability-indexed
 interface enforcement, simplifying the type surface before the universal
 RHTable migration in Q2.
@@ -466,7 +466,7 @@ CLAIM_EVIDENCE_INDEX.md, affected GitBook chapters. Regenerate codebase map.
 
 ### Phase Q2: Universal RHTable Migration
 
-**Target version**: v0.19.0
+**Target version**: v0.17.8
 **Goal**: Replace every `Std.HashMap` and `Std.HashSet` in kernel state with
 `RHTable`/`RHSet`, establishing the builder-phase representation.
 

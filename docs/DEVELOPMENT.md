@@ -65,9 +65,9 @@ See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.1
 The **active workstream** is **WS-Q** (Kernel State Architecture) — a
 multi-phase plan unifying two-phase state architecture, service interface
 simplification, and Rust syscall wrappers into a single execution path.
-**WS-Q1** (v0.18.0) — service interface simplification — **COMPLETED**:
+**WS-Q1** (v0.17.7) — service interface simplification — **COMPLETED**:
 stateless registry model replacing lifecycle-based `ServiceStatus`/`ServiceConfig`.
-**WS-Q2** (v0.19.0) — universal RHTable migration — **COMPLETED**: replaced
+**WS-Q2** (v0.17.8) — universal RHTable migration — **COMPLETED**: replaced
 every `Std.HashMap` and `Std.HashSet` in kernel state (16 map fields + 2 set
 fields across 6 structures, 30+ files) with formally verified `RHTable`/`RHSet`.
 10 atomic subphases (Q2-A through Q2-J) including `RHSet` type definition,
