@@ -257,17 +257,17 @@ def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit
     .ok ((), { st with lifecycle := lifecycle' })
 
 /-- M-P01: Fused revoke — filter CNode slots matching the revoke target and clear
-their capability refs in a single `HashMap.fold` pass, eliminating the intermediate
+their capability refs in a single `RHTable.fold` pass, eliminating the intermediate
 refs-list allocation and second traversal of the legacy two-pass revoke path. -/
 def revokeAndClearRefsState
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
-  cn.slots.fold (fun stAcc s c =>
+  cn.slots.fold st (fun stAcc s c =>
     if s != sourceSlot && c.target == target then
       { stAcc with lifecycle := { stAcc.lifecycle with
           capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
             { cnode := cnodeId, slot := s } } }
-    else stAcc) st
+    else stAcc)
 
 /-- M-P01: Fold body for `revokeAndClearRefsState` preserves objects. -/
 private theorem revokeAndClearRefsFoldBody_preserves_objects
@@ -290,8 +290,8 @@ theorem revokeAndClearRefsState_preserves_objects
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
   unfold revokeAndClearRefsState
-  rw [Std.HashMap.fold_eq_foldl_toList]
-  exact revokeAndClearRefsFoldBody_preserves_objects _ sourceSlot target cnodeId st
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.objects = st.objects)
+    rfl (fun acc s c hAcc => by simp only []; split <;> exact hAcc)
 
 private theorem revokeAndClearRefsFoldBody_preserves_cdt
     (pairs : List (SeLe4n.Slot × Capability))
@@ -332,10 +332,11 @@ theorem revokeAndClearRefsState_cdt_eq
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtSlotNode = st.cdtSlotNode ∧
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
   unfold revokeAndClearRefsState
-  rw [Std.HashMap.fold_eq_foldl_toList]
-  have h := revokeAndClearRefsFoldBody_preserves_cdt cn.slots.toList sourceSlot target cnodeId st
-  exact ⟨h.1, h.2.1, h.2.2,
-    revokeAndClearRefsFoldBody_preserves_objects cn.slots.toList sourceSlot target cnodeId st⟩
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _
+    (fun acc => acc.cdt = st.cdt ∧ acc.cdtNodeSlot = st.cdtNodeSlot ∧
+      acc.cdtSlotNode = st.cdtSlotNode ∧ acc.objects = st.objects)
+    ⟨rfl, rfl, rfl, rfl⟩
+    (fun acc s c ⟨h1, h2, h3, h4⟩ => by simp only []; split <;> exact ⟨h1, h2, h3, h4⟩)
 
 /-- M-P01: Fold body preserves scheduler, machine, services, irqHandlers, objectIndex fields. -/
 private theorem revokeAndClearRefsFoldBody_preserves_fields
@@ -361,53 +362,64 @@ private theorem revokeAndClearRefsFoldBody_preserves_fields
       simp only [List.foldl_cons]
       split <;> exact ih _
 
+/-- Helper tactic macro: uses `RHTable.fold_preserves` to show fold body preserves fields. -/
+private theorem revokeAndClearRefsState_preserves_allFields
+    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
+    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
+    let r := revokeAndClearRefsState cn sourceSlot target cnodeId st
+    r.scheduler = st.scheduler ∧ r.machine = st.machine ∧
+    r.services = st.services ∧ r.irqHandlers = st.irqHandlers ∧
+    r.objectIndex = st.objectIndex ∧ r.objectIndexSet = st.objectIndexSet := by
+  unfold revokeAndClearRefsState
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _
+    (fun acc => acc.scheduler = st.scheduler ∧ acc.machine = st.machine ∧
+      acc.services = st.services ∧ acc.irqHandlers = st.irqHandlers ∧
+      acc.objectIndex = st.objectIndex ∧ acc.objectIndexSet = st.objectIndexSet)
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+    (fun acc s c ⟨h1, h2, h3, h4, h5, h6⟩ => by
+      simp only []; split <;> exact ⟨h1, h2, h3, h4, h5, h6⟩)
+
 /-- M-P01: `revokeAndClearRefsState` preserves scheduler. -/
 theorem revokeAndClearRefsState_preserves_scheduler
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).scheduler = st.scheduler := by
-  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
-  exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).1
+    (revokeAndClearRefsState cn sourceSlot target cnodeId st).scheduler = st.scheduler :=
+  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).1
 
 /-- M-P01: `revokeAndClearRefsState` preserves machine state. -/
 theorem revokeAndClearRefsState_preserves_machine
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).machine = st.machine := by
-  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
-  exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.1
+    (revokeAndClearRefsState cn sourceSlot target cnodeId st).machine = st.machine :=
+  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves services. -/
 theorem revokeAndClearRefsState_preserves_services
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).services = st.services := by
-  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
-  exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.1
+    (revokeAndClearRefsState cn sourceSlot target cnodeId st).services = st.services :=
+  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves irqHandlers. -/
 theorem revokeAndClearRefsState_preserves_irqHandlers
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).irqHandlers = st.irqHandlers := by
-  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
-  exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.2.1
+    (revokeAndClearRefsState cn sourceSlot target cnodeId st).irqHandlers = st.irqHandlers :=
+  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves objectIndex. -/
 theorem revokeAndClearRefsState_preserves_objectIndex
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndex = st.objectIndex := by
-  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
-  exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.2.2.1
+    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndex = st.objectIndex :=
+  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.2.1
 
 /-- M-P01: `revokeAndClearRefsState` preserves objectIndexSet. -/
 theorem revokeAndClearRefsState_preserves_objectIndexSet
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndexSet = st.objectIndexSet := by
-  unfold revokeAndClearRefsState; rw [Std.HashMap.fold_eq_foldl_toList]
-  exact (revokeAndClearRefsFoldBody_preserves_fields _ sourceSlot target cnodeId st).2.2.2.2.2.1
+    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndexSet = st.objectIndexSet :=
+  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.2.2
 
 def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>

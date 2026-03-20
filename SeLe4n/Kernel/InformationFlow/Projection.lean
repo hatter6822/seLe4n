@@ -148,7 +148,8 @@ in Lean 4.28.0 reverses internal `AssocList` bucket ordering, making
 For all non-CNode variants, structural equality holds directly. -/
 theorem projectKernelObject_idempotent
     (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject)
-    (slot : SeLe4n.Slot) :
+    (slot : SeLe4n.Slot)
+    (hUniq : ∀ cn, obj = .cnode cn → cn.slotsUnique) :
     match projectKernelObject ctx observer (projectKernelObject ctx observer obj),
           projectKernelObject ctx observer obj with
     | .cnode cn1, .cnode cn2 => cn1.lookup slot = cn2.lookup slot
@@ -156,7 +157,7 @@ theorem projectKernelObject_idempotent
   cases obj with
   | cnode cn =>
     simp only [projectKernelObject, CNode.lookup]
-    exact SeLe4n.HashMap_filter_filter_getElem? cn.slots _ slot
+    exact SeLe4n.Kernel.RobinHood.RHTable.filter_filter_getElem? cn.slots _ slot (hUniq cn rfl).1
   | _ => trivial
 
 /-- WS-F3/F-22: `projectKernelObject` preserves object type. -/

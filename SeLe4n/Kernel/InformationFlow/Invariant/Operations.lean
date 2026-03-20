@@ -212,6 +212,8 @@ theorem cspaceMintChecked_NI
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hSlotUniq₁ : cspaceSlotUnique s₁)
+    (hSlotUniq₂ : cspaceSlotUnique s₂)
     (hStep₁ : cspaceMintChecked ctx src dst rights badge s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceMintChecked ctx src dst rights badge s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -224,7 +226,7 @@ theorem cspaceMintChecked_NI
   rw [cspaceMintChecked_eq_cspaceMint_when_allowed ctx src dst rights badge s₁ hFlow₁] at hStep₁
   rw [cspaceMintChecked_eq_cspaceMint_when_allowed ctx src dst rights badge s₂ hFlow₁] at hStep₂
   exact cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
-    s₁ s₂ s₁' s₂' hLow hSrcHigh hDstHigh hStep₁ hStep₂
+    s₁ s₂ s₁' s₂' hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hStep₁ hStep₂
 
 /-- WS-F3/F-20: If serviceRestartChecked succeeds, the resulting state transition
 preserves low-equivalence. -/

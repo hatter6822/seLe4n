@@ -35,7 +35,7 @@ per-cluster modular-arithmetic ordering.
 | **WS-N1** | Core types + operations: `RHEntry`, `RHTable`, `empty`, `insert`, `get?`, `erase`, `fold`, `resize`; fuel-bounded loops, bounds-checked access; `empty_wf` proof | CRITICAL — **COMPLETED** (v0.17.1) |
 | **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`probeChainDominant` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`). All 6 TPI-D items completed (D1–D6), ~3,600 LoC, zero sorry | HIGH — **COMPLETED** (v0.17.2) |
 | **WS-N3** | Kernel API bridge: `Inhabited`/`BEq` instances, 10 bridge lemmas (`getElem?_*`, `size_*`, `mem_iff_isSome_getElem?`, `fold_eq_slots_foldl`), `filter` + `ofList` support, `get_after_erase_ne` proof. ~307 LoC Bridge.lean + ~247 LoC Lookup.lean additions, zero sorry | MEDIUM — **COMPLETED** (v0.17.3) |
-| **WS-N4** | Kernel integration (first site): replace `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; update ~15 CNode theorems, ~8 invariant proofs, test fixtures | MEDIUM — **PLANNED** |
+| **WS-N4** | Kernel integration (first site): replaced `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; updated CNode operations, ~25 CNode/capability theorems, ~15 invariant proofs across Capability/InformationFlow subsystems, test fixtures; `slotsUnique` repurposed as substantive `invExt` invariant; 3 new bridge lemmas (`filter_fold_absent_by_pred`, `filter_get_pred`, `filter_filter_getElem?`); 20+ files modified | MEDIUM — **COMPLETED** (v0.17.4) |
 | **WS-N5** | Test coverage + documentation: 12 standalone + 6 integration test scenarios, full documentation sync across 8 canonical files + 4 GitBook chapters | LOW — **PLANNED** |
 
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
@@ -134,6 +134,40 @@ Delivers:
   (backshift displacement decrement), `relaxedPCD` (gap-excused PCD invariant).
 - Zero `sorry`/`axiom`. Zero warnings. All test tiers pass.
 - **WS-N2 COMPLETE** — 6/6 TPI-D proofs, ~3,600 LoC across Defs/Preservation/Lookup.
+
+**WS-N4 (v0.17.4):** Kernel integration (first site — CNode.slots) — replaced
+`CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`
+across the entire kernel. Delivers:
+- **N4-A1/A2:** Type change in `Model/Object/Types.lean` — import
+  `SeLe4n.Kernel.RobinHood.Bridge`, CNode.slots field type changed to
+  `Kernel.RobinHood.RHTable Slot Capability`.
+- **N4-A3:** CNode operations updated in `Model/Object/Structures.lean` —
+  `CNode.empty` uses `RHTable.empty 16`, `CNode.mk'` uses `RHTable.ofList`,
+  `CNode.lookup`/`insert`/`remove`/`revokeTargetLocal` use RHTable operations,
+  `BEq CNode` uses `RHTable.fold`, manual `DecidableEq CNode` instance added,
+  `CNode.slotsUnique` repurposed from `True` to substantive invariant
+  `cn.slots.invExt ∧ cn.slots.size < cn.slots.capacity ∧ 4 ≤ cn.slots.capacity`.
+- **N4-Bridge:** 3 new bridge lemmas in `Bridge.lean` — `filter_fold_absent_by_pred`
+  (predicate-gated fold induction for filter absence), `filter_get_pred`
+  (filter lookup implies predicate holds), `filter_filter_getElem?` (filter
+  idempotence for projection proofs).
+- **N4-Capability:** Invariant updates across `Capability/Invariant/Defs.lean`,
+  `Authority.lean`, `Preservation.lean` — `cspaceSlotUnique` propagated as
+  theorem parameter where RHTable operations require `invExt`; `remove_slots_sub`,
+  `revokeTargetLocal_slots_sub` proofs updated with `change` for `[·]?`/`.get?`
+  bridge; `cspaceRevoke_local_target_reduction` rewritten with `filter_get_pred`;
+  `cspaceInsertSlot_lookup_eq` simplified with direct bridge lemma application.
+- **N4-InformationFlow:** `projectKernelObject_idempotent` updated with
+  `slotsUnique` hypothesis, using `filter_filter_getElem?`; `cspaceSlotUnique`
+  propagated through `Helpers.lean`, `Operations.lean`, `Composition.lean`.
+- **N4-State:** `RHTable.fold` argument-order updates in `State.lean`,
+  `Lifecycle/Operations.lean`, `Testing/InvariantChecks.lean`.
+- **N4-Tests:** All test files updated — `Std.HashMap.ofList` → `RHTable.ofList`,
+  `slots := {}` → `RHTable.empty 16`, fold argument order fixes. Files:
+  `MainTraceHarness.lean`, `OperationChainSuite.lean`, `NegativeStateSuite.lean`,
+  `InformationFlowSuite.lean`, `TraceSequenceProbe.lean`.
+- 20+ files modified. Zero `sorry`/`axiom`. Zero warnings. All test tiers pass.
+- **WS-N4 COMPLETE** — CNode.slots fully migrated to verified RHTable.
 
 ### WS-M workstream (Capability subsystem audit & remediation)
 

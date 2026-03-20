@@ -2017,4 +2017,137 @@ theorem RHTable.get_after_erase_ne [BEq α] [Hashable α] [LawfulBEq α]
           idealIndex k' (t.erase k).capacity (t.erase k).hCapPos) (t.erase k).hCapPos
         omega)
       (by omega)
+
+-- ============================================================================
+-- N4: Public lookup infrastructure (for Bridge.lean filter proof)
+-- ============================================================================
+
+-- If get? returns none, no slot has a matching key.
+theorem RHTable.get_none_no_matching_entry [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hExt : t.invExt) (hNone : t.get? k = none) :
+    ∀ j (hj : j < t.capacity) (e : RHEntry α β),
+      t.slots[j]'(t.hSlotsLen ▸ hj) = some e → (e.key == k) = false :=
+  get_none_implies_absent t k hExt hNone
+
+-- If get? returns some, there is a slot with a matching entry.
+theorem RHTable.get_some_slot_entry [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β) (hGet : t.get? k = some v) :
+    ∃ p, ∃ hp : p < t.capacity, ∃ e : RHEntry α β,
+      t.slots[p]'(t.hSlotsLen ▸ hp) = some e ∧ (e.key == k) = true ∧ e.value = v := by
+  unfold RHTable.get? at hGet
+  exact getLoop_some_implies_entry t.capacity
+    (idealIndex k t.capacity t.hCapPos) k 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos v hGet
+
+set_option maxHeartbeats 800000 in
+theorem RHTable.insertNoResize_get_eq [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β)
+    (hExt : t.invExt) (hSizeLt : t.size < t.capacity) :
+    (t.insertNoResize k v).get? k = some v := by
+  have ⟨j, hj, hjNone⟩ := exists_empty_slot t.slots t.capacity t.hSlotsLen t.hCapPos
+    (by rw [← hExt.1.sizeCount]; exact hSizeLt)
+  have ⟨s, hs, hsEq⟩ := position_reachable (idealIndex k t.capacity t.hCapPos) j
+    t.capacity t.hCapPos hj
+  have hRoom : ∃ s, s < t.capacity ∧
+      t.slots[(idealIndex k t.capacity t.hCapPos + s) % t.capacity]'(by
+        rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos) = none :=
+    ⟨s, hs, by simp only [hsEq]; exact hjNone⟩
+  have hHasKey : ∃ p, ∃ hp : p < (t.insertNoResize k v).capacity,
+      ∃ e : RHEntry α β,
+        (t.insertNoResize k v).slots[p]'((t.insertNoResize k v).hSlotsLen ▸ hp) = some e
+        ∧ (e.key == k) = true ∧ e.value = v := by
+    unfold RHTable.insertNoResize; simp only []
+    exact insertLoop_places_key t.capacity
+      (idealIndex k t.capacity t.hCapPos) k v 0
+      t.slots t.capacity t.hSlotsLen t.hCapPos
+      (by omega) hRoom
+  have ⟨p, hp, e, hSlotP, hKeyE, hValE⟩ := hHasKey
+  have hInsExt := t.insertNoResize_preserves_invExt k v hExt
+  unfold RHTable.get?
+  have hDistE := hInsExt.2.1 p hp e hSlotP
+  have hKeyEq : idealIndex e.key (t.insertNoResize k v).capacity
+      (t.insertNoResize k v).hCapPos =
+      idealIndex k (t.insertNoResize k v).capacity
+      (t.insertNoResize k v).hCapPos := by
+    rw [eq_of_beq hKeyE]
+  rw [hKeyEq] at hDistE
+  exact getLoop_finds_present (t.insertNoResize k v).capacity
+    (idealIndex k (t.insertNoResize k v).capacity
+      (t.insertNoResize k v).hCapPos) k 0
+    (t.insertNoResize k v).slots (t.insertNoResize k v).capacity
+    (t.insertNoResize k v).hSlotsLen (t.insertNoResize k v).hCapPos
+    p hp e hSlotP hKeyE hValE
+    hInsExt.2.1 hInsExt.2.2.2 hInsExt.2.2.1
+    (by simp [Nat.mod_eq_of_lt (idealIndex_lt k _ _)])
+    (by
+      have := Nat.mod_lt (p + (t.insertNoResize k v).capacity -
+        idealIndex k (t.insertNoResize k v).capacity
+        (t.insertNoResize k v).hCapPos) (t.insertNoResize k v).hCapPos
+      omega)
+    (by omega)
+
+set_option maxHeartbeats 3200000 in
+theorem RHTable.insertNoResize_get_ne [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k k' : α) (v : β) (hNe : ¬(k' == k) = true)
+    (hExt : t.invExt) (hSizeLt : t.size < t.capacity) :
+    (t.insertNoResize k' v).get? k = t.get? k := by
+  have hInsExt := t.insertNoResize_preserves_invExt k' v hExt
+  cases hGet : t.get? k with
+  | none =>
+    have hAbsent := get_none_implies_absent t k hExt hGet
+    have hNe' : ¬(k' == k) = true := hNe
+    have hAbsent' := insertNoResize_absent_ne_key t k' v k hNe' hAbsent
+    unfold RHTable.get?
+    exact getLoop_none_of_absent _ _ _ _ _ _ _ _ hAbsent'
+  | some val =>
+    have ⟨p, hp, e, hSlotP, hKeyE, hValE⟩ := getLoop_some_implies_entry
+      t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+      t.slots t.capacity t.hSlotsLen t.hCapPos val
+      (by unfold RHTable.get? at hGet; exact hGet)
+    -- Entry survives insertNoResize via insertLoop_preserves_ne_entry_new
+    have ⟨j2, hj2, hjNone⟩ := exists_empty_slot t.slots t.capacity t.hSlotsLen
+      t.hCapPos (by rw [← hExt.1.sizeCount]; exact hSizeLt)
+    have ⟨s2, hs2, hsEq2⟩ := position_reachable
+      (idealIndex k' t.capacity t.hCapPos) j2 t.capacity t.hCapPos hj2
+    have hRoom : ∃ s, s < t.capacity ∧
+        t.slots[(idealIndex k' t.capacity t.hCapPos + s) % t.capacity]'(by
+          rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos) = none :=
+      ⟨s2, hs2, by simp only [hsEq2]; exact hjNone⟩
+    have ⟨q, hq, e', hSlotQ, hKeyQ, hValQ⟩ :
+        ∃ q, ∃ hq : q < (t.insertNoResize k' v).capacity, ∃ e' : RHEntry α β,
+          (t.insertNoResize k' v).slots[q]'((t.insertNoResize k' v).hSlotsLen ▸ hq) =
+            some e' ∧
+          (e'.key == k) = true ∧ e'.value = e.value := by
+      unfold RHTable.insertNoResize; simp only []
+      exact insertLoop_preserves_ne_entry_new t.capacity
+        (idealIndex k' t.capacity t.hCapPos) k' v 0
+        t.slots t.capacity t.hSlotsLen t.hCapPos
+        hExt.2.2.1 hExt.2.1 hExt.2.2.2
+        (by simp [Nat.mod_eq_of_lt (idealIndex_lt k' _ _)])
+        (by omega)
+        (by intro d' hd'; omega) (by intro d' hd'; omega)
+        hRoom k hNe p hp e hSlotP hKeyE
+    unfold RHTable.get?
+    exact getLoop_finds_present (t.insertNoResize k' v).capacity
+      (idealIndex k (t.insertNoResize k' v).capacity
+        (t.insertNoResize k' v).hCapPos)
+      k 0 (t.insertNoResize k' v).slots (t.insertNoResize k' v).capacity
+      (t.insertNoResize k' v).hSlotsLen (t.insertNoResize k' v).hCapPos
+      q hq e' hSlotQ hKeyQ (hValQ.trans hValE)
+      hInsExt.2.1 hInsExt.2.2.2 hInsExt.2.2.1
+      (by simp [Nat.mod_eq_of_lt (idealIndex_lt k _ _)])
+      (by
+        have hd := hInsExt.2.1 q hq e' hSlotQ
+        have hKeyEq2 : idealIndex e'.key (t.insertNoResize k' v).capacity
+            (t.insertNoResize k' v).hCapPos =
+            idealIndex k (t.insertNoResize k' v).capacity
+            (t.insertNoResize k' v).hCapPos := by
+          rw [eq_of_beq hKeyQ]
+        rw [hKeyEq2] at hd
+        have := Nat.mod_lt (q + (t.insertNoResize k' v).capacity -
+          idealIndex k (t.insertNoResize k' v).capacity
+          (t.insertNoResize k' v).hCapPos) (t.insertNoResize k' v).hCapPos
+        omega)
+      (by omega)
+
 end SeLe4n.Kernel.RobinHood

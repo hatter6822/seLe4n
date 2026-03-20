@@ -41,7 +41,7 @@ private def baseState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := Std.HashMap.ofList [
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
         (⟨0⟩, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read, .write]
@@ -55,7 +55,7 @@ private def baseState : SystemState :=
       guardWidth := 1
       guardValue := 1
       radixWidth := 2
-      slots := Std.HashMap.ofList [
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
         (⟨1⟩, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read]
@@ -206,7 +206,7 @@ private def f2UntypedState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := Std.HashMap.ofList [
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
         (⟨0⟩, {
           target := .object f2UntypedObjId
           rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -235,7 +235,7 @@ private def f2DeviceState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := Std.HashMap.ofList [
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
         (⟨0⟩, {
           target := .object f2DeviceUntypedId
           rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -316,7 +316,7 @@ private def runNegativeChecks : IO Unit := do
             guardWidth := 0
             guardValue := 0
             radixWidth := 0
-            slots := Std.HashMap.ofList [
+            slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
               (strictRootSlot.slot, {
                 target := .object endpointId
                 rights := AccessRightSet.ofList [.read, .write]
@@ -1065,7 +1065,7 @@ private def runH2NegativeChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -1185,16 +1185,16 @@ private def runWSH7Checks : IO Unit := do
   let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write], badge := none }
   let cn1 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert ⟨1⟩ capA).insert ⟨2⟩ capB }
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨1⟩, capA), (⟨2⟩, capB)] }
   let cn2 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := (({} : Std.HashMap SeLe4n.Slot Capability).insert ⟨2⟩ capB).insert ⟨1⟩ capA }
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨2⟩, capB), (⟨1⟩, capA)] }
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "WS-H7 CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := Std.HashMap.ofList [(⟨0⟩, capA)] }
+  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, capA)] }
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
@@ -1462,7 +1462,7 @@ private def runWSH15Checks : IO Unit := do
   let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
       (⟨0⟩, writeCap),
       (⟨1⟩, readOnlyCap)
     ]
@@ -1609,7 +1609,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -1653,7 +1653,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -1710,7 +1710,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object h16ExhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -1754,7 +1754,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := Std.HashMap.ofList [
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object h16DeviceUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -1983,7 +1983,7 @@ def runWSKGChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨200⟩ (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := {}  -- no slots occupied
+        slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16  -- no slots occupied
       })
       |>.withLifecycleObjectType ⟨200⟩ .cnode
       |>.build)
@@ -2292,7 +2292,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   -- CNode with radixWidth=2 → slotCount=4; fill all 4 slots
   let fullCNode : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 2,
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
       (⟨0⟩, cap), (⟨1⟩, cap), (⟨2⟩, cap), (⟨3⟩, cap)
     ]
   }
@@ -2302,7 +2302,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       |>.withObject receiverRoot (.cnode fullCNode)
       |>.withObject senderRoot (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := Std.HashMap.ofList [(⟨0⟩, cap)]
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap)]
         })
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.build)
@@ -2354,7 +2354,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 4
           guardValue := 0xA
           radixWidth := 0
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2393,7 +2393,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨5⟩, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2420,7 +2420,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 2
           guardValue := 0
           radixWidth := 4
-          slots := {}
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
       |>.build)
 
@@ -2473,7 +2473,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 2
           guardValue := 3
           radixWidth := 2
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2482,7 +2482,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 2
           guardValue := 1
           radixWidth := 2
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2491,7 +2491,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨7⟩, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2540,7 +2540,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       guardWidth := 0
       guardValue := 0
       radixWidth := 8
-      slots := Std.HashMap.ofList [
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
         (⟨1⟩, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
       ]
     })
@@ -2550,7 +2550,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
     guardWidth := 0
     guardValue := 0
     radixWidth := 8
-    slots := Std.HashMap.ofList [
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
       (⟨1⟩, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read], badge := none })
     ]
   })
@@ -2599,7 +2599,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨3⟩, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2608,7 +2608,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := {}  -- all slots empty
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16  -- all slots empty
         })
       |>.build)
 
@@ -2635,7 +2635,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := Std.HashMap.ofList [
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨1⟩, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })

@@ -53,6 +53,7 @@ inductive NonInterferenceStep
       (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
       (hSrcHigh : objectObservable ctx observer src.cnode = false)
       (hDstHigh : objectObservable ctx observer dst.cnode = false)
+      (hSlotUniq : cspaceSlotUnique st)
       (hStep : cspaceMint src dst rights badge st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | cspaceRevoke
@@ -257,8 +258,8 @@ theorem step_preserves_projection
   | chooseThread next hOp =>
     have := chooseThread_preserves_state st st' next hOp; subst this; rfl
   | endpointSendDual _ _ _ _ _ _ _ _ hProj => exact hProj
-  | cspaceMint src dst rights badge hSrcH hDstH hOp =>
-    rcases cspaceMint_child_attenuates st st' src dst rights badge hOp with
+  | cspaceMint src dst rights badge hSrcH hDstH hSlotUniq hOp =>
+    rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hOp with
       ⟨parent, child, hLookup, _, _⟩
     unfold cspaceMint at hOp; rw [hLookup] at hOp
     cases hMint : mintDerivedCap parent rights badge with

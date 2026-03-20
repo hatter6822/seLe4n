@@ -293,7 +293,8 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
           | ok pair =>
             obtain ⟨_, stMid⟩ := pair; simp [hStore] at hStep
             have hBndMid := cspaceSlotCountBounded_of_storeObject_cnode st stMid addr.cnode _ hBounded hStore
-              (CNode.revokeTargetLocal_slotCountBounded preCn addr.slot parent.target (hBounded addr.cnode preCn hPre))
+              (CNode.revokeTargetLocal_slotCountBounded preCn addr.slot parent.target
+                (hBounded addr.cnode preCn hPre) (hUnique addr.cnode preCn hPre))
             have hCompMid := cdtCompleteness_of_storeObject st stMid addr.cnode _ hComp hStore
               (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
             have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
@@ -1276,7 +1277,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle stDeleted st' authority target
       newObj hLifecycleDeleted hRetype
   exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
-    (lifecycleAuthorityMonotonicity_holds st')
+    (lifecycleAuthorityMonotonicity_holds st' hCap'.1)
 
 theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)
@@ -1381,6 +1382,7 @@ theorem cspaceMint_preserves_badgeWellFormed
     (st st' : SystemState) (src dst : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (hInv : badgeWellFormed st)
+    (hSlotUniq : cspaceSlotUnique st)
     (hBadgeValid : ∀ b, badge = some b → b.valid)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     badgeWellFormed st' := by
@@ -1403,6 +1405,7 @@ theorem cspaceMint_preserves_badgeWellFormed
       | some obj =>
         cases obj with
         | cnode cn =>
+          have hUniq := hSlotUniq dst.cnode cn hObj
           simp only [hObj] at hStep
           split at hStep
           · simp at hStep  -- slot occupied
@@ -1428,10 +1431,10 @@ theorem cspaceMint_preserves_badgeWellFormed
                   (fun slot' cap' badge' hLk hBdg => by
                     by_cases hSlotEq : dst.slot = slot'
                     · subst hSlotEq
-                      rw [CNode.lookup_insert_eq] at hLk
+                      rw [CNode.lookup_insert_eq cn dst.slot child hUniq] at hLk
                       cases hLk; rw [hChildBadge] at hBdg
                       exact hBadgeValid badge' hBdg
-                    · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq] at hLk
+                    · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
                       exact hCap dst.cnode cn slot' cap' badge' hObj hLk hBdg)
         | _ => simp [hObj] at hStep
 
@@ -1441,6 +1444,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
     (st st' : SystemState) (addr : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (hInv : badgeWellFormed st)
+    (hSlotUniq : cspaceSlotUnique st)
     (hBadgeValid : ∀ b, badge = some b → b.valid)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     badgeWellFormed st' := by
@@ -1459,6 +1463,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
       | some obj =>
         cases obj with
         | cnode cn =>
+          have hUniq := hSlotUniq addr.cnode cn hObj
           simp [hObj] at hStep
           cases hStore : storeObject addr.cnode
               (.cnode (cn.insert addr.slot
@@ -1480,7 +1485,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
                   by_cases hSlotEq : addr.slot = slot'
                   · -- The mutated slot
                     subst hSlotEq
-                    rw [CNode.lookup_insert_eq] at hLk; cases hLk
+                    rw [CNode.lookup_insert_eq cn addr.slot _ hUniq] at hLk; cases hLk
                     -- mutatedCap.badge = badge.or pair.1.badge
                     cases hBadge : badge with
                     | some b =>
@@ -1497,7 +1502,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
                       simp only [hObj] at hSlotCap
                       exact hCap addr.cnode cn addr.slot pair.1 badge' hObj hSlotCap hBdg
                   · -- Other slot: unchanged
-                    rw [CNode.lookup_insert_ne cn addr.slot slot' _ hSlotEq] at hLk
+                    rw [CNode.lookup_insert_ne cn addr.slot slot' _ hSlotEq hUniq] at hLk
                     exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
         | _ => simp [hObj] at hStep
     · simp at hStep

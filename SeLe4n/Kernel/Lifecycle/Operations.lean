@@ -80,47 +80,27 @@ private theorem detachSlotFromCdt_lifecycle_eq (st : SystemState) (ref : SlotRef
     Iterates the CNode's slots and clears the cdtSlotNode/cdtNodeSlot
     bidirectional mappings for each slot, preventing orphaned CDT references. -/
 def detachCNodeSlots (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) : SystemState :=
-  cn.slots.fold (fun acc slot _cap =>
+  cn.slots.fold st (fun acc slot _cap =>
     SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }
-  ) st
+  )
 
 /-- `detachCNodeSlots` preserves the objects store (CDT-only operation). -/
 theorem detachCNodeSlots_objects_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).objects = st.objects := by
   simp only [detachCNodeSlots]
-  rw [Std.HashMap.fold_eq_foldl_toList]
-  have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
-    (l.foldl (fun a b =>
-      SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).objects
-      = acc.objects := by
-    intro l
-    induction l with
-    | nil => intro acc; rfl
-    | cons pair rest ih =>
-      intro acc
-      simp only [List.foldl]
-      exact (ih _).trans (detachSlotFromCdt_objects_eq acc { cnode := cnodeId, slot := pair.1 })
-  exact key cn.slots.toList st
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.objects = st.objects)
+    rfl (fun acc slot _cap hAcc => (detachSlotFromCdt_objects_eq acc
+      { cnode := cnodeId, slot := slot }).trans hAcc)
 
 /-- `detachCNodeSlots` preserves lifecycle metadata (CDT-only operation). -/
 theorem detachCNodeSlots_lifecycle_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
   simp only [detachCNodeSlots]
-  rw [Std.HashMap.fold_eq_foldl_toList]
-  have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
-    (l.foldl (fun a b =>
-      SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).lifecycle
-      = acc.lifecycle := by
-    intro l
-    induction l with
-    | nil => intro acc; rfl
-    | cons pair rest ih =>
-      intro acc
-      simp only [List.foldl]
-      exact (ih _).trans (detachSlotFromCdt_lifecycle_eq acc { cnode := cnodeId, slot := pair.1 })
-  exact key cn.slots.toList st
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.lifecycle = st.lifecycle)
+    rfl (fun acc slot _cap hAcc => (detachSlotFromCdt_lifecycle_eq acc
+      { cnode := cnodeId, slot := slot }).trans hAcc)
 
 /-- WS-H2: Pre-retype cleanup combining TCB reference cleanup and CDT detach.
     - If the current object is a TCB: clean up scheduler references.
@@ -179,21 +159,11 @@ private theorem detachCNodeSlots_scheduler_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
   simp only [detachCNodeSlots]
-  rw [Std.HashMap.fold_eq_foldl_toList]
-  have key : ∀ (l : List (SeLe4n.Slot × Capability)) (acc : SystemState),
-    (l.foldl (fun a b =>
-      SystemState.detachSlotFromCdt a { cnode := cnodeId, slot := b.1 }) acc).scheduler
-      = acc.scheduler := by
-    intro l
-    induction l with
-    | nil => intro acc; rfl
-    | cons pair rest ih =>
-      intro acc
-      simp only [List.foldl]
-      have hDetach : (SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := pair.1 }).scheduler
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.scheduler = st.scheduler)
+    rfl (fun acc slot _cap hAcc => by
+      have : (SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }).scheduler
           = acc.scheduler := by unfold SystemState.detachSlotFromCdt; split <;> rfl
-      exact (ih _).trans hDetach
-  exact key cn.slots.toList st
+      exact this.trans hAcc)
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
     list was in the pre-cleanup flat list. -/
@@ -848,7 +818,7 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     })
   | 3 => .ok (.cnode {
       depth := 0, guardWidth := 0, guardValue := 0,
-      radixWidth := 0, slots := {}
+      radixWidth := 0, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
   | 4 => .ok (.vspaceRoot {
       asid := SeLe4n.ASID.ofNat 0, mappings := {}

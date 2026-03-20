@@ -81,7 +81,12 @@ lemmas matching `Std.HashMap` patterns (`getElem?_insert_self/ne`,
 `RHTable.filter` with `size_filter_le_size` preservation, `RHTable.ofList`
 constructor, plus `get_after_erase_ne` correctness proof. ~307 LoC in
 `Bridge.lean`, ~247 LoC additions to `Lookup.lean`, zero sorry/axiom.
-Remaining: N4 (CNode.slots integration), N5 (tests + documentation).
+**WS-N4** (v0.17.4) — kernel integration (first site — CNode.slots) —
+**COMPLETED**: replaced `CNode.slots : Std.HashMap Slot Capability` with
+`RHTable Slot Capability`, updated CNode operations, ~25 theorems, ~15
+invariant proofs, `slotsUnique` repurposed as substantive `invExt` invariant,
+3 new bridge lemmas, 20+ files modified, zero sorry/axiom.
+Remaining: N5 (tests + documentation).
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-N is **Raspberry Pi 5 hardware binding**:

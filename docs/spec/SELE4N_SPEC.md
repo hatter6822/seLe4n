@@ -33,7 +33,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,283 theorem/lemma declarations),
+2. machine-checked invariant preservation (1,421 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.17.2` (`lakefile.toml`) |
+| **Package version** | `0.17.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 41,057 across 73 Lean files |
+| **Production LoC** | 46,637 across 78 Lean files |
 | **Test LoC** | 5,256 across 4 Lean test suites |
-| **Proved declarations** | 1,292 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,421 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |
-| **Next workstreams** | **WS-N** Robin Hood hashing verified implementation — **ACTIVE** (v0.17.0+). 5 phases (N1–N5, 122 subtasks): **WS-N1 COMPLETED** (v0.17.1) — core types + operations; **WS-N2 COMPLETED** (v0.17.2) — invariant proofs (WF/distCorrect/noDupKeys/PCD preservation, lookup correctness, 6 TPI-D items); **WS-N3 COMPLETED** (v0.17.3) — kernel API bridge (Inhabited/BEq instances, 10 bridge lemmas, filter support, ofList, get_after_erase_ne); N4–N5 PLANNED. See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **After WS-N: Raspberry Pi 5 hardware binding** |
+| **Next workstreams** | **WS-N** Robin Hood hashing verified implementation — **ACTIVE** (v0.17.0+). 5 phases (N1–N5, 122 subtasks): **WS-N1 COMPLETED** (v0.17.1) — core types + operations; **WS-N2 COMPLETED** (v0.17.2) — invariant proofs (WF/distCorrect/noDupKeys/PCD preservation, lookup correctness, 6 TPI-D items); **WS-N3 COMPLETED** (v0.17.3) — kernel API bridge (Inhabited/BEq instances, 10 bridge lemmas, filter support, ofList, get_after_erase_ne); **WS-N4 COMPLETED** (v0.17.4) — kernel integration (CNode.slots `Std.HashMap` → `RHTable`, 20+ files, `slotsUnique` repurposed as substantive invariant, 3 new bridge lemmas); N5 PLANNED. See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE** (v0.16.0–v0.16.8). WS-J1 **PORTFOLIO COMPLETE** (v0.15.4–v0.15.10). **After WS-N: Raspberry Pi 5 hardware binding** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

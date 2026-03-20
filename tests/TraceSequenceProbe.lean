@@ -51,7 +51,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
                badge := none })
   let cnodeObj : KernelObject := .cnode {
     depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-    slots := Std.HashMap.ofList cnodeSlots }
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
   let allEntries :=
     (probeEndpointId, KernelObject.endpoint {}) ::
     (probeNotificationId, KernelObject.notification {
@@ -61,7 +61,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   let runnableThreads : List SeLe4n.ThreadId :=
     (List.range threadCount).map fun n => ⟨n + 1⟩
   { (default : SystemState) with
-    objects := Std.HashMap.ofList allEntries
+    objects := SeLe4n.Kernel.RobinHood.RHTable.ofList allEntries
     objectIndex := allEntries.map Prod.fst
     objectIndexSet := Std.HashSet.ofList (allEntries.map Prod.fst)
     scheduler := { (default : SchedulerState) with
