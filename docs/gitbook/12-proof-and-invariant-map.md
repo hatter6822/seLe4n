@@ -1071,6 +1071,34 @@ Multi-level resolver (`Capability/Operations.lean`):
 - `resolveCapAddressK` — kernel monad wrapper
 - `resolveCapAddressAndLookup` — composition with slot lookup
 
+**CNode Radix Tree** (Q4, v0.17.10 — `SeLe4n/Kernel/RadixTree/`):
+
+`CNodeRadix` is a verified flat radix array for CNode capability slots. Each
+CNode has a single radix level with `2^radixWidth` entries, addressed by
+`extractBits` (pure bitwise index computation — zero hashing). Operations:
+
+- `CNodeRadix.empty` — create empty tree with all slots `none`
+- `CNodeRadix.lookup` — O(1) via `extractBits slot.toNat 0 radixWidth` + direct array access
+- `CNodeRadix.insert` / `erase` — O(1) array set
+- `CNodeRadix.fold` / `toList` / `size` — O(2^radixWidth) traversal
+
+Correctness proofs (`RadixTree/Invariant.lean`):
+
+- `lookup_empty` — empty tree returns `none` for all slots
+- `lookup_insert_self` / `lookup_insert_ne` — insert roundtrip
+- `lookup_erase_self` / `lookup_erase_ne` — erase correctness
+- `insert_idempotent` — double insert = single insert
+- `insert_erase_cancel` — erase then insert = insert
+- `empty_wf` / `insert_wf` / `erase_wf` — WF preservation
+- `insert_guardWidth` / `insert_radixWidth` / etc. — parameter invariance
+
+Builder equivalence bridge (`RadixTree/Bridge.lean`):
+
+- `buildCNodeRadix` — fold RHTable entries into CNodeRadix
+- `buildCNodeRadix_guardWidth/guardValue/radixWidth` — parameter preservation
+- `buildCNodeRadix_wf` — built tree is well-formed
+- `CNodeRadix.ofCNode` — convenience conversion from CNode
+
 Resolution theorems:
 
 - `resolveCapAddress_deterministic` — trivial (functional equality)
