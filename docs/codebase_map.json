@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-cnode-radix-tree-zxB7L",
-      "commit_sha": "ea16f1cd6a14f76670329fc67bad6439c051136f",
-      "tree_sha": "a97fccad329baa82e2ddcd077c964250b6d557b2",
-      "committed_at_utc": "2026-03-20T19:34:04+00:00"
+      "branch": "main",
+      "commit_sha": "fd461e1aa43b9c6fa291eacc8fe2ea69d6b95259",
+      "tree_sha": "e5f7935926cc00ae2f4acbef134914fe7e2b6565",
+      "committed_at_utc": "2026-03-20T17:12:24-04:00"
     }
   },
   "source_sync": {
