@@ -17,7 +17,7 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ### WS-N workstream (Robin Hood hashing verified implementation)
 
-WS-N is the **active** workstream (v0.17.0+), created to close the trust gap
+WS-N is a **completed** workstream (v0.17.0–v0.17.5), created to close the trust gap
 between seLe4n's machine-checked proof surface and the unverified `Std.HashMap`
 library type used across 14 production source files (114 occurrences). The
 workstream delivers a formally verified Robin Hood hash table implementation
@@ -36,7 +36,7 @@ per-cluster modular-arithmetic ordering.
 | **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`probeChainDominant` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`). All 6 TPI-D items completed (D1–D6), ~3,600 LoC, zero sorry | HIGH — **COMPLETED** (v0.17.2) |
 | **WS-N3** | Kernel API bridge: `Inhabited`/`BEq` instances, 10 bridge lemmas (`getElem?_*`, `size_*`, `mem_iff_isSome_getElem?`, `fold_eq_slots_foldl`), `filter` + `ofList` support, `get_after_erase_ne` proof. ~307 LoC Bridge.lean + ~247 LoC Lookup.lean additions, zero sorry | MEDIUM — **COMPLETED** (v0.17.3) |
 | **WS-N4** | Kernel integration (first site): replaced `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; updated CNode operations, ~25 CNode/capability theorems, ~15 invariant proofs across Capability/InformationFlow subsystems, test fixtures; `slotsUnique` repurposed as substantive `invExt` invariant; 3 new bridge lemmas (`filter_fold_absent_by_pred`, `filter_get_pred`, `filter_filter_getElem?`); 20+ files modified | MEDIUM — **COMPLETED** (v0.17.4) |
-| **WS-N5** | Test coverage + documentation: 12 standalone + 6 integration test scenarios, full documentation sync across 8 canonical files + 4 GitBook chapters | LOW — **PLANNED** |
+| **WS-N5** | Test coverage + documentation: `RobinHoodSuite.lean` with 12 standalone tests (RH-001–RH-012: empty table, insert/get, erase, overwrite, multi-key, collision, Robin Hood swap, backward-shift, resize, post-resize, large-scale 200-entry stress, fold/toList) + 6 CNode integration tests (RH-INT-001–RH-INT-006: lookup/insert/remove, revokeTargetLocal, findFirstEmptySlot, slotCountBounded, CSpace resolution, BEq). Full doc sync across 8 canonical files + 4 GitBook chapters. ~300 LoC tests, zero sorry | LOW — **COMPLETED** (v0.17.5) |
 
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: N1 through N5, 122 subtasks).

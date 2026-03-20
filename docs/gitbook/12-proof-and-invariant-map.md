@@ -219,7 +219,16 @@ zero sorry/axiom. **WS-N3 COMPLETE.**
   through Capability and InformationFlow subsystem theorems
 - 20+ files updated, zero sorry/axiom. **WS-N4 COMPLETE.**
 
-Remaining planned theorems (N5):
+**WS-N5 (v0.17.5) — COMPLETED:** Test coverage + documentation:
+- 12 standalone Robin Hood test scenarios (`tests/RobinHoodSuite.lean`): empty
+  table, insert/get roundtrip, erase, overwrite, multi-key correctness, collision
+  handling, Robin Hood swap verification, backward-shift after erase, resize
+  trigger at 75% load, post-resize correctness, large-scale stress (200 inserts +
+  100 erases), fold/toList utility
+- 6 CNode integration regression tests: lookup/insert/remove, revokeTargetLocal
+  filter, findFirstEmptySlot, slotCountBounded, CSpace resolution, BEq comparison
+- `robin_hood_suite` executable + Tier 2 integration + 18 scenario IDs
+- Full documentation sync. **WS-N portfolio COMPLETE** (v0.17.0–v0.17.5).
 - See [WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
   for full proof strategies, expanded pseudocode, and 122-subtask breakdown.
 

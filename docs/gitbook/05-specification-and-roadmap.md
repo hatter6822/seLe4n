@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.17.4` |
+| Version | `0.17.5` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 46,637 across 78 files |
-| Test LoC | 5,256 across 4 suites |
+| Test LoC | 5,556 across 5 suites |
 | Proved declarations | 1,421 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |
-| Next workstreams | **WS-N** Robin Hood hashing verified implementation — **ACTIVE** (v0.17.0+). 5 phases (N1–N5, 122 subtasks): **WS-N1 COMPLETED** (v0.17.1), **WS-N2 COMPLETED** (v0.17.2), **WS-N3 COMPLETED** (v0.17.3), **WS-N4 COMPLETED** (v0.17.4). See [workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **After WS-N: Raspberry Pi 5 hardware binding** |
+| Next workstreams | **WS-N** Robin Hood hashing verified implementation — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). 5 phases: **WS-N1 COMPLETED** (v0.17.1), **WS-N2 COMPLETED** (v0.17.2), **WS-N3 COMPLETED** (v0.17.3), **WS-N4 COMPLETED** (v0.17.4), **WS-N5 COMPLETED** (v0.17.5). See [workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -112,6 +112,16 @@ CNode/capability theorems updated, ~15 invariant proofs across
 Capability/InformationFlow subsystems, 3 new bridge lemmas
 (`filter_fold_absent_by_pred`, `filter_get_pred`, `filter_filter_getElem?`),
 all test fixtures updated. 20+ files modified. Zero sorry/axiom.
+
+**WS-N5 (v0.17.5) — COMPLETED:** Test coverage + documentation — 12 standalone
+Robin Hood test scenarios (`RobinHoodSuite.lean`: empty table, insert/get roundtrip,
+erase, overwrite, multi-key, collision handling, Robin Hood swap, backward-shift,
+resize trigger, post-resize correctness, large-scale 200-entry stress, fold/toList)
++ 6 CNode integration tests (lookup/insert/remove, revokeTargetLocal, findFirstEmptySlot,
+slotCountBounded, CSpace resolution, BEq). `robin_hood_suite` executable added to
+`lakefile.toml`, Tier 2 test coverage, 18 scenario IDs registered. Full documentation
+sync across 8 canonical files + 4 GitBook chapters. ~300 LoC tests. Zero sorry/axiom.
+**WS-N portfolio COMPLETE** (v0.17.0–v0.17.5).
 
 ## Completed: WS-M Capability Subsystem Audit & Remediation (v0.16.13–v0.17.0, PORTFOLIO COMPLETE)
 

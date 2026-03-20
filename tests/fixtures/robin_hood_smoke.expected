@@ -1,0 +1,16 @@
+# WS-N5: Robin Hood suite scenario traceability fixture
+# Format: SCENARIO_ID | SUBSYSTEM | expected_trace_fragment
+# Validated by: scripts/scenario_catalog.py validate-registry --fixture2
+
+RH-001 | RobinHood | robin-hood check passed [RH-001a empty get? returns none]
+RH-002 | RobinHood | robin-hood check passed [RH-002a insert then get]
+RH-003 | RobinHood | robin-hood check passed [RH-003a erase then get returns none]
+RH-004 | RobinHood | robin-hood check passed [RH-004a overwrite returns latest]
+RH-005 | RobinHood | robin-hood check passed [RH-005a size is 10]
+RH-006 | RobinHood | robin-hood check passed [RH-006a colliding keys all retrievable]
+RH-007 | RobinHood | robin-hood check passed [RH-007a all keys findable after swaps]
+RH-008 | RobinHood | robin-hood check passed [RH-008a erased key gone]
+RH-009 | RobinHood | robin-hood check passed [RH-009a capacity doubled]
+RH-010 | RobinHood | robin-hood check passed [RH-010a all entries accessible after resizes]
+RH-011 | RobinHood | robin-hood check passed [RH-011a size is 200]
+RH-012 | RobinHood | robin-hood check passed [RH-012a fold sums correctly]

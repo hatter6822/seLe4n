@@ -61,6 +61,11 @@ SeLe4n/Kernel/Lifecycle/Invariant.lean
 # Service
 SeLe4n/Kernel/Service/Operations.lean
 
+# Robin Hood
+SeLe4n/Kernel/RobinHood/Core.lean
+SeLe4n/Kernel/RobinHood/Bridge.lean
+SeLe4n/Kernel/RobinHood/Invariant.lean
+
 # Architecture
 SeLe4n/Kernel/Architecture/VSpace.lean
 SeLe4n/Kernel/Architecture/VSpaceBackend.lean

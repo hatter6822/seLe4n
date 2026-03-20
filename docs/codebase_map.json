@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "ba4d885356c1039646af115c9951955373ab812a",
-      "tree_sha": "45230ee21948a89e754707d2e554821f079eb7c5",
-      "committed_at_utc": "2026-03-20T00:26:47-04:00"
+      "branch": "claude/audit-test-coverage-docs-MZRdt",
+      "commit_sha": "21dbf6edbf70f1d1107e7e294f4c877f83791aec",
+      "tree_sha": "236bc2e25f7b34aeb3c7d89dadb4041e7f5b7f0d",
+      "committed_at_utc": "2026-03-20T04:54:06+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d48afe828a6698bc521d6f2e8a4c43c339d923eeaad319256171483448e02793"
+    "source_digest": "aaddf7a7f35e197a185bddfbd2dc2ac44e1404e0e1ca6f27a1e204204be1332d"
   },
   "summary": {
-    "module_count": 82,
-    "declaration_count": 2541
+    "module_count": 83,
+    "declaration_count": 2563
   },
   "readme_sync": {
-    "version": "0.17.4",
+    "version": "0.17.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 78,
     "production_loc": 46637,
-    "test_files": 4,
-    "test_loc": 5256,
+    "test_files": 5,
+    "test_loc": 5560,
     "proved_theorem_lemma_decls": 1421,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -20679,6 +20679,200 @@
           "kind": "def",
           "name": "main",
           "line": 1408,
+          "called": []
+        }
+      ]
+    },
+    {
+      "module": "tests.RobinHoodSuite",
+      "path": "tests/RobinHoodSuite.lean",
+      "declaration_count": 22,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.RobinHoodSuite",
+          "line": 14,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 16,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "rh001_emptyTable",
+          "line": 27,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh002_singleInsertGet",
+          "line": 34,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh003_insertErase",
+          "line": 41,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh004_overwrite",
+          "line": 48,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh005_multipleKeys",
+          "line": 54,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh006_collisionHandling",
+          "line": 65,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh007_robinHoodSwap",
+          "line": 80,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh008_backwardShift",
+          "line": 95,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh009_resizeTrigger",
+          "line": 111,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh010_postResizeCorrectness",
+          "line": 124,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh011_largeScale",
+          "line": 137,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rh012_foldToList",
+          "line": 163,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rhInt001_cnodeLookupInsertRemove",
+          "line": 186,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rhInt002_revokeTargetLocal",
+          "line": 203,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rhInt003_findFirstEmptySlot",
+          "line": 218,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rhInt004_slotCountBounded",
+          "line": 234,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rhInt005_cspaceResolution",
+          "line": 247,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rhInt006_cnodeBEq",
+          "line": 264,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRobinHoodSuite",
+          "line": 274,
+          "called": [
+            "rh001_emptyTable",
+            "rh002_singleInsertGet",
+            "rh003_insertErase",
+            "rh004_overwrite",
+            "rh005_multipleKeys",
+            "rh006_collisionHandling",
+            "rh007_robinHoodSwap",
+            "rh008_backwardShift",
+            "rh009_resizeTrigger",
+            "rh010_postResizeCorrectness",
+            "rh011_largeScale",
+            "rh012_foldToList",
+            "rhInt001_cnodeLookupInsertRemove",
+            "rhInt002_revokeTargetLocal",
+            "rhInt003_findFirstEmptySlot",
+            "rhInt004_slotCountBounded",
+            "rhInt005_cspaceResolution",
+            "rhInt006_cnodeBEq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 303,
           "called": []
         }
       ]
