@@ -1170,10 +1170,10 @@ private def runAuditCoverageChecks : IO Unit := do
 private def runWSH7Checks : IO Unit := do
   let vr1 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨4096⟩ (⟨8192⟩, default)).insert ⟨12288⟩ (⟨16384⟩, default) }
+      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨4096⟩ (⟨8192⟩, default)).insert ⟨12288⟩ (⟨16384⟩, default) }
   let vr2 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : Std.HashMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨12288⟩ (⟨16384⟩, default)).insert ⟨4096⟩ (⟨8192⟩, default) }
+      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨12288⟩ (⟨16384⟩, default)).insert ⟨4096⟩ (⟨8192⟩, default) }
   if vr1 == vr2 then
     IO.println "positive check passed [WS-H7 VSpaceRoot BEq ignores insertion order]"
   else
@@ -1574,13 +1574,13 @@ def runWSH15PlatformChecks : IO Unit := do
   -- H15-PLAT-06: RPi5 boot contract — objectTypeMetadata verified by theorem
   -- `rpi5BootContract_objectType_holds` is a proof that the predicate holds.
   -- We verify the equivalent computational check: default objects HashMap is empty.
-  if ({} : Std.HashMap SeLe4n.ObjId KernelObject).size == 0 then
+  if ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).size == 0 then
     IO.println "positive check passed [H15 rpi5BootContract objectTypeMetadata]"
   else
     throw <| IO.userError "H15 rpi5BootContract objectTypeMetadataConsistent should hold"
 
   -- H15-PLAT-07: RPi5 boot contract — capabilityRefMetadata verified by theorem
-  if ({} : Std.HashMap SlotRef CapTarget).size == 0 then
+  if ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef CapTarget).size == 0 then
     IO.println "positive check passed [H15 rpi5BootContract capabilityRefMetadata]"
   else
     throw <| IO.userError "H15 rpi5BootContract capabilityRefMetadataConsistent should hold"

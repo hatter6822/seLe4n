@@ -73,14 +73,17 @@ M7 (audit remediation).
 
 ### What's next
 
-**WS-N** (Robin Hood hashing verified implementation) is the active workstream — 5 phases
-(N1–N5, 122 subtasks). **N1 COMPLETED** (v0.17.1): core types + operations.
-**N2 COMPLETED** (v0.17.2): invariant proofs. **N3 COMPLETED** (v0.17.3): kernel
-API bridge. Remaining: N4 (CNode.slots integration), N5 (tests + documentation).
-After WS-N: **Raspberry Pi 5 hardware binding (H3)**.
+**WS-Q** (Kernel State Architecture) is the active workstream — a multi-phase
+plan unifying two-phase state architecture, service interface simplification,
+and Rust syscall wrappers. **Q1 COMPLETED** (v0.17.7): service interface
+simplification. **Q2 COMPLETED** (v0.17.8): universal RHTable migration — all
+`Std.HashMap`/`Std.HashSet` in kernel state replaced with verified
+`RHTable`/`RHSet` (16 map fields + 2 set fields, 30+ files, 10 subphases).
+Remaining: Q3–Q9 (IntermediateState, CNode radix tree, freeze, Rust wrappers).
+After WS-Q: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
+[WS-Q master plan](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 ## 5. Architecture mental model
 

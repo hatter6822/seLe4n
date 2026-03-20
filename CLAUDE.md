@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.17.5.
+Lean 4.28.0 toolchain, Lake build system, version 0.17.8.
 
 ## Build and run
 
@@ -419,14 +419,15 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Most recently completed portfolio**: WS-N (Robin Hood hashing verified implementation) — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-N1 COMPLETED** (v0.17.1): core types + operations. **WS-N2 COMPLETED** (v0.17.2): invariant proofs (~4,655 lines). **WS-N3 COMPLETED** (v0.17.3): kernel API bridge. **WS-N4 COMPLETED** (v0.17.4): kernel integration (CNode.slots). **WS-N5 COMPLETED** (v0.17.5): test coverage + documentation (12 standalone + 6 integration tests, full doc sync). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
+- **Active workstream**: WS-Q (Kernel State Architecture) — multi-phase plan (Q1–Q9, 45 atomic units). **WS-Q1 COMPLETED** (v0.17.7): service interface simplification. **WS-Q2 COMPLETED** (v0.17.8): universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet`, 16 map + 2 set fields, 30+ files, 10 subphases). See `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
+- **Prior portfolio**: WS-N (Robin Hood hashing verified implementation) — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
 - **Prior portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
 - **WS-I5**: Superseded by WS-L (all deferred items resolved)
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
-- **Latest audit**: `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` — Robin Hood hashing workstream plan
+- **Latest audit**: `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` — Kernel state architecture: two-phase builder/freeze model
 - **All prior workstreams completed**: WS-B through WS-N (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: Raspberry Pi 5 hardware binding
+- **Next milestone**: Q3–Q9 (IntermediateState, CNode radix tree, freeze, Rust wrappers), then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

@@ -7,12 +7,14 @@
 -/
 
 import SeLe4n.Prelude
+import SeLe4n.Kernel.RobinHood.Set
 namespace SeLe4n.Kernel
 open SeLe4n
+open SeLe4n.Kernel.RobinHood
 structure RunQueue where
-  byPriority : Std.HashMap Priority (List ThreadId)
-  membership : Std.HashSet ThreadId
-  threadPriority : Std.HashMap ThreadId Priority
+  byPriority : RHTable Priority (List ThreadId)
+  membership : RHSet ThreadId
+  threadPriority : RHTable ThreadId Priority
   flat : List ThreadId
   size : Nat
   maxPriority : Option Priority
@@ -23,6 +25,24 @@ structure RunQueue where
       the flat list. Together with `flat_wf`, this yields bidirectional
       consistency between O(1) membership checks and list-based scans. -/
   flat_wf_rev : ∀ tid, membership.contains tid = true → tid ∈ flat
+  /-- RHSet invariant extension — maintained by all RunQueue operations. -/
+  mem_invExt : membership.table.invExt
+  /-- RHTable invariant extension for byPriority — maintained by all operations. -/
+  byPrio_invExt : byPriority.invExt
+  /-- RHTable invariant extension for threadPriority — maintained by all operations. -/
+  threadPrio_invExt : threadPriority.invExt
+  /-- RHSet size bound — required for erase operations. -/
+  mem_sizeOk : membership.table.size < membership.table.capacity
+  /-- RHTable size bound for byPriority — required for erase operations. -/
+  byPrio_sizeOk : byPriority.size < byPriority.capacity
+  /-- RHTable size bound for threadPriority — required for erase operations. -/
+  threadPrio_sizeOk : threadPriority.size < threadPriority.capacity
+  /-- RHSet capacity ≥ 4 — required for insert_size_lt_capacity. -/
+  mem_capGe4 : 4 ≤ membership.table.capacity
+  /-- RHTable byPriority capacity ≥ 4. -/
+  byPrio_capGe4 : 4 ≤ byPriority.capacity
+  /-- RHTable threadPriority capacity ≥ 4. -/
+  threadPrio_capGe4 : 4 ≤ threadPriority.capacity
   /- WS-G4: Implicit invariant (maintained structurally by `insert`/`remove` API):
      Every thread in `membership` has a corresponding entry in `threadPriority`,
      and vice versa. This is NOT enforced as a proof obligation in the structure
@@ -37,7 +57,31 @@ namespace RunQueue
   flat_wf := fun _ h => nomatch h
   flat_wf_rev := by
     intro tid h
-    simp [Std.HashSet.contains_empty] at h
+    exact absurd h (by rw [show ({} : RHSet ThreadId) = RHSet.empty from rfl,
+      RHSet.contains_empty]; decide)
+  mem_invExt := RHSet.empty_invExt
+  byPrio_invExt := RHTable.empty_invExt' 16 (by omega)
+  threadPrio_invExt := RHTable.empty_invExt' 16 (by omega)
+  mem_sizeOk := by
+    show (RHSet.empty : RHSet ThreadId).table.size < (RHSet.empty : RHSet ThreadId).table.capacity
+    native_decide
+  byPrio_sizeOk := by
+    show (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).size <
+         (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
+    native_decide
+  threadPrio_sizeOk := by
+    show (EmptyCollection.emptyCollection : RHTable ThreadId Priority).size <
+         (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
+    native_decide
+  mem_capGe4 := by
+    show 4 ≤ (RHSet.empty : RHSet ThreadId).table.capacity
+    native_decide
+  byPrio_capGe4 := by
+    show 4 ≤ (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
+    native_decide
+  threadPrio_capGe4 := by
+    show 4 ≤ (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
+    native_decide
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat
@@ -48,13 +92,13 @@ instance : Membership ThreadId RunQueue where
 instance (tid : ThreadId) (rq : RunQueue) : Decidable (tid ∈ rq) :=
   show Decidable (rq.contains tid = true) from inferInstance
 
-private def recomputeMaxPriority (byPrio : Std.HashMap Priority (List ThreadId)) : Option Priority :=
-  byPrio.fold (fun acc prio bucket =>
+private def recomputeMaxPriority (byPrio : RHTable Priority (List ThreadId)) : Option Priority :=
+  byPrio.fold none (fun acc prio bucket =>
     if bucket.isEmpty then acc
     else match acc with
       | none => some prio
       | some mp => if prio.toNat > mp.toNat then some prio else some mp
-  ) none
+  )
 
 def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
   if rq.contains tid then rq
@@ -70,33 +114,73 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
       flat_wf := by
         intro x hx
         simp only [List.mem_append, List.mem_singleton] at hx
-        rcases hx with h | rfl
-        · have := rq.flat_wf x h
-          simp [Std.HashSet.contains_insert, this]
-        · simp [Std.HashSet.contains_insert]
+        rcases hx with h | hEqTid
+        · have hOld := rq.flat_wf x h
+          by_cases hEq : (tid == x) = true
+          · have hTidEqX := eq_of_beq hEq
+            rw [hTidEqX]
+            exact RHSet.contains_insert_self rq.membership x rq.mem_invExt
+          · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt]; exact hOld
+        · rw [hEqTid]
+          exact RHSet.contains_insert_self rq.membership tid rq.mem_invExt
       flat_wf_rev := by
         intro x hx
         have hx0 : tid = x ∨ rq.membership.contains x = true := by
-          simpa [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hx
+          by_cases hEq : (tid == x) = true
+          · exact Or.inl (eq_of_beq hEq)
+          · right
+            rwa [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt] at hx
         have hx' : x = tid ∨ rq.membership.contains x = true :=
           hx0.elim (fun h => Or.inl h.symm) Or.inr
         rcases hx' with rfl | hOld
         · exact List.mem_append.mpr (Or.inr (by simp))
-        · exact List.mem_append.mpr (Or.inl (rq.flat_wf_rev x hOld)) }
+        · exact List.mem_append.mpr (Or.inl (rq.flat_wf_rev x hOld))
+      mem_invExt := RHSet.insert_preserves_invExt rq.membership tid rq.mem_invExt
+      byPrio_invExt := rq.byPriority.insert_preserves_invExt prio
+          ((rq.byPriority[prio]?).getD [] ++ [tid]) rq.byPrio_invExt
+      threadPrio_invExt := rq.threadPriority.insert_preserves_invExt tid prio
+          rq.threadPrio_invExt
+      mem_sizeOk := rq.membership.table.insert_size_lt_capacity tid ()
+          rq.mem_invExt rq.mem_sizeOk rq.mem_capGe4
+      byPrio_sizeOk := rq.byPriority.insert_size_lt_capacity prio
+          ((rq.byPriority[prio]?).getD [] ++ [tid]) rq.byPrio_invExt rq.byPrio_sizeOk
+          rq.byPrio_capGe4
+      threadPrio_sizeOk := rq.threadPriority.insert_size_lt_capacity tid prio
+          rq.threadPrio_invExt rq.threadPrio_sizeOk rq.threadPrio_capGe4
+      mem_capGe4 := by
+        show 4 ≤ (rq.membership.insert tid).table.capacity
+        simp only [RHSet.insert]
+        unfold RHTable.insert; split
+        · rw [RHTable.insertNoResize_capacity, rq.membership.table.resize_fold_capacity]
+          have := rq.mem_capGe4; omega
+        · rw [RHTable.insertNoResize_capacity]; exact rq.mem_capGe4
+      byPrio_capGe4 := by
+        show 4 ≤ (rq.byPriority.insert prio ((rq.byPriority[prio]?).getD [] ++ [tid])).capacity
+        unfold RHTable.insert; split
+        · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
+          have := rq.byPrio_capGe4; omega
+        · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4
+      threadPrio_capGe4 := by
+        show 4 ≤ (rq.threadPriority.insert tid prio).capacity
+        unfold RHTable.insert; split
+        · rw [RHTable.insertNoResize_capacity, rq.threadPriority.resize_fold_capacity]
+          have := rq.threadPrio_capGe4; omega
+        · rw [RHTable.insertNoResize_capacity]; exact rq.threadPrio_capGe4 }
 
 def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
-  let prio := rq.threadPriority[tid]?
   -- WS-G4 refinement: compute filtered bucket once, reuse for both byPriority and maxPriority
-  let (byPrio', maxPrio') := match prio with
-    | none => (rq.byPriority, rq.maxPriority)
+  let byPrio' := match rq.threadPriority.get? tid with
+    | none => rq.byPriority
     | some p =>
         let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
-        let byPrio' := if bucket.isEmpty then rq.byPriority.erase p
-                        else rq.byPriority.insert p bucket
-        let maxPrio' := if rq.maxPriority == some p && bucket.isEmpty then
-                           recomputeMaxPriority byPrio'
-                         else rq.maxPriority
-        (byPrio', maxPrio')
+        if bucket.isEmpty then rq.byPriority.erase p
+        else rq.byPriority.insert p bucket
+  let maxPrio' := match rq.threadPriority.get? tid with
+    | none => rq.maxPriority
+    | some p =>
+        if rq.maxPriority == some p && (((rq.byPriority[p]?).getD []).filter (· ≠ tid)).isEmpty then
+           recomputeMaxPriority byPrio'
+        else rq.maxPriority
   { byPriority := byPrio'
     membership := rq.membership.erase tid
     threadPriority := rq.threadPriority.erase tid
@@ -108,15 +192,94 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
       have ⟨hFlat, hNe⟩ := List.mem_filter.mp hx
       have hXNeTid : x ≠ tid := by simpa using hNe
       have hMem := rq.flat_wf x hFlat
-      simp [Std.HashSet.contains_erase, hMem, Ne.symm hXNeTid]
+      have hNeBeq : ¬(tid == x) = true := by simp [beq_iff_eq]; exact Ne.symm hXNeTid
+      rw [RHSet.contains_erase_ne rq.membership tid x hNeBeq rq.mem_invExt rq.mem_sizeOk]
+      exact hMem
     flat_wf_rev := by
       intro x hx
       have hx' : rq.membership.contains x = true ∧ x ≠ tid := by
-        have hx0 : tid ≠ x ∧ rq.membership.contains x = true := by
-          simpa [Std.HashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using hx
-        exact ⟨hx0.2, fun hEq => hx0.1 hEq.symm⟩
+        by_cases hEq : (tid == x) = true
+        · have := eq_of_beq hEq
+          subst this
+          rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExt] at hx
+          exact absurd hx (by simp)
+        · exact ⟨by rwa [RHSet.contains_erase_ne rq.membership tid x hEq rq.mem_invExt
+                    rq.mem_sizeOk] at hx,
+                 fun h => hEq (by simp [beq_iff_eq]; exact h.symm)⟩
       have hFlat : x ∈ rq.flat := rq.flat_wf_rev x hx'.1
-      exact List.mem_filter.mpr ⟨hFlat, by simpa [beq_iff_eq] using hx'.2⟩ }
+      exact List.mem_filter.mpr ⟨hFlat, by simpa [beq_iff_eq] using hx'.2⟩
+    mem_invExt := RHSet.erase_preserves_invExt rq.membership tid rq.mem_invExt rq.mem_sizeOk
+    byPrio_invExt := by
+      -- byPrio' is let-bound to `match rq.threadPriority.get? tid with ...`
+      -- Use `show` to replace byPrio' with its definition, then split on the match
+      show (match rq.threadPriority.get? tid with
+        | none => rq.byPriority
+        | some p =>
+          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
+          if bucket.isEmpty then rq.byPriority.erase p
+          else rq.byPriority.insert p bucket).invExt
+      split
+      · exact rq.byPrio_invExt
+      next p _ =>
+        dsimp only []
+        split
+        · exact rq.byPriority.erase_preserves_invExt p rq.byPrio_invExt rq.byPrio_sizeOk
+        · exact rq.byPriority.insert_preserves_invExt p _ rq.byPrio_invExt
+    threadPrio_invExt := rq.threadPriority.erase_preserves_invExt tid rq.threadPrio_invExt
+        rq.threadPrio_sizeOk
+    mem_sizeOk := rq.membership.table.erase_size_lt_capacity tid rq.mem_sizeOk
+    byPrio_sizeOk := by
+      show (match rq.threadPriority.get? tid with
+        | none => rq.byPriority
+        | some p =>
+          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
+          if bucket.isEmpty then rq.byPriority.erase p
+          else rq.byPriority.insert p bucket).size <
+        (match rq.threadPriority.get? tid with
+        | none => rq.byPriority
+        | some p =>
+          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
+          if bucket.isEmpty then rq.byPriority.erase p
+          else rq.byPriority.insert p bucket).capacity
+      split
+      · exact rq.byPrio_sizeOk
+      · next p _ =>
+        dsimp only []
+        split
+        · exact rq.byPriority.erase_size_lt_capacity p rq.byPrio_sizeOk
+        · exact rq.byPriority.insert_size_lt_capacity p _ rq.byPrio_invExt rq.byPrio_sizeOk
+            rq.byPrio_capGe4
+    threadPrio_sizeOk := rq.threadPriority.erase_size_lt_capacity tid rq.threadPrio_sizeOk
+    mem_capGe4 := by
+      show 4 ≤ (rq.membership.erase tid).table.capacity
+      have : (rq.membership.erase tid).table.capacity = rq.membership.table.capacity := by
+        simp only [RHSet.erase, RHTable.erase]
+        split <;> simp_all
+      rw [this]; exact rq.mem_capGe4
+    byPrio_capGe4 := by
+      show 4 ≤ (match rq.threadPriority.get? tid with
+        | none => rq.byPriority
+        | some p =>
+          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
+          if bucket.isEmpty then rq.byPriority.erase p
+          else rq.byPriority.insert p bucket).capacity
+      split
+      · exact rq.byPrio_capGe4
+      · next p _ =>
+        dsimp only []
+        split
+        · have : (rq.byPriority.erase p).capacity = rq.byPriority.capacity := by
+            simp only [RHTable.erase]; split <;> simp_all
+          rw [this]; exact rq.byPrio_capGe4
+        · unfold RHTable.insert; split
+          · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
+            have := rq.byPrio_capGe4; omega
+          · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4
+    threadPrio_capGe4 := by
+      show 4 ≤ (rq.threadPriority.erase tid).capacity
+      have : (rq.threadPriority.erase tid).capacity = rq.threadPriority.capacity := by
+        simp only [RHTable.erase]; split <;> simp_all
+      rw [this]; exact rq.threadPrio_capGe4 }
 
 def rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
   if hc : rq.contains tid then
@@ -142,7 +305,16 @@ def rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
                     by_cases hEq : x = tid
                     · subst hEq
                       exact List.mem_append.mpr (Or.inr (by simp))
-                    · exact List.mem_append.mpr (Or.inl ((List.mem_erase_of_ne hEq).2 hFlat)) }
+                    · exact List.mem_append.mpr (Or.inl ((List.mem_erase_of_ne hEq).2 hFlat))
+                  byPrio_invExt := rq.byPriority.insert_preserves_invExt prio
+                      (tl ++ [tid]) rq.byPrio_invExt
+                  byPrio_sizeOk := rq.byPriority.insert_size_lt_capacity prio
+                      (tl ++ [tid]) rq.byPrio_invExt rq.byPrio_sizeOk rq.byPrio_capGe4
+                  byPrio_capGe4 := by
+                    unfold RHTable.insert; split
+                    · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
+                      have := rq.byPrio_capGe4; omega
+                    · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4 }
             else rq
   else rq
 
@@ -166,7 +338,15 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
           by_cases hEq : x = tid
           · subst hEq
             exact List.mem_append.mpr (Or.inr (by simp))
-          · exact List.mem_append.mpr (Or.inl ((List.mem_erase_of_ne hEq).2 hFlat)) }
+          · exact List.mem_append.mpr (Or.inl ((List.mem_erase_of_ne hEq).2 hFlat))
+        byPrio_invExt := rq.byPriority.insert_preserves_invExt prio bucket' rq.byPrio_invExt
+        byPrio_sizeOk := rq.byPriority.insert_size_lt_capacity prio bucket'
+            rq.byPrio_invExt rq.byPrio_sizeOk rq.byPrio_capGe4
+        byPrio_capGe4 := by
+          unfold RHTable.insert; split
+          · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
+            have := rq.byPrio_capGe4; omega
+          · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4 }
   else rq
 
 @[inline] def toList (rq : RunQueue) : List ThreadId := rq.flat
@@ -196,7 +376,13 @@ theorem contains_false_of_not_mem {rq : RunQueue} {tid : ThreadId}
   cases hc : rq.contains tid <;> simp_all
 
 theorem not_mem_empty (tid : ThreadId) : ¬(tid ∈ (empty : RunQueue)) := by
-  intro h; simp [Membership.mem, contains, RunQueue.empty] at h
+  intro h
+  rw [mem_iff_contains] at h
+  have := RHSet.contains_empty tid
+  simp only [contains, RunQueue.empty] at h
+  rw [show ({} : RHSet ThreadId) = RHSet.empty from rfl] at h
+  rw [this] at h
+  exact absurd h (by decide)
 
 theorem mem_insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
     x ∈ rq.insert tid prio ↔ x ∈ rq ∨ x = tid := by
@@ -206,9 +392,21 @@ theorem mem_insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : Threa
   · rename_i h
     exact ⟨Or.inl, fun hOr => hOr.elim id (fun heq => heq ▸ h)⟩
   · rename_i h
-    rw [Std.HashSet.contains_insert]; simp only [Bool.or_eq_true, beq_iff_eq]
-    exact ⟨fun h => h.elim (fun h => Or.inr h.symm) Or.inl,
-           fun h => h.elim Or.inr (fun h => Or.inl h.symm)⟩
+    constructor
+    · intro hIns
+      by_cases hEq : (tid == x) = true
+      · exact Or.inr (eq_of_beq hEq).symm
+      · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt] at hIns
+        exact Or.inl hIns
+    · intro hOr
+      rcases hOr with hOld | hEqTid
+      · by_cases hEq : (tid == x) = true
+        · have hTidEqX := eq_of_beq hEq
+          rw [hTidEqX]
+          exact RHSet.contains_insert_self rq.membership x rq.mem_invExt
+        · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt]; exact hOld
+      · rw [hEqTid]
+        exact RHSet.contains_insert_self rq.membership tid rq.mem_invExt
 
 theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
     x ∈ rq.remove tid ↔ x ∈ rq ∧ x ≠ tid := by
@@ -216,13 +414,19 @@ theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
   unfold remove contains
   constructor
   · intro h
-    have h0 : tid ≠ x ∧ rq.contains x = true := by
-      simpa [Std.HashSet.contains_erase, Bool.and_eq_true, beq_iff_eq] using h
-    exact ⟨h0.2, fun hEq => h0.1 hEq.symm⟩
+    have hNeBeq : ¬(tid == x) = true := by
+      intro hEq
+      have := eq_of_beq hEq; subst this
+      rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExt] at h
+      exact absurd h (by simp)
+    constructor
+    · rwa [RHSet.contains_erase_ne rq.membership tid x hNeBeq rq.mem_invExt rq.mem_sizeOk] at h
+    · intro hEq; exact hNeBeq (by simp [beq_iff_eq]; exact hEq.symm)
   · intro h
     rcases h with ⟨hx, hne⟩
-    have hne' : tid ≠ x := fun hEq => hne hEq.symm
-    simp [Std.HashSet.contains_erase, hne', hx]
+    have hne' : ¬(tid == x) = true := by simp [beq_iff_eq]; exact fun h => hne h.symm
+    rw [RHSet.contains_erase_ne rq.membership tid x hne' rq.mem_invExt rq.mem_sizeOk]
+    exact hx
 
 theorem mem_rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
     x ∈ rq.rotateHead tid prio ↔ x ∈ rq := by
@@ -569,36 +773,51 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
     unfold wellFormed
     simp only [rotateToBack, hc, dite_true]
     -- Now goal has: rq.membership, rq.threadPriority, rq.byPriority.insert ...
+    have hByPrioInv := rq.byPrio_invExt
+    -- Helper: bracket notation resolves to get? for RHTable
+    have hGetElem : ∀ (t : RHTable Priority (List ThreadId)) (k : Priority),
+        t[k]? = t.get? k := fun _ _ => rfl
     constructor
     · -- Forward: bucket member → membership ∧ threadPriority
       intro p t hMem
-      simp only [HashMap_getElem?_insert] at hMem
-      split at hMem
-      · -- prio == p: t is in the modified bucket
-        rename_i hPEq
+      rw [hGetElem] at hMem
+      -- Case split on whether the inserted prio matches p
+      by_cases hPEq : ((rq.threadPriority[tid]?.getD ⟨0⟩) == p) = true
+      · -- prio == p: bucket was replaced
+        have hPrioEq := eq_of_beq hPEq
+        rw [hPrioEq, RHTable_get?_insert_self rq.byPriority p _ hByPrioInv] at hMem
         simp only [Option.getD] at hMem
         simp only [List.mem_append, List.mem_singleton] at hMem
-        rcases hMem with hFilter | rfl
+        rcases hMem with hFilter | hEqTid2
         · have hOrig := (List.mem_filter.mp hFilter).1
-          have hFwd := hwf.1 (rq.threadPriority[tid]?.getD ⟨0⟩) t hOrig
-          exact ⟨hFwd.1, by rw [(eq_of_beq hPEq).symm]; exact hFwd.2⟩
-        · exact ⟨hTidMem, by rw [(eq_of_beq hPEq).symm, hPrioVal]; exact hTidTP⟩
+          have hOrig' : t ∈ (rq.byPriority[p]?).getD [] := by exact hOrig
+          have hFwd := hwf.1 p t hOrig'
+          exact ⟨hFwd.1, hFwd.2⟩
+        · rw [hEqTid2]
+          have hPeq : tidPrio = p := hPrioVal.symm.trans hPrioEq
+          exact ⟨hTidMem, by rw [hPeq] at hTidTP; exact hTidTP⟩
       · -- prio ≠ p: bucket unchanged
-        exact hwf.1 p t hMem
+        rw [RHTable_get?_insert_ne rq.byPriority (rq.threadPriority[tid]?.getD ⟨0⟩)
+            p _ hPEq hByPrioInv] at hMem
+        have hMem' : t ∈ (rq.byPriority[p]?).getD [] := by exact hMem
+        exact hwf.1 p t hMem'
     · -- Reverse: membership → ∃ prio with bucket entry
       intro t hMem
       obtain ⟨p, hTP, hBucket⟩ := hwf.2 t hMem
       refine ⟨p, hTP, ?_⟩
-      simp only [HashMap_getElem?_insert]
-      split
+      rw [hGetElem]
+      by_cases hPEq : ((rq.threadPriority[tid]?.getD ⟨0⟩) == p) = true
       · -- prio == p
-        rename_i hPEq
+        have hPrioEq := eq_of_beq hPEq
+        rw [hPrioEq, RHTable_get?_insert_self rq.byPriority p _ hByPrioInv]
         simp only [Option.getD, List.mem_append, List.mem_singleton]
         by_cases hTEq : t = tid
         · exact Or.inr hTEq
-        · rw [← eq_of_beq hPEq] at hBucket
-          exact Or.inl (List.mem_filter.mpr ⟨hBucket, by simp [hTEq]⟩)
-      · exact hBucket
+        · exact Or.inl (List.mem_filter.mpr ⟨hBucket, by simp [hTEq]⟩)
+      · rw [RHTable_get?_insert_ne rq.byPriority (rq.threadPriority[tid]?.getD ⟨0⟩)
+            p _ hPEq hByPrioInv]
+        show t ∈ (rq.byPriority[p]?).getD []
+        exact hBucket
   · -- tid not in run queue; rotateToBack is identity
     simp only [rotateToBack, show ¬(rq.contains tid = true) from hc]; exact hwf
 
@@ -627,57 +846,86 @@ theorem insert_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
   · -- contains = false: prove for the new struct
     rename_i hNotContains
     have hNotMem : ¬(rq.membership.contains tid = true) := hNotContains
+    have hByPrioInv := rq.byPrio_invExt
+    have hTPrioInv := rq.threadPrio_invExt
+    have hMemInv := rq.mem_invExt
+    -- Helper: bracket notation resolves to get? for RHTable
+    have hGetElemBP : ∀ (t : RHTable Priority (List ThreadId)) (k : Priority),
+        t[k]? = t.get? k := fun _ _ => rfl
+    have hGetElemTP : ∀ (t : RHTable ThreadId Priority) (k : ThreadId),
+        t[k]? = t.get? k := fun _ _ => rfl
     unfold wellFormed; dsimp
     constructor
     · -- Forward: bucket member → membership ∧ threadPriority
       intro p t hMem
-      rw [HashMap_getElem?_insert] at hMem
-      split at hMem
-      · -- prio == p: t is in the modified bucket
-        rename_i hPEq
+      rw [hGetElemBP] at hMem
+      by_cases hPEq : (prio == p) = true
+      · -- prio == p: bucket was replaced
+        have hPrioEq := eq_of_beq hPEq
+        rw [hPrioEq, RHTable_get?_insert_self rq.byPriority p _ hByPrioInv] at hMem
         simp only [Option.getD, List.mem_append, List.mem_singleton] at hMem
-        rcases hMem with hOrig | rfl
-        · -- t was in original bucket at priority prio
-          have hFwd := hwf.1 prio t hOrig
+        rcases hMem with hOrig | hEqTid
+        · -- t was in original bucket at priority p (= prio)
+          have hOrig' : t ∈ (rq.byPriority[p]?).getD [] := by
+            simp only [Option.getD]; exact hOrig
+          have hFwd := hwf.1 p t hOrig'
+          have hTNeTid : ¬(tid == t) = true := by
+            simp [beq_iff_eq]; intro hEq; subst hEq; exact hNotMem hFwd.1
           constructor
-          · simp [Std.HashSet.contains_insert, hFwd.1]
-          · rw [Std.HashMap.getElem?_insert,
-                show (tid == t) = false from by
-                  simp; intro hEq; subst hEq; exact hNotMem hFwd.1]
-            rw [← eq_of_beq hPEq]; exact hFwd.2
+          · rw [RHSet.contains_insert_ne rq.membership tid t hTNeTid hMemInv]
+            exact hFwd.1
+          · rw [hGetElemTP,
+                RHTable_get?_insert_ne rq.threadPriority tid t prio hTNeTid hTPrioInv]
+            exact hFwd.2
         · -- t = tid (newly inserted)
-          exact ⟨by simp [Std.HashSet.contains_insert],
-                 by rw [Std.HashMap.getElem?_insert]; simp [eq_of_beq hPEq]⟩
+          rw [hEqTid]
+          constructor
+          · exact RHSet.contains_insert_self rq.membership tid hMemInv
+          · rw [hGetElemTP,
+                RHTable_get?_insert_self rq.threadPriority tid prio hTPrioInv]
+            exact congrArg some hPrioEq
       · -- prio ≠ p: bucket unchanged
-        have hFwd := hwf.1 p t hMem
-        exact ⟨by simp [Std.HashSet.contains_insert, hFwd.1],
-               by rw [Std.HashMap.getElem?_insert,
-                    show (tid == t) = false from by
-                      simp; intro hEq; subst hEq; exact hNotMem hFwd.1]
+        rw [RHTable_get?_insert_ne rq.byPriority prio p _ hPEq hByPrioInv] at hMem
+        have hMem' : t ∈ (rq.byPriority[p]?).getD [] := by exact hMem
+        have hFwd := hwf.1 p t hMem'
+        have hTNeTid : ¬(tid == t) = true := by
+          simp [beq_iff_eq]; intro hEq; subst hEq; exact hNotMem hFwd.1
+        exact ⟨by rw [RHSet.contains_insert_ne rq.membership tid t hTNeTid hMemInv]; exact hFwd.1,
+               by rw [hGetElemTP,
+                    RHTable_get?_insert_ne rq.threadPriority tid t prio hTNeTid hTPrioInv]
                   exact hFwd.2⟩
     · -- Reverse: membership → ∃ prio with bucket entry
       intro t hMem
       have hMemOr : tid = t ∨ rq.membership.contains t = true := by
-        simpa [Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq] using hMem
+        by_cases hEq : (tid == t) = true
+        · exact Or.inl (eq_of_beq hEq)
+        · right
+          rwa [RHSet.contains_insert_ne rq.membership tid t hEq hMemInv] at hMem
       rcases hMemOr with rfl | hOld
       · -- t = tid: use prio
         refine ⟨prio, ?_, ?_⟩
-        · rw [Std.HashMap.getElem?_insert]; simp
-        · rw [HashMap_getElem?_insert]; simp [Option.getD, List.mem_append]
+        · rw [hGetElemTP,
+              RHTable_get?_insert_self rq.threadPriority tid prio hTPrioInv]
+        · rw [hGetElemBP,
+              RHTable_get?_insert_self rq.byPriority prio _ hByPrioInv]
+          simp [Option.getD, List.mem_append]
       · -- t ≠ tid (old member)
         obtain ⟨p, hTP, hBucket⟩ := hwf.2 t hOld
         have hNe : tid ≠ t := fun hEq => by subst hEq; exact hNotMem hOld
+        have hNeBeq : ¬(tid == t) = true := by simp [beq_iff_eq]; exact hNe
         refine ⟨p, ?_, ?_⟩
-        · rw [Std.HashMap.getElem?_insert,
-              show (tid == t) = false from by simp [hNe]]
+        · rw [hGetElemTP,
+              RHTable_get?_insert_ne rq.threadPriority tid t prio hNeBeq hTPrioInv]
           exact hTP
-        · rw [HashMap_getElem?_insert]
-          split
-          · rename_i hPEq
+        · rw [hGetElemBP]
+          by_cases hPEq : (prio == p) = true
+          · have hPrioEq := eq_of_beq hPEq
+            rw [hPrioEq, RHTable_get?_insert_self rq.byPriority p _ hByPrioInv]
             simp only [Option.getD, List.mem_append, List.mem_singleton]
-            have hPrioEq := eq_of_beq hPEq
-            exact Or.inl (hPrioEq ▸ hBucket)
-          · exact hBucket
+            exact Or.inl hBucket
+          · rw [RHTable_get?_insert_ne rq.byPriority prio p _ hPEq hByPrioInv]
+            show t ∈ (rq.byPriority[p]?).getD []
+            exact hBucket
 
 end RunQueue
 end SeLe4n.Kernel

@@ -502,18 +502,20 @@ theorem lifecycle_storeObject_objects_eq
     (st st' : SystemState)
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objects[id]? = some obj :=
-  SeLe4n.Model.storeObject_objects_eq st st' id obj hStore
+  SeLe4n.Model.storeObject_objects_eq st st' id obj hObjInv hStore
 
 theorem lifecycle_storeObject_objects_ne
     (st st' : SystemState)
     (id oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hNe : oid ≠ id)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objects[oid]? = st.objects[oid]? :=
-  SeLe4n.Model.storeObject_objects_ne st st' id oid obj hNe hStore
+  SeLe4n.Model.storeObject_objects_ne st st' id oid obj hNe hObjInv hStore
 
 theorem lifecycle_storeObject_scheduler_eq
     (st st' : SystemState)
@@ -579,11 +581,12 @@ theorem lifecycleRetypeObject_ok_lookup_preserved_ne
     (target oid : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hNe : oid ≠ target)
+    (hObjInv : st.objects.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     st'.objects[oid]? = st.objects[oid]? := by
   rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
     ⟨_, _, _, _, _, _, hStore⟩
-  exact lifecycle_storeObject_objects_ne st st' target oid newObj hNe hStore
+  exact lifecycle_storeObject_objects_ne st st' target oid newObj hNe hObjInv hStore
 
 theorem lifecycleRetypeObject_ok_runnable_membership
     (st st' : SystemState)
@@ -651,6 +654,7 @@ theorem lifecycleRetypeObject_success_updates_object
     (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
     (hAuth : lifecycleRetypeAuthority cap target = true)
+    (hObjInv : st.objects.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     st'.objects[target]? = some newObj := by
   have _ : st.lifecycle.objectTypes[target]? = some currentObj.objectType := hMeta
@@ -668,7 +672,7 @@ theorem lifecycleRetypeObject_success_updates_object
   rw [hCapLookup'] at hCapLookup
   injection hCapLookup with hCapEq
   subst hCapEq
-  exact lifecycle_storeObject_objects_eq st st' target newObj hStore
+  exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
 
 theorem lifecycleRevokeDeleteRetype_error_authority_cleanup_alias
     (st : SystemState)

@@ -268,13 +268,13 @@ and every edge has a corresponding childMap entry. -/
 private def cdtChildMapConsistentCheck (st : SystemState) : List (String × Bool) :=
   let cdt := st.cdt
   -- Forward: every childMap entry has a corresponding edge
-  let forwardChecks := cdt.childMap.fold (fun acc parent children =>
+  let forwardChecks := cdt.childMap.toList.foldl (fun acc ⟨parent, children⟩ =>
     children.foldr (fun child inner =>
       let ok := cdt.edges.any fun e => e.parent == parent && e.child == child
       (s!"cdt childMap→edges: parent={reprStr parent} child={reprStr child}", ok) :: inner) acc) []
   -- Backward: every edge has a corresponding childMap entry
   let backwardChecks := cdt.edges.map fun e =>
-    let ok := match cdt.childMap.get? e.parent with
+    let ok := match cdt.childMap[e.parent]? with
       | some children => children.any (· == e.child)
       | none => false
     (s!"cdt edges→childMap: parent={reprStr e.parent} child={reprStr e.child}", ok)
@@ -285,7 +285,7 @@ private def cdtChildMapConsistentCheck (st : SystemState) : List (String × Bool
 private def cdtParentMapConsistentCheck (st : SystemState) : List (String × Bool) :=
   let cdt := st.cdt
   -- Forward: every parentMap entry has a corresponding edge
-  let forwardChecks := cdt.parentMap.fold (fun acc child parent =>
+  let forwardChecks := cdt.parentMap.toList.foldl (fun acc ⟨child, parent⟩ =>
     let ok := cdt.edges.any fun e => e.parent == parent && e.child == child
     (s!"cdt parentMap→edges: child={reprStr child} parent={reprStr parent}", ok) :: acc) []
   -- Backward: every edge has a corresponding parentMap entry

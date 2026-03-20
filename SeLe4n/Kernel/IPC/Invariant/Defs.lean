@@ -19,16 +19,22 @@ open SeLe4n.Model
 
 theorem storeObject_objects_eq
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objects[id]? = some obj := by
-  unfold storeObject at hStore; cases hStore; simp
+  unfold storeObject at hStore; cases hStore
+  simp only [RHTable_getElem?_eq_get?]
+  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv
 
 theorem storeObject_objects_ne
     (st st' : SystemState) (id oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hNe : oid ≠ id) (hStore : storeObject id obj st = .ok ((), st')) :
+    (hNe : oid ≠ id)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objects[oid]? = st.objects[oid]? := by
   unfold storeObject at hStore; cases hStore
-  rw [HashMap_getElem?_insert]
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable_getElem?_insert st.objects id obj hObjInv]
   have : ¬((id == oid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
   simp [this]
 
@@ -40,12 +46,13 @@ theorem storeObject_scheduler_eq
 
 theorem tcb_lookup_of_endpoint_store
     (st st' : SystemState) (endpointId tid : SeLe4n.ObjId) (tcb : TCB) (ep' : Endpoint)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st'))
     (hObj : st'.objects[tid]? = some (.tcb tcb)) :
     st.objects[tid]? = some (.tcb tcb) := by
   by_cases hEq : tid = endpointId
-  · rw [hEq, storeObject_objects_eq st st' endpointId (.endpoint ep') hStore] at hObj; cases hObj
-  · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hStore] at hObj; exact hObj
+  · rw [hEq, storeObject_objects_eq st st' endpointId (.endpoint ep') hObjInv hStore] at hObj; cases hObj
+  · rw [storeObject_objects_ne st st' endpointId tid (.endpoint ep') hEq hObjInv hStore] at hObj; exact hObj
 
 theorem runnable_membership_of_endpoint_store
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (ep' : Endpoint)
@@ -406,11 +413,12 @@ private theorem tcb_preserved_through_endpoint_store
     (st st1 : SystemState) (endpointId : SeLe4n.ObjId) (obj : KernelObject) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcbExists : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hEndpoint : ∃ ep, st.objects[endpointId]? = some (.endpoint ep))
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject endpointId obj st = .ok ((), st1)) :
     st1.objects[tid.toObjId]? = some (.tcb tcb) := by
   have hNe : tid.toObjId ≠ endpointId := by
     rcases hEndpoint with ⟨ep, hObj⟩; intro h; rw [h] at hTcbExists; simp_all
-  rwa [storeObject_objects_ne st st1 endpointId tid.toObjId obj hNe hStore]
+  rwa [storeObject_objects_ne st st1 endpointId tid.toObjId obj hNe hObjInv hStore]
 
 -- ============================================================================
 -- WS-G7/F-P11: Notification waiter consistency invariant
@@ -458,6 +466,7 @@ theorem notificationWait_preserves_uniqueWaiters
     (badge : Option SeLe4n.Badge)
     (hInv : uniqueWaiters st)
     (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
     uniqueWaiters st' := by
   intro oid ntfn hObj
@@ -465,12 +474,12 @@ theorem notificationWait_preserves_uniqueWaiters
   · rw [hEq] at hObj
     cases hBadge : badge with
     | some b =>
-      rcases notificationWait_badge_path_notification st st' notificationId waiter b
+      rcases notificationWait_badge_path_notification st st' notificationId waiter b hObjInv
         (by rw [← hBadge]; exact hStep) with ⟨ntfn', hObj', hEmpty⟩
       rw [hObj] at hObj'; cases hObj'
       rw [hEmpty]; exact .nil
     | none =>
-      rcases notificationWait_wait_path_notification st st' notificationId waiter
+      rcases notificationWait_wait_path_notification st st' notificationId waiter hObjInv
         (by rw [← hBadge]; exact hStep) with ⟨ntfnOld, ntfnNew, hObjOld, hNoBadge, hObjNew, hPrepend⟩
       rw [hObj] at hObjNew; cases hObjNew
       rw [hPrepend]
@@ -511,11 +520,13 @@ theorem notificationWait_preserves_uniqueWaiters
             | error e => simp
             | ok st2 =>
               simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
+              have hPairObjInv : pair.2.objects.invExt :=
+                storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
               have hPre : st.objects[oid]? = some (.notification ntfn) := by
-                have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hTcb hObj
+                have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hPairObjInv hTcb hObj
                 by_cases hEq2 : oid = notificationId
                 · exact absurd hEq2 hEq
-                · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hStore] at h2
+                · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hObjInv hStore] at h2
               exact hInv oid ntfn hPre
         | none =>
           simp only [hPend] at hStep
@@ -532,7 +543,9 @@ theorem notificationWait_preserves_uniqueWaiters
               | error e => simp
               | ok pair =>
                 -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-                have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hLookup hStore
+                have hPairObjInv : pair.2.objects.invExt :=
+                  storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+                have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hLookup hObjInv hStore
                 simp only [storeTcbIpcState_fromTcb_eq hLk']
                 cases hTcb : storeTcbIpcState pair.2 waiter _ with
                 | error e => simp
@@ -541,10 +554,10 @@ theorem notificationWait_preserves_uniqueWaiters
                   have hPre : st.objects[oid]? = some (.notification ntfn) := by
                     have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
                     rw [← hStEq, hRemObj] at hObj
-                    have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hTcb hObj
+                    have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hPairObjInv hTcb hObj
                     by_cases hEq2 : oid = notificationId
                     · exact absurd hEq2 hEq
-                    · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hStore] at h2
+                    · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hObjInv hStore] at h2
                   exact hInv oid ntfn hPre
 
 -- ============================================================================
@@ -556,7 +569,8 @@ because the object store is empty, so no notification objects exist. -/
 theorem default_notificationWaiterConsistent :
     notificationWaiterConsistent (default : SystemState) := by
   intro oid ntfn _ hObj _
-  have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty
+  have h : (default : SystemState).objects[oid]? = none := by
+    simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
   rw [h] at hObj; exact absurd hObj (by simp)
 
 /-! ### WS-G7: Preservation path for `notificationWaiterConsistent`

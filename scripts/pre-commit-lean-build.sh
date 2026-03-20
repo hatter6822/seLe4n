@@ -23,6 +23,7 @@ set -euo pipefail
 
 # Ensure elan/lean are available
 if [ -f "$HOME/.elan/env" ]; then
+    # shellcheck source=/dev/null
     source "$HOME/.elan/env"
 fi
 

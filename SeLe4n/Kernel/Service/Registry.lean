@@ -27,6 +27,7 @@ returns and machine-checked post-conditions.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.RobinHood
 
 -- ============================================================================
 -- Registry operations
@@ -106,12 +107,15 @@ theorem registerInterface_error_duplicate
 /-- Successful interface registration stores the spec in the registry. -/
 theorem registerInterface_success_stores
     (st st' : SystemState) (spec : InterfaceSpec)
+    (hInvExt : st.interfaceRegistry.invExt)
     (hStep : registerInterface spec st = .ok ((), st')) :
     st'.interfaceRegistry[spec.ifaceId]? = some spec := by
   unfold registerInterface at hStep
   split at hStep
   · cases hStep
-  · simp at hStep; cases hStep; simp
+  · simp at hStep; cases hStep
+    simp only [RHTable_getElem?_eq_get?]
+    exact RHTable.getElem?_insert_self _ _ _ hInvExt
 
 /-- Interface registration preserves objects. -/
 theorem registerInterface_preserves_objects
@@ -161,12 +165,15 @@ theorem revokeService_error_not_found
 /-- Successful revocation removes the entry from the registry. -/
 theorem revokeService_success_removes
     (st st' : SystemState) (sid : ServiceId)
+    (hInvExt : st.serviceRegistry.invExt)
     (hStep : revokeService sid st = .ok ((), st')) :
     st'.serviceRegistry[sid]? = none := by
   unfold revokeService at hStep
   split at hStep
   · cases hStep
-  · simp at hStep; cases hStep; simp
+  · simp at hStep; cases hStep
+    simp only [RHTable_getElem?_eq_get?]
+    exact RHTable.getElem?_erase_self _ _ hInvExt
 
 /-- Service registration preserves objects. -/
 theorem registerService_preserves_objects

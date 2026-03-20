@@ -208,6 +208,8 @@ theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hInv : lifecycleInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleInvariantBundle st' := by
   rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
@@ -215,7 +217,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
   have hMeta : SystemState.lifecycleMetadataConsistent st :=
     lifecycleMetadataConsistent_of_lifecycleInvariantBundle st hInv
   have hMeta' : SystemState.lifecycleMetadataConsistent st' :=
-    storeObject_preserves_lifecycleMetadataConsistent st st' target newObj hMeta hStore
+    storeObject_preserves_lifecycleMetadataConsistent st st' target newObj hMeta hObjInv hObjTypesInv hStore
   exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
 
 theorem lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant
@@ -224,10 +226,12 @@ theorem lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvarian
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hInv : lifecycleInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleStaleReferenceExclusionInvariant st' := by
   have hBundle' : lifecycleInvariantBundle st' :=
-    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hStep
+    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hObjInv hObjTypesInv hStep
   exact lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st' hBundle'
 
 theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
@@ -236,10 +240,12 @@ theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
     (target : SeLe4n.ObjId)
     (newObj : KernelObject)
     (hInv : lifecycleInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleIdentityStaleReferenceInvariant st' := by
   have hBundle' : lifecycleInvariantBundle st' :=
-    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hStep
+    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hObjInv hObjTypesInv hStep
   exact lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle st' hBundle'
 
 -- ============================================================================
@@ -285,7 +291,7 @@ def untypedMemoryInvariant (st : SystemState) : Prop :=
 because no untyped objects exist. -/
 theorem default_systemState_untypedMemoryInvariant :
     untypedMemoryInvariant (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_⟩ <;> (intro oid ut hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp))
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> (intro oid ut hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp))
 
 /-- WS-F2: `storeObject` at a non-untyped slot preserves watermark invariant
 for all existing untyped objects at other ObjIds. -/
@@ -294,6 +300,7 @@ theorem storeObject_preserves_untypedWatermarkInvariant_ne
     (oid : SeLe4n.ObjId)
     (obj : KernelObject)
     (hInv : untypedWatermarkInvariant st)
+    (hObjInv : st.objects.invExt)
     (hStep : storeObject oid obj st = .ok ((), st'))
     (uid : SeLe4n.ObjId)
     (hNe : uid ≠ oid)
@@ -301,7 +308,7 @@ theorem storeObject_preserves_untypedWatermarkInvariant_ne
     (hUt : st'.objects[uid]? = some (.untyped ut)) :
     ut.watermarkValid := by
   have hPrev : st'.objects[uid]? = st.objects[uid]? :=
-    storeObject_objects_ne st st' oid uid obj hNe hStep
+    storeObject_objects_ne st st' oid uid obj hNe hObjInv hStep
   rw [hPrev] at hUt
   exact hInv uid ut hUt
 
@@ -314,6 +321,8 @@ theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent
     (newObj : KernelObject)
     (allocSize : Nat)
     (hMeta : SystemState.lifecycleMetadataConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     SystemState.lifecycleMetadataConsistent st' := by
   rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
@@ -322,9 +331,14 @@ theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent
   have hLookupSt : stLookup = st :=
     cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup
   rw [hLookupSt] at hStoreUt
+  have hObjInvUt := storeObject_preserves_objects_invExt st stUt untypedId (.untyped ut') hObjInv hStoreUt
+  have hObjTypesInvUt : stUt.lifecycle.objectTypes.invExt := by
+    have hStoreUt' := hStoreUt
+    unfold storeObject at hStoreUt'; cases hStoreUt'
+    exact RHTable_insert_preserves_invExt st.lifecycle.objectTypes _ _ hObjTypesInv
   have hMetaUt : SystemState.lifecycleMetadataConsistent stUt :=
-    storeObject_preserves_lifecycleMetadataConsistent st stUt untypedId (.untyped ut') hMeta hStoreUt
-  exact storeObject_preserves_lifecycleMetadataConsistent stUt st' childId newObj hMetaUt hStoreChild
+    storeObject_preserves_lifecycleMetadataConsistent st stUt untypedId (.untyped ut') hMeta hObjInv hObjTypesInv hStoreUt
+  exact storeObject_preserves_lifecycleMetadataConsistent stUt st' childId newObj hMetaUt hObjInvUt hObjTypesInvUt hStoreChild
 
 /-- WS-F2: `retypeFromUntyped` preserves the full lifecycle invariant bundle. -/
 theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
@@ -334,13 +348,15 @@ theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
     (newObj : KernelObject)
     (allocSize : Nat)
     (hInv : lifecycleInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     lifecycleInvariantBundle st' := by
   have hMeta : SystemState.lifecycleMetadataConsistent st :=
     lifecycleMetadataConsistent_of_lifecycleInvariantBundle st hInv
   have hMeta' : SystemState.lifecycleMetadataConsistent st' :=
     retypeFromUntyped_preserves_lifecycleMetadataConsistent
-      st st' authority untypedId childId newObj allocSize hMeta hStep
+      st st' authority untypedId childId newObj allocSize hMeta hObjInv hObjTypesInv hStep
   exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
 
 /-- WS-F2: `retypeFromUntyped` preserves the untyped memory invariant.
@@ -359,6 +375,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     (hNewObjWF : ∀ ut_new, newObj = .untyped ut_new → ut_new.wellFormed)
     (hFresh : ∀ ut, st.objects[untypedId]? = some (.untyped ut) →
         ∀ c ∈ ut.children, c.objId ≠ childId)
+    (hObjInv : st.objects.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     untypedMemoryInvariant st' := by
   rcases hInv with ⟨hWM, hCB, hNO, hUI⟩
@@ -368,6 +385,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
   have hLookupSt : stLookup = st :=
     cspaceLookupSlot_ok_state_eq st authority _ stLookup hLookup
   rw [hLookupSt] at hStoreUt
+  have hObjInvUt := storeObject_preserves_objects_invExt st stUt untypedId (.untyped ut') hObjInv hStoreUt
   -- Source untyped properties for ut
   have hUtWM : ut.watermarkValid := hWM untypedId ut hObj
   have hUtCB : ut.childrenWithinWatermark := hCB untypedId ut hObj
@@ -388,17 +406,17 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant
     by_cases hEqChild : oid = childId
     · left; constructor; exact hEqChild
       rw [hEqChild] at hObjPost
-      have := storeObject_objects_eq stUt st' childId newObj hStoreChild
+      have := storeObject_objects_eq stUt st' childId newObj hObjInvUt hStoreChild
       rw [this] at hObjPost; cases hObjPost; rfl
     · right
-      rw [storeObject_objects_ne stUt st' childId oid newObj hEqChild hStoreChild] at hObjPost
+      rw [storeObject_objects_ne stUt st' childId oid newObj hEqChild hObjInvUt hStoreChild] at hObjPost
       by_cases hEqUt : oid = untypedId
       · left; refine ⟨hEqChild, hEqUt, ?_⟩
         rw [hEqUt] at hObjPost
-        have := storeObject_objects_eq st stUt untypedId (.untyped ut') hStoreUt
+        have := storeObject_objects_eq st stUt untypedId (.untyped ut') hObjInv hStoreUt
         rw [this] at hObjPost; cases hObjPost; rfl
       · right; exact ⟨hEqChild, hEqUt,
-          (storeObject_objects_ne st stUt untypedId oid (.untyped ut') hEqUt hStoreUt) ▸ hObjPost⟩
+          (storeObject_objects_ne st stUt untypedId oid (.untyped ut') hEqUt hObjInv hStoreUt) ▸ hObjPost⟩
   refine ⟨?_, ?_, ?_, ?_⟩
   · -- untypedWatermarkInvariant
     intro oid utPost hObjPost
@@ -494,6 +512,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
     (allocSize : Nat)
     (hInv : untypedMemoryInvariant st)
     (hNewObjWF : ∀ ut_new, newObj = .untyped ut_new → ut_new.wellFormed)
+    (hObjInv : st.objects.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     untypedMemoryInvariant st' :=
   retypeFromUntyped_preserves_untypedMemoryInvariant
@@ -501,6 +520,7 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
     (retypeFromUntyped_ok_childId_ne st st' authority untypedId childId newObj allocSize hStep)
     hNewObjWF
     (retypeFromUntyped_ok_childId_fresh st st' authority untypedId childId newObj allocSize hStep)
+    hObjInv
     hStep
 
 end SeLe4n.Kernel

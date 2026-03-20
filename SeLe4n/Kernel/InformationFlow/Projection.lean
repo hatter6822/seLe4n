@@ -142,9 +142,9 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
 observationally equivalent results to filtering once.
 
-WS-G5: With HashMap-backed CNode slots, idempotency is stated at the slot
-lookup level rather than structural equality, because `Std.HashMap.filter`
-in Lean 4.28.0 reverses internal `AssocList` bucket ordering, making
+WS-G5: With RHTable-backed CNode slots, idempotency is stated at the slot
+lookup level rather than structural equality, because `RHTable.filter`
+may reorder internal entries, making
 `(m.filter f).filter f ≠ m.filter f` structurally despite identical entries.
 For all non-CNode variants, structural equality holds directly. -/
 theorem projectKernelObject_idempotent

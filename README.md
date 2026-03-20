@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.17.5-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.17.8-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -42,9 +42,9 @@ compiles to native code with no admitted proofs.
 The project utilizes a capability-based security model while introducing novel 
 architectural improvements compared to other microkernels:
 
-- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots (formally verified Robin Hood hash table), VSpace mappings, and IPC queues use verified `RHTable`/`Std.HashMap`/`Std.HashSet`
+- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified `RHTable`/`RHSet` (Robin Hood hash table with machine-checked invariants, zero `Std.HashMap`/`Std.HashSet` in state)
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics
-- **Node-stable capability derivation tree** with `childMap` + `parentMap` HashMap indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
+- **Node-stable capability derivation tree** with `childMap` + `parentMap` RHTable indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
 - **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition)
 - **EDF + priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware partitioning
@@ -57,13 +57,13 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.17.5` |
+| **Version** | `0.17.8` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 46,637 across 78 files |
-| **Test Lean LoC** | 5,560 across 5 test suites |
-| **Proved declarations** | 1,421 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 48,925 across 83 files |
+| **Test Lean LoC** | 5,513 across 5 test suites |
+| **Proved declarations** | 1,459 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) — Robin Hood hashing workstream plan |
+| **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`

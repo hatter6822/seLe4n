@@ -122,7 +122,9 @@ def cdtMintCompleteness (st : SystemState) : Prop :=
 so `cdtMintCompleteness` holds vacuously. -/
 theorem cdtMintCompleteness_default : cdtMintCompleteness default := by
   intro childNode childRef hLookup
-  simp [default] at hLookup
+  have : (default : SystemState).cdtNodeSlot[childNode]? = none := by
+    simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+  rw [this] at hLookup; exact absurd hLookup (by simp)
 
 /-- WS-H13/H-01: CSpace depth consistency — every CNode has bounded depth and
 well-formed bit allocation.
@@ -171,7 +173,7 @@ standalone operation-correctness lemmas in `Authority.lean`.
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st
+    cspaceDepthConsistent st ∧ st.objects.invExt
 
 /-- WS-H4/M-G02: Extended capability invariant bundle including mint-tracking
 completeness. Provides the full 7-property assurance without changing the base
@@ -225,7 +227,11 @@ theorem cdtAcyclicity_of_capabilityInvariantBundle
 
 theorem cspaceDepthConsistent_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := hInv.2.2.2.2.2
+    cspaceDepthConsistent st := hInv.2.2.2.2.2.1
+
+theorem objects_invExt_of_capabilityInvariantBundle
+    (st : SystemState) (hInv : capabilityInvariantBundle st) :
+    st.objects.invExt := hInv.2.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4/M-G02: Transfer theorems for cdtMintCompleteness
@@ -256,18 +262,19 @@ the stored object is NOT a CNode (endpoint, TCB, etc.). -/
 private theorem cspaceSlotCountBounded_of_storeObject_nonCNode
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hBounded : cspaceSlotCountBounded st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st'))
     (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
     cspaceSlotCountBounded st' := by
   intro cnodeId cn hObj
   by_cases hEq : cnodeId = oid
   · subst hEq
-    have := storeObject_objects_eq st st' cnodeId obj hStore
+    have := storeObject_objects_eq st st' cnodeId obj hObjInv hStore
     rw [this] at hObj
     cases obj with
     | cnode cn' => exact absurd rfl (hNotCNode cn')
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
-  · have hPre := storeObject_objects_ne st st' oid cnodeId obj hEq hStore
+  · have hPre := storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore
     rw [hPre] at hObj
     exact hBounded cnodeId cn hObj
 
@@ -276,16 +283,17 @@ the stored object IS a CNode (requires new CNode to be bounded). -/
 theorem cspaceSlotCountBounded_of_storeObject_cnode
     (st st' : SystemState) (oid : SeLe4n.ObjId) (cn' : CNode)
     (hBounded : cspaceSlotCountBounded st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
     (hNewBounded : cn'.slotCountBounded) :
     cspaceSlotCountBounded st' := by
   intro cnodeId cn hObj
   by_cases hEq : cnodeId = oid
   · subst hEq
-    have := storeObject_objects_eq st st' cnodeId (.cnode cn') hStore
+    have := storeObject_objects_eq st st' cnodeId (.cnode cn') hObjInv hStore
     rw [this] at hObj; cases hObj
     exact hNewBounded
-  · have hPre := storeObject_objects_ne st st' oid cnodeId (.cnode cn') hEq hStore
+  · have hPre := storeObject_objects_ne st st' oid cnodeId (.cnode cn') hEq hObjInv hStore
     rw [hPre] at hObj
     exact hBounded cnodeId cn hObj
 
@@ -316,6 +324,7 @@ objects may change but every key that was non-none stays non-none. -/
 theorem cdtCompleteness_of_storeObject
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hComp : cdtCompleteness st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st'))
     (hNodeSlotEq : st'.cdtNodeSlot = st.cdtNodeSlot) :
     cdtCompleteness st' := by
@@ -323,8 +332,8 @@ theorem cdtCompleteness_of_storeObject
   rw [hNodeSlotEq] at hNS
   have hPre := hComp nodeId ref hNS
   by_cases hEq : ref.cnode = oid
-  · rw [hEq]; rw [storeObject_objects_eq st st' oid obj hStore]; simp
-  · rw [storeObject_objects_ne st st' oid ref.cnode obj hEq hStore]; exact hPre
+  · rw [hEq]; rw [storeObject_objects_eq st st' oid obj hObjInv hStore]; simp
+  · rw [storeObject_objects_ne st st' oid ref.cnode obj hEq hObjInv hStore]; exact hPre
 
 /-- WS-H4: Transfer cdtAcyclicity when CDT is unchanged. -/
 theorem cdtAcyclicity_of_cdt_eq
@@ -349,11 +358,12 @@ theorem storeObject_cdtNodeSlot_eq
 private theorem cspaceSlotCountBounded_of_storeTcbIpcState
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hBounded : cspaceSlotCountBounded st)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     cspaceSlotCountBounded st' := by
   intro cnodeId cn hObj
   have hPre : st.objects[cnodeId]? = some (.cnode cn) :=
-    storeTcbIpcState_cnode_backward st st' tid ipc cnodeId cn hStep hObj
+    storeTcbIpcState_cnode_backward st st' tid ipc cnodeId cn hObjInv hStep hObj
   exact hBounded cnodeId cn hPre
 
 /-- WS-H4: storeTcbIpcState preserves CDT fields (delegates to storeObject). -/
@@ -410,13 +420,14 @@ private theorem cdtPredicates_of_storeObject_nonCNode
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st'))
     (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
     cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' := by
   have hCdt := storeObject_cdt_eq st st' oid obj hStore
   have ⟨hNS, _⟩ := storeObject_cdtNodeSlot_eq st st' oid obj hStore
-  exact ⟨cspaceSlotCountBounded_of_storeObject_nonCNode st st' oid obj hBounded hStore hNotCNode,
-    cdtCompleteness_of_storeObject st st' oid obj hComp hStore hNS,
+  exact ⟨cspaceSlotCountBounded_of_storeObject_nonCNode st st' oid obj hBounded hObjInv hStore hNotCNode,
+    cdtCompleteness_of_storeObject st st' oid obj hComp hObjInv hStore hNS,
     cdtAcyclicity_of_cdt_eq st st' hAcyclic hCdt⟩
 
 /-- WS-H4: Transfer all three new predicates when objects and CDT fields are
@@ -438,7 +449,9 @@ detachSlotFromCdt only clears entries from cdtNodeSlot (making the quantifier
 vacuously true) and preserves objects. -/
 theorem cdtCompleteness_of_detachSlotFromCdt
     (st : SystemState) (ref : SlotRef)
-    (hComp : cdtCompleteness st) :
+    (hComp : cdtCompleteness st)
+    (hCdtNSInv : st.cdtNodeSlot.invExt)
+    (hCdtNSSz : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity) :
     cdtCompleteness (st.detachSlotFromCdt ref) := by
   intro nodeId slotRef hNS
   unfold SystemState.detachSlotFromCdt at hNS ⊢
@@ -446,16 +459,15 @@ theorem cdtCompleteness_of_detachSlotFromCdt
   | none => simp only [hLookup] at hNS ⊢; exact hComp nodeId slotRef hNS
   | some origNode =>
     simp only [hLookup] at hNS ⊢
-    -- objects unchanged except possibly at `origNode` erased by detach.
     by_cases hEq : nodeId = origNode
     · subst hEq
-      rw [HashMap_getElem?_erase] at hNS
-      simp at hNS
-    · rw [HashMap_getElem?_erase] at hNS
+      simp only [RHTable_getElem?_eq_get?] at hNS
+      rw [RHTable_get?_erase_self st.cdtNodeSlot nodeId hCdtNSInv] at hNS
+      exact absurd hNS (by simp)
+    · simp only [RHTable_getElem?_eq_get?] at hNS
       have hNeBeq : ¬((origNode == nodeId) = true) := by
-        intro hBeq
-        exact hEq (eq_of_beq hBeq).symm
-      simp [hNeBeq] at hNS
+        intro hBeq; exact hEq (eq_of_beq hBeq).symm
+      rw [RHTable_get?_erase_ne st.cdtNodeSlot origNode nodeId hNeBeq hCdtNSInv hCdtNSSz] at hNS
       exact hComp nodeId slotRef hNS
 
 /-- WS-H4: detachSlotFromCdt preserves cdtAcyclicity (CDT edges unchanged). -/
@@ -481,12 +493,14 @@ theorem cspaceSlotCountBounded_of_detachSlotFromCdt
 private theorem cdtPredicates_of_detachSlotFromCdt
     (st : SystemState) (ref : SlotRef)
     (hBounded : cspaceSlotCountBounded st)
-    (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st) :
+    (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
+    (hCdtNSInv : st.cdtNodeSlot.invExt)
+    (hCdtNSSz : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity) :
     cspaceSlotCountBounded (st.detachSlotFromCdt ref) ∧
     cdtCompleteness (st.detachSlotFromCdt ref) ∧
     cdtAcyclicity (st.detachSlotFromCdt ref) :=
   ⟨cspaceSlotCountBounded_of_detachSlotFromCdt st ref hBounded,
-   cdtCompleteness_of_detachSlotFromCdt st ref hComp,
+   cdtCompleteness_of_detachSlotFromCdt st ref hComp hCdtNSInv hCdtNSSz,
    cdtAcyclicity_of_detachSlotFromCdt st ref hAcyclic⟩
 
 /-- WS-H13: Transfer cspaceDepthConsistent when objects are unchanged. -/
@@ -502,17 +516,18 @@ object is NOT a CNode (endpoint, TCB, etc.). -/
 private theorem cspaceDepthConsistent_of_storeObject_nonCNode
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hDepth : cspaceDepthConsistent st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st'))
     (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
     cspaceDepthConsistent st' := by
   intro cnodeId cn hObj
   by_cases hEq : cnodeId = oid
   · subst hEq
-    have := storeObject_objects_eq st st' cnodeId obj hStore
+    have := storeObject_objects_eq st st' cnodeId obj hObjInv hStore
     rw [this] at hObj; cases obj with
     | cnode cn' => exact absurd rfl (hNotCNode cn')
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
-  · rw [storeObject_objects_ne st st' oid cnodeId obj hEq hStore] at hObj
+  · rw [storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore] at hObj
     exact hDepth cnodeId cn hObj
 
 /-- WS-H13: Transfer cspaceDepthConsistent through storeObject when the stored
@@ -521,6 +536,7 @@ This covers CNode.insert, CNode.remove, and CNode.revokeTargetLocal. -/
 theorem cspaceDepthConsistent_of_storeObject_sameCNode
     (st st' : SystemState) (targetOid : SeLe4n.ObjId) (preCn cn' : CNode)
     (hDepth : cspaceDepthConsistent st)
+    (hObjInv : st.objects.invExt)
     (hPreObj : st.objects[targetOid]? = some (.cnode preCn))
     (hStore : storeObject targetOid (.cnode cn') st = .ok ((), st'))
     (hSameDepth : cn'.depth = preCn.depth)
@@ -530,7 +546,7 @@ theorem cspaceDepthConsistent_of_storeObject_sameCNode
   intro cnodeId cn hObj
   by_cases hEq : cnodeId = targetOid
   · rw [hEq] at hObj
-    rw [storeObject_objects_eq st st' targetOid (.cnode cn') hStore] at hObj; cases hObj
+    rw [storeObject_objects_eq st st' targetOid (.cnode cn') hObjInv hStore] at hObj; cases hObj
     have hPreBound := hDepth targetOid preCn hPreObj
     constructor
     · rw [hSameDepth]; exact hPreBound.1
@@ -542,7 +558,7 @@ theorem cspaceDepthConsistent_of_storeObject_sameCNode
       constructor
       · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW, hSameDepth]; exact hWfPre.1
       · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW]; exact hWfPre.2
-  · rw [storeObject_objects_ne st st' targetOid cnodeId (.cnode cn') hEq hStore] at hObj
+  · rw [storeObject_objects_ne st st' targetOid cnodeId (.cnode cn') hEq hObjInv hStore] at hObj
     exact hDepth cnodeId cn hObj
 
 /-- WS-H13: Transfer cspaceDepthConsistent through storeObject when inserting a capability
@@ -551,15 +567,16 @@ theorem cspaceDepthConsistent_of_storeObject_insertCNode
     (st st' : SystemState) (targetOid : SeLe4n.ObjId) (preCn : CNode)
     (insertSlot : SeLe4n.Slot) (insertCap : Capability)
     (hDepth : cspaceDepthConsistent st)
+    (hObjInv : st.objects.invExt)
     (hPreObj : st.objects[targetOid]? = some (.cnode preCn))
     (hStore : storeObject targetOid (.cnode (preCn.insert insertSlot insertCap)) st = .ok ((), st')) :
     cspaceDepthConsistent st' := by
   intro cnodeId cn hObj
   by_cases hEq : cnodeId = targetOid
   · rw [hEq] at hObj
-    rw [storeObject_objects_eq st st' targetOid _ hStore] at hObj; cases hObj
+    rw [storeObject_objects_eq st st' targetOid _ hObjInv hStore] at hObj; cases hObj
     exact hDepth targetOid preCn hPreObj
-  · rw [storeObject_objects_ne st st' targetOid cnodeId _ hEq hStore] at hObj
+  · rw [storeObject_objects_ne st st' targetOid cnodeId _ hEq hObjInv hStore] at hObj
     exact hDepth cnodeId cn hObj
 
 /-- WS-H13: Transfer cspaceDepthConsistent through detachSlotFromCdt (objects unchanged). -/
@@ -644,6 +661,7 @@ private theorem cdtPredicates_through_blocking_path
     (ep : Endpoint) (ipc : ThreadIpcState)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject endpointId (.endpoint ep) st = .ok ((), st1))
     (hTcb : storeTcbIpcState st1 target ipc = .ok st2) :
     cspaceSlotCountBounded (removeRunnable st2 target) ∧
@@ -652,14 +670,15 @@ private theorem cdtPredicates_through_blocking_path
   have hCdt1 := storeObject_cdt_eq st st1 endpointId (.endpoint ep) hStore
   have ⟨hNS1, _⟩ := storeObject_cdtNodeSlot_eq st st1 endpointId (.endpoint ep) hStore
   have ⟨hCdt2, hNS2, _⟩ := storeTcbIpcState_cdt_eq st1 st2 target ipc hTcb
+  have hObjInv1 : st1.objects.invExt := storeObject_preserves_objects_invExt st st1 endpointId _ hObjInv hStore
   have hBnd1 := cspaceSlotCountBounded_of_storeObject_nonCNode st st1 endpointId (.endpoint ep)
-    hBounded hStore (fun cn h => by cases h)
-  have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target ipc hBnd1 hTcb
+    hBounded hObjInv hStore (fun cn h => by cases h)
+  have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target ipc hBnd1 hObjInv1 hTcb
   refine ⟨?_, ?_, ?_⟩
   · exact cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (removeRunnable_preserves_objects st2 target)
   · -- cdtCompleteness transfers through storeObject, storeTcbIpcState, removeRunnable
     -- All three only replace object entries (never delete), so objects[ref.cnode]? ≠ none is preserved
-    have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hStore hNS1
+    have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
     have hComp2 : cdtCompleteness st2 := by
       unfold storeTcbIpcState at hTcb
       cases hLookup : lookupTcb st1 target with
@@ -671,7 +690,7 @@ private theorem cdtPredicates_through_blocking_path
         | ok pair =>
           simp only [hS] at hTcb
           have hEq := Except.ok.inj hTcb; subst hEq
-          exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hS
+          exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
             (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
     exact cdtCompleteness_of_objects_nodeSlot_eq st2 _ hComp2
       (removeRunnable_preserves_objects st2 target)
@@ -686,6 +705,7 @@ private theorem cdtPredicates_through_handshake_path
     (ep : Endpoint)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject endpointId (.endpoint ep) st = .ok ((), st1))
     (hTcb : storeTcbIpcState st1 target .ready = .ok st2) :
     cspaceSlotCountBounded (ensureRunnable st2 target) ∧
@@ -694,10 +714,11 @@ private theorem cdtPredicates_through_handshake_path
   have hCdt1 := storeObject_cdt_eq st st1 endpointId (.endpoint ep) hStore
   have ⟨hNS1, _⟩ := storeObject_cdtNodeSlot_eq st st1 endpointId (.endpoint ep) hStore
   have ⟨hCdt2, hNS2, _⟩ := storeTcbIpcState_cdt_eq st1 st2 target .ready hTcb
+  have hObjInv1 : st1.objects.invExt := storeObject_preserves_objects_invExt st st1 endpointId _ hObjInv hStore
   have hBnd1 := cspaceSlotCountBounded_of_storeObject_nonCNode st st1 endpointId (.endpoint ep)
-    hBounded hStore (fun cn h => by cases h)
-  have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target .ready hBnd1 hTcb
-  have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hStore hNS1
+    hBounded hObjInv hStore (fun cn h => by cases h)
+  have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target .ready hBnd1 hObjInv1 hTcb
+  have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
   have hComp2 : cdtCompleteness st2 := by
     unfold storeTcbIpcState at hTcb
     cases hLookup : lookupTcb st1 target with
@@ -709,7 +730,7 @@ private theorem cdtPredicates_through_handshake_path
       | ok pair =>
         simp only [hS] at hTcb
         have hEq := Except.ok.inj hTcb; subst hEq
-        exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hS
+        exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
           (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
   have hEnsNS : (ensureRunnable st2 target).cdtNodeSlot = st2.cdtNodeSlot := by
     unfold ensureRunnable
@@ -734,6 +755,7 @@ theorem cdtPredicates_through_reply_path
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
+    (hObjInv : st.objects.invExt)
     (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1) :
     cspaceSlotCountBounded (ensureRunnable st1 target) ∧
     cdtCompleteness (ensureRunnable st1 target) ∧
@@ -749,7 +771,7 @@ theorem cdtPredicates_through_reply_path
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
-        exact cspaceSlotCountBounded_of_storeObject_nonCNode st pair.2 target.toObjId _ hBounded hS
+        exact cspaceSlotCountBounded_of_storeObject_nonCNode st pair.2 target.toObjId _ hBounded hObjInv hS
           (fun cn h => by cases h)
   have hComp1 : cdtCompleteness st1 := by
     unfold storeTcbIpcStateAndMessage at hTcb
@@ -761,7 +783,7 @@ theorem cdtPredicates_through_reply_path
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
-        exact cdtCompleteness_of_storeObject st pair.2 target.toObjId _ hComp hS
+        exact cdtCompleteness_of_storeObject st pair.2 target.toObjId _ hComp hObjInv hS
           (storeObject_cdtNodeSlot_eq st pair.2 target.toObjId _ hS).1
   have hEnsNS : (ensureRunnable st1 target).cdtNodeSlot = st1.cdtNodeSlot := by
     unfold ensureRunnable

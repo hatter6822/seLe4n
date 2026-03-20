@@ -138,6 +138,7 @@ theorem lookupTcb_preserved_by_storeObject_notification
     {obj : KernelObject}
     (hLookup : lookupTcb st tid = some tcb)
     (hNtfn : st.objects[notifId]? = some (.notification ntfn))
+    (hObjInv : st.objects.invExt)
     (hStore : storeObject notifId obj st = .ok pair) :
     lookupTcb pair.2 tid = some tcb := by
   have hStore' : storeObject notifId obj st = .ok ((), pair.2) := by
@@ -145,7 +146,7 @@ theorem lookupTcb_preserved_by_storeObject_notification
   have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
   have hNe : tid.toObjId ≠ notifId := by
     intro heq; rw [← heq] at hNtfn; rw [hNtfn] at hTcbObj; cases hTcbObj
-  have hPreserved := storeObject_objects_ne st pair.2 notifId tid.toObjId obj hNe hStore'
+  have hPreserved := storeObject_objects_ne st pair.2 notifId tid.toObjId obj hNe hObjInv hStore'
   unfold lookupTcb at hLookup ⊢
   rw [hPreserved]
   exact hLookup
@@ -245,6 +246,7 @@ theorem storeTcbIpcState_preserves_objects_ne
     (ipc : ThreadIpcState)
     (oid : SeLe4n.ObjId)
     (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     st'.objects[oid]? = st.objects[oid]? := by
   unfold storeTcbIpcState at hStep
@@ -260,7 +262,7 @@ theorem storeTcbIpcState_preserves_objects_ne
       have hEq : pair.snd = st' := Except.ok.inj hStep
       subst hEq
       exact storeObject_objects_ne st pair.2 tid.toObjId oid
-        (.tcb { tcb with ipcState := ipc }) hNe hStore
+        (.tcb { tcb with ipcState := ipc }) hNe hObjInv hStore
 
 /-- `storeTcbIpcState` preserves notification objects (it only writes TCBs). -/
 theorem storeTcbIpcState_preserves_notification
@@ -270,6 +272,7 @@ theorem storeTcbIpcState_preserves_notification
     (notifId : SeLe4n.ObjId)
     (ntfn : Notification)
     (hNtfn : st.objects[notifId]? = some (.notification ntfn))
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     st'.objects[notifId]? = some (.notification ntfn) := by
   by_cases hEq : notifId = tid.toObjId
@@ -278,7 +281,7 @@ theorem storeTcbIpcState_preserves_notification
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hNtfn]
     simp [hLookup] at hStep
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hStep]
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc notifId hEq hObjInv hStep]
     exact hNtfn
 
 /-- `removeRunnable` only modifies the scheduler; all objects are preserved. -/
@@ -327,6 +330,7 @@ theorem storeTcbIpcState_preserves_endpoint
     (epId : SeLe4n.ObjId)
     (ep : Endpoint)
     (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     st'.objects[epId]? = some (.endpoint ep) := by
   by_cases hEq : epId = tid.toObjId
@@ -335,7 +339,7 @@ theorem storeTcbIpcState_preserves_endpoint
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hEp]
     simp [hLookup] at hStep
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc epId hEq hStep]
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc epId hEq hObjInv hStep]
     exact hEp
 
 /-- WS-E3/H-09: `storeTcbIpcState` preserves CNode objects. -/
@@ -346,6 +350,7 @@ theorem storeTcbIpcState_preserves_cnode
     (cnodeId : SeLe4n.ObjId)
     (cn : CNode)
     (hCn : st.objects[cnodeId]? = some (.cnode cn))
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     st'.objects[cnodeId]? = some (.cnode cn) := by
   by_cases hEq : cnodeId = tid.toObjId
@@ -354,7 +359,7 @@ theorem storeTcbIpcState_preserves_cnode
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hCn]
     simp [hLookup] at hStep
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc cnodeId hEq hStep]
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc cnodeId hEq hObjInv hStep]
     exact hCn
 
 /-- WS-E3/H-09: `storeTcbIpcState` preserves VSpaceRoot objects. -/
@@ -365,6 +370,7 @@ theorem storeTcbIpcState_preserves_vspaceRoot
     (oid : SeLe4n.ObjId)
     (vs : VSpaceRoot)
     (hVs : st.objects[oid]? = some (.vspaceRoot vs))
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
     st'.objects[oid]? = some (.vspaceRoot vs) := by
   by_cases hEq : oid = tid.toObjId
@@ -373,7 +379,7 @@ theorem storeTcbIpcState_preserves_vspaceRoot
     have hLookup : lookupTcb st tid = none := by
       unfold lookupTcb; simp [hVs]
     simp [hLookup] at hStep
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep]
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hObjInv hStep]
     exact hVs
 
 /-- WS-E3/H-09: Backward CNode preservation: if post-state has a CNode, pre-state had it.
@@ -384,6 +390,7 @@ theorem storeTcbIpcState_cnode_backward
     (ipc : ThreadIpcState)
     (oid : SeLe4n.ObjId)
     (cn : CNode)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (hCn : st'.objects[oid]? = some (.cnode cn)) :
     st.objects[oid]? = some (.cnode cn) := by
@@ -400,8 +407,8 @@ theorem storeTcbIpcState_cnode_backward
       | ok pair =>
         simp only [hStore] at hStep
         have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hCn; cases hCn
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep] at hCn; exact hCn
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hCn; cases hCn
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hObjInv hStep] at hCn; exact hCn
 
 /-- WS-E3/H-09: Backward endpoint preservation for `storeTcbIpcState`. -/
 theorem storeTcbIpcState_endpoint_backward
@@ -410,6 +417,7 @@ theorem storeTcbIpcState_endpoint_backward
     (ipc : ThreadIpcState)
     (oid : SeLe4n.ObjId)
     (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
@@ -426,8 +434,8 @@ theorem storeTcbIpcState_endpoint_backward
       | ok pair =>
         simp only [hStore] at hStep
         have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hEp; cases hEp
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep] at hEp; exact hEp
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hEp; cases hEp
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hObjInv hStep] at hEp; exact hEp
 
 /-- WS-E3/H-09: Backward notification preservation for `storeTcbIpcState`. -/
 theorem storeTcbIpcState_notification_backward
@@ -436,6 +444,7 @@ theorem storeTcbIpcState_notification_backward
     (ipc : ThreadIpcState)
     (oid : SeLe4n.ObjId)
     (ntfn : Notification)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
@@ -452,8 +461,8 @@ theorem storeTcbIpcState_notification_backward
       | ok pair =>
         simp only [hStore] at hStep
         have := Except.ok.inj hStep; subst this
-        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hStore] at hNtfn; cases hNtfn
-  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hStep] at hNtfn; exact hNtfn
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hNtfn; cases hNtfn
+  · rw [storeTcbIpcState_preserves_objects_ne st st' tid ipc oid hEq hObjInv hStep] at hNtfn; exact hNtfn
 
 /-- WS-G7/F-P11: Double-wait is rejected: if the waiter's TCB ipcState is
 already `.blockedOnNotification notifId`, `notificationWait` returns
@@ -479,6 +488,7 @@ theorem notificationWait_badge_path_notification
     (notifId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
     (hStep : notificationWait notifId waiter st = .ok (some badge, st')) :
     ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧ ntfn'.waitingThreads = [] := by
   unfold notificationWait at hStep
@@ -506,7 +516,7 @@ theorem notificationWait_badge_path_notification
               simp only []
               intro hStep
               -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hStore
+              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
               rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
               revert hStep
               cases hTcb : storeTcbIpcState pair.2 waiter _ with
@@ -532,9 +542,12 @@ theorem notificationWait_badge_path_notification
             intro ⟨_, hStEq⟩
             subst hStEq
             have hNtfnStored : pair.2.objects[notifId]? = some (.notification newNtfn) :=
-              storeObject_objects_eq st pair.2 notifId (.notification newNtfn) hStore
+              storeObject_objects_eq st pair.2 notifId (.notification newNtfn) hObjInv hStore
+            have hPairObjInv : pair.2.objects.invExt := by
+              unfold storeObject at hStore; cases hStore
+              exact RHTable_insert_preserves_invExt _ _ _ hObjInv
             have hNtfnPreserved : st2.objects[notifId]? = some (.notification newNtfn) :=
-              storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hTcb
+              storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hPairObjInv hTcb
             exact ⟨newNtfn, hNtfnPreserved, rfl⟩
 
 /-- WS-G7/F-P11: Decomposition: on the wait path, the post-state notification has the
@@ -544,6 +557,7 @@ theorem notificationWait_wait_path_notification
     (st st' : SystemState)
     (notifId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
     (hStep : notificationWait notifId waiter st = .ok (none, st')) :
     ∃ ntfn ntfn',
       st.objects[notifId]? = some (.notification ntfn) ∧
@@ -593,7 +607,7 @@ theorem notificationWait_wait_path_notification
               simp only []
               intro hStep
               -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hStore
+              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
               rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
               revert hStep
               cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
@@ -603,10 +617,13 @@ theorem notificationWait_wait_path_notification
                 intro ⟨_, hStEq⟩
                 have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
                 have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
-                  storeObject_objects_eq st pair.2 notifId (.notification ntfn') hStore
+                  storeObject_objects_eq st pair.2 notifId (.notification ntfn') hObjInv hStore
+                have hPairObjInv : pair.2.objects.invExt := by
+                  unfold storeObject at hStore; cases hStore
+                  exact RHTable_insert_preserves_invExt _ _ _ hObjInv
                 have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
                   storeTcbIpcState_preserves_notification pair.2 st2 waiter
-                    (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hTcb
+                    (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hPairObjInv hTcb
                 refine ⟨ntfn, ntfn', rfl, hBadge, ?_, rfl⟩
                 rw [← hStEq, hRemObj]
                 exact hNtfnPreserved

@@ -221,7 +221,7 @@ private theorem default_schedulerInvariantBundle :
 
 private theorem default_ipcInvariant :
     ipcInvariant (default : SystemState) := by
-  intro oid ntfn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  intro oid ntfn hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
 
 private theorem default_lifecycleInvariantBundle :
     lifecycleInvariantBundle (default : SystemState) :=
@@ -230,12 +230,12 @@ private theorem default_lifecycleInvariantBundle :
 private theorem default_ipcSchedulerContractPredicates :
     ipcSchedulerContractPredicates (default : SystemState) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid rt hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb nid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb eid rt hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb nid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
 
 /-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
 to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
@@ -243,31 +243,36 @@ All components are vacuously true (empty objects/cdtNodeSlot) or use
 `CapDerivationTree.empty_edgeWellFounded`. -/
 private theorem default_capabilityInvariantBundle :
     capabilityInvariantBundle (default : SystemState) :=
-  ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-   by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-   by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp),
-   by intro _ _ h; simp [default] at h,
+  ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
+   by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
+   by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
+   by
+    intro nodeId _ h
+    have hempty : (default : SystemState).cdtNodeSlot[nodeId]? = none := by
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+    rw [hempty] at h; exact absurd h (by simp),
    by exact CapDerivationTree.empty_edgeWellFounded,
-   by intro cnodeId cn hObj; have h : (default : SystemState).objects[cnodeId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)⟩
+   by intro cnodeId cn hObj; have h : (default : SystemState).objects[cnodeId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
+   by exact RHTable_empty_invExt 16 (by omega)⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 
 private theorem default_dualQueueSystemInvariant :
     dualQueueSystemInvariant (default : SystemState) := by
   constructor
-  · intro epId ep hObj; have h : (default : SystemState).objects[epId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  · intro epId ep hObj; have h : (default : SystemState).objects[epId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
   · constructor
-    · intro a tcbA hObj; have h : (default : SystemState).objects[a.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-    · intro b tcbB hObj; have h : (default : SystemState).objects[b.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+    · intro a tcbA hObj; have h : (default : SystemState).objects[a.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+    · intro b tcbB hObj; have h : (default : SystemState).objects[b.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
 
 private theorem default_allPendingMessagesBounded :
     allPendingMessagesBounded (default : SystemState) := by
-  intro tid tcb msg hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+  intro tid tcb msg hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
 
 private theorem default_badgeWellFormed :
     badgeWellFormed (default : SystemState) := by
   refine ⟨fun oid _ _ hObj => ?_, fun oid _ _ _ _ hObj => ?_⟩
-  all_goals (have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp))
+  all_goals (have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp))
 
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
@@ -322,7 +327,7 @@ theorem default_system_state_proofLayerInvariantBundle :
       (by
         intro sid svc hSvc
         unfold lookupService at hSvc
-        have hNone : (default : SystemState).services[sid]? = none := HashMap_getElem?_empty
+        have hNone : (default : SystemState).services[sid]? = none := RHTable_get?_empty 16 (by omega)
         rw [hNone] at hSvc
         cases hSvc)
       default_lifecycleInvariantBundle
@@ -330,14 +335,14 @@ theorem default_system_state_proofLayerInvariantBundle :
       default_registryInvariant
   -- 7. vspaceInvariantBundle (6-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation)
   · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-    · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := HashMap_getElem?_empty; rw [h] at hObj₁; exact absurd hObj₁ (by simp)
-    · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
+    · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj₁; exact absurd hObj₁ (by simp)
+    · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
     · constructor
-      · intro asid oid hLookup; have h : (default : SystemState).asidTable[asid]? = none := HashMap_getElem?_empty; rw [h] at hLookup; exact absurd hLookup (by simp)
-      · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := HashMap_getElem?_empty; rw [h] at hObj; exact absurd hObj (by simp)
-    · intro oidA oidB rA rB hObjA; have h : (default : SystemState).objects[oidA]? = none := HashMap_getElem?_empty; rw [h] at hObjA; exact absurd hObjA (by simp)
+      · intro asid oid hLookup; have h : (default : SystemState).asidTable[asid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hLookup; exact absurd hLookup (by simp)
+      · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+    · intro oidA oidB rA rB hObjA; have h : (default : SystemState).objects[oidA]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObjA; exact absurd hObjA (by simp)
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems

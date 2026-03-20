@@ -9,6 +9,7 @@
 import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Model.State
+import SeLe4n.Kernel.RobinHood.Bridge
 
 /-!
 # Raspberry Pi 5 — Boot Boundary Contract
@@ -54,12 +55,12 @@ def rpi5BootContract : BootBoundaryContract :=
 
 /-- WS-H15b: RPi5 boot contract predicates are satisfied by the default state. -/
 theorem rpi5BootContract_objectType_holds : rpi5BootContract.objectTypeMetadataConsistent := by
-  show ({} : Std.HashMap SeLe4n.ObjId KernelObject).size = 0
+  show ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).size = 0
   rfl
 
 /-- WS-H15b: RPi5 boot contract capability ref predicate holds for default state. -/
 theorem rpi5BootContract_capabilityRef_holds : rpi5BootContract.capabilityRefMetadataConsistent := by
-  show ({} : Std.HashMap SlotRef CapTarget).size = 0
+  show ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef CapTarget).size = 0
   rfl
 
 /-- WS-H15b/A-41: RPi5 interrupt contract with GIC-400 range validation.

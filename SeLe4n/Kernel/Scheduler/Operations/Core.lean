@@ -49,7 +49,8 @@ If `st.objects[oid]? = some (.tcb tcb)`, then there exists a TCB at `oid`
 in `(saveOutgoingContext st).objects` as well. -/
 theorem saveOutgoingContext_preserves_tcb
     (st : SystemState) (oid : SeLe4n.ObjId) (tcb : TCB)
-    (h : st.objects[oid]? = some (.tcb tcb)) :
+    (h : st.objects[oid]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt) :
     ∃ tcb', (saveOutgoingContext st).objects[oid]? = some (.tcb tcb') := by
   unfold saveOutgoingContext
   cases hCur : st.scheduler.current with
@@ -62,7 +63,7 @@ theorem saveOutgoingContext_preserves_tcb
           cases outObj with
           | tcb outTcb =>
               dsimp only
-              rw [HashMap_getElem?_insert]
+              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               by_cases hEq : outTid.toObjId == oid
               · simp [hEq]
               · simp [hEq]; exact ⟨tcb, h⟩
@@ -75,7 +76,8 @@ theorem saveOutgoingContext_preserves_tcb
 /-- `saveOutgoingContext` preserves all TCB fields except `registerContext`. -/
 theorem saveOutgoingContext_tcb_fields
     (st : SystemState) (oid : SeLe4n.ObjId) (tcb : TCB)
-    (h : st.objects[oid]? = some (.tcb tcb)) :
+    (h : st.objects[oid]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt) :
     ∃ tcb', (saveOutgoingContext st).objects[oid]? = some (.tcb tcb') ∧
       tcb'.domain = tcb.domain ∧
       tcb'.priority = tcb.priority ∧
@@ -92,7 +94,7 @@ theorem saveOutgoingContext_tcb_fields
           cases outObj with
           | tcb outTcb =>
               dsimp only
-              rw [HashMap_getElem?_insert]
+              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               by_cases hEq : outTid.toObjId == oid
               · simp only [hEq, ite_true]
                 have hEq' := beq_iff_eq.mp hEq
@@ -112,7 +114,8 @@ insert targets `outTid.toObjId` where a TCB exists — if `oid` had no TCB, it
 cannot be that key. -/
 theorem saveOutgoingContext_preserves_non_tcb_lookup
     (st : SystemState) (oid : SeLe4n.ObjId)
-    (hNonTcb : ∀ tcb, st.objects[oid]? ≠ some (.tcb tcb)) :
+    (hNonTcb : ∀ tcb, st.objects[oid]? ≠ some (.tcb tcb))
+    (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).objects[oid]? = st.objects[oid]? := by
   simp only [saveOutgoingContext]
   cases hCur : st.scheduler.current with
@@ -125,7 +128,7 @@ theorem saveOutgoingContext_preserves_non_tcb_lookup
           cases outObj with
           | tcb outTcb =>
               dsimp only
-              rw [HashMap_getElem?_insert]
+              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               have hNe : ¬(outTid.toObjId == oid) := by
                 intro hEq
                 have hEq' := beq_iff_eq.mp hEq
@@ -141,7 +144,8 @@ theorem saveOutgoingContext_preserves_non_tcb_lookup
 changes `registerContext` on the outgoing TCB — no scheduler or time-slice
 field is modified. -/
 theorem saveOutgoingContext_preserves_timeSlicePositive
-    (st : SystemState) (hInv : timeSlicePositive st) :
+    (st : SystemState) (hInv : timeSlicePositive st)
+    (hObjInv : st.objects.invExt) :
     timeSlicePositive (saveOutgoingContext st) := by
   intro tid hMem
   have hSched : (saveOutgoingContext st).scheduler = st.scheduler := saveOutgoingContext_scheduler st
@@ -158,7 +162,7 @@ theorem saveOutgoingContext_preserves_timeSlicePositive
           cases outObj with
           | tcb outTcb =>
               dsimp only
-              rw [HashMap_getElem?_insert]
+              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               by_cases hEq : outTid.toObjId == tid.toObjId
               · -- Same key: inserted TCB has same timeSlice as original
                 simp [hEq]

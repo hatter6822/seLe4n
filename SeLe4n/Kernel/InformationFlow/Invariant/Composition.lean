@@ -237,6 +237,7 @@ projection (one-sided version). -/
 theorem step_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
     (hStep : NonInterferenceStep ctx observer st st') :
     projectState ctx observer st' = projectState ctx observer st := by
   cases hStep with
@@ -244,7 +245,7 @@ theorem step_preserves_projection
     have := chooseThread_preserves_state st st' next hOp; subst this; rfl
   | endpointSendDual _ _ _ _ _ _ _ _ hProj => exact hProj
   | cspaceMint src dst rights badge hSrcH hDstH hSlotUniq hOp =>
-    rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hOp with
+    rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hObjInv hOp with
       ⟨parent, child, hLookup, _, _⟩
     unfold cspaceMint at hOp; rw [hLookup] at hOp
     cases hMint : mintDerivedCap parent rights badge with
@@ -257,7 +258,7 @@ theorem step_preserves_projection
           by_cases hEq : oid = dst.cnode
           · subst hEq; simp [hDstH] at hObs
           · exact congrArg (Option.map (projectKernelObject ctx observer))
-              (cspaceInsertSlot_preserves_objects_ne st st' dst c oid hEq hInsert)
+              (cspaceInsertSlot_preserves_objects_ne st st' dst c oid hEq hObjInv hInsert)
         · simp [projectObjects, hObs]
       · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
@@ -274,27 +275,27 @@ theorem step_preserves_projection
       · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert,
               cspaceInsertSlot_preserves_machine st st' dst c hInsert]
   | cspaceRevoke addr hAddrH hOp =>
-    exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hOp
+    exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hObjInv hOp
   | lifecycleRetype authority target newObj hTH hOp =>
     rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hOp with
       ⟨_, _, _, _, _, _, hStore⟩
-    exact storeObject_preserves_projection ctx observer st st' target newObj hTH hStore
+    exact storeObject_preserves_projection ctx observer st st' target newObj hTH hObjInv hStore
   | lifecycleRevokeDeleteRetype authority cleanup target newObj hCH hTH hOp =>
     exact lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
-      newObj st st' hCH hTH hOp
+      newObj st st' hCH hTH hObjInv hOp
   | notificationSignal ntfnId badge hNH hCo hWD hOp =>
     exact notificationSignal_projection_preserved ctx observer ntfnId badge st st'
-      hNH hCo hWD hOp
+      hNH hCo hWD hObjInv hOp
   | notificationWait ntfnId waiter result hNH hWH hWOH hOp =>
     exact notificationWait_projection_preserved ctx observer ntfnId waiter result st st'
-      hNH hWH hWOH hOp
+      hNH hWH hWOH hObjInv hOp
   | cspaceInsertSlot dst cap hDH hOp =>
     simp only [projectState]; congr 1
     · funext oid; by_cases hObs : objectObservable ctx observer oid
       · simp [projectObjects, hObs]
         have hNe : oid ≠ dst.cnode := by intro hEq; subst hEq; simp [hDH] at hObs
         exact congrArg (Option.map (projectKernelObject ctx observer))
-          (cspaceInsertSlot_preserves_objects_ne st st' dst cap oid hNe hOp)
+          (cspaceInsertSlot_preserves_objects_ne st st' dst cap oid hNe hObjInv hOp)
       · simp [projectObjects, hObs]
     · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
@@ -310,26 +311,26 @@ theorem step_preserves_projection
     · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp,
             cspaceInsertSlot_preserves_machine st st' dst cap hOp]
   | schedule hCurH hAllR hOp =>
-    exact schedule_preserves_projection ctx observer st st' hCurH hAllR hOp
+    exact schedule_preserves_projection ctx observer st st' hCurH hAllR hObjInv hOp
   | vspaceMapPage asid vaddr paddr hRH hOp =>
-    exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st st' hRH hOp
+    exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st st' hRH hObjInv hOp
   | vspaceUnmapPage asid vaddr hRH hOp =>
-    exact vspaceUnmapPage_preserves_projection ctx observer asid vaddr st st' hRH hOp
+    exact vspaceUnmapPage_preserves_projection ctx observer asid vaddr st st' hRH hObjInv hOp
   | vspaceLookup asid vaddr paddr hOp =>
     have := vspaceLookup_preserves_state st asid vaddr paddr st' hOp; subst this; rfl
   | cspaceCopy src dst hSH hDH hOp =>
-    exact cspaceCopy_preserves_projection ctx observer src dst st st' hSH hDH hOp
+    exact cspaceCopy_preserves_projection ctx observer src dst st st' hSH hDH hObjInv hOp
   | cspaceMove src dst hSH hDH hOp =>
-    exact cspaceMove_preserves_projection ctx observer src dst st st' hSH hDH hOp
+    exact cspaceMove_preserves_projection ctx observer src dst st st' hSH hDH hObjInv hOp
   | cspaceDeleteSlot addr hAH hOp =>
-    exact cspaceDeleteSlot_preserves_projection ctx observer addr st st' hAH hOp
+    exact cspaceDeleteSlot_preserves_projection ctx observer addr st st' hAH hObjInv hOp
   | endpointReply replier target msg hTH hTOH hOp =>
-    exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hOp
+    exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hObjInv hOp
   | endpointReceiveDualHigh _ _ _ hProj _ => exact hProj
   | endpointCallHigh _ _ _ hProj _ => exact hProj
   | endpointReplyRecvHigh _ _ _ _ hProj _ => exact hProj
   | storeObjectHigh oid obj hOH hOp =>
-    exact storeObject_preserves_projection ctx observer st st' oid obj hOH hOp
+    exact storeObject_preserves_projection ctx observer st st' oid obj hOH hObjInv hOp
   | setCurrentThread tid hTidH hCurH hOp =>
     exact setCurrentThread_preserves_projection ctx observer tid st st' hTidH hCurH hOp
   | ensureRunnableHigh tid hTH hEq =>
@@ -337,9 +338,9 @@ theorem step_preserves_projection
   | removeRunnableHigh tid hTH hEq =>
     rw [hEq]; exact removeRunnable_preserves_projection ctx observer st tid hTH
   | storeTcbIpcStateAndMessageHigh tid ipc msg hTOH hOp =>
-    exact storeTcbIpcStateAndMessage_preserves_projection ctx observer st st' tid ipc msg hTOH hOp
+    exact storeTcbIpcStateAndMessage_preserves_projection ctx observer st st' tid ipc msg hTOH hObjInv hOp
   | storeTcbQueueLinksHigh tid prev pprev next hTOH hOp =>
-    exact storeTcbQueueLinks_preserves_projection ctx observer st st' tid prev pprev next hTOH hOp
+    exact storeTcbQueueLinks_preserves_projection ctx observer st st' tid prev pprev next hTOH hObjInv hOp
   | cspaceMutateHigh addr rights badge hAH hOp =>
     unfold cspaceMutate at hOp
     cases hL : cspaceLookupSlot addr st with
@@ -360,7 +361,7 @@ theorem step_preserves_projection
           · -- storeObject ok
             next stMid hStore =>
             have hProjMid := storeObject_preserves_projection ctx observer st stMid
-                addr.cnode _ hAH hStore
+                addr.cnode _ hAH hObjInv hStore
             have hProjFinal := storeCapabilityRef_preserves_projection ctx observer stMid st'
                 addr (some _) hOp
             rw [hProjFinal, hProjMid]
@@ -369,9 +370,9 @@ theorem step_preserves_projection
       · -- rights not subset: error
         simp at hOp
   | handleYield hCH hAR hOp =>
-    exact handleYield_preserves_projection ctx observer st st' hCH hAR hOp
+    exact handleYield_preserves_projection ctx observer st st' hCH hAR hObjInv hOp
   | timerTick hCH hCOH hAR hOp =>
-    exact timerTick_preserves_projection ctx observer st st' hCH hCOH hAR hOp
+    exact timerTick_preserves_projection ctx observer st st' hCH hCOH hAR hObjInv hOp
   | syscallDecodeError hEq => subst hEq; rfl
   | syscallDispatchHigh _ hProj => exact hProj
 
@@ -381,11 +382,13 @@ theorem composedNonInterference_step
     (ctx : LabelingContext) (observer : IfObserver)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : NonInterferenceStep ctx observer s₁ s₁')
     (hStep₂ : NonInterferenceStep ctx observer s₂ s₂') :
     lowEquivalent ctx observer s₁' s₂' := by
-  have h₁ := step_preserves_projection ctx observer s₁ s₁' hStep₁
-  have h₂ := step_preserves_projection ctx observer s₂ s₂' hStep₂
+  have h₁ := step_preserves_projection ctx observer s₁ s₁' hObjInv₁ hStep₁
+  have h₂ := step_preserves_projection ctx observer s₂ s₂' hObjInv₂ hStep₂
   unfold lowEquivalent; rw [h₁, h₂]; exact hLow
 
 /-- WS-F3/H-05: Multi-step trace of non-interference steps. -/
@@ -394,6 +397,7 @@ inductive NonInterferenceTrace
     SystemState → SystemState → Prop where
   | nil (st : SystemState) : NonInterferenceTrace ctx observer st st
   | cons (st₁ st₂ st₃ : SystemState)
+      (hObjInv : st₁.objects.invExt)
       (hStep : NonInterferenceStep ctx observer st₁ st₂)
       (hTail : NonInterferenceTrace ctx observer st₂ st₃)
     : NonInterferenceTrace ctx observer st₁ st₃
@@ -406,8 +410,8 @@ theorem trace_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   induction hTrace with
   | nil _ => rfl
-  | cons _ st₂ _ hStep _ ih =>
-    rw [ih, step_preserves_projection ctx observer _ st₂ hStep]
+  | cons _ st₂ _ hObjInv hStep _ ih =>
+    rw [ih, step_preserves_projection ctx observer _ st₂ hObjInv hStep]
 
 /-- WS-F3/H-05: Trace-level IF-M4 composition theorem. -/
 theorem composedNonInterference_trace
@@ -447,6 +451,8 @@ theorem declassifyStore_NI
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hTargetHigh : objectObservable ctx observer targetId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : declassifyStore gctx declPolicy srcDomain dstDomain targetId obj₁ s₁ = .ok ((), s₁'))
     (hStep₂ : declassifyStore gctx declPolicy srcDomain dstDomain targetId obj₂ s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -459,7 +465,7 @@ theorem declassifyStore_NI
   have hStore₂ : storeObject targetId obj₂ s₂ = .ok ((), s₂') := by
     simp [declassifyStore, hDenied₂, hAuth₂] at hStep₂; exact hStep₂
   exact storeObject_at_unobservable_preserves_lowEquivalent
-    ctx observer targetId obj₁ obj₂ s₁ s₂ s₁' s₂' hLow hTargetHigh hStore₁ hStore₂
+    ctx observer targetId obj₁ obj₂ s₁ s₂ s₁' s₂' hLow hTargetHigh hObjInv₁ hObjInv₂ hStore₁ hStore₂
 
 /-- WS-F3/H-05: Abstract non-interference predicate for a single kernel action. -/
 def preservesLowEquivalence
@@ -531,7 +537,8 @@ This theorem witnesses (1) that the decode-error constructor is always available
 constructor (checked by the Lean exhaustiveness checker on the 34-arm match). -/
 theorem syscallNI_coverage_witness
     (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) :
+    (st : SystemState)
+    (hObjInv : st.objects.invExt) :
     -- Decode error path is always a valid NI step (state unchanged)
     NonInterferenceStep ctx observer st st ∧
     -- Every NI step composes into a single-step trace
@@ -541,7 +548,7 @@ theorem syscallNI_coverage_witness
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,
-   fun st' hStep => .cons st st' st' hStep (.nil st'),
-   fun st' hStep => step_preserves_projection ctx observer st st' hStep⟩
+   fun st' hStep => .cons st st' st' hObjInv hStep (.nil st'),
+   fun st' hStep => step_preserves_projection ctx observer st st' hObjInv hStep⟩
 
 end SeLe4n.Kernel

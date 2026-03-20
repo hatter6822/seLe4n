@@ -139,12 +139,13 @@ theorem storeServiceState_preserves_servicePolicySurfaceInvariant
     (entry : ServiceGraphEntry)
     (hSvc : lookupService st sid ≠ none)
     (hIdentityEq : ∀ svc, lookupService st sid = some svc → entry.identity = svc.identity)
-    (hPolicy : servicePolicySurfaceInvariant st) :
+    (hPolicy : servicePolicySurfaceInvariant st)
+    (hSvcInv : st.services.invExt) :
     servicePolicySurfaceInvariant (storeServiceState sid entry st) := by
   intro sid' svc' hLookup
   by_cases hSid : sid' = sid
   · subst sid'
-    have hLookupEq := storeServiceState_lookup_eq st sid entry
+    have hLookupEq := storeServiceState_lookup_eq st sid entry hSvcInv
     rw [hLookupEq] at hLookup; cases hLookup
     cases hOld : lookupService st sid with
     | none => exact absurd hOld hSvc
@@ -158,7 +159,7 @@ theorem storeServiceState_preserves_servicePolicySurfaceInvariant
           simpa [policyOwnerAuthorityRefRecorded, hIdEq] using hRef
         have hPresentOld : policyOwnerAuthoritySlotPresent st svc := hBridge hRefOld
         simpa [policyOwnerAuthoritySlotPresent, hIdEq] using hPresentOld
-  · have hLookupNe := storeServiceState_lookup_ne st sid sid' entry hSid
+  · have hLookupNe := storeServiceState_lookup_ne st sid sid' entry hSid hSvcInv
     have hLookupOld : lookupService st sid' = some svc' := by simpa [hLookupNe] using hLookup
     exact hPolicy sid' svc' hLookupOld
 

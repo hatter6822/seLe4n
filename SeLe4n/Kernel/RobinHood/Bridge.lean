@@ -857,4 +857,12 @@ theorem RHTable.filter_filter_getElem? [BEq α] [Hashable α] [LawfulBEq α]
     have hfE : f e.key e.value = true := by rw [eq_of_beq hKeyE, hValE]; exact hfkv
     exact filter_fold_present (t.filter f) f k v hExtF p hp e hSlotP hKeyE hValE hfE hExtF.2.2.1
 
+-- ============================================================================
+-- Q2: EmptyCollection instance for migration compatibility
+-- ============================================================================
+
+/-- EmptyCollection instance so `{}` syntax works for RHTable fields. -/
+instance [BEq α] [Hashable α] : EmptyCollection (RHTable α β) where
+  emptyCollection := RHTable.empty 16
+
 end SeLe4n.Kernel.RobinHood

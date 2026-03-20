@@ -49,6 +49,8 @@ theorem cspaceMintChecked_NI
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hSlotUniq₁ : cspaceSlotUnique s₁)
     (hSlotUniq₂ : cspaceSlotUnique s₂)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceMintChecked ctx src dst rights badge s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceMintChecked ctx src dst rights badge s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -61,7 +63,7 @@ theorem cspaceMintChecked_NI
   rw [cspaceMintChecked_eq_cspaceMint_when_allowed ctx src dst rights badge s₁ hFlow₁] at hStep₁
   rw [cspaceMintChecked_eq_cspaceMint_when_allowed ctx src dst rights badge s₂ hFlow₁] at hStep₂
   exact cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
-    s₁ s₂ s₁' s₂' hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hStep₁ hStep₂
+    s₁ s₂ s₁' s₂' hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
 -- ============================================================================
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
@@ -111,6 +113,8 @@ theorem notificationSignalChecked_NI
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
     (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
         tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationSignalChecked ctx notificationId signaler badge s₁ = .ok ((), s₁'))
     (hStep₂ : notificationSignalChecked ctx notificationId signaler badge s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -123,7 +127,7 @@ theorem notificationSignalChecked_NI
   rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₁ hFlow] at hStep₁
   rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₂ hFlow] at hStep₂
   exact notificationSignal_preserves_lowEquivalent ctx observer notificationId badge
-    s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hWaiterDomain₂ hStep₁ hStep₂
+    s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hWaiterDomain₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
 /-- WS-H8/H-07: If cspaceCopyChecked succeeds, the resulting state transition
 preserves low-equivalence.
@@ -291,7 +295,8 @@ private theorem saveOutgoingContext_objectIndex (st : SystemState) :
 /-- WS-H12c: saveOutgoingContext preserves projectObjects because
 projectKernelObject strips registerContext from TCBs. -/
 private theorem saveOutgoingContext_preserves_projectObjects
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (oid : SeLe4n.ObjId) :
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (oid : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt) :
     projectObjects ctx observer (saveOutgoingContext st) oid =
     projectObjects ctx observer st oid := by
   simp only [projectObjects]
@@ -307,11 +312,13 @@ private theorem saveOutgoingContext_preserves_projectObjects
               cases outObj with
               | tcb outTcb =>
                   simp only [hOut, Option.map]
-                  rw [HashMap_getElem?_insert]
+                  simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
                   by_cases hEq : outTid.toObjId == oid
                   · simp only [hEq, ↓reduceIte, projectKernelObject]
                     have hEq' := beq_iff_eq.mp hEq
-                    subst hEq'; simp only [hOut]
+                    subst hEq'
+                    have : st.objects.get? outTid.toObjId = st.objects[outTid.toObjId]? := (RHTable_getElem?_eq_get? st.objects outTid.toObjId).symm
+                    rw [this]; simp only [hOut]
                   · simp [hEq]
               | endpoint _ => simp_all
               | notification _ => simp_all
@@ -325,7 +332,8 @@ The context save only modifies `registerContext` in one TCB. Since
 `projectKernelObject` strips `registerContext` (replacing it with `default`),
 this does not change the projected objects. -/
 private theorem saveOutgoingContext_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
     projectState ctx observer (saveOutgoingContext st) = projectState ctx observer st := by
   simp only [saveOutgoingContext]
   cases hCur : st.scheduler.current with
@@ -345,11 +353,11 @@ private theorem saveOutgoingContext_preserves_projection
                   simp only [projectObjects]
                   split
                   · simp only [Option.map]
-                    rw [HashMap_getElem?_insert]
+                    simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
                     by_cases hEq : outTid.toObjId == oid
                     · simp only [hEq, ↓reduceIte, projectKernelObject]
                       have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; simp only [hOut]
+                      subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
                     · simp [hEq]
                   · rfl)
           | endpoint _ => simp_all
@@ -398,7 +406,8 @@ private theorem projectObjects_ext_objects
 relative to the same scheduler override on the original state. -/
 private theorem saveOutgoingContext_with_sched_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (sched : SchedulerState) :
+    (sched : SchedulerState)
+    (hObjInv : st.objects.invExt) :
     projectState ctx observer { (saveOutgoingContext st) with scheduler := sched }
     = projectState ctx observer { st with scheduler := sched } := by
   simp only [saveOutgoingContext]
@@ -421,11 +430,11 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
                   simp only [projectObjects]
                   split
                   · simp only [Option.map]
-                    rw [HashMap_getElem?_insert]
+                    simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
                     by_cases hEq : outTid.toObjId == oid
                     · simp only [hEq, ↓reduceIte, projectKernelObject]
                       have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; simp only [hOut]
+                      subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
                     · simp [hEq]
                   · rfl)
           | endpoint _ => simp_all
@@ -442,6 +451,7 @@ theorem schedule_preserves_projection
     (st st' : SystemState)
     (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
+    (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold schedule at hStep
@@ -457,7 +467,7 @@ theorem schedule_preserves_projection
       exact (setCurrentThread_preserves_projection ctx observer none (saveOutgoingContext st) st'
         (fun _ h => by cases h)
         (fun t h => by rw [saveOutgoingContext_scheduler] at h; exact hCurrentHigh t h)
-        hStep).trans (saveOutgoingContext_preserves_projection ctx observer st)
+        hStep).trans (saveOutgoingContext_preserves_projection ctx observer st hObjInv)
     | some tid =>
       rw [hPres] at hStep
       cases hObj : st.objects[tid.toObjId]? with
@@ -493,7 +503,7 @@ theorem schedule_preserves_projection
                   { st.scheduler with runQueue := st.scheduler.runQueue.remove tid } } := by
                 simp only [stDequeued, stSaved, hSavedSched]
               rw [hDeqEq]
-              exact (saveOutgoingContext_with_sched_preserves_projection ctx observer st _).trans
+              exact (saveOutgoingContext_with_sched_preserves_projection ctx observer st _ hObjInv).trans
                 (remove_rq_preserves_projection ctx observer st tid hTidHigh)
             exact hSetProj.trans (hRestoreProj.trans hDeqProj)
           · simp at hStep
@@ -592,6 +602,7 @@ theorem vspaceMapPage_preserves_projection
     (st st' : SystemState)
     (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : Architecture.vspaceMapPage asid vaddr paddr default st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold Architecture.vspaceMapPage at hStep
@@ -606,7 +617,7 @@ theorem vspaceMapPage_preserves_projection
     | some root' =>
       simp only [hMap] at hStep
       have hHigh := hRootHigh rootId root hResolve
-      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hStep
+      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
 
 /-- WS-H9: vspaceMapPage preserves low-equivalence. -/
 theorem vspaceMapPage_preserves_lowEquivalent
@@ -618,12 +629,14 @@ theorem vspaceMapPage_preserves_lowEquivalent
         objectObservable ctx observer rootId = false)
     (hRootHigh₂ : ∀ rootId root, Architecture.resolveAsidRoot s₂ asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : Architecture.vspaceMapPage asid vaddr paddr default s₁ = .ok ((), s₁'))
     (hStep₂ : Architecture.vspaceMapPage asid vaddr paddr default s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    vspaceMapPage_preserves_projection ctx observer asid vaddr paddr s₁ s₁' hRootHigh₁ hStep₁,
-    vspaceMapPage_preserves_projection ctx observer asid vaddr paddr s₂ s₂' hRootHigh₂ hStep₂]
+    vspaceMapPage_preserves_projection ctx observer asid vaddr paddr s₁ s₁' hRootHigh₁ hObjInv₁ hStep₁,
+    vspaceMapPage_preserves_projection ctx observer asid vaddr paddr s₂ s₂' hRootHigh₂ hObjInv₂ hStep₂]
   exact hLow
 
 /-- WS-H9: vspaceUnmapPage at a non-observable VSpace root preserves projection. -/
@@ -633,6 +646,7 @@ theorem vspaceUnmapPage_preserves_projection
     (st st' : SystemState)
     (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold Architecture.vspaceUnmapPage at hStep
@@ -646,7 +660,7 @@ theorem vspaceUnmapPage_preserves_projection
     | some root' =>
       simp only [hUnmap] at hStep
       have hHigh := hRootHigh rootId root hResolve
-      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hStep
+      exact storeObject_preserves_projection ctx observer st st' rootId _ hHigh hObjInv hStep
 
 /-- WS-H9: vspaceUnmapPage preserves low-equivalence. -/
 theorem vspaceUnmapPage_preserves_lowEquivalent
@@ -658,12 +672,14 @@ theorem vspaceUnmapPage_preserves_lowEquivalent
         objectObservable ctx observer rootId = false)
     (hRootHigh₂ : ∀ rootId root, Architecture.resolveAsidRoot s₂ asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : Architecture.vspaceUnmapPage asid vaddr s₁ = .ok ((), s₁'))
     (hStep₂ : Architecture.vspaceUnmapPage asid vaddr s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    vspaceUnmapPage_preserves_projection ctx observer asid vaddr s₁ s₁' hRootHigh₁ hStep₁,
-    vspaceUnmapPage_preserves_projection ctx observer asid vaddr s₂ s₂' hRootHigh₂ hStep₂]
+    vspaceUnmapPage_preserves_projection ctx observer asid vaddr s₁ s₁' hRootHigh₁ hObjInv₁ hStep₁,
+    vspaceUnmapPage_preserves_projection ctx observer asid vaddr s₂ s₂' hRootHigh₂ hObjInv₂ hStep₂]
   exact hLow
 
 /-- WS-H9: vspaceLookup is a read-only operation — it does not modify state. -/
@@ -702,11 +718,13 @@ theorem vspaceMapPage_preserves_lowEquivalent_memoryOwnedHigh
         objectObservable ctx observer rootId = false)
     (hRootHigh₂ : ∀ rootId root, Architecture.resolveAsidRoot s₂ asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : Architecture.vspaceMapPage asid vaddr paddr default s₁ = .ok ((), s₁'))
     (hStep₂ : Architecture.vspaceMapPage asid vaddr paddr default s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   exact vspaceMapPage_preserves_lowEquivalent ctx observer asid vaddr paddr
-    s₁ s₂ s₁' s₂' hLow hRootHigh₁ hRootHigh₂ hStep₁ hStep₂
+    s₁ s₂ s₁' s₂' hLow hRootHigh₁ hRootHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
 /-- WS-I2/R-16: VSpace unmap preserves low-equivalence under optional memory
 ownership projection. Unmapping mutates VSpace metadata only. -/
@@ -723,11 +741,13 @@ theorem vspaceUnmapPage_preserves_lowEquivalent_memoryOwnedHigh
         objectObservable ctx observer rootId = false)
     (hRootHigh₂ : ∀ rootId root, Architecture.resolveAsidRoot s₂ asid = some (rootId, root) →
         objectObservable ctx observer rootId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : Architecture.vspaceUnmapPage asid vaddr s₁ = .ok ((), s₁'))
     (hStep₂ : Architecture.vspaceUnmapPage asid vaddr s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   exact vspaceUnmapPage_preserves_lowEquivalent ctx observer asid vaddr
-    s₁ s₂ s₁' s₂' hLow hRootHigh₁ hRootHigh₂ hStep₁ hStep₂
+    s₁ s₂ s₁' s₂' hLow hRootHigh₁ hRootHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
 theorem vspaceLookup_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
@@ -761,6 +781,7 @@ theorem cspaceDeleteSlot_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (addr : CSpaceAddr) (st st' : SystemState)
     (hAddrHigh : objectObservable ctx observer addr.cnode = false)
+    (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold cspaceDeleteSlot at hStep
@@ -788,7 +809,7 @@ theorem cspaceDeleteSlot_preserves_projection
             · congr 1
           rw [hDetach,
               storeCapabilityRef_preserves_projection ctx observer pair₁.2 pair₂.2 addr none hRef,
-              storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hStore]
+              storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore]
 
 /-- WS-H9: cspaceDeleteSlot preserves low-equivalence. -/
 private theorem cspaceDeleteSlot_preserves_lowEquivalent
@@ -796,12 +817,14 @@ private theorem cspaceDeleteSlot_preserves_lowEquivalent
     (addr : CSpaceAddr) (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hAddrHigh : objectObservable ctx observer addr.cnode = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceDeleteSlot addr s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceDeleteSlot addr s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    cspaceDeleteSlot_preserves_projection ctx observer addr s₁ s₁' hAddrHigh hStep₁,
-    cspaceDeleteSlot_preserves_projection ctx observer addr s₂ s₂' hAddrHigh hStep₂]
+    cspaceDeleteSlot_preserves_projection ctx observer addr s₁ s₁' hAddrHigh hObjInv₁ hStep₁,
+    cspaceDeleteSlot_preserves_projection ctx observer addr s₂ s₂' hAddrHigh hObjInv₂ hStep₂]
   exact hLow
 
 /-- cspaceRevoke at a non-observable CNode preserves projection.
@@ -811,6 +834,7 @@ theorem cspaceRevoke_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (addr : CSpaceAddr) (st st' : SystemState)
     (hAddrHigh : objectObservable ctx observer addr.cnode = false)
+    (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold cspaceRevoke at hStep
@@ -833,7 +857,7 @@ theorem cspaceRevoke_preserves_projection
           · simp [projectObjects, hObs]
             have hNe : oid ≠ addr.cnode := by
               intro hEq; subst hEq; simp [hAddrHigh] at hObs
-            simp [HashMap_getElem?_insert, Ne.symm hNe]
+            simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [Ne.symm hNe]
           · simp [projectObjects, hObs]
         · simp only [projectObjectIndex]
           split
@@ -891,6 +915,7 @@ private theorem cspaceInsertSlot_preserves_projection
     (dst : CSpaceAddr) (cap : Capability)
     (st st' : SystemState)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot dst cap st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [projectState]; congr 1
@@ -899,7 +924,7 @@ private theorem cspaceInsertSlot_preserves_projection
       by_cases hEq : oid = dst.cnode
       · subst hEq; simp [hDstHigh] at hObs
       · exact congrArg (Option.map (projectKernelObject ctx observer))
-          (cspaceInsertSlot_preserves_objects_ne st st' dst cap oid hEq hStep)
+          (cspaceInsertSlot_preserves_objects_ne st st' dst cap oid hEq hObjInv hStep)
     · simp [projectObjects, hObs]
   · simp [projectRunnable, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectCurrent, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
@@ -923,6 +948,7 @@ theorem cspaceCopy_preserves_projection
     (src dst : CSpaceAddr) (st st' : SystemState)
     (_hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hObjInv : st.objects.invExt)
     (hStep : cspaceCopy src dst st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold cspaceCopy at hStep
@@ -945,7 +971,7 @@ theorem cspaceCopy_preserves_projection
       rw [hAddEdge,
           ensureCdtNodeForSlot_preserves_projection ctx observer _ dst,
           ensureCdtNodeForSlot_preserves_projection ctx observer _ src,
-          cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert]
+          cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/
 private theorem cspaceCopy_preserves_lowEquivalent
@@ -954,12 +980,14 @@ private theorem cspaceCopy_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceCopy src dst s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceCopy src dst s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    cspaceCopy_preserves_projection ctx observer src dst s₁ s₁' hSrcHigh hDstHigh hStep₁,
-    cspaceCopy_preserves_projection ctx observer src dst s₂ s₂' hSrcHigh hDstHigh hStep₂]
+    cspaceCopy_preserves_projection ctx observer src dst s₁ s₁' hSrcHigh hDstHigh hObjInv₁ hStep₁,
+    cspaceCopy_preserves_projection ctx observer src dst s₂ s₂' hSrcHigh hDstHigh hObjInv₂ hStep₂]
   exact hLow
 
 /-- WS-H9: cspaceMove at non-observable CNodes preserves projection. -/
@@ -968,6 +996,7 @@ theorem cspaceMove_preserves_projection
     (src dst : CSpaceAddr) (st st' : SystemState)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hObjInv : st.objects.invExt)
     (hStep : cspaceMove src dst st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold cspaceMove at hStep
@@ -993,8 +1022,9 @@ theorem cspaceMove_preserves_projection
         · -- none: st' = stDel
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           rw [← hStep.2]
-          rw [cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hDelete,
-              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert]
+          have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
+          rw [cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
+              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
         · -- some srcNode: attachSlotToCdtNode only modifies CDT
           next srcNode =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1002,9 +1032,10 @@ theorem cspaceMove_preserves_projection
           have hAttach : ∀ stx nodeId, projectState ctx observer (SystemState.attachSlotToCdtNode stx dst nodeId) =
               projectState ctx observer stx := by
             intro stx _; simp only [projectState, SystemState.attachSlotToCdtNode]; congr 1
+          have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
           rw [hAttach,
-              cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hDelete,
-              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hInsert]
+              cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
+              cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceMove preserves low-equivalence. -/
 private theorem cspaceMove_preserves_lowEquivalent
@@ -1013,12 +1044,14 @@ private theorem cspaceMove_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceMove src dst s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceMove src dst s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    cspaceMove_preserves_projection ctx observer src dst s₁ s₁' hSrcHigh hDstHigh hStep₁,
-    cspaceMove_preserves_projection ctx observer src dst s₂ s₂' hSrcHigh hDstHigh hStep₂]
+    cspaceMove_preserves_projection ctx observer src dst s₁ s₁' hSrcHigh hDstHigh hObjInv₁ hStep₁,
+    cspaceMove_preserves_projection ctx observer src dst s₂ s₂' hSrcHigh hDstHigh hObjInv₂ hStep₂]
   exact hLow
 
 -- ============================================================================
@@ -1032,6 +1065,7 @@ theorem storeTcbQueueLinks_preserves_projection
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold storeTcbQueueLinks at hStep
@@ -1045,7 +1079,7 @@ theorem storeTcbQueueLinks_preserves_projection
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
-      exact storeObject_preserves_projection ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
+      exact storeObject_preserves_projection ctx observer st pair.2 tid.toObjId _ hTidObjHigh hObjInv hStore
 
 /-- WS-H9: endpointReply at non-observable target preserves projection. -/
 theorem endpointReply_preserves_projection
@@ -1054,6 +1088,7 @@ theorem endpointReply_preserves_projection
     (st st' : SystemState)
     (hTargetHigh : threadObservable ctx observer target = false)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false)
+    (hObjInv : st.objects.invExt)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold endpointReply at hStep
@@ -1080,7 +1115,7 @@ theorem endpointReply_preserves_projection
           revert hStep; split <;> (try split) <;> simp <;> exact Eq.symm
         rw [hEq,
             ensureRunnable_preserves_projection ctx observer stMid target hTargetHigh,
-            storeTcbIpcStateAndMessage_preserves_projection ctx observer st stMid target _ _ hTargetObjHigh hStore]
+            storeTcbIpcStateAndMessage_preserves_projection ctx observer st stMid target _ _ hTargetObjHigh hObjInv hStore]
     | _ => simp [hIpc] at hStep
 
 /-- WS-H9: endpointReply preserves low-equivalence. -/
@@ -1091,12 +1126,14 @@ theorem endpointReply_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hTargetHigh : threadObservable ctx observer target = false)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : endpointReply replier target msg s₁ = .ok ((), s₁'))
     (hStep₂ : endpointReply replier target msg s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    endpointReply_preserves_projection ctx observer replier target msg s₁ s₁' hTargetHigh hTargetObjHigh hStep₁,
-    endpointReply_preserves_projection ctx observer replier target msg s₂ s₂' hTargetHigh hTargetObjHigh hStep₂]
+    endpointReply_preserves_projection ctx observer replier target msg s₁ s₁' hTargetHigh hTargetObjHigh hObjInv₁ hStep₁,
+    endpointReply_preserves_projection ctx observer replier target msg s₂ s₂' hTargetHigh hTargetObjHigh hObjInv₂ hStep₂]
   exact hLow
 
 -- ============================================================================
@@ -1215,6 +1252,7 @@ theorem handleYield_preserves_projection
     (st st' : SystemState)
     (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
+    (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold handleYield at hStep
@@ -1222,7 +1260,7 @@ theorem handleYield_preserves_projection
   | none =>
     simp [hCur] at hStep
     exact schedule_preserves_projection ctx observer st st'
-      (fun _ h => by simp [hCur] at h) hAllRunnable hStep
+      (fun _ h => by simp [hCur] at h) hAllRunnable hObjInv hStep
   | some tid =>
     have hTidHigh := hCurrentHigh tid hCur
     simp only [hCur] at hStep
@@ -1255,7 +1293,7 @@ theorem handleYield_preserves_projection
           simpa [stIR, rq', hCur] using hStep
         exact (schedule_preserves_projection ctx observer stIR st'
           (fun t hc => hCurrentHigh t (by simpa [stIR] using hc))
-          hAllRunnableIR hSchedStep).trans hInsertRotProj
+          hAllRunnableIR hObjInv hSchedStep).trans hInsertRotProj
       | _ => simp [hObj] at hStep
 
 /-- WS-H9: handleYield preserves low-equivalence. -/
@@ -1271,12 +1309,14 @@ theorem handleYield_preserves_lowEquivalent
         threadObservable ctx observer t = false)
     (hAllRunnable₂ : ∀ tid, tid ∈ s₂.scheduler.runnable →
         threadObservable ctx observer tid = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : handleYield s₁ = .ok ((), s₁'))
     (hStep₂ : handleYield s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    handleYield_preserves_projection ctx observer s₁ s₁' hCurrentHigh₁ hAllRunnable₁ hStep₁,
-    handleYield_preserves_projection ctx observer s₂ s₂' hCurrentHigh₂ hAllRunnable₂ hStep₂]
+    handleYield_preserves_projection ctx observer s₁ s₁' hCurrentHigh₁ hAllRunnable₁ hObjInv₁ hStep₁,
+    handleYield_preserves_projection ctx observer s₂ s₂' hCurrentHigh₂ hAllRunnable₂ hObjInv₂ hStep₂]
   exact hLow
 
 /-- WS-H9: Inserting a non-observable object and ticking machine preserves projection.
@@ -1284,7 +1324,8 @@ machine is not in ObservableState; the insert is at a non-observable ObjId. -/
 private theorem insert_tick_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hOidHigh : objectObservable ctx observer oid = false) :
+    (hOidHigh : objectObservable ctx observer oid = false)
+    (hObjInv : st.objects.invExt) :
     projectState ctx observer
         { st with objects := st.objects.insert oid obj, machine := tick st.machine }
       = projectState ctx observer st := by
@@ -1294,7 +1335,7 @@ private theorem insert_tick_preserves_projection
     · simp only [hObs, ite_true]
       by_cases hEq : o = oid
       · subst hEq; simp [hOidHigh] at hObs
-      · rw [HashMap_getElem?_insert]; simp [show ¬(oid == o) from by simp; exact Ne.symm hEq]
+      · simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [show ¬(oid == o) from by simp; exact Ne.symm hEq]
     · simp [hObs]
 
 /-- WS-H9: timerTick with non-observable current thread preserves projection.
@@ -1306,6 +1347,7 @@ theorem timerTick_preserves_projection
     (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
     (hCurrentObjHigh : ∀ t, st.scheduler.current = some t → objectObservable ctx observer t.toObjId = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
+    (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold timerTick at hStep
@@ -1327,7 +1369,7 @@ theorem timerTick_preserves_projection
         -- WS-H12b: new timerTick does insert (re-enqueue) then schedule, no if-then-else
         let tcbReset : KernelObject := KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }
         have hInsertTickProj := insert_tick_preserves_projection ctx observer st
-          tid.toObjId tcbReset hTidObjHigh
+          tid.toObjId tcbReset hTidObjHigh hObjInv
         let stIT : SystemState :=
           { st with objects := st.objects.insert tid.toObjId tcbReset, machine := tick st.machine }
         -- stIT has the same runQueue as st
@@ -1351,14 +1393,15 @@ theorem timerTick_preserves_projection
           · subst hEq; exact hTidHigh
         have hSchedStep : schedule stInsert = .ok ((), st') := by
           simpa [stInsert, stIT, hCur] using hStep
-        rw [schedule_preserves_projection ctx observer stInsert st' hCurSched hAllRunnableSched hSchedStep,
+        have hObjInvInsert : stInsert.objects.invExt := RHTable_insert_preserves_invExt st.objects _ _ hObjInv
+        rw [schedule_preserves_projection ctx observer stInsert st' hCurSched hAllRunnableSched hObjInvInsert hSchedStep,
             hInsertRqProj, hInsertTickProj]
       · -- Time-slice not expired: insert + tick
         next hSliceNot =>
         have hEq := Except.ok.inj hStep
         simp only [Prod.mk.injEq, true_and] at hEq; subst hEq
         exact insert_tick_preserves_projection ctx observer st tid.toObjId
-          (KernelObject.tcb { tcb with timeSlice := tcb.timeSlice - 1 }) hTidObjHigh
+          (KernelObject.tcb { tcb with timeSlice := tcb.timeSlice - 1 }) hTidObjHigh hObjInv
     · -- Catch-all: error (not a TCB or not found)
       simp at hStep
 
@@ -1379,12 +1422,14 @@ theorem timerTick_preserves_lowEquivalent
         objectObservable ctx observer t.toObjId = false)
     (hAllRunnable₂ : ∀ tid, tid ∈ s₂.scheduler.runnable →
         threadObservable ctx observer tid = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : timerTick s₁ = .ok ((), s₁'))
     (hStep₂ : timerTick s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
-    timerTick_preserves_projection ctx observer s₁ s₁' hCurrentHigh₁ hCurrentObjHigh₁ hAllRunnable₁ hStep₁,
-    timerTick_preserves_projection ctx observer s₂ s₂' hCurrentHigh₂ hCurrentObjHigh₂ hAllRunnable₂ hStep₂]
+    timerTick_preserves_projection ctx observer s₁ s₁' hCurrentHigh₁ hCurrentObjHigh₁ hAllRunnable₁ hObjInv₁ hStep₁,
+    timerTick_preserves_projection ctx observer s₂ s₂' hCurrentHigh₂ hCurrentObjHigh₂ hAllRunnable₂ hObjInv₂ hStep₂]
   exact hLow
 
 -- ============================================================================
@@ -1405,6 +1450,8 @@ theorem retypeFromUntyped_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hUntypedHigh : objectObservable ctx observer untypedId = false)
     (hChildHigh : objectObservable ctx observer childId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : retypeFromUntyped authority untypedId childId newObj allocSize s₁ = .ok ((), s₁'))
     (hStep₂ : retypeFromUntyped authority untypedId childId newObj allocSize s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -1420,11 +1467,14 @@ theorem retypeFromUntyped_preserves_lowEquivalent
   -- First storeObject (untyped update) at non-observable untypedId
   have hMid := storeObject_at_unobservable_preserves_lowEquivalent
     ctx observer untypedId (.untyped ut₁') (.untyped ut₂') s₁ s₂ stUt₁ stUt₂
-    hLow hUntypedHigh hStoreUt₁ hStoreUt₂
+    hLow hUntypedHigh hObjInv₁ hObjInv₂ hStoreUt₁ hStoreUt₂
+  -- Propagate invExt through first storeObject
+  have hObjInvUt₁ := storeObject_preserves_objects_invExt s₁ stUt₁ untypedId _ hObjInv₁ hStoreUt₁
+  have hObjInvUt₂ := storeObject_preserves_objects_invExt s₂ stUt₂ untypedId _ hObjInv₂ hStoreUt₂
   -- Second storeObject (child creation) at non-observable childId
   exact storeObject_at_unobservable_preserves_lowEquivalent
     ctx observer childId newObj newObj stUt₁ stUt₂ s₁' s₂'
-    hMid hChildHigh hStoreChild₁ hStoreChild₂
+    hMid hChildHigh hObjInvUt₁ hObjInvUt₂ hStoreChild₁ hStoreChild₂
 
 -- ============================================================================
 -- lifecycleRevokeDeleteRetype NI proofs
@@ -1443,15 +1493,59 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
     (newObj : KernelObject) (st st' : SystemState)
     (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
     (hTargetHigh : objectObservable ctx observer target = false)
+    (hObjInv : st.objects.invExt)
     (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   rcases lifecycleRevokeDeleteRetype_ok_implies_staged_steps st st' authority cleanup target newObj hStep with
     ⟨stRevoked, stDeleted, _, hRevoke, hDelete, _, hRetype⟩
   rcases lifecycleRetypeObject_ok_as_storeObject stDeleted st' authority target newObj hRetype with
     ⟨_, _, _, _, _, _, hStore⟩
-  rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hStore,
-      cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hDelete,
-      cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hRevoke]
+  -- Propagate invExt through cspaceRevoke: cspaceRevoke does cspaceLookupSlot (preserves state)
+  -- + storeObject (preserves invExt) + revokeAndClearRefsState (preserves objects)
+  have hObjInvRevoked : stRevoked.objects.invExt := by
+    unfold cspaceRevoke at hRevoke
+    cases hL : cspaceLookupSlot cleanup st with
+    | error e => simp [hL] at hRevoke
+    | ok p =>
+      rcases p with ⟨par, stL⟩
+      have hEqL := cspaceLookupSlot_preserves_state st stL cleanup par hL
+      subst stL
+      cases hC : st.objects[cleanup.cnode]? with
+      | none => simp [hL, hC] at hRevoke
+      | some obj =>
+        cases obj with
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hL, hC] at hRevoke
+        | cnode cn =>
+          simp [hL, hC, storeObject] at hRevoke; cases hRevoke
+          rw [revokeAndClearRefsState_preserves_objects]
+          exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
+  -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + storeCapabilityRef + detachSlotFromCdt
+  have hObjInvDeleted : stDeleted.objects.invExt := by
+    unfold cspaceDeleteSlot at hDelete
+    cases hObj : stRevoked.objects[cleanup.cnode]? with
+    | none => simp [hObj] at hDelete
+    | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hDelete
+      | cnode cn =>
+        simp only [hObj] at hDelete
+        cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
+        | error e => simp [hSt] at hDelete
+        | ok pair₁ =>
+          simp only [hSt] at hDelete
+          have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
+          cases hRef : storeCapabilityRef cleanup none pair₁.2 with
+          | error e => simp [hRef] at hDelete
+          | ok pair₂ =>
+            simp only [hRef] at hDelete; cases hDelete
+            -- detachSlotFromCdt only modifies CDT, storeCapabilityRef preserves objects
+            have hRefObjs := storeCapabilityRef_preserves_objects pair₁.2 pair₂.2 cleanup none hRef
+            simp only [SystemState.detachSlotFromCdt]; split
+            · exact hRefObjs ▸ hInvPair
+            · exact hRefObjs ▸ hInvPair
+  rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hObjInvDeleted hStore,
+      cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hObjInvRevoked hDelete,
+      cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hObjInv hRevoke]
 
 /-- `lifecycleRevokeDeleteRetype` at non-observable cleanup CNode and target
 preserves low-equivalence. Composes low-equivalence preservation across
@@ -1465,13 +1559,15 @@ theorem lifecycleRevokeDeleteRetype_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hCleanupHigh : objectObservable ctx observer cleanup.cnode = false)
     (hTargetHigh : objectObservable ctx observer target = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : lifecycleRevokeDeleteRetype authority cleanup target newObj s₁ = .ok ((), s₁'))
     (hStep₂ : lifecycleRevokeDeleteRetype authority cleanup target newObj s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [
     lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
-      newObj s₁ s₁' hCleanupHigh hTargetHigh hStep₁,
+      newObj s₁ s₁' hCleanupHigh hTargetHigh hObjInv₁ hStep₁,
     lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
-      newObj s₂ s₂' hCleanupHigh hTargetHigh hStep₂]
+      newObj s₂ s₂' hCleanupHigh hTargetHigh hObjInv₂ hStep₂]
   exact hLow
 
