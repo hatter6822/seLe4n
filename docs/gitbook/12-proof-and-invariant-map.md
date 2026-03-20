@@ -190,7 +190,7 @@ dist within clusters) is NOT preserved by backshift-on-erase. The `invExt`
 bundle was restructured to use `probeChainDominant` instead, which IS preserved
 by all operations. Preservation theorems proved: WF (all ops), distCorrect
 (all ops), noDupKeys (all ops), probeChainDominant (all ops). All 6 TPI-D
-items complete (D1–D6), ~3,600 LoC, zero sorry/axiom. **WS-N2 COMPLETE.**
+items complete (D1–D6), ~4,655 LoC, zero sorry/axiom. **WS-N2 COMPLETE.**
 
 **N3 delivered proof surface** (v0.17.3, `SeLe4n/Kernel/RobinHood/Bridge.lean`):
 

@@ -33,8 +33,8 @@ per-cluster modular-arithmetic ordering.
 | ID | Focus | Priority |
 |----|-------|----------|
 | **WS-N1** | Core types + operations: `RHEntry`, `RHTable`, `empty`, `insert`, `get?`, `erase`, `fold`, `resize`; fuel-bounded loops, bounds-checked access; `empty_wf` proof | CRITICAL — **COMPLETED** (v0.17.1) |
-| **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`probeChainDominant` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`). All 6 TPI-D items completed (D1–D6), ~3,600 LoC, zero sorry | HIGH — **COMPLETED** (v0.17.2) |
-| **WS-N3** | Kernel API bridge: `Inhabited`/`BEq` instances, 10 bridge lemmas (`getElem?_*`, `size_*`, `mem_iff_isSome_getElem?`, `fold_eq_slots_foldl`), `filter` + `ofList` support, `get_after_erase_ne` proof. ~307 LoC Bridge.lean + ~247 LoC Lookup.lean additions, zero sorry | MEDIUM — **COMPLETED** (v0.17.3) |
+| **WS-N2** | Invariant proofs: `wf`/`distCorrect`/`noDupKeys`/`probeChainDominant` preservation through insert/erase/resize; lookup soundness + completeness (`get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`). All 6 TPI-D items completed (D1–D6), ~4,655 LoC, zero sorry | HIGH — **COMPLETED** (v0.17.2) |
+| **WS-N3** | Kernel API bridge: `Inhabited`/`BEq` instances, 12 bridge lemmas (`getElem?_*`, `size_*`, `mem_iff_isSome_getElem?`, `fold_eq_slots_foldl`, `size_filter_le_*`), `filter` + `ofList` support, `get_after_erase_ne` proof. ~307 LoC Bridge.lean + ~247 LoC Lookup.lean additions, zero sorry | MEDIUM — **COMPLETED** (v0.17.3) |
 | **WS-N4** | Kernel integration (first site): replaced `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; updated CNode operations, ~25 CNode/capability theorems, ~15 invariant proofs across Capability/InformationFlow subsystems, test fixtures; `slotsUnique` repurposed as substantive `invExt` invariant; 3 new bridge lemmas (`filter_fold_absent_by_pred`, `filter_get_pred`, `filter_filter_getElem?`); 20+ files modified | MEDIUM — **COMPLETED** (v0.17.4) |
 | **WS-N5** | Test coverage + documentation: `RobinHoodSuite.lean` with 12 standalone tests (RH-001–RH-012: empty table, insert/get, erase, overwrite, multi-key, collision, Robin Hood swap, backward-shift, resize, post-resize, large-scale 200-entry stress, fold/toList) + 6 CNode integration tests (RH-INT-001–RH-INT-006: lookup/insert/remove, revokeTargetLocal, findFirstEmptySlot, slotCountBounded, CSpace resolution, BEq). Full doc sync across 8 canonical files + 4 GitBook chapters. ~300 LoC tests, zero sorry | LOW — **COMPLETED** (v0.17.5) |
 
@@ -133,7 +133,7 @@ Delivers:
   (if key absent from all slots, getLoop returns none), `displacement_backward`
   (backshift displacement decrement), `relaxedPCD` (gap-excused PCD invariant).
 - Zero `sorry`/`axiom`. Zero warnings. All test tiers pass.
-- **WS-N2 COMPLETE** — 6/6 TPI-D proofs, ~3,600 LoC across Defs/Preservation/Lookup.
+- **WS-N2 COMPLETE** — 6/6 TPI-D proofs, ~4,655 LoC across Defs/Preservation/Lookup.
 
 **WS-N4 (v0.17.4):** Kernel integration (first site — CNode.slots) — replaced
 `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`

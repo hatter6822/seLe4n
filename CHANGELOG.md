@@ -41,7 +41,7 @@
 - Completed Phase 3 (WS-N3): kernel API bridge in
   `SeLe4n/Kernel/RobinHood/Bridge.lean` (~307 lines)
 - N3-A: `Inhabited`/`BEq` typeclass instances for `RHTable`
-- N3-B: 10 bridge lemmas matching `Std.HashMap` patterns (`getElem?_insert_self`,
+- N3-B: 12 bridge lemmas matching `Std.HashMap` patterns (`getElem?_insert_self`,
   `getElem?_insert_ne`, `getElem?_erase_self`, `getElem?_erase_ne`,
   `getElem?_empty`, `size_erase_le`, `size_insert_le`,
   `mem_iff_isSome_getElem?`, `getElem?_eq_some_getElem`, `fold_eq_slots_foldl`)
@@ -113,7 +113,7 @@
   `relaxedPCD` (gap-excused PCD invariant)
 - Files: 4 new (`Invariant/Defs.lean`, `Invariant/Preservation.lean`,
   `Invariant/Lookup.lean`, `Invariant.lean`), 2 modified (`Core.lean`,
-  `RobinHood.lean`); ~3,600 LoC total
+  `RobinHood.lean`); ~4,655 LoC total
 - All 6 TPI-D items completed (D1–D6); WS-N2 COMPLETE
 - Zero `sorry`/`axiom`; zero warnings; all test tiers pass
 - Bumped `lakefile.toml` version to `0.17.2`
