@@ -9,6 +9,7 @@
 import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Kernel.Scheduler.RunQueue
+import SeLe4n.Kernel.Service.Interface
 
 namespace SeLe4n.Model
 
@@ -104,23 +105,6 @@ structure LifecycleMetadata where
   objectTypes : Std.HashMap SeLe4n.ObjId KernelObjectType
   capabilityRefs : Std.HashMap SlotRef CapTarget
 
-/-- Configuration record holding policy predicates for service operations.
-    The dispatch layer reads these from `SystemState.serviceConfig` to gate
-    `serviceStart` and `serviceStop` transitions.
-
-    Uses the expanded type `ServiceGraphEntry → Bool` rather than the
-    `ServicePolicy` alias (defined in `Service/Operations.lean`) to avoid
-    a circular import — `State.lean` is upstream of `Service/Operations.lean`.
-
-    `Inhabited` default is permissive (`fun _ => true`), preserving backward
-    compatibility for all existing `SystemState` construction sites. -/
-structure ServiceConfig where
-  allowStart : ServiceGraphEntry → Bool
-  allowStop  : ServiceGraphEntry → Bool
-
-instance : Inhabited ServiceConfig where
-  default := { allowStart := fun _ => true, allowStop := fun _ => true }
-
 structure SystemState where
   machine : SeLe4n.MachineState
   /-- WS-G2/F-P01: Object store backed by `Std.HashMap` for O(1) amortized lookup.
@@ -150,9 +134,6 @@ structure SystemState where
       this set is the runtime fast path. -/
   objectIndexSet : Std.HashSet SeLe4n.ObjId := {}
   services : Std.HashMap ServiceId ServiceGraphEntry
-  /-- Service policy configuration for `serviceStart`/`serviceStop` gating.
-      Default permits all operations (backward compatible). -/
-  serviceConfig : ServiceConfig := default
   scheduler : SchedulerState
   irqHandlers : Std.HashMap SeLe4n.Irq SeLe4n.ObjId
   lifecycle : LifecycleMetadata
@@ -161,6 +142,10 @@ structure SystemState where
       when a VSpaceRoot is overwritten. Replaces the O(n) `objectIndex.findSome?`
       scan in `resolveAsidRoot`. -/
   asidTable : Std.HashMap SeLe4n.ASID SeLe4n.ObjId := {}
+  /-- WS-Q1-B: Registry of concrete interface specifications keyed by InterfaceId. -/
+  interfaceRegistry : Std.HashMap SeLe4n.InterfaceId InterfaceSpec := {}
+  /-- WS-Q1-B: Registry of capability-mediated service registrations keyed by ServiceId. -/
+  serviceRegistry : Std.HashMap ServiceId ServiceRegistration := {}
   cdt : CapDerivationTree := .empty   -- WS-E4/C-03: node-based Capability Derivation Tree
   cdtSlotNode : Std.HashMap SlotRef CdtNodeId := {}
   cdtNodeSlot : Std.HashMap CdtNodeId SlotRef := {}
@@ -186,6 +171,8 @@ instance : Inhabited SystemState where
       capabilityRefs := {}
     }
     asidTable := {}
+    interfaceRegistry := {}
+    serviceRegistry := {}
     cdt := .empty
     cdtSlotNode := {}
     cdtNodeSlot := {}
@@ -451,28 +438,12 @@ def hasIsolationEdge (st : SystemState) (lhs rhs : ServiceId) : Bool :=
   | some lhsSvc, some rhsSvc => rhs ∈ lhsSvc.isolatedFrom || lhs ∈ rhsSvc.isolatedFrom
   | _, _ => false
 
-/-- A service is runnable only when all declared dependencies are currently `running`. -/
-def dependenciesSatisfied (st : SystemState) (sid : ServiceId) : Bool :=
-  match lookupService st sid with
-  | none => false
-  | some svc =>
-      svc.dependencies.all (fun dep =>
-        match lookupService st dep with
-        | some depSvc => depSvc.status = .running
-        | none => false)
-
 /-- Deterministic pure state helper: replace one service graph entry. -/
 def storeServiceState (sid : ServiceId) (entry : ServiceGraphEntry) (st : SystemState) : SystemState :=
   {
     st with
       services := st.services.insert sid entry
   }
-
-/-- Deterministic pure state helper: update only the status of an existing service. -/
-def setServiceStatusState (sid : ServiceId) (status : ServiceStatus) (st : SystemState) : SystemState :=
-  match lookupService st sid with
-  | none => st
-  | some svc => storeServiceState sid { svc with status := status } st
 
 theorem storeServiceState_lookup_eq
     (st : SystemState)
@@ -493,23 +464,6 @@ theorem storeServiceState_lookup_ne
     intro hEq
     exact hNe (eq_of_beq hEq).symm
   simp [hNeBeq]
-
-theorem setServiceStatusState_lookup_eq
-    (st : SystemState)
-    (sid : ServiceId)
-    (status : ServiceStatus)
-    (svc : ServiceGraphEntry)
-    (hSvc : lookupService st sid = some svc) :
-    lookupService (setServiceStatusState sid status st) sid = some { svc with status := status } := by
-  simp [setServiceStatusState, hSvc, storeServiceState_lookup_eq]
-
-theorem setServiceStatusState_preserves_objects
-    (st : SystemState)
-    (sid : ServiceId)
-    (status : ServiceStatus) :
-    (setServiceStatusState sid status st).objects = st.objects := by
-  unfold setServiceStatusState lookupService
-  cases hSvc : st.services[sid]? <;> simp [storeServiceState]
 
 theorem storeObject_preserves_services
     (st st' : SystemState)

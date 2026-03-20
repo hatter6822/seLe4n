@@ -63,7 +63,7 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 
 **Layer 1 — RegisterDecode.lean:** Converts the raw register file (x0–x7) into a flat `SyscallDecodeResult` containing `capAddr : CPtr`, `msgInfo : MessageInfo`, `syscallId : SyscallId`, and `msgRegs : Array RegValue`. This layer handles architecture-specific register layout via `SyscallRegisterLayout` and provides total decode with explicit `Except` errors. Round-trip, determinism, and error-exclusivity theorems are proved at this layer.
 
-**Layer 2 — SyscallArgDecode.lean:** Converts the `msgRegs` array within `SyscallDecodeResult` into per-syscall typed argument structures. Seven structures cover the syscall families:
+**Layer 2 — SyscallArgDecode.lean:** Converts the `msgRegs` array within `SyscallDecodeResult` into per-syscall typed argument structures. Ten structures cover the syscall families:
 
 | Syscall family | Structure | Min regs | Fields |
 |---|---|---|---|
@@ -74,12 +74,15 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 | Lifecycle retype | `LifecycleRetypeArgs` | 3 | targetObj, newType, size |
 | VSpace map | `VSpaceMapArgs` | 4 | asid, vaddr, paddr, perms |
 | VSpace unmap | `VSpaceUnmapArgs` | 2 | asid, vaddr |
+| Service register | `ServiceRegisterArgs` | 2 | serviceId, dependencies |
+| Service revoke | `ServiceRevokeArgs` | 1 | serviceId |
+| Service query | `ServiceQueryArgs` | 1 | serviceId |
 
-A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Seven encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
+A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Ten encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
 
 **Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 13 syscalls are fully wired — zero `.illegalState` stubs remain.
 
-**Service policy:** `ServiceConfig` in `SystemState` holds policy predicates (`allowStart`, `allowStop`) for service start/stop operations, replacing the original permissive `(fun _ => true)` stubs with configuration-sourced, auditable predicates.
+**Service registry (WS-Q1):** The service subsystem uses a stateless registry model — services are registered entries with identity, dependencies, and isolation edges. No `ServiceStatus` lifecycle state or `ServiceConfig` policy predicates. Graph invariants (acyclicity, bounded service count) are preserved by `serviceRegisterDependency`.
 
 **IPC message population:** `extractMessageRegisters` converts `Array RegValue` → `Array Nat` with a triple bound (info.length, maxMessageRegisters, msgRegs.size). IPC send/call/reply dispatch arms populate message bodies from decoded registers instead of empty arrays.
 
@@ -263,10 +266,9 @@ constructors (dedicated `invalidTypeTag` error variant for unrecognized tags);
 double lookup); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
 round-trip proof. 3 delegation theorems proved (`lifecycleRetype`, `vspaceMap`,
 `vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`.
-**Layer 5 (completed, K-E v0.16.4):** Service policy and IPC message population.
-`ServiceConfig` in `SystemState` replaces `(fun _ => true)` stubs — service
-start/stop dispatch reads configurable policy predicates from
-`st.serviceConfig.allowStart`/`allowStop`. `extractMessageRegisters` converts
+**Layer 5 (completed, K-E v0.16.4; updated WS-Q1):** IPC message population.
+*(WS-Q1: `ServiceConfig` and service start/stop dispatch removed — registry-only model.)*
+`extractMessageRegisters` converts
 decoded `Array RegValue` to `Array Nat` (matching `IpcMessage.registers` type)
 with triple bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`); `.send`,
 `.call`, `.reply` dispatch arms now populate message bodies instead of empty arrays.

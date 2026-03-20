@@ -45,7 +45,7 @@ structure ObservableState where
   objects : SeLe4n.ObjId → Option KernelObject
   runnable : List SeLe4n.ThreadId
   current : Option SeLe4n.ThreadId
-  services : ServiceId → Option ServiceStatus
+  services : ServiceId → Bool
   /-- WS-F3: Active scheduling domain — visible to all observers (scheduling
       transparency: all threads need to know which domain is active).
       WS-H8/A-36: Documented as deliberate security assumption — scheduling
@@ -91,18 +91,19 @@ def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe
 def threadObservable (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId) : Bool :=
   securityFlowsTo (ctx.threadLabelOf tid) observer.clearance
 
-/-- Service projection keeps only status because service identity is carried by `ServiceId`. -/
+/-- Service projection gate: a service is observable iff its label flows to the observer. -/
 def serviceObservable (ctx : LabelingContext) (observer : IfObserver) (sid : ServiceId) : Bool :=
   securityFlowsTo (ctx.serviceLabelOf sid) observer.clearance
 
-/-- Service projection keeps only observer-visible statuses keyed by `ServiceId`. -/
-def projectServiceStatus (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
-    ServiceId → Option ServiceStatus :=
+/-- WS-Q1-E2: Service projection returns whether an observable service is registered.
+Replaces the old `projectServiceStatus` that projected `ServiceStatus`. -/
+def projectServicePresence (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    ServiceId → Bool :=
   fun sid =>
     if serviceObservable ctx observer sid then
-      (lookupService st sid).map ServiceGraphEntry.status
+      (lookupService st sid).isSome
     else
-      none
+      false
 
 -- ============================================================================
 -- WS-F3/F-22: CNode slot filtering to prevent capability target leakage
@@ -285,7 +286,7 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
     objects := projectObjects ctx observer st
     runnable := projectRunnable ctx observer st
     current := projectCurrent ctx observer st
-    services := projectServiceStatus ctx observer st
+    services := projectServicePresence ctx observer st
     activeDomain := projectActiveDomain ctx observer st
     irqHandlers := projectIrqHandlers ctx observer st
     objectIndex := projectObjectIndex ctx observer st
@@ -422,7 +423,7 @@ def projectStateFast (ctx : LabelingContext) (observer : IfObserver) (st : Syste
     objects := projectObjectsFast ctx observer observableOids st
     runnable := projectRunnable ctx observer st
     current := projectCurrent ctx observer st
-    services := projectServiceStatus ctx observer st
+    services := projectServicePresence ctx observer st
     activeDomain := projectActiveDomain ctx observer st
     irqHandlers := projectIrqHandlersFast observableOids st
     objectIndex := projectObjectIndexFast observableOids st

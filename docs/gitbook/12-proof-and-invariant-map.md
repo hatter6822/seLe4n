@@ -404,24 +404,19 @@ kept mutation-free:
   (plus backing-object existence assumptions) into the service policy bundle,
 - check-vs-mutation separation: policy-denial theorem surfaces remain explicit and deterministic.
 
-## 9. M5 proof package layering (WS-M5-D complete)
+## 9. M5 proof package layering (WS-M5-D complete; updated WS-Q1)
 
-Proof-package entrypoints now extend the M5 policy surface to full local + composed preservation:
+*(WS-Q1: Service lifecycle transitions (`serviceStart`/`serviceStop`/`serviceRestart`) removed.
+The M5 policy surface now covers registry operations only.)*
+
+Proof-package entrypoints extend the M5 policy surface to registry preservation:
 
 - composed bundle entrypoint: `serviceLifecycleCapabilityInvariantBundle`,
-- local preservation entrypoints:
-  - `serviceStart_preserves_serviceLifecycleCapabilityInvariantBundle`,
-  - `serviceStop_preserves_serviceLifecycleCapabilityInvariantBundle`,
-  - `serviceRestart_preserves_serviceLifecycleCapabilityInvariantBundle`,
-- failure-path preservation entrypoints:
-  - `serviceStart_failure_preserves_serviceLifecycleCapabilityInvariantBundle`,
-  - `serviceStop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`,
-  - `serviceRestart_stop_failure_preserves_serviceLifecycleCapabilityInvariantBundle`,
-  - `serviceRestart_start_failure_preserves_serviceLifecycleCapabilityInvariantBundle`.
-
-This keeps the M5 theorem surface aligned with the local-first composition rule:
-prove per-transition preservation first, then expose cross-subsystem bundle preservation with
-explicit failure-path statements.
+- registry preservation:
+  - `storeServiceState_preserves_servicePolicySurfaceInvariant`,
+  - `storeServiceState_preserves_lifecycleInvariantBundle`,
+  - `storeServiceState_preserves_capabilityInvariantBundle`,
+  - `serviceRegisterDependency_preserves_serviceGraphInvariant`.
 
 ## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06; WS-G6 / F-P05 updated)
 
@@ -502,15 +497,13 @@ Service dependency registration now includes DFS-based cycle detection (WS-G8: m
 - `serviceDependencyAcyclic` — acyclicity invariant definition
 - `serviceRegisterDependency_preserves_acyclicity` — preservation theorem (no `sorry`; BFS bridge `bfs_complete_for_nontrivialPath` formally proven — TPI-D07-BRIDGE resolved, see §14)
 
-### F-11: serviceRestart partial-failure semantics
+### F-11: Service graph invariant preservation (updated WS-Q1)
 
-serviceRestart uses documented partial-failure semantics (stop succeeds, start fails = service remains stopped):
+*(WS-Q1: `serviceRestart` partial-failure semantics removed — lifecycle transitions eliminated.
+Replaced by registry graph invariant preservation.)*
 
-- `serviceRestart_error_of_stop_error` — stop failure propagated directly
-- `serviceRestart_error_of_start_error` — start failure propagated with post-stop state
-- `serviceRestart_ok_implies_staged_steps` — success implies both stages succeeded
-- `serviceRestart_error_discards_state` — error monad discards intermediate state
-- `serviceRestart_error_from_start_phase` — functional decomposition of start-phase errors
+- `serviceRegisterDependency_preserves_serviceGraphInvariant` — dependency registration preserves acyclicity + bounded count
+- `serviceRegisterDependency_preserves_acyclicity` — acyclicity preserved through new edge insertion
 
 ### F-12: Double-wait prevention and uniqueness invariant
 
@@ -653,8 +646,8 @@ Policy and projection primitives:
 Policy checks wired into kernel operations via `Enforcement.lean`:
 
 - `endpointSendDualChecked` — enforces `securityFlowsTo` before IPC send,
-- `cspaceMintChecked` — enforces `securityFlowsTo` before capability minting,
-- `serviceRestartChecked` — enforces `securityFlowsTo` before service restart.
+- `cspaceMintChecked` — enforces `securityFlowsTo` before capability minting.
+*(WS-Q1: `serviceRestartChecked` removed — service lifecycle simplified to registry model.)*
 
 ### Non-interference theorems (WS-D2 baseline + WS-F3 expansion)
 
@@ -667,19 +660,15 @@ WS-D2 baseline (5 theorems):
 - `cspaceRevoke_preserves_lowEquivalent` — capability revoke non-interference (TPI-D02),
 - `lifecycleRetypeObject_preserves_lowEquivalent` — lifecycle non-interference (TPI-D03).
 
-WS-F3 additions (7 new theorems):
+WS-F3 additions (4 new theorems; WS-Q1: 3 service lifecycle NI proofs removed):
 - `notificationSignal_preserves_lowEquivalent` — notification signal NI (F-21),
 - `notificationWait_preserves_lowEquivalent` — notification wait NI (F-21),
 - `cspaceInsertSlot_preserves_lowEquivalent` — capability insert NI (CRIT-03),
-- `serviceStart_preserves_lowEquivalent` — service start NI (CRIT-03),
-- `serviceStop_preserves_lowEquivalent` — service stop NI (CRIT-03),
-- `serviceRestart_preserves_lowEquivalent` — service restart NI (CRIT-03),
 - `storeObject_at_unobservable_preserves_lowEquivalent` — generic infrastructure.
 
-WS-F3 enforcement-NI bridges (3 theorems):
+WS-F3 enforcement-NI bridges (2 theorems; WS-Q1: `serviceRestartChecked_NI` removed):
 - `endpointSendDualChecked_NI` — bridges checked send to NI,
-- `cspaceMintChecked_NI` — bridges checked mint to NI,
-- `serviceRestartChecked_NI` — bridges checked restart to NI.
+- `cspaceMintChecked_NI` — bridges checked mint to NI.
 
 WS-H8 enforcement-NI bridges (4 theorems):
 - `endpointSendDualChecked_NI` — bridges dual-queue checked send to NI,
@@ -742,10 +731,10 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 17-entry classification table,
-- `enforcementBoundaryExtended` — WS-H8 extended 19-entry table (8 policy-gated),
-- `denied_preserves_state_*` — denial preservation for all 7 checked operations,
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 7 checked operations.
+- `enforcementBoundary` — exhaustive 17-entry classification table (3 policy-gated),
+- `enforcementBoundaryExtended` — extended table (7 policy-gated),
+- `denied_preserves_state_*` — denial preservation for all 7 policy-gated operations,
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 7 policy-gated operations.
 
 **WS-H8/A-36 — Projection hardening:**
 
@@ -841,7 +830,8 @@ backward-preservation and frame lemmas.
 
 - `endpointSendDualChecked_NI` — bridges checked send to NI domain-separation,
 - `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
-- `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
+- `registerServiceChecked_NI` — bridges checked service registration to NI domain-separation.
+*(WS-Q1: replaces `serviceRestartChecked_NI` — service lifecycle simplified to registry model.)*
 
 ## 18. WS-F4 proof gap closure
 
@@ -1099,19 +1089,15 @@ CSpace depth invariant:
 - `serviceStop_error_policyDenied` — updated with `hBacking` hypothesis (backing-object existence is a precondition for reaching the policy-denial branch)
 - All downstream preservation theorems updated with extra `split at hStep` for new backing-object check branch
 
-### Part D — Service restart atomicity (A-30)
+### Part D — Service graph invariant preservation (updated WS-Q1)
 
-Error monad (`Except`) provides implicit atomicity for `serviceRestart`:
-
-- `serviceRestart_error_discards_state` — error path returns original state
-- `serviceRestart_error_of_stop_error` / `serviceRestart_error_of_start_error` — failure-phase identification
-- `serviceRestart_ok_implies_staged_steps` — success implies both stages completed
+*(WS-Q1: `serviceRestart` atomicity removed — lifecycle transitions eliminated.)*
 
 ### Part E — serviceCountBounded invariant (M-17/A-31)
 
 `serviceGraphInvariant` extended to 2-conjunct: `serviceDependencyAcyclic ∧ serviceCountBounded`.
 
-Transfer lemma suite (6 lemmas for status-only `storeServiceState` where `entry.dependencies = svc.dependencies`):
+Transfer lemma suite (6 lemmas for `storeServiceState` where `entry.dependencies = svc.dependencies`):
 
 - `serviceEdge_of_storeServiceState_sameDeps` — edge relation preserved
 - `serviceNontrivialPath_of_storeServiceState_sameDeps` — path relation preserved
@@ -1122,9 +1108,7 @@ Transfer lemma suite (6 lemmas for status-only `storeServiceState` where `entry.
 
 Preservation theorems:
 
-- `serviceStart_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged)
-- `serviceStop_preserves_serviceGraphInvariant` — status change preserves graph invariant (dependencies unchanged, extra backing-object branch)
-- `serviceRegisterDependency_preserves_serviceGraphInvariant` — inline `serviceCountBounded` transfer through dependency insertion
+- `serviceRegisterDependency_preserves_serviceGraphInvariant` — `serviceCountBounded` transfer through dependency insertion
 
 ## WS-H15: Platform & API Hardening (v0.14.7)
 
@@ -1376,9 +1360,10 @@ validate-and-read message registers in a single `Array.mapM` pass.
 `decodeMsgRegs_roundtrip` and extended `decode_components_roundtrip` proved.
 `encodeMsgRegs` identity helper added for proof surface completeness.
 
-**Completed — K-B (v0.16.1):** `SyscallArgDecode.lean` defines per-syscall typed
+**Completed — K-B (v0.16.1), extended WS-Q1:** `SyscallArgDecode.lean` defines per-syscall typed
 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
-`CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`)
+`CSpaceDeleteArgs`, `LifecycleRetypeArgs`, `VSpaceMapArgs`, `VSpaceUnmapArgs`,
+`ServiceRegisterArgs`, `ServiceRevokeArgs`, `ServiceQueryArgs`)
 and total decode functions via shared `requireMsgReg` bounds-checked helper.
 7 determinism theorems (trivially `rfl`), 7 error-exclusivity theorems
 (decode fails iff `msgRegs.size < required`), `requireMsgReg_error_iff` and
@@ -1406,20 +1391,17 @@ theorems proved: `dispatchWithCap_lifecycleRetype_delegates`,
 `dispatchWithCap_vspaceMap_delegates`, `dispatchWithCap_vspaceUnmap_delegates`.
 All 13 syscalls now fully dispatch. Zero sorry/axiom. 18 new Tier 3 anchors.
 
-**K-E (v0.16.4) — Service policy and IPC message population:**
-`ServiceConfig` structure in `SystemState` with `Inhabited` default (permissive
-`fun _ => true`). Service dispatch reads `st.serviceConfig.allowStart`/`allowStop`
-instead of hardcoded `(fun _ => true)` stubs. `extractMessageRegisters` converts
-`Array RegValue` → `Array Nat` (matching `IpcMessage.registers` type) with triple
-bound (`info.length`, `maxMessageRegisters`, `msgRegs.size`). IPC dispatch arms
-(`.send`, `.call`, `.reply`) populate message bodies from decoded registers. Proved:
-`extractMessageRegisters_length` (result size ≤ `maxMessageRegisters`),
-`extractMessageRegisters_ipc_bounded` (constructed `IpcMessage` satisfies `bounded`),
-`extractMessageRegisters_deterministic`. 5 delegation theorems:
-`dispatchWithCap_serviceStart_uses_config`, `dispatchWithCap_serviceStop_uses_config`,
-`dispatchWithCap_send_uses_withCaps`, `dispatchWithCap_call_uses_withCaps`,
-`dispatchWithCap_reply_populates_msg`. All existing soundness theorems compile
-unchanged. Zero sorry/axiom. 11 new Tier 3 anchors.
+**K-E (v0.16.4; updated WS-Q1) — IPC message population:**
+*(WS-Q1: `ServiceConfig` and service start/stop dispatch removed — registry-only model.)*
+`extractMessageRegisters` converts `Array RegValue` → `Array Nat` (matching
+`IpcMessage.registers` type) with triple bound (`info.length`, `maxMessageRegisters`,
+`msgRegs.size`). IPC dispatch arms (`.send`, `.call`, `.reply`) populate message
+bodies from decoded registers. Proved: `extractMessageRegisters_length` (result
+size ≤ `maxMessageRegisters`), `extractMessageRegisters_ipc_bounded` (constructed
+`IpcMessage` satisfies `bounded`), `extractMessageRegisters_deterministic`. 3
+delegation theorems: `dispatchWithCap_send_uses_withCaps`,
+`dispatchWithCap_call_uses_withCaps`, `dispatchWithCap_reply_populates_msg`. All
+existing soundness theorems compile unchanged. Zero sorry/axiom.
 
 **Completed — K-F (v0.16.5) — Proofs: round-trip, preservation, and NI integration:**
 7 encode functions (`encodeCSpaceMintArgs` through `encodeVSpaceUnmapArgs`) completing
@@ -1453,8 +1435,8 @@ See [workstream plan](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WO
 The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 
 **Layer-2 round-trip proofs** (SyscallArgDecode.lean, K-F):
-- `encodeCSpaceMintArgs`/`decodeCSpaceMintArgs` round-trip (and 6 analogous pairs)
-- `decode_layer2_roundtrip_all` — composed conjunction of all 7 round-trips
+- `encodeCSpaceMintArgs`/`decodeCSpaceMintArgs` round-trip (and 9 analogous pairs, WS-Q1: +`ServiceRegisterArgs`, `ServiceRevokeArgs`, `ServiceQueryArgs`)
+- `decode_layer2_roundtrip_all` — composed conjunction of all 10 round-trips
 
 **Layer-1 extraction round-trip** (RegisterDecode.lean, K-F):
 - `extractMessageRegisters_roundtrip` — closes layer-1 extraction gap
@@ -1462,8 +1444,8 @@ The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 **Delegation theorems** (API.lean, K-C/K-D/K-E):
 - 4 CSpace: `dispatchWithCap_cspaceMint_delegates`, `_cspaceCopy_delegates`, `_cspaceMove_delegates`, `_cspaceDelete_delegates`
 - 3 Lifecycle/VSpace: `dispatchWithCap_lifecycleRetype_delegates`, `_vspaceMap_delegates`, `_vspaceUnmap_delegates`
-- 2 Service: `dispatchWithCap_serviceStart_uses_config`, `_serviceStop_uses_config`
 - 3 IPC: `dispatchWithCap_send_uses_withCaps`, `_call_uses_withCaps`, `_reply_populates_msg`
+*(WS-Q1: 2 service delegation theorems removed — `dispatchWithCap_serviceStart_uses_config`, `_serviceStop_uses_config`.)*
 
 **Preservation and NI** (API.lean, Operations.lean, Composition.lean, K-F/K-G):
 - `dispatchWithCap_layer2_decode_pure` — decode depends only on `msgRegs`
@@ -1475,7 +1457,7 @@ The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 - `syscallNI_coverage_witness` — exhaustive 34-constructor match
 
 **Error-exclusivity theorems** (SyscallArgDecode.lean, K-B):
-- 7 theorems: `decodeCSpaceMintArgs_error_iff` through `decodeVSpaceUnmapArgs_error_iff`
+- 10 theorems: `decodeCSpaceMintArgs_error_iff` through `decodeServiceQueryArgs_error_iff` (WS-Q1: +3 service decode structures)
 
 **Type tag and permissions** (Lifecycle/Operations.lean, Structures.lean, K-D):
 - `objectOfTypeTag_type`, `objectOfTypeTag_error_iff`, `objectOfTypeTag_deterministic`
@@ -1566,7 +1548,7 @@ without mutating state. Seven operations are wrapped:
 | `cspaceCopyChecked` | `cspaceCopy` | source CNode → destination |
 | `cspaceMoveChecked` | `cspaceMove` | source CNode → destination |
 | `endpointReceiveDualChecked` | `endpointReceiveDual` | receiver → endpoint |
-| `serviceRestartChecked` | `serviceRestart` | orchestrator → target |
+*(WS-Q1: `serviceRestartChecked` row removed — service lifecycle simplified.)*
 
 **Soundness** (`Enforcement/Soundness.lean`): for each wrapper, two theorems:
 
@@ -1615,7 +1597,7 @@ objects outside the observer's clearance are filtered out by projection.
                      ▼
 ┌─────────────────────────────────────────────────────┐
 │ Layer 2: Enforcement/Wrappers.lean + Soundness.lean │
-│   7 policy-gated wrappers + transparency/safety     │
+│   7 policy-gated wrappers (incl. registerServiceChecked) │
 │   theorems (only safe calls proceed)                │
 └────────────────────┬────────────────────────────────┘
                      │ safe calls reach the kernel

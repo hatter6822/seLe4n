@@ -230,12 +230,85 @@ theorem enforcement_sufficiency_endpointReceiveDual
   | false => right; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
 
 -- ============================================================================
--- WS-H8: Updated enforcement boundary classification (21 operations)
+-- WS-Q1: registerServiceChecked correctness theorems
 -- ============================================================================
 
-/-- WS-H8: Updated enforcement boundary — 7 policy-gated operations (up from 3).
+/-- WS-Q1: When the policy allows flow, registerServiceChecked behaves
+identically to the unchecked registration. -/
+theorem registerServiceChecked_eq_registerService_when_allowed
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId)
+    (reg : ServiceRegistration)
+    (st : SystemState)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf caller)
+               (ctx.serviceLabelOf reg.sid) = true) :
+    registerServiceChecked ctx caller reg st =
+      registerService reg st := by
+  unfold registerServiceChecked
+  simp [hFlow]
 
-Extends the canonical classification with 4 new policy-gated wrappers:
+/-- WS-Q1: When the policy denies flow, registerServiceChecked returns
+`flowDenied`. -/
+theorem registerServiceChecked_flowDenied
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId)
+    (reg : ServiceRegistration)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf caller)
+               (ctx.serviceLabelOf reg.sid) = false) :
+    registerServiceChecked ctx caller reg st =
+      .error .flowDenied := by
+  unfold registerServiceChecked
+  simp [hDeny]
+
+/-- WS-Q1: registerServiceChecked denied → no state change. -/
+theorem registerServiceChecked_denied_preserves_state
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
+    (reg : ServiceRegistration)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf caller)
+               (ctx.serviceLabelOf reg.sid) = false) :
+    ¬∃ st', registerServiceChecked ctx caller reg st = .ok ((), st') := by
+  intro ⟨st', h⟩
+  simp [registerServiceChecked, hDeny] at h
+
+/-- WS-Q1: `registerServiceChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_registerService
+    (ctx : LabelingContext) (caller : SeLe4n.ThreadId)
+    (reg : ServiceRegistration)
+    (st : SystemState) :
+    (securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = true ∧
+       registerServiceChecked ctx caller reg st = registerService reg st) ∨
+    (securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = false ∧
+       registerServiceChecked ctx caller reg st = .error .flowDenied) := by
+  cases hFlow : securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) with
+  | true => left; exact ⟨rfl, by simp [registerServiceChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [registerServiceChecked, hFlow]⟩
+
+/-- WS-Q1/A-35: Enforcement soundness for registerServiceChecked. -/
+theorem enforcementSoundness_registerServiceChecked
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
+    (st st' : SystemState)
+    (hStep : registerServiceChecked ctx caller reg st = .ok ((), st')) :
+    securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = true := by
+  cases h : securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) with
+  | true => rfl
+  | false =>
+    have := registerServiceChecked_flowDenied ctx caller reg st h
+    rw [this] at hStep; simp at hStep
+
+-- ============================================================================
+-- WS-H8/Q1: Updated enforcement boundary classification
+-- ============================================================================
+
+/-- WS-H8/Q1: Updated enforcement boundary — 7 policy-gated operations.
+
+Q1 added `registerServiceChecked` (service registration enforcement).
+Policy-gated wrappers:
+- `endpointSendDualChecked` — sender→endpoint flow
+- `cspaceMintChecked` — source CNode→destination CNode flow
+- `registerServiceChecked` — thread→service flow
 - `notificationSignalChecked` — signaler→notification flow
 - `cspaceCopyChecked` — source CNode→destination CNode flow
 - `cspaceMoveChecked` — source CNode→destination CNode flow
@@ -243,7 +316,7 @@ Extends the canonical classification with 4 new policy-gated wrappers:
 def enforcementBoundaryExtended : List EnforcementClass :=
   [ .policyGated "endpointSendDualChecked"
   , .policyGated "cspaceMintChecked"
-  , .policyGated "serviceRestartChecked"
+  , .policyGated "registerServiceChecked"
   , .policyGated "notificationSignalChecked"
   , .policyGated "cspaceCopyChecked"
   , .policyGated "cspaceMoveChecked"

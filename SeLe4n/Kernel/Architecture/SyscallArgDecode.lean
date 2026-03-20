@@ -492,7 +492,158 @@ theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) :
     decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args := by
   rcases args with ⟨a, v⟩; rfl
 
-/-- Composed round-trip: all 7 argument structures satisfy the encode-decode
+-- ============================================================================
+-- WS-Q1-D: Service argument structures
+-- ============================================================================
+
+/-- Per-syscall argument structure for `serviceRegister`.
+    Register mapping: x2=interfaceId, x3=methodCount, x4=maxMessageSize,
+    x5=maxResponseSize, x6=requiresGrant (0 or 1). -/
+structure ServiceRegisterArgs where
+  interfaceId    : InterfaceId
+  methodCount    : Nat
+  maxMessageSize : Nat
+  maxResponseSize : Nat
+  requiresGrant  : Bool
+  deriving Repr, DecidableEq
+
+/-- Per-syscall argument structure for `serviceRevoke`.
+    Register mapping: x2=serviceId. -/
+structure ServiceRevokeArgs where
+  targetService : ServiceId
+  deriving Repr, DecidableEq
+
+/-- Per-syscall argument structure for `serviceQuery`.
+    No additional message registers required — the endpoint object ID comes
+    from the capability target, not from message registers. -/
+structure ServiceQueryArgs where
+  deriving Repr, DecidableEq
+
+-- ============================================================================
+-- WS-Q1-D: Service decode functions
+-- ============================================================================
+
+/-- Decode service register arguments from message registers.
+    Requires 5 message registers (interfaceId, methodCount, maxMessageSize,
+    maxResponseSize, requiresGrant). -/
+def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
+    : Except KernelError ServiceRegisterArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  let r3 ← requireMsgReg decoded.msgRegs 3
+  let r4 ← requireMsgReg decoded.msgRegs 4
+  pure { interfaceId    := InterfaceId.ofNat r0.val
+         methodCount    := r1.val
+         maxMessageSize := r2.val
+         maxResponseSize := r3.val
+         requiresGrant  := r4.val != 0 }
+
+/-- Decode service revoke arguments from message registers.
+    Requires 1 message register (serviceId). -/
+def decodeServiceRevokeArgs (decoded : SyscallDecodeResult)
+    : Except KernelError ServiceRevokeArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { targetService := ⟨r0.val⟩ }
+
+-- ============================================================================
+-- WS-Q1-D: Service encode functions
+-- ============================================================================
+
+/-- Encode service register arguments into message registers.
+    Inverse of `decodeServiceRegisterArgs`. -/
+@[inline] def encodeServiceRegisterArgs (args : ServiceRegisterArgs) : Array RegValue :=
+  #[⟨args.interfaceId.toNat⟩, ⟨args.methodCount⟩, ⟨args.maxMessageSize⟩,
+    ⟨args.maxResponseSize⟩, ⟨if args.requiresGrant then 1 else 0⟩]
+
+/-- Encode service revoke arguments into message registers.
+    Inverse of `decodeServiceRevokeArgs`. -/
+@[inline] def encodeServiceRevokeArgs (args : ServiceRevokeArgs) : Array RegValue :=
+  #[⟨args.targetService.toNat⟩]
+
+-- ============================================================================
+-- WS-Q1-D: Service determinism theorems
+-- ============================================================================
+
+theorem decodeServiceRegisterArgs_deterministic (d : SyscallDecodeResult) :
+    decodeServiceRegisterArgs d = decodeServiceRegisterArgs d := rfl
+
+theorem decodeServiceRevokeArgs_deterministic (d : SyscallDecodeResult) :
+    decodeServiceRevokeArgs d = decodeServiceRevokeArgs d := rfl
+
+-- ============================================================================
+-- WS-Q1-D: Service error-exclusivity theorems
+-- ============================================================================
+
+/-- Service register decode fails iff fewer than 5 message registers. -/
+theorem decodeServiceRegisterArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeServiceRegisterArgs d = .error e) ↔ d.msgRegs.size < 5 := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 5
+    · exact hlt
+    · exfalso
+      simp only [decodeServiceRegisterArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        dif_pos (show 1 < d.msgRegs.size by omega),
+        dif_pos (show 2 < d.msgRegs.size by omega),
+        dif_pos (show 3 < d.msgRegs.size by omega),
+        dif_pos (show 4 < d.msgRegs.size by omega),
+        pure, Except.pure] at he
+      nomatch he
+  · intro h
+    refine ⟨.invalidMessageInfo, ?_⟩
+    simp only [decodeServiceRegisterArgs, bind, Except.bind]
+    by_cases h0 : 0 < d.msgRegs.size
+    · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+      by_cases h1 : 1 < d.msgRegs.size
+      · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+        by_cases h2 : 2 < d.msgRegs.size
+        · rw [requireMsgReg_unfold_ok _ _ h2]; simp
+          by_cases h3 : 3 < d.msgRegs.size
+          · rw [requireMsgReg_unfold_ok _ _ h3]; simp
+            rw [requireMsgReg_unfold_err _ _ (by omega)]
+          · rw [requireMsgReg_unfold_err _ _ h3]
+        · rw [requireMsgReg_unfold_err _ _ h2]
+      · rw [requireMsgReg_unfold_err _ _ h1]
+    · rw [requireMsgReg_unfold_err _ _ h0]
+
+/-- Service revoke decode fails iff fewer than 1 message register. -/
+theorem decodeServiceRevokeArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeServiceRevokeArgs d = .error e) ↔ d.msgRegs.size < 1 := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 1
+    · exact hlt
+    · exfalso
+      simp only [decodeServiceRevokeArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        pure, Except.pure] at he
+      nomatch he
+  · intro h
+    refine ⟨.invalidMessageInfo, ?_⟩
+    simp only [decodeServiceRevokeArgs, bind, Except.bind]
+    rw [requireMsgReg_unfold_err _ _ (by omega)]
+
+-- ============================================================================
+-- WS-Q1-D: Service round-trip theorems
+-- ============================================================================
+
+/-- Round-trip: encoding then decoding ServiceRegisterArgs recovers the original. -/
+theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs) :
+    decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args := by
+  rcases args with ⟨iid, mc, mms, mrs, rg⟩
+  simp [decodeServiceRegisterArgs, encodeServiceRegisterArgs, stubDecoded,
+        requireMsgReg, bind, Except.bind, pure, Except.pure,
+        InterfaceId.ofNat, InterfaceId.toNat]
+  cases rg <;> simp
+
+/-- Round-trip: encoding then decoding ServiceRevokeArgs recovers the original. -/
+theorem decodeServiceRevokeArgs_roundtrip (args : ServiceRevokeArgs) :
+    decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args := by
+  rcases args with ⟨s⟩; rfl
+
+/-- Composed round-trip: all 9 argument structures satisfy the encode-decode
     round-trip property. Parallel to `decode_components_roundtrip` in
     `RegisterDecode.lean`. -/
 theorem decode_layer2_roundtrip_all :
@@ -502,14 +653,18 @@ theorem decode_layer2_roundtrip_all :
     (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
     (∀ args, decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args) ∧
     (∀ args, decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args) ∧
-    (∀ args, decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) :=
+    (∀ args, decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
+    (∀ args, decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
+    (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) :=
   ⟨decodeCSpaceMintArgs_roundtrip,
    decodeCSpaceCopyArgs_roundtrip,
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
    decodeLifecycleRetypeArgs_roundtrip,
    decodeVSpaceMapArgs_roundtrip,
-   decodeVSpaceUnmapArgs_roundtrip⟩
+   decodeVSpaceUnmapArgs_roundtrip,
+   decodeServiceRegisterArgs_roundtrip,
+   decodeServiceRevokeArgs_roundtrip⟩
 
 -- ============================================================================
 -- IPC extra capability address decode (M-D01)

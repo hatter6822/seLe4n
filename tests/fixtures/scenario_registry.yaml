@@ -93,61 +93,96 @@ scenarios:
     function: runCapabilityAndArchitectureTrace
     subsystem: Architecture
     description: "adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplement"
-  SST-002:
+  SST-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service start api status: some (SeLe4n.Model.ServiceStatus.running)"
+    description: "service lookup svcApi identity"
   SST-003:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service start denied branch: SeLe4n.Model.KernelError.policyDenied"
-  SST-005:
+    description: "service lookup absent: none"
+  SST-006:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service start dependency branch: SeLe4n.Model.KernelError.dependencyViolation"
+    description: "store service entry lookup identity"
   SST-008:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service restart status: some (SeLe4n.Model.ServiceStatus.running)"
+    description: "register dependency result: dependencies list"
   SST-009:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service stop denied branch: SeLe4n.Model.KernelError.policyDenied"
+    description: "register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency"
   SST-011:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service stop illegal-state branch: SeLe4n.Model.KernelError.illegalState"
+    description: "service path svcApi→svcDb: true"
   SST-013:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service restart stop-stage failure: SeLe4n.Model.KernelError.policyDenied"
-  SST-015:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runServiceAndStressTrace
-    subsystem: Service
-    description: "service restart start-stage failure: SeLe4n.Model.KernelError.dependencyViolatio"
-  SST-017:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runServiceAndStressTrace
-    subsystem: Service
-    description: "service start missing-backing branch: SeLe4n.Model.KernelError.backingObjectMiss"
-  SST-019:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runServiceAndStressTrace
-    subsystem: Service
     description: "service isolation api↔denied: true"
-  SST-020:
+  SST-014:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service isolation api↔db: false"
+  SRG-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register service with valid endpoint + interface"
+  SRG-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "duplicate service registration rejected"
+  SRG-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register with unknown interface rejected"
+  SRG-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register with invalid endpoint rejected"
+  SRG-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "revoke registered service"
+  SRG-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "revoke non-existent service rejected"
+  SRG-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "lookup by matching capability"
+  SRG-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "lookup by non-matching capability rejected"
+  SRG-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "register interface + service chain"
+  SRG-010:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: ServiceRegistry
+    description: "dependency cycle detection still works"
   SST-021:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -188,11 +223,11 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "multi-endpoint receive senders: 1, 12"
-  SST-039:
+  SST-038:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
     subsystem: Service
-    description: "service dependency chain depth-5 start status: some (SeLe4n.Model.ServiceStatus."
+    description: "service dependency chain path chainTop→chainRoot: true"
   SST-041:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -642,7 +677,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runSyscallDispatchTrace
     subsystem: Service
-    description: "serviceStart config-sourced policy status: running"
+    description: "service registry lookup present: true"
   KSD-007:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runSyscallDispatchTrace

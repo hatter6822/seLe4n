@@ -317,7 +317,7 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_currentThreadDequeueCoherent⟩
   -- 5. lifecycleInvariantBundle
   · exact default_lifecycleInvariantBundle
-  -- 6. serviceLifecycleCapabilityInvariantBundle = servicePolicySurface ∧ lifecycle ∧ capability
+  -- 6. serviceLifecycleCapabilityInvariantBundle = servicePolicySurface ∧ lifecycle ∧ capability ∧ registry
   · exact serviceLifecycleCapabilityInvariantBundle_of_components (default : SystemState)
       (by
         intro sid svc hSvc
@@ -327,6 +327,7 @@ theorem default_system_state_proofLayerInvariantBundle :
         cases hSvc)
       default_lifecycleInvariantBundle
       default_capabilityInvariantBundle
+      default_registryInvariant
   -- 7. vspaceInvariantBundle (6-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation)
   · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := HashMap_getElem?_empty; rw [h] at hObj₁; exact absurd hObj₁ (by simp)
@@ -468,9 +469,10 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
             advanceTimerState_preserves_ipcInvariantFull ticks st hI⟩,
            by exact hCoh, by exact hCtx, by exact hDeq⟩
   -- serviceLifecycleCapabilityInvariantBundle
-  · obtain ⟨hP, hL, hC⟩ := hSvc
+  · obtain ⟨hP, hL, hC, hR⟩ := hSvc
     exact ⟨by exact hP, by exact hL,
-           advanceTimerState_preserves_capabilityInvariantBundle ticks st hC⟩
+           advanceTimerState_preserves_capabilityInvariantBundle ticks st hC,
+           by exact hR⟩
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
 

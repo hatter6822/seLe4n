@@ -160,8 +160,8 @@ Delivered anchors (WS-E5 closeout):
 **M-07 — Enforcement boundary specification** (`Enforcement.lean`):
 
 - `EnforcementClass` — canonical classification (policyGated / capabilityOnly / readOnly),
-- `enforcementBoundary` — 17-entry canonical operation classification table,
-- denial-preserves-state theorems for all 3 checked operations,
+- `enforcementBoundary` — 17-entry canonical operation classification table (3 policy-gated),
+- denial-preserves-state theorems for all 3 base checked operations (7 in extended boundary),
 - `enforcement_sufficiency_*` — gateway equivalence theorems for all checked operations.
 
 ## WS-F3 closeout — Information-flow completeness ✅ completed
@@ -200,7 +200,8 @@ Delivered (WS-F3 closeout):
 
 - `endpointSendChecked_NI` — bridges checked send to NI domain-separation,
 - `cspaceMintChecked_NI` — bridges checked mint to NI domain-separation,
-- `serviceRestartChecked_NI` — bridges checked restart to NI domain-separation.
+- `registerServiceChecked_NI` — bridges checked service registration to NI domain-separation.
+*(WS-Q1: replaces `serviceRestartChecked_NI`.)*
 
 **Testing:** 39 WS-F3 tests in `InformationFlowSuite.lean`, 22 Tier-3 anchors.
 

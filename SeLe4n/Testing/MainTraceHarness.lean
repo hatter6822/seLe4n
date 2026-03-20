@@ -105,43 +105,36 @@ def bootstrapState : SystemState :=
     })
     |>.withService svcDb {
       identity := { sid := svcDb, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-      status := .running
       dependencies := []
       isolatedFrom := []
     }
     |>.withService svcApi {
       identity := { sid := svcApi, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-      status := .stopped
       dependencies := [svcDb]
       isolatedFrom := [svcDenied]
     }
     |>.withService svcDenied {
       identity := { sid := svcDenied, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-      status := .stopped
       dependencies := []
       isolatedFrom := []
     }
     |>.withService svcBroken {
       identity := { sid := svcBroken, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-      status := .stopped
       dependencies := [⟨999⟩]
       isolatedFrom := []
     }
     |>.withService svcRestart {
       identity := { sid := svcRestart, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-      status := .running
       dependencies := [svcDb]
       isolatedFrom := []
     }
     |>.withService svcRestartBroken {
       identity := { sid := svcRestartBroken, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-      status := .running
       dependencies := [⟨999⟩]
       isolatedFrom := []
     }
     |>.withService svcMissingBacking {
       identity := { sid := svcMissingBacking, backingObject := ⟨9999⟩, owner := ⟨10⟩ }
-      status := .stopped
       dependencies := []
       isolatedFrom := []
     }
@@ -232,49 +225,150 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
   checkInvariants counter "post-adapter-register-memory" st1
 
 private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
-  let allowAll : SeLe4n.Kernel.ServicePolicy := fun _ => true
-  let denyAll : SeLe4n.Kernel.ServicePolicy := fun _ => false
-  match SeLe4n.Kernel.serviceStart svcApi allowAll st1 with
-  | .error err => IO.println s!"[SST-001] service start api error: {reprStr err}"
-  | .ok (_, stServiceStart) =>
-      IO.println s!"[SST-002] service start api status: {reprStr <| (SeLe4n.Model.lookupService stServiceStart svcApi).map ServiceGraphEntry.status}"
-  match SeLe4n.Kernel.serviceStart svcDenied denyAll st1 with
-  | .error err => IO.println s!"[SST-003] service start denied branch: {reprStr err}"
+  -- Q1: Service lifecycle (start/stop/restart) removed — test service registry operations
+  -- SST-001/002: Service lookup (present)
+  IO.println s!"[SST-001] service lookup svcApi: {reprStr <| (SeLe4n.Model.lookupService st1 svcApi).map ServiceGraphEntry.identity}"
+  -- SST-003/004: Service lookup (absent)
+  IO.println s!"[SST-003] service lookup absent ⟨9998⟩: {reprStr <| SeLe4n.Model.lookupService st1 ⟨9998⟩}"
+  -- SST-005/006: Store a new service entry
+  let newSid : ServiceId := ⟨200⟩
+  let newEntry : ServiceGraphEntry := {
+    identity := { sid := newSid, backingObject := ⟨12⟩, owner := ⟨10⟩ }
+    dependencies := [svcDb]
+    isolatedFrom := []
+  }
+  match SeLe4n.Kernel.storeServiceEntry newSid newEntry st1 with
+  | .error err => IO.println s!"[SST-005] store service entry error: {reprStr err}"
+  | .ok (_, stStored) =>
+      IO.println s!"[SST-006] store service entry lookup: {reprStr <| (SeLe4n.Model.lookupService stStored newSid).map ServiceGraphEntry.identity}"
+  -- SST-007/008: Register dependency (acyclic)
+  match SeLe4n.Kernel.serviceRegisterDependency svcApi svcDb st1 with
+  | .error err => IO.println s!"[SST-007] register dependency svcApi→svcDb: {reprStr err}"
+  | .ok (_, stDep) =>
+      IO.println s!"[SST-008] register dependency result: {reprStr <| (SeLe4n.Model.lookupService stDep svcApi).map ServiceGraphEntry.dependencies}"
+  -- SST-009/010: Register dependency (self-loop rejection)
+  match SeLe4n.Kernel.serviceRegisterDependency svcApi svcApi st1 with
+  | .error err => IO.println s!"[SST-009] register self-loop dependency: {reprStr err}"
   | .ok _ =>
-      IO.println "[SST-004] unexpected service start success under denied policy"
-  match SeLe4n.Kernel.serviceStart svcBroken allowAll st1 with
-  | .error err => IO.println s!"[SST-005] service start dependency branch: {reprStr err}"
-  | .ok _ =>
-      IO.println "[SST-006] unexpected service start success with unsatisfied dependencies"
-  match SeLe4n.Kernel.serviceRestartChecked SeLe4n.Kernel.defaultLabelingContext svcApi svcRestart allowAll allowAll st1 with
-  | .error err => IO.println s!"[SST-007] service restart error: {reprStr err}"
-  | .ok (_, stRestarted) =>
-      IO.println s!"[SST-008] service restart status: {reprStr <| (SeLe4n.Model.lookupService stRestarted svcRestart).map ServiceGraphEntry.status}"
-  match SeLe4n.Kernel.serviceStop svcRestart denyAll st1 with
-  | .error err => IO.println s!"[SST-009] service stop denied branch: {reprStr err}"
-  | .ok _ =>
-      IO.println "[SST-010] unexpected service stop success under denied policy"
-  match SeLe4n.Kernel.serviceStop svcApi allowAll st1 with
-  | .error err => IO.println s!"[SST-011] service stop illegal-state branch: {reprStr err}"
-  | .ok _ =>
-      IO.println "[SST-012] unexpected service stop success from stopped state"
-  match SeLe4n.Kernel.serviceRestartChecked SeLe4n.Kernel.defaultLabelingContext svcApi svcRestart denyAll allowAll st1 with
-  | .error err => IO.println s!"[SST-013] service restart stop-stage failure: {reprStr err}"
-  | .ok _ =>
-      IO.println "[SST-014] unexpected service restart success when stop policy denies"
-  match SeLe4n.Kernel.serviceRestartChecked SeLe4n.Kernel.defaultLabelingContext svcApi svcRestartBroken allowAll allowAll st1 with
-  | .error err => IO.println s!"[SST-015] service restart start-stage failure: {reprStr err}"
-  | .ok _ =>
-      IO.println "[SST-016] unexpected service restart success with broken dependencies"
-  -- WS-H13/A-29: Service start with missing backing object
-  match SeLe4n.Kernel.serviceStart svcMissingBacking allowAll st1 with
-  | .error err => IO.println s!"[SST-017] service start missing-backing branch: {reprStr err}"
-  | .ok _ =>
-      IO.println "[SST-018] unexpected service start success with missing backing object"
-  -- WS-H13/A-29: Service stop with missing backing object (start it first manually)
-  IO.println s!"[SST-019] service isolation api↔denied: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDenied}"
-  IO.println s!"[SST-020] service isolation api↔db: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDb}"
-  checkInvariants counter "post-service-start-stop-restart" st1
+      IO.println "[SST-010] unexpected self-loop dependency success"
+  -- SST-011/012: Path reachability
+  let fuel := SeLe4n.Kernel.serviceBfsFuel st1
+  IO.println s!"[SST-011] service path svcApi→svcDb: {reprStr <| SeLe4n.Kernel.serviceHasPathTo st1 svcApi svcDb fuel}"
+  IO.println s!"[SST-012] service path svcApi→svcDenied: {reprStr <| SeLe4n.Kernel.serviceHasPathTo st1 svcApi svcDenied fuel}"
+  -- SST-013..018: Service isolation edge checks
+  IO.println s!"[SST-013] service isolation api↔denied: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDenied}"
+  IO.println s!"[SST-014] service isolation api↔db: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDb}"
+  -- SST-019/020: Service entry with missing backing object (still stored — backing check is caller responsibility)
+  IO.println s!"[SST-019] service lookup missing-backing: {reprStr <| (SeLe4n.Model.lookupService st1 svcMissingBacking).map ServiceGraphEntry.identity}"
+  IO.println s!"[SST-020] service lookup svcBroken deps: {reprStr <| (SeLe4n.Model.lookupService st1 svcBroken).map ServiceGraphEntry.dependencies}"
+  checkInvariants counter "post-service-registry" st1
+
+  -- =========================================================================
+  -- WS-Q1-F: Service Registry Tests (SRG-001 through SRG-010)
+  -- =========================================================================
+
+  -- SRG-001: Register service with valid endpoint + interface
+  let srgIfaceId : SeLe4n.InterfaceId := ⟨500⟩
+  let srgIface : InterfaceSpec := {
+    ifaceId := srgIfaceId, methodCount := 3,
+    maxMessageSize := 4, maxResponseSize := 4, requiresGrant := false
+  }
+  match SeLe4n.Kernel.registerInterface srgIface st1 with
+  | .error err => IO.println s!"[SRG-001] register interface error: {reprStr err}"
+  | .ok (_, stIface) =>
+    let srgSid : ServiceId := ⟨501⟩
+    let srgCap : Capability := { target := .object demoEndpoint, rights := .empty }
+    let srgReg : ServiceRegistration := {
+      sid := srgSid, iface := srgIface, endpointCap := srgCap
+    }
+    match SeLe4n.Kernel.registerService srgReg stIface with
+    | .error err => IO.println s!"[SRG-001] register service error: {reprStr err}"
+    | .ok (_, stSvc) =>
+      IO.println s!"[SRG-001] register service success: {stSvc.serviceRegistry[srgSid]? != none}"
+      checkInvariants counter "post-SRG-001" stSvc
+
+      -- SRG-002: Duplicate service registration
+      match SeLe4n.Kernel.registerService srgReg stSvc with
+      | .error err => IO.println s!"[SRG-002] duplicate register: {reprStr err}"
+      | .ok _ => IO.println "[SRG-002] unexpected duplicate success"
+
+      -- SRG-005: Revoke registered service
+      match SeLe4n.Kernel.revokeService srgSid stSvc with
+      | .error err => IO.println s!"[SRG-005] revoke service error: {reprStr err}"
+      | .ok (_, stRevoked) =>
+        IO.println s!"[SRG-005] revoke service success: {stRevoked.serviceRegistry[srgSid]? == none}"
+
+      -- SRG-007: Lookup by matching capability
+      match SeLe4n.Kernel.lookupServiceByCap demoEndpoint stSvc with
+      | .error err => IO.println s!"[SRG-007] lookup by cap error: {reprStr err}"
+      | .ok (reg, _) =>
+        IO.println s!"[SRG-007] lookup by cap found sid: {reg.sid.toNat}"
+
+      -- SRG-008: Lookup by non-matching capability
+      match SeLe4n.Kernel.lookupServiceByCap ⟨9999⟩ stSvc with
+      | .error err => IO.println s!"[SRG-008] lookup non-matching: {reprStr err}"
+      | .ok _ => IO.println "[SRG-008] unexpected lookup success"
+
+  -- SRG-003: Register with unknown interface
+  let srgBadIface : InterfaceSpec := {
+    ifaceId := ⟨999⟩, methodCount := 1,
+    maxMessageSize := 1, maxResponseSize := 1, requiresGrant := false
+  }
+  let srgBadReg : ServiceRegistration := {
+    sid := ⟨502⟩, iface := srgBadIface,
+    endpointCap := { target := .object demoEndpoint, rights := .empty }
+  }
+  match SeLe4n.Kernel.registerService srgBadReg st1 with
+  | .error err => IO.println s!"[SRG-003] unknown interface: {reprStr err}"
+  | .ok _ => IO.println "[SRG-003] unexpected success with unknown interface"
+
+  -- SRG-004: Register with invalid endpoint (non-object target)
+  let srgInvalidCap : Capability := { target := .cnodeSlot ⟨10⟩ ⟨0⟩, rights := .empty }
+  match SeLe4n.Kernel.registerInterface srgIface st1 with
+  | .error _ => IO.println "[SRG-004] skipped (interface already tested)"
+  | .ok (_, stIface4) =>
+    let srgInvalidReg : ServiceRegistration := {
+      sid := ⟨503⟩, iface := srgIface,
+      endpointCap := srgInvalidCap
+    }
+    match SeLe4n.Kernel.registerService srgInvalidReg stIface4 with
+    | .error err => IO.println s!"[SRG-004] invalid endpoint: {reprStr err}"
+    | .ok _ => IO.println "[SRG-004] unexpected success with invalid endpoint"
+
+  -- SRG-006: Revoke non-existent service
+  match SeLe4n.Kernel.revokeService ⟨9998⟩ st1 with
+  | .error err => IO.println s!"[SRG-006] revoke non-existent: {reprStr err}"
+  | .ok _ => IO.println "[SRG-006] unexpected revoke success"
+
+  -- SRG-009: Register interface + service chain (end-to-end)
+  let srgChainIface : InterfaceSpec := {
+    ifaceId := ⟨600⟩, methodCount := 2,
+    maxMessageSize := 2, maxResponseSize := 2, requiresGrant := true
+  }
+  match SeLe4n.Kernel.registerInterface srgChainIface st1 with
+  | .error err => IO.println s!"[SRG-009] chain interface error: {reprStr err}"
+  | .ok (_, stChainIface) =>
+    let srgChainReg : ServiceRegistration := {
+      sid := ⟨601⟩, iface := srgChainIface,
+      endpointCap := { target := .object demoEndpoint, rights := .empty }
+    }
+    match SeLe4n.Kernel.registerService srgChainReg stChainIface with
+    | .error err => IO.println s!"[SRG-009] chain service error: {reprStr err}"
+    | .ok (_, stChain) =>
+      let chainIfaceId : SeLe4n.InterfaceId := ⟨600⟩
+      let chainSvcId : ServiceId := ⟨601⟩
+      IO.println s!"[SRG-009] chain success: iface={stChain.interfaceRegistry[chainIfaceId]? != none} svc={stChain.serviceRegistry[chainSvcId]? != none}"
+
+  -- SRG-010: Dependency cycle detection still works
+  match SeLe4n.Kernel.serviceRegisterDependency svcDb svcApi st1 with
+  | .error err => IO.println s!"[SRG-010] cycle detection: {reprStr err}"
+  | .ok (_, stDepOk) =>
+    -- Now try to create a cycle: svcApi already depends on svcDb (from SST-007 path),
+    -- but in st1 there's no edge yet. Register svcApi→svcDb then try svcDb→svcApi.
+    match SeLe4n.Kernel.serviceRegisterDependency svcApi svcDb stDepOk with
+    | .error err => IO.println s!"[SRG-010] reverse edge: {reprStr err}"
+    | .ok _ => IO.println "[SRG-010] unexpected cycle allowed"
+  checkInvariants counter "post-SRG-tests" st1
 
   let deepRadixCNode : CNode := {
     depth := 14
@@ -356,46 +450,40 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     (((((st1.services
       |>.insert chainRoot {
         identity := { sid := chainRoot, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        status := .running
         dependencies := []
         isolatedFrom := []
       })
       |>.insert chainL4 {
         identity := { sid := chainL4, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        status := .running
         dependencies := [chainRoot]
         isolatedFrom := []
       })
       |>.insert chainL3 {
         identity := { sid := chainL3, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        status := .running
         dependencies := [chainL4]
         isolatedFrom := []
       })
       |>.insert chainL2 {
         identity := { sid := chainL2, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        status := .running
         dependencies := [chainL3]
         isolatedFrom := []
       })
       |>.insert chainL1 {
         identity := { sid := chainL1, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        status := .running
         dependencies := [chainL2]
         isolatedFrom := []
       })
       |>.insert chainTop {
         identity := { sid := chainTop, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-        status := .stopped
         dependencies := [chainL1]
         isolatedFrom := []
       }
   let stServiceChain : SystemState :=
     { st1 with services := servicesChain }
-  match SeLe4n.Kernel.serviceStart chainTop allowAll stServiceChain with
-  | .error err => IO.println s!"[SST-038] service dependency chain start error: {reprStr err}"
-  | .ok (_, stChainStarted) =>
-      IO.println s!"[SST-039] service dependency chain depth-5 start status: {reprStr <| (SeLe4n.Model.lookupService stChainStarted chainTop).map ServiceGraphEntry.status}"
+  -- Q1: Test dependency chain reachability (serviceStart removed)
+  let chainFuel := SeLe4n.Kernel.serviceBfsFuel stServiceChain
+  IO.println s!"[SST-038] service dependency chain path chainTop→chainRoot: {reprStr <| SeLe4n.Kernel.serviceHasPathTo stServiceChain chainTop chainRoot chainFuel}"
+  IO.println s!"[SST-039] service dependency chain lookup chainTop: {reprStr <| (SeLe4n.Model.lookupService stServiceChain chainTop).map ServiceGraphEntry.dependencies}"
 
   match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll ⟨0⟩ st1 with
   | .error err => IO.println s!"[SST-040] boundary memory low-address error: {reprStr err}"
@@ -1503,17 +1591,13 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
         ipcState := .ready })
       |>.withService ksdSvcId {
         identity := { sid := ksdSvcId, backingObject := ksdSvcBackingId, owner := ⟨10⟩ }
-        status := .stopped
         dependencies := []
         isolatedFrom := []
       }
-      |>.withServiceConfig { allowStart := fun _ => true, allowStop := fun _ => true }
       |>.build)
-  match SeLe4n.Kernel.serviceStart ksdSvcId stSvc.serviceConfig.allowStart stSvc with
-  | .error e => IO.println s!"[KSD-006] serviceStart with config policy error: {reprStr e}"
-  | .ok (_, stStarted) =>
-    let svcStatus := (SeLe4n.Model.lookupService stStarted ksdSvcId).map ServiceGraphEntry.status
-    IO.println s!"[KSD-006] serviceStart config-sourced policy status: {reprStr svcStatus}"
+  -- Q1: Service lifecycle removed — test registry lookup instead
+  let svcPresent := (SeLe4n.Model.lookupService stSvc ksdSvcId).isSome
+  IO.println s!"[KSD-006] service registry lookup present: {reprStr svcPresent}"
 
   -- KSD-007: IPC send with populated message body
   let msgRegsArr : Array SeLe4n.RegValue := #[⟨111⟩, ⟨222⟩, ⟨333⟩, ⟨444⟩]
@@ -1892,7 +1976,7 @@ private def buildParameterizedTopology
       let sid : ServiceId := ⟨5000 + i⟩
       let deps := if i + 1 < svcCount then [⟨5000 + i + 1⟩] else []
       (sid, { identity := { sid := sid, backingObject := ⟨5000 + i⟩, owner := ⟨1000⟩ },
-              status := .running, dependencies := deps, isolatedFrom := [] })
+              dependencies := deps, isolatedFrom := [] })
   let builder := BootstrapBuilder.empty
     |>.withRunnable runnableThreads
   let builder := allObjects.foldl (fun b (oid, obj) => b.withObject oid obj) builder

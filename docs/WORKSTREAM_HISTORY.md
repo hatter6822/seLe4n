@@ -15,6 +15,36 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+### WS-Q1 workstream (Service Interface Simplification)
+
+WS-Q1 is a **completed** workstream (v0.18.0), the first phase of WS-Q (Kernel
+State Architecture). It simplifies the service subsystem from a lifecycle-based
+model (`serviceStart`/`serviceStop`/`serviceRestart` with `ServiceStatus` and
+`ServiceConfig`) to a stateless registry model where services are registered
+entries with identity, dependencies, and isolation edges — no running/stopped
+state. Key changes:
+
+- **Removed**: `ServiceStatus` enum, `ServiceConfig` structure, `ServicePolicy`
+  type, `serviceStart`/`serviceStop`/`serviceRestart` transitions,
+  `serviceRestartChecked` enforcement wrapper, associated NI proofs
+- **Simplified**: `ServiceGraphEntry.status` field removed; `SyscallId`
+  renumbered (14 valid IDs, 0..13); `projectServicePresence` replaces
+  `projectServiceStatus` (returns `Bool` instead of `Option ServiceStatus`)
+- **Added (WS-Q1)**: `registerServiceChecked` policy-gated enforcement wrapper,
+  `ServiceRegisterArgs`/`ServiceRevokeArgs`/`ServiceQueryArgs` decode structures
+  in `SyscallArgDecode.lean`, `dispatchWithCap` service syscalls use decoded MR
+  arguments, SRG-001 through SRG-010 test scenarios
+- **Preserved**: `serviceRegisterDependency`, `serviceHasPathTo`,
+  `hasIsolationEdge`, `lookupService`, `storeServiceEntry` — all graph
+  invariants and acyclicity proofs intact
+- **Test migration**: All trace harnesses, negative-state tests, information
+  flow tests, operation chain tests updated; fixture files synchronized
+- **Proof surface**: Zero sorry, all invariant preservation theorems intact,
+  enforcement boundary updated: 3 policy-gated in base, 7 in extended (WS-Q1: `registerServiceChecked` added)
+
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+for the full WS-Q plan (phases Q1–Q9).
+
 ### WS-N workstream (Robin Hood hashing verified implementation)
 
 WS-N is a **completed** workstream (v0.17.0–v0.17.5), created to close the trust gap

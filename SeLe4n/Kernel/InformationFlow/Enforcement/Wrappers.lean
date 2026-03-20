@@ -10,6 +10,7 @@ import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Service.Operations
+import SeLe4n.Kernel.Service.Registry
 
 namespace SeLe4n.Kernel
 
@@ -56,25 +57,6 @@ def cspaceMintChecked
     let dstLabel := ctx.objectLabelOf dst.cnode
     if securityFlowsTo srcLabel dstLabel then
       cspaceMint src dst rights badge st
-    else
-      .error .flowDenied
-
-/-- Policy-checked service restart: verifies that information may flow from
-the orchestrator's security domain to the service's security domain before
-delegating to the underlying `serviceRestart` operation.
-
-Returns `flowDenied` when `securityFlowsTo orchestratorLabel serviceLabel = false`. -/
-def serviceRestartChecked
-    (ctx : LabelingContext)
-    (orchestrator : ServiceId)
-    (sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (policyAllowsStart : ServicePolicy) : Kernel Unit :=
-  fun st =>
-    let orchestratorLabel := ctx.serviceLabelOf orchestrator
-    let serviceLabel := ctx.serviceLabelOf sid
-    if securityFlowsTo orchestratorLabel serviceLabel then
-      serviceRestart sid policyAllowsStop policyAllowsStart st
     else
       .error .flowDenied
 
@@ -157,36 +139,6 @@ theorem cspaceMintChecked_flowDenied
   unfold cspaceMintChecked
   simp [hDeny]
 
-/-- When the policy allows flow, the checked restart behaves identically to the
-unchecked restart. -/
-theorem serviceRestartChecked_eq_serviceRestart_when_allowed
-    (ctx : LabelingContext)
-    (orchestrator sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (policyAllowsStart : ServicePolicy)
-    (st : SystemState)
-    (hFlow : securityFlowsTo (ctx.serviceLabelOf orchestrator)
-               (ctx.serviceLabelOf sid) = true) :
-    serviceRestartChecked ctx orchestrator sid policyAllowsStop policyAllowsStart st =
-      serviceRestart sid policyAllowsStop policyAllowsStart st := by
-  unfold serviceRestartChecked
-  simp [hFlow]
-
-/-- When the policy denies flow, the checked restart returns `flowDenied`
-without modifying state. -/
-theorem serviceRestartChecked_flowDenied
-    (ctx : LabelingContext)
-    (orchestrator sid : ServiceId)
-    (policyAllowsStop : ServicePolicy)
-    (policyAllowsStart : ServicePolicy)
-    (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.serviceLabelOf orchestrator)
-               (ctx.serviceLabelOf sid) = false) :
-    serviceRestartChecked ctx orchestrator sid policyAllowsStop policyAllowsStart st =
-      .error .flowDenied := by
-  unfold serviceRestartChecked
-  simp [hDeny]
-
 -- ============================================================================
 -- WS-E5/M-07: Enforcement boundary specification
 -- ============================================================================
@@ -201,7 +153,7 @@ enforcement boundary.
 
 | Category | Operations |
 |---|---|
-| **Policy-gated** (3) | `endpointSendDualChecked`, `cspaceMintChecked`, `serviceRestartChecked` |
+| **Policy-gated** (3) | `endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked` |
 | **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `cspaceCopy`, `cspaceMove`, `notificationSignal` |
 | **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
 | **Internal/lifecycle** (3) | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
@@ -223,11 +175,11 @@ inductive EnforcementClass where
   | readOnly (name : String)
   deriving Repr
 
-/-- WS-E5/M-07: Canonical enforcement boundary classification table (17 entries). -/
+/-- WS-E5/M-07/Q1-D: Canonical enforcement boundary classification table (17 entries). -/
 def enforcementBoundary : List EnforcementClass :=
   [ .policyGated "endpointSendDualChecked"
   , .policyGated "cspaceMintChecked"
-  , .policyGated "serviceRestartChecked"
+  , .policyGated "registerServiceChecked"
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
   , .capabilityOnly "cspaceDeleteSlot"
@@ -277,18 +229,6 @@ theorem cspaceMintChecked_denied_preserves_state
   intro ⟨st', h⟩
   simp [cspaceMintChecked, hDeny] at h
 
-/-- When the policy denies flow, `serviceRestartChecked` produces no state change. -/
-theorem serviceRestartChecked_denied_preserves_state
-    (ctx : LabelingContext) (orchestrator sid : ServiceId)
-    (policyAllowsStop policyAllowsStart : ServicePolicy)
-    (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.serviceLabelOf orchestrator)
-               (ctx.serviceLabelOf sid) = false) :
-    ¬∃ st', serviceRestartChecked ctx orchestrator sid
-              policyAllowsStop policyAllowsStart st = .ok ((), st') := by
-  intro ⟨st', h⟩
-  simp [serviceRestartChecked, hDeny] at h
-
 -- ============================================================================
 -- WS-E5/M-07: Enforcement sufficiency theorems (complete disjunction)
 -- ============================================================================
@@ -328,21 +268,6 @@ theorem enforcement_sufficiency_cspaceMint
   cases hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with
   | true => left; exact ⟨rfl, by simp [cspaceMintChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [cspaceMintChecked, hFlow]⟩
-
-/-- `serviceRestartChecked` either delegates to unchecked or returns `flowDenied`. -/
-theorem enforcement_sufficiency_serviceRestart
-    (ctx : LabelingContext) (orchestrator sid : ServiceId)
-    (policyAllowsStop policyAllowsStart : ServicePolicy)
-    (st : SystemState) :
-    (securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) = true ∧
-       serviceRestartChecked ctx orchestrator sid policyAllowsStop policyAllowsStart st =
-         serviceRestart sid policyAllowsStop policyAllowsStart st) ∨
-    (securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) = false ∧
-       serviceRestartChecked ctx orchestrator sid policyAllowsStop policyAllowsStart st =
-         .error .flowDenied) := by
-  cases hFlow : securityFlowsTo (ctx.serviceLabelOf orchestrator) (ctx.serviceLabelOf sid) with
-  | true => left; exact ⟨rfl, by simp [serviceRestartChecked, hFlow]⟩
-  | false => right; exact ⟨rfl, by simp [serviceRestartChecked, hFlow]⟩
 
 -- ============================================================================
 -- WS-H8: Missing enforcement wrappers (A-35/H-07)
@@ -433,6 +358,31 @@ def endpointReceiveDualChecked
     let receiverLabel := ctx.threadLabelOf receiver
     if securityFlowsTo endpointLabel receiverLabel then
       endpointReceiveDual endpointId receiver st
+    else
+      .error .flowDenied
+
+-- ============================================================================
+-- WS-Q1: Service registration enforcement wrapper
+-- ============================================================================
+
+/-- WS-Q1/Q1-D: Policy-checked service registration: verifies that information
+may flow from the registering thread's security domain to the service's security
+domain before delegating to `registerService`.
+
+Service registration binds a service identity to an endpoint capability,
+creating a persistent mapping that reveals the registrar's intent. The wrapper
+gates on `securityFlowsTo` from the thread's domain to the service's domain.
+
+Returns `flowDenied` when `securityFlowsTo threadLabel serviceLabel = false`. -/
+def registerServiceChecked
+    (ctx : LabelingContext)
+    (caller : SeLe4n.ThreadId)
+    (reg : ServiceRegistration) : Kernel Unit :=
+  fun st =>
+    let threadLabel := ctx.threadLabelOf caller
+    let serviceLabel := ctx.serviceLabelOf reg.sid
+    if securityFlowsTo threadLabel serviceLabel then
+      registerService reg st
     else
       .error .flowDenied
 

@@ -12,18 +12,6 @@ import SeLe4n.Kernel.RobinHood
 namespace SeLe4n.Model
 
 
-/-- High-level service runtime status for orchestration-level reasoning.
-
-WS-F8/D1: Two-state machine — services are either `stopped` or `running`.
-Failure is modelled as an error return from service operations (matching seL4's
-deterministic error model), not as a persistent runtime state. Isolation between
-services is expressed via `ServiceGraphEntry.isolatedFrom` edges in the
-dependency graph, not as a runtime status variant. -/
-inductive ServiceStatus where
-  | stopped
-  | running
-  deriving Repr, DecidableEq
-
 /-- Stable service identity metadata for graph-level orchestration. -/
 structure ServiceIdentity where
   sid : ServiceId
@@ -31,10 +19,13 @@ structure ServiceIdentity where
   owner : SeLe4n.ObjId
   deriving Repr, DecidableEq
 
-/-- Declared service dependencies and isolation edges. -/
+/-- Declared service dependencies and isolation edges.
+
+WS-Q1-E1: `status` field removed — runtime lifecycle state is no longer tracked
+in the service graph. The capability-indexed service registry
+(`SystemState.serviceRegistry`) replaces lifecycle-focused orchestration. -/
 structure ServiceGraphEntry where
   identity : ServiceIdentity
-  status : ServiceStatus
   dependencies : List ServiceId
   isolatedFrom : List ServiceId
   deriving Repr, DecidableEq
@@ -619,8 +610,9 @@ inductive SyscallId where
   | lifecycleRetype
   | vspaceMap
   | vspaceUnmap
-  | serviceStart
-  | serviceStop
+  | serviceRegister   -- WS-Q1-D: capability-mediated service registration
+  | serviceRevoke     -- WS-Q1-D: service revocation
+  | serviceQuery      -- WS-Q1-D: service lookup by capability
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -628,22 +620,23 @@ namespace SyscallId
 /-- Encode a syscall identifier to its numeric value for the syscall number
     register. The encoding matches the canonical ordering and is injective. -/
 @[inline] def toNat : SyscallId → Nat
-  | .send           => 0
-  | .receive        => 1
-  | .call           => 2
-  | .reply          => 3
-  | .cspaceMint     => 4
-  | .cspaceCopy     => 5
-  | .cspaceMove     => 6
-  | .cspaceDelete   => 7
+  | .send            => 0
+  | .receive         => 1
+  | .call            => 2
+  | .reply           => 3
+  | .cspaceMint      => 4
+  | .cspaceCopy      => 5
+  | .cspaceMove      => 6
+  | .cspaceDelete    => 7
   | .lifecycleRetype => 8
-  | .vspaceMap      => 9
-  | .vspaceUnmap    => 10
-  | .serviceStart   => 11
-  | .serviceStop    => 12
+  | .vspaceMap       => 9
+  | .vspaceUnmap     => 10
+  | .serviceRegister => 11
+  | .serviceRevoke   => 12
+  | .serviceQuery    => 13
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 13
+def count : Nat := 14
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -659,25 +652,27 @@ def count : Nat := 13
   | 8  => some .lifecycleRetype
   | 9  => some .vspaceMap
   | 10 => some .vspaceUnmap
-  | 11 => some .serviceStart
-  | 12 => some .serviceStop
+  | 11 => some .serviceRegister
+  | 12 => some .serviceRevoke
+  | 13 => some .serviceQuery
   | _  => none
 
 instance : ToString SyscallId where
   toString
-    | .send           => "send"
-    | .receive        => "receive"
-    | .call           => "call"
-    | .reply          => "reply"
-    | .cspaceMint     => "cspaceMint"
-    | .cspaceCopy     => "cspaceCopy"
-    | .cspaceMove     => "cspaceMove"
-    | .cspaceDelete   => "cspaceDelete"
+    | .send            => "send"
+    | .receive         => "receive"
+    | .call            => "call"
+    | .reply           => "reply"
+    | .cspaceMint      => "cspaceMint"
+    | .cspaceCopy      => "cspaceCopy"
+    | .cspaceMove      => "cspaceMove"
+    | .cspaceDelete    => "cspaceDelete"
     | .lifecycleRetype => "lifecycleRetype"
-    | .vspaceMap      => "vspaceMap"
-    | .vspaceUnmap    => "vspaceUnmap"
-    | .serviceStart   => "serviceStart"
-    | .serviceStop    => "serviceStop"
+    | .vspaceMap       => "vspaceMap"
+    | .vspaceUnmap     => "vspaceUnmap"
+    | .serviceRegister => "serviceRegister"
+    | .serviceRevoke   => "serviceRevoke"
+    | .serviceQuery    => "serviceQuery"
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
@@ -701,7 +696,8 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 10 => intro s h; simp [ofNat?] at h; subst h; rfl
   | 11 => intro s h; simp [ofNat?] at h; subst h; rfl
   | 12 => intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 13 => intro s h; simp [ofNat?] at h
+  | 13 => intro s h; simp [ofNat?] at h; subst h; rfl
+  | n + 14 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
