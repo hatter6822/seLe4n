@@ -90,12 +90,12 @@ instance. 379 lines in `SeLe4n/Kernel/RobinHood/Core.lean`. Zero sorry/axiom.
 **WS-N2 (v0.17.2) — COMPLETED:** Full invariant proofs — `distCorrect`,
 `noDupKeys`, `probeChainDominant` preservation through insert/erase/resize;
 lookup correctness (`get_after_insert_eq`, `get_after_insert_ne`,
-`get_after_erase_eq`). All 6 TPI-D items complete (D1–D6), ~3,600 LoC across
+`get_after_erase_eq`). All 6 TPI-D items complete (D1–D6), ~4,655 LoC across
 `SeLe4n/Kernel/RobinHood/Invariant/`. Key innovation: `relaxedPCD` framework
 for erase PCD preservation. Zero sorry/axiom.
 
 **WS-N3 (v0.17.3) — COMPLETED:** Kernel API bridge — `Inhabited`/`BEq`
-typeclass instances, 10 bridge lemmas matching `Std.HashMap` patterns
+typeclass instances, 12 bridge lemmas matching `Std.HashMap` patterns
 (`getElem?_empty`, `getElem?_insert_self/ne`, `getElem?_erase_self/ne`,
 `size_insert_le`, `size_erase_le`, `mem_iff_isSome_getElem?`,
 `getElem?_eq_some_getElem`, `fold_eq_slots_foldl`), `filter` support with

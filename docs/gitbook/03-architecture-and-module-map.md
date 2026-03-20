@@ -82,10 +82,10 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 - `SeLe4n/Kernel/RobinHood/Invariant/` — invariant proofs (WS-N2, v0.17.2):
   `distCorrect`/`noDupKeys`/`probeChainDominant` preservation through all ops;
   lookup correctness (`get_after_insert_eq/ne`, `get_after_erase_eq/ne`). All 6
-  TPI-D items complete, ~3,600 LoC, zero sorry.
+  TPI-D items complete, ~4,655 LoC, zero sorry.
   Re-export hub: `SeLe4n/Kernel/RobinHood/Invariant.lean`.
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` — kernel API bridge (WS-N3, v0.17.3):
-  `Inhabited`/`BEq` typeclass instances, 10 bridge lemmas (`getElem?_empty`,
+  `Inhabited`/`BEq` typeclass instances, 12 bridge lemmas (`getElem?_empty`,
   `getElem?_insert_self/ne`, `getElem?_erase_self/ne`, `size_insert_le`,
   `size_erase_le`, `mem_iff_isSome_getElem?`, `getElem?_eq_some_getElem`,
   `fold_eq_slots_foldl`), `filter` support with 2 size theorems, `ofList`
@@ -149,7 +149,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Invariant/Preservation.lean` — operation preservation, lifecycle integration, composed bundles.
 - **WS-N modules** (v0.17.0–v0.17.5, **PORTFOLIO COMPLETE**):
   - `SeLe4n/Kernel/RobinHood/Core.lean` — Robin Hood hash table types (`RHEntry`, `RHTable`), fuel-bounded operations (`insert`, `get?`, `erase`, `fold`, `resize`), `GetElem?`/`Membership` instances. 379 LoC. **N1 COMPLETED** (v0.17.1).
-  - `SeLe4n/Kernel/RobinHood/Bridge.lean` — Kernel API bridge: `Inhabited`/`BEq` instances, 10 bridge lemmas, `filter`/`ofList` support. ~860 LoC. **N3 COMPLETED** (v0.17.3).
+  - `SeLe4n/Kernel/RobinHood/Bridge.lean` — Kernel API bridge: `Inhabited`/`BEq` instances, 12 bridge lemmas, `filter`/`ofList` support. ~860 LoC. **N3 COMPLETED** (v0.17.3).
   - `SeLe4n/Kernel/RobinHood/Invariant/Defs.lean` — `distCorrect`/`noDupKeys`/`probeChainDominant` predicates, `invExt` bundle. 79 LoC.
   - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` — WF/distCorrect/noDupKeys/PCD preservation through all ops, modular arithmetic helpers, relaxedPCD framework. ~2,400 LoC.
   - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` — Lookup correctness: `get_after_insert_eq/ne`, `get_after_erase_eq/ne`. ~2,150 LoC.

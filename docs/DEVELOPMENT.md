@@ -71,10 +71,10 @@ proofs — **COMPLETED**: invariant definitions (`distCorrect`, `noDupKeys`,
 `probeChainDominant`, `RHTable.invExt` bundle), preservation through all ops
 (WF, distCorrect, noDupKeys, probeChainDominant), lookup correctness (insert
 same-key, insert different-key, erase). All 6 TPI-D items complete (D1–D6),
-~3,600 LoC, zero sorry/axiom. Major finding: `robinHoodOrdered` is NOT
+~4,655 LoC, zero sorry/axiom. Major finding: `robinHoodOrdered` is NOT
 preserved by backshift-on-erase; `invExt` bundle uses `probeChainDominant`
 instead (relaxedPCD framework for erase proofs). **WS-N3** (v0.17.3) — kernel
-API bridge — **COMPLETED**: `Inhabited`/`BEq` typeclass instances, 10 bridge
+API bridge — **COMPLETED**: `Inhabited`/`BEq` typeclass instances, 12 bridge
 lemmas matching `Std.HashMap` patterns (`getElem?_insert_self/ne`,
 `getElem?_erase_self/ne`, `getElem?_empty`, `size_erase_le`, `size_insert_le`,
 `mem_iff_isSome_getElem?`, `getElem?_eq_some_getElem`, `fold_eq_slots_foldl`),
