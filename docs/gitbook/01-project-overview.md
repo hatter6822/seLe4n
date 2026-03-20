@@ -81,7 +81,9 @@ simplification. **Q2 COMPLETED** (v0.17.8): universal RHTable migration — all
 `RHTable`/`RHSet` (16 map fields + 2 set fields, 30+ files, 10 subphases).
 **Q3 COMPLETED** (v0.17.9): IntermediateState formalization — builder-phase state
 with invariant witnesses, 7 builder operations, boot sequence.
-Remaining: Q4–Q9 (CNode radix tree, freeze, Rust wrappers).
+**Q4 COMPLETED** (v0.17.10): CNode radix tree — verified `CNodeRadix` flat array
+with O(1) zero-hash lookup, 12+ correctness proofs, `buildCNodeRadix` bridge.
+Remaining: Q5–Q9 (freeze, option slots, value-only maps, Rust wrappers, hardware).
 After WS-Q: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and

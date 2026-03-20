@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "c0c40c381768d7723f4c4ce10801a7608ceb4b2f",
-      "tree_sha": "d763b20e9cd5f93a08ec2e4b4184c02d1081e37b",
-      "committed_at_utc": "2026-03-20T15:10:32-04:00"
+      "branch": "claude/audit-cnode-radix-tree-zxB7L",
+      "commit_sha": "f57d48820771540025532fdadbed47173c47012e",
+      "tree_sha": "124e9f5f6671e09bc4624dae8480c9925da6cad3",
+      "committed_at_utc": "2026-03-20T19:10:43+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "72fb23f7facf6b3eb18565094d84b08d48e6bbbcbd67f664569881f034569577"
+    "source_digest": "7e8b5804b210bcbf967485f749da4be619fd501e2b82b1843f380fcdb38df384"
   },
   "summary": {
-    "module_count": 91,
-    "declaration_count": 2699
+    "module_count": 95,
+    "declaration_count": 2747
   },
   "readme_sync": {
-    "version": "0.17.9",
+    "version": "0.17.10",
     "lean_toolchain": "v4.28.0",
-    "production_files": 86,
-    "production_loc": 49498,
+    "production_files": 90,
+    "production_loc": 50017,
     "test_files": 5,
     "test_loc": 5513,
-    "proved_theorem_lemma_decls": 1479,
+    "proved_theorem_lemma_decls": 1508,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -9547,6 +9547,382 @@
           ]
         }
       ]
+    },
+    {
+      "module": "SeLe4n.Kernel.RadixTree.Bridge",
+      "path": "SeLe4n/Kernel/RadixTree/Bridge.lean",
+      "declaration_count": 11,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.RadixTree",
+          "line": 23,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "CNodeConfig",
+          "line": 34,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "buildCNodeRadix",
+          "line": 51,
+          "called": [
+            "CNodeConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rhFold_preserves_field",
+          "line": 60,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadix_guardWidth",
+          "line": 76,
+          "called": [
+            "CNodeConfig",
+            "buildCNodeRadix",
+            "rhFold_preserves_field"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadix_guardValue",
+          "line": 83,
+          "called": [
+            "CNodeConfig",
+            "buildCNodeRadix",
+            "rhFold_preserves_field"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadix_radixWidth",
+          "line": 90,
+          "called": [
+            "CNodeConfig",
+            "buildCNodeRadix",
+            "rhFold_preserves_field"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadix_wf",
+          "line": 101,
+          "called": [
+            "CNodeConfig",
+            "buildCNodeRadix"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadix_deterministic",
+          "line": 111,
+          "called": [
+            "CNodeConfig",
+            "buildCNodeRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeConfig.ofCNode",
+          "line": 120,
+          "called": [
+            "CNodeConfig"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.ofCNode",
+          "line": 126,
+          "called": [
+            "CNodeConfig.ofCNode",
+            "buildCNodeRadix"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.RadixTree.Core",
+      "path": "SeLe4n/Kernel/RadixTree/Core.lean",
+      "declaration_count": 14,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.RadixTree",
+          "line": 22,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "extractBits",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "extractBits_lt",
+          "line": 36,
+          "called": [
+            "extractBits"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "extractBits_zero_width",
+          "line": 42,
+          "called": [
+            "extractBits"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "CNodeRadix",
+          "line": 61,
+          "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:68>",
+          "line": 68,
+          "called": [
+            "CNodeRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.empty",
+          "line": 78,
+          "called": [
+            "CNodeRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.lookup",
+          "line": 91,
+          "called": [
+            "CNodeRadix",
+            "extractBits",
+            "extractBits_lt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.insert",
+          "line": 102,
+          "called": [
+            "CNodeRadix",
+            "extractBits",
+            "extractBits_lt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.erase",
+          "line": 116,
+          "called": [
+            "CNodeRadix",
+            "extractBits",
+            "extractBits_lt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.fold",
+          "line": 130,
+          "called": [
+            "CNodeRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.toList",
+          "line": 142,
+          "called": [
+            "CNodeRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.size",
+          "line": 150,
+          "called": [
+            "CNodeRadix"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.fanout",
+          "line": 161,
+          "called": [
+            "CNodeRadix"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.RadixTree.Invariant",
+      "path": "SeLe4n/Kernel/RadixTree/Invariant.lean",
+      "declaration_count": 23,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.RadixTree",
+          "line": 33,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "extractBits_idx_eq",
+          "line": 41,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.lookup_empty",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.lookup_insert_self",
+          "line": 59,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.lookup_insert_ne",
+          "line": 70,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.lookup_erase_self",
+          "line": 81,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.lookup_erase_ne",
+          "line": 91,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.insert_idempotent",
+          "line": 102,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "CNodeRadix.WF",
+          "line": 112,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.wf_of_mk",
+          "line": 116,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.empty_wf",
+          "line": 120,
+          "called": [
+            "CNodeRadix.WF"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.insert_wf",
+          "line": 124,
+          "called": [
+            "CNodeRadix.WF"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.erase_wf",
+          "line": 130,
+          "called": [
+            "CNodeRadix.WF"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.insert_erase_cancel",
+          "line": 139,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.insert_guardWidth",
+          "line": 149,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.insert_guardValue",
+          "line": 154,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.insert_radixWidth",
+          "line": 159,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.erase_guardWidth",
+          "line": 164,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.erase_guardValue",
+          "line": 168,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.erase_radixWidth",
+          "line": 172,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "list_foldl_replicate_none_count",
+          "line": 179,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.size_empty",
+          "line": 188,
+          "called": [
+            "list_foldl_replicate_none_count"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CNodeRadix.fanout_eq_slots_size",
+          "line": 199,
+          "called": []
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.RadixTree",
+      "path": "SeLe4n/Kernel/RadixTree.lean",
+      "declaration_count": 0,
+      "declarations": []
     },
     {
       "module": "SeLe4n.Kernel.RobinHood.Bridge",

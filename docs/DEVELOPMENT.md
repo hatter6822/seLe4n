@@ -81,6 +81,12 @@ operations (`registerIrq`, `registerService`, `addServiceGraph`,
 `createObject`, `deleteObject`, `insertCap`, `mapPage`). Boot sequence
 (`bootFromPlatform`) with master validity theorem. Zero sorry/axiom, 1,479
 proved declarations, all tests pass.
+**WS-Q4** (v0.17.10) — CNode radix tree (verified) — **COMPLETED**:
+`CNodeRadix` flat radix array for CNode capability slots with O(1) zero-hash
+lookup via `extractBits` + direct array indexing. 12+ correctness proofs
+(lookup roundtrip, WF preservation, parameter invariance). `buildCNodeRadix`
+equivalence bridge (RHTable → CNodeRadix). Zero sorry/axiom, 1,508 proved
+declarations, all tests pass.
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully
