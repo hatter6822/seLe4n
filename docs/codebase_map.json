@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-q1-service-interface-CPo3U",
-      "commit_sha": "cba68f79e8687337ba18cbad4305bd81f6cb3ed4",
-      "tree_sha": "0b598b49ecb570dc198de7ff38563c1739bfd169",
-      "committed_at_utc": "2026-03-20T07:52:09+00:00"
+      "branch": "main",
+      "commit_sha": "95bbd74a9a774e8ae3adfe6eeb1d2f0d18cfd001",
+      "tree_sha": "189050a75267b4bdccf4daec0625a62c64387eb0",
+      "committed_at_utc": "2026-03-20T04:00:16-04:00"
     }
   },
   "source_sync": {
