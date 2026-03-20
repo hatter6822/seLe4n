@@ -1,3 +1,36 @@
+## [0.17.11] — WS-Q5 FrozenSystemState + Freeze
+
+- Completed Phase 5 (WS-Q5) of the Kernel State Architecture workstream:
+  FrozenSystemState definition and freeze transformation
+- Q5-A: `FrozenMap` and `FrozenSet` types in `SeLe4n/Model/FrozenState.lean`
+  — dense `Array ν` value store + `RHTable κ Nat` index mapping, runtime
+  bounds-checked `get?` (safe-by-construction), `set` (update existing key),
+  `contains`, `fold` operations
+- Q5-A: `FrozenSet κ` defined as `FrozenMap κ Unit` with `FrozenSet.mem`
+- Q5-B: Per-object frozen types — `FrozenCNode` (uses `CNodeRadix` from Q4
+  for O(1) zero-hash slot lookup), `FrozenVSpaceRoot` (uses `FrozenMap` for
+  page mappings), `FrozenKernelObject` inductive (6 variants matching
+  `KernelObject`), `FrozenSchedulerState`, `FrozenSystemState` (19 fields
+  mirroring `SystemState` with all `RHTable` fields replaced by `FrozenMap`)
+- Q5-C: Freeze functions — `freezeMap` (RHTable → FrozenMap via fold),
+  `freezeCNode`, `freezeVSpaceRoot`, `freezeObject` (per-object freeze with
+  CNode→CNodeRadix via Q4 bridge, VSpaceRoot→FrozenMap), `freezeScheduler`,
+  `freeze` (IntermediateState → FrozenSystemState, full 19-field conversion)
+- Q5-D: Capacity planning — `minObjectSize` constant, `objectCapacity`
+  (current objects + potential from untyped memory / minObjectSize)
+- 15+ theorems: `freeze_deterministic`, `freeze_preserves_machine`,
+  `freeze_preserves_objectIndex`, `freeze_preserves_cdtEdges`,
+  `freezeMap_empty`, `freezeMap_data_size`, `freezeObject_preserves_type`,
+  `freezeObject_tcb_passthrough`, `freezeMap_get?_some`,
+  `frozenMap_set_preserves_size`, `objectCapacity_ge_size`, and more
+- Q5-T: 13-scenario test suite in `tests/FrozenStateSuite.lean` (40 checks):
+  FrozenMap core (FS-001 to FS-007), FrozenKernelObject (FS-008 to FS-010),
+  freeze integration (FS-011 to FS-013)
+- Files: 1 new (`FrozenState.lean`), 1 new test (`FrozenStateSuite.lean`),
+  docs + codebase map updated, `lakefile.toml` version bumped
+- All test tiers pass; zero `sorry`/`axiom`
+- Bumped `lakefile.toml` version to `0.17.11`
+
 ## [0.17.9] — WS-Q3 IntermediateState Formalization
 
 - Completed Phase 3 (WS-Q3) of the Kernel State Architecture workstream:

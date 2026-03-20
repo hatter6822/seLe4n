@@ -917,11 +917,13 @@ theorem buildCNodeRadix_lookup_equiv
 
 ---
 
-### Phase Q5: FrozenSystemState + Freeze
+### Phase Q5: FrozenSystemState + Freeze — **COMPLETED** (v0.17.11)
 
-**Target version**: v0.21.0
+**Target version**: v0.17.11 (originally v0.21.0)
 **Goal**: Define the frozen execution-phase state representation and implement
 the `freeze` function with explicit capacity planning.
+**Status**: COMPLETED — all sub-phases (Q5-A through Q5-D) implemented with
+zero sorry/axiom, 15+ theorems, 13-scenario test suite (40 checks).
 
 #### Q5-A: FrozenMap and FrozenSet Types
 
