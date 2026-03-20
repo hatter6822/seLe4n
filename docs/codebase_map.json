@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-rhtable-migration-pP996",
-      "commit_sha": "95412bf4a2ee3926867dbb44bfce6429b9f853d3",
-      "tree_sha": "fa43675d3031a2e101b99c2eac4792b1b04165ac",
-      "committed_at_utc": "2026-03-20T16:38:23+00:00"
+      "branch": "main",
+      "commit_sha": "8b5f7a476ff278eb416cb811f0a59474d8dbc1c4",
+      "tree_sha": "132933cc52fd21d22fd1f0d9f5f735e6524d028d",
+      "committed_at_utc": "2026-03-20T12:53:40-04:00"
     }
   },
   "source_sync": {
