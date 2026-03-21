@@ -2725,6 +2725,44 @@ def runWSR2RevocationChecks : IO Unit := do
   | .ok _ =>
     throw <| IO.userError "R2-NEG-02: streamingRevokeBFS with fuel=0 should return error, not succeed"
 
+  -- R2-NEG-03: cspaceRevokeCdt propagates descendant delete failures
+  -- Set up: CNode with root cap at slot 5. CDT: rootNode → childNode (bad slot).
+  -- cspaceRevokeCdt should fail because descendant deletion fails.
+  let r2RootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := ⟨5⟩ }
+  let r2RootNode : CdtNodeId := ⟨70⟩
+  let r2ChildNode : CdtNodeId := ⟨71⟩
+  let r2ChildBadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := ⟨0⟩ }
+  let r2RevokeSeed : SystemState :=
+    { r2State with
+      objects := r2State.objects.insert r2CnodeId (.cnode {
+            depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+            slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+              (r2RootSlot.slot, {
+                target := .object ⟨40⟩
+                rights := AccessRightSet.ofList [.read, .write]
+                badge := none
+              })
+            ]
+          })
+      cdt := CapDerivationTree.empty
+        |>.addEdge r2RootNode r2ChildNode .mint
+      cdtSlotNode := ((r2State.cdtSlotNode
+        |>.insert r2RootSlot r2RootNode)
+        |>.insert r2ChildBadSlot r2ChildNode)
+      cdtNodeSlot := ((r2State.cdtNodeSlot
+        |>.insert r2RootNode r2RootSlot)
+        |>.insert r2ChildNode r2ChildBadSlot)
+      cdtNextNode := ⟨72⟩
+    }
+  match SeLe4n.Kernel.cspaceRevokeCdt r2RootSlot r2RevokeSeed with
+  | .error e =>
+    if e = .objectNotFound then
+      IO.println "negative check passed [R2-NEG-03: cspaceRevokeCdt propagates descendant delete error]"
+    else
+      throw <| IO.userError s!"R2-NEG-03: expected objectNotFound from cspaceRevokeCdt, got {reprStr e}"
+  | .ok _ =>
+    throw <| IO.userError "R2-NEG-03: cspaceRevokeCdt should propagate descendant delete error, not succeed"
+
   IO.println "all WS-R2 revocation error propagation checks passed"
 
 end SeLe4n.Testing

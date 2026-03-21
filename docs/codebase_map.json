@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-phase-r2-workstream-JSz4E",
-      "commit_sha": "82da0d4438628339617be6c887d03f65f2573c84",
-      "tree_sha": "80517559c94ffc23b13bdb3a3456e85d61237efe",
-      "committed_at_utc": "2026-03-21T06:15:56+00:00"
+      "commit_sha": "0a64b0f871ce36583ebb0c600eb1621c31fbc24f",
+      "tree_sha": "760eda379c5c674e398eca5e4efdf7261a964a01",
+      "committed_at_utc": "2026-03-21T07:02:53+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a6c2db186d3ad126c36fcbaffa8345c8ea2cf50d8c02d0fe6a8e83107afa395c"
+    "source_digest": "37266a0f3a72bb98483364472ce87bd118431fc0150b48363553fec0839f1a56"
   },
   "summary": {
     "module_count": 107,
@@ -29,7 +29,7 @@
     "production_files": 97,
     "production_loc": 53284,
     "test_files": 10,
-    "test_loc": 7117,
+    "test_loc": 7155,
     "proved_theorem_lemma_decls": 1629,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -23964,7 +23964,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2732,
+          "line": 2770,
           "called": []
         }
       ]
