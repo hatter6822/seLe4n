@@ -171,7 +171,8 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 
 **Known large files** (read in ≤500-line chunks):
 - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2345 lines)
-- `docs/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
+- `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2446 lines)
+- `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2170 lines)
 - `CHANGELOG.md` (~1659 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~1504 lines)
@@ -187,23 +188,23 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Model/State.lean` (~1073 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~893 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (~868 lines)
-- `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
+- `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~833 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations.lean` (~819 lines)
 - `tests/InformationFlowSuite.lean` (~816 lines)
 - `SeLe4n/Prelude.lean` (~1049 lines)
-- `docs/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md` (~775 lines)
+- `docs/dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md` (~775 lines)
 - `docs/spec/SEL4_SPEC.md` (~753 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean` (~738 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~733 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~732 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~675 lines)
-- `docs/audits/AUDIT_CODEBASE_v0.12.15_v1.md` (~682 lines)
+- `docs/dev_history/audits/AUDIT_CODEBASE_v0.12.15_v1.md` (~682 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~639 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~622 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~607 lines)
-- `docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
+- `docs/dev_history/audits/AUDIT_CODEBASE_v0.12.2_v2.md` (~556 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~544 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~724 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~519 lines)
@@ -434,12 +435,14 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14): Kernel State Architecture — all 9 phases (Q1–Q9, 45 atomic units) delivered. Two-phase builder/freeze model with verified Robin Hood hashing, CNode radix tree, FrozenMap/FrozenSet dense arrays, frozen kernel operations, Rust syscall wrappers, and comprehensive integration testing. See `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
-- **Prior portfolios**: WS-N (v0.17.0–v0.17.5), WS-M (v0.16.14–v0.17.0), WS-L (v0.16.9–v0.16.13), WS-K (v0.16.0–v0.16.8), WS-J1 (v0.15.4–v0.15.10), WS-F (F1..F8, 33/33 findings) — all COMPLETE
+- **WS-R IN PROGRESS**: Comprehensive Audit Remediation — 8 phases (R1–R8, 111 sub-tasks). See `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`
+- **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14): Kernel State Architecture — all 9 phases (Q1–Q9, 45 atomic units) delivered. See `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
+- **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
-- **Latest audit**: `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` — Kernel state architecture: two-phase builder/freeze model
+- **Latest audit**: `docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md` — Full kernel + Rust codebase pre-release audit
+- **Active workstream plan**: `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` — WS-R: 8 phases, 111 sub-tasks
 - **All prior workstreams completed**: WS-B through WS-Q (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: Raspberry Pi 5 hardware binding
+- **Next milestone**: WS-R audit remediation, then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

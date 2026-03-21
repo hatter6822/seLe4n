@@ -31,8 +31,8 @@ Specification documents:
 
 ## Where to find current workstream detail
 
-- Canonical execution matrix:
-  [`docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
+- Active workstream plan:
+  [`docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
   [Specification & Roadmap](05-specification-and-roadmap.md)
 

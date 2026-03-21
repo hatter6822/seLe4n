@@ -14,9 +14,9 @@ Use this file during planning and PR review to keep documentation status aligned
 |---|---|---|---|
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
-| Active audit / workstream (WS-L) | `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` | `05-specification-and-roadmap.md` | Findings and status tables canonical in audit plan; GitBook chapter summarizes and links back. |
+| Active audit / workstream (WS-R) | `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` | `05-specification-and-roadmap.md` | Findings and status tables canonical in audit plan; GitBook chapter summarizes and links back. |
 | Workstream history (all prior portfolios) | `docs/WORKSTREAM_HISTORY.md` | `05-specification-and-roadmap.md` | Canonical record; GitBook chapter provides navigation. |
-| Completed performance portfolio (WS-G) | `docs/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | `08-kernel-performance-optimization.md` | All findings closed; chapter documents optimizations. |
+| Completed performance portfolio (WS-G) | `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | `08-kernel-performance-optimization.md` | All findings closed; chapter documents optimizations. Archived to `docs/dev_history/`. |
 | Prior audit findings (WS-E, completed) | `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` | — | Archived to `docs/dev_history/`; WS-E1..E6 all completed. |
 | Prior audit findings (WS-D, completed) | `docs/dev_history/audits/AUDIT_v0.11.0.md` | — | Archived to `docs/dev_history/`; WS-D1..D4 completed. |
 | Claim vs evidence index (active semantics/proofs/docs) | `docs/CLAIM_EVIDENCE_INDEX.md` | `31-claim-vs-evidence-index.md` | Keep auditable claim→command mapping canonical in root; GitBook chapter points to index. |

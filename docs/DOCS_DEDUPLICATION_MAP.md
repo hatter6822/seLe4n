@@ -14,7 +14,7 @@ This document defines the canonical-vs-mirror split used to reduce drift between
 |---|---|---|---|
 | Active scope, milestones, and acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Keep normative decisions in spec; chapter is digest + links only. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
-| Active workstream (WS-L) | `docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` | `05-specification-and-roadmap.md` | Keep status/closure evidence canonical in audit plan; chapter summarizes and links. |
+| Active workstream (WS-R) | `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` | `05-specification-and-roadmap.md` | Keep status/closure evidence canonical in audit plan; chapter summarizes and links. |
 | Workstream history | `docs/WORKSTREAM_HISTORY.md` | `05-specification-and-roadmap.md` | Canonical record; chapter provides navigation. |
 | Contributor workflow expectations | `docs/DEVELOPMENT.md` | — (archived to dev_history) | Canonical workflow in root doc. |
 | Test/CI evidence contract | `docs/TESTING_FRAMEWORK_PLAN.md`, `docs/CI_POLICY.md` | `07-testing-and-ci.md` | Root docs own gate semantics and policy details; chapter links and summarizes. |
