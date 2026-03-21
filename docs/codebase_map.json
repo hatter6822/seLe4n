@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "a302b7ba575f456bfe7ffda2d8df273eef0efa74",
-      "tree_sha": "a80f30bab7477c9c623207a42f2b1de3c5a80305",
-      "committed_at_utc": "2026-03-20T21:24:40-04:00"
+      "branch": "claude/audit-q7-kernel-ops-QrT6d",
+      "commit_sha": "11f0c13ec4d53725cd6d34e06cb7c5c0a3056bdc",
+      "tree_sha": "c9dd84432ce362fe6999e72fe7c3d1eead6e4df3",
+      "committed_at_utc": "2026-03-21T01:24:48+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bc8e54dc52a26f32b7918566734d980b5e4e3bd90e1e8ea7a963a4e474cfd174"
+    "source_digest": "662e306fd29b40f258317c0d0ac82e00ae2b6af9cf8f704740c6ac4a94a98a35"
   },
   "summary": {
-    "module_count": 100,
-    "declaration_count": 2925
+    "module_count": 106,
+    "declaration_count": 2980
   },
   "readme_sync": {
-    "version": "0.17.12",
+    "version": "0.17.13",
     "lean_toolchain": "v4.28.0",
-    "production_files": 92,
-    "production_loc": 51950,
-    "test_files": 8,
-    "test_loc": 6279,
-    "proved_theorem_lemma_decls": 1597,
+    "production_files": 97,
+    "production_loc": 52864,
+    "test_files": 9,
+    "test_loc": 6392,
+    "proved_theorem_lemma_decls": 1611,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -4158,6 +4158,387 @@
           ]
         }
       ]
+    },
+    {
+      "module": "SeLe4n.Kernel.FrozenOps.Commutativity",
+      "path": "SeLe4n/Kernel/FrozenOps/Commutativity.lean",
+      "declaration_count": 6,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.FrozenOps",
+          "line": 36,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenMap_set_get",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "FrozenMap.set_indexMap_eq",
+          "line": 66,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_irqHandlers",
+          "line": 83,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_asidTable",
+          "line": 94,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_serviceRegistry",
+          "line": 105,
+          "called": []
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.FrozenOps.Core",
+      "path": "SeLe4n/Kernel/FrozenOps/Core.lean",
+      "declaration_count": 18,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.FrozenOps",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "abbrev",
+          "name": "FrozenKernel",
+          "line": 44,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenLookupObject",
+          "line": 52,
+          "called": [
+            "FrozenKernel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenLookupTcb",
+          "line": 60,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenLookupEndpoint",
+          "line": 67,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenLookupNotification",
+          "line": 73,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenLookupCNode",
+          "line": 79,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenStoreObject",
+          "line": 91,
+          "called": [
+            "FrozenKernel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenStoreTcb",
+          "line": 100,
+          "called": [
+            "FrozenKernel",
+            "frozenStoreObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenStoreEndpoint",
+          "line": 105,
+          "called": [
+            "FrozenKernel",
+            "frozenStoreObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenStoreNotification",
+          "line": 110,
+          "called": [
+            "FrozenKernel",
+            "frozenStoreObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenStoreTcbIpcState",
+          "line": 115,
+          "called": [
+            "frozenLookupTcb",
+            "frozenStoreTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenSaveOutgoingContext",
+          "line": 130,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenRestoreIncomingContext",
+          "line": 144,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenSetCurrentThread",
+          "line": 152,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenLookupObject_state_unchanged",
+          "line": 161,
+          "called": [
+            "frozenLookupObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_scheduler",
+          "line": 171,
+          "called": [
+            "frozenStoreObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_machine",
+          "line": 182,
+          "called": [
+            "frozenStoreObject"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.FrozenOps.Invariant",
+      "path": "SeLe4n/Kernel/FrozenOps/Invariant.lean",
+      "declaration_count": 7,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.FrozenOps",
+          "line": 24,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_extracts_state",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_cdtEdges",
+          "line": 45,
+          "called": [
+            "frozenStoreObject_extracts_state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_objectIndex",
+          "line": 54,
+          "called": [
+            "frozenStoreObject_extracts_state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_cdtChildMap",
+          "line": 63,
+          "called": [
+            "frozenStoreObject_extracts_state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_cdtParentMap",
+          "line": 72,
+          "called": [
+            "frozenStoreObject_extracts_state"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenStoreObject_preserves_cdtNextNode",
+          "line": 81,
+          "called": [
+            "frozenStoreObject_extracts_state"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.FrozenOps.Operations",
+      "path": "SeLe4n/Kernel/FrozenOps/Operations.lean",
+      "declaration_count": 19,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.FrozenOps",
+          "line": 39,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenChooseThread",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenSchedule",
+          "line": 71,
+          "called": [
+            "frozenChooseThread"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenHandleYield",
+          "line": 96,
+          "called": [
+            "frozenSchedule"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenDefaultTimeSlice",
+          "line": 112,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenTimerTick",
+          "line": 116,
+          "called": [
+            "frozenDefaultTimeSlice",
+            "frozenSchedule"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenNotificationSignal",
+          "line": 152,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenNotificationWait",
+          "line": 184,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenQueuePopHead",
+          "line": 223,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenEndpointSend",
+          "line": 254,
+          "called": [
+            "frozenQueuePopHead"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenEndpointReceive",
+          "line": 291,
+          "called": [
+            "frozenQueuePopHead"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenEndpointCall",
+          "line": 333,
+          "called": [
+            "frozenQueuePopHead"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenEndpointReply",
+          "line": 379,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenCspaceLookup",
+          "line": 404,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenCspaceLookupSlot",
+          "line": 416,
+          "called": [
+            "frozenCspaceLookup"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenCspaceMint",
+          "line": 425,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenCspaceDelete",
+          "line": 439,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenVspaceLookup",
+          "line": 458,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenLookupServiceByCap",
+          "line": 479,
+          "called": []
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.FrozenOps",
+      "path": "SeLe4n/Kernel/FrozenOps.lean",
+      "declaration_count": 0,
+      "declarations": []
     },
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue.Core",
@@ -22579,6 +22960,50 @@
             "fp019_freezeEmptyInvariant",
             "fp020_fieldParity",
             "fp021_lookupTransfer"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.FrozenOpsSuite",
+      "path": "tests/FrozenOpsSuite.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.FrozenOpsSuite",
+          "line": 18,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 20,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "fo001_lookupExisting",
+          "line": 31,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fo002_lookupMissing",
+          "line": 71,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 109,
+          "called": [
+            "fo001_lookupExisting",
+            "fo002_lookupMissing"
           ]
         }
       ]
