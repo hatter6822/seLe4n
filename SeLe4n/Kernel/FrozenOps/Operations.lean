@@ -11,26 +11,28 @@ import SeLe4n.Kernel.FrozenOps.Core
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
-Implements 12 frozen kernel operations that operate on `FrozenSystemState`
+Implements 14 frozen kernel operations that operate on `FrozenSystemState`
 using O(1) array-indexed lookups. Each mirrors a builder-phase operation
 but uses `FrozenMap.get?`/`FrozenMap.set` instead of `RHTable` operations.
 
 ## Operation Table
 
-| # | Frozen Operation           | Builder Counterpart      | Subsystem  |
-|---|---------------------------|--------------------------|------------|
-| 1 | `frozenSchedule`          | `schedule`               | Scheduler  |
-| 2 | `frozenHandleYield`       | `handleYield`            | Scheduler  |
-| 3 | `frozenTimerTick`         | `timerTick`              | Scheduler  |
-| 4 | `frozenEndpointSend`      | `notificationSignal`     | IPC        |
-| 5 | `frozenEndpointReceive`   | `notificationWait`       | IPC        |
-| 6 | `frozenEndpointCall`      | `endpointCall`           | IPC        |
-| 7 | `frozenEndpointReply`     | `endpointReply`          | IPC        |
-| 8 | `frozenCspaceLookup`      | `cspaceLookupSlot`       | Capability |
-| 9 | `frozenCspaceMint`        | `cspaceMint`             | Capability |
-|10 | `frozenCspaceDelete`      | `cspaceDeleteSlot`       | Capability |
-|11 | `frozenVspaceLookup`      | `vspaceLookupFull`       | VSpace     |
-|12 | `frozenLookupServiceByCap`| `lookupServiceByCap`     | Service    |
+| # | Frozen Operation              | Builder Counterpart      | Subsystem  |
+|---|------------------------------|--------------------------|------------|
+| 1 | `frozenSchedule`             | `schedule`               | Scheduler  |
+| 2 | `frozenHandleYield`          | `handleYield`            | Scheduler  |
+| 3 | `frozenTimerTick`            | `timerTick`              | Scheduler  |
+| 4 | `frozenNotificationSignal`   | `notificationSignal`     | IPC        |
+| 5 | `frozenNotificationWait`     | `notificationWait`       | IPC        |
+| 6 | `frozenEndpointSend`         | `endpointSendDual`       | IPC        |
+| 7 | `frozenEndpointReceive`      | `endpointReceiveDual`    | IPC        |
+| 8 | `frozenEndpointCall`         | `endpointCall`           | IPC        |
+| 9 | `frozenEndpointReply`        | `endpointReply`          | IPC        |
+|10 | `frozenCspaceLookup`         | `cspaceLookupSlot`       | Capability |
+|11 | `frozenCspaceMint`           | `cspaceMint`             | Capability |
+|12 | `frozenCspaceDelete`         | `cspaceDeleteSlot`       | Capability |
+|13 | `frozenVspaceLookup`         | `vspaceLookupFull`       | VSpace     |
+|14 | `frozenLookupServiceByCap`   | `lookupServiceByCap`     | Service    |
 
 **Lifecycle operations** (`lifecycleRetype`) are builder-only — they add new
 keys, which is incompatible with the frozen map's fixed key set.

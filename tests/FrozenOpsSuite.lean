@@ -23,91 +23,270 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
   else
     throw <| IO.userError s!"frozen-ops check failed [{label}]"
 
+/-- Helper: construct a minimal empty FrozenSystemState. -/
+private def emptyFrozenState : FrozenSystemState := {
+  objects := freezeMap (RHTable.empty 16)
+  irqHandlers := freezeMap (RHTable.empty 16)
+  asidTable := freezeMap (RHTable.empty 16)
+  serviceRegistry := freezeMap (RHTable.empty 16)
+  interfaceRegistry := freezeMap (RHTable.empty 16)
+  services := freezeMap (RHTable.empty 16)
+  cdtChildMap := freezeMap (RHTable.empty 16)
+  cdtParentMap := freezeMap (RHTable.empty 16)
+  cdtSlotNode := freezeMap (RHTable.empty 16)
+  cdtNodeSlot := freezeMap (RHTable.empty 16)
+  cdtEdges := []
+  cdtNextNode := ⟨0⟩
+  scheduler := {
+    byPriority := freezeMap (RHTable.empty 16)
+    threadPriority := freezeMap (RHTable.empty 16)
+    membership := freezeMap (RHTable.empty 16)
+    current := none
+    activeDomain := ⟨0⟩
+    domainTimeRemaining := 5
+    domainSchedule := []
+    domainScheduleIndex := 0
+  }
+  objectTypes := freezeMap (RHTable.empty 16)
+  capabilityRefs := freezeMap (RHTable.empty 16)
+  machine := default
+  objectIndex := []
+  objectIndexSet := freezeMap (RHTable.empty 16)
+}
+
+/-- Helper: construct a test TCB. -/
+private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
+  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨dom⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
+
+/-- Helper: construct a FrozenSystemState with given objects. -/
+private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
+    : FrozenSystemState :=
+  let rt := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
+  { emptyFrozenState with objects := freezeMap rt }
+
 -- ============================================================================
--- Q7-T1: FrozenKernel Monad Tests
+-- Q7-T1: FrozenKernel Monad Tests (FO-001 to FO-003)
 -- ============================================================================
 
 /-- FO-001: frozenLookupObject — find existing object -/
 private def fo001_lookupExisting : IO Unit := do
-  let tcb : TCB := { tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
-  let rt := (RHTable.empty 16 : RHTable ObjId FrozenKernelObject).insert ⟨1⟩ (.tcb tcb)
-  let fm := freezeMap rt
-  let fst : FrozenSystemState := {
-    objects := fm
-    irqHandlers := freezeMap (RHTable.empty 16)
-    asidTable := freezeMap (RHTable.empty 16)
-    serviceRegistry := freezeMap (RHTable.empty 16)
-    interfaceRegistry := freezeMap (RHTable.empty 16)
-    services := freezeMap (RHTable.empty 16)
-    cdtChildMap := freezeMap (RHTable.empty 16)
-    cdtParentMap := freezeMap (RHTable.empty 16)
-    cdtSlotNode := freezeMap (RHTable.empty 16)
-    cdtNodeSlot := freezeMap (RHTable.empty 16)
-    cdtEdges := []
-    cdtNextNode := ⟨0⟩
-    scheduler := {
-      byPriority := freezeMap (RHTable.empty 16)
-      threadPriority := freezeMap (RHTable.empty 16)
-      membership := freezeMap (RHTable.empty 16)
-      current := none
-      activeDomain := ⟨0⟩
-      domainTimeRemaining := 5
-      domainSchedule := []
-      domainScheduleIndex := 0
-    }
-    objectTypes := freezeMap (RHTable.empty 16)
-    capabilityRefs := freezeMap (RHTable.empty 16)
-    machine := default
-    objectIndex := []
-    objectIndexSet := freezeMap (RHTable.empty 16)
-  }
+  let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1))]
   match frozenLookupObject ⟨1⟩ fst with
-  | .ok (obj, _) =>
-      expect "FO-001a lookup found object" (obj.objectType == .tcb)
-  | .error _ =>
-      throw <| IO.userError "FO-001a lookup should succeed"
+  | .ok (obj, _) => expect "FO-001 lookup found TCB" (obj.objectType == .tcb)
+  | .error _ => throw <| IO.userError "FO-001 lookup should succeed"
 
 /-- FO-002: frozenLookupObject — missing object returns error -/
 private def fo002_lookupMissing : IO Unit := do
-  let fm : FrozenMap ObjId FrozenKernelObject := freezeMap (RHTable.empty 16)
-  let fst : FrozenSystemState := {
-    objects := fm
-    irqHandlers := freezeMap (RHTable.empty 16)
-    asidTable := freezeMap (RHTable.empty 16)
-    serviceRegistry := freezeMap (RHTable.empty 16)
-    interfaceRegistry := freezeMap (RHTable.empty 16)
-    services := freezeMap (RHTable.empty 16)
-    cdtChildMap := freezeMap (RHTable.empty 16)
-    cdtParentMap := freezeMap (RHTable.empty 16)
-    cdtSlotNode := freezeMap (RHTable.empty 16)
-    cdtNodeSlot := freezeMap (RHTable.empty 16)
-    cdtEdges := []
-    cdtNextNode := ⟨0⟩
-    scheduler := {
-      byPriority := freezeMap (RHTable.empty 16)
-      threadPriority := freezeMap (RHTable.empty 16)
-      membership := freezeMap (RHTable.empty 16)
-      current := none
-      activeDomain := ⟨0⟩
-      domainTimeRemaining := 5
-      domainSchedule := []
-      domainScheduleIndex := 0
-    }
-    objectTypes := freezeMap (RHTable.empty 16)
-    capabilityRefs := freezeMap (RHTable.empty 16)
-    machine := default
-    objectIndex := []
-    objectIndexSet := freezeMap (RHTable.empty 16)
-  }
+  let fst := mkFrozenState []
   match frozenLookupObject ⟨99⟩ fst with
-  | .ok _ => throw <| IO.userError "FO-002 lookup should fail"
-  | .error e => expect "FO-002 missing returns objectNotFound" (e == .objectNotFound)
+  | .ok _ => throw <| IO.userError "FO-002 should fail"
+  | .error e => expect "FO-002 missing → objectNotFound" (e == .objectNotFound)
+
+/-- FO-003: frozenStoreObject — update existing TCB -/
+private def fo003_storeObject : IO Unit := do
+  let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1))]
+  let tcb2 := mkTcb 1 5  -- changed priority
+  match frozenStoreObject ⟨1⟩ (.tcb tcb2) fst with
+  | .ok ((), fst') =>
+      match fst'.objects.get? ⟨1⟩ with
+      | some (.tcb t) => expect "FO-003a updated priority" (t.priority == ⟨5⟩)
+      | _ => throw <| IO.userError "FO-003a should find updated TCB"
+      expect "FO-003b scheduler preserved" (fst'.scheduler.current == fst.scheduler.current)
+      expect "FO-003c machine preserved" (fst'.machine.timer == fst.machine.timer)
+  | .error _ => throw <| IO.userError "FO-003 store should succeed"
+
+-- ============================================================================
+-- TPH-005: Frozen IPC Send/Receive
+-- ============================================================================
+
+/-- FO-004: frozenEndpointReply — reply to blocked caller -/
+private def fo004_endpointReply : IO Unit := do
+  let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNat 0 }
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ msg fst with
+  | .ok ((), fst') =>
+      match frozenLookupTcb fst' ⟨2⟩ with
+      | some tcb =>
+          expect "FO-004a target unblocked" (tcb.ipcState == .ready)
+          expect "FO-004b message delivered" (tcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "FO-004a target TCB missing"
+  | .error _ => throw <| IO.userError "FO-004 reply should succeed"
+
+/-- FO-005: frozenEndpointReply — wrong replier rejected -/
+private def fo005_replyWrongReplier : IO Unit := do
+  let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNat 0 }
+  match frozenEndpointReply ⟨99⟩ ⟨2⟩ msg fst with
+  | .ok _ => throw <| IO.userError "FO-005 wrong replier should fail"
+  | .error e => expect "FO-005 wrong replier → replyCapInvalid" (e == .replyCapInvalid)
+
+-- ============================================================================
+-- TPH-006: Frozen Scheduler Tick
+-- ============================================================================
+
+/-- FO-006: frozenTimerTick — no current thread advances timer -/
+private def fo006_timerTickIdle : IO Unit := do
+  let fst := { emptyFrozenState with scheduler := { emptyFrozenState.scheduler with current := none } }
+  match frozenTimerTick fst with
+  | .ok ((), fst') =>
+      expect "FO-006a timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
+      expect "FO-006b still idle" (fst'.scheduler.current == none)
+  | .error _ => throw <| IO.userError "FO-006 timer tick should succeed"
+
+-- ============================================================================
+-- TPH-007: Frozen CSpace Lookup (Radix O(1))
+-- ============================================================================
+
+/-- FO-007: frozenCspaceLookup — O(1) radix lookup -/
+private def fo007_cspaceLookup : IO Unit := do
+  -- Create a CNodeRadix with one slot
+  let cap : Capability := {
+    target := .object ⟨42⟩
+    rights := ⟨7⟩
+    badge := none
+  }
+  let radix := (CNodeRadix.empty 0 0 4).insert ⟨3⟩ cap
+  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
+  -- Lookup slot 3 (CPtr with value 3)
+  match frozenCspaceLookup fst ⟨3⟩ ⟨10⟩ with
+  | .ok foundCap =>
+      expect "FO-007a found capability" (foundCap.target == .object ⟨42⟩)
+  | .error _ => throw <| IO.userError "FO-007 radix lookup should succeed"
+
+/-- FO-008: frozenCspaceLookup — missing slot returns error -/
+private def fo008_cspaceLookupMissing : IO Unit := do
+  let radix := CNodeRadix.empty 0 0 4
+  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
+  match frozenCspaceLookup fst ⟨5⟩ ⟨10⟩ with
+  | .ok _ => throw <| IO.userError "FO-008 should fail"
+  | .error e => expect "FO-008 empty slot → invalidCapability" (e == .invalidCapability)
+
+-- ============================================================================
+-- TPH-008: Frozen VSpace Resolve
+-- ============================================================================
+
+/-- FO-009: frozenVspaceLookup — resolve virtual address -/
+private def fo009_vspaceLookup : IO Unit := do
+  -- Create a frozen VSpaceRoot with one mapping
+  let mappingsRt := (RHTable.empty 16 : RHTable VAddr (PAddr × PagePermissions)).insert
+    ⟨0x1000⟩ (⟨0x2000⟩, default)
+  let vsr : FrozenVSpaceRoot := { asid := ⟨1⟩, mappings := freezeMap mappingsRt }
+  let asidRt := (RHTable.empty 16 : RHTable ASID ObjId).insert ⟨1⟩ ⟨20⟩
+  let fst := { mkFrozenState [(⟨20⟩, .vspaceRoot vsr)] with
+    asidTable := freezeMap asidRt }
+  match frozenVspaceLookup ⟨1⟩ ⟨0x1000⟩ fst with
+  | .ok ((paddr, _perms), _) =>
+      expect "FO-009 resolved paddr" (paddr == ⟨0x2000⟩)
+  | .error _ => throw <| IO.userError "FO-009 vspace lookup should succeed"
+
+/-- FO-010: frozenVspaceLookup — unbound ASID returns error -/
+private def fo010_vspaceLookupMissing : IO Unit := do
+  let fst := emptyFrozenState
+  match frozenVspaceLookup ⟨99⟩ ⟨0x1000⟩ fst with
+  | .ok _ => throw <| IO.userError "FO-010 should fail"
+  | .error e => expect "FO-010 unbound ASID → asidNotBound" (e == .asidNotBound)
+
+-- ============================================================================
+-- TPH-009: Frozen Service Query
+-- ============================================================================
+
+/-- FO-011: frozenLookupServiceByCap — find service by endpoint -/
+private def fo011_serviceLookup : IO Unit := do
+  let reg : ServiceRegistration := {
+    sid := ⟨1⟩
+    iface := { ifaceId := ⟨1⟩, methodCount := 1, maxMessageSize := 64,
+               maxResponseSize := 64, requiresGrant := false }
+    endpointCap := { target := .object ⟨42⟩, rights := ⟨7⟩, badge := none }
+  }
+  let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨1⟩ reg
+  let fst := { emptyFrozenState with serviceRegistry := freezeMap regRt }
+  match frozenLookupServiceByCap ⟨42⟩ fst with
+  | .ok (found, _) => expect "FO-011 found service" (found.sid == ⟨1⟩)
+  | .error _ => throw <| IO.userError "FO-011 service lookup should succeed"
+
+/-- FO-012: frozenLookupServiceByCap — missing service returns error -/
+private def fo012_serviceLookupMissing : IO Unit := do
+  let fst := emptyFrozenState
+  match frozenLookupServiceByCap ⟨99⟩ fst with
+  | .ok _ => throw <| IO.userError "FO-012 should fail"
+  | .error e => expect "FO-012 missing → objectNotFound" (e == .objectNotFound)
+
+-- ============================================================================
+-- TPH-013: Delete in Frozen (CSpace)
+-- ============================================================================
+
+/-- FO-013: frozenCspaceDelete — erase slot from frozen CNode -/
+private def fo013_cspaceDelete : IO Unit := do
+  let cap : Capability := { target := .object ⟨42⟩, rights := ⟨7⟩, badge := none }
+  let radix := (CNodeRadix.empty 0 0 4).insert ⟨3⟩ cap
+  let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
+  match frozenCspaceDelete ⟨10⟩ ⟨3⟩ fst with
+  | .ok ((), fst') =>
+      -- After delete, lookup should fail
+      match frozenCspaceLookup fst' ⟨3⟩ ⟨10⟩ with
+      | .ok _ => throw <| IO.userError "FO-013a deleted slot should be empty"
+      | .error e => expect "FO-013a deleted → invalidCapability" (e == .invalidCapability)
+  | .error _ => throw <| IO.userError "FO-013 delete should succeed"
+
+-- ============================================================================
+-- TPH-014: Notification Signal/Wait
+-- ============================================================================
+
+/-- FO-014: frozenNotificationSignal — accumulate badge on idle notification -/
+private def fo014_notificationSignal : IO Unit := do
+  let ntfn : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
+  let fst := mkFrozenState [(⟨5⟩, .notification ntfn)]
+  match frozenNotificationSignal ⟨5⟩ (Badge.ofNat 0xFF) fst with
+  | .ok ((), fst') =>
+      match fst'.objects.get? ⟨5⟩ with
+      | some (.notification ntfn') =>
+          expect "FO-014a state is active" (ntfn'.state == .active)
+          expect "FO-014b badge accumulated" (ntfn'.pendingBadge.isSome)
+      | _ => throw <| IO.userError "FO-014a notification should exist"
+  | .error _ => throw <| IO.userError "FO-014 signal should succeed"
+
+/-- FO-015: frozenNotificationWait — consume pending badge -/
+private def fo015_notificationWait : IO Unit := do
+  let ntfn : Notification := { state := .active, waitingThreads := [], pendingBadge := some (Badge.ofNat 42) }
+  let waiterTcb := mkTcb 2
+  let fst := mkFrozenState [(⟨5⟩, .notification ntfn), (⟨2⟩, .tcb waiterTcb)]
+  match frozenNotificationWait ⟨5⟩ ⟨2⟩ fst with
+  | .ok (badge, _fst') =>
+      expect "FO-015a badge consumed" (badge == some (Badge.ofNat 42))
+  | .error _ => throw <| IO.userError "FO-015 wait should succeed"
 
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
 def main : IO Unit := do
   IO.println "=== Q7 Frozen Operations Test Suite ==="
+  IO.println "--- Q7-T1: FrozenKernel Monad Tests ---"
   fo001_lookupExisting
   fo002_lookupMissing
-  IO.println "=== All Q7 frozen ops tests passed ==="
+  fo003_storeObject
+  IO.println "--- TPH-005: Frozen IPC ---"
+  fo004_endpointReply
+  fo005_replyWrongReplier
+  IO.println "--- TPH-006: Frozen Scheduler Tick ---"
+  fo006_timerTickIdle
+  IO.println "--- TPH-007: Frozen CSpace Lookup ---"
+  fo007_cspaceLookup
+  fo008_cspaceLookupMissing
+  IO.println "--- TPH-008: Frozen VSpace Resolve ---"
+  fo009_vspaceLookup
+  fo010_vspaceLookupMissing
+  IO.println "--- TPH-009: Frozen Service Query ---"
+  fo011_serviceLookup
+  fo012_serviceLookupMissing
+  IO.println "--- TPH-013: Delete in Frozen ---"
+  fo013_cspaceDelete
+  IO.println "--- TPH-014: Notification Signal/Wait ---"
+  fo014_notificationSignal
+  fo015_notificationWait
+  IO.println "=== All Q7 frozen ops tests passed (15 scenarios) ==="

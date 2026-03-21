@@ -112,4 +112,96 @@ theorem frozenStoreObject_preserves_serviceRegistry
   | some objects' => simp [hSet] at hOk; rw [← hOk]
   | none => simp [hSet] at hOk
 
+-- ============================================================================
+-- Q7-D: FrozenMap.set Structural Lemmas
+-- ============================================================================
+
+/-- Q7-D: `FrozenMap.set` preserves the data array size. -/
+theorem FrozenMap.set_data_size [BEq κ] [Hashable κ]
+    (fm fm' : FrozenMap κ ν) (k : κ) (v : ν)
+    (hSet : fm.set k v = some fm') :
+    fm'.data.size = fm.data.size := by
+  unfold FrozenMap.set at hSet
+  split at hSet
+  · simp at hSet
+  · rename_i idx hIdx
+    split at hSet
+    · rename_i hBound
+      simp at hSet; rw [← hSet]; simp [Array.size_set]
+    · simp at hSet
+
+/-- Q7-D: `FrozenMap.set` does not change containment for any key. -/
+theorem FrozenMap.set_contains_eq [BEq κ] [Hashable κ]
+    (fm fm' : FrozenMap κ ν) (k : κ) (v : ν) (k' : κ)
+    (hSet : fm.set k v = some fm') :
+    fm'.contains k' = fm.contains k' := by
+  unfold FrozenMap.contains
+  rw [FrozenMap.set_indexMap_eq fm fm' k v hSet]
+
+/-- Q7-D: `frozenStoreObject` preserves CDT slot-node map. -/
+theorem frozenStoreObject_preserves_cdtSlotNode
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.cdtSlotNode = st.cdtSlotNode := by
+  unfold frozenStoreObject at hOk
+  cases hSet : st.objects.set id obj with
+  | some objects' => simp [hSet] at hOk; rw [← hOk]
+  | none => simp [hSet] at hOk
+
+/-- Q7-D: `frozenStoreObject` preserves CDT node-slot map. -/
+theorem frozenStoreObject_preserves_cdtNodeSlot
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold frozenStoreObject at hOk
+  cases hSet : st.objects.set id obj with
+  | some objects' => simp [hSet] at hOk; rw [← hOk]
+  | none => simp [hSet] at hOk
+
+/-- Q7-D: `frozenStoreObject` preserves object types metadata. -/
+theorem frozenStoreObject_preserves_objectTypes
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.objectTypes = st.objectTypes := by
+  unfold frozenStoreObject at hOk
+  cases hSet : st.objects.set id obj with
+  | some objects' => simp [hSet] at hOk; rw [← hOk]
+  | none => simp [hSet] at hOk
+
+/-- Q7-D: `frozenStoreObject` preserves capability refs metadata. -/
+theorem frozenStoreObject_preserves_capabilityRefs
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.capabilityRefs = st.capabilityRefs := by
+  unfold frozenStoreObject at hOk
+  cases hSet : st.objects.set id obj with
+  | some objects' => simp [hSet] at hOk; rw [← hOk]
+  | none => simp [hSet] at hOk
+
+/-- Q7-D: `frozenStoreObject` preserves interface registry. -/
+theorem frozenStoreObject_preserves_interfaceRegistry
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.interfaceRegistry = st.interfaceRegistry := by
+  unfold frozenStoreObject at hOk
+  cases hSet : st.objects.set id obj with
+  | some objects' => simp [hSet] at hOk; rw [← hOk]
+  | none => simp [hSet] at hOk
+
+/-- Q7-D: `frozenStoreObject` preserves the object index set. -/
+theorem frozenStoreObject_preserves_objectIndexSet
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.objectIndexSet = st.objectIndexSet := by
+  unfold frozenStoreObject at hOk
+  cases hSet : st.objects.set id obj with
+  | some objects' => simp [hSet] at hOk; rw [← hOk]
+  | none => simp [hSet] at hOk
+
 end SeLe4n.Kernel.FrozenOps

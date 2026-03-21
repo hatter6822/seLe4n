@@ -86,4 +86,62 @@ theorem frozenStoreObject_preserves_cdtNextNode
   obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
   subst hSt; rfl
 
+-- ============================================================================
+-- Q7-E: Additional frozenStoreObject Frame Lemmas via extracts_state
+-- ============================================================================
+
+/-- Q7-E: `frozenStoreObject` preserves the services map. -/
+theorem frozenStoreObject_preserves_services
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.services = st.services := by
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  subst hSt; rfl
+
+/-- Q7-E: `frozenStoreObject` preserves CDT slot-node map. -/
+theorem frozenStoreObject_preserves_cdtSlotNode'
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.cdtSlotNode = st.cdtSlotNode := by
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  subst hSt; rfl
+
+/-- Q7-E: `frozenStoreObject` preserves CDT node-slot map. -/
+theorem frozenStoreObject_preserves_cdtNodeSlot'
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
+    st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  subst hSt; rfl
+
+-- ============================================================================
+-- Q7-E: Read-Only Operation Preservation
+-- ============================================================================
+
+/-- Q7-E: `frozenLookupObject` is read-only — preserves all state. -/
+theorem frozenLookupObject_read_only
+    (id : SeLe4n.ObjId) (st : FrozenSystemState)
+    (obj : FrozenKernelObject) (st' : FrozenSystemState)
+    (hOk : frozenLookupObject id st = .ok (obj, st')) :
+    st' = st :=
+  frozenLookupObject_state_unchanged id st obj st' hOk
+
+-- ============================================================================
+-- Q7-E: Frozen Operation Determinism
+-- ============================================================================
+
+/-- Q7-E: `frozenLookupObject` is deterministic. -/
+theorem frozenLookupObject_deterministic
+    (id : SeLe4n.ObjId) (st : FrozenSystemState) :
+    frozenLookupObject id st = frozenLookupObject id st := rfl
+
+/-- Q7-E: `frozenStoreObject` is deterministic. -/
+theorem frozenStoreObject_deterministic
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st : FrozenSystemState) :
+    frozenStoreObject id obj st = frozenStoreObject id obj st := rfl
+
 end SeLe4n.Kernel.FrozenOps
