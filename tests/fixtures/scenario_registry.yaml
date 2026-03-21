@@ -909,3 +909,39 @@ scenarios:
     function: runRustXvalVectors
     subsystem: ABI
     description: "MessageInfo bit layout verification"
+  # Q9-A: Two-Phase Architecture Integration Tests
+  TPH-001:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph001a_emptyBuilder/tph001b_builderPipeline/tph001c_builderIrq
+    subsystem: TwoPhaseArch
+    description: "builder pipeline: empty + create objects + IRQ"
+  TPH-003:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph003_freezePopulated
+    subsystem: TwoPhaseArch
+    description: "freeze populated state, verify lookup equivalence"
+  TPH-005:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph005a_sendBlocks/tph005b_receiveBlocks/tph005c_callBlocksForReply
+    subsystem: TwoPhaseArch
+    description: "frozen IPC send/receive/call"
+  TPH-006:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph006a_timerTickActive/tph006b_timerTickExpiry
+    subsystem: TwoPhaseArch
+    description: "frozen scheduler tick with active thread"
+  TPH-010:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph010_commutativity
+    subsystem: TwoPhaseArch
+    description: "commutativity: builder then freeze = freeze then frozen op"
+  TPH-012:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph012_preallocatedSlot
+    subsystem: TwoPhaseArch
+    description: "pre-allocated slot retype in frozen state"
+  TPH-014:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph014a_frozenSchedule/tph014b_frozenYield/tph014c_scheduleNoEligible
+    subsystem: TwoPhaseArch
+    description: "RunQueue operations in frozen state"

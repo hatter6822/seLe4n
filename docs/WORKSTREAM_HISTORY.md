@@ -284,8 +284,33 @@ syscall wrappers for all 14 seLe4n syscalls. Key changes:
 - **Proof surface**: Lean side unchanged (zero new sorry/axiom). Rust side:
   64 unit tests + 25 conformance tests across 3 crates.
 
+### WS-Q9 workstream (Integration Testing + Documentation)
+
+WS-Q9 is a **completed** workstream (v0.17.14), the final phase of WS-Q (Kernel
+State Architecture). It delivers comprehensive integration testing for the
+two-phase builder→freeze→execution pipeline and synchronizes all documentation.
+Key changes:
+
+- **Q9-A**: `TwoPhaseArchSuite.lean` — 14 integration tests (41 checks) covering
+  TPH-001 (builder pipeline), TPH-003 (freeze populated + lookup equivalence),
+  TPH-005 (frozen IPC send/receive/call), TPH-006 (frozen scheduler tick with
+  active thread + preemption), TPH-010 (commutativity: builder→freeze =
+  freeze→frozen op), TPH-012 (pre-allocated slot retype in frozen state),
+  TPH-014 (RunQueue frozen operations: schedule/yield/no-eligible).
+- **Q9-B**: Rust conformance tests RUST-XVAL-001 through RUST-XVAL-019 verified
+  complete (25 tests in `rust/sele4n-abi/tests/conformance.rs`).
+- **Q9-C**: Service interface tests SRG-001 through SRG-010 verified complete
+  in `MainTraceHarness.lean`.
+- **Q9-D**: Full documentation sync across 15+ files: WORKSTREAM_HISTORY.md,
+  SELE4N_SPEC.md, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.md, README.md, CLAUDE.md,
+  GitBook chapters (architecture, design, spec, proofs), codebase_map.json.
+- **Test infrastructure**: New `two_phase_arch_suite` executable registered in
+  `lakefile.toml`, integrated into `test_tier2_negative.sh`, scenario registry
+  updated with TPH-* entries, fixture file created.
+- **Proof surface**: Zero sorry/axiom, all modules compile independently.
+
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
-for the full WS-Q plan (phases Q1–Q9).
+for the full WS-Q plan (phases Q1–Q9). **WS-Q portfolio is now COMPLETE.**
 
 ### WS-N workstream (Robin Hood hashing verified implementation)
 

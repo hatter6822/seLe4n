@@ -114,6 +114,12 @@ encoding the finalized ABI surface (14 syscalls). 14 newtype identifiers,
 `unsafe` block), safe high-level wrappers for all syscalls, phantom-typed
 `Cap<Obj, Rts>` handles with sealed traits. 64 unit tests + 25 conformance tests.
 Lean trace harness cross-validation (XVAL-001..004). Zero Lean regression.
+**WS-Q9** (v0.17.14) — Integration testing + documentation — **COMPLETED**:
+`TwoPhaseArchSuite.lean` with 14 integration tests (41 checks) covering the full
+builder→freeze→execution pipeline (TPH-001 through TPH-014). Commutativity
+property verified. Rust conformance XVAL-001..019 verified. SRG-001..010
+verified. Full documentation sync across 15+ files. Scenario registry updated.
+**WS-Q portfolio is now COMPLETE** (all 9 phases, 45 atomic units of work).
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully

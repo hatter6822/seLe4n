@@ -1,3 +1,24 @@
+## [0.17.14] — WS-Q9 Integration Testing + Documentation
+
+- Completed Phase 9 (WS-Q9) of the Kernel State Architecture workstream:
+  Comprehensive integration testing for the two-phase architecture + full
+  documentation sync. **WS-Q portfolio is now COMPLETE** (all 9 phases).
+- Q9-A: `TwoPhaseArchSuite.lean` — 14 integration tests (41 checks) covering
+  the full builder→freeze→execution pipeline: TPH-001 (builder pipeline),
+  TPH-003 (freeze populated + lookup equivalence), TPH-005 (frozen IPC
+  send/receive/call), TPH-006 (frozen scheduler tick with preemption),
+  TPH-010 (commutativity property), TPH-012 (pre-allocated slot retype),
+  TPH-014 (RunQueue frozen operations: schedule/yield/no-eligible)
+- Q9-B: Verified Rust conformance XVAL-001..019 (25 tests in conformance.rs)
+- Q9-C: Verified service interface SRG-001..010 in MainTraceHarness
+- Q9-D: Full documentation sync across 15+ files: WORKSTREAM_HISTORY.md,
+  SELE4N_SPEC.md, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.md, README.md,
+  CLAUDE.md, GitBook chapters (spec, proofs), codebase_map.json
+- Test infrastructure: `two_phase_arch_suite` executable in lakefile.toml,
+  integrated into test_tier2_negative.sh, scenario registry + fixture updated
+- Version bump: v0.17.13 → v0.17.14
+- All test tiers pass, zero sorry/axiom
+
 ## [0.17.13] — WS-Q8 Rust Syscall Wrappers
 
 - Completed Phase 8 (WS-Q8) of the Kernel State Architecture workstream:

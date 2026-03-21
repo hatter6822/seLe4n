@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.17.12` |
+| Version | `0.17.14` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 50,017 across 90 Lean files |
-| Test LoC | 5,513 across 5 suites |
-| Proved declarations | 1,508 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 53,118 across 97 Lean files |
+| Test LoC | 7,027 across 10 suites |
+| Proved declarations | 1,625 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
-| Active workstream | **WS-Q** Kernel State Architecture — **WS-Q1 COMPLETED** (v0.17.7), **WS-Q2 COMPLETED** (v0.17.8), **WS-Q3 COMPLETED** (v0.17.9), **WS-Q4 COMPLETED** (v0.17.10), **WS-Q5 COMPLETED** (v0.17.11), **WS-Q6 COMPLETED** (v0.17.12), **WS-Q7 COMPLETED** (v0.17.13), **WS-Q8 COMPLETED** (v0.17.13). Prior: **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Q9 (integration testing + documentation), then Raspberry Pi 5 hardware binding** |
+| Active workstream | **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14) — Kernel State Architecture, all 9 phases (Q1–Q9). Prior: **WS-N** (v0.17.0–v0.17.5), **WS-M** (v0.16.14–v0.17.0), **WS-L** (v0.16.9–v0.16.13), WS-K, WS-J1 — all COMPLETE. **Next: Raspberry Pi 5 hardware binding** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

@@ -101,6 +101,7 @@ run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 
 # WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registry \
-  --extra-fixtures tests/fixtures/robin_hood_smoke.expected
+  --extra-fixtures tests/fixtures/robin_hood_smoke.expected \
+  tests/fixtures/two_phase_arch_smoke.expected
 
 finalize_report

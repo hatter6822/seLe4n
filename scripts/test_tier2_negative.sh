@@ -21,5 +21,7 @@ run_check "TRACE" lake env lean --run tests/NegativeStateSuite.lean
 run_check "TRACE" lake env lean --run tests/OperationChainSuite.lean
 run_check "TRACE" lake env lean --run tests/InformationFlowSuite.lean
 run_check "TRACE" lake env lean --run tests/RobinHoodSuite.lean
+# Q9-A: Two-Phase Architecture integration tests (builder→freeze→execution).
+run_check "TRACE" lake exe two_phase_arch_suite
 
 finalize_report
