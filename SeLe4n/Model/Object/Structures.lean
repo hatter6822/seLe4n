@@ -1361,6 +1361,20 @@ def projectObservedEdges
     | some p, some c => some { parent := p, child := c, op := e.op }
     | _, _ => none)
 
+/-- R2-D/M-08: Decidable ancestor check — returns `true` if `ancestor` is
+reachable from `start` by following parent edges upward through the CDT.
+Uses `parentMap` for O(depth) lookup. Fuel = edges.length for termination. -/
+def isAncestor (cdt : CapDerivationTree) (ancestor start : CdtNodeId) : Bool :=
+  go cdt.edges.length start
+where
+  go : Nat → CdtNodeId → Bool
+    | 0, _ => false
+    | n + 1, current =>
+      if current == ancestor then true
+      else match cdt.parentMap[current]? with
+        | none => false
+        | some par => go n par
+
 end CapDerivationTree
 
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is

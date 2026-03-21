@@ -672,29 +672,26 @@ private theorem capabilityInvariantBundle_of_cdt_update
     cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq,
     hObjEq ▸ hObjInvPre⟩
 
-/-- `processRevokeNode` preserves `cdtNodeSlot.invExt` and the size bound. -/
+/-- `processRevokeNode` preserves `cdtNodeSlot.invExt` and the size bound
+when it succeeds. -/
 private theorem processRevokeNode_preserves_cdtNodeSlot
-    (st : SystemState) (node : CdtNodeId)
+    (st st' : SystemState) (node : CdtNodeId)
     (hNodeSlotInv : st.cdtNodeSlot.invExt)
-    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity) :
-    (processRevokeNode st node).cdtNodeSlot.invExt ∧
-    (processRevokeNode st node).cdtNodeSlot.size < (processRevokeNode st node).cdtNodeSlot.capacity := by
-  unfold processRevokeNode
+    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity)
+    (hStep : processRevokeNode st node = .ok st') :
+    st'.cdtNodeSlot.invExt ∧ st'.cdtNodeSlot.size < st'.cdtNodeSlot.capacity := by
+  unfold processRevokeNode at hStep
   cases hSlot : SystemState.lookupCdtSlotOfNode st node with
-  | none => simp only []; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
+  | none => simp [hSlot] at hStep; cases hStep; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
   | some descAddr =>
-    simp only []
+    simp [hSlot] at hStep
     cases hDel : cspaceDeleteSlot descAddr st with
-    | error _ => simp only []; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
+    | error _ => simp [hDel] at hStep
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
-      simp only []
+      simp [hDel] at hStep; cases hStep
       have ⟨hInvDel, hSzDel⟩ := cspaceDeleteSlot_preserves_cdtNodeSlot st stDel descAddr
         hNodeSlotInv hNodeSlotSize hDel
-      -- The result is { stDetached with cdt := ... } where stDetached = detachSlotFromCdt stDel descAddr
-      -- The struct update only changes cdt, so cdtNodeSlot is unchanged from stDetached.
-      -- We need to show stDetached's cdtNodeSlot properties.
-      -- detachSlotFromCdt either leaves cdtNodeSlot unchanged or erases one key
       have hDetachNS : (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.invExt ∧
           (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.size <
           (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.capacity := by
@@ -707,39 +704,40 @@ private theorem processRevokeNode_preserves_cdtNodeSlot
                  SeLe4n.Kernel.RobinHood.RHTable.erase_size_lt_capacity stDel.cdtNodeSlot origNode hSzDel⟩
       exact hDetachNS
 
-/-- M-P04/M5: `processRevokeNode` preserves the full capability invariant bundle.
+/-- R2-A/R2-F: `processRevokeNode` preserves the full capability invariant bundle
+when it succeeds.
 
-Three cases handled:
+Two cases handled:
 - **No slot mapping** (`lookupCdtSlotOfNode = none`): just `removeNode` — CDT-only
   update preserves all object-level invariants.
-- **Delete error**: same as above (error swallowed, node removed).
 - **Successful delete**: chains `cspaceDeleteSlot_preserves` → `detachSlotFromCdt`
   invariant reconstruction → `removeNode` CDT update.
+
+The error case (`cspaceDeleteSlot` fails) now returns `.error` and does not
+produce a post-state, so no invariant proof is needed for that path.
 
 This is the single proof obligation for per-node revocation, shared by both the
 materialized fold (`cspaceRevokeCdt`) and streaming BFS (`streamingRevokeBFS`). -/
 theorem processRevokeNode_preserves_capabilityInvariantBundle
-    (st : SystemState) (node : CdtNodeId)
+    (st st' : SystemState) (node : CdtNodeId)
     (hInv : capabilityInvariantBundle st)
     (hNodeSlotInv : st.cdtNodeSlot.invExt)
-    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity) :
-    capabilityInvariantBundle (processRevokeNode st node) := by
-  unfold processRevokeNode
+    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity)
+    (hStep : processRevokeNode st node = .ok st') :
+    capabilityInvariantBundle st' := by
+  unfold processRevokeNode at hStep
   cases hSlot : SystemState.lookupCdtSlotOfNode st node with
   | none =>
-    simp
+    simp [hSlot] at hStep; cases hStep
     exact capabilityInvariantBundle_of_cdt_update st _ hInv
       (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
   | some descAddr =>
-    simp
+    simp [hSlot] at hStep
     cases hDel : cspaceDeleteSlot descAddr st with
-    | error _ =>
-      simp
-      exact capabilityInvariantBundle_of_cdt_update st _ hInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
+    | error _ => simp [hDel] at hStep
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
-      simp
+      simp [hDel] at hStep; cases hStep
       have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle st stDel descAddr hInv
         hNodeSlotInv hNodeSlotSize hDel
       have ⟨hNodeSlotInvDel, hNodeSlotSizeDel⟩ :=
@@ -759,13 +757,17 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
           (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node))
 
 /-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node.
-Delegates to `processRevokeNode` for the actual state transformation. -/
+Delegates to `processRevokeNode` for the actual state transformation.
+Updated in WS-R2 to handle `processRevokeNode`'s `Except` return type. -/
 private def revokeCdtFoldBody
     (acc : Except KernelError (Unit × SystemState)) (node : CdtNodeId) :
     Except KernelError (Unit × SystemState) :=
   match acc with
   | .error e => .error e
-  | .ok ((), stAcc) => .ok ((), processRevokeNode stAcc node)
+  | .ok ((), stAcc) =>
+      match processRevokeNode stAcc node with
+      | .error e => .error e
+      | .ok stNext => .ok ((), stNext)
 
 /-- Single fold step preserves capabilityInvariantBundle.
 Delegates to `processRevokeNode_preserves_capabilityInvariantBundle`. -/
@@ -778,9 +780,13 @@ private theorem revokeCdtFoldBody_preserves
     capabilityInvariantBundle stNext ∧
     stNext.cdtNodeSlot.invExt ∧ stNext.cdtNodeSlot.size < stNext.cdtNodeSlot.capacity := by
   unfold revokeCdtFoldBody at hStep
-  simp at hStep; cases hStep
-  exact ⟨processRevokeNode_preserves_capabilityInvariantBundle stAcc node hInv hNodeSlotInv hNodeSlotSize,
-         processRevokeNode_preserves_cdtNodeSlot stAcc node hNodeSlotInv hNodeSlotSize⟩
+  simp only [] at hStep
+  cases hProc : processRevokeNode stAcc node with
+  | error e => simp [hProc] at hStep
+  | ok stMid =>
+    simp [hProc] at hStep; subst hStep
+    exact ⟨processRevokeNode_preserves_capabilityInvariantBundle stAcc stMid node hInv hNodeSlotInv hNodeSlotSize hProc,
+           processRevokeNode_preserves_cdtNodeSlot stAcc stMid node hNodeSlotInv hNodeSlotSize hProc⟩
 
 /-- Error propagation: revokeCdtFoldBody propagates errors unchanged. -/
 private theorem revokeCdtFoldBody_error (e : KernelError) (node : CdtNodeId) :
@@ -869,30 +875,31 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
           (.ok ((), stLocal)) = .ok ((), st') at hStep
       exact revokeCdtFold_preserves _ stLocal st' hLocalInv hLocalNSInv hLocalNSSz hStep
 
-/-- WS-M1/M-G04: Error-swallowing consistency theorem. When `revokeCdtFoldBody`
-encounters a `cspaceDeleteSlot` error, it drops the error and performs only a
-CDT `removeNode`. This theorem proves that invariant preservation holds through
-the swallowed-error path specifically — the resulting state satisfies
-`capabilityInvariantBundle` because `removeNode` only shrinks the edge set
-(via `edgeWellFounded_sub`), leaving all other CSpace state untouched. -/
-theorem cspaceRevokeCdt_swallowed_error_consistent
-    (stAcc stNext : SystemState) (node : CdtNodeId)
+/-- R2-F: Error propagation consistency theorem. When `cspaceDeleteSlot` fails
+for a CDT descendant, `processRevokeNode` (and therefore `revokeCdtFoldBody`)
+now propagates the error. This theorem proves that the error propagation is
+correct: the fold body returns the same error that `cspaceDeleteSlot` produced.
+This replaces the former `cspaceRevokeCdt_swallowed_error_consistent` theorem. -/
+theorem cspaceRevokeCdt_error_propagation_consistent
+    (stAcc : SystemState) (node : CdtNodeId)
     (descAddr : CSpaceAddr) (err : KernelError)
-    (hInv : capabilityInvariantBundle stAcc)
     (hSlot : SystemState.lookupCdtSlotOfNode stAcc node = some descAddr)
-    (hDelErr : cspaceDeleteSlot descAddr stAcc = .error err)
-    (hStep : revokeCdtFoldBody (.ok ((), stAcc)) node = .ok ((), stNext)) :
-    capabilityInvariantBundle stNext ∧
-    stNext.objects = stAcc.objects ∧
-    stNext.cdt.edges ⊆ stAcc.cdt.edges := by
-  unfold revokeCdtFoldBody at hStep
-  unfold processRevokeNode at hStep
-  simp [hSlot, hDelErr] at hStep; cases hStep
-  exact ⟨capabilityInvariantBundle_of_cdt_update stAcc _ hInv
-    (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1
-      (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)),
-   rfl,
-   CapDerivationTree.removeNode_edges_sub stAcc.cdt node⟩
+    (hDelErr : cspaceDeleteSlot descAddr stAcc = .error err) :
+    revokeCdtFoldBody (.ok ((), stAcc)) node = .error err := by
+  unfold revokeCdtFoldBody
+  simp only []
+  unfold processRevokeNode
+  simp [hSlot, hDelErr]
+
+/-- R2-F/M-05: Fuel exhaustion preservation theorem. When `streamingRevokeBFS`
+returns `.error .resourceExhausted`, the input state is unchanged — the error
+is returned before any state modification occurs in the exhaustion case. -/
+theorem streamingRevokeBFS_fuel_exhaustion_returns_error
+    (queue : List CdtNodeId) (st : SystemState) (node : CdtNodeId)
+    (rest : List CdtNodeId)
+    (hQueue : queue = node :: rest) :
+    streamingRevokeBFS 0 queue st = .error .resourceExhausted := by
+  subst hQueue; unfold streamingRevokeBFS; rfl
 
 /-- WS-F4/F-06: cspaceRevokeCdtStrict preserves capabilityInvariantBundle.
 The strict variant composes cspaceRevoke + a fold that only does cspaceDeleteSlot
@@ -1032,21 +1039,25 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
 -- M-P04: Streaming CDT revocation preservation (WS-M5)
 -- ============================================================================
 
-/-- M-P04: Each node-processing step in the streaming BFS preserves the
+/-- M-P04/R2-F: Each node-processing step in the streaming BFS preserves the
 capability invariant bundle. Direct delegation to
 `processRevokeNode_preserves_capabilityInvariantBundle`. -/
 private theorem streamingRevokeBFS_step_preserves
-    (st : SystemState) (node : CdtNodeId)
+    (st st' : SystemState) (node : CdtNodeId)
     (hInv : capabilityInvariantBundle st)
     (hNodeSlotInv : st.cdtNodeSlot.invExt)
-    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity) :
-    capabilityInvariantBundle (processRevokeNode st node) :=
-  processRevokeNode_preserves_capabilityInvariantBundle st node hInv hNodeSlotInv hNodeSlotSize
+    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity)
+    (hStep : processRevokeNode st node = .ok st') :
+    capabilityInvariantBundle st' :=
+  processRevokeNode_preserves_capabilityInvariantBundle st st' node hInv hNodeSlotInv hNodeSlotSize hStep
 
-/-- M-P04: The full streaming BFS loop preserves the capability invariant bundle.
+/-- M-P04/R2-F: The full streaming BFS loop preserves the capability invariant bundle.
 Proof by induction on `fuel`. Each step processes one node (preserving
 the invariant by `streamingRevokeBFS_step_preserves`) then recurses with
-fuel-1 and the updated queue + state. -/
+fuel-1 and the updated queue + state.
+
+Updated in WS-R2: fuel exhaustion case (`0, _ :: _`) now returns `.error`,
+so the proof obligation for that case is vacuously discharged by contradiction. -/
 private theorem streamingRevokeBFS_preserves
     (fuel : Nat) (queue : List CdtNodeId)
     (stInit stFinal : SystemState)
@@ -1060,14 +1071,20 @@ private theorem streamingRevokeBFS_preserves
     unfold streamingRevokeBFS at hBFS
     cases queue with
     | nil => simp at hBFS; cases hBFS; exact hInv
-    | cons _ _ => simp at hBFS; cases hBFS; exact hInv
+    | cons _ _ => simp at hBFS  -- .error ≠ .ok → contradiction
   | succ n ih =>
     unfold streamingRevokeBFS at hBFS
     cases queue with
     | nil => simp at hBFS; cases hBFS; exact hInv
     | cons node rest =>
-      have ⟨hNSInvPost, hNSSzPost⟩ := processRevokeNode_preserves_cdtNodeSlot stInit node hNodeSlotInv hNodeSlotSize
-      exact ih _ _ _ (streamingRevokeBFS_step_preserves stInit node hInv hNodeSlotInv hNodeSlotSize) hNSInvPost hNSSzPost hBFS
+      simp only [] at hBFS
+      cases hProc : processRevokeNode stInit node with
+      | error e => simp [hProc] at hBFS
+      | ok stNext =>
+        simp [hProc] at hBFS
+        have hStepInv := streamingRevokeBFS_step_preserves stInit stNext node hInv hNodeSlotInv hNodeSlotSize hProc
+        have ⟨hNSInvPost, hNSSzPost⟩ := processRevokeNode_preserves_cdtNodeSlot stInit stNext node hNodeSlotInv hNodeSlotSize hProc
+        exact ih _ _ _ hStepInv hNSInvPost hNSSzPost hBFS
 
 /-- M-P04: `cspaceRevokeCdtStreaming` preserves the capability invariant bundle.
 Composes `cspaceRevoke_preserves_capabilityInvariantBundle` with

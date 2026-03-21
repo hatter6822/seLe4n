@@ -27,7 +27,16 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   SyscallResponse semantic overlap (R-M03), api* wrapper capability-target bypass
   (M-04), frozen context save/restore silent failures (M-10, M-11). All 14 api*
   wrappers deprecated with validation guards.
-- **R2–R8**: Pending. See workstream plan for details.
+- **R2 (v0.18.1) — COMPLETE**: Capability & CDT hardening. Fixed `processRevokeNode`
+  error swallowing (M-06) — revocation now propagates `cspaceDeleteSlot` errors
+  instead of silently dropping them. Fixed `streamingRevokeBFS` fuel exhaustion
+  (M-05) — returns `.error .resourceExhausted` instead of `.ok`. Added
+  `resourceExhausted` to `KernelError`. Updated all preservation proofs for new
+  `Except` return types. Added `isAncestor` decidable predicate for CDT cycle
+  detection (M-08). Existing `removeNode_parentMapConsistent` proof covers CDT
+  remove consistency (M-07). Added `processRevokeNode_lenient` deprecated variant
+  for backward compatibility. Added revocation error propagation test cases.
+- **R3–R8**: Pending. See workstream plan for details.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 
