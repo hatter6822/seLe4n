@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-q7-kernel-ops-QrT6d",
-      "commit_sha": "9f79f2e612c3c007e5b8703daac8f3d9b6bbab77",
-      "tree_sha": "db035f01fbdc211571ce09d1130acfad5ded502c",
-      "committed_at_utc": "2026-03-21T02:03:23+00:00"
+      "commit_sha": "4274718ff59b732a66562daa9015be10a539e0f6",
+      "tree_sha": "92ea90d2f8ebb2b00e4e1fc42dc4c908142474f1",
+      "committed_at_utc": "2026-03-21T02:17:36+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e7bc5e2b5640413ca794435ac53c68dee511440aef7a663767a0d246d9eabb9d"
+    "source_digest": "22dbcf5744fa397d034277dad0ba7c1928636dcc64d6243c656fca0cb466cdb7"
   },
   "summary": {
     "module_count": 106,
@@ -27,7 +27,7 @@
     "version": "0.17.13",
     "lean_toolchain": "v4.28.0",
     "production_files": 97,
-    "production_loc": 53016,
+    "production_loc": 53061,
     "test_files": 9,
     "test_loc": 6571,
     "proved_theorem_lemma_decls": 1625,
@@ -4504,13 +4504,13 @@
         {
           "kind": "def",
           "name": "frozenChooseThread",
-          "line": 53,
+          "line": 83,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenSchedule",
-          "line": 73,
+          "line": 108,
           "called": [
             "frozenChooseThread"
           ]
@@ -4518,7 +4518,7 @@
         {
           "kind": "def",
           "name": "frozenHandleYield",
-          "line": 98,
+          "line": 136,
           "called": [
             "frozenSchedule"
           ]
@@ -4526,13 +4526,13 @@
         {
           "kind": "def",
           "name": "frozenDefaultTimeSlice",
-          "line": 114,
+          "line": 146,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenTimerTick",
-          "line": 118,
+          "line": 154,
           "called": [
             "frozenDefaultTimeSlice",
             "frozenSchedule"
@@ -4541,25 +4541,25 @@
         {
           "kind": "def",
           "name": "frozenNotificationSignal",
-          "line": 154,
+          "line": 194,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenNotificationWait",
-          "line": 186,
+          "line": 231,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenQueuePopHead",
-          "line": 225,
+          "line": 270,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenEndpointSend",
-          "line": 256,
+          "line": 301,
           "called": [
             "frozenQueuePopHead"
           ]
@@ -4567,7 +4567,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReceive",
-          "line": 293,
+          "line": 338,
           "called": [
             "frozenQueuePopHead"
           ]
@@ -4575,7 +4575,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointCall",
-          "line": 335,
+          "line": 380,
           "called": [
             "frozenQueuePopHead"
           ]
@@ -4583,19 +4583,19 @@
         {
           "kind": "def",
           "name": "frozenEndpointReply",
-          "line": 381,
+          "line": 426,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 406,
+          "line": 451,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 418,
+          "line": 463,
           "called": [
             "frozenCspaceLookup"
           ]
@@ -4603,25 +4603,25 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 427,
+          "line": 472,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 441,
+          "line": 486,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 460,
+          "line": 505,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 481,
+          "line": 526,
           "called": []
         }
       ]

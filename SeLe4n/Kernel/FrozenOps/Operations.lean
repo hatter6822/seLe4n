@@ -48,28 +48,63 @@ open SeLe4n.Kernel.RadixTree
 -- Q7-C1: Scheduler Frozen Operations
 -- ============================================================================
 
+/-! ### Frozen Scheduler Architecture
+
+The frozen scheduler uses a different representation than the builder-phase
+`RunQueue`. Key differences:
+
+1. **No key-set mutation**: `FrozenSet`/`FrozenMap` cannot add or remove keys.
+   The `membership` set is immutable after freeze — it records the set of
+   threads that were in the run queue at freeze time.
+
+2. **Dequeue-on-dispatch via `current`**: In the builder phase, `schedule`
+   removes the dispatched thread from the run queue. In the frozen phase,
+   the `current` field serves as the dequeue marker: `current = some tid`
+   means `tid` is dispatched and should be skipped during selection.
+
+3. **Thread eligibility**: A thread is eligible for selection if:
+   - It is in the `membership` set (was in run queue at freeze time)
+   - It is NOT the current thread (dequeue-on-dispatch)
+   - Its TCB domain matches `activeDomain`
+   - Its TCB ipcState is `.ready` (not blocked)
+
+4. **Yield**: Clears `current` (conceptually re-enqueues the outgoing thread)
+   then calls `frozenSchedule` to select the next thread.
+
+5. **`ensureRunnable` equivalent**: In the builder phase, woken threads are
+   inserted into the run queue. In the frozen phase, woken threads must
+   already be in the `membership` set (pre-allocated at freeze time). The
+   frozen equivalent is updating the TCB's `ipcState` to `.ready`, which
+   makes the thread eligible for selection. -/
+
 /-- Q7-C1: Choose the best runnable thread in the frozen scheduler.
-Mirrors `chooseThread` from builder phase using `FrozenMap` lookups. -/
+Mirrors `chooseThread` — scans `byPriority` buckets for an eligible thread
+in the active domain, skipping the current thread (dequeue-on-dispatch). -/
 def frozenChooseThread (st : FrozenSystemState)
     : Except KernelError (Option SeLe4n.ThreadId × FrozenSystemState) :=
-  -- Fold over the scheduler's byPriority map to find the highest-priority
-  -- non-empty bucket with a thread in the active domain
+  let currentTid := st.scheduler.current
   let result := st.scheduler.byPriority.fold (init := none)
     fun acc _prio threads =>
       match acc with
-      | some _ => acc  -- already found a candidate
+      | some _ => acc
       | none =>
-          -- Find first thread in active domain
-          match threads.find? (fun tid =>
-            match st.objects.get? tid.toObjId with
-            | some (.tcb tcb) => tcb.domain == st.scheduler.activeDomain
-            | _ => false) with
-          | some tid => some tid
-          | none => none
+          threads.find? (fun tid =>
+            -- Skip current thread (dequeue-on-dispatch semantics)
+            if currentTid == some tid then false
+            else
+              match st.objects.get? tid.toObjId with
+              | some (.tcb tcb) =>
+                  tcb.domain == st.scheduler.activeDomain &&
+                  tcb.ipcState == .ready
+              | _ => false)
   .ok (result, st)
 
 /-- Q7-C1: Frozen schedule — select and dispatch a thread from frozen state.
-Mirrors `schedule` with dequeue-on-dispatch and inline context switch. -/
+Mirrors `schedule` with dequeue-on-dispatch and inline context switch.
+
+In the frozen phase, "dequeue" is represented by setting `current := some tid`.
+The `membership` FrozenSet is not modified — it remains a read-only record
+of the thread population at freeze time. -/
 def frozenSchedule : FrozenKernel Unit :=
   fun st =>
     match frozenChooseThread st with
@@ -80,41 +115,42 @@ def frozenSchedule : FrozenKernel Unit :=
     | .ok (some tid, st') =>
         match st'.objects.get? tid.toObjId with
         | some (.tcb tcb) =>
-            if tcb.domain == st'.scheduler.activeDomain then
+            if tcb.domain == st'.scheduler.activeDomain &&
+               tcb.ipcState == .ready then
               let stSaved := frozenSaveOutgoingContext st'
-              -- Dequeue: remove from scheduler membership
-              let stDequeued := { stSaved with scheduler :=
-                { stSaved.scheduler with
-                  membership := match stSaved.scheduler.membership.set tid ()
-                    with | some m => m | none => stSaved.scheduler.membership } }
-              let stRestored := frozenRestoreIncomingContext stDequeued tid
+              -- Dequeue-on-dispatch: setting current = some tid marks the
+              -- thread as dispatched. frozenChooseThread will skip it.
+              let stRestored := frozenRestoreIncomingContext stSaved tid
               frozenSetCurrentThread (some tid) stRestored
             else
               .error .schedulerInvariantViolation
         | _ => .error .schedulerInvariantViolation
 
 /-- Q7-C1: Frozen yield — re-enqueue current thread and reschedule.
-Mirrors `handleYield` with dequeue-on-dispatch. -/
+Mirrors `handleYield` with dequeue-on-dispatch.
+
+In the frozen phase, "re-enqueue" means clearing `current` so the thread
+becomes eligible for selection again. The `frozenSchedule` call then
+picks the best candidate (which may be the same thread if it has the
+highest priority). -/
 def frozenHandleYield : FrozenKernel Unit :=
   fun st =>
     match st.scheduler.current with
     | none => frozenSchedule st
-    | some tid =>
-        match st.objects.get? tid.toObjId with
-        | some (.tcb _tcb) =>
-            -- Re-enqueue at back (simplified: just reschedule)
-            let st' := { st with scheduler :=
-              { st.scheduler with
-                membership := match st.scheduler.membership.set tid ()
-                  with | some m => m | none => st.scheduler.membership } }
-            frozenSchedule st'
-        | _ => .error .schedulerInvariantViolation
+    | some _tid =>
+        -- Clear current to make the yielding thread eligible again
+        let st' := { st with scheduler := { st.scheduler with current := none } }
+        frozenSchedule st'
 
 /-- Q7-C1: Default time-slice quantum for frozen scheduler. -/
 def frozenDefaultTimeSlice : Nat := 5
 
 /-- Q7-C1: Frozen timer tick — handle preemption in frozen state.
-Mirrors `timerTick` with dequeue-on-dispatch. -/
+Mirrors `timerTick` with dequeue-on-dispatch.
+
+On time-slice expiry: reset time-slice, advance timer, clear `current`
+(conceptually re-enqueue the preempted thread), then reschedule.
+On non-expiry: decrement time-slice, advance timer. -/
 def frozenTimerTick : FrozenKernel Unit :=
   fun st =>
     match st.scheduler.current with
@@ -129,11 +165,9 @@ def frozenTimerTick : FrozenKernel Unit :=
               match st.objects.set tid.toObjId (.tcb tcb') with
               | some objects' =>
                   let st' := { st with objects := objects', machine := tick st.machine }
-                  -- Re-enqueue current thread
+                  -- Clear current to re-enqueue the preempted thread
                   let st'' := { st' with scheduler :=
-                    { st'.scheduler with
-                      membership := match st'.scheduler.membership.set tid ()
-                        with | some m => m | none => st'.scheduler.membership } }
+                    { st'.scheduler with current := none } }
                   frozenSchedule st''
               | none => .error .objectNotFound
             else
@@ -150,7 +184,13 @@ def frozenTimerTick : FrozenKernel Unit :=
 -- ============================================================================
 
 /-- Q7-C2: Frozen notification signal — wake waiter or accumulate badge.
-Mirrors `notificationSignal` using frozen state lookups and mutations. -/
+Mirrors `notificationSignal` using frozen state lookups and mutations.
+
+**`ensureRunnable` equivalent**: The builder phase calls `ensureRunnable` to
+insert the woken thread into the run queue. In the frozen phase, the woken
+thread is already in the `membership` FrozenSet (pre-allocated at freeze time).
+Setting `ipcState := .ready` via `frozenStoreTcbIpcState` makes the thread
+eligible for selection by `frozenChooseThread`, which checks `.ready` state. -/
 def frozenNotificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     : FrozenKernel Unit :=
   fun st =>
@@ -182,7 +222,12 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen notification wait — consume badge or block caller.
-Mirrors `notificationWait` using frozen state. -/
+Mirrors `notificationWait` using frozen state.
+
+**`removeRunnable` equivalent**: The builder phase calls `removeRunnable` when
+a thread blocks. In the frozen phase, setting `ipcState := .blockedOnNotification`
+via `frozenStoreTcbIpcState` makes the thread ineligible for selection by
+`frozenChooseThread`, which only selects threads with `.ready` state. -/
 def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : FrozenKernel (Option SeLe4n.Badge) :=
   fun st =>
