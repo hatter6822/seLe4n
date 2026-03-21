@@ -144,4 +144,52 @@ theorem frozenStoreObject_deterministic
     (st : FrozenSystemState) :
     frozenStoreObject id obj st = frozenStoreObject id obj st := rfl
 
+-- ============================================================================
+-- R1-E: Context Save/Restore Preservation Theorems
+-- ============================================================================
+
+/-- R1-E/M-10: When `frozenSaveOutgoingContext` succeeds, the scheduler
+is preserved (only the objects field is modified). -/
+theorem frozenSaveOutgoingContext_preserves_scheduler
+    (st st' : FrozenSystemState)
+    (hOk : frozenSaveOutgoingContext st = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold frozenSaveOutgoingContext at hOk
+  split at hOk
+  · -- current = none: state is unchanged
+    simp at hOk; rw [← hOk]
+  · -- current = some outTid
+    rename_i outTid _
+    split at hOk
+    · -- objects.get? = some (.tcb outTcb)
+      rename_i outTcb _
+      simp only at hOk
+      cases hSet : st.objects.set outTid.toObjId
+          (FrozenKernelObject.tcb { outTcb with registerContext := st.machine.regs }) with
+      | some objects' => simp [hSet] at hOk; rw [← hOk]
+      | none => simp [hSet] at hOk
+    · simp at hOk
+
+/-- R1-E/M-11: When `frozenRestoreIncomingContext` succeeds, the scheduler
+is preserved (only the machine.regs field is modified). -/
+theorem frozenRestoreIncomingContext_preserves_scheduler
+    (st st' : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (hOk : frozenRestoreIncomingContext st tid = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold frozenRestoreIncomingContext at hOk
+  split at hOk
+  · simp at hOk; rw [← hOk]
+  · simp at hOk
+
+/-- R1-E/M-11: When `frozenRestoreIncomingContext` succeeds, the objects
+are preserved (only machine registers are modified). -/
+theorem frozenRestoreIncomingContext_preserves_objects
+    (st st' : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (hOk : frozenRestoreIncomingContext st tid = .ok st') :
+    st'.objects = st.objects := by
+  unfold frozenRestoreIncomingContext at hOk
+  split at hOk
+  · simp at hOk; rw [← hOk]
+  · simp at hOk
+
 end SeLe4n.Kernel.FrozenOps

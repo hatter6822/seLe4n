@@ -303,6 +303,8 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
      | _ => false)
   assertInvariants "chain8: interleaved send/receive queue integrity" st10
 
+-- R1-D: Suppress deprecation warnings for deprecated api* wrappers exercised in this test.
+set_option linter.deprecated false in
 private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   let targetId : SeLe4n.ObjId := ⟨2900⟩
   let rootCNode : SeLe4n.ObjId := ⟨2901⟩

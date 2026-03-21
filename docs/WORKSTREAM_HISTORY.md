@@ -15,6 +15,20 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+### WS-R workstream (Comprehensive Audit Remediation) — IN PROGRESS
+
+WS-R is the **active** workstream (v0.18.0+), addressing all 82 findings from the
+comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
+8 phases (R1–R8), 111 sub-tasks. See
+[`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+
+- **R1 (v0.18.0) — COMPLETE**: Pre-release blockers. Fixed Rust `Cap::downgrade()`
+  rights bypass (H-01), AccessRights/PagePerms silent truncation (R-M01, R-M02),
+  SyscallResponse semantic overlap (R-M03), api* wrapper capability-target bypass
+  (M-04), frozen context save/restore silent failures (M-10, M-11). All 14 api*
+  wrappers deprecated with validation guards.
+- **R2–R8**: Pending. See workstream plan for details.
+
 ### WS-Q1 workstream (Service Interface Simplification)
 
 WS-Q1 is a **completed** workstream (v0.17.7), the first phase of WS-Q (Kernel
@@ -42,7 +56,7 @@ state. Key changes:
 - **Proof surface**: Zero sorry, all invariant preservation theorems intact,
   enforcement boundary updated: 3 policy-gated in base, 7 in extended (WS-Q1: `registerServiceChecked` added)
 
-See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).
 
 ### WS-Q2 workstream (Universal RHTable Migration)
@@ -163,7 +177,7 @@ frozen-phase CNode representation in Q5. Key changes:
 - **Proof surface**: Zero admitted proofs, all 4 modules compile independently via
   `lake build SeLe4n.Kernel.RadixTree.Core`, etc. All test tiers pass.
 
-See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).
 
 ### WS-Q5 workstream (FrozenSystemState + Freeze)
@@ -196,7 +210,7 @@ and implements the `freeze` function that transforms an `IntermediateState`
   `freezeObject_tcb_passthrough`, `frozenMap_set_preserves_size`,
   `objectCapacity_ge_size`. Zero admitted proofs, all modules compile independently.
 
-See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).
 
 ### WS-Q6 workstream (Freeze Correctness Proofs)
@@ -309,7 +323,7 @@ Key changes:
   updated with TPH-* entries, fixture file created.
 - **Proof surface**: Zero sorry/axiom, all modules compile independently.
 
-See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9). **WS-Q portfolio is now COMPLETE.**
 
 ### WS-N workstream (Robin Hood hashing verified implementation)
@@ -335,7 +349,7 @@ per-cluster modular-arithmetic ordering.
 | **WS-N4** | Kernel integration (first site): replaced `CNode.slots : Std.HashMap Slot Capability` with `RHTable Slot Capability`; updated CNode operations, ~25 CNode/capability theorems, ~15 invariant proofs across Capability/InformationFlow subsystems, test fixtures; `slotsUnique` repurposed as substantive `invExt` invariant; 3 new bridge lemmas (`filter_fold_absent_by_pred`, `filter_get_pred`, `filter_filter_getElem?`); 20+ files modified | MEDIUM — **COMPLETED** (v0.17.4) |
 | **WS-N5** | Test coverage + documentation: `RobinHoodSuite.lean` with 12 standalone tests (RH-001–RH-012: empty table, insert/get, erase, overwrite, multi-key, collision, Robin Hood swap, backward-shift, resize, post-resize, large-scale 200-entry stress, fold/toList) + 6 CNode integration tests (RH-INT-001–RH-INT-006: lookup/insert/remove, revokeTargetLocal, findFirstEmptySlot, slotCountBounded, CSpace resolution, BEq). Full doc sync across 8 canonical files + 4 GitBook chapters. ~300 LoC tests, zero sorry | LOW — **COMPLETED** (v0.17.5) |
 
-See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: N1 through N5, 122 subtasks).
 
 **WS-N1 (v0.17.1):** Core types + operations — 379 new lines in
@@ -483,7 +497,7 @@ phases delivered. All findings resolved.
 | **WS-M4** | Test coverage (8 subtasks): multi-level resolution edge cases (guard-only, 64-bit max depth, guard mismatch at intermediate level, partial bits, single-level leaf), strict revocation stress (15+ deep chain, partial failure, BFS ordering) | MEDIUM — **COMPLETED** (v0.16.18) |
 | **WS-M5** | Streaming BFS revocation (13 subtasks): `streamingRevokeBFS` interleaved BFS loop, `cspaceRevokeCdtStreaming` top-level operation, 3 preservation theorems, `SCN-REVOKE-STREAMING-BFS` test, full documentation sync; v0.17.0 optimization pass | LOW — **COMPLETED** (v0.16.19; optimized v0.17.0) |
 
-See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md)
+See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: M1 through M5).
 
 **WS-M1** (v0.16.14): Proof strengthening & correctness — 10 atomic subtasks.
@@ -664,7 +678,7 @@ and GitBook chapters. Added WS-L3 theorem documentation to GitBook ch.12.
 All findings resolved (12/13, 1 intentionally deferred). All 4 WS-I5 deferred
 items closed. WS-L portfolio complete.
 
-See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
+See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
 for the full workstream plan (5 phases: L1 through L5).
 
 ### Remaining WS-H workstreams
@@ -824,8 +838,8 @@ are archived in [`docs/dev_history/`](dev_history/README.md).
 
 | Plan | Scope |
 |------|-------|
-| [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) | **WS-N** Robin Hood hashing verified implementation (5 phases) — **active** |
-| [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) | **WS-L** IPC subsystem audit & remediation (5 phases) — **completed** (v0.16.13) |
+| [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md) | **WS-N** Robin Hood hashing verified implementation (5 phases) — **active** |
+| [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) | **WS-L** IPC subsystem audit & remediation (5 phases) — **completed** (v0.16.13) |
 | [`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md) | WS-K full syscall dispatch completion (8 phases) — completed |
 | [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md) | WS-J1 register-indexed authoritative namespaces (6 phases) — completed |
 | [`AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md) | WS-I portfolio (v0.14.9 improvement recommendations) — completed |

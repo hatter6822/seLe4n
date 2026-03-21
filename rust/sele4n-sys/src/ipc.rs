@@ -84,7 +84,7 @@ pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
         msg_regs: [0; 4],
         syscall_id: SyscallId::Receive,
     })?;
-    Ok((resp.badge, resp))
+    Ok((resp.badge(), resp))
 }
 
 /// Call an endpoint (send + blocking receive in one syscall).
@@ -160,5 +160,5 @@ pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
         msg_regs: [0; 4],
         syscall_id: SyscallId::Receive,
     })?;
-    Ok(resp.badge)
+    Ok(resp.badge())
 }

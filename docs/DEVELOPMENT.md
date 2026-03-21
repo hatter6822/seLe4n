@@ -7,7 +7,7 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **completed workstream:** WS-L (IPC subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). All 5 phases completed: **L1** (v0.16.9): IPC hot-path performance — eliminated 4 redundant TCB lookups. **L2** (v0.16.10): code quality — HashMap.fold migration (4 sites), closes WS-I5/R-17. **L3** (v0.16.11): proof strengthening — 22 new theorems, `ipcStateQueueConsistent` invariant. **L4** (v0.16.12): test coverage expansion — 16 scenario IDs, 4 test coverage gaps filled. **L5** (v0.16.13): documentation & workstream closeout — IF readers' guide, version bump, full doc sync. See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). WS-K portfolio fully completed (K-A through K-H, v0.16.0–v0.16.8). WS-J1 portfolio fully completed (J1-A through J1-F, v0.15.4–v0.15.10). WS-F portfolio fully completed (F1..F8),
+- **completed workstream:** WS-L (IPC subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). All 5 phases completed: **L1** (v0.16.9): IPC hot-path performance — eliminated 4 redundant TCB lookups. **L2** (v0.16.10): code quality — HashMap.fold migration (4 sites), closes WS-I5/R-17. **L3** (v0.16.11): proof strengthening — 22 new theorems, `ipcStateQueueConsistent` invariant. **L4** (v0.16.12): test coverage expansion — 16 scenario IDs, 4 test coverage gaps filled. **L5** (v0.16.13): documentation & workstream closeout — IF readers' guide, version bump, full doc sync. See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md). WS-K portfolio fully completed (K-A through K-H, v0.16.0–v0.16.8). WS-J1 portfolio fully completed (J1-A through J1-F, v0.15.4–v0.15.10). WS-F portfolio fully completed (F1..F8),
 - **recently completed:** WS-J1-C audit refinements (v0.15.7 — CSpace/lifecycle/VSpace dispatch returns `illegalState` for MR-dependent ops, `syscallEntry` accepts `regCount` parameter, `syscallEntry_implies_capability_held` strengthened to full capability-resolution chain; zero sorry/axiom), WS-J1-C (v0.15.6, syscall entry point and dispatch — `syscallEntry` top-level entry point, `lookupThreadRegisterContext` TCB register extraction, `dispatchSyscall` routing through `SyscallGate`/`syscallInvoke` to 13 internal kernel operations, `dispatchWithCap` per-syscall routing, `syscallRequiredRight` total right mapping, `MachineConfig.registerCount` promoted to field; 5 soundness theorems; zero sorry/axiom), WS-J1-B (v0.15.5, register decode layer — `SyscallId` inductive with 13 syscalls, `MessageInfo` bit-field structure, `SyscallDecodeResult`, total deterministic decode functions in `RegisterDecode.lean`, round-trip/determinism/error-exclusivity theorems, `SyscallRegisterLayout` with ARM64 default, 3 new `KernelError` variants; zero sorry/axiom), WS-J1-A (v0.15.4, typed register wrappers — replaced `abbrev RegName/RegValue := Nat` with typed wrapper structures, full instance suites, all 10 machine lemmas re-proved, downstream compilation fixed across Architecture/Platform/Testing; zero sorry/axiom), WS-H15 (v0.14.7, platform & API hardening — `InterruptBoundaryContract` decidability, RPi5 contract hardening with substantive predicates, 13 capability-gated syscall wrappers, `AdapterProofHooks` concrete instantiation for Sim/RPi5, MMIO disjointness proof; closes A-33, A-41, A-42, M-13), WS-H14 (v0.14.6, type safety & Prelude foundations — `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness proof, identifier roundtrip/injectivity theorems, `OfNat` instance removal for type-safety enforcement, sentinel predicate completion), Module restructuring (v0.14.5, decomposed 9 monolithic files into 24 focused submodules via re-export hub pattern; zero code loss, 50 new helper theorems extracted, 209 Tier 3 anchor checks updated), WS-H13 (v0.14.4, CSpace/service model enrichment — `cspaceDepthConsistent` invariant, `resolveCapAddress` theorems, `serviceGraphInvariant` preservation, `cspaceMove` atomicity; addresses H-01, A-21, A-29, A-30, M-17/A-31; WS-Q1: `serviceStop` backing-object verification removed), WS-H12f (v0.14.3, test harness update & documentation sync — dequeue-on-dispatch, context switch, and bounded message trace scenarios; legacy `endpointInvariant` comment cleanup; expected fixture updated; Tier 3 anchors added; documentation synchronized), WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds — A-09 closed), WS-H12c (v0.14.0, per-TCB register context with inline context switch — H-03 closed), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics — H-04 closed), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4, NI coverage >80%), WS-H8 (v0.13.2, enforcement-NI bridge), WS-H6 (v0.13.1, scheduler proof completion), WS-H5 (v0.12.19, IPC dual-queue invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path fix), WS-G (v0.12.15, kernel performance), WS-F1..F4 (critical audit remediation),
 - **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](dev_history/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](dev_history/audits/AUDIT_CODEBASE_v0.12.2_v2.md),
 - **latest audit:** [`AUDIT_CODEBASE_v0.13.6.md`](dev_history/audits/AUDIT_CODEBASE_v0.13.6.md) — comprehensive end-to-end audit, zero critical issues,
@@ -51,7 +51,7 @@ The **WS-L** portfolio (IPC subsystem audit & remediation) is **fully complete**
 L3 (proof strengthening), L4 (test coverage), L5 (documentation & closeout).
 12 of 13 findings resolved, 1 intentionally deferred (L-T03: cap transfer requires
 CSpace IPC integration not yet modeled). All 4 WS-I5 deferred items resolved.
-See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
+See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **WS-M** portfolio (Capability subsystem audit & remediation) is **fully
 complete** (v0.16.14–v0.17.0) — all 5 phases delivered: M1 (proof strengthening,
@@ -60,7 +60,7 @@ v0.16.17), M4 (test coverage expansion, v0.16.18), M5 (streaming BFS revocation
 + documentation sync, v0.16.19), plus v0.17.0 (shared `processRevokeNode` helper
 extraction, unified BFS revocation proofs, edge-case test expansion). All 14
 audit findings resolved. Zero sorry/axiom.
-See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 The **active workstream** is **WS-Q** (Kernel State Architecture) — a
 multi-phase plan unifying two-phase state architecture, service interface
@@ -120,14 +120,14 @@ builder→freeze→execution pipeline (TPH-001 through TPH-014). Commutativity
 property verified. Rust conformance XVAL-001..019 verified. SRG-001..010
 verified. Full documentation sync across 15+ files. Scenario registry updated.
 **WS-Q portfolio is now COMPLETE** (all 9 phases, 45 atomic units of work).
-See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully
 complete** (v0.17.0–v0.17.5) — 5 phases (N1–N5, 122 subtasks): core types +
 operations (N1, v0.17.1), invariant proofs (N2, v0.17.2), kernel API bridge
 (N3, v0.17.3), CNode.slots integration (N4, v0.17.4), test coverage +
 documentation (N5, v0.17.5). ~4,655 LoC, zero sorry/axiom.
-See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 The **next major milestone** after WS-Q is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing

@@ -36,7 +36,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | 121 trace lines tagged with unique scenario IDs; registry validated bidirectionally (WS-I1/R-03) | `./scripts/test_tier0_hygiene.sh` + `test_tier2_trace.sh` |
 | WS-I3 operations coverage expansion: six operation-chain tests + scheduler stress + declassification runtime checks (including distinct `declassificationDenied` policy-denial path) | `./scripts/test_tier2_negative.sh` |
 | WS-L IPC subsystem audit — PORTFOLIO COMPLETE (v0.16.9–v0.16.13) | `./scripts/test_full.sh` |
-| WS-M Capability subsystem audit — Phase 1 COMPLETED (v0.16.14), 4 phases remaining | [Workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) |
+| WS-M Capability subsystem audit — Phase 1 COMPLETED (v0.16.14), 4 phases remaining | [Workstream plan](../dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) |
 
 ## Proof claim qualification
 

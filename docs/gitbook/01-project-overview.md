@@ -88,7 +88,7 @@ Remaining: Q5–Q9 (freeze, option slots, value-only maps, Rust wrappers, hardwa
 After WS-Q: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-Q master plan](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
+[WS-Q master plan](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 ## 5. Architecture mental model
 
@@ -129,5 +129,5 @@ For milestone-moving changes:
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
 - Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
-- Active workstream plan: [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) (WS-L)
+- Active workstream plan: [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) (WS-L)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

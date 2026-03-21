@@ -1191,6 +1191,9 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
 -- WS-H15e: Syscall capability-gating trace
 -- ============================================================================
 
+-- R1-D: These tests intentionally exercise deprecated api* wrappers to verify
+-- the new capability-target validation guards. Suppress deprecation warnings.
+set_option linter.deprecated false in
 /-- WS-H15e: Exercise the capability-gated syscall path:
 1. Build a state with a CNode containing a `.write`-only capability.
 2. Invoke `apiEndpointSend` with correct gate → expect success.

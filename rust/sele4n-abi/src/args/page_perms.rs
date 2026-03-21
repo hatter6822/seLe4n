@@ -41,9 +41,15 @@ impl PagePerms {
     }
 }
 
-impl From<u64> for PagePerms {
+impl TryFrom<u64> for PagePerms {
+    type Error = KernelError;
+    /// R-M02 fix: validates that the permissions value fits in 5 bits (0–0x1F).
+    /// Values > 0x1F are rejected to prevent silent truncation.
     #[inline]
-    fn from(v: u64) -> Self { Self(v as u8) }
+    fn try_from(v: u64) -> Result<Self, Self::Error> {
+        if v > 0x1F { return Err(KernelError::InvalidMessageInfo); }
+        Ok(Self(v as u8))
+    }
 }
 
 impl From<PagePerms> for u64 {
@@ -74,5 +80,19 @@ mod tests {
         let wx = PagePerms::WRITE | PagePerms::EXECUTE;
         assert!(!wx.is_wx_safe());
         assert_eq!(wx.validate_wx(), Err(KernelError::PolicyDenied));
+    }
+
+    #[test]
+    fn try_from_valid_boundary() {
+        assert_eq!(PagePerms::try_from(0u64).unwrap(), PagePerms(0));
+        assert_eq!(PagePerms::try_from(0x1Fu64).unwrap(), PagePerms(0x1F));
+    }
+
+    #[test]
+    fn try_from_truncation_rejected() {
+        assert_eq!(PagePerms::try_from(0x20u64), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(PagePerms::try_from(0xFFu64), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(PagePerms::try_from(0x100u64), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(PagePerms::try_from(u64::MAX), Err(KernelError::InvalidMessageInfo));
     }
 }

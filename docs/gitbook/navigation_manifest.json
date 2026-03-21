@@ -3,7 +3,7 @@
   "current_state_bullets": [
     "**Version:** 0.16.12 (Lean v4.28.0).",
     "**Codebase metrics:** 38,349 production LoC across 69 files; 4,098 test LoC across 4 suites; 1,224 theorem/lemma declarations (zero sorry/axiom).",
-    "**Latest audit:** [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues.",
+    "**Latest audit:** [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues.",
     "**Active workstream:** WS-L IPC subsystem audit & remediation (5 phases: L1–L5). All prior portfolios (WS-B through WS-K) completed.",
     "**Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",

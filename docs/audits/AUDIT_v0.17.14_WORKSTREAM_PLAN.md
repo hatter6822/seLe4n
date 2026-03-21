@@ -165,7 +165,7 @@ inclusion based on security relevance and proof chain completeness.
 
 | Phase | ID | Focus | Tasks / Sub-tasks | Deps | Target | Findings |
 |-------|----|-------|-------------------|------|--------|----------|
-| 1 | **R1** | Pre-Release Blockers | 6 / 17 | — | v0.18.0 | H-01, M-04, M-10, M-11, R-M01, R-M02, R-M03 |
+| 1 | **R1** ✅ | Pre-Release Blockers | 6 / 17 | — | v0.18.0 | H-01, M-04, M-10, M-11, R-M01, R-M02, R-M03 |
 | 2 | **R2** | Capability & CDT Hardening | 7 / 17 | — | v0.18.1 | M-05, M-06, M-07, M-08, L-07 |
 | 3 | **R3** | IPC Invariant Completion | 6 / 15 | R2 | v0.18.2 | M-16, M-18, M-19, L-05, L-08 |
 | 4 | **R4** | Lifecycle & Service Coherence | 6 / 19 | R2 | v0.18.3 | M-12, M-13, M-14, M-15, L-09 |
@@ -199,9 +199,10 @@ and invariant completion to non-interference).
 
 ## 5. Detailed Phase Plans
 
-### Phase R1: Pre-Release Blockers
+### Phase R1: Pre-Release Blockers — **COMPLETE** (v0.18.0)
 
 **Target version**: v0.18.0
+**Status**: **COMPLETE** — all 6 task groups (R1-A through R1-F) delivered.
 **Goal**: Eliminate all findings that enable privilege escalation or silent
 security failures in the public API surface.
 **Priority**: CRITICAL — these findings are pre-release blockers.
