@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "sele4n-types",
+    "sele4n-abi",
+    "sele4n-sys",
+]
+
+[workspace.package]
+version = "0.17.13"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/hatter6822/seLe4n"

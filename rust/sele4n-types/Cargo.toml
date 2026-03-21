@@ -1,0 +1,13 @@
+[package]
+name = "sele4n-types"
+description = "Core types for the seLe4n verified microkernel — no_std, zero unsafe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+std = []
+
+[dependencies]

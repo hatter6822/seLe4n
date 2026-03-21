@@ -159,3 +159,7 @@ ITR-001 | Testing | inter-transition invariant checks: 24 passed
 PTY-001 | Testing | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 PTY-001 | Testing | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 PTY-001 | Testing | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
+XVAL-001 | ABI | MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
+XVAL-002 | ABI | SyscallId roundtrip ok: all 14 variants
+XVAL-003 | ABI | CSpaceMintArgs roundtrip ok
+XVAL-004 | ABI | MessageInfo bit layout ok: len=42 caps=384 label=2560

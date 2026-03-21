@@ -1,3 +1,28 @@
+## [0.17.13] — WS-Q8 Rust Syscall Wrappers
+
+- Completed Phase 8 (WS-Q8) of the Kernel State Architecture workstream:
+  Rust syscall wrappers (`libsele4n`) — 3 `no_std` crates for ARM64 userspace
+- Q8-A: `sele4n-types` crate — 14 newtype identifiers, 34-variant `KernelError`
+  enum, `AccessRight`/`AccessRights` bitmask, 14-variant `SyscallId` enum.
+  Zero `unsafe`, zero external deps. 20 unit tests.
+- Q8-B: `sele4n-abi` crate — `MessageInfo` bitfield encode/decode, register
+  ABI encoding (`SyscallRequest`/`SyscallResponse`), inline ARM64 `svc #0`
+  trap (single `unsafe` block), 10 per-syscall argument structures,
+  `TypeTag` enum (6 variants), `PagePerms` with W^X enforcement. 32 unit tests.
+- Q8-C: `sele4n-sys` crate — safe high-level wrappers for all 14 syscalls:
+  IPC (send/receive/call/reply, notification signal/wait), CSpace (mint/copy/
+  move/delete), Lifecycle (retype + convenience constructors), VSpace (map with
+  W^X pre-check, unmap), Service (register/revoke/query). Phantom-typed `Cap<Obj, Rts>`
+  with sealed traits and rights downgrading. 4 unit tests.
+- Q8-D: 20 conformance tests (RUST-XVAL-001..014 + exhaustive property tests),
+  `test_rust.sh` CI script, Lean trace harness XVAL-001..004 cross-validation
+  vectors, `test_smoke.sh` integration (Tier 2)
+- Files: 20 new Rust source files across `rust/` directory, 1 new script
+  (`scripts/test_rust.sh`), trace harness + fixture + registry updated
+- Lean proof surface: unchanged (zero new sorry/axiom)
+- Rust: 76 total tests across 3 crates, all passing
+- All test tiers pass
+
 ## [0.17.11] — WS-Q5 FrozenSystemState + Freeze
 
 - Completed Phase 5 (WS-Q5) of the Kernel State Architecture workstream:

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "8cf09cbb31fd41e8494b93f2f7c2187c72f6fc34",
-      "tree_sha": "9dab18e8ba3cf39c75c90739233c038e81db0883",
-      "committed_at_utc": "2026-03-20T22:23:56-04:00"
+      "branch": "claude/audit-rust-syscall-wrappers-7dWuA",
+      "commit_sha": "f44094c9eaa5b8327636e2f4de6dfdaa07154a71",
+      "tree_sha": "3b5ab70a541a4740b455349acd2cfa26f2e11dcd",
+      "committed_at_utc": "2026-03-21T02:24:06+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "22dbcf5744fa397d034277dad0ba7c1928636dcc64d6243c656fca0cb466cdb7"
+    "source_digest": "9651f28e8eb1d10367752c5ce57665b4407ea6ea09f0a716e97e92404c362aae"
   },
   "summary": {
     "module_count": 106,
-    "declaration_count": 3010
+    "declaration_count": 3011
   },
   "readme_sync": {
     "version": "0.17.13",
     "lean_toolchain": "v4.28.0",
     "production_files": 97,
-    "production_loc": 53061,
+    "production_loc": 53118,
     "test_files": 9,
     "test_loc": 6571,
     "proved_theorem_lemma_decls": 1625,
@@ -22258,7 +22258,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 46,
+      "declaration_count": 47,
       "declarations": [
         {
           "kind": "namespace",
@@ -22652,14 +22652,21 @@
         },
         {
           "kind": "def",
+          "name": "runRustXvalVectors",
+          "line": 2013,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "runMainTrace",
-          "line": 2010,
+          "line": 2066,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
             "bootstrapState",
             "runMainTraceFrom",
-            "runParameterizedTopologies"
+            "runParameterizedTopologies",
+            "runRustXvalVectors"
           ]
         }
       ]

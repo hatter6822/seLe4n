@@ -2007,6 +2007,62 @@ private def runParameterizedTopologies : IO Unit := do
   -- Configuration 3: eight threads, high priority base, large radix, four ASIDs, 4-service chain
   runParameterizedTopologyCheck "large" 8 100 16 4 4
 
+/-- Q8-D: RUST-XVAL cross-validation test vectors.
+    Encodes known values through the Lean encode/decode pipeline and prints
+    the expected register contents for Rust conformance test validation. -/
+private def runRustXvalVectors : IO Unit := do
+  -- RUST-XVAL: MessageInfo encode/decode roundtrip
+  let mi : MessageInfo := { length := 42, extraCaps := 2, label := 0x1234 }
+  let encoded := mi.encode
+  match MessageInfo.decode encoded with
+  | some decoded =>
+    if decoded == mi then
+      IO.println s!"[XVAL-001] MessageInfo roundtrip ok: encoded={encoded} length={decoded.length} extraCaps={decoded.extraCaps} label={decoded.label}"
+    else
+      throw <| IO.userError "[XVAL-001] MessageInfo roundtrip FAILED"
+  | none => throw <| IO.userError "[XVAL-001] MessageInfo decode returned none"
+
+  -- RUST-XVAL: SyscallId roundtrip (all 14)
+  let allSyscalls : List SyscallId := [
+    .send, .receive, .call, .reply,
+    .cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete,
+    .lifecycleRetype, .vspaceMap, .vspaceUnmap,
+    .serviceRegister, .serviceRevoke, .serviceQuery
+  ]
+  let mut syscallOk := true
+  for s in allSyscalls do
+    match SyscallId.ofNat? s.toNat with
+    | some s' => if s != s' then syscallOk := false
+    | none => syscallOk := false
+  if syscallOk then
+    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 14 variants"
+  else
+    throw <| IO.userError "[XVAL-002] SyscallId roundtrip FAILED"
+
+  -- RUST-XVAL: CSpaceMintArgs encode/decode
+  let mintArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMintArgs :=
+    { srcSlot := ⟨10⟩, dstSlot := ⟨20⟩, rights := ⟨0x07⟩, badge := ⟨999⟩ }
+  let mintEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs mintArgs
+  let mintStub : SyscallDecodeResult :=
+    { capAddr := ⟨0⟩, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+      syscallId := .send, msgRegs := mintEncoded }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintStub with
+  | .ok decoded =>
+    if decoded == mintArgs then
+      IO.println s!"[XVAL-003] CSpaceMintArgs roundtrip ok: regs={reprStr mintEncoded}"
+    else
+      throw <| IO.userError "[XVAL-003] CSpaceMintArgs roundtrip MISMATCH"
+  | .error e => throw <| IO.userError s!"[XVAL-003] CSpaceMintArgs decode error: {reprStr e}"
+
+  -- RUST-XVAL: MessageInfo bit layout verification
+  let miLen := MessageInfo.encode { length := 42, extraCaps := 0, label := 0 }
+  let miCaps := MessageInfo.encode { length := 0, extraCaps := 3, label := 0 }
+  let miLabel := MessageInfo.encode { length := 0, extraCaps := 0, label := 5 }
+  if miLen == 42 && miCaps == 3 * 128 && miLabel == 5 * 512 then
+    IO.println s!"[XVAL-004] MessageInfo bit layout ok: len={miLen} caps={miCaps} label={miLabel}"
+  else
+    throw <| IO.userError s!"[XVAL-004] MessageInfo bit layout MISMATCH: len={miLen} caps={miCaps} label={miLabel}"
+
 def runMainTrace : IO Unit := do
   assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState bootstrapServiceIds
   match SeLe4n.Kernel.schedule bootstrapState with
@@ -2016,5 +2072,6 @@ def runMainTrace : IO Unit := do
       IO.println s!"[ENT-000] scheduled thread: {reprStr (st1.scheduler.current.map SeLe4n.ThreadId.toNat)}"
       runMainTraceFrom st1
   runParameterizedTopologies
+  runRustXvalVectors
 
 end SeLe4n.Testing

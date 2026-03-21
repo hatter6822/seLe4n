@@ -1,0 +1,14 @@
+[package]
+name = "sele4n-abi"
+description = "ARM64 register ABI layer for the seLe4n verified microkernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+std = ["sele4n-types/std"]
+
+[dependencies]
+sele4n-types = { path = "../sele4n-types" }

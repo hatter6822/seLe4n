@@ -24,6 +24,8 @@ run_check "META" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate
 run_check "META" "${SCRIPT_DIR}/test_tier2_trace.sh" "${sub_args[@]}"
 run_check "META" "${SCRIPT_DIR}/test_tier2_determinism.sh" "${sub_args[@]}"
 run_check "META" "${SCRIPT_DIR}/test_tier2_negative.sh" "${sub_args[@]}"
+# Q8-D: Rust syscall wrappers build + test + conformance.
+run_check "META" "${SCRIPT_DIR}/test_rust.sh"
 # M-19: documentation sync check — catches navigation/link drift on every PR.
 run_check "META" "${SCRIPT_DIR}/test_docs_sync.sh"
 
