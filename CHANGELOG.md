@@ -20,7 +20,7 @@
 - Files: 20 new Rust source files across `rust/` directory, 1 new script
   (`scripts/test_rust.sh`), trace harness + fixture + registry updated
 - Lean proof surface: unchanged (zero new sorry/axiom)
-- Rust: 76 total tests across 3 crates, all passing
+- Rust: 78 total tests across 3 crates (58 unit + 20 conformance), all passing
 - All test tiers pass
 
 ## [0.17.11] — WS-Q5 FrozenSystemState + Freeze

@@ -73,7 +73,7 @@ x7  → Syscall number (SyscallId)
 
 ## Testing
 
-- **76 unit tests** across 3 crates
+- **58 unit tests** across 3 crates
 - **20 conformance tests** (RUST-XVAL-001..014 + property tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2)

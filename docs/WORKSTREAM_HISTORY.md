@@ -281,7 +281,7 @@ syscall wrappers for all 14 seLe4n syscalls. Key changes:
   script integrated into `test_smoke.sh` (Tier 2). Lean trace harness extended
   with XVAL-001 through XVAL-004 cross-validation vectors.
 - **Proof surface**: Lean side unchanged (zero new sorry/axiom). Rust side:
-  76 unit tests + 20 conformance tests across 3 crates.
+  58 unit tests + 20 conformance tests across 3 crates.
 
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).

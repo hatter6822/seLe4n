@@ -72,7 +72,8 @@ impl SyscallId {
             Self::CSpaceDelete => AccessRight::Write,
             Self::LifecycleRetype => AccessRight::Retype,
             Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
-            Self::ServiceRegister | Self::ServiceRevoke | Self::ServiceQuery => AccessRight::Write,
+            Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
+            Self::ServiceQuery => AccessRight::Read,
         }
     }
 }
@@ -126,5 +127,19 @@ mod tests {
     #[test]
     fn required_right_lifecycle() {
         assert_eq!(SyscallId::LifecycleRetype.required_right(), AccessRight::Retype);
+    }
+
+    #[test]
+    fn required_right_vspace() {
+        assert_eq!(SyscallId::VSpaceMap.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::VSpaceUnmap.required_right(), AccessRight::Write);
+    }
+
+    #[test]
+    fn required_right_service() {
+        assert_eq!(SyscallId::ServiceRegister.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::ServiceRevoke.required_right(), AccessRight::Write);
+        // ServiceQuery requires Read (not Write) — Lean API.lean:318
+        assert_eq!(SyscallId::ServiceQuery.required_right(), AccessRight::Read);
     }
 }
