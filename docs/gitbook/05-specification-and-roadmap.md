@@ -13,7 +13,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.17.14` |
+| Version | `0.18.3` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 54,573 across 98 Lean files |
 | Test LoC | 7,309 across 10 suites |
