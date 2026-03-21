@@ -130,6 +130,11 @@ SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
   Core.lean                      CNodeRadix type, extractBits, O(1) lookup/insert/erase/fold/toList
   Invariant.lean                 24 correctness proofs (lookup, WF, size, toList, fold)
   Bridge.lean                    buildCNodeRadix (RHTable → CNodeRadix), freezeCNodeSlots, bridge lemmas
+SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7)
+  Core.lean                      FrozenKernel monad, lookup/store primitives
+  Operations.lean                12 per-subsystem frozen operations
+  Commutativity.lean             FrozenMap set/get? roundtrip proofs, frame lemmas
+  Invariant.lean                 frozenStoreObject preservation theorems
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
 SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks
@@ -429,7 +434,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-Q (Kernel State Architecture) — multi-phase plan (Q1–Q9, 45 atomic units). **WS-Q1 COMPLETED** (v0.17.7): service interface simplification. **WS-Q2 COMPLETED** (v0.17.8): universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet`, 16 map + 2 set fields, 30+ files, 10 subphases). **WS-Q3 COMPLETED** (v0.17.9): IntermediateState formalization (builder-phase state with invariant witnesses, 7 builder ops, boot sequence). **WS-Q4 COMPLETED** (v0.17.10): CNode radix tree verified implementation (`CNodeRadix` flat array with O(1) zero-hash lookup, 24 correctness proofs, `buildCNodeRadix` bridge, `freezeCNodeSlots` Q5 integration, 12-scenario test suite, zero admitted proofs). **WS-Q5 COMPLETED** (v0.17.11): FrozenSystemState + freeze (FrozenMap/FrozenSet types, per-object frozen representations, `freeze` function, capacity planning, 20+ theorems, 15-scenario test suite, full SystemState field parity). **WS-Q6 COMPLETED** (v0.17.12): Freeze correctness proofs (31 theorems: `freezeMap_get?_eq` core + 13 per-field lookup equivalence, CNode radix equivalence, 5 structural properties, invariant transfer with `freeze_preserves_invariants` keystone, 22-scenario test suite). See `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
+- **Active workstream**: WS-Q (Kernel State Architecture) — multi-phase plan (Q1–Q9, 45 atomic units). **WS-Q1 COMPLETED** (v0.17.7): service interface simplification. **WS-Q2 COMPLETED** (v0.17.8): universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet`, 16 map + 2 set fields, 30+ files, 10 subphases). **WS-Q3 COMPLETED** (v0.17.9): IntermediateState formalization (builder-phase state with invariant witnesses, 7 builder ops, boot sequence). **WS-Q4 COMPLETED** (v0.17.10): CNode radix tree verified implementation (`CNodeRadix` flat array with O(1) zero-hash lookup, 24 correctness proofs, `buildCNodeRadix` bridge, `freezeCNodeSlots` Q5 integration, 12-scenario test suite, zero admitted proofs). **WS-Q5 COMPLETED** (v0.17.11): FrozenSystemState + freeze (FrozenMap/FrozenSet types, per-object frozen representations, `freeze` function, capacity planning, 20+ theorems, 15-scenario test suite, full SystemState field parity). **WS-Q6 COMPLETED** (v0.17.12): Freeze correctness proofs (31 theorems: `freezeMap_get?_eq` core + 13 per-field lookup equivalence, CNode radix equivalence, 5 structural properties, invariant transfer with `freeze_preserves_invariants` keystone, 22-scenario test suite). **WS-Q7 COMPLETED** (v0.17.13): Frozen kernel operations (FrozenKernel monad, 14 per-subsystem frozen operations across 5 subsystems, FrozenMap set/get? commutativity proofs + structural lemmas, 18 frozenStoreObject frame/preservation theorems, 15-scenario test suite covering TPH-005–TPH-014). See `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
 - **Prior portfolio**: WS-N (Robin Hood hashing verified implementation) — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
 - **Prior portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
 - **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
@@ -437,7 +442,7 @@ under `docs/` and `docs/gitbook/`.
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` — Kernel state architecture: two-phase builder/freeze model
 - **All prior workstreams completed**: WS-B through WS-N (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: Q7–Q9 (frozen operations, Rust wrappers, hardware binding), then Raspberry Pi 5 hardware binding
+- **Next milestone**: Q8–Q9 (Rust wrappers, integration testing), then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
