@@ -2563,6 +2563,70 @@ theorem endpointReply_preserves_badgeWellFormed
                   · simp at hStep
 
 -- ============================================================================
+-- R3-C.2/M-19: Endpoint operation notificationWaiterConsistent preservation
+-- ============================================================================
+
+/-- R3-C.2/M-19: endpointReply preserves notificationWaiterConsistent.
+The target thread has `ipcState = .blockedOnReply`, so by
+`notificationWaiterConsistent` it is not in any notification wait list.
+`storeTcbIpcStateAndMessage` + `ensureRunnable` therefore do not affect
+any notification waiter's TCB. -/
+theorem endpointReply_preserves_notificationWaiterConsistent
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    notificationWaiterConsistent st' := by
+  -- Unfold endpointReply and extract the storeTcbIpcStateAndMessage + ensureRunnable steps
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
+      | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId' rt =>
+      simp only [hIpc] at hStep
+      cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+      | error e =>
+        revert hStep; simp only [hStore]; intro hStep
+        cases rt with
+        | none => simp at hStep
+        | some val => dsimp only [] at hStep; split at hStep <;> simp at hStep
+      | ok st1 =>
+        simp only [hStore] at hStep
+        -- target has .blockedOnReply, so it is not in any notification wait list
+        have hTargetNotInWaitList : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification),
+            st.objects[noid]? = some (.notification ntfn) → target ∉ ntfn.waitingThreads := by
+          intro noid ntfn hNtfn hMem
+          obtain ⟨tcb_w, hTcb_w, hIpc_w⟩ := hConsist noid ntfn target hNtfn hMem
+          have hTcbTarget := lookupTcb_some_objects st target tcb hLookup
+          rw [hTcb_w] at hTcbTarget; cases hTcbTarget; rw [hIpc_w] at hIpc; cases hIpc
+        have hConsist1 := storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent
+          st st1 target .ready (some msg) hConsist hObjInv hStore hTargetNotInWaitList
+        -- Final state is ensureRunnable st1 target — objects unchanged
+        have hSubst : st' = ensureRunnable st1 target := by
+          cases rt with
+          | none => simp at hStep; exact hStep.symm
+          | some val =>
+            dsimp only [] at hStep; split at hStep
+            · simp at hStep; exact hStep.symm
+            · simp at hStep
+        subst hSubst
+        intro noid ntfn tid hNtfnPost hMem
+        have hNtfnSt1 : st1.objects[noid]? = some (.notification ntfn) := by
+          rwa [ensureRunnable_preserves_objects] at hNtfnPost
+        obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist1 noid ntfn tid hNtfnSt1 hMem
+        exact ⟨tcb', by rw [ensureRunnable_preserves_objects]; exact hTcb', hIpc'⟩
+
+-- ============================================================================
 -- WS-H12e/R3-B: Composed ipcInvariantFull preservation theorems
 -- ============================================================================
 

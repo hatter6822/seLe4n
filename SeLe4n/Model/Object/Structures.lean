@@ -1628,7 +1628,7 @@ theorem addEdge_preserves_edgeWellFounded_noParent
     (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
     (hNeq : parent ≠ child)
     (hAcyclic : cdt.edgeWellFounded)
-    (hNoIncoming : ∀ e ∈ cdt.edges, e.child ≠ child)
+    (_hNoIncoming : ∀ e ∈ cdt.edges, e.child ≠ child)
     (hNoPath : ∀ (p : List CdtNodeId),
       p.length > 1 → p.head? = some child → p.getLast? = some parent →
       (∀ i, (h : i + 1 < p.length) → ∃ e ∈ cdt.edges, e.parent = p[i] ∧ e.child = p[i + 1]) →
