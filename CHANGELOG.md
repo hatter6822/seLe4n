@@ -3,7 +3,7 @@
 - Completed Phase 9 (WS-Q9) of the Kernel State Architecture workstream:
   Comprehensive integration testing for the two-phase architecture + full
   documentation sync. **WS-Q portfolio is now COMPLETE** (all 9 phases).
-- Q9-A: `TwoPhaseArchSuite.lean` — 14 integration tests (40 checks) covering
+- Q9-A: `TwoPhaseArchSuite.lean` — 14 integration tests (41 checks) covering
   the full builder→freeze→execution pipeline: TPH-001 (builder pipeline),
   TPH-003 (freeze populated + lookup equivalence), TPH-005 (frozen IPC
   send/receive/call), TPH-006 (frozen scheduler tick with preemption),

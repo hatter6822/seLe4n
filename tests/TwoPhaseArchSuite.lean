@@ -243,16 +243,36 @@ private def tph006a_timerTickActive : IO Unit := do
 
 /-- TPH-006b: Timer tick with expired time slice — preemption and reschedule. -/
 private def tph006b_timerTickExpiry : IO Unit := do
+  -- Thread with timeSlice=1, so the tick will expire it.
+  -- byPriority has the thread so frozenSchedule can re-select it.
   let tcb1 : TCB := { mkTcb 1 10 0 with timeSlice := 1, ipcState := .ready }
+  let byPrioRt := (RHTable.empty 16 : RHTable Priority (List ThreadId))
+    |>.insert ⟨10⟩ [⟨1⟩]
+  let memberRt := (RHTable.empty 16 : RHTable ThreadId Unit)
+    |>.insert ⟨1⟩ ()
   let fst := { mkFrozenState [(⟨1⟩, .tcb tcb1)] with
-    scheduler := { emptyFrozenState.scheduler with current := some ⟨1⟩ } }
+    scheduler := {
+      byPriority := freezeMap byPrioRt
+      threadPriority := freezeMap (RHTable.empty 16)
+      membership := freezeMap memberRt
+      current := some ⟨1⟩
+      activeDomain := ⟨0⟩
+      domainTimeRemaining := 5
+      domainSchedule := []
+      domainScheduleIndex := 0
+    } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
       expect "TPH-006d timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
-      -- After expiry: time slice reset, reschedule happened
-      -- The thread should have been re-selected or current cleared
-      -- (depends on whether it's eligible — domain check + ready)
-      expect "TPH-006e preemption occurred" true
+      -- After expiry: current was cleared, frozenSchedule ran.
+      -- The thread's time slice was reset to frozenDefaultTimeSlice (5).
+      match frozenLookupTcb fst' ⟨1⟩ with
+      | some tcb =>
+          expect "TPH-006e time slice reset" (tcb.timeSlice == frozenDefaultTimeSlice)
+      | none => throw <| IO.userError "TPH-006e TCB missing after expiry"
+      -- frozenSchedule was called after clearing current. Thread 1 is the
+      -- only eligible thread (domain 0, .ready), so it should be re-selected.
+      expect "TPH-006f thread re-selected" (fst'.scheduler.current == some ⟨1⟩)
   | .error e => throw <| IO.userError s!"TPH-006b expiry should succeed: {reprStr e}"
 
 -- ============================================================================

@@ -1833,7 +1833,7 @@ roundtrip properties, frame lemmas, structural composition theorems.
 
 ### Q9: Integration Testing (`tests/TwoPhaseArchSuite.lean`)
 
-14 integration tests (40 checks) verifying the full builder→freeze→execution
+14 integration tests (41 checks) verifying the full builder→freeze→execution
 pipeline:
 
 - **TPH-001**: Builder pipeline (`mkEmptyIntermediateState` → `createObject` →

@@ -291,7 +291,7 @@ State Architecture). It delivers comprehensive integration testing for the
 two-phase builder→freeze→execution pipeline and synchronizes all documentation.
 Key changes:
 
-- **Q9-A**: `TwoPhaseArchSuite.lean` — 14 integration tests (40 checks) covering
+- **Q9-A**: `TwoPhaseArchSuite.lean` — 14 integration tests (41 checks) covering
   TPH-001 (builder pipeline), TPH-003 (freeze populated + lookup equivalence),
   TPH-005 (frozen IPC send/receive/call), TPH-006 (frozen scheduler tick with
   active thread + preemption), TPH-010 (commutativity: builder→freeze =

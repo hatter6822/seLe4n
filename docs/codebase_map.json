@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-q9-workstream-gtMmK",
-      "commit_sha": "8885ab352079c2748b8fffc71d4db701ca620256",
-      "tree_sha": "22e59e1307e5bcac8a318e208dfcf085eb120294",
-      "committed_at_utc": "2026-03-21T03:36:36+00:00"
+      "commit_sha": "2a29b0278a4298785fd88efaf53e3738d1e89845",
+      "tree_sha": "ba5806eab51110d22df99025fd187185c92ff766",
+      "committed_at_utc": "2026-03-21T04:06:05+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0f2f8fe5a60f2d12db6264346ce43a4ce9419ea91491eb263c58aaab7d3d613e"
+    "source_digest": "9be2c86dc8b25edffe3c6ca4d4c9902f6b22ea75b96053c8b2bcd6a0344c3bc6"
   },
   "summary": {
     "module_count": 107,
@@ -29,7 +29,7 @@
     "production_files": 97,
     "production_loc": 53118,
     "test_files": 10,
-    "test_loc": 7027,
+    "test_loc": 7047,
     "proved_theorem_lemma_decls": 1625,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -24867,7 +24867,7 @@
         {
           "kind": "def",
           "name": "tph010_commutativity",
-          "line": 268,
+          "line": 288,
           "called": [
             "expect",
             "mkTcb"
@@ -24876,7 +24876,7 @@
         {
           "kind": "def",
           "name": "tph012_preallocatedSlot",
-          "line": 308,
+          "line": 328,
           "called": [
             "expect",
             "mkFrozenState",
@@ -24886,7 +24886,7 @@
         {
           "kind": "def",
           "name": "tph014a_frozenSchedule",
-          "line": 338,
+          "line": 358,
           "called": [
             "expect",
             "mkFrozenState",
@@ -24896,7 +24896,7 @@
         {
           "kind": "def",
           "name": "tph014b_frozenYield",
-          "line": 366,
+          "line": 386,
           "called": [
             "expect",
             "mkFrozenState",
@@ -24906,7 +24906,7 @@
         {
           "kind": "def",
           "name": "tph014c_scheduleNoEligible",
-          "line": 391,
+          "line": 411,
           "called": [
             "expect",
             "mkFrozenState",
@@ -24916,7 +24916,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 421,
+          "line": 441,
           "called": [
             "tph001a_emptyBuilder",
             "tph001b_builderPipeline",
