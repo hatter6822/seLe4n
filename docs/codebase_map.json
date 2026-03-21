@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-phase-r2-workstream-JSz4E",
-      "commit_sha": "0a64b0f871ce36583ebb0c600eb1621c31fbc24f",
-      "tree_sha": "760eda379c5c674e398eca5e4efdf7261a964a01",
-      "committed_at_utc": "2026-03-21T07:02:53+00:00"
+      "commit_sha": "12ae573c8292e9dcf664cc1f4b92b79ed3d9de26",
+      "tree_sha": "af7d6700d2e0fe584093d8acc285f4235689ec16",
+      "committed_at_utc": "2026-03-21T07:45:25+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "37266a0f3a72bb98483364472ce87bd118431fc0150b48363553fec0839f1a56"
+    "source_digest": "3f443d400b2c20586e6c0082e76653a70419b60159f94cc88fb7e0fdfb61733b"
   },
   "summary": {
     "module_count": 107,
-    "declaration_count": 3038
+    "declaration_count": 3039
   },
   "readme_sync": {
     "version": "0.17.14",
     "lean_toolchain": "v4.28.0",
     "production_files": 97,
-    "production_loc": 53284,
+    "production_loc": 53419,
     "test_files": 10,
     "test_loc": 7155,
-    "proved_theorem_lemma_decls": 1629,
+    "proved_theorem_lemma_decls": 1630,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -16796,7 +16796,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 120,
+      "declaration_count": 121,
       "declarations": [
         {
           "kind": "namespace",
@@ -17728,17 +17728,29 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "addEdge_preserves_edgeWellFounded_noParent",
+          "line": 1389,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "DerivationOp",
+            "addEdge",
+            "edgeWellFounded"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1384,
+          "line": 1519,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1395>",
-          "line": 1395,
+          "name": "<anonymous:instance:1530>",
+          "line": 1530,
           "called": [
             "KernelObject"
           ]
@@ -17746,19 +17758,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1405,
+          "line": 1540,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 1414,
+          "line": 1549,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 1416,
+          "line": 1551,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -17767,7 +17779,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 1428,
+          "line": 1563,
           "called": []
         }
       ]
