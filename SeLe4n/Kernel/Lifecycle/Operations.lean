@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.Operations
+import SeLe4n.Kernel.Service.Registry
 
 namespace SeLe4n.Kernel
 
@@ -24,25 +25,124 @@ def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :
 -- WS-H2: Lifecycle Safety Guards
 -- ============================================================================
 
-/-- WS-H2/H-05: Clean up external references to a TCB being retyped away.
-    Removes the ThreadId from the scheduler run queue (`removeRunnable`).
-    This prevents the dangling-reference scenario described in H-05: after a TCB
-    is retyped, its ThreadId must not remain in the run queue pointing at what
-    is now a different object type.
+/-- R4-A.1: Remove a ThreadId from an intrusive queue's head/tail pointers.
+    If the head points to `tid`, advances to the TCB's `queueNext` successor
+    (preserving queue accessibility for remaining threads). If `tid` is the
+    tail, retreats to the TCB's `queuePrev` predecessor. Falls back to `none`
+    if the TCB cannot be looked up (defensive — the TCB should still exist at
+    cleanup time since cleanup runs before retype). -/
+private def removeThreadFromQueue (st : SystemState) (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) : IntrusiveQueue :=
+  let advance := match lookupTcb st tid with
+    | some tcb => (tcb.queueNext, tcb.queuePrev)
+    | none => (none, none)
+  { head := if q.head = some tid then advance.1 else q.head,
+    tail := if q.tail = some tid then advance.2 else q.tail }
 
-    Note: IPC endpoint queue references become stale after retype but are
-    safe — all IPC operations guard on `lookupTcb`, which fails gracefully
-    when the TCB no longer exists.  Full endpoint dequeue is deferred to a
-    future workstream to avoid breaking the `objects`-preservation chain
-    used by downstream invariant proofs. -/
+/-- R4-A.1 (M-12): Remove a ThreadId from all endpoint send/receive queues.
+    Iterates over all endpoint objects in `st.objects` and advances any
+    head/tail references to `tid` in both `sendQ` and `receiveQ` to the
+    TCB's queue successor/predecessor. TCB queue links are read from the
+    original state (before any fold mutations) to ensure consistent reads.
+    This prevents dangling queue references after a TCB is retyped. -/
+def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  st.objects.fold st fun acc oid obj =>
+    match obj with
+    | .endpoint ep =>
+      let ep' : Endpoint := {
+        sendQ := removeThreadFromQueue st ep.sendQ tid,
+        receiveQ := removeThreadFromQueue st ep.receiveQ tid }
+      { acc with objects := acc.objects.insert oid (.endpoint ep') }
+    | _ => acc
+
+/-- R4-A.2 (M-12): Remove a ThreadId from all notification waiting lists.
+    Iterates over all notification objects in `st.objects` and filters out
+    `tid` from each notification's `waitingThreads` list. -/
+def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  st.objects.fold st fun acc oid obj =>
+    match obj with
+    | .notification notif =>
+      let notif' : Notification := {
+        notif with waitingThreads := notif.waitingThreads.filter (· != tid) }
+      { acc with objects := acc.objects.insert oid (.notification notif') }
+    | _ => acc
+
+/-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.
+    Removes the ThreadId from:
+    1. The scheduler run queue (`removeRunnable`)
+    2. All endpoint send/receive queues (`removeFromAllEndpointQueues`)
+    3. All notification waiting lists (`removeFromAllNotificationWaitLists`)
+    This prevents dangling-reference scenarios after a TCB is retyped. -/
 def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  removeRunnable st tid
+  let st := removeRunnable st tid
+  let st := removeFromAllEndpointQueues st tid
+  removeFromAllNotificationWaitLists st tid
+
+-- ============================================================================
+-- R4-A: Cleanup preservation theorems
+-- ============================================================================
+
+/-- R4-A.1: removeFromAllEndpointQueues preserves the scheduler. -/
+private theorem removeFromAllEndpointQueues_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllEndpointQueues st tid).scheduler = st.scheduler := by
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.scheduler = st.scheduler) rfl
+    (fun acc _ _ hAcc => by split <;> exact hAcc)
+
+/-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
+private theorem removeFromAllNotificationWaitLists_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.scheduler = st.scheduler) rfl
+    (fun acc _ _ hAcc => by split <;> exact hAcc)
+
+/-- R4-A.1: removeFromAllEndpointQueues preserves lifecycle metadata. -/
+private theorem removeFromAllEndpointQueues_lifecycle_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle := by
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.lifecycle = st.lifecycle) rfl
+    (fun acc _ _ hAcc => by split <;> exact hAcc)
+
+/-- R4-A.2: removeFromAllNotificationWaitLists preserves lifecycle metadata. -/
+private theorem removeFromAllNotificationWaitLists_lifecycle_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.lifecycle = st.lifecycle) rfl
+    (fun acc _ _ hAcc => by split <;> exact hAcc)
+
+/-- R4-A.1: removeFromAllEndpointQueues preserves serviceRegistry. -/
+private theorem removeFromAllEndpointQueues_serviceRegistry_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry := by
+  unfold removeFromAllEndpointQueues
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.serviceRegistry = st.serviceRegistry) rfl
+    (fun acc _ _ hAcc => by split <;> exact hAcc)
+
+/-- R4-A.2: removeFromAllNotificationWaitLists preserves serviceRegistry. -/
+private theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.serviceRegistry = st.serviceRegistry) rfl
+    (fun acc _ _ hAcc => by split <;> exact hAcc)
 
 /-- After cleanup, the cleaned thread is not in the run queue. -/
 theorem cleanupTcbReferences_removes_from_runnable
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     ¬(tid ∈ (cleanupTcbReferences st tid).scheduler.runQueue) := by
-  unfold cleanupTcbReferences removeRunnable
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_scheduler_eq]
+  rw [removeFromAllEndpointQueues_scheduler_eq]
+  unfold removeRunnable
   exact RunQueue.not_mem_remove_self _ _
 
 /-- Cleanup preserves run queue membership for other threads. -/
@@ -50,21 +150,28 @@ theorem cleanupTcbReferences_preserves_runnable_ne
     (st : SystemState) (tid other : SeLe4n.ThreadId) (hNe : other ≠ tid)
     (hMem : other ∈ st.scheduler.runQueue) :
     other ∈ (cleanupTcbReferences st tid).scheduler.runQueue := by
-  unfold cleanupTcbReferences removeRunnable
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_scheduler_eq]
+  rw [removeFromAllEndpointQueues_scheduler_eq]
+  unfold removeRunnable
   rw [RunQueue.mem_remove]
   exact ⟨hMem, hNe⟩
 
-/-- Cleanup preserves the objects store (scheduler-only operation). -/
-theorem cleanupTcbReferences_objects_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (cleanupTcbReferences st tid).objects = st.objects := by
-  unfold cleanupTcbReferences removeRunnable; rfl
-
-/-- Cleanup preserves lifecycle metadata (scheduler-only operation). -/
+/-- Cleanup preserves lifecycle metadata. -/
 theorem cleanupTcbReferences_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (cleanupTcbReferences st tid).lifecycle = st.lifecycle := by
-  unfold cleanupTcbReferences removeRunnable; rfl
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_lifecycle_eq]
+  exact removeFromAllEndpointQueues_lifecycle_eq (removeRunnable st tid) tid
+
+/-- Cleanup preserves serviceRegistry. -/
+theorem cleanupTcbReferences_serviceRegistry_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupTcbReferences st tid).serviceRegistry = st.serviceRegistry := by
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_serviceRegistry_eq]
+  exact removeFromAllEndpointQueues_serviceRegistry_eq (removeRunnable st tid) tid
 
 /-- CDT detach preserves the objects store. -/
 private theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
@@ -102,14 +209,21 @@ theorem detachCNodeSlots_lifecycle_eq
     rfl (fun acc slot _cap hAcc => (detachSlotFromCdt_lifecycle_eq acc
       { cnode := cnodeId, slot := slot }).trans hAcc)
 
-/-- WS-H2: Pre-retype cleanup combining TCB reference cleanup and CDT detach.
-    - If the current object is a TCB: clean up scheduler references.
+/-- WS-H2, R4-B.2 (M-13): Pre-retype cleanup combining TCB reference cleanup,
+    CDT detach, and service registration cleanup.
+    - If the current object is a TCB: clean up scheduler + IPC references.
+    - If the current object is an endpoint: revoke service registrations
+      backed by this endpoint to preserve `registryEndpointValid`.
     - If the current object is a CNode being replaced by a non-CNode: detach
       CDT slot mappings to prevent orphaned derivation tree references. -/
 def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) : SystemState :=
   let st := match currentObj with
     | .tcb tcb => cleanupTcbReferences st tcb.tid
+    | _ => st
+  -- R4-B.2 (M-13): Clean up service registrations for endpoints being retyped
+  let st := match currentObj with
+    | .endpoint _ => cleanupEndpointServiceRegistrations st target
     | _ => st
   match currentObj with
   | .cnode cn =>
@@ -118,18 +232,25 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | _ => detachCNodeSlots st target cn
   | _ => st
 
-/-- Pre-retype cleanup preserves the objects store. -/
-theorem lifecyclePreRetypeCleanup_objects_eq
+/-- Pre-retype cleanup preserves the objects store for non-TCB cases.
+    For TCB cases, objects are modified by endpoint/notification queue cleanup.
+    For CNode→non-CNode, CDT detach does not change objects. -/
+theorem lifecyclePreRetypeCleanup_objects_eq_non_tcb
     (st : SystemState) (target : SeLe4n.ObjId)
-    (currentObj newObj : KernelObject) :
+    (currentObj newObj : KernelObject)
+    (hNotTcb : ∀ tcb, currentObj ≠ .tcb tcb) :
     (lifecyclePreRetypeCleanup st target currentObj newObj).objects = st.objects := by
   unfold lifecyclePreRetypeCleanup
   cases currentObj with
-  | tcb tcb => exact cleanupTcbReferences_objects_eq st tcb.tid
+  | tcb tcb => exact absurd rfl (hNotTcb tcb)
   | cnode cn =>
+    simp only []
     cases newObj <;> simp only [] <;>
     first | rfl | exact detachCNodeSlots_objects_eq st target cn
-  | endpoint _ | notification _ | vspaceRoot _ | untyped _ => rfl
+  | endpoint _ =>
+    simp only []
+    exact cleanupEndpointServiceRegistrations_objects_eq st target
+  | notification _ | vspaceRoot _ | untyped _ => rfl
 
 /-- Pre-retype cleanup preserves lifecycle metadata. -/
 theorem lifecyclePreRetypeCleanup_lifecycle_eq
@@ -138,11 +259,17 @@ theorem lifecyclePreRetypeCleanup_lifecycle_eq
     (lifecyclePreRetypeCleanup st target currentObj newObj).lifecycle = st.lifecycle := by
   unfold lifecyclePreRetypeCleanup
   cases currentObj with
-  | tcb tcb => exact cleanupTcbReferences_lifecycle_eq st tcb.tid
+  | tcb tcb =>
+    simp only []
+    exact cleanupTcbReferences_lifecycle_eq st tcb.tid
   | cnode cn =>
+    simp only []
     cases newObj <;> simp only [] <;>
     first | rfl | exact detachCNodeSlots_lifecycle_eq st target cn
-  | endpoint _ | notification _ | vspaceRoot _ | untyped _ => rfl
+  | endpoint _ =>
+    simp only []
+    exact cleanupEndpointServiceRegistrations_lifecycle_eq st target
+  | notification _ | vspaceRoot _ | untyped _ => rfl
 
 
 /-- Pre-retype cleanup only removes elements from the flat list, never adds. -/
@@ -150,7 +277,10 @@ private theorem cleanupTcbReferences_flat_subset
     (st : SystemState) (tid x : SeLe4n.ThreadId)
     (h : x ∈ (cleanupTcbReferences st tid).scheduler.runQueue.flat) :
     x ∈ st.scheduler.runQueue.flat := by
-  unfold cleanupTcbReferences removeRunnable at h
+  unfold cleanupTcbReferences at h
+  rw [removeFromAllNotificationWaitLists_scheduler_eq] at h
+  rw [removeFromAllEndpointQueues_scheduler_eq] at h
+  unfold removeRunnable at h
   simp only [] at h
   exact (List.mem_filter.mp h).1
 
@@ -165,6 +295,14 @@ private theorem detachCNodeSlots_scheduler_eq
           = acc.scheduler := by unfold SystemState.detachSlotFromCdt; split <;> rfl
       exact this.trans hAcc)
 
+/-- Cleanup preserves the scheduler state. -/
+private theorem cleanupTcbReferences_scheduler_eq_removeRunnable
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupTcbReferences st tid).scheduler = (removeRunnable st tid).scheduler := by
+  unfold cleanupTcbReferences
+  rw [removeFromAllNotificationWaitLists_scheduler_eq]
+  exact removeFromAllEndpointQueues_scheduler_eq (removeRunnable st tid) tid
+
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
     list was in the pre-cleanup flat list. -/
 private theorem lifecyclePreRetypeCleanup_flat_subset
@@ -176,8 +314,11 @@ private theorem lifecyclePreRetypeCleanup_flat_subset
   cases currentObj with
   | tcb tcb =>
     simp only [] at h
-    exact cleanupTcbReferences_flat_subset st tcb.tid x h
+    rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
+    unfold removeRunnable at h; simp only [] at h
+    exact (List.mem_filter.mp h).1
   | cnode cn =>
+    simp only [] at h
     cases newObj <;> simp only [] at h
     all_goals first
       | exact h
@@ -185,7 +326,11 @@ private theorem lifecyclePreRetypeCleanup_flat_subset
          rw [show (detachCNodeSlots st target cn).scheduler.runQueue.flat =
                st.scheduler.runQueue.flat from by rw [hSched]] at h
          exact h)
-  | endpoint _ | notification _ | vspaceRoot _ | untyped _ => exact h
+  | endpoint _ =>
+    simp only [] at h
+    rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h
+    exact h
+  | notification _ | vspaceRoot _ | untyped _ => exact h
 
 /-- Retype an existing object id to a new typed object value.
 

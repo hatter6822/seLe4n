@@ -135,6 +135,7 @@ SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7)
   Operations.lean                12 per-subsystem frozen operations
   Commutativity.lean             FrozenMap set/get? roundtrip proofs, frame lemmas
   Invariant.lean                 frozenStoreObject preservation theorems
+SeLe4n/Kernel/CrossSubsystem.lean Cross-subsystem invariants (R4-E)
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
 SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks

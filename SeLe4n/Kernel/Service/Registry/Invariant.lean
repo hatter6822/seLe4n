@@ -111,18 +111,22 @@ theorem registerService_preserves_registryEndpointValid
     · cases hTarget : newReg.endpointCap.target with
       | object epId =>
         simp only [hTarget] at hStep
-        split at hStep
-        · simp at hStep
-        · rename_i hEpExists
-          simp at hStep; subst st'
-          intro sid reg hReg
-          simp only [RHTable_getElem?_eq_get?] at hReg
-          rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
-          split at hReg
-          · cases hReg
-            refine ⟨epId, hTarget, ?_⟩
-            rwa [← hObjEq]
-          · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
+        cases hObj : st.objects[epId]? with
+        | none => simp [hObj] at hStep
+        | some obj =>
+          cases obj <;> simp [hObj] at hStep
+          case endpoint ep =>
+            split at hStep
+            · cases hStep
+            · simp at hStep; subst st'
+              intro sid reg hReg
+              simp only [RHTable_getElem?_eq_get?] at hReg
+              rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
+              split at hReg
+              · cases hReg
+                refine ⟨epId, hTarget, ?_⟩
+                rw [← hObjEq, hObj]; simp
+              · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -138,27 +142,27 @@ theorem registerService_preserves_registryInterfaceValid
   · split at hStep
     · simp at hStep
     · rename_i hHasIface
-      -- hHasIface : ¬st.interfaceRegistry[newReg.iface.ifaceId]? = none
       cases hTarget : newReg.endpointCap.target with
       | object epId =>
         simp only [hTarget] at hStep
-        split at hStep
-        · simp at hStep
-        · simp at hStep; subst st'
-          -- interfaceRegistry unchanged, serviceRegistry has insert
-          intro sid reg hReg
-          simp only [RHTable_getElem?_eq_get?] at hReg
-          rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
-          split at hReg
-          · cases hReg
-            -- reg = newReg, interfaceRegistry unchanged in st'
-            -- The goal is about {st with serviceRegistry := ...}.interfaceRegistry
-            -- which definitionally equals st.interfaceRegistry
-            suffices h : ∃ spec, st.interfaceRegistry[newReg.iface.ifaceId]? = some spec from h
-            cases hIface : st.interfaceRegistry[newReg.iface.ifaceId]? with
-            | none => exact absurd hIface hHasIface
-            | some s => exact ⟨s, rfl⟩
-          · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
+        cases hObj : st.objects[epId]? with
+        | none => simp [hObj] at hStep
+        | some obj =>
+          cases obj <;> simp [hObj] at hStep
+          case endpoint ep =>
+            split at hStep
+            · cases hStep
+            · simp at hStep; subst st'
+              intro sid reg hReg
+              simp only [RHTable_getElem?_eq_get?] at hReg
+              rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
+              split at hReg
+              · cases hReg
+                suffices h : ∃ spec, st.interfaceRegistry[newReg.iface.ifaceId]? = some spec from h
+                cases hIface : st.interfaceRegistry[newReg.iface.ifaceId]? with
+                | none => exact absurd hIface hHasIface
+                | some s => exact ⟨s, rfl⟩
+              · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -174,12 +178,17 @@ theorem revokeService_preserves_registryEndpointValid
     (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) :
     registryEndpointValid st' := by
   have hObjEq := revokeService_preserves_objects st st' sid hStep
+  have hSvcRegEq := revokeService_success_removes st st' sid hSvcInv hStep
+  intro sid' reg hReg
+  -- The post-state serviceRegistry = (erased).serviceRegistry (removeDependenciesOf preserves it)
+  -- Need to recover that reg was in st.serviceRegistry
   unfold revokeService at hStep
   split at hStep
   · simp at hStep
-  · simp at hStep; subst st'
-    intro sid' reg hReg
-    -- serviceRegistry.erase sid, need sid' ≠ sid
+  · simp at hStep; cases hStep
+    -- st' = removeDependenciesOf {st with serviceRegistry := ...erase...} sid
+    -- st'.serviceRegistry = {st with serviceRegistry := ...erase...}.serviceRegistry (by removeDependenciesOf_serviceRegistry_eq)
+    rw [removeDependenciesOf_serviceRegistry_eq] at hReg
     have hOrig : st.serviceRegistry[sid']? = some reg := by
       simp only [RHTable_getElem?_eq_get?] at hReg
       rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg
@@ -198,8 +207,9 @@ theorem revokeService_preserves_registryInterfaceValid
   unfold revokeService at hStep
   split at hStep
   · simp at hStep
-  · simp at hStep; subst st'
+  · simp at hStep; cases hStep
     intro sid' reg hReg
+    rw [removeDependenciesOf_serviceRegistry_eq] at hReg
     have hOrig : st.serviceRegistry[sid']? = some reg := by
       simp only [RHTable_getElem?_eq_get?] at hReg
       rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg

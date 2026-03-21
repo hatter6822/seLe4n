@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Service.Operations
 
 /-! # Service Registry Operations — seLe4n Extension
 
@@ -45,10 +46,12 @@ def registerInterface (spec : InterfaceSpec) : Kernel Unit :=
         interfaceRegistry := st.interfaceRegistry.insert spec.ifaceId spec })
 
 /-- Register a service with capability-mediated binding.
-Checks:
+Checks (ordered for defense-in-depth — validate target before authority):
 1. Service not already registered (`illegalState`)
 2. Interface exists in registry (`objectNotFound`)
 3. Endpoint capability target resolves to an existing object (`invalidCapability`)
+4. R4-C.2 (L-09): Target object must be an endpoint (`invalidCapability`)
+5. R4-C.1 (M-14): Endpoint capability must have Write right (`illegalAuthority`)
 -/
 def registerService (reg : ServiceRegistration) : Kernel Unit :=
   fun st =>
@@ -59,11 +62,18 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
     else
       match reg.endpointCap.target with
       | .object epId =>
-        if st.objects[epId]? = none then
-          .error .invalidCapability
-        else
-          .ok ((), { st with
-            serviceRegistry := st.serviceRegistry.insert reg.sid reg })
+        match st.objects[epId]? with
+        | none => .error .invalidCapability
+        -- R4-C.2 (L-09): Target must be an endpoint object
+        | some (.endpoint _) =>
+          -- R4-C.1 (M-14): Capability authority check — require Write right
+          -- Checked after target validation to prevent authority probing on invalid targets
+          if !Capability.hasRight reg.endpointCap .write then
+            .error .illegalAuthority
+          else
+            .ok ((), { st with
+              serviceRegistry := st.serviceRegistry.insert reg.sid reg })
+        | some _ => .error .invalidCapability
       | _ => .error .invalidCapability
 
 /-- Read-only lookup of a service registration by matching endpoint capability
@@ -83,14 +93,47 @@ def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
     | none => .error .objectNotFound
 
 /-- Remove a service registration by ServiceId.
-Returns `objectNotFound` if no such registration exists. -/
+Returns `objectNotFound` if no such registration exists.
+R4-D.1 (M-15): After erasing the registration, also cleans the dependency
+graph by calling `removeDependenciesOf` to remove all edges involving `sid`. -/
 def revokeService (sid : ServiceId) : Kernel Unit :=
   fun st =>
     if st.serviceRegistry[sid]? = none then
       .error .objectNotFound
     else
-      .ok ((), { st with
-        serviceRegistry := st.serviceRegistry.erase sid })
+      let st' := { st with
+        serviceRegistry := st.serviceRegistry.erase sid }
+      .ok ((), removeDependenciesOf st' sid)
+
+/-- R4-B.1 (M-13): Remove all service registrations whose endpoint targets
+    the given ObjId. Called before retype to ensure `registryEndpointValid`
+    is preserved when an endpoint backing a registered service is retyped.
+    This is a pure state helper (not monadic) for composition in the
+    pre-retype cleanup path. -/
+def cleanupEndpointServiceRegistrations (st : SystemState) (epId : SeLe4n.ObjId) : SystemState :=
+  { st with
+    serviceRegistry := st.serviceRegistry.filter fun _sid reg =>
+      match reg.endpointCap.target with
+      | .object id => !(id == epId)
+      | _ => true }
+
+/-- R4-B.1: cleanupEndpointServiceRegistrations preserves objects. -/
+theorem cleanupEndpointServiceRegistrations_objects_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).objects = st.objects := by
+  unfold cleanupEndpointServiceRegistrations; rfl
+
+/-- R4-B.1: cleanupEndpointServiceRegistrations preserves scheduler. -/
+theorem cleanupEndpointServiceRegistrations_scheduler_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).scheduler = st.scheduler := by
+  unfold cleanupEndpointServiceRegistrations; rfl
+
+/-- R4-B.1: cleanupEndpointServiceRegistrations preserves lifecycle. -/
+theorem cleanupEndpointServiceRegistrations_lifecycle_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).lifecycle = st.lifecycle := by
+  unfold cleanupEndpointServiceRegistrations; rfl
 
 -- ============================================================================
 -- Theorems: error conditions, success post-conditions, frame lemmas
@@ -172,8 +215,24 @@ theorem revokeService_success_removes
   split at hStep
   · cases hStep
   · simp at hStep; cases hStep
+    -- removeDependenciesOf preserves serviceRegistry
+    rw [removeDependenciesOf_serviceRegistry_eq]
     simp only [RHTable_getElem?_eq_get?]
     exact RHTable.getElem?_erase_self _ _ hInvExt
+
+/-- R4-C.1 (M-14): Service registration without Write right returns `illegalAuthority`
+    when targeting an existing endpoint. -/
+theorem registerService_error_no_write_right
+    (st : SystemState) (reg : ServiceRegistration)
+    (hNoDup : st.serviceRegistry[reg.sid]? = none)
+    (hHasIface : st.interfaceRegistry[reg.iface.ifaceId]? ≠ none)
+    (epId : SeLe4n.ObjId) (ep : Endpoint)
+    (hTarget : reg.endpointCap.target = .object epId)
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hNoWrite : Capability.hasRight reg.endpointCap .write = false) :
+    registerService reg st = .error .illegalAuthority := by
+  unfold registerService
+  simp [hNoDup, hHasIface, hTarget, hEp, hNoWrite]
 
 /-- Service registration preserves objects. -/
 theorem registerService_preserves_objects
@@ -188,9 +247,14 @@ theorem registerService_preserves_objects
     · cases hTarget : reg.endpointCap.target with
       | object epId =>
         simp only [hTarget] at hStep
-        split at hStep
-        · cases hStep
-        · cases hStep; rfl
+        cases hObj : st.objects[epId]? with
+        | none => simp [hObj] at hStep
+        | some obj =>
+          cases obj <;> simp [hObj] at hStep
+          case endpoint ep =>
+            split at hStep
+            · cases hStep
+            · simp at hStep; cases hStep; rfl
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -202,7 +266,8 @@ theorem revokeService_preserves_objects
   unfold revokeService at hStep
   split at hStep
   · cases hStep
-  · simp at hStep; cases hStep; rfl
+  · simp at hStep; cases hStep
+    exact removeDependenciesOf_objects_eq _ _
 
 /-- Service registration preserves scheduler state. -/
 theorem registerService_preserves_scheduler
@@ -217,9 +282,14 @@ theorem registerService_preserves_scheduler
     · cases hTarget : reg.endpointCap.target with
       | object epId =>
         simp only [hTarget] at hStep
-        split at hStep
-        · cases hStep
-        · cases hStep; rfl
+        cases hObj : st.objects[epId]? with
+        | none => simp [hObj] at hStep
+        | some obj =>
+          cases obj <;> simp [hObj] at hStep
+          case endpoint ep =>
+            split at hStep
+            · cases hStep
+            · simp at hStep; cases hStep; rfl
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -231,6 +301,7 @@ theorem revokeService_preserves_scheduler
   unfold revokeService at hStep
   split at hStep
   · cases hStep
-  · simp at hStep; cases hStep; rfl
+  · simp at hStep; cases hStep
+    exact removeDependenciesOf_scheduler_eq _ _
 
 end SeLe4n.Kernel

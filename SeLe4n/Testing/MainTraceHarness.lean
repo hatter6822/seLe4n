@@ -277,7 +277,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   | .error err => IO.println s!"[SRG-001] register interface error: {reprStr err}"
   | .ok (_, stIface) =>
     let srgSid : ServiceId := ⟨501⟩
-    let srgCap : Capability := { target := .object demoEndpoint, rights := .empty }
+    let srgCap : Capability := { target := .object demoEndpoint, rights := .singleton .write }
     let srgReg : ServiceRegistration := {
       sid := srgSid, iface := srgIface, endpointCap := srgCap
     }
@@ -323,7 +323,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   | .ok _ => IO.println "[SRG-003] unexpected success with unknown interface"
 
   -- SRG-004: Register with invalid endpoint (non-object target)
-  let srgInvalidCap : Capability := { target := .cnodeSlot ⟨10⟩ ⟨0⟩, rights := .empty }
+  let srgInvalidCap : Capability := { target := .cnodeSlot ⟨10⟩ ⟨0⟩, rights := .singleton .write }
   match SeLe4n.Kernel.registerInterface srgIface st1 with
   | .error _ => IO.println "[SRG-004] skipped (interface already tested)"
   | .ok (_, stIface4) =>
@@ -350,7 +350,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   | .ok (_, stChainIface) =>
     let srgChainReg : ServiceRegistration := {
       sid := ⟨601⟩, iface := srgChainIface,
-      endpointCap := { target := .object demoEndpoint, rights := .empty }
+      endpointCap := { target := .object demoEndpoint, rights := .singleton .write }
     }
     match SeLe4n.Kernel.registerService srgChainReg stChainIface with
     | .error err => IO.println s!"[SRG-009] chain service error: {reprStr err}"

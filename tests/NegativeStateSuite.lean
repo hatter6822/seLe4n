@@ -2765,6 +2765,116 @@ def runWSR2RevocationChecks : IO Unit := do
 
   IO.println "all WS-R2 revocation error propagation checks passed"
 
+-- ============================================================================
+-- R4: Lifecycle & Service Coherence negative tests
+-- ============================================================================
+
+/-- R4-F.1: Negative tests for cross-subsystem lifecycle/service coherence.
+Tests: service registration without Write right, service registration targeting
+a non-endpoint object, and endpoint type verification. -/
+private def runWSR4CoherenceChecks : IO Unit := do
+  IO.println "--- R4: Lifecycle & Service Coherence checks ---"
+
+  -- R4-NEG-01: Register service without Write right → illegalAuthority
+  let epId : SeLe4n.ObjId := ⟨30⟩
+  let ifaceId : SeLe4n.InterfaceId := ⟨700⟩
+  let iface : InterfaceSpec := {
+    ifaceId := ifaceId, methodCount := 1,
+    maxMessageSize := 1, maxResponseSize := 1, requiresGrant := false
+  }
+  let r4State := (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withLifecycleObjectType epId .endpoint
+      |>.build)
+  match SeLe4n.Kernel.registerInterface iface r4State with
+  | .error _ => throw <| IO.userError "R4-NEG-01: interface registration unexpectedly failed"
+  | .ok (_, stIface) =>
+    -- Capability without write right
+    let noWriteCap : Capability := { target := .object epId, rights := .ofList [.read] }
+    let reg : ServiceRegistration := {
+      sid := ⟨701⟩, iface := iface, endpointCap := noWriteCap
+    }
+    expectError "R4-NEG-01: register service without Write right"
+      (SeLe4n.Kernel.registerService reg stIface)
+      .illegalAuthority
+
+    -- R4-NEG-02: Register service targeting a non-endpoint (TCB) → invalidCapability
+    let tcbId : SeLe4n.ObjId := ⟨31⟩
+    let r4State2 := (BootstrapBuilder.empty
+        |>.withObject tcbId (.tcb {
+          tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ })
+        |>.withLifecycleObjectType tcbId .tcb
+        |>.build)
+    match SeLe4n.Kernel.registerInterface iface r4State2 with
+    | .error _ => throw <| IO.userError "R4-NEG-02: interface registration unexpectedly failed"
+    | .ok (_, stIface2) =>
+      let writeCap : Capability := { target := .object tcbId, rights := .singleton .write }
+      let regTcb : ServiceRegistration := {
+        sid := ⟨702⟩, iface := iface, endpointCap := writeCap
+      }
+      expectError "R4-NEG-02: register service targeting non-endpoint"
+        (SeLe4n.Kernel.registerService regTcb stIface2)
+        .invalidCapability
+
+    -- R4-NEG-03: Endpoint retype → service registration auto-revoked (R4-B/M-13)
+    let epForRetype : SeLe4n.ObjId := ⟨32⟩
+    let r4State3 := (BootstrapBuilder.empty
+        |>.withObject epForRetype (.endpoint {})
+        |>.withLifecycleObjectType epForRetype .endpoint
+        |>.build)
+    -- Register interface and service on this endpoint
+    match SeLe4n.Kernel.registerInterface iface r4State3 with
+    | .error _ => throw <| IO.userError "R4-NEG-03: interface registration failed"
+    | .ok (_, stIface3) =>
+      let svcSid : ServiceId := ⟨703⟩
+      let svcCap : Capability := { target := .object epForRetype, rights := .singleton .write }
+      let svcReg : ServiceRegistration := {
+        sid := svcSid, iface := iface, endpointCap := svcCap
+      }
+      match SeLe4n.Kernel.registerService svcReg stIface3 with
+      | .error e => throw <| IO.userError s!"R4-NEG-03: service registration failed: {reprStr e}"
+      | .ok (_, stSvc3) =>
+        -- Verify service is registered
+        if stSvc3.serviceRegistry[svcSid]? = none then
+          throw <| IO.userError "R4-NEG-03: service not registered"
+        -- Run cleanup (simulates pre-retype endpoint cleanup)
+        let stCleaned := SeLe4n.Kernel.cleanupEndpointServiceRegistrations stSvc3 epForRetype
+        -- Verify service registration was revoked
+        if stCleaned.serviceRegistry[svcSid]? != none then
+          throw <| IO.userError "R4-NEG-03: service registration was NOT revoked after endpoint cleanup"
+        IO.println "negative check passed [R4-NEG-03: endpoint cleanup auto-revokes service registrations]"
+
+    -- R4-NEG-04: Service revocation cleans dependency graph (R4-D/M-15)
+    let svcA : ServiceId := ⟨710⟩
+    let svcB : ServiceId := ⟨711⟩
+    let r4State4 := (BootstrapBuilder.empty
+        |>.withService svcA {
+          identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
+          dependencies := [svcB]
+          isolatedFrom := []
+        }
+        |>.withService svcB {
+          identity := { sid := svcB, backingObject := ⟨1⟩, owner := ⟨10⟩ }
+          dependencies := []
+          isolatedFrom := []
+        }
+        |>.build)
+    -- Run removeDependenciesOf to clean svcB from the graph
+    let stCleaned4 := SeLe4n.Kernel.removeDependenciesOf r4State4 svcB
+    -- Verify svcB is removed from services
+    if stCleaned4.services[svcB]? != none then
+      throw <| IO.userError "R4-NEG-04: svcB should be erased from services"
+    -- Verify svcA's dependency on svcB is removed
+    match stCleaned4.services[svcA]? with
+    | none => throw <| IO.userError "R4-NEG-04: svcA should still exist in services"
+    | some entry =>
+      if entry.dependencies.any (· == svcB) then
+        throw <| IO.userError "R4-NEG-04: svcA still depends on svcB after removeDependenciesOf"
+      IO.println "negative check passed [R4-NEG-04: removeDependenciesOf cleans dependency graph edges]"
+
+  IO.println "all R4 lifecycle/service coherence checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2783,3 +2893,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSM3CapTransferNegativeChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
   SeLe4n.Testing.runWSR2RevocationChecks
+  SeLe4n.Testing.runWSR4CoherenceChecks

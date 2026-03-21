@@ -432,6 +432,36 @@ Proof-package entrypoints extend the M5 policy surface to registry preservation:
   - `storeServiceState_preserves_capabilityInvariantBundle`,
   - `serviceRegisterDependency_preserves_serviceGraphInvariant`.
 
+## 9.1 R4 cross-subsystem invariant completion (WS-R/R4 complete)
+
+*(R4: Lifecycle & Service Coherence cross-subsystem preservation)*
+
+Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
+
+- **Lifecycle/IPC coupling** (`cleanupTcbReferences` extensions):
+  - `removeFromAllEndpointQueues` — removes TCB from all endpoint sender/receiver queues
+  - `removeFromAllNotificationWaitLists` — removes TCB from all notification wait lists
+  - `removeThreadFromQueue` advances head/tail to TCB's `queueNext`/`queuePrev` (preserves queue accessibility for remaining threads, instead of clearing to `none`)
+  - Existing scheduler preservation theorems updated for new intermediate states
+
+- **Lifecycle/Service coupling** (`cleanupEndpointServiceRegistrations`):
+  - `cleanupEndpointServiceRegistrations` — revokes all service registrations backing a retyped endpoint
+  - `registryEndpointValid` preservation through retype
+  - Integrated into `lifecyclePreRetypeCleanup` in `Lifecycle/Operations.lean`
+
+- **Service operation hardening**:
+  - `registerService` validates target exists and is an endpoint BEFORE checking Write right authority (defense-in-depth ordering prevents authority probing on invalid targets)
+  - Endpoint object type verification — target must be an actual endpoint (L-09)
+
+- **Service revocation completeness**:
+  - `revokeService` cleans dependency graph via `removeDependenciesOf`
+  - Erases service entry and filters from all other entries' dependency lists
+
+- **Cross-subsystem invariant bundle** (`CrossSubsystem.lean`):
+  - `noStaleEndpointQueueReferences` — every endpoint queue head/tail has a live TCB
+  - `registryDependencyConsistent` — every dependency edge references a registered service
+  - `crossSubsystemInvariant` — composed bundle added to `proofLayerInvariantBundle`
+
 ## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06; WS-G6 / F-P05 updated)
 
 VSpace invariant bundle preservation is now proven for both success and error paths:

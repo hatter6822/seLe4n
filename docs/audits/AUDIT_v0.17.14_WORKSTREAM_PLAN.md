@@ -1103,6 +1103,7 @@ hypotheses and new preservation theorems.
 ### Phase R4: Lifecycle & Service Coherence
 
 **Target version**: v0.18.3
+**Status**: **COMPLETE** — all 6 task groups (R4-A through R4-F) delivered.
 **Goal**: Establish cross-subsystem invariant preservation between lifecycle,
 service registry, and IPC subsystems.
 **Priority**: HIGH — cross-subsystem gaps enable invariant violations that
