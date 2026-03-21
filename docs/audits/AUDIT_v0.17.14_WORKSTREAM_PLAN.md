@@ -167,7 +167,7 @@ inclusion based on security relevance and proof chain completeness.
 |-------|----|-------|-------------------|------|--------|----------|
 | 1 | **R1** ✅ | Pre-Release Blockers | 6 / 17 | — | v0.18.0 | H-01, M-04, M-10, M-11, R-M01, R-M02, R-M03 |
 | 2 | **R2** ✅ | Capability & CDT Hardening | 7 / 17 | — | v0.18.1 | M-05, M-06, M-07, M-08, L-07 |
-| 3 | **R3** | IPC Invariant Completion | 6 / 15 | R2 | v0.18.2 | M-16, M-18, M-19, L-05, L-08 |
+| 3 | **R3** ✅ | IPC Invariant Completion | 6 / 15 | R2 | v0.18.2 | M-16, M-18, M-19, L-05, L-08 |
 | 4 | **R4** | Lifecycle & Service Coherence | 6 / 19 | R2 | v0.18.3 | M-12, M-13, M-14, M-15, L-09 |
 | 5 | **R5** | Information Flow Completion | 5 / 13 | R3, R4 | v0.18.4 | M-01, M-02, M-03 |
 | 6 | **R6** | Model & Frozen State Correctness | 5 / 10 | R1 | v0.18.5 | M-09, L-01, L-04, L-12 |
@@ -821,9 +821,10 @@ Add test cases to `tests/NegativeStateSuite.lean` verifying:
 
 ---
 
-### Phase R3: IPC Invariant Completion
+### Phase R3: IPC Invariant Completion — **COMPLETE** (v0.18.2)
 
 **Target version**: v0.18.2
+**Status**: **COMPLETE** — all 6 task groups (R3-A through R3-F) delivered.
 **Goal**: Internalize externalized IPC invariant hypotheses and fix the
 notification badge delivery gap.
 **Priority**: HIGH — IPC is the primary cross-domain communication mechanism.

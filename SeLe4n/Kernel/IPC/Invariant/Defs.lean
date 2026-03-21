@@ -603,10 +603,14 @@ transition surface is sketched here for documentation:
    ipcState, but only for threads that are `.ready` or blocked on
    non-notification objects, so `notificationWaiterConsistent` is preserved.
 
-The formal preservation theorems for the full transition surface are deferred
-to a future workstream (WS-G7+). The base case (`default_notificationWaiterConsistent`)
-and the runtime check (`notificationWaiterConsistentCheck`) provide confidence
-that the invariant holds in reachable states.
+R3-C/M-19: Formal preservation theorems are proved in
+`NotificationPreservation.lean`:
+- `storeObject_notification_preserves_notificationWaiterConsistent` — notification
+  store with subset waiting list
+- `storeObject_nonNotification_preserves_notificationWaiterConsistent` — non-notification
+  store with ipcState consistency hypothesis (covers endpoint operations)
+The base case (`default_notificationWaiterConsistent`) and the runtime check
+(`notificationWaiterConsistentCheck`) complete the chain.
 -/
 
 -- ============================================================================

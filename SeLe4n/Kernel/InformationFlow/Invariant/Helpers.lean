@@ -730,7 +730,7 @@ theorem notificationSignal_projection_preserved
         exact storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hObjInv hStep
       | cons waiter rest =>
         simp [hWaiters] at hStep
-        -- Waiter path: storeObject + storeTcbIpcState + ensureRunnable
+        -- Waiter path: storeObject + storeTcbIpcStateAndMessage + ensureRunnable (R3-A/M-16)
         have hWaiterHigh := hWaiterDomain ntfn waiter hObj (hWaiters ▸ List.Mem.head rest)
         have hWaiterObjHigh := hCoherent waiter hWaiterHigh
         revert hStep
@@ -738,13 +738,14 @@ theorem notificationSignal_projection_preserved
         | error e => simp
         | ok pair =>
           simp only []
-          cases hTcb : storeTcbIpcState pair.2 waiter _ with
+          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
+              (some { IpcMessage.empty with badge := some badge }) with
           | error e => simp
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
             have hObjInvMid := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
             rw [ensureRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
-                storeTcbIpcState_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hObjInvMid hTcb,
+                storeTcbIpcStateAndMessage_preserves_projection ctx observer pair.2 st2 waiter _ _ hWaiterObjHigh hObjInvMid hTcb,
                 storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
 /-- WS-F3/F-21: notificationSignal preserves low-equivalence. -/
