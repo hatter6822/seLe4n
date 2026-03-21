@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.17.12.
+Lean 4.28.0 toolchain, Lake build system, version 0.17.13.
 
 ## Build and run
 
@@ -442,7 +442,8 @@ under `docs/` and `docs/gitbook/`.
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` — Kernel state architecture: two-phase builder/freeze model
 - **All prior workstreams completed**: WS-B through WS-N (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: Q8–Q9 (Rust wrappers, integration testing), then Raspberry Pi 5 hardware binding
+- **WS-Q8 COMPLETED** (v0.17.13): Rust syscall wrappers (`libsele4n` — 3 `no_std` crates: `sele4n-types`, `sele4n-abi`, `sele4n-sys`, 14 newtype identifiers, 34-variant KernelError, MessageInfo bitfield, ARM64 svc trap, safe wrappers for all 14 syscalls, phantom-typed `Cap<Obj, Rts>`, 64 unit tests + 25 conformance tests)
+- **Next milestone**: Q9 (integration testing + documentation), then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

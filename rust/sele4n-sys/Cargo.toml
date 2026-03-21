@@ -1,0 +1,15 @@
+[package]
+name = "sele4n-sys"
+description = "Safe high-level syscall wrappers for the seLe4n verified microkernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+std = ["sele4n-abi/std"]
+
+[dependencies]
+sele4n-abi = { path = "../sele4n-abi" }
+sele4n-types = { path = "../sele4n-types" }

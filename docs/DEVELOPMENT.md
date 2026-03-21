@@ -102,6 +102,18 @@ theorems (Q6-A). CNode radix lookup equivalence via generic fold helpers (Q6-B).
 `freeze_preserves_invariants` theorem (Q6-D). 31 theorems in
 `SeLe4n/Model/FreezeProofs.lean`, 22-scenario test suite (60 checks). Zero
 sorry/axiom.
+**WS-Q7** (v0.17.13) — Frozen kernel operations — **COMPLETED**:
+`FrozenKernel` monad with 14 per-subsystem frozen operations across 5 subsystems
+(Scheduler, IPC, Capability, VSpace, Service). FrozenMap set/get? commutativity
+proofs, 18 frozenStoreObject preservation theorems. 15-scenario test suite
+covering TPH-005 through TPH-014. Zero sorry/axiom.
+**WS-Q8** (v0.17.13) — Rust syscall wrappers — **COMPLETED**:
+`libsele4n` — 3 `no_std` Rust crates (`sele4n-types`, `sele4n-abi`, `sele4n-sys`)
+encoding the finalized ABI surface (14 syscalls). 14 newtype identifiers,
+34-variant `KernelError`, `MessageInfo` bitfield, ARM64 `svc #0` trap (single
+`unsafe` block), safe high-level wrappers for all syscalls, phantom-typed
+`Cap<Obj, Rts>` handles with sealed traits. 64 unit tests + 25 conformance tests.
+Lean trace harness cross-validation (XVAL-001..004). Zero Lean regression.
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully

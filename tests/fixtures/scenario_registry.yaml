@@ -888,3 +888,24 @@ scenarios:
     function: rhInt006_cnodeBEq
     subsystem: Capability
     description: "CNode BEq comparison with RHTable slots"
+  # Q8-D: Rust ABI cross-validation vectors
+  XVAL-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRustXvalVectors
+    subsystem: ABI
+    description: "MessageInfo encode/decode roundtrip"
+  XVAL-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRustXvalVectors
+    subsystem: ABI
+    description: "SyscallId roundtrip all 14 variants"
+  XVAL-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRustXvalVectors
+    subsystem: ABI
+    description: "CSpaceMintArgs encode/decode roundtrip"
+  XVAL-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRustXvalVectors
+    subsystem: ABI
+    description: "MessageInfo bit layout verification"

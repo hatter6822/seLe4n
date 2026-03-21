@@ -1372,9 +1372,10 @@ documentation sync.
 | TPH-013 | Delete in frozen state: slot cleared to none | Execution | lookup returns none |
 | TPH-014 | RunQueue operations in frozen state | Execution | correct scheduling |
 
-#### Q9-B: Rust Conformance Tests (RUST-XVAL-001 through XVAL-014)
+#### Q9-B: Rust Conformance Tests (RUST-XVAL-001 through RUST-XVAL-019)
 
-Register-by-register ABI validation for all 14 syscalls.
+Register-by-register ABI validation for all 14 syscalls, notification
+signal/wait, and IPC buffer overflow.
 
 #### Q9-C: Service Interface Tests (SRG-001 through SRG-010)
 

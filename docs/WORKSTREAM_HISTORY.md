@@ -234,6 +234,59 @@ invariants across the builder→execution phase transition. Key changes:
 - **Proof surface**: 30 theorems/definitions in `SeLe4n/Model/FreezeProofs.lean`,
   zero sorry/axiom, all modules compile independently.
 
+### WS-Q7 workstream (Frozen Kernel Operations)
+
+WS-Q7 is a **completed** workstream (v0.17.13), the seventh phase of WS-Q (Kernel
+State Architecture). It delivers the execution-phase kernel operations that run
+on top of the frozen (immutable key-set) state produced by WS-Q5/Q6. Key changes:
+
+- **Q7-A**: `FrozenKernel` monad (`KernelM FrozenSystemState KernelError`) with
+  lookup/store primitives for all 5 object types (TCB, Endpoint, Notification,
+  CNode, VSpaceRoot). Scheduler context-switch helpers.
+- **Q7-B/C**: 14 per-subsystem frozen operations across 5 subsystems: Scheduler
+  (`frozenSchedule`, `frozenHandleYield`, `frozenTimerTick`), IPC
+  (`frozenNotificationSignal`, `frozenNotificationWait`, `frozenEndpointSend`,
+  `frozenEndpointReceive`, `frozenEndpointCall`, `frozenEndpointReply`),
+  Capability (`frozenCspaceLookup`, `frozenCspaceMint`, `frozenCspaceDelete`),
+  VSpace (`frozenVspaceLookup`), Service (`frozenLookupServiceByCap`).
+- **Q7-D**: FrozenMap set/get? commutativity proofs and structural lemmas.
+- **Q7-E**: 18 `frozenStoreObject` frame/preservation theorems.
+- **Q7-T**: 15-scenario test suite in `tests/FrozenOpsSuite.lean` covering
+  TPH-005 through TPH-014.
+- **Proof surface**: Zero sorry/axiom, all modules compile independently.
+
+### WS-Q8 workstream (Rust Syscall Wrappers)
+
+WS-Q8 is a **completed** workstream (v0.17.13), absorbing WS-O (Syscall Rust
+Wrappers). It delivers `libsele4n`, a `no_std` Rust userspace library with safe
+syscall wrappers for all 14 seLe4n syscalls. Key changes:
+
+- **Q8-A**: `sele4n-types` crate — 14 newtype identifiers (`ObjId`, `ThreadId`,
+  `CPtr`, `Slot`, etc.), 34-variant `KernelError` enum, 5-variant `AccessRight`
+  enum + `AccessRights` bitmask, 14-variant `SyscallId` enum. Zero `unsafe`,
+  `#![no_std]`, zero external dependencies.
+- **Q8-B**: `sele4n-abi` crate — `MessageInfo` bitfield encode/decode (seL4
+  convention: 7-bit length, 2-bit extraCaps, label), `SyscallRequest`/
+  `SyscallResponse` register structures, ARM64 `svc #0` inline asm (the single
+  `unsafe` block), per-syscall argument structures (CSpace×4, Lifecycle×1,
+  VSpace×2, Service×3), `TypeTag` enum (6 variants), `PagePerms` bitmask with
+  W^X enforcement.
+- **Q8-C**: `sele4n-sys` crate — safe high-level wrappers: IPC (endpoint
+  send/receive/call/reply, notification signal/wait), CSpace (mint/copy/move/
+  delete), Lifecycle (retype + convenience constructors), VSpace (map with W^X
+  pre-check, unmap), Service (register/revoke/query). Phantom-typed capability
+  handles (`Cap<Obj, Rts>`) with sealed traits, rights downgrading.
+- **Q8-D**: Conformance tests (RUST-XVAL-001 through RUST-XVAL-019) validating
+  register-by-register ABI encoding for all 14 syscalls, notification signal/wait,
+  and IPC buffer overflow. `test_rust.sh` CI script integrated into
+  `test_smoke.sh` (Tier 2). Lean trace harness extended with XVAL-001 through
+  XVAL-004 cross-validation vectors.
+- **Proof surface**: Lean side unchanged (zero new sorry/axiom). Rust side:
+  64 unit tests + 25 conformance tests across 3 crates.
+
+See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
+for the full WS-Q plan (phases Q1–Q9).
+
 ### WS-N workstream (Robin Hood hashing verified implementation)
 
 WS-N is a **completed** workstream (v0.17.0–v0.17.5), created to close the trust gap
