@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-phase-r2-workstream-JSz4E",
-      "commit_sha": "12ae573c8292e9dcf664cc1f4b92b79ed3d9de26",
-      "tree_sha": "af7d6700d2e0fe584093d8acc285f4235689ec16",
-      "committed_at_utc": "2026-03-21T07:45:25+00:00"
+      "branch": "main",
+      "commit_sha": "f4f2eccab5bd23f3fbb6e756141d5120817ef11c",
+      "tree_sha": "41b98e7346ba32c330988f3d35f866cf1ffd0eb0",
+      "committed_at_utc": "2026-03-21T14:23:28-04:00"
     }
   },
   "source_sync": {
