@@ -163,18 +163,18 @@ inclusion based on security relevance and proof chain completeness.
 
 ## 4. Phase Overview
 
-| Phase | ID | Focus | Sub-tasks | Deps | Target | Findings |
-|-------|----|-------|-----------|------|--------|----------|
-| 1 | **R1** | Pre-Release Blockers | 6 (A–F) | — | v0.18.0 | H-01, M-04, M-10, M-11, R-M01, R-M02, R-M03 |
-| 2 | **R2** | Capability & CDT Hardening | 7 (A–G) | — | v0.18.1 | M-05, M-06, M-07, M-08, L-07 |
-| 3 | **R3** | IPC Invariant Completion | 6 (A–F) | R2 | v0.18.2 | M-16, M-18, M-19, L-05, L-08 |
-| 4 | **R4** | Lifecycle & Service Coherence | 6 (A–F) | R2 | v0.18.3 | M-12, M-13, M-14, M-15, L-09 |
-| 5 | **R5** | Information Flow Completion | 5 (A–E) | R3, R4 | v0.18.4 | M-01, M-02, M-03 |
-| 6 | **R6** | Model & Frozen State Correctness | 5 (A–E) | R1 | v0.18.5 | M-09, L-01, L-04, L-12 |
-| 7 | **R7** | Architecture & Hardware Preparation | 5 (A–E) | R6 | v0.18.6 | M-17, L-02, L-03, L-06, L-10 |
-| 8 | **R8** | Infrastructure & CI Hardening | 5 (A–E) | — | v0.18.7 | I-M01, I-M02, I-M03, I-M04, L-11 |
+| Phase | ID | Focus | Tasks / Sub-tasks | Deps | Target | Findings |
+|-------|----|-------|-------------------|------|--------|----------|
+| 1 | **R1** | Pre-Release Blockers | 6 / 17 | — | v0.18.0 | H-01, M-04, M-10, M-11, R-M01, R-M02, R-M03 |
+| 2 | **R2** | Capability & CDT Hardening | 7 / 17 | — | v0.18.1 | M-05, M-06, M-07, M-08, L-07 |
+| 3 | **R3** | IPC Invariant Completion | 6 / 15 | R2 | v0.18.2 | M-16, M-18, M-19, L-05, L-08 |
+| 4 | **R4** | Lifecycle & Service Coherence | 6 / 19 | R2 | v0.18.3 | M-12, M-13, M-14, M-15, L-09 |
+| 5 | **R5** | Information Flow Completion | 5 / 13 | R3, R4 | v0.18.4 | M-01, M-02, M-03 |
+| 6 | **R6** | Model & Frozen State Correctness | 5 / 10 | R1 | v0.18.5 | M-09, L-01, L-04, L-12 |
+| 7 | **R7** | Architecture & Hardware Preparation | 5 / 10 | R6 | v0.18.6 | M-17, L-02, L-03, L-06, L-10 |
+| 8 | **R8** | Infrastructure & CI Hardening | 5 / 10 | — | v0.18.7 | I-M01, I-M02, I-M03, I-M04, L-11 |
 
-**Total**: 8 phases, 45 atomic sub-tasks, addressing 20 High+Medium + 12 Low findings.
+**Total**: 8 phases, 45 task groups, 111 atomic sub-tasks, addressing 20 High+Medium + 12 Low findings.
 
 **Parallel paths**: R1 and R2 have no mutual dependencies and can execute
 concurrently. R8 (infrastructure) is independent of all Lean/Rust phases.
@@ -546,6 +546,14 @@ Capability revocation is the kernel's primary mechanism for revoking authority.
 Two findings (M-05, M-06) show that revocation can silently leave capabilities
 alive. Two model-layer findings (M-07, M-08) show that CDT remove operations
 and acyclicity proofs are incomplete. This phase closes all four.
+
+**Intra-phase ordering**:
+```
+R2-A, R2-B ──→ R2-F (preservation updates need new return types)
+R2-C ──→ R2-D (acyclicity uses consistency lemmas)
+R2-C, R2-D ──→ R2-E (postconditions use consistency + acyclicity)
+R2-F, R2-E ──→ R2-G (tests verify final behavior)
+```
 
 #### R2-A: Fix `processRevokeNode` error swallowing (M-06)
 
@@ -985,9 +993,12 @@ cleanup in `cleanupTcbReferences`).
 
 **Scope**: `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean` (~50 lines)
 **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation`
-**Note**: R3-C.3 has a soft dependency on R4-A. If R4-A is not yet complete,
-this theorem can accept the cleanup hypothesis externally and be internalized
-in R5.
+**Note**: R3-C.3 has a soft dependency on R4-A (endpoint queue cleanup).
+**Recommended execution order**: complete R4-A before R3-C.3 so the cleanup
+guarantee is available as a proved lemma. If R3 and R4 execute in parallel,
+R3-C.3 should accept the cleanup hypothesis externally and be internalized
+when R5 unifies the proof chains. This does not change the phase dependency
+graph — R3 and R4 remain independently schedulable from R2.
 
 ---
 
@@ -1107,14 +1118,20 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId)
   st.objects.fold (init := st) fun acc objId obj =>
     match obj with
     | .endpoint ep =>
-        let ep' := { ep with
-          senderQueue := ep.senderQueue.filter (· ≠ tid)
-          receiverQueue := ep.receiverQueue.filter (· ≠ tid) }
-        match storeObject objId (.endpoint ep') acc with
-        | .ok ((), acc') => acc'
-        | .error _ => acc
+        if ep.senderQueue.contains tid || ep.receiverQueue.contains tid then
+          let ep' := { ep with
+            senderQueue := ep.senderQueue.filter (· ≠ tid)
+            receiverQueue := ep.receiverQueue.filter (· ≠ tid) }
+          match storeObject objId (.endpoint ep') acc with
+          | .ok ((), acc') => acc'
+          | .error _ => acc  -- object existed in fold source; store should not fail
+        else acc
     | _ => acc
 ```
+
+**Design note**: The `storeObject` fallback returns `acc` unchanged. This is
+safe because the fold iterates objects already in the map, so `storeObject`
+should always succeed. A future refinement could prove this invariant.
 
 **Scope**: `SeLe4n/Kernel/Lifecycle/Operations.lean` (~20 lines)
 **Gate**: `lake build SeLe4n.Kernel.Lifecycle.Operations`
@@ -1402,6 +1419,16 @@ non-interference proofs (M-01) are the audit's most significant finding.
 Completing them requires the dual-queue decomposition lemmas referenced
 in the code comments, which in turn depend on the IPC invariant
 internalization from R3.
+
+**Intra-phase ordering**:
+```
+R5-A.1 (decomposition lemma) ──→ R5-A.2 (send NI) ──→ R5-A.4 (call/reply NI)
+                                 R5-A.3 (recv NI) ──→ R5-A.4
+R5-A.2..A.4 ──→ R5-A.5 (remove hypothesis parameters)
+R5-B (service NI) — independent of R5-A
+R5-C (memory projection) — independent of R5-A, R5-B
+R5-A.5, R5-B.3, R5-C.3 ──→ R5-D (composition update) ──→ R5-E (docs)
+```
 
 #### R5-A: Complete IPC non-interference proofs (M-01)
 
@@ -2146,17 +2173,17 @@ Migrate any code that accesses `.0` directly to use `.raw()` accessor.
 
 ## 6. Scope Estimates
 
-| Phase | Sub-tasks | New Lines (est.) | Modified Lines (est.) | Modified Files | New Files |
-|-------|-----------|-------------------|-----------------------|----------------|-----------|
-| R1 | 17 | ~350 | ~200 | ~12 | 1 |
-| R2 | 17 | ~600 | ~300 | ~8 | 0 |
-| R3 | 16 | ~700 | ~250 | ~10 | 1 |
-| R4 | 15 | ~550 | ~200 | ~11 | 1 |
-| R5 | 12 | ~800 | ~150 | ~7 | 0 |
-| R6 | 10 | ~400 | ~100 | ~8 | 0 |
-| R7 | 11 | ~450 | ~150 | ~12 | 0 |
-| R8 | 9 | ~200 | ~100 | ~8 | 0 |
-| **Total** | **107** | **~4,050** | **~1,450** | **~50 unique** | **3** |
+| Phase | Tasks / Sub-tasks | New Lines (est.) | Modified Lines (est.) | Modified Files | New Files |
+|-------|-------------------|-------------------|-----------------------|----------------|-----------|
+| R1 | 6 / 17 | ~350 | ~200 | ~12 | 1 |
+| R2 | 7 / 17 | ~600 | ~300 | ~8 | 0 |
+| R3 | 6 / 15 | ~700 | ~250 | ~10 | 1 |
+| R4 | 6 / 19 | ~550 | ~200 | ~11 | 1 |
+| R5 | 5 / 13 | ~800 | ~150 | ~7 | 0 |
+| R6 | 5 / 10 | ~400 | ~100 | ~8 | 0 |
+| R7 | 5 / 10 | ~450 | ~150 | ~12 | 0 |
+| R8 | 5 / 10 | ~200 | ~100 | ~8 | 0 |
+| **Total** | **45 / 111** | **~4,050** | **~1,450** | **~50 unique** | **3** |
 
 **Notes**:
 - R5 has the highest new-line count due to the IPC non-interference proof
@@ -2413,7 +2440,7 @@ deferred to future workstreams:
 
 *This plan was created from the comprehensive pre-release audit of seLe4n
 v0.17.13 (`docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
-All 20 High+Medium findings are addressed across 8 phases with 107 atomic
+All 20 High+Medium findings are addressed across 8 phases with 111 atomic
 sub-tasks. The plan maintains the project's zero-sorry/axiom invariant
 and follows the additive-first, deprecate-later migration strategy.*
 

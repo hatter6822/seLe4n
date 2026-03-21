@@ -63,7 +63,7 @@ architectural improvements compared to other microkernels:
 | **Test Lean LoC** | 7,027 across 10 test suites |
 | **Proved declarations** | 1,625 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
+| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`

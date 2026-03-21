@@ -82,7 +82,7 @@ x7  → Syscall number (SyscallId)
 
 ## Canonical Sources
 
-- Master plan: `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (Q8)
+- Master plan: `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (Q8)
 - Lean ABI: `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
 - Lean args: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
 - Rust source: `rust/sele4n-types/`, `rust/sele4n-abi/`, `rust/sele4n-sys/`

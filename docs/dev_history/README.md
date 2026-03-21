@@ -72,6 +72,7 @@ Nothing here drives active development, planning, or execution.
 ## Audit lineage
 
 For the **active** audit and workstream plan, see
-`docs/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (WS-L).
+`docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (WS-R).
+For the latest audit, see `docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`.
 For workstream history, see `docs/WORKSTREAM_HISTORY.md`.
 The files here provide the predecessor audit chain for traceability only.
