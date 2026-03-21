@@ -48,7 +48,9 @@ def registerInterface (spec : InterfaceSpec) : Kernel Unit :=
 Checks:
 1. Service not already registered (`illegalState`)
 2. Interface exists in registry (`objectNotFound`)
-3. Endpoint capability target resolves to an existing object (`invalidCapability`)
+3. R4-C.1 (M-14): Endpoint capability must have Write right (`illegalAuthority`)
+4. Endpoint capability target resolves to an existing object (`invalidCapability`)
+5. R4-C.2 (L-09): Target object must be an endpoint (`invalidCapability`)
 -/
 def registerService (reg : ServiceRegistration) : Kernel Unit :=
   fun st =>
@@ -56,14 +58,19 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
       .error .illegalState
     else if st.interfaceRegistry[reg.iface.ifaceId]? = none then
       .error .objectNotFound
+    -- R4-C.1 (M-14): Capability authority check — require Write right
+    else if !Capability.hasRight reg.endpointCap .write then
+      .error .illegalAuthority
     else
       match reg.endpointCap.target with
       | .object epId =>
-        if st.objects[epId]? = none then
-          .error .invalidCapability
-        else
+        match st.objects[epId]? with
+        | none => .error .invalidCapability
+        -- R4-C.2 (L-09): Target must be an endpoint object
+        | some (.endpoint _) =>
           .ok ((), { st with
             serviceRegistry := st.serviceRegistry.insert reg.sid reg })
+        | some _ => .error .invalidCapability
       | _ => .error .invalidCapability
 
 /-- Read-only lookup of a service registration by matching endpoint capability
@@ -205,6 +212,16 @@ theorem revokeService_success_removes
     simp only [RHTable_getElem?_eq_get?]
     exact RHTable.getElem?_erase_self _ _ hInvExt
 
+/-- R4-C.1 (M-14): Service registration without Write right returns `illegalAuthority`. -/
+theorem registerService_error_no_write_right
+    (st : SystemState) (reg : ServiceRegistration)
+    (hNoDup : st.serviceRegistry[reg.sid]? = none)
+    (hHasIface : st.interfaceRegistry[reg.iface.ifaceId]? ≠ none)
+    (hNoWrite : Capability.hasRight reg.endpointCap .write = false) :
+    registerService reg st = .error .illegalAuthority := by
+  unfold registerService
+  simp [hNoDup, hHasIface, hNoWrite]
+
 /-- Service registration preserves objects. -/
 theorem registerService_preserves_objects
     (st st' : SystemState) (reg : ServiceRegistration)
@@ -215,14 +232,17 @@ theorem registerService_preserves_objects
   · cases hStep
   · split at hStep
     · cases hStep
-    · cases hTarget : reg.endpointCap.target with
-      | object epId =>
-        simp only [hTarget] at hStep
-        split at hStep
-        · cases hStep
-        · cases hStep; rfl
-      | cnodeSlot => simp [hTarget] at hStep
-      | replyCap => simp [hTarget] at hStep
+    · split at hStep
+      · cases hStep
+      · cases hTarget : reg.endpointCap.target with
+        | object epId =>
+          simp only [hTarget] at hStep
+          cases hObj : st.objects[epId]? with
+          | none => simp [hObj] at hStep
+          | some obj =>
+            cases obj <;> simp [hObj] at hStep <;> (try cases hStep; rfl)
+        | cnodeSlot => simp [hTarget] at hStep
+        | replyCap => simp [hTarget] at hStep
 
 /-- Revocation preserves objects. -/
 theorem revokeService_preserves_objects
@@ -244,14 +264,17 @@ theorem registerService_preserves_scheduler
   · cases hStep
   · split at hStep
     · cases hStep
-    · cases hTarget : reg.endpointCap.target with
-      | object epId =>
-        simp only [hTarget] at hStep
-        split at hStep
-        · cases hStep
-        · cases hStep; rfl
-      | cnodeSlot => simp [hTarget] at hStep
-      | replyCap => simp [hTarget] at hStep
+    · split at hStep
+      · cases hStep
+      · cases hTarget : reg.endpointCap.target with
+        | object epId =>
+          simp only [hTarget] at hStep
+          cases hObj : st.objects[epId]? with
+          | none => simp [hObj] at hStep
+          | some obj =>
+            cases obj <;> simp [hObj] at hStep <;> (try cases hStep; rfl)
+        | cnodeSlot => simp [hTarget] at hStep
+        | replyCap => simp [hTarget] at hStep
 
 /-- Revocation preserves scheduler state. -/
 theorem revokeService_preserves_scheduler

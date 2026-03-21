@@ -108,23 +108,27 @@ theorem registerService_preserves_registryEndpointValid
   · simp at hStep
   · split at hStep
     · simp at hStep
-    · cases hTarget : newReg.endpointCap.target with
-      | object epId =>
-        simp only [hTarget] at hStep
-        split at hStep
-        · simp at hStep
-        · rename_i hEpExists
-          simp at hStep; subst st'
-          intro sid reg hReg
-          simp only [RHTable_getElem?_eq_get?] at hReg
-          rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
-          split at hReg
-          · cases hReg
-            refine ⟨epId, hTarget, ?_⟩
-            rwa [← hObjEq]
-          · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
-      | cnodeSlot => simp [hTarget] at hStep
-      | replyCap => simp [hTarget] at hStep
+    · split at hStep
+      · simp at hStep
+      · cases hTarget : newReg.endpointCap.target with
+        | object epId =>
+          simp only [hTarget] at hStep
+          cases hObj : st.objects[epId]? with
+          | none => simp [hObj] at hStep
+          | some obj =>
+            cases obj <;> simp [hObj] at hStep
+            case endpoint ep =>
+              subst st'
+              intro sid reg hReg
+              simp only [RHTable_getElem?_eq_get?] at hReg
+              rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
+              split at hReg
+              · cases hReg
+                refine ⟨epId, hTarget, ?_⟩
+                rw [← hObjEq, hObj]; simp
+              · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
+        | cnodeSlot => simp [hTarget] at hStep
+        | replyCap => simp [hTarget] at hStep
 
 theorem registerService_preserves_registryInterfaceValid
     (st st' : SystemState) (newReg : ServiceRegistration)
@@ -138,29 +142,29 @@ theorem registerService_preserves_registryInterfaceValid
   · split at hStep
     · simp at hStep
     · rename_i hHasIface
-      -- hHasIface : ¬st.interfaceRegistry[newReg.iface.ifaceId]? = none
-      cases hTarget : newReg.endpointCap.target with
-      | object epId =>
-        simp only [hTarget] at hStep
-        split at hStep
-        · simp at hStep
-        · simp at hStep; subst st'
-          -- interfaceRegistry unchanged, serviceRegistry has insert
-          intro sid reg hReg
-          simp only [RHTable_getElem?_eq_get?] at hReg
-          rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
-          split at hReg
-          · cases hReg
-            -- reg = newReg, interfaceRegistry unchanged in st'
-            -- The goal is about {st with serviceRegistry := ...}.interfaceRegistry
-            -- which definitionally equals st.interfaceRegistry
-            suffices h : ∃ spec, st.interfaceRegistry[newReg.iface.ifaceId]? = some spec from h
-            cases hIface : st.interfaceRegistry[newReg.iface.ifaceId]? with
-            | none => exact absurd hIface hHasIface
-            | some s => exact ⟨s, rfl⟩
-          · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
-      | cnodeSlot => simp [hTarget] at hStep
-      | replyCap => simp [hTarget] at hStep
+      split at hStep
+      · simp at hStep
+      · cases hTarget : newReg.endpointCap.target with
+        | object epId =>
+          simp only [hTarget] at hStep
+          cases hObj : st.objects[epId]? with
+          | none => simp [hObj] at hStep
+          | some obj =>
+            cases obj <;> simp [hObj] at hStep
+            case endpoint ep =>
+              subst st'
+              intro sid reg hReg
+              simp only [RHTable_getElem?_eq_get?] at hReg
+              rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
+              split at hReg
+              · cases hReg
+                suffices h : ∃ spec, st.interfaceRegistry[newReg.iface.ifaceId]? = some spec from h
+                cases hIface : st.interfaceRegistry[newReg.iface.ifaceId]? with
+                | none => exact absurd hIface hHasIface
+                | some s => exact ⟨s, rfl⟩
+              · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
+        | cnodeSlot => simp [hTarget] at hStep
+        | replyCap => simp [hTarget] at hStep
 
 -- ============================================================================
 -- revokeService
