@@ -37,6 +37,8 @@ ARM64 register ABI layer with exactly one `unsafe` block:
   Service (3)
 - **`TypeTag`**: 6 retype variants (TCB=0, Endpoint=1, ..., Untyped=5)
 - **`PagePerms`**: Permission bitmask with W^X enforcement
+- **`IpcBuffer`**: Overflow message registers (4–119) for messages exceeding
+  the 4 inline ARM64 registers
 
 ### sele4n-sys
 
@@ -73,8 +75,8 @@ x7  → Syscall number (SyscallId)
 
 ## Testing
 
-- **58 unit tests** across 3 crates
-- **20 conformance tests** (RUST-XVAL-001..014 + property tests)
+- **64 unit tests** across 3 crates
+- **25 conformance tests** (RUST-XVAL-001..019 + property tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2)
 

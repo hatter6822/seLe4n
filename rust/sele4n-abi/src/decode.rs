@@ -23,12 +23,15 @@ pub struct SyscallResponse {
 /// - x0: error code (0 = success)
 /// - x1: badge or message info (context-dependent)
 /// - x2–x5: return message registers
+#[inline]
 pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
     let error = if regs[0] == 0 {
         None
     } else {
+        // Truncate u64 → u32 is safe: kernel error codes are 0–33.
+        // Unrecognized codes map to InvalidSyscallNumber (protocol violation).
         let err = KernelError::from_u32(regs[0] as u32)
-            .unwrap_or(KernelError::NotImplemented);
+            .unwrap_or(KernelError::InvalidSyscallNumber);
         return Err(err);
     };
 

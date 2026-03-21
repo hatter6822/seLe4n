@@ -2,7 +2,9 @@
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiVspaceMap`, `apiVspaceUnmap`.
 
-use sele4n_types::{CPtr, Asid, VAddr, PAddr, KernelResult, KernelError, SyscallId};
+use sele4n_types::{CPtr, Asid, VAddr, PAddr, KernelResult, SyscallId};
+#[cfg(test)]
+use sele4n_types::KernelError;
 use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
 use sele4n_abi::args::{VSpaceMapArgs, VSpaceUnmapArgs, PagePerms};
 
@@ -13,6 +15,7 @@ use sele4n_abi::args::{VSpaceMapArgs, VSpaceUnmapArgs, PagePerms};
 /// Enforces W^X: the WRITE and EXECUTE permission bits cannot both be set.
 /// Returns `PolicyDenied` if the W^X constraint is violated.
 #[must_use]
+#[inline]
 pub fn vspace_map(
     vspace_cap: CPtr,
     asid: Asid,
@@ -37,6 +40,7 @@ pub fn vspace_map(
 ///
 /// Lean: `apiVspaceUnmap` (API.lean) — requires `.write` right on `vspace_cap`.
 #[must_use]
+#[inline]
 pub fn vspace_unmap(
     vspace_cap: CPtr,
     asid: Asid,

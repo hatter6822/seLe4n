@@ -7,6 +7,7 @@
 //! - `invoke_syscall`: safe wrapper
 //! - Per-syscall typed argument structures with encode/decode
 //! - `TypeTag` enum (6 retype variants) and `PagePerms` bitmask
+//! - `IpcBuffer` for messages exceeding the 4 inline ARM64 registers
 //!
 //! # Safety
 //!
@@ -23,11 +24,13 @@ pub mod encode;
 pub mod decode;
 pub mod trap;
 pub mod args;
+pub mod ipc_buffer;
 
 pub use message_info::MessageInfo;
 pub use encode::{SyscallRequest, encode_syscall};
 pub use decode::{SyscallResponse, decode_response};
 pub use trap::invoke_syscall;
 pub use args::*;
+pub use ipc_buffer::IpcBuffer;
 
 pub use sele4n_types;

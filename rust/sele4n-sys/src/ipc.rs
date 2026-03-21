@@ -3,7 +3,7 @@
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiEndpointSend`, `apiEndpointReceive`,
 //! `apiEndpointCall`, `apiEndpointReply`.
 
-use sele4n_types::{CPtr, Badge, KernelResult, SyscallId};
+use sele4n_types::{Badge, CPtr, KernelResult, SyscallId};
 use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
 
 /// Maximum number of inline message registers (seL4_MsgMaxLength).
@@ -27,13 +27,19 @@ pub struct IpcMessage {
     pub label: u64,
 }
 
+impl Default for IpcMessage {
+    fn default() -> Self { Self::new(0) }
+}
+
 impl IpcMessage {
     /// Create an empty message with the given label.
     pub const fn new(label: u64) -> Self {
         Self { regs: [0; 4], length: 0, label }
     }
 
-    /// Push a register value. Returns error if all 4 inline slots are full.
+    /// Push a register value. Returns `IpcMessageTooLarge` if all 4 inline
+    /// ARM64 slots (x2–x5) are full.
+    #[inline]
     pub fn push(&mut self, val: u64) -> Result<(), sele4n_types::KernelError> {
         if self.length >= 4 {
             return Err(sele4n_types::KernelError::IpcMessageTooLarge);
@@ -48,6 +54,7 @@ impl IpcMessage {
 ///
 /// Lean: `apiEndpointSend` (API.lean) — requires `.write` right.
 #[must_use]
+#[inline]
 pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo {
         length: msg.length,
@@ -68,6 +75,7 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 ///
 /// Returns the received badge and response registers.
 #[must_use]
+#[inline]
 pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
     let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
     let resp = invoke_syscall(SyscallRequest {
@@ -83,6 +91,7 @@ pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
 ///
 /// Lean: `apiEndpointCall` (API.lean) — requires `.write` right.
 #[must_use]
+#[inline]
 pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo {
         length: msg.length,
@@ -101,6 +110,7 @@ pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 ///
 /// Lean: `apiEndpointReply` (API.lean) — requires `.write` right.
 #[must_use]
+#[inline]
 pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo {
         length: msg.length,
@@ -117,15 +127,22 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
 
 /// Signal a notification object (badge OR accumulation).
 ///
-/// Lean: This is an IPC send to a notification object. The kernel accumulates
-/// badges via bitwise OR (`Badge.bor`).
+/// The badge is **not** passed by the caller — it is embedded in the
+/// notification capability and was configured at `cspace_mint` time.
+/// The kernel resolves the capability, extracts its badge, and
+/// accumulates it via bitwise OR (`Badge.bor`).
+///
+/// Lean: `notificationSignal` (Endpoint.lean) — badge comes from
+/// the resolved capability, not from message registers.
+/// seL4 equivalent: `seL4_Signal(dest)`.
 #[must_use]
-pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<SyscallResponse> {
+#[inline]
+pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
     invoke_syscall(SyscallRequest {
         cap_addr: ntfn,
         msg_info,
-        msg_regs: [badge.0, 0, 0, 0],
+        msg_regs: [0; 4],
         syscall_id: SyscallId::Send,
     })
 }
@@ -134,6 +151,7 @@ pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<SyscallResp
 ///
 /// Returns the accumulated badge value.
 #[must_use]
+#[inline]
 pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
     let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
     let resp = invoke_syscall(SyscallRequest {

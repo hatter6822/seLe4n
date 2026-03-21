@@ -14,6 +14,7 @@ use sele4n_abi::args::cspace::*;
 /// Creates a new capability in `dst_slot` derived from the capability in
 /// `src_slot`, with rights restricted to `rights` and badge set to `badge`.
 #[must_use]
+#[inline]
 pub fn cspace_mint(
     cnode_cap: CPtr,
     src_slot: Slot,
@@ -35,6 +36,7 @@ pub fn cspace_mint(
 ///
 /// Lean: `apiCspaceCopy` (API.lean) — requires `.grant` right on `cnode_cap`.
 #[must_use]
+#[inline]
 pub fn cspace_copy(
     cnode_cap: CPtr,
     src_slot: Slot,
@@ -54,6 +56,7 @@ pub fn cspace_copy(
 ///
 /// Lean: `apiCspaceMove` (API.lean) — requires `.grant` right on `cnode_cap`.
 #[must_use]
+#[inline]
 pub fn cspace_move(
     cnode_cap: CPtr,
     src_slot: Slot,
@@ -73,6 +76,7 @@ pub fn cspace_move(
 ///
 /// Lean: `apiCspaceDelete` (API.lean) — requires `.write` right on `cnode_cap`.
 #[must_use]
+#[inline]
 pub fn cspace_delete(
     cnode_cap: CPtr,
     target_slot: Slot,

@@ -112,7 +112,7 @@ covering TPH-005 through TPH-014. Zero sorry/axiom.
 encoding the finalized ABI surface (14 syscalls). 14 newtype identifiers,
 34-variant `KernelError`, `MessageInfo` bitfield, ARM64 `svc #0` trap (single
 `unsafe` block), safe high-level wrappers for all syscalls, phantom-typed
-`Cap<Obj, Rts>` handles with sealed traits. 58 unit tests + 20 conformance tests.
+`Cap<Obj, Rts>` handles with sealed traits. 64 unit tests + 25 conformance tests.
 Lean trace harness cross-validation (XVAL-001..004). Zero Lean regression.
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 

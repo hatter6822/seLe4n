@@ -37,6 +37,7 @@ pub const REG_SYSCALL_NUM: usize = 6; // x7 (mapped to array index 6)
 ///
 /// The syscall number is placed at index 6, corresponding to x7 in the
 /// ARM64 convention (seLe4n uses x7, not x8).
+#[inline]
 pub fn encode_syscall(req: &SyscallRequest) -> [u64; 7] {
     [
         req.cap_addr.0,           // x0: CPtr

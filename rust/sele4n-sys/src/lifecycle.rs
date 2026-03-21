@@ -14,6 +14,7 @@ use sele4n_abi::args::{LifecycleRetypeArgs, TypeTag};
 /// 2=Notification, 3=CNode, 4=VSpaceRoot, 5=Untyped). The `size` is a
 /// hint for variable-size objects (e.g., CNode radix width).
 #[must_use]
+#[inline]
 pub fn lifecycle_retype(
     untyped_cap: CPtr,
     target_obj: ObjId,

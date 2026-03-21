@@ -37,6 +37,7 @@ impl AccessRight {
     ];
 
     /// Convert from a bit position. Returns `None` for positions > 4.
+    #[inline]
     pub const fn from_bit(bit: u8) -> Option<Self> {
         match bit {
             0 => Some(Self::Read),

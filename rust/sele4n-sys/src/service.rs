@@ -4,16 +4,22 @@
 //! `apiServiceQuery`. Added in WS-Q1-D.
 
 use sele4n_types::{CPtr, InterfaceId, ServiceId, KernelResult, SyscallId};
-use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
+use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, IpcBuffer, invoke_syscall};
 use sele4n_abi::args::service::*;
 
 /// Register a service with the given interface specification.
 ///
 /// Lean: `apiServiceRegister` (API.lean) — requires `.write` right.
 ///
-/// Creates a service registration binding the caller's endpoint capability
-/// to the specified interface specification.
+/// This syscall requires 5 message registers, but ARM64 only provides 4
+/// inline (x2–x5). The 5th value (`requires_grant`) is written to the
+/// IPC buffer's overflow slot 0 (message register index 4).
+///
+/// The kernel reads `msgRegs[4]` via `requireMsgReg decoded.msgRegs 4`,
+/// which falls through to the IPC buffer when the inline array has only
+/// 4 entries.
 #[must_use]
+#[inline]
 pub fn service_register(
     endpoint_cap: CPtr,
     interface_id: InterfaceId,
@@ -21,6 +27,7 @@ pub fn service_register(
     max_message_size: u64,
     max_response_size: u64,
     requires_grant: bool,
+    buf: &mut IpcBuffer,
 ) -> KernelResult<SyscallResponse> {
     let args = ServiceRegisterArgs {
         interface_id,
@@ -30,10 +37,11 @@ pub fn service_register(
         requires_grant,
     };
     let encoded = args.encode();
+    // Write 5th parameter to IPC buffer overflow slot (register index 4)
+    buf.set_mr(4, encoded[4])?;
     invoke_syscall(SyscallRequest {
         cap_addr: endpoint_cap,
         msg_info: MessageInfo { length: 5, extra_caps: 0, label: 0 },
-        // Pack 5 values into 4 inline regs + overflow via msg_info.length
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::ServiceRegister,
     })
@@ -43,6 +51,7 @@ pub fn service_register(
 ///
 /// Lean: `apiServiceRevoke` (API.lean) — requires `.write` right.
 #[must_use]
+#[inline]
 pub fn service_revoke(
     service_cap: CPtr,
     target_service: ServiceId,
@@ -59,10 +68,11 @@ pub fn service_revoke(
 
 /// Query services by capability (endpoint lookup).
 ///
-/// Lean: `apiServiceQuery` (API.lean) — requires `.write` right.
+/// Lean: `apiServiceQuery` (API.lean) — requires `.read` right.
 /// No additional message registers — the endpoint object ID comes from
 /// the capability target.
 #[must_use]
+#[inline]
 pub fn service_query(
     endpoint_cap: CPtr,
 ) -> KernelResult<SyscallResponse> {
