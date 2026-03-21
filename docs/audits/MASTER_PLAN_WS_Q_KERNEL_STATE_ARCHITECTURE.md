@@ -1060,9 +1060,10 @@ includes mappings for all potential keys.
 
 ---
 
-### Phase Q6: Freeze Correctness Proofs
+### Phase Q6: Freeze Correctness Proofs — **COMPLETED** (v0.17.12)
 
-**Target version**: v0.21.1
+**Target version**: v0.17.12 (originally v0.21.1)
+**Status**: COMPLETED — all sub-phases (Q6-A through Q6-D) implemented.
 **Goal**: Prove that freeze preserves all lookup semantics and kernel invariants.
 
 #### Q6-A: Per-Map Lookup Equivalence (6+ theorems)
@@ -1120,8 +1121,23 @@ equivalence is proven (Q6-A/Q6-B), each invariant transfers automatically.
 Define `apiInvariantBundle_frozen` that mirrors `apiInvariantBundle` but
 over `FrozenSystemState`.
 
-**Gate**: `lake build` + all proofs compile + zero sorry
+**Gate**: `lake build` + all proofs compile + zero sorry — **PASSED**
 
+**Deliverables** (v0.17.12):
+- 30 theorems/definitions in `SeLe4n/Model/FreezeProofs.lean` (~1059 LoC)
+- Q6-A: `freezeMap_get?_eq` core theorem + 13 per-field lookup equivalence
+  theorems. 3 helper theorems (`toList_contains_of_get`, `toList_absent_of_get_none`,
+  `toList_noDupKeys`) connecting `RHTable.toList` to `get?`.
+- Q6-B: `lookup_freeze_cnode_slots_some` / `lookup_freeze_cnode_slots_none`.
+  3 generic fold helpers parameterized over step function (works around Lean 4
+  match compilation identity issue).
+- Q6-C: `freeze_deterministic'`, `freezeMap_preserves_size`,
+  `freezeMap_preserves_membership`, `freezeMap_no_duplicates`,
+  `freezeMap_total_coverage`.
+- Q6-D: `apiInvariantBundle_frozen` (existential def),
+  `freeze_preserves_invariants` (keystone), `frozen_lookup_transfer`.
+- 22-scenario test suite in `tests/FreezeProofSuite.lean` (60 checks).
+- Zero sorry/axiom, all modules compile independently.
 
 ---
 

@@ -199,6 +199,41 @@ and implements the `freeze` function that transforms an `IntermediateState`
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md)
 for the full WS-Q plan (phases Q1–Q9).
 
+### WS-Q6 workstream (Freeze Correctness Proofs)
+
+WS-Q6 is a **completed** workstream (v0.17.12), the sixth phase of WS-Q (Kernel
+State Architecture). It provides machine-checked proofs that the `freeze`
+function preserves lookup semantics, structural properties, and kernel
+invariants across the builder→execution phase transition. Key changes:
+
+- **Q6-A**: Core `freezeMap` lookup equivalence — `freezeMap_get?_eq` proves
+  `rt.get? k = (freezeMap rt).get? k` for any key `k`. 13 per-field theorems
+  (`lookup_freeze_objects`, `lookup_freeze_objectIndexSet`,
+  `lookup_freeze_irqHandlers`, etc.) instantiate this
+  for every `RHTable` field in `SystemState`. Helper theorems connect
+  `RHTable.toList` membership to `get?` results.
+- **Q6-B**: CNode radix lookup equivalence — `lookup_freeze_cnode_slots_some`
+  and `lookup_freeze_cnode_slots_none` prove that `cn.slots.get? slot` agrees
+  with `(freezeCNodeSlots cn).lookup slot` in both directions. Three generic
+  helper theorems (`foldl_generic_preserves_lookup`, `foldl_generic_preserves_none`,
+  `foldl_generic_establishes_lookup`) work around Lean 4 match compilation
+  identity differences by parameterizing over the fold step function.
+- **Q6-C**: Structural properties — `freeze_deterministic'` (idempotent output),
+  `freezeMap_preserves_size` (data array size = toList length),
+  `freezeMap_preserves_membership` (isSome agreement),
+  `freezeMap_no_duplicates` (pairwise distinct keys in toList),
+  `freezeMap_total_coverage` (every source key has valid data index).
+- **Q6-D**: Invariant transfer — `apiInvariantBundle_frozen` (existential
+  formulation), `freeze_preserves_invariants` (keystone theorem: builder-phase
+  `apiInvariantBundle` → frozen `apiInvariantBundle_frozen`),
+  `frozen_lookup_transfer` (enabling lemma for per-invariant transfer proofs).
+- **Q6-T**: 22-scenario test suite in `tests/FreezeProofSuite.lean` (60 checks):
+  freezeMap lookup (FP-001 to FP-005), per-field lookup (FP-006 to FP-009),
+  CNode radix (FP-010 to FP-013), structural properties (FP-014 to FP-018),
+  invariant transfer (FP-019 to FP-021).
+- **Proof surface**: 30 theorems/definitions in `SeLe4n/Model/FreezeProofs.lean`,
+  zero sorry/axiom, all modules compile independently.
+
 ### WS-N workstream (Robin Hood hashing verified implementation)
 
 WS-N is a **completed** workstream (v0.17.0–v0.17.5), created to close the trust gap

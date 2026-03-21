@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.17.9` |
+| Version | `0.17.12` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 50,017 across 90 Lean files |
 | Test LoC | 5,513 across 5 suites |
 | Proved declarations | 1,508 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
-| Active workstream | **WS-Q** Kernel State Architecture — **WS-Q1 COMPLETED** (v0.17.7), **WS-Q2 COMPLETED** (v0.17.8), **WS-Q3 COMPLETED** (v0.17.9), **WS-Q4 COMPLETED** (v0.17.10). Prior: **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Q5–Q9 (freeze, option slots, value-only maps, Rust wrappers, hardware binding)** |
+| Active workstream | **WS-Q** Kernel State Architecture — **WS-Q1 COMPLETED** (v0.17.7), **WS-Q2 COMPLETED** (v0.17.8), **WS-Q3 COMPLETED** (v0.17.9), **WS-Q4 COMPLETED** (v0.17.10), **WS-Q5 COMPLETED** (v0.17.11), **WS-Q6 COMPLETED** (v0.17.12). Prior: **WS-N** — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). **WS-M** — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). **WS-L** — **PORTFOLIO COMPLETE** (v0.16.9–v0.16.13). WS-K **PORTFOLIO COMPLETE**. **Next: Q7–Q9 (frozen operations, Rust wrappers, hardware binding)** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -71,7 +71,10 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-N (Robin Hood hashing, v0.17.0–v0.17.5) — PORTFOLIO COMPLETE.** →
 **WS-Q1 (Service interface simplification, v0.17.7) — COMPLETED.** →
 **WS-Q2 (Universal RHTable migration, v0.17.8) — COMPLETED.** →
-**WS-Q3 (IntermediateState formalization, v0.17.9) — COMPLETED.**
+**WS-Q3 (IntermediateState formalization, v0.17.9) — COMPLETED.** →
+**WS-Q4 (CNode radix tree, v0.17.10) — COMPLETED.** →
+**WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
+**WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
 
 ## Active: WS-Q Kernel State Architecture (v0.17.7+)
 
@@ -95,6 +98,23 @@ type wrapping `SystemState` with four invariant witnesses (`allTablesInvExt`,
 `createObject`, `deleteObject`, `insertCap`, `mapPage`). Boot sequence
 (`bootFromPlatform`) with master validity theorem. Zero sorry/axiom, 1,479
 proved declarations, all tests pass.
+
+**WS-Q4 (v0.17.10) — COMPLETED:** CNode radix tree (verified). `CNodeRadix`
+flat radix array for CNode capability slots with O(1) zero-hash lookup via
+`extractBits`. 24 correctness proofs, `buildCNodeRadix` equivalence bridge,
+`freezeCNodeSlots` Q5 integration, 12-scenario test suite. Zero sorry/axiom.
+
+**WS-Q5 (v0.17.11) — COMPLETED:** FrozenSystemState + freeze. `FrozenMap`/
+`FrozenSet` types, per-object frozen representations, `freeze` function
+(IntermediateState → FrozenSystemState), capacity planning. 20+ theorems,
+15-scenario test suite. Zero sorry/axiom.
+
+**WS-Q6 (v0.17.12) — COMPLETED:** Freeze correctness proofs. Machine-checked
+proofs that `freeze` preserves lookup semantics and kernel invariants. Core
+`freezeMap_get?_eq` + 13 per-field lookup equivalence theorems (Q6-A). CNode
+radix equivalence via generic fold helpers (Q6-B). 5 structural property
+theorems (Q6-C). Invariant transfer with `freeze_preserves_invariants` keystone
+(Q6-D). 31 theorems, 22-scenario test suite. Zero sorry/axiom.
 
 ## Completed: WS-N Robin Hood Hashing (v0.17.0–v0.17.5)
 

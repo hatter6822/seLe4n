@@ -1767,3 +1767,47 @@ Key theorems:
 
 Key theorem:
 - `objectCapacity_ge_size` — capacity ≥ current object count.
+
+### Q6: Freeze Correctness Proofs (`Model/FreezeProofs.lean`)
+
+Phase Q6 provides machine-checked proofs that the `freeze` function preserves
+lookup semantics, structural properties, and kernel invariants across the
+builder→execution phase transition.
+
+#### Q6-A: Per-Map Lookup Equivalence
+
+- `freezeMap_get?_eq` — core theorem: `rt.get? k = (freezeMap rt).get? k` for
+  any key `k` when `invExt` holds.
+- 13 per-field theorems (`lookup_freeze_objects`, `lookup_freeze_objectIndexSet`,
+  `lookup_freeze_irqHandlers`, `lookup_freeze_asidTable`, etc.) instantiating
+  the core theorem for every `RHTable`/`RHSet` field in `SystemState`.
+- Helper theorems: `toList_contains_of_get` (get? some → toList membership),
+  `toList_absent_of_get_none` (get? none → toList absence),
+  `toList_noDupKeys` (pairwise distinct keys in toList).
+
+#### Q6-B: CNode Radix Lookup Equivalence
+
+- `lookup_freeze_cnode_slots_some` — forward: `cn.slots.get? slot = some cap →
+  (freezeCNodeSlots cn).lookup slot = some cap`.
+- `lookup_freeze_cnode_slots_none` — backward: `cn.slots.get? slot = none →
+  (freezeCNodeSlots cn).lookup slot = none`.
+- Three generic fold helpers (`foldl_generic_preserves_lookup`,
+  `foldl_generic_preserves_none`, `foldl_generic_establishes_lookup`)
+  parameterized over the fold step function to work around Lean 4 match
+  compilation identity differences.
+
+#### Q6-C: Structural Properties
+
+- `freeze_deterministic'` — idempotent output,
+- `freezeMap_preserves_size` — data array size = toList length,
+- `freezeMap_preserves_membership` — isSome agreement between source and frozen,
+- `freezeMap_no_duplicates` — pairwise distinct keys in toList,
+- `freezeMap_total_coverage` — every source key has valid data index.
+
+#### Q6-D: Invariant Transfer
+
+- `apiInvariantBundle_frozen` — existential definition: frozen state was produced
+  by `freeze` from an `IntermediateState` whose `apiInvariantBundle` held.
+- `freeze_preserves_invariants` — **keystone theorem**: builder-phase
+  `apiInvariantBundle` transfers to frozen `apiInvariantBundle_frozen`.
+- `frozen_lookup_transfer` — enabling lemma for per-invariant transfer proofs.
