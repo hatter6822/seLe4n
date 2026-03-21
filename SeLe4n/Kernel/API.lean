@@ -308,37 +308,52 @@ def apiCspaceDelete (gate : SyscallGate) (addr : CSpaceAddr) : Kernel Unit :=
     if cap.target ≠ .object addr.cnode then fun _ => .error .invalidCapability
     else cspaceDeleteSlot addr
 
-/-- R1-D/M-04: Capability-gated lifecycle retype. Requires `.retype` right. -/
+/-- R1-D/M-04: Capability-gated lifecycle retype. Requires `.retype` right.
+Validates capability targets an object (the authority). -/
 @[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
 def apiLifecycleRetype (gate : SyscallGate) (authority : CSpaceAddr)
     (target : SeLe4n.ObjId) (newObj : KernelObject) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .retype } fun _cap =>
-    lifecycleRetypeObject authority target newObj
+  syscallInvoke { gate with requiredRight := .retype } fun cap =>
+    match cap.target with
+    | .object _ => lifecycleRetypeObject authority target newObj
+    | _ => fun _ => .error .invalidCapability
 
-/-- R1-D/M-04: Capability-gated VSpace map. Requires `.write` right. -/
+/-- R1-D/M-04: Capability-gated VSpace map. Requires `.write` right.
+Validates capability targets an object. -/
 @[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
 def apiVspaceMap (gate : SyscallGate) (asid : SeLe4n.ASID)
     (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions := default) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun _cap =>
-    Architecture.vspaceMapPage asid vaddr paddr perms
+  syscallInvoke { gate with requiredRight := .write } fun cap =>
+    match cap.target with
+    | .object _ => Architecture.vspaceMapPage asid vaddr paddr perms
+    | _ => fun _ => .error .invalidCapability
 
-/-- R1-D/M-04: Capability-gated VSpace unmap. Requires `.write` right. -/
+/-- R1-D/M-04: Capability-gated VSpace unmap. Requires `.write` right.
+Validates capability targets an object. -/
 @[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
 def apiVspaceUnmap (gate : SyscallGate) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun _cap =>
-    Architecture.vspaceUnmapPage asid vaddr
+  syscallInvoke { gate with requiredRight := .write } fun cap =>
+    match cap.target with
+    | .object _ => Architecture.vspaceUnmapPage asid vaddr
+    | _ => fun _ => .error .invalidCapability
 
-/-- R1-D/M-04: Capability-gated service registration. Requires `.write` right. -/
+/-- R1-D/M-04: Capability-gated service registration. Requires `.write` right.
+Validates capability targets an object. -/
 @[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
 def apiServiceRegister (gate : SyscallGate) (reg : ServiceRegistration) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun _cap =>
-    registerService reg
+  syscallInvoke { gate with requiredRight := .write } fun cap =>
+    match cap.target with
+    | .object _ => registerService reg
+    | _ => fun _ => .error .invalidCapability
 
-/-- R1-D/M-04: Capability-gated service revocation. Requires `.write` right. -/
+/-- R1-D/M-04: Capability-gated service revocation. Requires `.write` right.
+Validates capability targets an object. -/
 @[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
 def apiServiceRevoke (gate : SyscallGate) (svcId : ServiceId) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun _cap =>
-    revokeService svcId
+  syscallInvoke { gate with requiredRight := .write } fun cap =>
+    match cap.target with
+    | .object _ => revokeService svcId
+    | _ => fun _ => .error .invalidCapability
 
 /-- R1-D/M-04: Capability-gated service query. Requires `.read` right.
 Validates capability targets the specified endpoint. -/

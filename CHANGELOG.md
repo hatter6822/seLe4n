@@ -4,8 +4,9 @@
   eliminated all findings that enable privilege escalation or silent security
   failures in the public API surface.
 - R1-A (H-01): Removed `Cap::downgrade()` — replaced with `to_read_only()` and
-  `restrict()` with runtime subset assertion. Prevents phantom-typed capability
-  escalation in Rust library.
+  `restrict()` with runtime subset assertions. `to_read_only()` validates READ is
+  present in current rights (panics on `Restricted` caps). Prevents phantom-typed
+  capability escalation in Rust library.
 - R1-B (R-M01, R-M02): Added bounds validation to `CSpaceMintArgs::decode()`
   (rejects rights > 0x1F) and `PagePerms::TryFrom<u64>` (replaces silent-truncation
   `From<u64>`). 6 regression tests for boundary values.
@@ -13,9 +14,10 @@
   accessors `badge()` and `msg_info()`. Eliminates semantic overlap between badge
   and message info interpretations of x1 register.
 - R1-D (M-04): Added capability-target validation guards to all 14 `api*`
-  convenience wrappers. Wrappers now verify `cap.target` matches the supplied
-  target ID, preventing capability-target binding bypass. All wrappers deprecated
-  in favor of `syscallEntry`/`dispatchWithCap`.
+  convenience wrappers. IPC/CSpace wrappers verify `cap.target` matches the
+  supplied target ID. Lifecycle/VSpace/Service wrappers verify `cap.target` is
+  an `.object` variant (rejecting reply caps). All wrappers deprecated in favor
+  of `syscallEntry`/`dispatchWithCap`.
 - R1-E (M-10, M-11): Changed `frozenSaveOutgoingContext` and
   `frozenRestoreIncomingContext` return types from `FrozenSystemState` to
   `Except KernelError FrozenSystemState`. Silent register discard/wrong-context

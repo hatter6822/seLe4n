@@ -148,9 +148,18 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
     /// Get the static rights for this capability.
     pub const fn rights(&self) -> AccessRights { Rts::RIGHTS }
 
-    /// Convert to a read-only capability. Always safe because `ReadOnly`
-    /// rights (bit 0 only) are a subset of every non-empty rights set.
-    pub const fn to_read_only(self) -> Cap<Obj, ReadOnly> {
+    /// Convert to a read-only capability.
+    ///
+    /// Panics if READ is not a subset of the current rights descriptor.
+    /// Safe for `FullRights`, `ReadOnly`, `ReadWrite`, and `GrantRights`
+    /// (all include READ). Panics for `Restricted` caps — use
+    /// `restrict(AccessRights::READ)` instead.
+    pub fn to_read_only(self) -> Cap<Obj, ReadOnly> {
+        assert!(
+            AccessRights::READ.is_subset_of(&Rts::RIGHTS),
+            "Cap::to_read_only: READ right is not present in current rights 0x{:02x}",
+            Rts::RIGHTS.0
+        );
         Cap { ptr: self.ptr, _obj: PhantomData, _rts: PhantomData }
     }
 
@@ -228,5 +237,14 @@ mod tests {
         let ro: Cap<Endpoint, ReadOnly> = Cap::from_cptr(CPtr(7));
         let restricted = ro.restrict(AccessRights::EMPTY);
         assert_eq!(restricted.cptr(), CPtr(7));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cap::to_read_only: READ right is not present")]
+    fn cap_to_read_only_on_restricted_panics() {
+        let full: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr(3));
+        let restricted = full.restrict(AccessRights::WRITE);
+        // Restricted::RIGHTS = EMPTY, so READ is not a subset — should panic
+        let _ = restricted.to_read_only();
     }
 }
