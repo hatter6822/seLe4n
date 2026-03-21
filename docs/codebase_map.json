@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-q6-proofs-sS3Fv",
-      "commit_sha": "6f4cd1197179abff3e1740b0d9b4b7d74042d80f",
-      "tree_sha": "7ee597eab56d0a69f4d29ae042f2b694c6227565",
-      "committed_at_utc": "2026-03-21T00:43:00+00:00"
+      "branch": "main",
+      "commit_sha": "a302b7ba575f456bfe7ffda2d8df273eef0efa74",
+      "tree_sha": "a80f30bab7477c9c623207a42f2b1de3c5a80305",
+      "committed_at_utc": "2026-03-20T21:24:40-04:00"
     }
   },
   "source_sync": {
