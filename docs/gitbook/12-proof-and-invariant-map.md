@@ -246,6 +246,7 @@ CDT structural invariants (WS-G8):
 - `childMapConsistent` — bidirectional consistency between `edges` and `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed index,
 - `empty_childMapConsistent` — empty CDT satisfies `childMapConsistent`,
 - `addEdge_childMapConsistent` — `addEdge` preserves `childMapConsistent`,
+- `removeNode_childMapConsistent` — `removeNode` preserves `childMapConsistent` (R3/R2-C, closing CDT consistency gap),
 - `childrenOf` — O(1) HashMap lookup replacing O(E) edge-list scan,
 - `descendantsOf` — O(N+E) total via `childrenOf`-backed BFS traversal.
 - `cdtChildMapConsistentCheck` — runtime verification of `childMapConsistent` invariant (v0.12.15), checking both forward (childMap→edges) and backward (edges→childMap) directions.
@@ -315,6 +316,10 @@ Preservation shape:
 - WS-F4 notification contract predicates: `notificationSignal_preserves_ipcSchedulerContractPredicates`, `notificationWait_preserves_ipcSchedulerContractPredicates` (M3.5 gap closure).
 - WS-H5 dual-queue structural invariant: 13 `*_preserves_dualQueueSystemInvariant` theorems covering `endpointQueuePopHead`, `endpointQueueEnqueue`, `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReply`, `endpointReplyRecv`, plus 5 state-only ops (`ensureRunnable`, `removeRunnable`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbPendingMessage`).
 - WS-L1 IPC performance optimization (v0.16.9): `endpointQueuePopHead` returns pre-dequeue TCB in 3-tuple `(ThreadId × TCB × SystemState)`, eliminating redundant lookups. `storeTcbIpcStateAndMessage_fromTcb` and `storeTcbIpcState_fromTcb` bypass internal lookup with equivalence theorems (`storeTcbIpcStateAndMessage_fromTcb_eq`, `storeTcbIpcState_fromTcb_eq`). `lookupTcb_preserved_by_storeObject_notification` proves cross-store TCB stability. 4 redundant O(log n) lookups eliminated; zero new preservation lemmas needed.
+- R3-B/M-18 `ipcInvariantFull` internalization (v0.18.2): Notification operations (`notificationSignal`, `notificationWait`) and `endpointReply` now have **self-contained** `ipcInvariantFull` preservation theorems with zero externalized hypotheses. New infrastructure: `storeObject_notification_preserves_dualQueueSystemInvariant`, `notificationSignal_preserves_dualQueueSystemInvariant`, `notificationWait_preserves_dualQueueSystemInvariant`, `endpointReply_preserves_badgeWellFormed`.
+- R3-A/M-16 notification badge delivery (v0.18.2): `notificationSignal` wake path now delivers the signaled badge to the woken thread via `storeTcbIpcStateAndMessage` with `{ IpcMessage.empty with badge := some badge }`. All preservation proofs updated to use `storeTcbIpcStateAndMessage` instead of `storeTcbIpcState`.
+- R3-C/M-19 `notificationWaiterConsistent` preservation: `storeObject_notification_preserves_notificationWaiterConsistent` (subset waiting list), `storeObject_nonNotification_preserves_notificationWaiterConsistent` (frame for TCB stores), `storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent` (TCB ipc state change with wait-list exclusion), `notificationSignal_preserves_notificationWaiterConsistent` (wake path + merge path), `frame_preserves_notificationWaiterConsistent` (general frame lemma for endpoint operations), `endpointReply_preserves_notificationWaiterConsistent` (reply path).
+- R3-E/L-08 linter: `set_option linter.all false` removed from `Structural.lean`; replaced with targeted `set_option linter.unusedVariables false`.
 
 ### 4.2 IPC message payload bounds (WS-H12d)
 

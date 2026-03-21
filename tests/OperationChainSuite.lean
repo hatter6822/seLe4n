@@ -1377,6 +1377,48 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
   assertInvariants "chain21: materialized revoke invariants" stMaterialized
   assertInvariants "chain21: streaming revoke invariants" stStreaming
 
+/-- R3-A.3: Badge delivery test — verifies that notificationSignal delivers
+the badge to the woken waiter's pendingMessage when waking a blocked thread.
+Steps: wait (blocks waiter) → signal (wakes waiter with badge) → verify badge. -/
+private def chain22NotificationBadgeDelivery : IO Unit := do
+  let ntfnId : SeLe4n.ObjId := ⟨260⟩
+  let waiter : SeLe4n.ThreadId := ⟨12⟩
+  let badge := SeLe4n.Badge.ofNat 0xCAFE
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject waiter.toObjId (.tcb {
+          tid := waiter
+          priority := ⟨20⟩
+          domain := ⟨0⟩
+          cspaceRoot := ⟨350⟩
+          vspaceRoot := ⟨360⟩
+          ipcBuffer := ⟨4096⟩
+          ipcState := .ready
+        })
+      |>.withRunnable [waiter]
+      |>.build)
+  -- Step 1: waiter blocks on notification (no pending badge)
+  let (result1, st1) ← expectOkState "chain22: wait blocks"
+    (SeLe4n.Kernel.notificationWait ntfnId waiter st0)
+  expect "chain22: wait returns none (blocked)" (result1 = none)
+  -- Step 2: signal with badge 0xCAFE — should wake the waiter
+  let (_, st2) ← expectOkState "chain22: signal wakes waiter"
+    (SeLe4n.Kernel.notificationSignal ntfnId badge st1)
+  -- Step 3: Verify badge was delivered to waiter's pendingMessage
+  match st2.objects[waiter.toObjId]? with
+  | some (.tcb tcb) =>
+    expect "chain22: waiter ipcState is ready after wake" (tcb.ipcState = .ready)
+    match tcb.pendingMessage with
+    | some msg =>
+      expect "chain22: badge delivered via pendingMessage"
+        (msg.badge = some (SeLe4n.Badge.ofNatMasked 0xCAFE))
+    | none => throw (IO.userError "chain22: FAIL — waiter pendingMessage is none after signal wake")
+  | _ => throw (IO.userError "chain22: FAIL — waiter TCB not found after signal wake")
+  -- Step 4: Verify waiter is runnable again
+  expect "chain22: waiter is runnable after wake" (waiter ∈ st2.scheduler.runQueue)
+  assertInvariants "chain22: signal-wake badge delivery" st2
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -1400,7 +1442,8 @@ private def runOperationChainSuite : IO Unit := do
   chain19StreamingRevokeEmpty
   chain20StreamingRevokeDeepChain
   chain21StreamingRevokeEquivalence
-  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5)"
+  chain22NotificationBadgeDelivery
+  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5/R3-A)"
 
 end SeLe4n.Testing
 

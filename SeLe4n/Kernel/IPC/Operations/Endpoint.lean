@@ -167,7 +167,10 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
-                match storeTcbIpcState st' waiter .ready with
+                -- R3-A/M-16: Deliver signaled badge to woken waiter via pendingMessage.
+                -- In seL4, the badge from Signal is returned as the Wait syscall's result.
+                let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
+                match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
         | [] =>

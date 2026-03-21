@@ -945,3 +945,8 @@ scenarios:
     function: tph014a_frozenSchedule/tph014b_frozenYield/tph014c_scheduleNoEligible
     subsystem: TwoPhaseArch
     description: "RunQueue operations in frozen state"
+  SCN-NOTIF-BADGE-DELIVERY:
+    source: tests/OperationChainSuite.lean
+    function: chain22NotificationBadgeDelivery
+    subsystem: IPC
+    description: "R3-A/M-16: wait→signal badge delivery to woken thread pendingMessage"

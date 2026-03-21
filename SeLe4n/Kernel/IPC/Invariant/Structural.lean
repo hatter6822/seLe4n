@@ -9,7 +9,9 @@
 import SeLe4n.Kernel.IPC.Invariant.CallReplyRecv
 import SeLe4n.Kernel.IPC.Invariant.NotificationPreservation
 
-set_option linter.all false
+-- R3-E/L-08: Linter directives. The global `set_option linter.all false` has been
+-- removed. Specific linters are disabled only where structurally necessary.
+set_option linter.unusedVariables false
 
 namespace SeLe4n.Kernel
 
@@ -333,6 +335,84 @@ private theorem storeObject_endpoint_preserves_intrusiveQueueWellFormed
   · intro tl hTl; obtain ⟨t, hT, hN⟩ := hTail tl hTl
     have : tl.toObjId ≠ epId := fun h => absurd (h ▸ hT) (hPreEp t)
     exact ⟨t, by rw [storeObject_objects_ne st st' epId tl.toObjId _ this hObjInv hStore]; exact hT, hN⟩
+
+-- ---- R3-B: storeObject notification preserves dualQueueSystemInvariant ----
+-- Notification stores never modify TCBs or endpoints, so dual-queue structural
+-- invariants are trivially preserved.
+
+/-- R3-B: Storing a notification preserves tcbQueueLinkIntegrity (no TCB is modified). -/
+private theorem storeObject_notification_preserves_tcbQueueLinkIntegrity
+    (st st' : SystemState) (nid : SeLe4n.ObjId) (ntfn' : Notification)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject nid (.notification ntfn') st = .ok ((), st'))
+    (hPreNtfn : ∀ tcb : TCB, st.objects[nid]? ≠ some (.tcb tcb))
+    (hInteg : tcbQueueLinkIntegrity st) :
+    tcbQueueLinkIntegrity st' := by
+  constructor
+  · intro a tA hA b hN
+    by_cases hNeA : a.toObjId = nid
+    · subst hNeA; rw [storeObject_objects_eq st st' a.toObjId _ hObjInv hStore] at hA; cases hA
+    · have hA' : st.objects[a.toObjId]? = some (.tcb tA) := by
+        rw [storeObject_objects_ne st st' nid a.toObjId _ hNeA hObjInv hStore] at hA; exact hA
+      obtain ⟨tB, hB, hP⟩ := hInteg.1 a tA hA' b hN
+      have : b.toObjId ≠ nid := fun h => absurd (h ▸ hB) (hPreNtfn tB)
+      exact ⟨tB, by rw [storeObject_objects_ne st st' nid b.toObjId _ this hObjInv hStore]; exact hB, hP⟩
+  · intro b tB hB a hP
+    by_cases hNeB : b.toObjId = nid
+    · subst hNeB; rw [storeObject_objects_eq st st' b.toObjId _ hObjInv hStore] at hB; cases hB
+    · have hB' : st.objects[b.toObjId]? = some (.tcb tB) := by
+        rw [storeObject_objects_ne st st' nid b.toObjId _ hNeB hObjInv hStore] at hB; exact hB
+      obtain ⟨tA, hA, hN⟩ := hInteg.2 b tB hB' a hP
+      have : a.toObjId ≠ nid := fun h => absurd (h ▸ hA) (hPreNtfn tA)
+      exact ⟨tA, by rw [storeObject_objects_ne st st' nid a.toObjId _ this hObjInv hStore]; exact hA, hN⟩
+
+/-- R3-B: Storing a notification preserves intrusiveQueueWellFormed. -/
+private theorem storeObject_notification_preserves_intrusiveQueueWellFormed
+    (st st' : SystemState) (nid : SeLe4n.ObjId) (ntfn' : Notification)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject nid (.notification ntfn') st = .ok ((), st'))
+    (hPreNtfn : ∀ tcb : TCB, st.objects[nid]? ≠ some (.tcb tcb))
+    (q : IntrusiveQueue) (hWf : intrusiveQueueWellFormed q st) :
+    intrusiveQueueWellFormed q st' := by
+  obtain ⟨hHT, hHead, hTail⟩ := hWf
+  refine ⟨hHT, ?_, ?_⟩
+  · intro hd hHd; obtain ⟨t, hT, hP⟩ := hHead hd hHd
+    have : hd.toObjId ≠ nid := fun h => absurd (h ▸ hT) (hPreNtfn t)
+    exact ⟨t, by rw [storeObject_objects_ne st st' nid hd.toObjId _ this hObjInv hStore]; exact hT, hP⟩
+  · intro tl hTl; obtain ⟨t, hT, hN⟩ := hTail tl hTl
+    have : tl.toObjId ≠ nid := fun h => absurd (h ▸ hT) (hPreNtfn t)
+    exact ⟨t, by rw [storeObject_objects_ne st st' nid tl.toObjId _ this hObjInv hStore]; exact hT, hN⟩
+
+/-- R3-B: Storing a notification preserves dualQueueSystemInvariant.
+The notification store does not modify endpoint objects or TCB queue links. -/
+theorem storeObject_notification_preserves_dualQueueSystemInvariant
+    (st st' : SystemState) (nid : SeLe4n.ObjId) (ntfn' : Notification)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject nid (.notification ntfn') st = .ok ((), st'))
+    (hPreNtfn : (∃ n, st.objects[nid]? = some (.notification n)) ∨
+                st.objects[nid]? = none)
+    (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant st' := by
+  obtain ⟨hEpInv, hLink⟩ := hInv
+  have hNotTcb : ∀ tcb : TCB, st.objects[nid]? ≠ some (.tcb tcb) := by
+    intro tcb h; rcases hPreNtfn with ⟨n, hSome⟩ | hNone
+    · rw [hSome] at h; cases h
+    · rw [hNone] at h; cases h
+  constructor
+  · intro epId ep hEpPost
+    by_cases hEq : epId = nid
+    · subst hEq; rw [storeObject_objects_eq st st' epId _ hObjInv hStore] at hEpPost; cases hEpPost
+    · have hEpPre : st.objects[epId]? = some (.endpoint ep) := by
+        rw [storeObject_objects_ne st st' nid epId _ hEq hObjInv hStore] at hEpPost; exact hEpPost
+      have hWf := hEpInv epId ep hEpPre
+      unfold dualQueueEndpointWellFormed at hWf ⊢
+      rw [hEpPre] at hWf; rw [hEpPost]; simp at hWf ⊢
+      exact ⟨storeObject_notification_preserves_intrusiveQueueWellFormed
+               st st' nid ntfn' hObjInv hStore hNotTcb _ hWf.1,
+             storeObject_notification_preserves_intrusiveQueueWellFormed
+               st st' nid ntfn' hObjInv hStore hNotTcb _ hWf.2⟩
+  · exact storeObject_notification_preserves_tcbQueueLinkIntegrity
+      st st' nid ntfn' hObjInv hStore hNotTcb hLink
 
 -- ---- Derived frame lemmas for storeTcbIpcState, storeTcbIpcStateAndMessage, storeTcbPendingMessage ----
 
@@ -2174,15 +2254,19 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
               simp only []
               have hInv1 := storeObject_notification_preserves_allPendingMessagesBounded
                 st pair.2 notificationId _ hObjInv hStore hInv
-              cases hIpc : storeTcbIpcState pair.2 waiter .ready with
+              -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
+              cases hIpc : storeTcbIpcStateAndMessage pair.2 waiter .ready
+                  (some { IpcMessage.empty with badge := some badge }) with
               | error e => simp
               | ok st'' =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
                   have hObjInvPair : pair.2.objects.invExt :=
                     storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-                  have hInv2 := storeTcbIpcState_preserves_allPendingMessagesBounded
-                    pair.2 st'' waiter _ hObjInvPair hIpc hInv1
+                  have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+                    pair.2 st'' waiter .ready _
+                    (fun m hm => by cases hm; exact IpcMessage.empty_bounded)
+                    hObjInvPair hIpc hInv1
                   exact ensureRunnable_preserves_allPendingMessagesBounded st'' waiter hInv2
       | nil =>
           simp only [hWaiters] at hStep
@@ -2321,68 +2405,279 @@ theorem endpointReply_preserves_allPendingMessagesBounded
                     hObjInv hStore hInv)
 
 -- ============================================================================
--- WS-H12e: Composed ipcInvariantFull preservation theorems
+-- R3-B: Notification operation dualQueueSystemInvariant preservation
 -- ============================================================================
 
-/-- WS-H12e: notificationSignal preserves the full IPC invariant.
-The `dualQueueSystemInvariant` post-state is a hypothesis because notification
-operations store notification objects (not endpoint/TCB queue links) and the
-dual-queue frame lemma for notification stores is independently derivable. -/
+/-- R3-B: notificationSignal preserves dualQueueSystemInvariant.
+Wake path: storeObject(.notification) + storeTcbIpcStateAndMessage + ensureRunnable.
+Merge path: storeObject(.notification) only. All preserve dual-queue invariant. -/
+theorem notificationSignal_preserves_dualQueueSystemInvariant
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hInv : dualQueueSystemInvariant st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    dualQueueSystemInvariant st' := by
+  unfold notificationSignal at hStep
+  cases hObj : st.objects[notificationId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | notification ntfn =>
+      simp only [hObj] at hStep
+      cases hWaiters : ntfn.waitingThreads with
+      | cons waiter rest =>
+        simp only [hWaiters] at hStep; revert hStep
+        cases hStore : storeObject notificationId
+            (.notification { state := if rest.isEmpty then .idle else .waiting,
+                             waitingThreads := rest, pendingBadge := none }) st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          have hInv1 := storeObject_notification_preserves_dualQueueSystemInvariant
+            st pair.2 notificationId _ hObjInv hStore (.inl ⟨ntfn, hObj⟩) hInv
+          have hObjInv1 := storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
+          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
+              (some { IpcMessage.empty with badge := some badge }) with
+          | error e => simp
+          | ok st'' =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+            exact ensureRunnable_preserves_dualQueueSystemInvariant st'' waiter
+              (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                pair.2 st'' waiter .ready _ hObjInv1 hTcb hInv1)
+      | nil =>
+        simp only [hWaiters] at hStep
+        exact storeObject_notification_preserves_dualQueueSystemInvariant
+          st st' notificationId _ hObjInv hStep (.inl ⟨ntfn, hObj⟩) hInv
+
+/-- R3-B: notificationWait preserves dualQueueSystemInvariant.
+Badge-consume path: storeObject(.notification) + storeTcbIpcState.
+Block path: storeObject(.notification) + storeTcbIpcState + removeRunnable. -/
+theorem notificationWait_preserves_dualQueueSystemInvariant
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : dualQueueSystemInvariant st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    dualQueueSystemInvariant st' := by
+  unfold notificationWait at hStep
+  cases hObj : st.objects[notificationId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | notification ntfn =>
+      simp only [hObj] at hStep
+      cases hPending : ntfn.pendingBadge with
+      | some pendBadge =>
+        simp only [hPending] at hStep; revert hStep
+        cases hStore : storeObject notificationId
+            (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          have hInv1 := storeObject_notification_preserves_dualQueueSystemInvariant
+            st pair.2 notificationId _ hObjInv hStore (.inl ⟨ntfn, hObj⟩) hInv
+          have hObjInv1 := storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
+          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
+          | error e => simp
+          | ok st'' =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+            exact storeTcbIpcState_preserves_dualQueueSystemInvariant
+              pair.2 st'' waiter .ready hObjInv1 hTcb hInv1
+      | none =>
+        simp only [hPending] at hStep; revert hStep
+        cases hLk : lookupTcb st waiter with
+        | none => simp
+        | some tcb =>
+          simp only []; split
+          · simp
+          · intro hStep; revert hStep
+            cases hStore : storeObject notificationId
+                (.notification { state := .waiting,
+                                 waitingThreads := waiter :: ntfn.waitingThreads,
+                                 pendingBadge := none }) st with
+            | error e => simp
+            | ok pair =>
+              simp only []
+              have hInv1 := storeObject_notification_preserves_dualQueueSystemInvariant
+                st pair.2 notificationId _ hObjInv hStore (.inl ⟨ntfn, hObj⟩) hInv
+              have hObjInv1 := storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
+              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
+              simp only [storeTcbIpcState_fromTcb_eq hLk']
+              cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
+              | error e => simp
+              | ok st'' =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
+                exact removeRunnable_preserves_dualQueueSystemInvariant st'' waiter
+                  (storeTcbIpcState_preserves_dualQueueSystemInvariant
+                    pair.2 st'' waiter _ hObjInv1 hTcb hInv1)
+
+-- ============================================================================
+-- R3-B: Endpoint operation badgeWellFormed preservation
+-- Endpoint operations only modify TCB and endpoint objects (never notifications
+-- or CNodes), so badge well-formedness is preserved by construction.
+-- ============================================================================
+
+/-- R3-B: endpointReply preserves badgeWellFormed.
+Calls storeTcbIpcStateAndMessage + ensureRunnable — neither stores a
+notification or CNode. -/
+theorem endpointReply_preserves_badgeWellFormed
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : badgeWellFormed st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    badgeWellFormed st' := by
+  -- Mirror the structure of endpointReply_preserves_dualQueueSystemInvariant
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+      cases hIpc : tcb.ipcState with
+      | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
+        | blockedOnCall _ => simp [hIpc] at hStep
+      | blockedOnReply epId' rt =>
+          simp only [hIpc] at hStep
+          cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e =>
+              revert hStep; simp only [hStore]; intro hStep
+              cases rt with
+              | none => simp at hStep
+              | some val => dsimp only [] at hStep; split at hStep <;> simp at hStep
+          | ok st1 =>
+              simp only [hStore] at hStep
+              have hInv1 := storeTcbIpcStateAndMessage_preserves_badgeWellFormed
+                st st1 target .ready (some msg) hInv hObjInv hStore
+              have hInvER := ensureRunnable_preserves_badgeWellFormed st1 target hInv1
+              cases rt with
+              | none => simp at hStep; subst hStep; exact hInvER
+              | some val =>
+                  dsimp only [] at hStep
+                  split at hStep
+                  · simp at hStep; subst hStep; exact hInvER
+                  · simp at hStep
+
+-- ============================================================================
+-- R3-C.2/M-19: Endpoint operation notificationWaiterConsistent preservation
+-- ============================================================================
+
+/-- R3-C.2/M-19: endpointReply preserves notificationWaiterConsistent.
+The target thread has `ipcState = .blockedOnReply`, so by
+`notificationWaiterConsistent` it is not in any notification wait list.
+`storeTcbIpcStateAndMessage` + `ensureRunnable` therefore do not affect
+any notification waiter's TCB. -/
+theorem endpointReply_preserves_notificationWaiterConsistent
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    notificationWaiterConsistent st' := by
+  -- Unfold endpointReply and extract the storeTcbIpcStateAndMessage + ensureRunnable steps
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
+      | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId' rt =>
+      simp only [hIpc] at hStep
+      cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
+      | error e =>
+        revert hStep; simp only [hStore]; intro hStep
+        cases rt with
+        | none => simp at hStep
+        | some val => dsimp only [] at hStep; split at hStep <;> simp at hStep
+      | ok st1 =>
+        simp only [hStore] at hStep
+        -- target has .blockedOnReply, so it is not in any notification wait list
+        have hTargetNotInWaitList : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification),
+            st.objects[noid]? = some (.notification ntfn) → target ∉ ntfn.waitingThreads := by
+          intro noid ntfn hNtfn hMem
+          obtain ⟨tcb_w, hTcb_w, hIpc_w⟩ := hConsist noid ntfn target hNtfn hMem
+          have hTcbTarget := lookupTcb_some_objects st target tcb hLookup
+          rw [hTcb_w] at hTcbTarget; cases hTcbTarget; rw [hIpc_w] at hIpc; cases hIpc
+        have hConsist1 := storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent
+          st st1 target .ready (some msg) hConsist hObjInv hStore hTargetNotInWaitList
+        -- Final state is ensureRunnable st1 target — objects unchanged
+        have hSubst : st' = ensureRunnable st1 target := by
+          cases rt with
+          | none => simp at hStep; exact hStep.symm
+          | some val =>
+            dsimp only [] at hStep; split at hStep
+            · simp at hStep; exact hStep.symm
+            · simp at hStep
+        subst hSubst
+        intro noid ntfn tid hNtfnPost hMem
+        have hNtfnSt1 : st1.objects[noid]? = some (.notification ntfn) := by
+          rwa [ensureRunnable_preserves_objects] at hNtfnPost
+        obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist1 noid ntfn tid hNtfnSt1 hMem
+        exact ⟨tcb', by rw [ensureRunnable_preserves_objects]; exact hTcb', hIpc'⟩
+
+-- ============================================================================
+-- WS-H12e/R3-B: Composed ipcInvariantFull preservation theorems
+-- ============================================================================
+
+/-- R3-B/M-18: notificationSignal preserves the full IPC invariant (self-contained).
+All four components derived from pre-state invariants — no externalized hypotheses. -/
 theorem notificationSignal_preserves_ipcInvariantFull
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hObjInv hStep,
-   hDualQueue',
+   notificationSignal_preserves_dualQueueSystemInvariant st st' notificationId badge hInv.2.1 hObjInv hStep,
    notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hObjInv hStep,
-   hBadge'⟩
+   notificationSignal_preserves_badgeWellFormed st st' notificationId badge hInv.2.2.2 hObjInv hStep⟩
 
-/-- WS-H12e: notificationWait preserves the full IPC invariant.
-See `notificationSignal_preserves_ipcInvariantFull` for hypothesis rationale. -/
+/-- R3-B/M-18: notificationWait preserves the full IPC invariant (self-contained).
+All four components derived from pre-state invariants — no externalized hypotheses. -/
 theorem notificationWait_preserves_ipcInvariantFull
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariantFull st' :=
   ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hObjInv hStep,
-   hDualQueue',
+   notificationWait_preserves_dualQueueSystemInvariant st st' notificationId waiter result hInv.2.1 hObjInv hStep,
    notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hObjInv hStep,
-   hBadge'⟩
+   notificationWait_preserves_badgeWellFormed st st' notificationId waiter result hInv.2.2.2 hObjInv hStep⟩
 
-/-- WS-H12e: endpointReply preserves the full IPC invariant.
-The `dualQueueSystemInvariant` post-state hypothesis is needed because
-`endpointReply` modifies TCB queue links via `storeTcbIpcStateAndMessage`;
-the dual-queue preservation follows from `endpointReply_preserves_dualQueueSystemInvariant`
-(which requires additional freshness hypotheses). -/
+/-- R3-B/M-18: endpointReply preserves the full IPC invariant (self-contained).
+All four components derived from pre-state invariants. -/
 theorem endpointReply_preserves_ipcInvariantFull
     (st st' : SystemState)
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull st)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBadge' : badgeWellFormed st')
     (hObjInv : st.objects.invExt)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hObjInv hStep,
-   hDualQueue',
+   endpointReply_preserves_dualQueueSystemInvariant replier target msg st st' hObjInv hStep hInv.2.1,
    endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2.1 hObjInv hStep,
-   hBadge'⟩
+   endpointReply_preserves_badgeWellFormed st st' replier target msg hInv.2.2.2 hObjInv hStep⟩
 
-/-- WS-H12e: endpointSendDual preserves the full IPC invariant.
-Composes `endpointSendDual_preserves_ipcInvariant` (from existing proof surface),
-`dualQueueSystemInvariant` (from caller — requires freshness hypotheses), and
-`allPendingMessagesBounded` (from caller — the bounds check at entry ensures
-any stored message satisfies `bounded`; see `endpointSendDual_message_bounded`). -/
+/-- R3-B/M-18: endpointSendDual preserves the full IPC invariant.
+`dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` remain
+caller-supplied: the dual-queue theorem requires freshness preconditions (the sender
+must not already be in any endpoint queue), and the bounds/badge come from the user-
+provided message at the API entry point. -/
 theorem endpointSendDual_preserves_ipcInvariantFull
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -2396,7 +2691,7 @@ theorem endpointSendDual_preserves_ipcInvariantFull
   ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hObjInv hStep,
    hDualQueue', hBounded', hBadge'⟩
 
-/-- WS-H12e: endpointReceiveDual preserves the full IPC invariant. -/
+/-- R3-B/M-18: endpointReceiveDual preserves the full IPC invariant. -/
 theorem endpointReceiveDual_preserves_ipcInvariantFull
     (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
     (st st' : SystemState)
@@ -2410,7 +2705,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
   ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId hInv.1 hObjInv hStep,
    hDualQueue', hBounded', hBadge'⟩
 
-/-- WS-H12e: endpointCall preserves the full IPC invariant. -/
+/-- R3-B/M-18: endpointCall preserves the full IPC invariant. -/
 theorem endpointCall_preserves_ipcInvariantFull
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)

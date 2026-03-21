@@ -51,7 +51,7 @@ theorem notificationSignal_preserves_ipcInvariant
       simp only [hObj] at hStep
       cases hWaiters : ntfn.waitingThreads with
       | cons waiter rest =>
-        -- Wake path: storeObject → storeTcbIpcState → ensureRunnable
+        -- Wake path: storeObject → storeTcbIpcStateAndMessage → ensureRunnable
         simp only [hWaiters] at hStep
         revert hStep
         cases hStore : storeObject notificationId
@@ -64,12 +64,14 @@ theorem notificationSignal_preserves_ipcInvariant
             _ hInv hObjInv hStore (notificationSignal_result_wellFormed_wake rest)
           have hObjInv1 : pair.2.objects.invExt :=
             storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
+          -- R3-A/M-16: Badge now delivered via storeTcbIpcStateAndMessage
+          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
+              (some { IpcMessage.empty with badge := some badge }) with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
-            have hInv2 := storeTcbIpcState_preserves_ipcInvariant pair.2 st'' waiter .ready hInv1 hObjInv1 hTcb
+            have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2 st'' waiter .ready _ hInv1 hObjInv1 hTcb
             exact fun oid ntfn' h => hInv2 oid ntfn' (by rwa [ensureRunnable_preserves_objects] at h)
       | nil =>
         -- Merge path: storeObject only
@@ -78,7 +80,7 @@ theorem notificationSignal_preserves_ipcInvariant
           _ hInv hObjInv hStep (notificationSignal_result_wellFormed_merge _)
 
 /-- WS-F4: notificationSignal preserves schedulerInvariantBundle.
-Wake path: storeObject + storeTcbIpcState (scheduler unchanged) + ensureRunnable.
+Wake path: storeObject + storeTcbIpcStateAndMessage (scheduler unchanged) + ensureRunnable.
 Merge path: storeObject only (scheduler unchanged). -/
 theorem notificationSignal_preserves_schedulerInvariantBundle
     (st st' : SystemState)
@@ -98,7 +100,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
       simp only [hObj] at hStep
       cases hWaiters : ntfn.waitingThreads with
       | cons waiter rest =>
-        -- Wake path: storeObject → storeTcbIpcState → ensureRunnable
+        -- Wake path: storeObject → storeTcbIpcStateAndMessage → ensureRunnable
         simp only [hWaiters] at hStep
         revert hStep
         cases hStore : storeObject notificationId
@@ -107,12 +109,16 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
         | error e => simp
         | ok pair =>
           simp only []
-          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
+          -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
+          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
+              (some { IpcMessage.empty with badge := some badge }) with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
-            have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st'' notificationId _ waiter _ hStore hTcb
+            have hSchedEq : st''.scheduler = st.scheduler := by
+              rw [storeTcbIpcStateAndMessage_scheduler_eq pair.2 st'' waiter .ready _ hTcb,
+                  storeObject_scheduler_eq st pair.2 notificationId _ hStore]
             refine ⟨?_, ?_, ?_⟩
             · -- queueCurrentConsistent
               unfold queueCurrentConsistent
@@ -147,9 +153,9 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
                   rw [storeObject_objects_ne st pair.2 notificationId x.toObjId _ hNeNotif hObjInv hStore]; exact hTcbX
                 by_cases hNeTid : x.toObjId = waiter.toObjId
                 · have hTargetTcb : ∃ t, pair.2.objects[waiter.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcbX, hTcb1⟩
-                  have h := storeTcbIpcState_tcb_exists_at_target pair.2 st'' waiter .ready hObjInv1 hTcb hTargetTcb
+                  have h := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2 st'' waiter .ready _ hObjInv1 hTcb hTargetTcb
                   rwa [← hNeTid] at h
-                · exact ⟨tcbX, (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter .ready x.toObjId hNeTid hObjInv1 hTcb) ▸ hTcb1⟩
+                · exact ⟨tcbX, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter .ready _ x.toObjId hNeTid hObjInv1 hTcb) ▸ hTcb1⟩
       | nil =>
         -- Merge path: storeObject only (scheduler unchanged)
         simp only [hWaiters] at hStep
@@ -373,8 +379,8 @@ theorem notificationWait_preserves_schedulerInvariantBundle
                       have hNeTid : x.toObjId ≠ waiter.toObjId := fun h => hEq' (threadId_toObjId_injective h)
                       exact ⟨tcbX, (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter (.blockedOnNotification notificationId) x.toObjId hNeTid hObjInv1 hTcb) ▸ hTcb1⟩
 
-/-- WS-F4: notificationSignal preserves ipcSchedulerContractPredicates.
-Wake path: storeObject + storeTcbIpcState(.ready) + ensureRunnable — waiter gets
+/-- WS-F4/R3-A: notificationSignal preserves ipcSchedulerContractPredicates.
+Wake path: storeObject + storeTcbIpcStateAndMessage(.ready) + ensureRunnable — waiter gets
 .ready and is added to runnable; other threads are backward-transported.
 Merge path: storeObject notification only — scheduler and TCBs unchanged,
 contracts preserved via contracts_of_same_scheduler_ipcState. -/
@@ -403,13 +409,16 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
         | error e => simp
         | ok pair =>
           simp only []
-          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
+          -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
+          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
+              (some { IpcMessage.empty with badge := some badge }) with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
-            have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st''
-              notificationId _ waiter _ hStore hTcb
+            have hSchedEq : st''.scheduler = st.scheduler := by
+              rw [storeTcbIpcStateAndMessage_scheduler_eq pair.2 st'' waiter .ready _ hTcb,
+                  storeObject_scheduler_eq st pair.2 notificationId _ hStore]
             have hObjInv1 : pair.2.objects.invExt :=
               storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
             refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -417,9 +426,9 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               intro tid tcb' hTcb' hRun'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · exact storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hObjInv1 hTcb tcb' (hNe ▸ hTcb')
-              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
-                    .ready tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · exact storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
+                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -434,10 +443,10 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
-                    .ready tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
+                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -454,10 +463,10 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
-                    .ready tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
+                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -474,10 +483,10 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
-                    .ready tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
+                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -494,10 +503,10 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid rt hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
-                    .ready tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
+                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -514,10 +523,10 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               intro tid tcb' nid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcState_ipcState_eq pair.2 st'' waiter .ready hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcState_preserves_objects_ne pair.2 st'' waiter
-                    .ready tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
+                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -891,7 +900,7 @@ theorem removeRunnable_preserves_badgeWellFormed
 
 /-- WS-F5/D1d: `storeTcbIpcState` preserves `badgeWellFormed`.
 Stores a `.tcb` object (not notification, not CNode). -/
-private theorem storeTcbIpcState_preserves_badgeWellFormed
+theorem storeTcbIpcState_preserves_badgeWellFormed
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
@@ -899,6 +908,29 @@ private theorem storeTcbIpcState_preserves_badgeWellFormed
     badgeWellFormed st' := by
   obtain ⟨hNtfn, hCap⟩ := hInv
   unfold storeTcbIpcState at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep; revert hStep
+    cases hStore : storeObject tid.toObjId _ st with
+    | error e => simp
+    | ok pair => simp only []; intro hEq; cases hEq
+                 exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
+                           st pair.2 tid.toObjId _ hNtfn hObjInv hStore (fun ntfn h => by cases h),
+                        storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+                           st pair.2 tid.toObjId _ hCap hObjInv hStore (fun cn h => by cases h)⟩
+
+/-- R3-A: `storeTcbIpcStateAndMessage` preserves `badgeWellFormed`.
+Stores a `.tcb` object (not notification, not CNode). -/
+theorem storeTcbIpcStateAndMessage_preserves_badgeWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (msg : Option IpcMessage)
+    (hInv : badgeWellFormed st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    badgeWellFormed st' := by
+  obtain ⟨hNtfn, hCap⟩ := hInv
+  unfold storeTcbIpcStateAndMessage at hStep
   cases hLk : lookupTcb st tid with
   | none => simp [hLk] at hStep
   | some tcb =>
@@ -935,12 +967,14 @@ theorem notificationSignal_preserves_badgeWellFormed
         | error e => simp
         | ok pair1 =>
           simp only []; intro hStep; revert hStep
-          cases hStoreTcb : storeTcbIpcState pair1.2 waiter .ready with
+          -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
+          cases hStoreTcb : storeTcbIpcStateAndMessage pair1.2 waiter .ready
+              (some { IpcMessage.empty with badge := some badge }) with
           | error e => simp
           | ok st2 => simp only []; intro hEq; cases hEq
                       apply ensureRunnable_preserves_badgeWellFormed
                       have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
-                      exact storeTcbIpcState_preserves_badgeWellFormed pair1.2 st2 waiter .ready
+                      exact storeTcbIpcStateAndMessage_preserves_badgeWellFormed pair1.2 st2 waiter .ready _
                         ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                           st pair1.2 notificationId _ hNtfn hObjInv hStore1 (fun b hb => by simp at hb),
                          storeObject_nonCNode_preserves_capabilityBadgesWellFormed
@@ -1023,3 +1057,229 @@ theorem notificationWait_preserves_badgeWellFormed
                     st pair1.2 notificationId _ hCap hObjInv hStore1 (fun cn h => by cases h)⟩
                   hObjInv1 hStoreTcb
     | _ => simp [hObjSrc] at hStep
+
+-- ============================================================================
+-- R3-C/M-19: notificationWaiterConsistent preservation
+-- ============================================================================
+
+/-- R3-C/M-19: storeObject at a non-notification ID preserves notificationWaiterConsistent
+when the stored object is a TCB with preserved ipcState for threads in wait lists. -/
+theorem storeObject_nonNotification_preserves_notificationWaiterConsistent
+    (st st' : SystemState) (targetId : SeLe4n.ObjId) (obj : KernelObject)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject targetId obj st = .ok ((), st'))
+    (hNotNtfn : ∀ ntfn, obj ≠ .notification ntfn)
+    (hIpcPreserved : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification) (waiter : SeLe4n.ThreadId),
+      st.objects[noid]? = some (.notification ntfn) → waiter ∈ ntfn.waitingThreads →
+      waiter.toObjId = targetId →
+      ∃ tcb', st'.objects[waiter.toObjId]? = some (.tcb tcb') ∧
+              tcb'.ipcState = .blockedOnNotification noid) :
+    notificationWaiterConsistent st' := by
+  intro noid ntfn waiter hNtfnPost hMem
+  -- Notification is at noid ≠ targetId (since stored object is not notification)
+  by_cases hEq : noid = targetId
+  · subst hEq; rw [storeObject_objects_eq st st' noid obj hObjInv hStore] at hNtfnPost
+    have := Option.some.inj hNtfnPost; cases obj with
+    | notification n => exact absurd rfl (hNotNtfn n)
+    | _ => cases this
+  · -- noid ≠ targetId: notification unchanged in pre-state
+    have hNtfnPre : st.objects[noid]? = some (.notification ntfn) := by
+      rw [storeObject_objects_ne st st' targetId noid obj hEq hObjInv hStore] at hNtfnPost; exact hNtfnPost
+    by_cases hTEq : waiter.toObjId = targetId
+    · -- waiter is the stored object — use hIpcPreserved
+      exact hIpcPreserved noid ntfn waiter hNtfnPre hMem hTEq
+    · -- waiter is not the stored object — backward transport
+      obtain ⟨tcb, hTcb, hIpc⟩ := hConsist noid ntfn waiter hNtfnPre hMem
+      exact ⟨tcb, by rw [storeObject_objects_ne st st' targetId waiter.toObjId obj hTEq hObjInv hStore]; exact hTcb, hIpc⟩
+
+/-- R3-C/M-19: storeObject of a notification preserves notificationWaiterConsistent
+when the stored notification has a subset of the original waiting list (or is empty)
+and no TCBs are modified. -/
+theorem storeObject_notification_preserves_notificationWaiterConsistent
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId)
+    (ntfnOrig : Notification) (ntfn' : Notification)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hObjOrig : st.objects[notificationId]? = some (.notification ntfnOrig))
+    (hStore : storeObject notificationId (.notification ntfn') st = .ok ((), st'))
+    (hSubset : ∀ tid, tid ∈ ntfn'.waitingThreads → tid ∈ ntfnOrig.waitingThreads) :
+    notificationWaiterConsistent st' := by
+  intro noid ntfn waiter hNtfnPost hMem
+  by_cases hEq : noid = notificationId
+  · subst hEq
+    rw [storeObject_objects_eq st st' noid _ hObjInv hStore] at hNtfnPost
+    cases hNtfnPost
+    -- waiter ∈ ntfn'.waitingThreads ⊆ ntfnOrig.waitingThreads
+    have hMemOrig := hSubset waiter hMem
+    obtain ⟨tcb, hTcb, hIpc⟩ := hConsist noid ntfnOrig waiter hObjOrig hMemOrig
+    -- TCB at waiter.toObjId is unchanged (waiter.toObjId ≠ noid since one is TCB other is notification)
+    have hNeTcb : waiter.toObjId ≠ noid := by
+      intro h; rw [h, hObjOrig] at hTcb; cases hTcb
+    exact ⟨tcb, by rw [storeObject_objects_ne st st' noid waiter.toObjId _ hNeTcb hObjInv hStore]; exact hTcb, hIpc⟩
+  · have hNtfnPre : st.objects[noid]? = some (.notification ntfn) := by
+      rw [storeObject_objects_ne st st' notificationId noid _ hEq hObjInv hStore] at hNtfnPost; exact hNtfnPost
+    obtain ⟨tcb, hTcb, hIpc⟩ := hConsist noid ntfn waiter hNtfnPre hMem
+    have hNeTcb : waiter.toObjId ≠ notificationId := by
+      intro h; rw [h, hObjOrig] at hTcb; cases hTcb
+    exact ⟨tcb, by rw [storeObject_objects_ne st st' notificationId waiter.toObjId _ hNeTcb hObjInv hStore]; exact hTcb, hIpc⟩
+
+-- ============================================================================
+-- R3-C.1/M-19: notificationSignal preserves notificationWaiterConsistent
+-- ============================================================================
+
+/-- R3-C.1/M-19: storeTcbIpcStateAndMessage preserves notificationWaiterConsistent
+when the stored TCB's target is not in any notification's waiting list (in the
+pre-state). This holds because storeTcbIpcStateAndMessage stores a TCB (not a
+notification), so all notification waiting lists are unchanged, and only the
+target thread's TCB is modified. -/
+theorem storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hNotInWaitList : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification),
+      st.objects[noid]? = some (.notification ntfn) → tid ∉ ntfn.waitingThreads) :
+    notificationWaiterConsistent st' := by
+  intro noid ntfn waiter hNtfnPost hMem
+  -- Notifications are preserved backward by storeTcbIpcStateAndMessage (it stores a TCB)
+  have hNtfnPre : st.objects[noid]? = some (.notification ntfn) :=
+    storeTcbIpcStateAndMessage_notification_backward st st' tid ipc msg noid ntfn hObjInv hStep
+      hNtfnPost
+  -- Get the pre-state witness
+  obtain ⟨tcb, hTcb, hIpc⟩ := hConsist noid ntfn waiter hNtfnPre hMem
+  -- waiter ≠ tid because tid is not in any notification's waiting list
+  have hNeTid : waiter ≠ tid := by
+    intro h; subst h; exact hNotInWaitList noid ntfn hNtfnPre hMem
+  have hNeObjId : waiter.toObjId ≠ tid.toObjId := fun h => hNeTid (threadId_toObjId_injective h)
+  -- TCB at waiter.toObjId is unchanged
+  exact ⟨tcb, by rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg
+    waiter.toObjId hNeObjId hObjInv hStep]; exact hTcb, hIpc⟩
+
+/-- R3-C.1/M-19: notificationSignal preserves notificationWaiterConsistent.
+Wake path: removes head waiter from notification (subset), then stores TCB
+with `.ready` — the woken waiter is not in any remaining wait list (by
+`uniqueWaiters` Nodup guarantee). ensureRunnable only touches scheduler.
+Merge path: stores notification with empty waiters (vacuous subset). -/
+theorem notificationSignal_preserves_notificationWaiterConsistent
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hConsist : notificationWaiterConsistent st)
+    (hUnique : uniqueWaiters st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    notificationWaiterConsistent st' := by
+  unfold notificationSignal at hStep
+  cases hObj : st.objects[notificationId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | notification ntfn =>
+      simp only [hObj] at hStep
+      cases hWaiters : ntfn.waitingThreads with
+      | cons waiter rest =>
+        -- Wake path: storeObject → storeTcbIpcStateAndMessage → ensureRunnable
+        simp only [hWaiters] at hStep
+        -- Extract uniqueness: waiter ∉ rest
+        have hNodup := hUnique notificationId ntfn hObj
+        rw [hWaiters] at hNodup
+        have hWaiterNotInRest : waiter ∉ rest := (List.nodup_cons.mp hNodup).1
+        revert hStep
+        cases hStore : storeObject notificationId
+            (.notification { state := if rest.isEmpty then .idle else .waiting,
+                             waitingThreads := rest, pendingBadge := none }) st with
+        | error e => simp
+        | ok pair =>
+          simp only []
+          -- Step 1: storeObject preserves notificationWaiterConsistent (subset rest ⊆ waiter::rest)
+          have hConsist1 := storeObject_notification_preserves_notificationWaiterConsistent
+            st pair.2 notificationId ntfn
+            { state := if rest.isEmpty then .idle else .waiting,
+              waitingThreads := rest, pendingBadge := none }
+            hConsist hObjInv hObj hStore
+            (fun tid hMem => hWaiters ▸ List.mem_cons_of_mem waiter hMem)
+          have hObjInv1 : pair.2.objects.invExt :=
+            storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
+          -- Step 2: storeTcbIpcStateAndMessage — waiter not in any wait list in pair.2
+          -- Because: in pair.2, the only modified notification is at notificationId
+          -- with rest as waiters. waiter ∉ rest. For other notifications, waiter was
+          -- in waiter::rest (original), but after storeObject the other notifications
+          -- are unchanged. We need to show waiter is not in any notification wait list
+          -- in pair.2. By hConsist (pre-state), waiter had ipcState .blockedOnNotification
+          -- notificationId. So waiter could only be in notificationId's wait list.
+          -- In pair.2, notificationId has rest (which excludes waiter). Other notifications
+          -- haven't changed, and waiter wasn't in their lists either (by notificationWaiterConsistent:
+          -- if waiter were in another notification noid's list, waiter's ipcState would be
+          -- .blockedOnNotification noid, but we know it's .blockedOnNotification notificationId).
+          have hWaiterNotInAny : ∀ (noid : SeLe4n.ObjId) (ntfn' : Notification),
+              pair.2.objects[noid]? = some (.notification ntfn') →
+              waiter ∉ ntfn'.waitingThreads := by
+            intro noid ntfn' hNtfn'
+            by_cases hEq : noid = notificationId
+            · subst hEq
+              rw [storeObject_objects_eq st pair.2 noid _ hObjInv hStore] at hNtfn'
+              cases hNtfn'; exact hWaiterNotInRest
+            · have hNtfnPre : st.objects[noid]? = some (.notification ntfn') := by
+                rw [storeObject_objects_ne st pair.2 notificationId noid _ hEq hObjInv hStore] at hNtfn'
+                exact hNtfn'
+              -- If waiter were in ntfn'.waitingThreads, then by hConsist,
+              -- waiter's ipcState = .blockedOnNotification noid.
+              -- But waiter ∈ ntfn.waitingThreads (original), so by hConsist,
+              -- waiter's ipcState = .blockedOnNotification notificationId.
+              -- Since noid ≠ notificationId, contradiction.
+              intro hMem
+              obtain ⟨tcb1, hTcb1, hIpc1⟩ := hConsist noid ntfn' waiter hNtfnPre hMem
+              obtain ⟨tcb2, hTcb2, hIpc2⟩ := hConsist notificationId ntfn waiter hObj
+                (by rw [hWaiters]; exact .head rest)
+              rw [hTcb1] at hTcb2; cases hTcb2
+              rw [hIpc1] at hIpc2; exact hEq (ThreadIpcState.blockedOnNotification.inj hIpc2)
+          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
+              (some { IpcMessage.empty with badge := some badge }) with
+          | error e => simp
+          | ok st'' =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, hEqSt⟩; subst hEqSt
+            have hConsist2 := storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent
+              pair.2 st'' waiter .ready _ hConsist1 hObjInv1 hTcb hWaiterNotInAny
+            -- Step 3: ensureRunnable only modifies scheduler — objects unchanged
+            intro noid' ntfn' tid' hNtfn' hMem'
+            have hNtfnSt := (ensureRunnable_preserves_objects st'' waiter) ▸ hNtfn'
+            obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist2 noid' ntfn' tid' hNtfnSt hMem'
+            exact ⟨tcb', by rw [ensureRunnable_preserves_objects]; exact hTcb', hIpc'⟩
+      | nil =>
+        -- Merge path: storeObject only — empty wait list is vacuous subset
+        simp only [hWaiters] at hStep
+        exact storeObject_notification_preserves_notificationWaiterConsistent
+          st st' notificationId ntfn
+          { state := .active, waitingThreads := [],
+            pendingBadge := some (match ntfn.pendingBadge with
+              | some existing => SeLe4n.Badge.bor existing badge
+              | none => SeLe4n.Badge.ofNatMasked badge.toNat) }
+          hConsist hObjInv hObj hStep
+          (fun _ hMem => by simp at hMem)
+
+-- ============================================================================
+-- R3-C.2/M-19: General frame lemma for notificationWaiterConsistent
+-- ============================================================================
+
+/-- R3-C.2/M-19: General frame lemma — if a state transition preserves all
+notification objects identically and preserves TCBs for all threads appearing
+in notification waiting lists, then `notificationWaiterConsistent` is preserved.
+This covers all endpoint operations (which only modify TCBs and endpoints,
+never notifications). -/
+theorem frame_preserves_notificationWaiterConsistent
+    (st st' : SystemState)
+    (hConsist : notificationWaiterConsistent st)
+    (hNtfnPreserved : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification),
+      st'.objects[noid]? = some (.notification ntfn) →
+      st.objects[noid]? = some (.notification ntfn))
+    (hTcbPreserved : ∀ (noid : SeLe4n.ObjId) (ntfn : Notification) (tid : SeLe4n.ThreadId),
+      st.objects[noid]? = some (.notification ntfn) →
+      tid ∈ ntfn.waitingThreads →
+      st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?) :
+    notificationWaiterConsistent st' := by
+  intro noid ntfn waiter hNtfnPost hMem
+  have hNtfnPre := hNtfnPreserved noid ntfn hNtfnPost
+  obtain ⟨tcb, hTcb, hIpc⟩ := hConsist noid ntfn waiter hNtfnPre hMem
+  exact ⟨tcb, (hTcbPreserved noid ntfn waiter hNtfnPre hMem).symm ▸ hTcb, hIpc⟩

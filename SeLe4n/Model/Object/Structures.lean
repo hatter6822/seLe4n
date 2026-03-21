@@ -1345,6 +1345,244 @@ theorem removeNode_parentMapConsistent
     rw [hPreserves]
     exact (hCon child parent).mpr ⟨e, heMemOrig, hep, hec⟩
 
+/-- R3/R2-C: `removeNode` preserves `childMapConsistent`.
+
+After removing all edges mentioning `node`:
+- Node's own `childMap` entry is erased (matching edge removal)
+- Parent's `childMap` entry has `node` filtered out (matching edge removal)
+- All other entries are unchanged (matching surviving edges) -/
+theorem removeNode_childMapConsistent
+    (cdt : CapDerivationTree) (node : CdtNodeId)
+    (hCon : cdt.childMapConsistent)
+    (hParentCon : cdt.parentMapConsistent)
+    (hExt : cdt.childMap.invExt)
+    (hSizeCM : cdt.childMap.size < cdt.childMap.capacity) :
+    (cdt.removeNode node).childMapConsistent := by
+  intro parent child
+  simp only [removeNode]
+  -- Establish invExt/size for childMap.erase node
+  have hEraseExt := cdt.childMap.erase_preserves_invExt node hExt hSizeCM
+  have hEraseSize := cdt.childMap.erase_size_lt_capacity node hSizeCM
+  constructor
+  · -- Forward: child ∈ (childMapFinal.get? parent).getD [] → ∃ e ∈ edgesFiltered, ...
+    intro hIn
+    -- Case split on parentMap[node]?
+    split at hIn
+    · -- Case: cdt.parentMap[node]? = some p
+      rename_i p hParent
+      -- Case split on filtered.isEmpty
+      split at hIn
+      · -- filtered.isEmpty = true → childMapFinal = (childMap.erase node).erase p
+        rename_i hEmpty
+        -- parent ≠ node and parent ≠ p (both erased)
+        -- Need to show child was in original childMap
+        -- After erase p from (erase node), get? parent goes through both erases
+        by_cases hpn : (node == parent) = true
+        · -- parent = node: erased, so get? node = none, contradiction
+          have hNodeEq : node = parent := eq_of_beq hpn
+          subst hNodeEq
+          have hEraseP_ext := (cdt.childMap.erase node).erase_preserves_invExt p hEraseExt hEraseSize
+          have : ((cdt.childMap.erase node).erase p).get? node = none := by
+            by_cases hpn2 : (p == node) = true
+            · have := eq_of_beq hpn2; subst this
+              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hEraseExt
+            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ p node hpn2 hEraseExt hEraseSize]
+              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt
+          rw [this] at hIn; simp at hIn
+        · by_cases hpp : (p == parent) = true
+          · -- parent = p: erased, so get? p = none, contradiction
+            have hPeq : p = parent := eq_of_beq hpp
+            subst hPeq
+            have : ((cdt.childMap.erase node).erase p).get? p = none :=
+              SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hEraseExt
+            rw [this] at hIn; simp at hIn
+          · -- parent ≠ node and parent ≠ p: both erases are no-ops for parent
+            have hEraseP_ext := (cdt.childMap.erase node).erase_preserves_invExt p hEraseExt hEraseSize
+            have hEraseP_size := (cdt.childMap.erase node).erase_size_lt_capacity p hEraseSize
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ p parent hpp hEraseExt hEraseSize] at hIn
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hpn hExt hSizeCM] at hIn
+            have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
+            refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
+            simp only [decide_eq_true_eq]
+            constructor
+            · intro hIsP
+              simp only [CapDerivationEdge.isParentOf] at hIsP
+              have : e.parent = node := of_decide_eq_true hIsP
+              rw [hep] at this; subst this; simp at hpn
+            · intro hIsC
+              simp only [CapDerivationEdge.isChildOf] at hIsC
+              have hChildNode : e.child = node := of_decide_eq_true hIsC
+              have hParentMap := (hParentCon node parent).mpr ⟨e, heMem, hep, hChildNode⟩
+              rw [hParent] at hParentMap; cases hParentMap; simp at hpp
+      · -- filtered.isEmpty = false → childMapFinal = (childMap.erase node).insert p filtered
+        rename_i hNotEmpty
+        by_cases hpn : (p == parent) = true
+        · -- parent = p: insert p filtered, so get? p = some filtered
+          have hPeq : p = parent := eq_of_beq hpn
+          subst hPeq
+          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hEraseExt] at hIn
+          simp only [Option.getD] at hIn
+          -- child ∈ filtered = ((childMap.erase node).get? p).getD []).filter (· != node)
+          have hFilt := List.mem_filter.mp hIn
+          have ⟨hSib, hNeNode⟩ := hFilt
+          -- hSib: child ∈ ((childMap.erase node).get? p).getD []
+          by_cases hpn2 : (node == p) = true
+          · have hNodeP : node = p := eq_of_beq hpn2
+            subst hNodeP
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt] at hSib
+            simp at hSib
+          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node p hpn2 hExt hSizeCM] at hSib
+            have ⟨e, heMem, hep, hec⟩ := (hCon p child).mp hSib
+            refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
+            simp only [decide_eq_true_eq]
+            constructor
+            · intro hIsP
+              simp only [CapDerivationEdge.isParentOf] at hIsP
+              have : e.parent = node := of_decide_eq_true hIsP
+              rw [hep] at this; subst this; simp at hpn2
+            · intro hIsC
+              simp only [CapDerivationEdge.isChildOf] at hIsC
+              have hChildNode : e.child = node := of_decide_eq_true hIsC
+              have hChildEqNode : child = node := hec.symm.trans hChildNode
+              subst hChildEqNode
+              simp at hNeNode
+        · -- parent ≠ p: insert is a no-op for parent
+          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hpn hEraseExt] at hIn
+          by_cases hpn2 : (node == parent) = true
+          · have hNodeEq : node = parent := eq_of_beq hpn2
+            subst hNodeEq
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt] at hIn
+            simp at hIn
+          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hpn2 hExt hSizeCM] at hIn
+            have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
+            refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
+            simp only [decide_eq_true_eq]
+            constructor
+            · intro hIsP
+              simp only [CapDerivationEdge.isParentOf] at hIsP
+              have : e.parent = node := of_decide_eq_true hIsP
+              rw [hep] at this; subst this; simp at hpn2
+            · intro hIsC
+              simp only [CapDerivationEdge.isChildOf] at hIsC
+              have hChildNode : e.child = node := of_decide_eq_true hIsC
+              have hParentMap := (hParentCon node parent).mpr ⟨e, heMem, hep, hChildNode⟩
+              rw [hParent] at hParentMap; cases hParentMap; simp at hpn
+    · -- Case: cdt.parentMap[node]? = none → childMapFinal = childMap.erase node
+      rename_i hNoParent
+      by_cases hpn : (node == parent) = true
+      · have hNodeEq : node = parent := eq_of_beq hpn
+        subst hNodeEq
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt] at hIn
+        simp at hIn
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hpn hExt hSizeCM] at hIn
+        have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
+        refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
+        simp only [decide_eq_true_eq]
+        constructor
+        · intro hIsP
+          simp only [CapDerivationEdge.isParentOf] at hIsP
+          have : e.parent = node := of_decide_eq_true hIsP
+          rw [hep] at this; subst this; simp at hpn
+        · intro hIsC
+          simp only [CapDerivationEdge.isChildOf] at hIsC
+          have hChildNode : e.child = node := of_decide_eq_true hIsC
+          have hPM := (hParentCon node parent).mpr ⟨e, heMem, hep, hChildNode⟩
+          rw [hNoParent] at hPM; cases hPM
+  · -- Backward: ∃ e ∈ edgesFiltered, ... → child ∈ (childMapFinal.get? parent).getD []
+    rintro ⟨e, heMem, hep, hec⟩
+    have ⟨heMemOrig, hFilter⟩ := List.mem_filter.mp heMem
+    simp only [decide_eq_true_eq] at hFilter
+    have ⟨hNotParent, hNotChild⟩ := hFilter
+    -- e.parent ≠ node and e.child ≠ node
+    have hParentNeNode : ¬(node == parent) = true := by
+      intro h
+      have := eq_of_beq h
+      simp only [CapDerivationEdge.isParentOf] at hNotParent
+      exact hNotParent (decide_eq_true (by rw [hep, this]))
+    have hChildNeNode : ¬(node == child) = true := by
+      intro h
+      have := eq_of_beq h
+      simp only [CapDerivationEdge.isChildOf] at hNotChild
+      exact hNotChild (decide_eq_true (by rw [hec, this]))
+    -- child was in original childMap
+    have hOriginal := (hCon parent child).mpr ⟨e, heMemOrig, hep, hec⟩
+    -- Case split on parentMap[node]?
+    split
+    · -- some p
+      rename_i p hParent
+      -- Case split on filtered.isEmpty
+      split
+      · -- filtered.isEmpty = true → childMapFinal = (childMap.erase node).erase p
+        rename_i hEmpty
+        -- Need: child ∈ ((childMap.erase node).erase p).get? parent).getD []
+        -- parent ≠ node (shown above), need parent ≠ p
+        by_cases hpp : (p == parent) = true
+        · -- parent = p, so we need to show node was the only child of parent
+          -- But e has e.parent = parent and e.child = child ≠ node
+          -- So child should be in siblings.filter (· != node)
+          -- But filtered.isEmpty, contradiction
+          have hPeq : p = parent := eq_of_beq hpp
+          subst hPeq
+          -- siblings = ((childMap.erase node).get? p).getD []
+          -- filtered = siblings.filter (· != node) is empty
+          -- But child ∈ original childMap at p, and child ≠ node
+          -- So child ∈ (childMap.erase node).get? p).getD [] (since p ≠ node)
+          by_cases hpn2 : (node == p) = true
+          · have hNodeP : node = p := eq_of_beq hpn2
+            subst hNodeP
+            -- parent = node, contradiction with hParentNeNode
+            simp at hParentNeNode
+          · have hSiblings : (cdt.childMap.erase node).get? p = cdt.childMap.get? p :=
+              SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node p hpn2 hExt hSizeCM
+            -- child ∈ original siblings
+            -- child ∈ siblings (after erase node from childMap, but key is p ≠ node)
+            have hChildInSibs : child ∈ ((cdt.childMap.erase node).get? p).getD [] := by
+              rw [hSiblings]; exact hOriginal
+            -- child ≠ node, so child survives filter
+            have hChildSurvives : child ∈ (((cdt.childMap.erase node).get? p).getD []).filter (· != node) := by
+              apply List.mem_filter.mpr
+              constructor
+              · exact hChildInSibs
+              · simp only [bne_iff_ne, ne_eq]
+                intro h; apply hChildNeNode; exact beq_of_eq h.symm
+            -- But filtered.isEmpty = true means no elements in filter
+            have : (((cdt.childMap.erase node).get? p).getD []).filter (· != node) = [] := by
+              exact List.isEmpty_iff.mp hEmpty
+            rw [this] at hChildSurvives; cases hChildSurvives
+        · -- parent ≠ p: both erases are no-ops for parent
+          rw [show ((cdt.childMap.erase node).erase p).get? parent = cdt.childMap.get? parent from by
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ p parent hpp hEraseExt hEraseSize]
+            exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hParentNeNode hExt hSizeCM]
+          exact hOriginal
+      · -- filtered.isEmpty = false → childMapFinal = (childMap.erase node).insert p filtered
+        rename_i hNotEmpty
+        by_cases hpp : (p == parent) = true
+        · -- parent = p
+          have hPeq : p = parent := eq_of_beq hpp
+          subst hPeq
+          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hEraseExt]
+          simp only [Option.getD]
+          -- Need: child ∈ filtered
+          -- filtered = ((childMap.erase node).get? p).getD []).filter (· != node)
+          apply List.mem_filter.mpr
+          constructor
+          · -- child ∈ siblings
+            by_cases hpn2 : (node == p) = true
+            · have hNodeP : node = p := eq_of_beq hpn2
+              subst hNodeP; simp at hParentNeNode
+            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node p hpn2 hExt hSizeCM]
+              exact hOriginal
+          · simp only [bne_iff_ne, ne_eq]
+            intro h; apply hChildNeNode; exact beq_of_eq h.symm
+        · -- parent ≠ p
+          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hpp hEraseExt]
+          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hParentNeNode hExt hSizeCM]
+          exact hOriginal
+    · -- none
+      rename_i hNoParent
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hParentNeNode hExt hSizeCM]
+      exact hOriginal
+
 /-- Slot-address view of a CDT edge (projection through slot backpointers). -/
 structure ObservedDerivationEdge where
   parent : SlotAddr
@@ -1390,7 +1628,7 @@ theorem addEdge_preserves_edgeWellFounded_noParent
     (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
     (hNeq : parent ≠ child)
     (hAcyclic : cdt.edgeWellFounded)
-    (hNoIncoming : ∀ e ∈ cdt.edges, e.child ≠ child)
+    (_hNoIncoming : ∀ e ∈ cdt.edges, e.child ≠ child)
     (hNoPath : ∀ (p : List CdtNodeId),
       p.length > 1 → p.head? = some child → p.getLast? = some parent →
       (∀ i, (h : i + 1 < p.length) → ∃ e ∈ cdt.edges, e.parent = p[i] ∧ e.child = p[i + 1]) →
