@@ -51,7 +51,16 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   predicate. Removed `set_option linter.all false` from Structural.lean (L-08).
   Added `removeNode_childMapConsistent` proof for CDT childMap consistency.
   Fixed unused variable warning (`_hNoIncoming`). Zero warnings, zero sorry.
-- **R4–R8**: Pending. See workstream plan for details.
+- **R4 (v0.18.3) — COMPLETE**: Lifecycle & Service Coherence. Fixed TCB cleanup
+  gaps (M-12) — `cleanupTcbReferences` now removes TCB from endpoint queues and
+  notification wait lists. Fixed endpoint retype service registration revocation
+  (M-13) — retyping endpoint auto-revokes registered services. Added service
+  registration authority check (M-14) — `registerService` requires Write right
+  and endpoint type verification (L-09). Fixed service revocation dependency
+  graph cleanup (M-15) — `revokeService` cleans dependency graph via
+  `removeDependenciesOf`. Cross-subsystem invariant bundle (`crossSubsystemInvariant`)
+  added to `proofLayerInvariantBundle`. Zero sorry/axiom.
+- **R5–R8**: Pending. See workstream plan for details.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 

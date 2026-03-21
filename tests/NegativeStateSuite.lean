@@ -2765,6 +2765,60 @@ def runWSR2RevocationChecks : IO Unit := do
 
   IO.println "all WS-R2 revocation error propagation checks passed"
 
+-- ============================================================================
+-- R4: Lifecycle & Service Coherence negative tests
+-- ============================================================================
+
+/-- R4-F.1: Negative tests for cross-subsystem lifecycle/service coherence.
+Tests: service registration without Write right, service registration targeting
+a non-endpoint object, and endpoint type verification. -/
+private def runWSR4CoherenceChecks : IO Unit := do
+  IO.println "--- R4: Lifecycle & Service Coherence checks ---"
+
+  -- R4-NEG-01: Register service without Write right → illegalAuthority
+  let epId : SeLe4n.ObjId := ⟨30⟩
+  let ifaceId : SeLe4n.InterfaceId := ⟨700⟩
+  let iface : InterfaceSpec := {
+    ifaceId := ifaceId, methodCount := 1,
+    maxMessageSize := 1, maxResponseSize := 1, requiresGrant := false
+  }
+  let r4State := (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withLifecycleObjectType epId .endpoint
+      |>.build)
+  match SeLe4n.Kernel.registerInterface iface r4State with
+  | .error _ => throw <| IO.userError "R4-NEG-01: interface registration unexpectedly failed"
+  | .ok (_, stIface) =>
+    -- Capability without write right
+    let noWriteCap : Capability := { target := .object epId, rights := .ofList [.read] }
+    let reg : ServiceRegistration := {
+      sid := ⟨701⟩, iface := iface, endpointCap := noWriteCap
+    }
+    expectError "R4-NEG-01: register service without Write right"
+      (SeLe4n.Kernel.registerService reg stIface)
+      .illegalAuthority
+
+    -- R4-NEG-02: Register service targeting a non-endpoint (TCB) → invalidCapability
+    let tcbId : SeLe4n.ObjId := ⟨31⟩
+    let r4State2 := (BootstrapBuilder.empty
+        |>.withObject tcbId (.tcb {
+          tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ })
+        |>.withLifecycleObjectType tcbId .tcb
+        |>.build)
+    match SeLe4n.Kernel.registerInterface iface r4State2 with
+    | .error _ => throw <| IO.userError "R4-NEG-02: interface registration unexpectedly failed"
+    | .ok (_, stIface2) =>
+      let writeCap : Capability := { target := .object tcbId, rights := .singleton .write }
+      let regTcb : ServiceRegistration := {
+        sid := ⟨702⟩, iface := iface, endpointCap := writeCap
+      }
+      expectError "R4-NEG-02: register service targeting non-endpoint"
+        (SeLe4n.Kernel.registerService regTcb stIface2)
+        .invalidCapability
+
+  IO.println "all R4 lifecycle/service coherence checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2783,3 +2837,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSM3CapTransferNegativeChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
   SeLe4n.Testing.runWSR2RevocationChecks
+  SeLe4n.Testing.runWSR4CoherenceChecks
