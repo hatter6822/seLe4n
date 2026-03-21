@@ -207,8 +207,9 @@ function preserves lookup semantics, structural properties, and kernel
 invariants across the builder→execution phase transition. Key changes:
 
 - **Q6-A**: Core `freezeMap` lookup equivalence — `freezeMap_get?_eq` proves
-  `rt.get? k = (freezeMap rt).get? k` for any key `k`. 12 per-field theorems
-  (`lookup_freeze_objects`, `lookup_freeze_irqHandlers`, etc.) instantiate this
+  `rt.get? k = (freezeMap rt).get? k` for any key `k`. 13 per-field theorems
+  (`lookup_freeze_objects`, `lookup_freeze_objectIndexSet`,
+  `lookup_freeze_irqHandlers`, etc.) instantiate this
   for every `RHTable` field in `SystemState`. Helper theorems connect
   `RHTable.toList` membership to `get?` results.
 - **Q6-B**: CNode radix lookup equivalence — `lookup_freeze_cnode_slots_some`
@@ -226,7 +227,7 @@ invariants across the builder→execution phase transition. Key changes:
   formulation), `freeze_preserves_invariants` (keystone theorem: builder-phase
   `apiInvariantBundle` → frozen `apiInvariantBundle_frozen`),
   `frozen_lookup_transfer` (enabling lemma for per-invariant transfer proofs).
-- **Q6-T**: 21-scenario test suite in `tests/FreezeProofSuite.lean` (57 checks):
+- **Q6-T**: 22-scenario test suite in `tests/FreezeProofSuite.lean` (60 checks):
   freezeMap lookup (FP-001 to FP-005), per-field lookup (FP-006 to FP-009),
   CNode radix (FP-010 to FP-013), structural properties (FP-014 to FP-018),
   invariant transfer (FP-019 to FP-021).

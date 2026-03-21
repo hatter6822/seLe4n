@@ -1778,9 +1778,9 @@ builder→execution phase transition.
 
 - `freezeMap_get?_eq` — core theorem: `rt.get? k = (freezeMap rt).get? k` for
   any key `k` when `invExt` holds.
-- 12 per-field theorems (`lookup_freeze_objects`, `lookup_freeze_irqHandlers`,
-  `lookup_freeze_asidTable`, etc.) instantiating the core theorem for every
-  `RHTable` field in `SystemState`.
+- 13 per-field theorems (`lookup_freeze_objects`, `lookup_freeze_objectIndexSet`,
+  `lookup_freeze_irqHandlers`, `lookup_freeze_asidTable`, etc.) instantiating
+  the core theorem for every `RHTable`/`RHSet` field in `SystemState`.
 - Helper theorems: `toList_contains_of_get` (get? some → toList membership),
   `toList_absent_of_get_none` (get? none → toList absence),
   `toList_noDupKeys` (pairwise distinct keys in toList).

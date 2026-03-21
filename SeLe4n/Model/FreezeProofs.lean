@@ -517,6 +517,80 @@ theorem freezeMap_get?_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
     exact this.symm
 
 -- ============================================================================
+-- Q6-A: Value-mapped freeze (for objects field)
+-- ============================================================================
+
+/-- Q6-A helper: The indexMap foldl depends only on keys, not values.
+Mapping values through an arbitrary function `f` does not change the resulting
+indexMap. This enables the `lookup_freeze_objects` proof where values are
+transformed by `freezeObject` before constructing the frozen map. -/
+private theorem foldl_indexMap_map_values [BEq κ] [Hashable κ]
+    (entries : List (κ × α)) (f : α → β)
+    (init : RHTable κ Nat) (n : Nat) :
+    ((entries.map (fun (k, v) => (k, f v))).foldl
+      (fun (acc, i) (k', _) => (acc.insert k' i, i + 1)) (init, n)) =
+    (entries.foldl (fun (acc, i) (k', _) => (acc.insert k' i, i + 1))
+      (init, n)) := by
+  induction entries generalizing init n with
+  | nil => simp [List.foldl]
+  | cons hd tl ih =>
+    simp only [List.map_cons, List.foldl_cons]
+    exact ih (init.insert hd.1 n) (n + 1)
+
+/-- Q6-A helper: Extracting `.2` after mapping a pair function that transforms
+only values is equivalent to mapping the value function then applying it. -/
+private theorem map_snd_map_pair [BEq κ] [Hashable κ]
+    (entries : List (κ × α)) (f : α → β) :
+    (entries.map (fun (k, v) => (k, f v))).map (·.2) =
+    (entries.map (·.2)).map f := by
+  induction entries with
+  | nil => rfl
+  | cons hd tl ih => simp [List.map_cons, ih]
+
+/-- Q6-A helper: Freeze a map with a value transformation. Mirrors the custom
+object freeze path in `freeze` but expressed as a general combinator, enabling
+reuse of the `freezeMap_get?_eq` machinery. -/
+private def freezeMapWith [BEq κ] [Hashable κ]
+    (rt : RHTable κ α) (f : α → β) : FrozenMap κ β :=
+  let entries := rt.toList
+  let mapped := entries.map (fun (k, v) => (k, f v))
+  let data := (mapped.map (·.2)).toArray
+  let indexMap := (mapped.foldl (fun (acc, i) (k', _) =>
+    (acc.insert k' i, i + 1)) (RHTable.empty 16, 0)).1
+  { data := data, indexMap := indexMap }
+
+/-- Q6-A helper: `freezeMapWith` preserves lookup with value transformation. -/
+private theorem freezeMapWith_get?_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ α) (f : α → β) (k : κ) (hExt : rt.invExt) :
+    (rt.get? k).map f = (freezeMapWith rt f).get? k := by
+  rw [freezeMap_get?_eq rt k hExt]
+  -- Goal: ((freezeMap rt).get? k).map f = (freezeMapWith rt f).get? k
+  unfold FrozenMap.get? freezeMapWith freezeMap
+  simp only [foldl_indexMap_map_values]
+  -- Now both sides use the same indexMap
+  cases rt.toList.foldl (fun (acc, i) (k', _) => (acc.insert k' i, i + 1))
+    (RHTable.empty 16, 0) |>.1 |>.get? k with
+  | none => rfl
+  | some idx =>
+    simp only [Option.map, map_snd_map_pair]
+    -- Case split on the underlying list length (both arrays derive from toList)
+    by_cases hLen : idx < rt.toList.length
+    · -- In bounds: both if-then-else return some, values agree via f
+      simp [hLen]
+    · -- Out of bounds: both return none
+      simp [hLen]
+
+/-- Q6-A: objects lookup preserved by freeze (with value transformation).
+The objects field undergoes `freezeObject` during freeze, so the equivalence
+relates `(get? k).map freezeObject` to the frozen map's `get? k`. -/
+theorem lookup_freeze_objects (ist : IntermediateState) (k : SeLe4n.ObjId) :
+    (ist.state.objects.get? k).map freezeObject = (freeze ist).objects.get? k := by
+  -- (freeze ist).objects is definitionally freezeMapWith ist.state.objects freezeObject
+  have hDef : (freeze ist).objects = freezeMapWith ist.state.objects freezeObject := rfl
+  rw [hDef]
+  exact freezeMapWith_get?_eq ist.state.objects freezeObject k ist.hAllTables.1
+
+-- ============================================================================
 -- Q6-A: Per-field lookup equivalence theorems
 -- ============================================================================
 

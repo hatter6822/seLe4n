@@ -74,7 +74,7 @@ private def fp005_largeLookup : IO Unit := do
   expect "FP-005b missing key 99" (fm.get? ⟨99⟩ == none)
 
 -- ============================================================================
--- Q6-T2: Per-Field Lookup Equivalence (4 scenarios)
+-- Q6-T2: Per-Field Lookup Equivalence (5 scenarios)
 -- ============================================================================
 
 /-- FP-006: IRQ handlers field — freeze preserves lookup -/
@@ -103,6 +103,14 @@ private def fp009_cdtMaps : IO Unit := do
   let nodeId : CdtNodeId := ⟨0⟩
   expect "FP-009a cdtChildMap empty" (fss.cdtChildMap.get? nodeId == none)
   expect "FP-009b cdtParentMap empty" (fss.cdtParentMap.get? nodeId == none)
+
+/-- FP-009c: Objects field — freeze preserves lookup with freezeObject transform -/
+private def fp009c_objectsField : IO Unit := do
+  let ist := mkEmptyIntermediateState
+  let fss := freeze ist
+  -- Empty state: objects frozen map should have no entries
+  expect "FP-009c objects empty" (fss.objects.data.size == 0)
+  expect "FP-009d objects lookup none" ((fss.objects.get? ⟨0⟩).isNone)
 
 -- ============================================================================
 -- Q6-T3: CNode Radix Equivalence (4 scenarios)
@@ -296,6 +304,7 @@ def main : IO Unit := do
   fp007_asidTable
   fp008_objectTypes
   fp009_cdtMaps
+  fp009c_objectsField
 
   -- Q6-T3: CNode Radix Equivalence
   fp010_cnodeRadixSingle
@@ -316,5 +325,5 @@ def main : IO Unit := do
   fp021_lookupTransfer
 
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 21 freeze-proof tests passed!"
+  IO.println "  All 22 freeze-proof tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

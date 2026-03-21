@@ -111,10 +111,10 @@ flat radix array for CNode capability slots with O(1) zero-hash lookup via
 
 **WS-Q6 (v0.17.12) — COMPLETED:** Freeze correctness proofs. Machine-checked
 proofs that `freeze` preserves lookup semantics and kernel invariants. Core
-`freezeMap_get?_eq` + 12 per-field lookup equivalence theorems (Q6-A). CNode
+`freezeMap_get?_eq` + 13 per-field lookup equivalence theorems (Q6-A). CNode
 radix equivalence via generic fold helpers (Q6-B). 5 structural property
 theorems (Q6-C). Invariant transfer with `freeze_preserves_invariants` keystone
-(Q6-D). 30 theorems, 21-scenario test suite. Zero sorry/axiom.
+(Q6-D). 31 theorems, 22-scenario test suite. Zero sorry/axiom.
 
 ## Completed: WS-N Robin Hood Hashing (v0.17.0–v0.17.5)
 

@@ -1124,8 +1124,8 @@ over `FrozenSystemState`.
 **Gate**: `lake build` + all proofs compile + zero sorry — **PASSED**
 
 **Deliverables** (v0.17.12):
-- 30 theorems/definitions in `SeLe4n/Model/FreezeProofs.lean` (~985 LoC)
-- Q6-A: `freezeMap_get?_eq` core theorem + 12 per-field lookup equivalence
+- 30 theorems/definitions in `SeLe4n/Model/FreezeProofs.lean` (~1059 LoC)
+- Q6-A: `freezeMap_get?_eq` core theorem + 13 per-field lookup equivalence
   theorems. 3 helper theorems (`toList_contains_of_get`, `toList_absent_of_get_none`,
   `toList_noDupKeys`) connecting `RHTable.toList` to `get?`.
 - Q6-B: `lookup_freeze_cnode_slots_some` / `lookup_freeze_cnode_slots_none`.
@@ -1136,7 +1136,7 @@ over `FrozenSystemState`.
   `freezeMap_total_coverage`.
 - Q6-D: `apiInvariantBundle_frozen` (existential def),
   `freeze_preserves_invariants` (keystone), `frozen_lookup_transfer`.
-- 21-scenario test suite in `tests/FreezeProofSuite.lean` (57 checks).
+- 22-scenario test suite in `tests/FreezeProofSuite.lean` (60 checks).
 - Zero sorry/axiom, all modules compile independently.
 
 ---
