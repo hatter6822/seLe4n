@@ -1,3 +1,32 @@
+## [0.18.0] — WS-R1 Pre-Release Blockers
+
+- Completed Phase 1 (WS-R1) of the Comprehensive Audit Remediation workstream:
+  eliminated all findings that enable privilege escalation or silent security
+  failures in the public API surface.
+- R1-A (H-01): Removed `Cap::downgrade()` — replaced with `to_read_only()` and
+  `restrict()` with runtime subset assertions. `to_read_only()` validates READ is
+  present in current rights (panics on `Restricted` caps). Prevents phantom-typed
+  capability escalation in Rust library.
+- R1-B (R-M01, R-M02): Added bounds validation to `CSpaceMintArgs::decode()`
+  (rejects rights > 0x1F) and `PagePerms::TryFrom<u64>` (replaces silent-truncation
+  `From<u64>`). 6 regression tests for boundary values.
+- R1-C (R-M03): Refactored `SyscallResponse` to use `x1_raw` field with typed
+  accessors `badge()` and `msg_info()`. Eliminates semantic overlap between badge
+  and message info interpretations of x1 register.
+- R1-D (M-04): Added capability-target validation guards to all 14 `api*`
+  convenience wrappers. IPC/CSpace wrappers verify `cap.target` matches the
+  supplied target ID. Lifecycle/VSpace/Service wrappers verify `cap.target` is
+  an `.object` variant (rejecting reply caps). All wrappers deprecated in favor
+  of `syscallEntry`/`dispatchWithCap`.
+- R1-E (M-10, M-11): Changed `frozenSaveOutgoingContext` and
+  `frozenRestoreIncomingContext` return types from `FrozenSystemState` to
+  `Except KernelError FrozenSystemState`. Silent register discard/wrong-context
+  paths now return explicit errors. Added preservation theorems for new error paths.
+- R1-F: Updated all callers in FrozenOps/Operations.lean, test suites, doc links.
+  Fixed 30 broken documentation links to dev_history/ files. Regenerated
+  codebase_map.json.
+- All test tiers pass (0-3), zero sorry/axiom, clean build with zero warnings
+
 ## [0.17.14] — WS-Q9 Integration Testing + Documentation
 
 - Completed Phase 9 (WS-Q9) of the Kernel State Architecture workstream:

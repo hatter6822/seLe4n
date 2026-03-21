@@ -112,7 +112,7 @@ Badge routing chain (H-03, WS-F5/D1):
 - M-T03: ~~capability transfer during IPC untested~~ → **RESOLVED** (v0.16.17): 4 test scenarios implemented (SCN-IPC-CAP-TRANSFER-BASIC, SCN-IPC-CAP-TRANSFER-NO-GRANT, SCN-IPC-CAP-TRANSFER-FULL-CNODE, SCN-IPC-CAP-BADGE-COMBINED) in OperationChainSuite and NegativeStateSuite.
 - M-P04: ~~`descendantsOf` materializes full set upfront~~ → **RESOLVED** (v0.16.19–v0.17.0): `processRevokeNode` shared per-node step (DRY), `streamingRevokeBFS` BFS loop, `cspaceRevokeCdtStreaming` top-level operation. `processRevokeNode_preserves_capabilityInvariantBundle` shared proof, `streamingRevokeBFS_preserves` induction, `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle` composition. 4 test scenarios.
 
-All 14 WS-M findings resolved. See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+All 14 WS-M findings resolved. See [WS-M workstream plan](../dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 **WS-N proof surface** (v0.17.0+, **ACTIVE** — Robin Hood hashing verified implementation):
 
@@ -238,7 +238,7 @@ zero sorry/axiom. **WS-N3 COMPLETE.**
   filter, findFirstEmptySlot, slotCountBounded, CSpace resolution, BEq comparison
 - `robin_hood_suite` executable + Tier 2 integration + 18 scenario IDs
 - Full documentation sync. **WS-N portfolio COMPLETE** (v0.17.0–v0.17.5).
-- See [WS-N workstream plan](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
+- See [WS-N workstream plan](../dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md)
   for full proof strategies, expanded pseudocode, and 122-subtask breakdown.
 
 CDT structural invariants (WS-G8):

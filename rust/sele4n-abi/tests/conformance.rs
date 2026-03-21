@@ -369,7 +369,7 @@ fn xval_016_notification_wait() {
     // Simulate kernel response: badge=0xBEEF in x1
     let response_regs: [u64; 7] = [0, 0xBEEF, 0, 0, 0, 0, 0];
     let resp = decode_response(response_regs).unwrap();
-    assert_eq!(resp.badge, Badge(0xBEEF), "Badge from x1");
+    assert_eq!(resp.badge(), Badge(0xBEEF), "Badge from x1");
 }
 
 // ============================================================================

@@ -18,8 +18,8 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Production LoC | 53,118 across 97 Lean files |
 | Test LoC | 7,027 across 10 suites |
 | Proved declarations | 1,625 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
-| Active workstream | **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14) — Kernel State Architecture, all 9 phases (Q1–Q9). Prior: **WS-N** (v0.17.0–v0.17.5), **WS-M** (v0.16.14–v0.17.0), **WS-L** (v0.16.9–v0.16.13), WS-K, WS-J1 — all COMPLETE. **Next: Raspberry Pi 5 hardware binding** |
+| Latest audit | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
+| Active workstream | **WS-R IN PROGRESS** — Comprehensive Audit Remediation (8 phases, R1–R8). **R1 COMPLETE** (v0.18.0): pre-release blockers (H-01, M-04, M-10, M-11, R-M01–R-M03). Prior: **WS-Q COMPLETE** (v0.17.7–v0.17.14), WS-N, WS-M, WS-L, WS-K, WS-J1 — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -80,7 +80,7 @@ WS-L4 (test coverage expansion, v0.16.12) →
 
 Multi-phase plan unifying two-phase state architecture, service interface
 simplification (WS-P absorbed), and Rust syscall wrappers (WS-O absorbed).
-9 phases (Q1–Q9, 45 atomic units). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
+9 phases (Q1–Q9, 45 atomic units). See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 **WS-Q1 (v0.17.7) — COMPLETED:** Service interface simplification. Stateless
 registry model replacing lifecycle-based `ServiceStatus`/`ServiceConfig`.
@@ -123,7 +123,7 @@ machine-checked proof surface and the unverified `Std.HashMap` library type.
 Single-representation architecture with fuel-bounded recursion, bounds-checked
 array access, and per-cluster modular-arithmetic ordering. 5 phases (N1–N5,
 122 subtasks). Portfolio **COMPLETE**.
-See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
+See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
 **WS-N1 (v0.17.1) — COMPLETED:** `RHEntry`/`RHTable` core types, `idealIndex`/
 `nextIndex` with bound proofs, `empty` constructor with `empty_wf` 4-conjunct
@@ -200,7 +200,7 @@ Phase 5 (WS-M5, streaming BFS optimization) completed at v0.16.19, optimized v0.
 operations, `processRevokeNode_preserves_capabilityInvariantBundle` shared proof,
 `streamingRevokeBFS_preserves` induction, `cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle`
 top-level preservation. 4 test scenarios (branching, empty, deep chain, equivalence). Resolves M-P04.
-See [WS-M workstream plan](../audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+See [WS-M workstream plan](../dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-K Full Syscall Dispatch Completion (v0.16.0–v0.16.8)
 
@@ -229,7 +229,7 @@ coverage gaps. WS-L also resolves all deferred WS-I5 items.
 | **WS-L4** | Test coverage: ReplyRecv, blocked-thread, interleaving | MEDIUM | Partially complete |
 | **WS-L5** | Documentation: IF readers' guide, fixture process, metrics | LOW | In progress |
 
-See [WS-L workstream plan](../audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
+See [WS-L workstream plan](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 
 ## Next: Raspberry Pi 5 Hardware Binding
 

@@ -23,8 +23,14 @@ impl CSpaceMintArgs {
     }
 
     /// Decode from message registers. Requires 4 registers.
+    ///
+    /// R-M01 fix: validates that the rights register fits in u8 and only
+    /// uses valid rights bits (0–4). Values > 0x1F are rejected.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 4 { return Err(KernelError::InvalidMessageInfo); }
+        if regs[2] > 0x1F {
+            return Err(KernelError::InvalidMessageInfo);
+        }
         Ok(Self {
             src_slot: Slot(regs[0]),
             dst_slot: Slot(regs[1]),
@@ -137,5 +143,32 @@ mod tests {
     #[test]
     fn delete_empty_regs() {
         assert_eq!(CSpaceDeleteArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+    }
+
+    #[test]
+    fn mint_rights_valid_boundary() {
+        // 0x1F = all 5 rights bits set — maximum valid value
+        let regs = [1, 2, 0x1F, 42];
+        let args = CSpaceMintArgs::decode(&regs).unwrap();
+        assert_eq!(args.rights, AccessRights(0x1F));
+    }
+
+    #[test]
+    fn mint_rights_zero() {
+        let regs = [1, 2, 0, 42];
+        let args = CSpaceMintArgs::decode(&regs).unwrap();
+        assert_eq!(args.rights, AccessRights(0));
+    }
+
+    #[test]
+    fn mint_rights_truncation_rejected() {
+        // 0x20 — bit 5 set, exceeds valid rights range
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x20, 42]), Err(KernelError::InvalidMessageInfo));
+        // 0xFF — u8 max
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0xFF, 42]), Err(KernelError::InvalidMessageInfo));
+        // 0x100 — would truncate to 0x00 without bounds check
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x100, 42]), Err(KernelError::InvalidMessageInfo));
+        // u64::MAX — worst case
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]), Err(KernelError::InvalidMessageInfo));
     }
 }

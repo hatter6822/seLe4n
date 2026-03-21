@@ -58,11 +58,19 @@ Safe high-level wrappers for all 14 syscalls:
 
 ```rust
 let full: Cap<CNode, FullRights> = Cap::from_cptr(CPtr(10));
-let ro: Cap<CNode, ReadOnly> = full.downgrade();
+let ro: Cap<CNode, ReadOnly> = full.to_read_only(); // safe for standard rights
+let restricted = full.restrict(AccessRights::READ | AccessRights::WRITE); // runtime-checked
 ```
 
 Object markers: `Endpoint`, `Notification`, `CNode`, `Tcb`, `VSpaceRoot`, `Untyped`
-Rights markers: `FullRights`, `ReadOnly`, `ReadWrite`, `GrantRights`
+Rights markers: `FullRights`, `ReadOnly`, `ReadWrite`, `GrantRights`, `Restricted`
+
+**R1-A/H-01 fix (v0.18.0):** The former `downgrade()` method was removed because
+it performed no subset check, allowing `Cap<Endpoint, ReadOnly>` to be converted
+to `Cap<Endpoint, FullRights>`. Use `to_read_only()` for safe restriction (panics
+if READ is not in current rights — safe for all standard rights descriptors), or
+`restrict(mask)` for runtime-checked restriction to an arbitrary mask (panics if
+mask is not a subset of current rights).
 
 ## Register ABI (ARM64)
 

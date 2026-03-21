@@ -125,28 +125,31 @@ def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
 -- Q7-A: Frozen Scheduler Helpers
 -- ============================================================================
 
-/-- Q7-A: Save outgoing thread's register context to its TCB in frozen state.
+/-- R1-E/M-10: Save outgoing thread's register context to its TCB in frozen state.
+Returns explicit error if the current thread's object is missing or not a TCB.
 Mirrors `saveOutgoingContext` from builder phase. -/
-def frozenSaveOutgoingContext (st : FrozenSystemState) : FrozenSystemState :=
+def frozenSaveOutgoingContext (st : FrozenSystemState)
+    : Except KernelError FrozenSystemState :=
   match st.scheduler.current with
-  | none => st
+  | none => .ok st
   | some outTid =>
       match st.objects.get? outTid.toObjId with
       | some (.tcb outTcb) =>
           let obj := FrozenKernelObject.tcb { outTcb with registerContext := st.machine.regs }
           match st.objects.set outTid.toObjId obj with
-          | some objects' => { st with objects := objects' }
-          | none => st  -- should not happen for well-formed frozen state
-      | _ => st
+          | some objects' => .ok { st with objects := objects' }
+          | none => .error .objectNotFound
+      | _ => .error .objectNotFound
 
-/-- Q7-A: Restore incoming thread's register context from its TCB in frozen state.
+/-- R1-E/M-11: Restore incoming thread's register context from its TCB in frozen state.
+Returns explicit error if the thread's object is missing or not a TCB.
 Mirrors `restoreIncomingContext` from builder phase. -/
 def frozenRestoreIncomingContext (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
-    : FrozenSystemState :=
+    : Except KernelError FrozenSystemState :=
   match st.objects.get? tid.toObjId with
   | some (.tcb tcb) =>
-      { st with machine := { st.machine with regs := tcb.registerContext } }
-  | _ => st
+      .ok { st with machine := { st.machine with regs := tcb.registerContext } }
+  | _ => .error .objectNotFound
 
 /-- Q7-A: Set the current thread in frozen scheduler state. -/
 def frozenSetCurrentThread (tid : Option SeLe4n.ThreadId)

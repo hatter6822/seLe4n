@@ -54,7 +54,7 @@ enforcement, and scheduling.
 | **Test LoC** | 7,027 across 10 Lean test suites |
 | **Proved declarations** | 1,625 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
+| **Latest audit** | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
 | **Next workstreams** | **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14) — Kernel State Architecture (absorbs WS-P, WS-O). All 9 phases (Q1–Q9) completed: Q1 service interface simplification, Q2 universal RHTable migration, Q3 IntermediateState formalization, Q4 CNode radix tree, Q5 FrozenSystemState + freeze, Q6 freeze correctness proofs, Q7 frozen kernel operations, Q8 Rust syscall wrappers, Q9 integration testing + documentation. **Next: Raspberry Pi 5 hardware binding.** Prior portfolios: WS-N (v0.17.0–v0.17.5), WS-M (v0.16.14–v0.17.0), WS-L (v0.16.9–v0.16.13), WS-K (v0.16.0–v0.16.8), WS-J1 (v0.15.4–v0.15.10) — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |

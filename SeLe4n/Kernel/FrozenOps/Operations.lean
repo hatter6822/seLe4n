@@ -110,18 +110,22 @@ def frozenSchedule : FrozenKernel Unit :=
     match frozenChooseThread st with
     | .error e => .error e
     | .ok (none, st') =>
-        let stSaved := frozenSaveOutgoingContext st'
-        frozenSetCurrentThread none stSaved
+        match frozenSaveOutgoingContext st' with
+        | .error e => .error e
+        | .ok stSaved => frozenSetCurrentThread none stSaved
     | .ok (some tid, st') =>
         match st'.objects.get? tid.toObjId with
         | some (.tcb tcb) =>
             if tcb.domain == st'.scheduler.activeDomain &&
                tcb.ipcState == .ready then
-              let stSaved := frozenSaveOutgoingContext st'
-              -- Dequeue-on-dispatch: setting current = some tid marks the
-              -- thread as dispatched. frozenChooseThread will skip it.
-              let stRestored := frozenRestoreIncomingContext stSaved tid
-              frozenSetCurrentThread (some tid) stRestored
+              match frozenSaveOutgoingContext st' with
+              | .error e => .error e
+              | .ok stSaved =>
+                -- Dequeue-on-dispatch: setting current = some tid marks the
+                -- thread as dispatched. frozenChooseThread will skip it.
+                match frozenRestoreIncomingContext stSaved tid with
+                | .error e => .error e
+                | .ok stRestored => frozenSetCurrentThread (some tid) stRestored
             else
               .error .schedulerInvariantViolation
         | _ => .error .schedulerInvariantViolation

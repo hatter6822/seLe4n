@@ -1451,6 +1451,8 @@ private def runWSH13Checks : IO Unit := do
 
   IO.println "all WS-H13 service negative checks passed"
 
+-- R1-D: Suppress deprecation warnings for deprecated api* wrappers exercised in this test.
+set_option linter.deprecated false in
 /-- WS-H15e: Negative tests for syscall capability-checking wrappers. -/
 private def runWSH15Checks : IO Unit := do
   -- Build a state with a CNode (radixWidth=4, 16 slots) with known capabilities.
