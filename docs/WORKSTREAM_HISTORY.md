@@ -38,12 +38,14 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   for backward compatibility. Added revocation error propagation test cases.
 - **R3 (v0.18.2) — COMPLETE**: IPC invariant completion. Fixed `notificationSignal`
   badge delivery gap (M-16) — woken thread now receives signaled badge via
-  `storeTcbIpcStateAndMessage`. Internalized `ipcInvariantFull` preservation
-  hypotheses (M-18) — notification operations and `endpointReply` now have
-  self-contained preservation theorems with zero externalized hypotheses.
-  Added `notificationWaiterConsistent` preservation infrastructure (M-19).
-  IpcMessage structural bounds (L-05) already addressed by existing `bounded`
-  predicate. Removed `set_option linter.all false` from Structural.lean (L-08).
+  `storeTcbIpcStateAndMessage`; badge delivery verified by chain22 test.
+  Internalized `ipcInvariantFull` preservation hypotheses (M-18) — notification
+  operations and `endpointReply` now have self-contained preservation theorems
+  with zero externalized hypotheses. Added `notificationWaiterConsistent`
+  preservation infrastructure (M-19). IpcMessage structural bounds (L-05)
+  already addressed by existing `bounded` predicate. Removed
+  `set_option linter.all false` from Structural.lean (L-08). Added
+  `removeNode_childMapConsistent` proof closing the CDT childMap consistency gap.
 - **R4–R8**: Pending. See workstream plan for details.
 
 ### WS-Q1 workstream (Service Interface Simplification)

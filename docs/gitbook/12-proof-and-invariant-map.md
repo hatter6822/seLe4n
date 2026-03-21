@@ -246,6 +246,7 @@ CDT structural invariants (WS-G8):
 - `childMapConsistent` — bidirectional consistency between `edges` and `childMap : Std.HashMap CdtNodeId (List CdtNodeId)` parent-indexed index,
 - `empty_childMapConsistent` — empty CDT satisfies `childMapConsistent`,
 - `addEdge_childMapConsistent` — `addEdge` preserves `childMapConsistent`,
+- `removeNode_childMapConsistent` — `removeNode` preserves `childMapConsistent` (R3/R2-C, closing CDT consistency gap),
 - `childrenOf` — O(1) HashMap lookup replacing O(E) edge-list scan,
 - `descendantsOf` — O(N+E) total via `childrenOf`-backed BFS traversal.
 - `cdtChildMapConsistentCheck` — runtime verification of `childMapConsistent` invariant (v0.12.15), checking both forward (childMap→edges) and backward (edges→childMap) directions.

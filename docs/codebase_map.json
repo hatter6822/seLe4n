@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ipc-invariant-tNhxH",
-      "commit_sha": "15fedef12f9a873ff2e53f7112a72dffed1d83b6",
-      "tree_sha": "5fb98df8b8091effbe638b65fa56a0154d619169",
-      "committed_at_utc": "2026-03-21T18:23:38+00:00"
+      "commit_sha": "745e55da8f031065d9a79ce7708374b8ea89dc7f",
+      "tree_sha": "9ab1fba26d183a269b9aacce360b519f5f0db10c",
+      "committed_at_utc": "2026-03-21T19:04:55+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9825f9e35b4850b13692c9228e1b90b7ea8585b94ef5223568f3e4720f9073f2"
+    "source_digest": "04b862344d74ad9dfe3e54ec6ce7983ad64f9e7e13d0d2b7d649d1fa145ea7a7"
   },
   "summary": {
     "module_count": 107,
-    "declaration_count": 3048
+    "declaration_count": 3050
   },
   "readme_sync": {
     "version": "0.17.14",
     "lean_toolchain": "v4.28.0",
     "production_files": 97,
-    "production_loc": 53758,
+    "production_loc": 53996,
     "test_files": 10,
-    "test_loc": 7155,
-    "proved_theorem_lemma_decls": 1639,
+    "test_loc": 7198,
+    "proved_theorem_lemma_decls": 1640,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -16868,7 +16868,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 121,
+      "declaration_count": 122,
       "declarations": [
         {
           "kind": "namespace",
@@ -17771,9 +17771,20 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "removeNode_childMapConsistent",
+          "line": 1354,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "childMapConsistent",
+            "removeNode"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "ObservedDerivationEdge",
-          "line": 1349,
+          "line": 1587,
           "called": [
             "DerivationOp",
             "SlotAddr"
@@ -17782,7 +17793,7 @@
         {
           "kind": "def",
           "name": "projectObservedEdges",
-          "line": 1356,
+          "line": 1594,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -17793,7 +17804,7 @@
         {
           "kind": "def",
           "name": "isAncestor",
-          "line": 1367,
+          "line": 1605,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -17802,7 +17813,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_noParent",
-          "line": 1389,
+          "line": 1627,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -17814,15 +17825,15 @@
         {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1519,
+          "line": 1757,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1530>",
-          "line": 1530,
+          "name": "<anonymous:instance:1768>",
+          "line": 1768,
           "called": [
             "KernelObject"
           ]
@@ -17830,19 +17841,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1540,
+          "line": 1778,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 1549,
+          "line": 1787,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 1551,
+          "line": 1789,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -17851,7 +17862,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 1563,
+          "line": 1801,
           "called": []
         }
       ]
@@ -24056,7 +24067,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 33,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -24337,8 +24348,18 @@
         },
         {
           "kind": "def",
+          "name": "chain22NotificationBadgeDelivery",
+          "line": 1383,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 1380,
+          "line": 1422,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -24353,6 +24374,7 @@
             "chain1RetypeMintRevoke",
             "chain20StreamingRevokeDeepChain",
             "chain21StreamingRevokeEquivalence",
+            "chain22NotificationBadgeDelivery",
             "chain2SendSendReceiveFifo",
             "chain3MapLookupUnmapLookup",
             "chain4ServiceRegistryDependencyGraph",
@@ -24367,7 +24389,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1407,
+          "line": 1450,
           "called": []
         }
       ]
