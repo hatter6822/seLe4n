@@ -108,17 +108,17 @@ theorem registerService_preserves_registryEndpointValid
   · simp at hStep
   · split at hStep
     · simp at hStep
-    · split at hStep
-      · simp at hStep
-      · cases hTarget : newReg.endpointCap.target with
-        | object epId =>
-          simp only [hTarget] at hStep
-          cases hObj : st.objects[epId]? with
-          | none => simp [hObj] at hStep
-          | some obj =>
-            cases obj <;> simp [hObj] at hStep
-            case endpoint ep =>
-              subst st'
+    · cases hTarget : newReg.endpointCap.target with
+      | object epId =>
+        simp only [hTarget] at hStep
+        cases hObj : st.objects[epId]? with
+        | none => simp [hObj] at hStep
+        | some obj =>
+          cases obj <;> simp [hObj] at hStep
+          case endpoint ep =>
+            split at hStep
+            · cases hStep
+            · simp at hStep; subst st'
               intro sid reg hReg
               simp only [RHTable_getElem?_eq_get?] at hReg
               rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
@@ -127,8 +127,8 @@ theorem registerService_preserves_registryEndpointValid
                 refine ⟨epId, hTarget, ?_⟩
                 rw [← hObjEq, hObj]; simp
               · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
-        | cnodeSlot => simp [hTarget] at hStep
-        | replyCap => simp [hTarget] at hStep
+      | cnodeSlot => simp [hTarget] at hStep
+      | replyCap => simp [hTarget] at hStep
 
 theorem registerService_preserves_registryInterfaceValid
     (st st' : SystemState) (newReg : ServiceRegistration)
@@ -142,17 +142,17 @@ theorem registerService_preserves_registryInterfaceValid
   · split at hStep
     · simp at hStep
     · rename_i hHasIface
-      split at hStep
-      · simp at hStep
-      · cases hTarget : newReg.endpointCap.target with
-        | object epId =>
-          simp only [hTarget] at hStep
-          cases hObj : st.objects[epId]? with
-          | none => simp [hObj] at hStep
-          | some obj =>
-            cases obj <;> simp [hObj] at hStep
-            case endpoint ep =>
-              subst st'
+      cases hTarget : newReg.endpointCap.target with
+      | object epId =>
+        simp only [hTarget] at hStep
+        cases hObj : st.objects[epId]? with
+        | none => simp [hObj] at hStep
+        | some obj =>
+          cases obj <;> simp [hObj] at hStep
+          case endpoint ep =>
+            split at hStep
+            · cases hStep
+            · simp at hStep; subst st'
               intro sid reg hReg
               simp only [RHTable_getElem?_eq_get?] at hReg
               rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
@@ -163,8 +163,8 @@ theorem registerService_preserves_registryInterfaceValid
                 | none => exact absurd hIface hHasIface
                 | some s => exact ⟨s, rfl⟩
               · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
-        | cnodeSlot => simp [hTarget] at hStep
-        | replyCap => simp [hTarget] at hStep
+      | cnodeSlot => simp [hTarget] at hStep
+      | replyCap => simp [hTarget] at hStep
 
 -- ============================================================================
 -- revokeService

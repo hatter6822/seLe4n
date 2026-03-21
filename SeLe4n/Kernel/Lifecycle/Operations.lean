@@ -26,22 +26,31 @@ def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :
 -- ============================================================================
 
 /-- R4-A.1: Remove a ThreadId from an intrusive queue's head/tail pointers.
-    If the head or tail points to `tid`, it is cleared to `none`. -/
-private def removeThreadFromQueue (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) : IntrusiveQueue :=
-  { head := if q.head = some tid then none else q.head,
-    tail := if q.tail = some tid then none else q.tail }
+    If the head points to `tid`, advances to the TCB's `queueNext` successor
+    (preserving queue accessibility for remaining threads). If `tid` is the
+    tail, retreats to the TCB's `queuePrev` predecessor. Falls back to `none`
+    if the TCB cannot be looked up (defensive — the TCB should still exist at
+    cleanup time since cleanup runs before retype). -/
+private def removeThreadFromQueue (st : SystemState) (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) : IntrusiveQueue :=
+  let advance := match lookupTcb st tid with
+    | some tcb => (tcb.queueNext, tcb.queuePrev)
+    | none => (none, none)
+  { head := if q.head = some tid then advance.1 else q.head,
+    tail := if q.tail = some tid then advance.2 else q.tail }
 
 /-- R4-A.1 (M-12): Remove a ThreadId from all endpoint send/receive queues.
-    Iterates over all endpoint objects in `st.objects` and clears any
-    head/tail references to `tid` in both `sendQ` and `receiveQ`.
+    Iterates over all endpoint objects in `st.objects` and advances any
+    head/tail references to `tid` in both `sendQ` and `receiveQ` to the
+    TCB's queue successor/predecessor. TCB queue links are read from the
+    original state (before any fold mutations) to ensure consistent reads.
     This prevents dangling queue references after a TCB is retyped. -/
 def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   st.objects.fold st fun acc oid obj =>
     match obj with
     | .endpoint ep =>
       let ep' : Endpoint := {
-        sendQ := removeThreadFromQueue ep.sendQ tid,
-        receiveQ := removeThreadFromQueue ep.receiveQ tid }
+        sendQ := removeThreadFromQueue st ep.sendQ tid,
+        receiveQ := removeThreadFromQueue st ep.receiveQ tid }
       { acc with objects := acc.objects.insert oid (.endpoint ep') }
     | _ => acc
 

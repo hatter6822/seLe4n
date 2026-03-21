@@ -441,6 +441,7 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
 - **Lifecycle/IPC coupling** (`cleanupTcbReferences` extensions):
   - `removeFromAllEndpointQueues` — removes TCB from all endpoint sender/receiver queues
   - `removeFromAllNotificationWaitLists` — removes TCB from all notification wait lists
+  - `removeThreadFromQueue` advances head/tail to TCB's `queueNext`/`queuePrev` (preserves queue accessibility for remaining threads, instead of clearing to `none`)
   - Existing scheduler preservation theorems updated for new intermediate states
 
 - **Lifecycle/Service coupling** (`cleanupEndpointServiceRegistrations`):
@@ -449,7 +450,7 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - Integrated into `lifecyclePreRetypeCleanup` in `Lifecycle/Operations.lean`
 
 - **Service operation hardening**:
-  - `registerService` now requires Write right (`illegalAuthority` if missing)
+  - `registerService` validates target exists and is an endpoint BEFORE checking Write right authority (defense-in-depth ordering prevents authority probing on invalid targets)
   - Endpoint object type verification — target must be an actual endpoint (L-09)
 
 - **Service revocation completeness**:
