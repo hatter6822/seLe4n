@@ -2662,6 +2662,109 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
 
   IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
 
+-- ============================================================================
+-- WS-R2: Revocation error propagation & fuel exhaustion tests
+-- ============================================================================
+
+/-- WS-R2/M-05,M-06: Negative tests for revocation error propagation.
+Verifies that:
+- `processRevokeNode` propagates `cspaceDeleteSlot` errors (M-06)
+- `streamingRevokeBFS` returns `.resourceExhausted` on fuel exhaustion (M-05)
+- `cspaceRevokeCdt` propagates descendant delete failures -/
+def runWSR2RevocationChecks : IO Unit := do
+  -- R2-NEG-01: processRevokeNode propagates error when cspaceDeleteSlot fails
+  -- Set up: CDT node mapped to a slot in a non-existent CNode → delete fails
+  let r2CnodeId : SeLe4n.ObjId := ⟨10⟩
+  let r2BadCnodeId : SeLe4n.ObjId := ⟨777⟩
+  let r2NodeId : CdtNodeId := ⟨50⟩
+  let r2BadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := ⟨0⟩ }
+  let r2State : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject r2CnodeId (.cnode {
+            depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+            slots := SeLe4n.Kernel.RobinHood.RHTable.ofList []
+          })
+      |>.build)
+  let r2Seed := { r2State with
+    cdtNodeSlot := r2State.cdtNodeSlot.insert r2NodeId r2BadSlot
+    cdtSlotNode := r2State.cdtSlotNode.insert r2BadSlot r2NodeId
+    cdtNextNode := ⟨51⟩
+  }
+  -- processRevokeNode should return error (slot points to non-existent CNode 777)
+  match SeLe4n.Kernel.processRevokeNode r2Seed r2NodeId with
+  | .error e =>
+    if e = .objectNotFound then
+      IO.println "negative check passed [R2-NEG-01: processRevokeNode propagates cspaceDeleteSlot error]"
+    else
+      throw <| IO.userError s!"R2-NEG-01: expected objectNotFound, got {reprStr e}"
+  | .ok _ =>
+    throw <| IO.userError "R2-NEG-01: processRevokeNode should propagate error, not succeed"
+
+  -- R2-NEG-02: streamingRevokeBFS returns resourceExhausted on fuel exhaustion
+  let r2Node1 : CdtNodeId := ⟨60⟩
+  let r2Node2 : CdtNodeId := ⟨61⟩
+  let r2Slot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := ⟨0⟩ }
+  let r2BfsSeed := { r2State with
+    cdt := CapDerivationTree.empty
+      |>.addEdge r2Node1 r2Node2 .mint
+    cdtNodeSlot := (r2State.cdtNodeSlot
+      |>.insert r2Node1 r2Slot1)
+      |>.insert r2Node2 { cnode := r2CnodeId, slot := ⟨1⟩ }
+    cdtSlotNode := (r2State.cdtSlotNode
+      |>.insert r2Slot1 r2Node1)
+      |>.insert { cnode := r2CnodeId, slot := ⟨1⟩ } r2Node2
+    cdtNextNode := ⟨62⟩
+  }
+  -- Fuel = 0 with non-empty queue → resourceExhausted
+  match SeLe4n.Kernel.streamingRevokeBFS 0 [r2Node1, r2Node2] r2BfsSeed with
+  | .error e =>
+    if e = .resourceExhausted then
+      IO.println "negative check passed [R2-NEG-02: streamingRevokeBFS fuel exhaustion returns resourceExhausted]"
+    else
+      throw <| IO.userError s!"R2-NEG-02: expected resourceExhausted, got {reprStr e}"
+  | .ok _ =>
+    throw <| IO.userError "R2-NEG-02: streamingRevokeBFS with fuel=0 should return error, not succeed"
+
+  -- R2-NEG-03: cspaceRevokeCdt propagates descendant delete failures
+  -- Set up: CNode with root cap at slot 5. CDT: rootNode → childNode (bad slot).
+  -- cspaceRevokeCdt should fail because descendant deletion fails.
+  let r2RootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := ⟨5⟩ }
+  let r2RootNode : CdtNodeId := ⟨70⟩
+  let r2ChildNode : CdtNodeId := ⟨71⟩
+  let r2ChildBadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := ⟨0⟩ }
+  let r2RevokeSeed : SystemState :=
+    { r2State with
+      objects := r2State.objects.insert r2CnodeId (.cnode {
+            depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+            slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+              (r2RootSlot.slot, {
+                target := .object ⟨40⟩
+                rights := AccessRightSet.ofList [.read, .write]
+                badge := none
+              })
+            ]
+          })
+      cdt := CapDerivationTree.empty
+        |>.addEdge r2RootNode r2ChildNode .mint
+      cdtSlotNode := ((r2State.cdtSlotNode
+        |>.insert r2RootSlot r2RootNode)
+        |>.insert r2ChildBadSlot r2ChildNode)
+      cdtNodeSlot := ((r2State.cdtNodeSlot
+        |>.insert r2RootNode r2RootSlot)
+        |>.insert r2ChildNode r2ChildBadSlot)
+      cdtNextNode := ⟨72⟩
+    }
+  match SeLe4n.Kernel.cspaceRevokeCdt r2RootSlot r2RevokeSeed with
+  | .error e =>
+    if e = .objectNotFound then
+      IO.println "negative check passed [R2-NEG-03: cspaceRevokeCdt propagates descendant delete error]"
+    else
+      throw <| IO.userError s!"R2-NEG-03: expected objectNotFound from cspaceRevokeCdt, got {reprStr e}"
+  | .ok _ =>
+    throw <| IO.userError "R2-NEG-03: cspaceRevokeCdt should propagate descendant delete error, not succeed"
+
+  IO.println "all WS-R2 revocation error propagation checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2679,3 +2782,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSL4BlockedThreadChecks
   SeLe4n.Testing.runWSM3CapTransferNegativeChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
+  SeLe4n.Testing.runWSR2RevocationChecks

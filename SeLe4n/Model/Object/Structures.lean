@@ -1361,6 +1361,155 @@ def projectObservedEdges
     | some p, some c => some { parent := p, child := c, op := e.op }
     | _, _ => none)
 
+/-- R2-D/M-08: Decidable ancestor check — returns `true` if `ancestor` is
+reachable from `start` by following parent edges upward through the CDT.
+Uses `parentMap` for O(depth) lookup. Fuel = edges.length for termination. -/
+def isAncestor (cdt : CapDerivationTree) (ancestor start : CdtNodeId) : Bool :=
+  go cdt.edges.length start
+where
+  go : Nat → CdtNodeId → Bool
+    | 0, _ => false
+    | n + 1, current =>
+      if current == ancestor then true
+      else match cdt.parentMap[current]? with
+        | none => false
+        | some par => go n par
+
+set_option maxHeartbeats 2000000 in
+/-- R2-D/M-08: `addEdge` preserves `edgeWellFounded` when:
+1. `parent ≠ child`
+2. Existing CDT is acyclic
+3. No existing edge targets `child` (no incoming edges)
+4. No old-edge path from `child` to `parent` exists
+
+Generalizes `addEdge_preserves_edgeWellFounded_fresh` to non-fresh child nodes
+(child may have outgoing edges/subtree). The proof projects each cycle edge onto
+old CDT edges; when the new edge is encountered, constructs a rotated sub-path
+from child to parent using only old edges, contradicting hypothesis 4. -/
+theorem addEdge_preserves_edgeWellFounded_noParent
+    (cdt : CapDerivationTree) (parent child : CdtNodeId) (op : DerivationOp)
+    (hNeq : parent ≠ child)
+    (hAcyclic : cdt.edgeWellFounded)
+    (hNoIncoming : ∀ e ∈ cdt.edges, e.child ≠ child)
+    (hNoPath : ∀ (p : List CdtNodeId),
+      p.length > 1 → p.head? = some child → p.getLast? = some parent →
+      (∀ i, (h : i + 1 < p.length) → ∃ e ∈ cdt.edges, e.parent = p[i] ∧ e.child = p[i + 1]) →
+      False) :
+    (cdt.addEdge parent child op).edgeWellFounded := by
+  intro node ⟨path, hLen, hHead, hLast, hEdges⟩
+  -- Project each edge to old CDT. If old, keep. If new (parent→child), derive ⊥ via hNoPath.
+  apply hAcyclic node
+  refine ⟨path, hLen, hHead, hLast, fun idx hIdx => ?_⟩
+  have ⟨e, heMem, hep, hec⟩ := hEdges idx hIdx
+  simp only [addEdge] at heMem
+  rcases List.mem_cons.mp heMem with heq | hOld
+  · -- The edge at idx is the new edge: path[idx] = parent, path[idx+1] = child
+    exfalso
+    have hCidx : path[idx + 1] = child := by rw [← hec]; exact congrArg CapDerivationEdge.child heq
+    have hPidx : path[idx] = parent := by rw [← hep]; exact congrArg CapDerivationEdge.parent heq
+    -- At positions where path[j] ≠ parent, the edge is provably old
+    have hOldAt : ∀ j (hj : j + 1 < path.length), path[j] ≠ parent →
+        ∃ e ∈ cdt.edges, e.parent = path[j] ∧ e.child = path[j + 1] := by
+      intro j hj hjNe
+      obtain ⟨ej, hejMem, hejp, hejc⟩ := hEdges j hj
+      simp only [addEdge] at hejMem
+      rcases List.mem_cons.mp hejMem with heq' | hold
+      · exact absurd (by rw [← hejp]; exact congrArg CapDerivationEdge.parent heq') hjNe
+      · exact ⟨ej, hold, hejp, hejc⟩
+    -- Cycle boundary properties
+    have hFirst : path[0]'(by omega) = node := by
+      cases path with | nil => simp at hLen | cons a rest => simp [List.head?] at hHead; exact hHead
+    have hLastIdx : path[path.length - 1] = node := by
+      rw [List.getLast?_eq_getElem?] at hLast; exact (List.getElem?_eq_some_iff.mp hLast).2
+    -- Base case: cycle of length 2 forces parent = child, contradiction
+    have hL3 : path.length ≥ 3 := by
+      rcases Nat.lt_or_ge path.length 3 with h | h
+      · exfalso
+        have hp : path[idx]'(by omega) = path[0]'(by omega) := by congr 1; omega
+        have hc : path[idx + 1]'(by omega) = path[1]'(by omega) := by congr 1; omega
+        have hn : path[1]'(by omega) = path[path.length - 1]'(by omega) := by congr 1; omega
+        exact hNeq (hPidx.symm.trans (hp ▸ hFirst) |>.trans (hn ▸ hLastIdx).symm |>.trans (hc ▸ hCidx))
+      · exact h
+    -- Build rotated path from child (at idx+1) back to parent (at idx)
+    let L := path.length
+    let nodeAt : Fin (L - 1) → CdtNodeId := fun k =>
+      if h : idx + 1 + k.val < L then path[idx + 1 + k.val]
+      else path[idx + 1 + k.val - L + 1]'(by omega)
+    let rotPath := List.ofFn nodeAt
+    have hRotLen : rotPath.length = L - 1 := List.length_ofFn ..
+    have hRotGet : ∀ (k : Nat) (hk : k < L - 1),
+        rotPath[k]'(by rw [hRotLen]; exact hk) = nodeAt ⟨k, hk⟩ :=
+      fun k hk => List.getElem_ofFn ..
+    -- rotPath[0] = child
+    have hRotFirst : rotPath[0]'(by rw [hRotLen]; omega) = child := by
+      rw [hRotGet 0 (by omega)]
+      simp only [nodeAt, dif_pos (show idx + 1 + (⟨0, by omega⟩ : Fin (L - 1)).val < L from by simp; omega)]
+      exact hCidx
+    -- rotPath[L-2] = parent
+    have hRotLastP : rotPath[L - 2]'(by rw [hRotLen]; omega) = parent := by
+      rw [hRotGet (L - 2) (by omega)]; simp only [nodeAt]
+      split
+      · next h =>
+        have : path[idx + 1 + (L - 2)]'(by omega) = path[L - 1]'(by omega) := by congr 1; omega
+        rw [this, hLastIdx, ← hFirst]
+        have : path[idx]'(by omega) = path[0]'(by omega) := by congr 1; omega
+        rwa [← this]
+      · next h =>
+        have : path[idx + 1 + (L - 2) - L + 1]'(by omega) = path[idx]'(by omega) := by congr 1; omega
+        rw [this]; exact hPidx
+    -- Find first parent in rotation, truncate, apply hNoPath
+    have hParInRot : ∃ x ∈ rotPath, (x == parent) = true :=
+      ⟨rotPath[L - 2], List.getElem_mem .., by rw [hRotLastP]; exact beq_self_eq_true _⟩
+    let m := rotPath.findIdx (· == parent)
+    have hm : m < rotPath.length := List.findIdx_lt_length_of_exists hParInRot
+    have hmP : rotPath[m]'hm = parent := eq_of_beq (List.findIdx_getElem (w := hm))
+    have hBNe : ∀ (i : Nat) (hi : i < m), rotPath[i]'(by omega) ≠ parent := by
+      intro i hi habs; have := List.not_of_lt_findIdx hi; simp [habs] at this
+    have hm0 : m > 0 := by
+      rcases Nat.eq_zero_or_pos m with h | h
+      · exact absurd (hRotFirst.symm.trans (by congr 1; omega) |>.trans hmP).symm hNeq
+      · exact h
+    -- opath = rotPath.take (m+1): sub-path from child to parent, all edges old
+    let opath := rotPath.take (m + 1)
+    have hOL : opath.length = m + 1 := by simp [opath, List.length_take, hRotLen]; omega
+    apply hNoPath opath
+    · rw [hOL]; omega
+    · rw [List.head?_take]; simp
+      cases hrot : rotPath with
+      | nil => rw [hrot] at hm; simp at hm
+      | cons a rest =>
+        simp only [List.head?]; congr 1
+        have : rotPath[0]'(by simp [hrot]) = a := by simp [hrot]
+        rw [← hRotFirst, this]
+    · rw [List.getLast?_take]; simp [show m + 1 - 1 = m from by omega]
+      rw [show rotPath[m]? = some parent from List.getElem?_eq_some_iff.mpr ⟨hm, hmP⟩]; simp
+    · intro i hi; rw [hOL] at hi
+      have him : i < m := by omega
+      rw [show opath[i] = rotPath[i] from List.getElem_take ..,
+          show opath[i + 1] = rotPath[i + 1] from List.getElem_take ..,
+          hRotGet i (by omega), hRotGet (i + 1) (by omega)]
+      simp only [nodeAt]
+      have hSrcNePar : nodeAt ⟨i, by omega⟩ ≠ parent := by
+        rw [← hRotGet i (by omega)]; exact hBNe i him
+      split <;> rename_i h1 <;> split <;> rename_i h2
+      · exact hOldAt (idx + 1 + i) (by omega) (by simp only [nodeAt, dif_pos h1] at hSrcNePar; exact hSrcNePar)
+      · have hSrc : path[idx + 1 + i]'(by omega) = path[0]'(by omega) := by
+          have : path[idx + 1 + i]'(by omega) = path[L - 1]'(by omega) := by congr 1; omega
+          rw [this, hLastIdx, ← hFirst]
+        have hTgt : path[idx + 1 + (i + 1) - L + 1]'(by omega) = path[1]'(by omega) := by congr 1; omega
+        rw [hSrc, hTgt]
+        exact hOldAt 0 (by omega) (by
+          intro h; simp only [nodeAt, dif_pos h1] at hSrcNePar; exact hSrcNePar (hSrc.symm ▸ h))
+      · omega
+      · have hNP : path[idx + 1 + i - L + 1]'(by omega) ≠ parent := by
+          simp only [nodeAt, dif_neg h1] at hSrcNePar; exact hSrcNePar
+        obtain ⟨e', he', hep', hec'⟩ := hOldAt (idx + 1 + i - L + 1) (by omega) hNP
+        refine ⟨e', he', hep', ?_⟩
+        have : path[(idx + 1 + i - L + 1) + 1]'(by omega) = path[idx + 1 + (i + 1) - L + 1]'(by omega) := by
+          congr 1; omega
+        rwa [← this]
+  · exact ⟨e, hOld, hep, hec⟩
+
 end CapDerivationTree
 
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is

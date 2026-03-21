@@ -713,14 +713,34 @@ def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : AccessRightSet)
 -- M-P04/M5: Shared per-node revocation step
 -- ============================================================================
 
-/-- M-P04/M5: Process a single CDT descendant node during revocation.
+/-- R2-A: Process a single CDT descendant node during revocation.
 
 Shared transition used by both `cspaceRevokeCdt` (materialized fold) and
 `streamingRevokeBFS` (streaming BFS). Given a CDT node:
-1. If no slot mapping exists, just remove the CDT node.
-2. If delete fails, remove the CDT node (swallow error).
-3. If delete succeeds, detach the slot→node mapping and remove the CDT node. -/
-def processRevokeNode (st : SystemState) (node : CdtNodeId) : SystemState :=
+1. If no slot mapping exists, just remove the CDT node → `.ok`.
+2. If delete fails, propagate the error → `.error e`.
+3. If delete succeeds, detach the slot→node mapping and remove the CDT node → `.ok`.
+
+Changed in WS-R2/M-06: errors from `cspaceDeleteSlot` are now propagated
+instead of swallowed. For the legacy lenient behavior, use
+`processRevokeNode_lenient`. -/
+def processRevokeNode (st : SystemState) (node : CdtNodeId)
+    : Except KernelError SystemState :=
+  match SystemState.lookupCdtSlotOfNode st node with
+  | none => .ok { st with cdt := st.cdt.removeNode node }
+  | some descAddr =>
+      match cspaceDeleteSlot descAddr st with
+      | .error e => .error e
+      | .ok ((), stDel) =>
+          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+          .ok { stDetached with cdt := stDetached.cdt.removeNode node }
+
+/-- Legacy lenient variant of `processRevokeNode` that swallows delete errors.
+
+Deprecated since WS-R2/M-06. Retained for backward compatibility with callers
+that explicitly require lenient revocation semantics. -/
+@[deprecated "Use processRevokeNode (error-propagating) instead" (since := "v0.18.1")]
+def processRevokeNode_lenient (st : SystemState) (node : CdtNodeId) : SystemState :=
   match SystemState.lookupCdtSlotOfNode st node with
   | none => { st with cdt := st.cdt.removeNode node }
   | some descAddr =>
@@ -743,11 +763,11 @@ Extends local revoke with CDT-based global traversal:
 3. Delete each descendant's capability from its CNode
 4. Clean up CDT edges for deleted slots
 
-**Error handling**: Descendant deletion errors are swallowed — the CDT node is
-removed regardless, preventing stale references. This is safe because
-`removeNode` only shrinks the edge set (proven by
-`cspaceRevokeCdt_swallowed_error_consistent`). For callers requiring error
-visibility, use `cspaceRevokeCdtStrict`. -/
+**Error handling** (WS-R2/M-06): Descendant deletion errors are now propagated
+to callers. If any descendant's `cspaceDeleteSlot` fails, the fold stops and
+returns the error. For the legacy lenient behavior (swallow errors), use
+`cspaceRevokeCdt_lenient`. For callers requiring structured failure reports,
+use `cspaceRevokeCdtStrict`. -/
 def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     -- First do local revocation
@@ -762,7 +782,10 @@ def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
             let result := descendants.foldl (fun acc node =>
               match acc with
               | .error e => .error e
-              | .ok ((), stAcc) => .ok ((), processRevokeNode stAcc node)
+              | .ok ((), stAcc) =>
+                  match processRevokeNode stAcc node with
+                  | .error e => .error e
+                  | .ok stNext => .ok ((), stNext)
             ) (.ok ((), stLocal))
             result
 
@@ -780,16 +803,22 @@ Each iteration:
 4. Appends newly-discovered children to the queue tail.
 
 Fuel = initial edge count, guaranteeing termination since each step
-removes at least one CDT node (shrinking the edge set). -/
+removes at least one CDT node (shrinking the edge set).
+
+Changed in WS-R2/M-05: fuel exhaustion now returns `.error .resourceExhausted`
+instead of `.ok`, making incomplete revocation visible to callers. -/
 def streamingRevokeBFS
     (fuel : Nat) (queue : List CdtNodeId)
     (st : SystemState) : Except KernelError (Unit × SystemState) :=
   match fuel, queue with
   | _, [] => .ok ((), st)
-  | 0, _ :: _ => .ok ((), st)  -- fuel exhausted (safety bound)
+  | 0, _ :: _ => .error .resourceExhausted  -- WS-R2/M-05: fuel exhausted
   | fuel + 1, node :: rest =>
-      let children := st.cdt.childrenOf node
-      streamingRevokeBFS fuel (rest ++ children) (processRevokeNode st node)
+      match processRevokeNode st node with
+      | .error e => .error e
+      | .ok stNext =>
+          let children := st.cdt.childrenOf node
+          streamingRevokeBFS fuel (rest ++ children) stNext
 
 /-- M-P04: Streaming CDT revocation — interleaves BFS discovery with deletion.
 
@@ -802,8 +831,8 @@ factor) instead of O(N).
 3. Initialize the BFS queue with the root node's direct children.
 4. Run `streamingRevokeBFS` with fuel = `cdt.edges.length`.
 
-Error handling: identical to `cspaceRevokeCdt` — descendant deletion errors
-are swallowed, CDT nodes are always removed. -/
+Error handling (WS-R2/M-05, M-06): descendant deletion errors are propagated.
+Fuel exhaustion returns `.error .resourceExhausted`. -/
 def cspaceRevokeCdtStreaming (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match cspaceRevoke addr st with

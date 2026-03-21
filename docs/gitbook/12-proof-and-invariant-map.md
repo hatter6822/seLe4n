@@ -102,8 +102,8 @@ Badge routing chain (H-03, WS-F5/D1):
 
 - M-G01: ~~proof incomplete~~ → **RESOLVED** (v0.16.14): existing proof was complete; added forward-direction `resolveCapAddress_guard_match` companion theorem,
 - M-G02: ~~`cdtMintCompleteness` gap~~ → **RESOLVED** (v0.16.14): `cdtMintCompleteness` predicate + transfer theorem + extended bundle `capabilityInvariantBundleWithMintCompleteness`,
-- M-G03: ~~CDT acyclicity hypotheses deferred~~ → **PARTIALLY RESOLVED** (v0.16.14): `addEdge_preserves_edgeWellFounded_fresh` proves acyclicity for fresh nodes; general `descendantsOf`-based theorem deferred to Phase 2,
-- M-G04: ~~unnamed error-swallowing pattern~~ → **RESOLVED** (v0.16.14): `cspaceRevokeCdt_swallowed_error_consistent` explicitly named theorem + docstring update,
+- M-G03: ~~CDT acyclicity hypotheses deferred~~ → **RESOLVED** (v0.18.1): `addEdge_preserves_edgeWellFounded_fresh` for fresh nodes + `isAncestor` decidable predicate + `addEdgeWouldBeSafe` runtime cycle check. General no-parent theorem (`addEdge_preserves_edgeWellFounded_noParent`) requires descendant hypothesis,
+- M-G04: ~~unnamed error-swallowing pattern~~ → **RESOLVED** (v0.18.1): Error-swallowing eliminated in R2-A/R2-B. `processRevokeNode` now propagates errors. `cspaceRevokeCdt_error_propagation_consistent` replaces `cspaceRevokeCdt_swallowed_error_consistent`. `streamingRevokeBFS` returns `.error .resourceExhausted` on fuel exhaustion,
 - M-P01: ~~`cspaceRevokeCdt` double-pass revoke fold~~ → **RESOLVED** (v0.16.15): `revokeAndClearRefsState` fuses revoke and clear-refs into a single-pass fold (M2-A),
 - M-P02: ~~CDT parent lookup O(E) scan~~ → **RESOLVED** (v0.16.15): `parentMap : Std.HashMap CdtNodeId CdtNodeId` index added to `CapDerivationTree`; `parentOf` now O(1) HashMap lookup; `parentMapConsistent` invariant with runtime check (M2-B),
 - M-P03: ~~reply lemma duplication~~ → **RESOLVED** (v0.16.15): reply lemmas extracted as shared infrastructure; new field preservation lemmas for NI proofs (M2-C),
