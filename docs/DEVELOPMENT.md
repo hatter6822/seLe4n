@@ -89,6 +89,19 @@ toList completeness/noDup, fold coverage). `buildCNodeRadix` equivalence
 bridge (RHTable → CNodeRadix), `freezeCNodeSlots` Q5 integration, 12-scenario
 test suite (43 checks). Zero admitted proofs, 1,527 proved declarations,
 all tests pass.
+**WS-Q5** (v0.17.11) — FrozenSystemState + freeze — **COMPLETED**:
+`FrozenMap`/`FrozenSet` types, per-object frozen representations (`FrozenCNode`
+with `CNodeRadix`, `FrozenVSpaceRoot` with `FrozenMap`), `freeze` function
+(IntermediateState → FrozenSystemState), capacity planning. 20+ theorems,
+15-scenario test suite (49 checks). Zero sorry/axiom, 1,558 proved declarations.
+**WS-Q6** (v0.17.12) — Freeze correctness proofs — **COMPLETED**:
+machine-checked proofs that `freeze` preserves lookup semantics and kernel
+invariants. Core `freezeMap_get?_eq` theorem + 12 per-field lookup equivalence
+theorems (Q6-A). CNode radix lookup equivalence via generic fold helpers (Q6-B).
+5 structural property theorems (Q6-C). Invariant transfer with keystone
+`freeze_preserves_invariants` theorem (Q6-D). 30 theorems in
+`SeLe4n/Model/FreezeProofs.lean`, 21-scenario test suite (57 checks). Zero
+sorry/axiom.
 See [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
 
 The **WS-N** portfolio (Robin Hood hashing verified implementation) is **fully

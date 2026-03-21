@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "db7ed2978700b502527ef2b713235888d5c3f175",
-      "tree_sha": "f7a4ff166d93e9d749566b940dee3cc99649711c",
-      "committed_at_utc": "2026-03-20T18:21:48-04:00"
+      "branch": "claude/optimize-q6-proofs-sS3Fv",
+      "commit_sha": "a1522c9654ada70b3ba3c64c3eb0e7372264cde9",
+      "tree_sha": "fe61af3dc45ad2028f2d91d58d8fe7395053cf6a",
+      "committed_at_utc": "2026-03-20T22:21:57+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4ca258ad96a564506b60ce3d05c6f95add34a6deffe4a9875ff447cfff98ee1d"
+    "source_digest": "7fd93ca04102bd491b16ff9704906b56637fe6689b529c82c9c0992d543638be"
   },
   "summary": {
-    "module_count": 98,
-    "declaration_count": 2858
+    "module_count": 100,
+    "declaration_count": 2919
   },
   "readme_sync": {
-    "version": "0.17.11",
+    "version": "0.17.12",
     "lean_toolchain": "v4.28.0",
-    "production_files": 91,
-    "production_loc": 50891,
-    "test_files": 7,
-    "test_loc": 5950,
-    "proved_theorem_lemma_decls": 1558,
+    "production_files": 92,
+    "production_loc": 51876,
+    "test_files": 8,
+    "test_loc": 6270,
+    "proved_theorem_lemma_decls": 1593,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -15425,6 +15425,296 @@
       ]
     },
     {
+      "module": "SeLe4n.Model.FreezeProofs",
+      "path": "SeLe4n/Model/FreezeProofs.lean",
+      "declaration_count": 37,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Model",
+          "line": 27,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_toList_mem_forward",
+          "line": 58,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_toList_mem_backward",
+          "line": 88,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_contains_of_get",
+          "line": 130,
+          "called": [
+            "foldl_toList_mem_backward"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_absent_of_get_none",
+          "line": 155,
+          "called": [
+            "foldl_toList_mem_forward"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_noDupKeys_inv",
+          "line": 189,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "toList_noDupKeys",
+          "line": 268,
+          "called": [
+            "foldl_noDupKeys_inv"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_indexMap_absent",
+          "line": 311,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_indexMap_head",
+          "line": 338,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_indexMap_at_pos",
+          "line": 391,
+          "called": [
+            "freezeMap_indexMap_head"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_get",
+          "line": 461,
+          "called": [
+            "freezeMap_indexMap_absent",
+            "freezeMap_indexMap_at_pos",
+            "toList_absent_of_get_none",
+            "toList_contains_of_get",
+            "toList_noDupKeys"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_irqHandlers",
+          "line": 530,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_asidTable",
+          "line": 535,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_serviceRegistry",
+          "line": 540,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_interfaceRegistry",
+          "line": 545,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_services",
+          "line": 550,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_cdtChildMap",
+          "line": 555,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_cdtParentMap",
+          "line": 560,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_cdtSlotNode",
+          "line": 565,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_cdtNodeSlot",
+          "line": 570,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_objectTypes",
+          "line": 575,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_capabilityRefs",
+          "line": 580,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_objectIndexSet",
+          "line": 585,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "get_ne_none_of_slot_occupied",
+          "line": 598,
+          "called": [
+            "foldl_toList_mem_backward",
+            "toList_absent_of_get_none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_generic_preserves_lookup",
+          "line": 628,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_generic_preserves_none",
+          "line": 666,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_generic_establishes_lookup",
+          "line": 706,
+          "called": [
+            "foldl_generic_preserves_lookup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_cnode_slots_some",
+          "line": 800,
+          "called": [
+            "foldl_generic_establishes_lookup",
+            "get_ne_none_of_slot_occupied"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookup_freeze_cnode_slots_none",
+          "line": 857,
+          "called": [
+            "foldl_generic_preserves_none",
+            "get_ne_none_of_slot_occupied"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freeze_deterministic'",
+          "line": 889,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_preserves_size",
+          "line": 894,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_preserves_membership",
+          "line": 902,
+          "called": [
+            "freezeMap_get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_no_duplicates",
+          "line": 909,
+          "called": [
+            "toList_noDupKeys"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "freezeMap_total_coverage",
+          "line": 917,
+          "called": [
+            "freezeMap_indexMap_at_pos",
+            "toList_contains_of_get",
+            "toList_noDupKeys"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiInvariantBundle_frozen",
+          "line": 959,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "freeze_preserves_invariants",
+          "line": 971,
+          "called": [
+            "apiInvariantBundle_frozen"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozen_lookup_transfer",
+          "line": 980,
+          "called": [
+            "freezeMap_get"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Model.FrozenState",
       "path": "SeLe4n/Model/FrozenState.lean",
       "declaration_count": 54,
@@ -22028,6 +22318,221 @@
           "name": "main",
           "line": 12,
           "called": []
+        }
+      ]
+    },
+    {
+      "module": "tests.FreezeProofSuite",
+      "path": "tests/FreezeProofSuite.lean",
+      "declaration_count": 24,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.FreezeProofSuite",
+          "line": 17,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 19,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "fp001_singleLookup",
+          "line": 30,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp002_multiLookup",
+          "line": 38,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp003_emptyLookup",
+          "line": 49,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp004_overwrite",
+          "line": 57,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp005_largeLookup",
+          "line": 65,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp006_irqHandlers",
+          "line": 81,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp007_asidTable",
+          "line": 88,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp008_objectTypes",
+          "line": 94,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp009_cdtMaps",
+          "line": 100,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp010_cnodeRadixSingle",
+          "line": 112,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp011_cnodeRadixMulti",
+          "line": 131,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp012_cnodeRadixEmpty",
+          "line": 152,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp013_cnodeRadixStructure",
+          "line": 165,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp014_preservesSize",
+          "line": 187,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp015_preservesMembership",
+          "line": 195,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp016_deterministic",
+          "line": 204,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp017_noDuplicates",
+          "line": 214,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp018_totalCoverage",
+          "line": 230,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp019_freezeEmptyInvariant",
+          "line": 243,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp020_fieldParity",
+          "line": 252,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fp021_lookupTransfer",
+          "line": 264,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 282,
+          "called": [
+            "fp001_singleLookup",
+            "fp002_multiLookup",
+            "fp003_emptyLookup",
+            "fp004_overwrite",
+            "fp005_largeLookup",
+            "fp006_irqHandlers",
+            "fp007_asidTable",
+            "fp008_objectTypes",
+            "fp009_cdtMaps",
+            "fp010_cnodeRadixSingle",
+            "fp011_cnodeRadixMulti",
+            "fp012_cnodeRadixEmpty",
+            "fp013_cnodeRadixStructure",
+            "fp014_preservesSize",
+            "fp015_preservesMembership",
+            "fp016_deterministic",
+            "fp017_noDuplicates",
+            "fp018_totalCoverage",
+            "fp019_freezeEmptyInvariant",
+            "fp020_fieldParity",
+            "fp021_lookupTransfer"
+          ]
         }
       ]
     },
