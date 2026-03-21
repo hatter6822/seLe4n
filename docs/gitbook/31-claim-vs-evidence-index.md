@@ -17,7 +17,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | Evidence type | Example | Assurance level |
 |---------------|---------|----------------|
 | **Tier 0 hygiene scan** | `test_tier0_hygiene.sh` — no `sorry`/`axiom` in production files | High: forbidden-marker scan is exhaustive |
-| **Tier 1 build** | `lake build` — all 84 jobs compile | High: Lean type-checker verifies proofs |
+| **Tier 1 build** | `lake build` — all modules compile | High: Lean type-checker verifies proofs |
 | **Tier 2 fixture** | `test_tier2_trace.sh` — runtime output matches locked fixture | Medium-High: covers exercised paths |
 | **Tier 3 surface anchor** | `test_tier3_invariant_surface.sh` — named theorems still exist | High: prevents silent proof-surface regression |
 
@@ -36,7 +36,10 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | 121 trace lines tagged with unique scenario IDs; registry validated bidirectionally (WS-I1/R-03) | `./scripts/test_tier0_hygiene.sh` + `test_tier2_trace.sh` |
 | WS-I3 operations coverage expansion: six operation-chain tests + scheduler stress + declassification runtime checks (including distinct `declassificationDenied` policy-denial path) | `./scripts/test_tier2_negative.sh` |
 | WS-L IPC subsystem audit — PORTFOLIO COMPLETE (v0.16.9–v0.16.13) | `./scripts/test_full.sh` |
-| WS-M Capability subsystem audit — Phase 1 COMPLETED (v0.16.14), 4 phases remaining | [Workstream plan](../dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md) |
+| WS-M Capability subsystem audit — PORTFOLIO COMPLETE (v0.16.14–v0.17.0) | `./scripts/test_full.sh` |
+| WS-N Robin Hood hashing — PORTFOLIO COMPLETE (v0.17.0–v0.17.5) | `./scripts/test_full.sh` |
+| WS-Q Kernel State Architecture — PORTFOLIO COMPLETE (v0.17.7–v0.17.14, 9 phases) | `./scripts/test_full.sh` |
+| WS-R Comprehensive Audit Remediation — IN PROGRESS (R1–R4 complete, R5–R8 pending) | [Workstream plan](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) |
 
 ## Proof claim qualification
 

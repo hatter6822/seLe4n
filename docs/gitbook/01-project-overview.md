@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 50,360 lines of production Lean across 90 files, 5,710 lines across 6 Lean test suites,
-1,527 theorem/lemma declarations, zero unsound constructs.
+Current state: 54,573 lines of production Lean across 98 files, 7,309 lines across 10 Lean test suites,
+1,660 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -73,22 +73,19 @@ M7 (audit remediation).
 
 ### What's next
 
-**WS-Q** (Kernel State Architecture) is the active workstream — a multi-phase
-plan unifying two-phase state architecture, service interface simplification,
-and Rust syscall wrappers. **Q1 COMPLETED** (v0.17.7): service interface
-simplification. **Q2 COMPLETED** (v0.17.8): universal RHTable migration — all
-`Std.HashMap`/`Std.HashSet` in kernel state replaced with verified
-`RHTable`/`RHSet` (16 map fields + 2 set fields, 30+ files, 10 subphases).
-**Q3 COMPLETED** (v0.17.9): IntermediateState formalization — builder-phase state
-with invariant witnesses, 7 builder operations, boot sequence.
-**Q4 COMPLETED** (v0.17.10): CNode radix tree — verified `CNodeRadix` flat array
-with O(1) zero-hash lookup, 24 correctness proofs, `buildCNodeRadix` bridge,
-`freezeCNodeSlots` Q5 integration, 12-scenario test suite.
-Remaining: Q5–Q9 (freeze, option slots, value-only maps, Rust wrappers, hardware).
-After WS-Q: **Raspberry Pi 5 hardware binding (H3)**.
+**WS-Q** (Kernel State Architecture) is **PORTFOLIO COMPLETE** (v0.17.7–v0.17.14) —
+all 9 phases delivered: Q1 service interface simplification, Q2 universal RHTable
+migration, Q3 IntermediateState formalization, Q4 CNode radix tree, Q5 FrozenSystemState +
+freeze, Q6 freeze correctness proofs, Q7 frozen kernel operations, Q8 Rust syscall
+wrappers, Q9 integration testing + documentation.
+
+**WS-R** (Comprehensive Audit Remediation) is the **active workstream** — 8 phases
+(R1–R8), 111 sub-tasks addressing all 82 findings from the pre-release audit.
+R1–R4 complete (v0.18.0–v0.18.3), R5–R8 pending.
+After WS-R: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-Q master plan](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md).
+[WS-R workstream plan](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 
 ## 5. Architecture mental model
 
@@ -129,5 +126,5 @@ For milestone-moving changes:
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
 - Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
-- Active workstream plan: [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) (WS-L)
+- Active workstream plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) (WS-R)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

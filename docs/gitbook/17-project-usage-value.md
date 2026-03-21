@@ -10,8 +10,8 @@ every invariant is machine-checked.
 
 ### Concrete artifacts
 
-- **37,245 lines** of production Lean code across 69 files.
-- **1,198 theorem/lemma declarations** with zero sorry/axiom.
+- **54,573 lines** of production Lean code across 98 files.
+- **1,660 theorem/lemma declarations** with zero sorry/axiom.
 - **4-tier CI** with hygiene, build, trace, and invariant surface gates.
 - **Negative-state test suite** with corruption testing and per-mutation invariant checks.
 - **Executable trace harness** with fixture-backed evidence.
@@ -31,7 +31,7 @@ capability, and information-flow behavior. Catch violations at type-check time.
 
 ### C) Formal-methods engineering practice
 
-The milestone progression (Bootstrap → M7 → WS-B..K) provides a practical path
+The milestone progression (Bootstrap → M7 → WS-B..Q) provides a practical path
 from state modeling through composed theorem surfaces to production kernel.
 
 ### D) Architecture and security review
@@ -56,6 +56,6 @@ platform-specific binding without invalidating core verification.
 ## 4. Key links
 
 - Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
-- Active workstream: [WS-L IPC Subsystem Audit](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md)
+- Active workstream: [WS-R Comprehensive Audit Remediation](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
 - Workstream history: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)

@@ -59,9 +59,9 @@ architectural improvements compared to other microkernels:
 |-----------|-------|
 | **Version** | `0.17.14` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 53,118 across 97 files |
-| **Test Lean LoC** | 7,027 across 10 test suites |
-| **Proved declarations** | 1,625 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 54,573 across 98 files |
+| **Test Lean LoC** | 7,309 across 10 test suites |
+| **Proved declarations** | 1,660 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -255,8 +255,9 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-J1** — Register-indexed authoritative namespaces (High priority, 6 phases). Replaces `RegName`/`RegValue` bare `Nat` aliases with typed wrapper structures, introduces a `RegisterDecode.lean` module with total decode functions from raw register words to typed kernel references, adds `syscallEntry` as a register-sourced syscall dispatch path closing the gap between the model and real ARM64 hardware, wraps `CdtNodeId` for consistency, and proves decode correctness, invariant preservation, and NI properties (plan: [`docs/dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md)).
+- **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). Addresses all 82 findings from the [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R4 complete (v0.18.0–v0.18.3), R5–R8 pending. Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
-Prior audits (v0.8.0-v0.9.32), milestone closeouts, and legacy GitBook chapters
-are archived in [`docs/dev_history/`](docs/dev_history/README.md).
+Prior portfolios (WS-B through WS-Q) are all complete. Prior audits (v0.8.0–v0.9.32),
+milestone closeouts, and legacy GitBook chapters are archived in
+[`docs/dev_history/`](docs/dev_history/README.md).
