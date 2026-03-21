@@ -251,21 +251,37 @@ def memoryAddressObservable (ctx : LabelingContext) (observer : IfObserver)
       | none => false
       | some dom => securityFlowsTo (ownership.domainLabelOf dom) observer.clearance
 
-/-- WS-I2/R-16: Project machine memory using optional ownership metadata.
-When no ownership model is configured, memory is not observable.
+/-- R5-C.1/M-03: Project machine memory using actual content lookup.
 
-Design note: the current abstract model projects address observability shape
-without exposing concrete bytes, which keeps existing NI proofs stable while
-introducing a domain-ownership-aware projection surface. -/
-def projectMemory (ctx : LabelingContext) (observer : IfObserver) (_st : SystemState) :
+When a memory address is observable (domain ownership model assigns it to a
+domain that flows to the observer), the projection returns the actual byte
+value from `st.machine.memory`. When no ownership model is configured
+(`ctx.memoryOwnership = none`), `memoryAddressObservable` returns `false` for
+all addresses, preserving backward compatibility.
+
+This replaces the prior dummy-byte projection (`some 0`) that was flagged in
+audit finding M-03 as failing to verify content isolation. -/
+def projectMemory (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     SeLe4n.PAddr → Option UInt8 :=
-  fun paddr => if memoryAddressObservable ctx observer paddr then some 0 else none
+  fun paddr => if memoryAddressObservable ctx observer paddr then some (st.machine.memory paddr) else none
 
-@[simp] theorem projectMemory_state_irrelevant
-    (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) :
+/-- R5-C.1: When no memory ownership model is configured, projectMemory returns
+none for all addresses regardless of state, preserving state-irrelevance. -/
+theorem projectMemory_no_ownership
+    (ctx : LabelingContext) (observer : IfObserver)
+    (hNone : ctx.memoryOwnership = none) (s₁ s₂ : SystemState) :
     projectMemory ctx observer s₁ = projectMemory ctx observer s₂ := by
-  funext _
-  simp [projectMemory]
+  funext paddr
+  simp only [projectMemory, memoryAddressObservable, hNone]
+  rfl
+
+/-- R5-C.1: When memory is unmodified between two states, projectMemory agrees. -/
+theorem projectMemory_eq_of_memory_eq
+    (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState)
+    (hMem : s₁.machine.memory = s₂.machine.memory) :
+    projectMemory ctx observer s₁ = projectMemory ctx observer s₂ := by
+  funext paddr
+  simp only [projectMemory, hMem]
 
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 

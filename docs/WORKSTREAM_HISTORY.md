@@ -60,7 +60,21 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   graph cleanup (M-15) — `revokeService` cleans dependency graph via
   `removeDependenciesOf`. Cross-subsystem invariant bundle (`crossSubsystemInvariant`)
   added to `proofLayerInvariantBundle`. Zero sorry/axiom.
-- **R5–R8**: Pending. See workstream plan for details.
+- **R5 (v0.18.4)**: Information Flow Completion — Internalized IPC
+  non-interference proofs (M-01), added `registerServiceChecked` to NI
+  composition bundle (M-02, 35 total constructors), and replaced dummy-byte
+  memory projection with content-aware projection (M-03). Four new internalized
+  bridge theorems: `endpointSendDualChecked_NI_internalized`,
+  `endpointReceiveDualChecked_NI_internalized`,
+  `endpointCall_preserves_lowEquivalent_internalized`,
+  `endpointReplyRecv_preserves_lowEquivalent_internalized`. Service registration
+  NI proved unconditionally (`registerService_preserves_projection` — service
+  registry changes are invisible to projection because `projectServicePresence`
+  is gated by `serviceObservable`, not registry contents). Content-aware
+  `projectMemory` returns actual `st.machine.memory` bytes instead of `some 0`.
+  All existing NI proofs updated for content-aware projection (12 files, ~30
+  proof sites). Zero sorry/axiom.
+- **R6–R8**: Pending. See workstream plan for details.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 

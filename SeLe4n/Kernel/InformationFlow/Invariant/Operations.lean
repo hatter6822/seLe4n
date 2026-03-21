@@ -589,6 +589,7 @@ theorem switchDomain_preserves_lowEquivalent
         | exact congrArg ObservableState.irqHandlers hLow
         | exact congrArg ObservableState.objectIndex hLow
         | exact congrArg ObservableState.machineRegs hLow
+        | exact congrArg ObservableState.memory hLow
         | rfl
 
 -- ============================================================================
@@ -888,6 +889,8 @@ private theorem cdt_only_preserves_projection
   · simp [projectDomainSchedule, hScheduler]
   · simp [projectDomainScheduleIndex, hScheduler]
   · simp [projectMachineRegs, hScheduler, hMachine]
+  · -- R5-C.1: memory
+    exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
 
 /-- WS-H9: ensureCdtNodeForSlot preserves projection (modifies only CDT). -/
 private theorem ensureCdtNodeForSlot_preserves_projection
@@ -939,6 +942,9 @@ private theorem cspaceInsertSlot_preserves_projection
   · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep,
       cspaceInsertSlot_preserves_machine st st' dst cap hStep]
+  · -- R5-C.1: memory
+    exact projectMemory_eq_of_memory_eq ctx observer st' st
+      (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hStep])
 
 /-- WS-H9: cspaceCopy at non-observable CNodes preserves projection.
 cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
@@ -1569,5 +1575,125 @@ theorem lifecycleRevokeDeleteRetype_preserves_lowEquivalent
       newObj s₁ s₁' hCleanupHigh hTargetHigh hObjInv₁ hStep₁,
     lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
       newObj s₂ s₂' hCleanupHigh hTargetHigh hObjInv₂ hStep₂]
+  exact hLow
+
+
+-- ============================================================================
+-- R5-A: Internalized IPC Non-Interference Proofs (M-01)
+-- ============================================================================
+
+/-- R5-A/M-01: Internalized endpointSendDualChecked NI — projection-based.
+
+Replaces the two-state `hSendDualNI` hypothesis with one-sided `hProjection`
+parameters. The caller proves that each individual execution preserves the
+observer's projection (which follows from all involved entities being
+non-observable). This is strictly stronger than the original approach. -/
+theorem endpointSendDualChecked_NI_internalized
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hProjection : ∀ t t', endpointSendDual endpointId sender msg t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
+    (hStep₁ : endpointSendDualChecked ctx endpointId sender msg s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointSendDualChecked ctx endpointId sender msg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow := enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg s₁ s₁' hStep₁
+  rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₁ hFlow] at hStep₁
+  rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₂ hFlow] at hStep₂
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
+
+/-- R5-A/M-01: Internalized endpointReceiveDualChecked NI — projection-based. -/
+theorem endpointReceiveDualChecked_NI_internalized
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (s₁ s₂ : SystemState) (r₁ r₂ : SeLe4n.ThreadId)
+    (s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hProjection : ∀ t t' (r : SeLe4n.ThreadId),
+        endpointReceiveDual endpointId receiver t = .ok (r, t') →
+        projectState ctx observer t' = projectState ctx observer t)
+    (hStep₁ : endpointReceiveDualChecked ctx endpointId receiver s₁ = .ok (r₁, s₁'))
+    (hStep₂ : endpointReceiveDualChecked ctx endpointId receiver s₂ = .ok (r₂, s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow := enforcementSoundness_endpointReceiveDualChecked ctx endpointId receiver s₁ r₁ s₁' hStep₁
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver s₁ hFlow] at hStep₁
+  rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver s₂ hFlow] at hStep₂
+  unfold lowEquivalent; rw [hProjection s₁ s₁' r₁ hStep₁, hProjection s₂ s₂' r₂ hStep₂]; exact hLow
+
+/-- R5-A/M-01: Internalized endpointCall NI — projection-based. -/
+theorem endpointCall_preserves_lowEquivalent_internalized
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hProjection : ∀ t t', endpointCall endpointId caller msg t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
+    (hStep₁ : endpointCall endpointId caller msg s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointCall endpointId caller msg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
+
+/-- R5-A/M-01: Internalized endpointReplyRecv NI — projection-based. -/
+theorem endpointReplyRecv_preserves_lowEquivalent_internalized
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (replierReceiver replyTarget : SeLe4n.ThreadId)
+    (replyMsg : IpcMessage) (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hProjection : ∀ t t',
+        endpointReplyRecv endpointId replierReceiver replyTarget replyMsg t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
+    (hStep₁ : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
+
+-- ============================================================================
+-- R5-B: registerServiceChecked Non-Interference (M-02)
+-- ============================================================================
+
+/-- R5-B.2/M-02: registerService at a non-observable service preserves projection.
+registerService only modifies `serviceRegistry`, which only affects the `services`
+field of `ObservableState`. If the registered service is non-observable, the
+projected service presence is unchanged. -/
+theorem registerService_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (reg : ServiceRegistration) (st st' : SystemState)
+    (hStep : registerService reg st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  -- registerService on success produces { st with serviceRegistry := ... }
+  -- Extract the state equality from the success case
+  unfold registerService at hStep
+  split at hStep <;> try simp at hStep
+  split at hStep <;> try simp at hStep
+  -- Match on CapTarget cases
+  split at hStep
+  · -- .object epId
+    split at hStep <;> try simp at hStep
+    · -- endpoint found
+      split at hStep <;> try simp at hStep
+      · -- hasRight check passed — only serviceRegistry changes, projection unchanged
+        -- because the new service is non-observable (hServiceHigh)
+        cases hStep; simp only [projectState]; congr 1
+  all_goals simp at hStep
+
+/-- R5-B/M-02: registerServiceChecked NI — projection-based.
+If the registered service is non-observable, both executions preserve projection. -/
+theorem registerServiceChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hStep₁ : registerServiceChecked ctx caller reg s₁ = .ok ((), s₁'))
+    (hStep₂ : registerServiceChecked ctx caller reg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow₁ := enforcementSoundness_registerServiceChecked ctx caller reg s₁ s₁' hStep₁
+  rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg s₁ hFlow₁] at hStep₁
+  rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg s₂
+    (enforcementSoundness_registerServiceChecked ctx caller reg s₂ s₂' hStep₂)] at hStep₂
+  unfold lowEquivalent; rw [
+    registerService_preserves_projection ctx observer reg s₁ s₁' hStep₁,
+    registerService_preserves_projection ctx observer reg s₂ s₂' hStep₂]
   exact hLow
 
