@@ -36,6 +36,45 @@ open SeLe4n.Model
 def storeServiceEntry (sid : ServiceId) (entry : ServiceGraphEntry) : Kernel Unit :=
   fun st => .ok ((), storeServiceState sid entry st)
 
+/-- R4-D.2 (M-15): Remove all dependency graph edges involving a given service.
+    Erases the service's entry from the graph (removing outgoing edges) and
+    filters the service from all other entries' dependency lists (removing
+    incoming edges). Returns a pure SystemState update. -/
+def removeDependenciesOf (st : SystemState) (sid : ServiceId) : SystemState :=
+  let erased := st.services.erase sid
+  let cleaned := erased.fold erased fun acc otherSid entry =>
+    if entry.dependencies.any (· == sid) then
+      let entry' := { entry with
+        dependencies := entry.dependencies.filter (· != sid) }
+      acc.insert otherSid entry'
+    else
+      acc
+  { st with services := cleaned }
+
+/-- R4-D.2: removeDependenciesOf preserves objects. -/
+theorem removeDependenciesOf_objects_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).objects = st.objects := by
+  unfold removeDependenciesOf; rfl
+
+/-- R4-D.2: removeDependenciesOf preserves scheduler. -/
+theorem removeDependenciesOf_scheduler_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).scheduler = st.scheduler := by
+  unfold removeDependenciesOf; rfl
+
+/-- R4-D.2: removeDependenciesOf preserves lifecycle. -/
+theorem removeDependenciesOf_lifecycle_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).lifecycle = st.lifecycle := by
+  unfold removeDependenciesOf; rfl
+
+/-- R4-D.2: removeDependenciesOf preserves serviceRegistry. -/
+theorem removeDependenciesOf_serviceRegistry_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).serviceRegistry = st.serviceRegistry := by
+  unfold removeDependenciesOf; rfl
+
 -- ============================================================================
 -- F-07: Service dependency registration with cycle detection (WS-D4)
 -- ============================================================================

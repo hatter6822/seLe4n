@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Service.Operations
 
 /-! # Service Registry Operations — seLe4n Extension
 
@@ -90,14 +91,17 @@ def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
     | none => .error .objectNotFound
 
 /-- Remove a service registration by ServiceId.
-Returns `objectNotFound` if no such registration exists. -/
+Returns `objectNotFound` if no such registration exists.
+R4-D.1 (M-15): After erasing the registration, also cleans the dependency
+graph by calling `removeDependenciesOf` to remove all edges involving `sid`. -/
 def revokeService (sid : ServiceId) : Kernel Unit :=
   fun st =>
     if st.serviceRegistry[sid]? = none then
       .error .objectNotFound
     else
-      .ok ((), { st with
-        serviceRegistry := st.serviceRegistry.erase sid })
+      let st' := { st with
+        serviceRegistry := st.serviceRegistry.erase sid }
+      .ok ((), removeDependenciesOf st' sid)
 
 /-- R4-B.1 (M-13): Remove all service registrations whose endpoint targets
     the given ObjId. Called before retype to ensure `registryEndpointValid`
@@ -209,6 +213,8 @@ theorem revokeService_success_removes
   split at hStep
   · cases hStep
   · simp at hStep; cases hStep
+    -- removeDependenciesOf preserves serviceRegistry
+    rw [removeDependenciesOf_serviceRegistry_eq]
     simp only [RHTable_getElem?_eq_get?]
     exact RHTable.getElem?_erase_self _ _ hInvExt
 
@@ -252,7 +258,8 @@ theorem revokeService_preserves_objects
   unfold revokeService at hStep
   split at hStep
   · cases hStep
-  · simp at hStep; cases hStep; rfl
+  · simp at hStep; cases hStep
+    exact removeDependenciesOf_objects_eq _ _
 
 /-- Service registration preserves scheduler state. -/
 theorem registerService_preserves_scheduler
@@ -284,6 +291,7 @@ theorem revokeService_preserves_scheduler
   unfold revokeService at hStep
   split at hStep
   · cases hStep
-  · simp at hStep; cases hStep; rfl
+  · simp at hStep; cases hStep
+    exact removeDependenciesOf_scheduler_eq _ _
 
 end SeLe4n.Kernel

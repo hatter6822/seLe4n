@@ -178,12 +178,17 @@ theorem revokeService_preserves_registryEndpointValid
     (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) :
     registryEndpointValid st' := by
   have hObjEq := revokeService_preserves_objects st st' sid hStep
+  have hSvcRegEq := revokeService_success_removes st st' sid hSvcInv hStep
+  intro sid' reg hReg
+  -- The post-state serviceRegistry = (erased).serviceRegistry (removeDependenciesOf preserves it)
+  -- Need to recover that reg was in st.serviceRegistry
   unfold revokeService at hStep
   split at hStep
   · simp at hStep
-  · simp at hStep; subst st'
-    intro sid' reg hReg
-    -- serviceRegistry.erase sid, need sid' ≠ sid
+  · simp at hStep; cases hStep
+    -- st' = removeDependenciesOf {st with serviceRegistry := ...erase...} sid
+    -- st'.serviceRegistry = {st with serviceRegistry := ...erase...}.serviceRegistry (by removeDependenciesOf_serviceRegistry_eq)
+    rw [removeDependenciesOf_serviceRegistry_eq] at hReg
     have hOrig : st.serviceRegistry[sid']? = some reg := by
       simp only [RHTable_getElem?_eq_get?] at hReg
       rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg
@@ -202,8 +207,9 @@ theorem revokeService_preserves_registryInterfaceValid
   unfold revokeService at hStep
   split at hStep
   · simp at hStep
-  · simp at hStep; subst st'
+  · simp at hStep; cases hStep
     intro sid' reg hReg
+    rw [removeDependenciesOf_serviceRegistry_eq] at hReg
     have hOrig : st.serviceRegistry[sid']? = some reg := by
       simp only [RHTable_getElem?_eq_get?] at hReg
       rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg
