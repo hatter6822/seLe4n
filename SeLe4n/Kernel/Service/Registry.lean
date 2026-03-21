@@ -92,6 +92,36 @@ def revokeService (sid : ServiceId) : Kernel Unit :=
       .ok ((), { st with
         serviceRegistry := st.serviceRegistry.erase sid })
 
+/-- R4-B.1 (M-13): Remove all service registrations whose endpoint targets
+    the given ObjId. Called before retype to ensure `registryEndpointValid`
+    is preserved when an endpoint backing a registered service is retyped.
+    This is a pure state helper (not monadic) for composition in the
+    pre-retype cleanup path. -/
+def cleanupEndpointServiceRegistrations (st : SystemState) (epId : SeLe4n.ObjId) : SystemState :=
+  { st with
+    serviceRegistry := st.serviceRegistry.filter fun _sid reg =>
+      match reg.endpointCap.target with
+      | .object id => !(id == epId)
+      | _ => true }
+
+/-- R4-B.1: cleanupEndpointServiceRegistrations preserves objects. -/
+theorem cleanupEndpointServiceRegistrations_objects_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).objects = st.objects := by
+  unfold cleanupEndpointServiceRegistrations; rfl
+
+/-- R4-B.1: cleanupEndpointServiceRegistrations preserves scheduler. -/
+theorem cleanupEndpointServiceRegistrations_scheduler_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).scheduler = st.scheduler := by
+  unfold cleanupEndpointServiceRegistrations; rfl
+
+/-- R4-B.1: cleanupEndpointServiceRegistrations preserves lifecycle. -/
+theorem cleanupEndpointServiceRegistrations_lifecycle_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).lifecycle = st.lifecycle := by
+  unfold cleanupEndpointServiceRegistrations; rfl
+
 -- ============================================================================
 -- Theorems: error conditions, success post-conditions, frame lemmas
 -- ============================================================================
