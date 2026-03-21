@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-phase-r1-blockers-zlGTR",
-      "commit_sha": "1aaa30efefa17aa9e77ddb39b10167c6e5276600",
-      "tree_sha": "0369f8acdf5abbfb9dc0f59ab0d285b08e4efc4b",
-      "committed_at_utc": "2026-03-21T06:03:02+00:00"
+      "branch": "main",
+      "commit_sha": "f0f3ddd836e67df3d8f43e9b804e9aeeae36e95e",
+      "tree_sha": "c42298337f3a5b94a04a57ba2a4c413be460e226",
+      "committed_at_utc": "2026-03-21T02:15:46-04:00"
     }
   },
   "source_sync": {
