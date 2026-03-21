@@ -1,3 +1,43 @@
+## [0.18.3] — WS-R4 Lifecycle & Service Coherence
+
+- Completed Phase 4 (WS-R4) of the Comprehensive Audit Remediation workstream.
+- R4-A (M-12): TCB cleanup now removes TCB from endpoint queues and notification
+  wait lists via `cleanupTcbReferences`.
+- R4-B (M-13): Retyping an endpoint auto-revokes registered services.
+- R4-C (M-14): `registerService` requires Write right and endpoint type
+  verification (L-09).
+- R4-D (M-15): `revokeService` cleans dependency graph via `removeDependenciesOf`.
+- R4-E: Cross-subsystem invariant bundle (`crossSubsystemInvariant`) added to
+  `proofLayerInvariantBundle`.
+- Zero sorry/axiom, all test tiers pass.
+- Version bump: v0.18.2 → v0.18.3
+
+## [0.18.2] — WS-R3 IPC Invariant Completion
+
+- Completed Phase 3 (WS-R3) of the Comprehensive Audit Remediation workstream.
+- R3-A (M-16): Fixed `notificationSignal` badge delivery — woken thread now
+  receives signaled badge via `storeTcbIpcStateAndMessage`.
+- R3-B (M-18): Internalized `ipcInvariantFull` preservation hypotheses —
+  notification operations and `endpointReply` now have self-contained proofs.
+- R3-C (M-19): Completed `notificationWaiterConsistent` preservation chain —
+  `notificationSignal`, frame lemma, `endpointReply` preservation theorems.
+- Removed `set_option linter.all false` from Structural.lean (L-08).
+- Zero sorry/axiom, all test tiers pass.
+- Version bump: v0.18.1 → v0.18.2
+
+## [0.18.1] — WS-R2 Capability & CDT Hardening
+
+- Completed Phase 2 (WS-R2) of the Comprehensive Audit Remediation workstream.
+- R2-A (M-06): Fixed `processRevokeNode` error swallowing — revocation now
+  propagates `cspaceDeleteSlot` errors.
+- R2-B (M-05): Fixed `streamingRevokeBFS` fuel exhaustion — returns
+  `.error .resourceExhausted` instead of `.ok`. Added `resourceExhausted`
+  to `KernelError`.
+- R2-C (M-08): Added `isAncestor` decidable predicate for CDT cycle detection.
+- Updated all preservation proofs for new `Except` return types.
+- Zero sorry/axiom, all test tiers pass.
+- Version bump: v0.18.0 → v0.18.1
+
 ## [0.18.0] — WS-R1 Pre-Release Blockers
 
 - Completed Phase 1 (WS-R1) of the Comprehensive Audit Remediation workstream:

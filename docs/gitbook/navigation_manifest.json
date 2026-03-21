@@ -1,10 +1,10 @@
 {
   "description": "This GitBook is the long-form guide for seLe4n \u2014 a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.",
   "current_state_bullets": [
-    "**Version:** 0.16.12 (Lean v4.28.0).",
-    "**Codebase metrics:** 38,349 production LoC across 69 files; 4,098 test LoC across 4 suites; 1,224 theorem/lemma declarations (zero sorry/axiom).",
-    "**Latest audit:** [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md) — IPC subsystem end-to-end audit, zero critical issues.",
-    "**Active workstream:** WS-L IPC subsystem audit & remediation (5 phases: L1–L5). All prior portfolios (WS-B through WS-K) completed.",
+    "**Version:** 0.18.3 (Lean v4.28.0).",
+    "**Codebase metrics:** 54,573 production LoC across 98 files; 7,309 test LoC across 10 suites; 1,660 theorem/lemma declarations (zero sorry/axiom).",
+    "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit.",
+    "**Active workstream:** WS-R Comprehensive Audit Remediation (8 phases: R1–R8, 111 sub-tasks). R1–R4 complete. All prior portfolios (WS-B through WS-Q) completed.",
     "**Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",
     "**Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.",

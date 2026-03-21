@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.17.14` |
+| Version | `0.18.3` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 53,118 across 97 Lean files |
-| Test LoC | 7,027 across 10 suites |
-| Proved declarations | 1,625 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](../dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) — Kernel state architecture: two-phase builder/freeze model |
-| Active workstream | **WS-R IN PROGRESS** — Comprehensive Audit Remediation (8 phases, R1–R8). **R1 COMPLETE** (v0.18.0): pre-release blockers (H-01, M-04, M-10, M-11, R-M01–R-M03). Prior: **WS-Q COMPLETE** (v0.17.7–v0.17.14), WS-N, WS-M, WS-L, WS-K, WS-J1 — all COMPLETE. |
+| Production LoC | 54,573 across 98 Lean files |
+| Test LoC | 7,309 across 10 suites |
+| Proved declarations | 1,660 theorem/lemma declarations (zero sorry/axiom) |
+| Latest audit | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit |
+| Active workstream | **WS-R IN PROGRESS** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). **R1–R4 COMPLETE** (v0.18.0–v0.18.3). R5–R8 pending. Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md). Prior: **WS-Q COMPLETE** (v0.17.7–v0.17.14), WS-N, WS-M, WS-L, WS-K, WS-J1 — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

@@ -4,7 +4,7 @@
 
 This document defines the active testing baseline and near-term expansion path after M5 closeout.
 
-Current stage context: **All prior workstreams completed through WS-K (v0.16.8). Active workstream: WS-L (IPC subsystem audit & remediation). Testing surface: 37,245 production LoC, 4,098 test LoC, 1,198 proved declarations (zero sorry/axiom). 4-tier CI enforces regression protection across 69 production files and 4 test suites.**
+Current stage context: **All prior workstreams completed through WS-Q (v0.17.14). Active workstream: WS-R (Comprehensive Audit Remediation). Testing surface: 54,573 production LoC, 7,309 test LoC, 1,660 proved declarations (zero sorry/axiom). 4-tier CI enforces regression protection across 98 production files and 10 test suites.**
 
 ## 2. Current enforced tiers
 

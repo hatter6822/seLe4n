@@ -55,9 +55,9 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- **Active workstream**: WS-L IPC subsystem audit & remediation (`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`).
-- **Completed portfolios**: WS-B through WS-K (all completed). See `docs/WORKSTREAM_HISTORY.md`.
+- **Active workstream**: WS-R Comprehensive Audit Remediation (`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`). R1–R4 complete, R5–R8 pending.
+- **Completed portfolios**: WS-B through WS-Q (all completed). See `docs/WORKSTREAM_HISTORY.md`.
 - **Historical baselines**: prior audits and workstream plans archived in `docs/dev_history/audits/`.
 - **Quality-gate contract**: Tier 0–3 required, Tier 4 nightly determinism evidence.
 - **Hardware target**: Raspberry Pi 5 (ARM64).
-- **Metrics**: 37,245 production LoC, 4,098 test LoC, 1,198 proved declarations (zero sorry/axiom).
+- **Metrics**: 54,573 production LoC, 7,309 test LoC, 1,660 proved declarations (zero sorry/axiom).
