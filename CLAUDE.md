@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.17.13.
+Lean 4.28.0 toolchain, Lake build system, version 0.17.14.
 
 ## Build and run
 
@@ -434,16 +434,12 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **Active workstream**: WS-Q (Kernel State Architecture) — multi-phase plan (Q1–Q9, 45 atomic units). **WS-Q1 COMPLETED** (v0.17.7): service interface simplification. **WS-Q2 COMPLETED** (v0.17.8): universal RHTable migration (all `Std.HashMap`/`Std.HashSet` → `RHTable`/`RHSet`, 16 map + 2 set fields, 30+ files, 10 subphases). **WS-Q3 COMPLETED** (v0.17.9): IntermediateState formalization (builder-phase state with invariant witnesses, 7 builder ops, boot sequence). **WS-Q4 COMPLETED** (v0.17.10): CNode radix tree verified implementation (`CNodeRadix` flat array with O(1) zero-hash lookup, 24 correctness proofs, `buildCNodeRadix` bridge, `freezeCNodeSlots` Q5 integration, 12-scenario test suite, zero admitted proofs). **WS-Q5 COMPLETED** (v0.17.11): FrozenSystemState + freeze (FrozenMap/FrozenSet types, per-object frozen representations, `freeze` function, capacity planning, 20+ theorems, 15-scenario test suite, full SystemState field parity). **WS-Q6 COMPLETED** (v0.17.12): Freeze correctness proofs (31 theorems: `freezeMap_get?_eq` core + 13 per-field lookup equivalence, CNode radix equivalence, 5 structural properties, invariant transfer with `freeze_preserves_invariants` keystone, 22-scenario test suite). **WS-Q7 COMPLETED** (v0.17.13): Frozen kernel operations (FrozenKernel monad, 14 per-subsystem frozen operations across 5 subsystems, FrozenMap set/get? commutativity proofs + structural lemmas, 18 frozenStoreObject frame/preservation theorems, 15-scenario test suite covering TPH-005–TPH-014). See `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
-- **Prior portfolio**: WS-N (Robin Hood hashing verified implementation) — **PORTFOLIO COMPLETE** (v0.17.0–v0.17.5). See `docs/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`
-- **Prior portfolio**: WS-M (Capability subsystem audit & remediation) — **PORTFOLIO COMPLETE** (v0.16.14–v0.17.0). See `docs/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`
-- **WS-F portfolio**: Fully completed (F1..F8, 33/33 v0.12.2 audit findings closed)
-- **WS-I5**: Superseded by WS-L (all deferred items resolved)
+- **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14): Kernel State Architecture — all 9 phases (Q1–Q9, 45 atomic units) delivered. Two-phase builder/freeze model with verified Robin Hood hashing, CNode radix tree, FrozenMap/FrozenSet dense arrays, frozen kernel operations, Rust syscall wrappers, and comprehensive integration testing. See `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
+- **Prior portfolios**: WS-N (v0.17.0–v0.17.5), WS-M (v0.16.14–v0.17.0), WS-L (v0.16.9–v0.16.13), WS-K (v0.16.0–v0.16.8), WS-J1 (v0.15.4–v0.15.10), WS-F (F1..F8, 33/33 findings) — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audit**: `docs/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` — Kernel state architecture: two-phase builder/freeze model
-- **All prior workstreams completed**: WS-B through WS-N (see `docs/WORKSTREAM_HISTORY.md`)
-- **WS-Q8 COMPLETED** (v0.17.13): Rust syscall wrappers (`libsele4n` — 3 `no_std` crates: `sele4n-types`, `sele4n-abi`, `sele4n-sys`, 14 newtype identifiers, 34-variant KernelError, MessageInfo bitfield, ARM64 svc trap, safe wrappers for all 14 syscalls, phantom-typed `Cap<Obj, Rts>`, 64 unit tests + 25 conformance tests)
-- **Next milestone**: Q9 (integration testing + documentation), then Raspberry Pi 5 hardware binding
+- **All prior workstreams completed**: WS-B through WS-Q (see `docs/WORKSTREAM_HISTORY.md`)
+- **Next milestone**: Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

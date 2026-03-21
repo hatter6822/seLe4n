@@ -1,0 +1,9 @@
+# Q9-A: Two-Phase Architecture Integration Suite — expected output fragments
+# Each line is a scenario ID | subsystem | expected fragment
+TPH-001 | TwoPhaseArch | TPH-001a empty builder valid
+TPH-003 | TwoPhaseArch | TPH-003a frozen objects size 2
+TPH-005 | TwoPhaseArch | TPH-005a sender blocked
+TPH-006 | TwoPhaseArch | TPH-006a timer advanced
+TPH-010 | TwoPhaseArch | TPH-010a both paths find object
+TPH-012 | TwoPhaseArch | TPH-012a slot exists
+TPH-014 | TwoPhaseArch | TPH-014a thread selected

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "66816b0537bb3f6ce57e2b79e2cf0ac037956400",
-      "tree_sha": "93efc16ff5417808bb467ca61f6d77977eb6581f",
-      "committed_at_utc": "2026-03-20T23:36:28-04:00"
+      "branch": "claude/review-phase-q9-workstream-gtMmK",
+      "commit_sha": "8885ab352079c2748b8fffc71d4db701ca620256",
+      "tree_sha": "22e59e1307e5bcac8a318e208dfcf085eb120294",
+      "committed_at_utc": "2026-03-21T03:36:36+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9651f28e8eb1d10367752c5ce57665b4407ea6ea09f0a716e97e92404c362aae"
+    "source_digest": "0f2f8fe5a60f2d12db6264346ce43a4ce9419ea91491eb263c58aaab7d3d613e"
   },
   "summary": {
-    "module_count": 106,
-    "declaration_count": 3011
+    "module_count": 107,
+    "declaration_count": 3031
   },
   "readme_sync": {
-    "version": "0.17.13",
+    "version": "0.17.14",
     "lean_toolchain": "v4.28.0",
     "production_files": 97,
     "production_loc": 53118,
-    "test_files": 9,
-    "test_loc": 6571,
+    "test_files": 10,
+    "test_loc": 7027,
     "proved_theorem_lemma_decls": 1625,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -24739,6 +24739,199 @@
           "line": 269,
           "called": [
             "parseNatArg"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.TwoPhaseArchSuite",
+      "path": "tests/TwoPhaseArchSuite.lean",
+      "declaration_count": 20,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.TwoPhaseArchSuite",
+          "line": 42,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 44,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "mkTcb",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "emptyFrozenState",
+          "line": 56,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "mkFrozenState",
+          "line": 87,
+          "called": [
+            "emptyFrozenState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph001a_emptyBuilder",
+          "line": 97,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph001b_builderPipeline",
+          "line": 106,
+          "called": [
+            "expect",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph001c_builderIrq",
+          "line": 123,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph003_freezePopulated",
+          "line": 134,
+          "called": [
+            "expect",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph005a_sendBlocks",
+          "line": 168,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph005b_receiveBlocks",
+          "line": 183,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph005c_callBlocksForReply",
+          "line": 196,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph006a_timerTickActive",
+          "line": 229,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph006b_timerTickExpiry",
+          "line": 245,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph010_commutativity",
+          "line": 268,
+          "called": [
+            "expect",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph012_preallocatedSlot",
+          "line": 308,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph014a_frozenSchedule",
+          "line": 338,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph014b_frozenYield",
+          "line": 366,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph014c_scheduleNoEligible",
+          "line": 391,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 421,
+          "called": [
+            "tph001a_emptyBuilder",
+            "tph001b_builderPipeline",
+            "tph001c_builderIrq",
+            "tph003_freezePopulated",
+            "tph005a_sendBlocks",
+            "tph005b_receiveBlocks",
+            "tph005c_callBlocksForReply",
+            "tph006a_timerTickActive",
+            "tph006b_timerTickExpiry",
+            "tph010_commutativity",
+            "tph012_preallocatedSlot",
+            "tph014a_frozenSchedule",
+            "tph014b_frozenYield",
+            "tph014c_scheduleNoEligible"
           ]
         }
       ]

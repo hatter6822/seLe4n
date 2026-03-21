@@ -1811,3 +1811,37 @@ builder→execution phase transition.
 - `freeze_preserves_invariants` — **keystone theorem**: builder-phase
   `apiInvariantBundle` transfers to frozen `apiInvariantBundle_frozen`.
 - `frozen_lookup_transfer` — enabling lemma for per-invariant transfer proofs.
+
+### Q7: Frozen Kernel Operations (`Kernel/FrozenOps/`)
+
+**Q7-A**: `FrozenKernel` monad (`Core.lean`) — execution-phase monad over
+`FrozenSystemState` with `KernelError`. Core primitives: `frozenLookupObject`,
+`frozenStoreObject`, `frozenLookupTcb`, `frozenStoreTcb`, scheduler context
+switch helpers. Theorems: `frozenLookupObject_state_unchanged`,
+`frozenStoreObject_preserves_scheduler`, `frozenStoreObject_preserves_machine`.
+
+**Q7-B/C**: 14 per-subsystem frozen operations (`Operations.lean`) across 5
+subsystems: Scheduler (`frozenSchedule`, `frozenHandleYield`, `frozenTimerTick`),
+IPC (`frozenNotificationSignal/Wait`, `frozenEndpointSend/Receive/Call/Reply`),
+Capability (`frozenCspaceLookup/Mint/Delete`), VSpace (`frozenVspaceLookup`),
+Service (`frozenLookupServiceByCap`).
+
+**Q7-D**: FrozenMap set/get? commutativity proofs (`Commutativity.lean`) —
+roundtrip properties, frame lemmas, structural composition theorems.
+
+**Q7-E**: 18 frozenStoreObject frame/preservation theorems (`Invariant.lean`).
+
+### Q9: Integration Testing (`tests/TwoPhaseArchSuite.lean`)
+
+14 integration tests (40 checks) verifying the full builder→freeze→execution
+pipeline:
+
+- **TPH-001**: Builder pipeline (`mkEmptyIntermediateState` → `createObject` →
+  `registerIrq`), invariant preservation verified at each step.
+- **TPH-003**: Freeze populated state with multiple object types, lookup
+  equivalence for objects and IRQ handlers, object type preservation.
+- **TPH-005**: Frozen IPC (send blocks, receive blocks, call with reply).
+- **TPH-006**: Frozen scheduler tick (time slice decrement, preemption on expiry).
+- **TPH-010**: Commutativity — builder mutation→freeze ≈ freeze→frozen mutation.
+- **TPH-012**: Pre-allocated slot retype (FrozenMap.set on existing key).
+- **TPH-014**: RunQueue operations (schedule selection, yield, no-eligible).
