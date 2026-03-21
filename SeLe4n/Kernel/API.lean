@@ -65,13 +65,13 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked` | Info-flow | Stable |
-| `apiEndpointSend`, `apiEndpointReceive` | Syscall IPC (WS-H15c) | Stable |
-| `apiEndpointCall`, `apiEndpointReply` | Syscall IPC (WS-H15c) | Stable |
-| `apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove` | Syscall Capability (WS-H15c) | Stable |
-| `apiCspaceDelete` | Syscall Capability (WS-H15c) | Stable |
-| `apiLifecycleRetype` | Syscall Lifecycle (WS-H15c) | Stable |
-| `apiVspaceMap`, `apiVspaceUnmap` | Syscall VSpace (WS-H15c) | Stable |
-| `apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery` | Syscall Service (WS-Q1-D) | Stable |
+| `apiEndpointSend`, `apiEndpointReceive` | Syscall IPC (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
+| `apiEndpointCall`, `apiEndpointReply` | Syscall IPC (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
+| `apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove` | Syscall Capability (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
+| `apiCspaceDelete` | Syscall Capability (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
+| `apiLifecycleRetype` | Syscall Lifecycle (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
+| `apiVspaceMap`, `apiVspaceUnmap` | Syscall VSpace (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
+| `apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery` | Syscall Service (WS-Q1-D) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
 | `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable |
 | `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
 | `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable |

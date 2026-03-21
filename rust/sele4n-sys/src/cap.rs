@@ -163,9 +163,8 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
         Cap { ptr: self.ptr, _obj: PhantomData, _rts: PhantomData }
     }
 
-    /// Restrict this capability to the intersection of its current rights
-    /// and the given `mask`. Panics (debug) / returns the intersection
-    /// (release) if `mask` is not a subset of the current rights.
+    /// Restrict this capability to the given `mask`.
+    /// Panics if `mask` is not a subset of the current rights.
     ///
     /// This replaces the former `downgrade()` method and enforces that
     /// rights can only be reduced, never escalated.
