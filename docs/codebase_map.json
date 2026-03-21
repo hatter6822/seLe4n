@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-ipc-invariant-tNhxH",
-      "commit_sha": "2586824839275eb10d27851df7e1f7e2f91f7a15",
-      "tree_sha": "9439a8d78a293118b2d6110293ea4938980b0e9b",
-      "committed_at_utc": "2026-03-21T19:31:46+00:00"
+      "branch": "main",
+      "commit_sha": "feb187adb1f9cb23c2c68d6064bb2bd72491f4d0",
+      "tree_sha": "5d04ecb9b30a2c6013493ba7bc45d94698d02d71",
+      "committed_at_utc": "2026-03-21T16:13:20-04:00"
     }
   },
   "source_sync": {
