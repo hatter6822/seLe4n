@@ -14,8 +14,8 @@ use crate::{SyscallRequest, SyscallResponse, encode_syscall, decode_response};
 /// The caller must ensure the register contents encode a valid syscall request.
 /// This is the **only** unsafe function in the entire `libsele4n` library.
 ///
-/// On non-AArch64 targets, this function panics (use `invoke_syscall` with
-/// the `std` feature for testing).
+/// On non-AArch64 targets, this returns an `InvalidSyscallNumber` error
+/// response (use `invoke_syscall` with the `std` feature for testing).
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 #[allow(unsafe_code)]
@@ -41,6 +41,11 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 /// Returns an error response (InvalidSyscallNumber) since there is no
 /// kernel to handle the syscall. Tests should use the mock infrastructure
 /// in the `std` feature instead.
+///
+/// # Safety
+///
+/// Same contract as the ARM64 variant. The mock implementation is safe in
+/// practice — it only writes to the provided register array.
 #[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 #[allow(unsafe_code)]

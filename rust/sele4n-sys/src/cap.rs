@@ -208,13 +208,11 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
     }
 }
 
-impl<Obj: CapObject, Rts: CapRights> Clone for Cap<Obj, Rts> {
-    fn clone(&self) -> Self {
-        Self { ptr: self.ptr, restricted_rights: self.restricted_rights, _obj: PhantomData, _rts: PhantomData }
-    }
-}
-
+// Copy provides Clone automatically; no manual Clone impl needed.
 impl<Obj: CapObject, Rts: CapRights> Copy for Cap<Obj, Rts> {}
+impl<Obj: CapObject, Rts: CapRights> Clone for Cap<Obj, Rts> {
+    fn clone(&self) -> Self { *self }
+}
 
 impl<Obj: CapObject, Rts: CapRights> core::fmt::Debug for Cap<Obj, Rts> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {

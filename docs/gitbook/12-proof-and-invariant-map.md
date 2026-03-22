@@ -1896,3 +1896,28 @@ pipeline:
 - **TPH-010**: Commutativity — builder mutation→freeze ≈ freeze→frozen mutation.
 - **TPH-012**: Pre-allocated slot retype (FrozenMap.set on existing key).
 - **TPH-014**: RunQueue operations (schedule selection, yield, no-eligible).
+
+## WS-S Phase S1 — Trust Boundaries (v0.19.0)
+
+Phase S1 addressed all 5 High-severity findings and Rust type-safety defects
+from two comprehensive v0.18.7 audits. Key trust boundary documentation:
+
+- **ThreadId.toObjId identity mapping** (`Prelude.lean`): `toObjId` performs no
+  validation — callers must verify the returned `ObjId` references a TCB by
+  pattern-matching `.tcb tcb` after lookup. The checked variant `toObjIdChecked`
+  rejects sentinel values. See `ThreadId.toObjId_injective` for injectivity proof.
+- **Badge forging via Mint** (`Capability/Operations.lean`): Mint authority on
+  an endpoint allows minting derived capabilities with arbitrary badge values.
+  Badges are opaque identifiers, not cryptographic authenticators. Authentication
+  relies on CDT tracking.
+- **MemoryRegion.wellFormed** (`Machine.lean`): Converted from `Bool` runtime
+  check to `Prop` proof obligation with `Decidable` instance, ensuring malformed
+  regions cannot be constructed without explicit proof.
+- **AccessRightSet.valid** (`Model/Object/Types.lean`): `bits < 2^5` predicate
+  enforced via `ofNat` masking constructor. Proofs: `ofNat_valid`, `ofNat_idempotent`.
+- **Rust Cap type safety** (`rust/sele4n-sys/src/cap.rs`): `Cap::restrict()` and
+  `Cap::to_read_only()` return `Result<_, CapError>` (no panics). `Restricted::RIGHTS`
+  fixed to store actual runtime rights. `#![deny(unsafe_code)]` enforced on `sele4n-abi`.
+
+See [`docs/spec/SELE4N_SPEC.md` §10.1](../spec/SELE4N_SPEC.md) for the canonical
+trust boundary specification.

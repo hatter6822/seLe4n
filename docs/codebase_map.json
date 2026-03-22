@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-security-type-safety-EmqYZ",
-      "commit_sha": "4c1fc429a27359233c2bed0b05ca81b8c1968e6e",
-      "tree_sha": "ba5ffa4757fc03cbd063578d9df1f791bebb93d3",
-      "committed_at_utc": "2026-03-22T18:42:00+00:00"
+      "branch": "HEAD",
+      "commit_sha": "48e2387aa920ec3d60d28fd2852fd49ded82a2f7",
+      "tree_sha": "3684f4c3cd93ff09251e8b00fa7055614aef03c7",
+      "committed_at_utc": "2026-03-22T18:46:21+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 3146
   },
   "readme_sync": {
-    "version": "0.18.7",
+    "version": "0.19.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 98,
     "production_loc": 55732,
