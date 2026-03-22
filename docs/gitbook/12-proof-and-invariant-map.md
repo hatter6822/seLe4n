@@ -40,11 +40,12 @@ Data structure:
 Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)
-- `schedulerInvariantBundleFull` (6-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs`, WS-H12b + WS-H12e + WS-F6/D3)
+- `schedulerInvariantBundleFull` (7-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs ∧ schedulerPriorityMatch`, R6-D/L-12)
 
 Extraction theorem:
 
-- `schedulerInvariantBundleFull_to_contextMatchesCurrent` — extracts `contextMatchesCurrent` from the 6-conjunct bundle (WS-H12e + WS-F6/D3)
+- `schedulerInvariantBundleFull_to_contextMatchesCurrent` — extracts `contextMatchesCurrent` from the 7-conjunct bundle (WS-H12e + WS-F6/D3)
+- `schedulerInvariantBundleFull_to_priorityMatch` — extracts `schedulerPriorityMatch` from the 7-conjunct bundle (R6-D/L-12)
 
 Preservation shape:
 
@@ -95,7 +96,8 @@ Badge routing chain (H-03, WS-F5/D1):
 - `mintDerivedCap_badge_propagated` → `cspaceMint_child_badge_preserved` → `notificationSignal_badge_stored_fresh` → `notificationWait_recovers_pending_badge`
 - End-to-end: `badge_notification_routing_consistent` (word-bounded)
 - Merge property: `badge_merge_idempotent` (via `Badge.bor`)
-- Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`
+- Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`, `Badge.ofNatMasked_lt_eq` (R6-B/L-01)
+- **R6-B**: `Badge.ofNat` deprecated in favor of `Badge.ofNatMasked` (64-bit word masking)
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
 
 **WS-M audit findings** (v0.16.13 — Phase 1 at v0.16.14; Phase 2 at v0.16.15; Phase 3 at v0.16.17; Phase 4 at v0.16.18; Phase 5 at v0.16.19–v0.17.0 — **PORTFOLIO COMPLETE**):
@@ -1041,18 +1043,18 @@ closing gaps where invariants were defined but not composed into the top-level p
 
 | Bundle | Change | Effect |
 |---|---|---|
-| `schedulerInvariantBundleFull` | Extended from 4 to 6 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3) | Machine registers match current thread's saved context; all runnable threads are valid TCBs |
+| `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12) | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches TCB priority |
 | `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
-| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 6 scheduler conjuncts |
+| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 7 scheduler conjuncts |
 
 ### New proofs and definitions
 
 Scheduler preservation (4 updated theorems):
-- `schedule_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation (incl. `runnableThreadsAreTCBs` WS-F6/D3)
-- `handleYield_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation
-- `timerTick_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation
-- `switchDomain_preserves_schedulerInvariantBundleFull` — 6-conjunct preservation (+ `switchDomain_preserves_contextMatchesCurrent`)
+- `schedule_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation (incl. `runnableThreadsAreTCBs` WS-F6/D3, `schedulerPriorityMatch` R6-D/L-12)
+- `handleYield_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation
+- `timerTick_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation
+- `switchDomain_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation (+ `switchDomain_preserves_schedulerPriorityMatch`)
 
 Backward-compatible extraction theorems (3):
 - `coreIpcInvariantBundle_to_ipcInvariant`
