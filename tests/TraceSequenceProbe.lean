@@ -102,7 +102,7 @@ def checkStateInvariants (threadCount : Nat) (st : SystemState) : Except String 
   if failures.isEmpty then
     .ok ()
   else
-    .error s!"state invariant mismatch: {reprStr failures}"
+    .error s!"state invariant mismatch: {toString failures}"
 
 def checkEndpointConsistency (st : SystemState) : Except String Unit := do
   match st.objects[probeEndpointId]? with
@@ -110,13 +110,13 @@ def checkEndpointConsistency (st : SystemState) : Except String Unit := do
       if endpointConsistencyHolds ep then
         .ok ()
       else
-        .error s!"endpoint invariant mismatch: sendQ={reprStr ep.sendQ}, receiveQ={reprStr ep.receiveQ}"
-  | some obj => .error s!"probe endpoint object changed unexpectedly: {reprStr obj}"
+        .error s!"endpoint invariant mismatch: sendQ={toString ep.sendQ}, receiveQ={toString ep.receiveQ}"
+  | some obj => .error s!"probe endpoint object changed unexpectedly: {toString obj}"
   | none => .error "probe endpoint object missing"
   -- WS-F7: verify notification object still exists and has valid state
   match st.objects[probeNotificationId]? with
   | some (.notification _) => .ok ()
-  | some obj => .error s!"probe notification object changed unexpectedly: {reprStr obj}"
+  | some obj => .error s!"probe notification object changed unexpectedly: {toString obj}"
   | none => .error "probe notification object missing"
 
 /-- Outcome of a single probe step, distinguishing actual mutations from expected failures
@@ -145,14 +145,14 @@ def classifyError (op : ProbeOp) (err : KernelError) : StepOutcome :=
   | .invalidCapability =>
       match op with
       | .capLookup => .expectedFailure err
-      | _ => .unexpectedFailure err s!"invalidCapability during {reprStr op}: probe objects should be correctly typed"
+      | _ => .unexpectedFailure err s!"invalidCapability during {toString op}: probe objects should be correctly typed"
   | .objectNotFound =>
       match op with
       -- capLookup on a non-existent CNode slot returns objectNotFound
       | .capLookup => .expectedFailure err
-      | _ => .unexpectedFailure err s!"objectNotFound during {reprStr op}: probe objects should always exist"
+      | _ => .unexpectedFailure err s!"objectNotFound during {toString op}: probe objects should always exist"
   | other =>
-      .unexpectedFailure other s!"unexpected error {reprStr other} during {reprStr op}"
+      .unexpectedFailure other s!"unexpected error {toString other} during {toString op}"
 
 /-- Execute one probe operation with error-aware classification.
 
@@ -257,7 +257,7 @@ def runProbe (seed : Nat) (steps : Nat) : Except String (ProbeStats × Nat) := d
   if stats.unexpectedFailures.isEmpty then
     .ok (stats, threadCount)
   else
-    .error s!"probe completed with {stats.unexpectedFailures.length} unexpected failure(s): {reprStr stats.unexpectedFailures}"
+    .error s!"probe completed with {stats.unexpectedFailures.length} unexpected failure(s): {toString stats.unexpectedFailures}"
 
 end SeLe4n.Testing
 

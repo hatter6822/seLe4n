@@ -54,6 +54,12 @@ inductive KernelError where
   | resourceExhausted       -- WS-R2/M-05: fuel exhaustion in streaming BFS revocation
   deriving Repr, DecidableEq
 
+/-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
+string interpolation (`s!"{x}"`) for all types with `Repr` instances.
+Explicit `ToString` instances take precedence due to priority 10. -/
+instance (priority := 10) instToStringOfReprFallback [Repr α] : ToString α where
+  toString := reprStr
+
 /-- M-05/WS-E6: One entry in the round-robin domain schedule table.
 Mirrors seL4's `dschedule[]` — each entry specifies a domain and how
 many ticks that domain runs before the scheduler advances to the next entry. -/

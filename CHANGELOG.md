@@ -26,12 +26,28 @@
 
 ## [0.19.1] — WS-S Phase S2: Test Hardening
 
-- S2-A (U-H4): Documented `reprStr` usage in determinism checks (types lack
-  `BEq` due to function-typed fields).
+- S2-A/B/C (U-H4): Replaced all 101 `reprStr` occurrences across 4 test files
+  with `toString` for display. Added blanket `ToString` from `Repr` instance in
+  State.lean. **Determinism checks converted to structural `==` via new `BEq Except`
+  instance** — eliminates all string-based comparison in test assertions.
 - S2-D (U-H5): Documented golden-output fixture management in DEVELOPMENT.md.
 - S2-E (U-H5): Enhanced trace fixture diff reporting in test_tier2_trace.sh.
-- S2-F (U-L11): Added `BootstrapBuilder.buildValidated` with invariant checks.
-- S2-J (U-M05): Migrated 2 deprecated `api*` wrapper calls to `syscallInvoke`.
+- S2-F (U-L11): Enhanced `BootstrapBuilder.buildValidated` with 8 runtime
+  invariant checks. Added `buildChecked` drop-in for `build` that panics on
+  violation. Primary test states (`baseState`, `f2UntypedState`, `f2DeviceState`)
+  migrated to `buildChecked`.
+- S2-G (U-L12): Added 6 capability error-path tests: rights attenuation failure,
+  copy/mint to occupied slot, empty revoke report, **copy to full CNode**, and
+  **deep CDT chain revocation** (5-deep, exercises multi-level traversal).
+- S2-H (U-L12): Added 5 lifecycle error-path tests: allocSize too small, device
+  untyped TCB rejection, non-untyped source, **region exhaustion** (watermark at
+  capacity), **child ID collision**.
+- S2-I (U-L13): Created `SeLe4n/Testing/Helpers.lean` shared module with
+  `expectCond`, `expectError`, `expectOk` helpers. Updated InformationFlowSuite
+  to use shared helpers. Added `MainTraceHarness` import for library build
+  reachability.
+- S2-J (U-M05): Migrated all deprecated `api*` wrapper calls in MainTraceHarness
+  to direct `syscallInvoke` path. Removed `set_option linter.deprecated false`.
 - Zero sorry/axiom, all tests pass.
 
 ## [0.19.2] — WS-S Phase S3 (partial): Proof Surface Closure

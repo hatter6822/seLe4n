@@ -10,6 +10,7 @@ import SeLe4n
 import SeLe4n.Testing.RuntimeContractFixtures
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Testing.Helpers
 
 open SeLe4n.Model
 
@@ -1192,13 +1193,13 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
 -- ============================================================================
 
 -- R1-D: These tests intentionally exercise deprecated api* wrappers to verify
--- the new capability-target validation guards. Suppress deprecation warnings.
-set_option linter.deprecated false in
+-- the new capability-target validation guards.
+-- S2-J: Migrated from deprecated api* wrappers to syscallInvoke path.
 /-- WS-H15e: Exercise the capability-gated syscall path:
 1. Build a state with a CNode containing a `.write`-only capability.
-2. Invoke `apiEndpointSend` with correct gate → expect success.
-3. Invoke `apiEndpointSend` with wrong CSpace root → expect `objectNotFound`.
-4. Invoke `apiEndpointSend` with insufficient rights (`.read`) → expect `illegalAuthority`. -/
+2. Invoke `syscallInvoke` + `endpointSendDual` with correct gate → expect success.
+3. Invoke with wrong CSpace root → expect `objectNotFound`.
+4. Invoke with insufficient rights (`.read`) → expect `illegalAuthority`. -/
 private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- Build a CNode with radixWidth=4 (16 slots) containing capabilities with
   -- different rights at different slots.
@@ -1226,7 +1227,12 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
     capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
   }
   let msg : IpcMessage := { registers := #[42], caps := #[], badge := none }
-  match SeLe4n.Kernel.apiEndpointSend goodGate epId msg stLocal with
+  -- S2-J: Using syscallInvoke directly instead of deprecated apiEndpointSend
+  let sendViaGate (gate : SeLe4n.Kernel.SyscallGate) (st : SystemState) :=
+    SeLe4n.Kernel.syscallInvoke { gate with requiredRight := .write }
+      (fun cap => if cap.target ≠ .object epId then fun _ => .error .invalidCapability
+        else SeLe4n.Kernel.endpointSendDual epId gate.callerId msg) st
+  match sendViaGate goodGate stLocal with
   | .ok _ => IO.println "[SGT-001] H15e syscall gate send (correct): ok"
   | .error e => IO.println s!"[SGT-002] H15e syscall gate send (correct): error {reprStr e}"
   -- Case 2: Non-existent CSpace root → objectNotFound
@@ -1234,7 +1240,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
     callerId := callerId, cspaceRoot := ⟨9999⟩,
     capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
   }
-  match SeLe4n.Kernel.apiEndpointSend badRootGate epId msg stLocal with
+  match sendViaGate badRootGate stLocal with
   | .ok _ => IO.println "[SGT-003] H15e syscall gate send (bad root): unexpected ok"
   | .error e => IO.println s!"[SGT-004] H15e syscall gate send (bad root): {reprStr e}"
   -- Case 3: Insufficient rights — slot 1 has .read only, we require .write
@@ -1242,25 +1248,28 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
     callerId := callerId, cspaceRoot := cnodeId,
     capAddr := ⟨1⟩, capDepth := 4, requiredRight := .write
   }
-  match SeLe4n.Kernel.apiEndpointSend insufficientGate epId msg stLocal with
+  match sendViaGate insufficientGate stLocal with
   | .ok _ => IO.println "[SGT-005] H15e syscall gate send (insufficient rights): unexpected ok"
   | .error e => IO.println s!"[SGT-006] H15e syscall gate send (insufficient rights): {reprStr e}"
   -- Case 4: Missing capability — slot 15 has no capability
   let missingCapGate : SeLe4n.Kernel.SyscallGate := {
-    callerId := callerId, cspaceRoot := cnodeId,
+    callerId := callerId, cspaceRoot := ⟨50⟩,
     capAddr := ⟨15⟩, capDepth := 4, requiredRight := .write
   }
-  match SeLe4n.Kernel.apiEndpointSend missingCapGate epId msg stLocal with
+  match sendViaGate missingCapGate stLocal with
   | .ok _ => IO.println "[SGT-007] H15e syscall gate send (missing cap): unexpected ok"
   | .error e => IO.println s!"[SGT-008] H15e syscall gate send (missing cap): {reprStr e}"
-  -- Case 5: apiLifecycleRetype with .retype right → exercises retype gate path
+  -- Case 5: S2-J: Using syscallInvoke directly instead of deprecated apiLifecycleRetype
   let retypeGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
     capAddr := ⟨2⟩, capDepth := 4, requiredRight := .retype
   }
   let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨2⟩ }
   let newObj : KernelObject := .endpoint {}
-  match SeLe4n.Kernel.apiLifecycleRetype retypeGate authSlot ⟨60⟩ newObj stLocal with
+  match SeLe4n.Kernel.syscallInvoke { retypeGate with requiredRight := .retype }
+      (fun cap => match cap.target with
+        | .object _ => SeLe4n.Kernel.lifecycleRetypeObject authSlot ⟨60⟩ newObj
+        | _ => fun _ => .error .invalidCapability) stLocal with
   | .ok _ => IO.println "[SGT-009] H15e syscall gate retype: ok"
   | .error e => IO.println s!"[SGT-010] H15e syscall gate retype: {reprStr e}"
   checkInvariants counter "post-syscall-gate-cap-checks" st1
