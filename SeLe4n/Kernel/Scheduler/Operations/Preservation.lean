@@ -2439,8 +2439,11 @@ theorem contextMatchesCurrent_frame
 -- R6-D: schedulerPriorityMatch preservation lemmas (schedule, handleYield, timerTick)
 -- ============================================================================
 
-/-- R6-D: `schedule` preserves `schedulerPriorityMatch`. -/
-private theorem schedule_preserves_schedulerPriorityMatch
+/-- R6-D: `schedule` preserves `schedulerPriorityMatch`. TPI-D14: Schedule removes
+    the dispatched thread and modifies TCBs via context save/restore. Since context
+    save only changes `registerContext` (not `priority`), the priority mapping is
+    preserved for all remaining runQueue members. -/
+private theorem schedule_preserves_schedulerPriorityMatch -- TPI-D14
     (st st' : SystemState)
     (hpm : schedulerPriorityMatch st)
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
@@ -2448,10 +2451,11 @@ private theorem schedule_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  sorry
+  sorry -- TPI-D14
 
-/-- R6-D: `handleYield` preserves `schedulerPriorityMatch`. -/
-private theorem handleYield_preserves_schedulerPriorityMatch
+/-- R6-D: `handleYield` preserves `schedulerPriorityMatch`. TPI-D14: handleYield
+    re-enqueues current at its priority then calls schedule. -/
+private theorem handleYield_preserves_schedulerPriorityMatch -- TPI-D14
     (st st' : SystemState)
     (hpm : schedulerPriorityMatch st)
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
@@ -2459,10 +2463,11 @@ private theorem handleYield_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  sorry
+  sorry -- TPI-D14
 
-/-- R6-D: `timerTick` preserves `schedulerPriorityMatch`. -/
-private theorem timerTick_preserves_schedulerPriorityMatch
+/-- R6-D: `timerTick` preserves `schedulerPriorityMatch`. TPI-D14: Non-expire
+    path only changes timeSlice; expire path calls schedule after insert. -/
+private theorem timerTick_preserves_schedulerPriorityMatch -- TPI-D14
     (st st' : SystemState)
     (hpm : schedulerPriorityMatch st)
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
@@ -2470,7 +2475,7 @@ private theorem timerTick_preserves_schedulerPriorityMatch
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
-  sorry
+  sorry -- TPI-D14
 
 -- ============================================================================
 -- WS-H6/WS-H12b: Full scheduler invariant bundle composition theorems
