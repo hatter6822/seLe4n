@@ -1056,4 +1056,79 @@ theorem frozen_lookup_transfer [BEq κ] [Hashable κ] [LawfulBEq κ]
     rt.get? k = (freezeMap rt).get? k :=
   freezeMap_get?_eq rt k hExt
 
+-- ============================================================================
+-- R6-A: Direct frozen invariant predicate (M-09 fix)
+-- ============================================================================
+
+/-! ### R6-A: Non-existential frozen invariant
+
+The existential `apiInvariantBundle_frozen` asserts that a frozen state was
+produced from a valid builder-phase state. After `FrozenMap.set` mutations,
+the witness `IntermediateState` becomes stale because the frozen state no
+longer equals `freeze ist` for the original `ist`.
+
+`apiInvariantBundle_frozenDirect` solves this by expressing the invariant
+directly on `FrozenSystemState` fields, without any witness. It is defined
+as: the frozen state has the same lookup behavior as some valid `SystemState`
+— i.e., there exists a `SystemState` that (a) satisfies `apiInvariantBundle`
+and (b) agrees on all object lookups with the frozen state.
+
+This formulation:
+- Survives `FrozenMap.set` mutations (the `SystemState` witness only needs
+  to agree on lookups, not be the exact pre-image of `freeze`)
+- Is equivalent to the existential version at freeze time
+- Enables compositional invariant preservation through FrozenOps -/
+
+/-- R6-A.1: Direct frozen invariant predicate.
+    A `FrozenSystemState` satisfies the direct invariant if there exists a
+    `SystemState` whose `apiInvariantBundle` holds and whose object store
+    agrees on all lookups (modulo `freezeObject`) with the frozen state.
+    Unlike `apiInvariantBundle_frozen`, the witness does not need to be the
+    exact pre-image of `freeze` — only lookup-equivalent. This allows the
+    predicate to survive `FrozenMap.set` mutations. -/
+def apiInvariantBundle_frozenDirect (fst : FrozenSystemState) : Prop :=
+  ∃ (sst : SystemState),
+    SeLe4n.Kernel.apiInvariantBundle sst ∧
+    (∀ (oid : ObjId), (sst.objects.get? oid).map freezeObject = fst.objects.get? oid)
+
+/-- R6-A.2: At freeze time, the direct and existential formulations are equivalent. -/
+theorem apiInvariantBundle_frozenDirect_iff_frozen
+    (ist : IntermediateState)
+    (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
+    apiInvariantBundle_frozenDirect (freeze ist) ↔
+    apiInvariantBundle_frozen (freeze ist) := by
+  constructor
+  · intro _; exact ⟨ist, rfl, hInv⟩
+  · intro ⟨ist', hFreeze, hInv'⟩
+    exact ⟨ist'.state, hInv', fun oid => by
+      rw [← hFreeze]; exact lookup_freeze_objects ist' oid⟩
+
+/-- R6-A.2 (convenience): `freeze` preserves the direct frozen invariant. -/
+theorem freeze_preserves_direct_invariants (ist : IntermediateState)
+    (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
+    apiInvariantBundle_frozenDirect (freeze ist) :=
+  ⟨ist.state, hInv, fun oid => lookup_freeze_objects ist oid⟩
+
+/-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
+    mutated object corresponds to a valid `SystemState` mutation.
+
+    If the frozen state agrees on lookups with a valid `SystemState`,
+    and we can find a new `SystemState` that (a) satisfies the invariant
+    and (b) agrees with the post-mutation frozen objects, then the direct
+    invariant is preserved after `FrozenMap.set`. -/
+theorem frozenDirect_preserved_by_set
+    (fst : FrozenSystemState)
+    (hInv : apiInvariantBundle_frozenDirect fst)
+    (objects' : FrozenMap ObjId FrozenKernelObject)
+    (hCompat : ∀ (sst : SystemState),
+      SeLe4n.Kernel.apiInvariantBundle sst →
+      (∀ (oid : ObjId), (sst.objects.get? oid).map freezeObject = fst.objects.get? oid) →
+      ∃ (sst' : SystemState),
+        SeLe4n.Kernel.apiInvariantBundle sst' ∧
+        (∀ (oid : ObjId), (sst'.objects.get? oid).map freezeObject = objects'.get? oid)) :
+    apiInvariantBundle_frozenDirect { fst with objects := objects' } := by
+  obtain ⟨sst, hSstInv, hSstLookup⟩ := hInv
+  obtain ⟨sst', hSst'Inv, hSst'Lookup⟩ := hCompat sst hSstInv hSstLookup
+  exact ⟨sst', hSst'Inv, hSst'Lookup⟩
+
 end SeLe4n.Model

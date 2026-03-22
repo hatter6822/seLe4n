@@ -359,9 +359,6 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace Badge
 
-/-- Constructor helper kept explicit for migration ergonomics. -/
-@[inline] def ofNat (n : Nat) : Badge := ⟨n⟩
-
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (badge : Badge) : Nat := badge.val
 
@@ -374,6 +371,12 @@ namespace Badge
 /-- WS-F5/D1a: Construct a badge with word-size truncation, matching seL4's
     silent word-truncation semantics on 64-bit platforms. -/
 @[inline] def ofNatMasked (n : Nat) : Badge := ⟨n % machineWordMax⟩
+
+/-- Constructor helper — **deprecated**: use `ofNatMasked` for word-bounded
+    badge construction. Raw `ofNat` wraps an unbounded `Nat` without masking
+    to 64-bit word size, which is incorrect on hardware (R6-B/L-01). -/
+@[deprecated Badge.ofNatMasked (since := "0.18.5"), inline]
+def ofNat (n : Nat) : Badge := ⟨n⟩
 
 /-- WS-F5/D1b: Bitwise OR combiner for badge accumulation. Masks the result
     to machine word size, matching seL4 notification signal semantics. -/
@@ -397,10 +400,12 @@ theorem bor_comm (a b : Badge) : bor a b = bor b a := by
 theorem bor_idempotent (a : Badge) : bor a a = ofNatMasked a.val := by
   simp [bor, Nat.or_self]
 
-/-- WS-F5/D1a: `ofNat` with a small literal is valid (common test/fixture case). -/
-theorem ofNat_lt_valid {n : Nat} (h : n < machineWordMax) : (ofNat n).valid := by
-  simp [ofNat, valid, machineWordMax]
-  exact h
+/-- R6-B: `ofNatMasked` with a small literal that fits in one word is
+    identity — the modulus is a no-op. -/
+theorem ofNatMasked_lt_eq {n : Nat} (h : n < machineWordMax) :
+    (ofNatMasked n).val = n := by
+  unfold ofNatMasked machineWordMax machineWordBits
+  exact Nat.mod_eq_of_lt h
 
 instance : ToString Badge where
   toString badge := toString badge.toNat
@@ -1107,13 +1112,17 @@ theorem Slot.ofNat_injective {n₁ n₂ : Nat} (h : Slot.ofNat n₁ = Slot.ofNat
 theorem Slot.ext {a b : Slot} (h : a.val = b.val) : a = b := by
   cases a; cases b; simp_all
 
-/-- WS-H14d: Badge roundtrip — construct then project. -/
-theorem Badge.toNat_ofNat (n : Nat) : (Badge.ofNat n).toNat = n := rfl
-/-- WS-H14d: Badge roundtrip — project then reconstruct. -/
-theorem Badge.ofNat_toNat (b : Badge) : Badge.ofNat b.toNat = b := rfl
-/-- WS-H14d: Badge injectivity. -/
-theorem Badge.ofNat_injective {n₁ n₂ : Nat} (h : Badge.ofNat n₁ = Badge.ofNat n₂) : n₁ = n₂ := by
-  cases h; rfl
+/-- R6-B: Badge.ofNatMasked roundtrip — construct then project (mod). -/
+theorem Badge.toNat_ofNatMasked (n : Nat) :
+    (Badge.ofNatMasked n).toNat = n % machineWordMax := rfl
+/-- R6-B: Badge.ofNatMasked of a valid badge is identity. -/
+theorem Badge.ofNatMasked_toNat (b : Badge) (h : b.valid) :
+    Badge.ofNatMasked b.toNat = b := by
+  unfold Badge.ofNatMasked Badge.toNat Badge.valid machineWordMax machineWordBits at *
+  exact congrArg Badge.mk (Nat.mod_eq_of_lt h)
+/-- WS-H14d: Badge injectivity (val-level). -/
+theorem Badge.val_injective {a b : Badge} (h : a.val = b.val) : a = b := by
+  cases a; cases b; simp_all
 /-- WS-H14d: Badge extensionality. -/
 theorem Badge.ext {a b : Badge} (h : a.val = b.val) : a = b := by
   cases a; cases b; simp_all

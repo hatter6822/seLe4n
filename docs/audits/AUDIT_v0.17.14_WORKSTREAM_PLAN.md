@@ -1666,9 +1666,10 @@ Update `docs/gitbook/12-proof-and-invariant-map.md` and
 
 ---
 
-### Phase R6: Model & Frozen State Correctness
+### Phase R6: Model & Frozen State Correctness — **COMPLETE** (v0.18.5)
 
 **Target version**: v0.18.5
+**Status**: COMPLETE — all findings resolved, zero sorry, zero warnings
 **Goal**: Strengthen the frozen invariant to survive mutation and close
 model-layer proof gaps for value bounds and invariant bundles.
 **Priority**: MEDIUM — frozen state correctness is critical for the

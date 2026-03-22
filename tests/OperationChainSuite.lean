@@ -198,13 +198,13 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
       |>.withRunnable [waiter]
       |>.build)
   let (_, st1) ← expectOkState "chain6: signal badge 0x01"
-    (SeLe4n.Kernel.notificationSignal ntfnId (SeLe4n.Badge.ofNat 0x01) st0)
+    (SeLe4n.Kernel.notificationSignal ntfnId (SeLe4n.Badge.ofNatMasked 0x01) st0)
   let (_, st2) ← expectOkState "chain6: signal badge 0x10"
-    (SeLe4n.Kernel.notificationSignal ntfnId (SeLe4n.Badge.ofNat 0x10) st1)
+    (SeLe4n.Kernel.notificationSignal ntfnId (SeLe4n.Badge.ofNatMasked 0x10) st1)
   let (received, st3) ← expectOkState "chain6: wait"
     (SeLe4n.Kernel.notificationWait ntfnId waiter st2)
   expect "chain6: badge accumulation is bitwise OR"
-    (received = some (SeLe4n.Badge.ofNat 0x11))
+    (received = some (SeLe4n.Badge.ofNatMasked 0x11))
   assertInvariants "chain6: signal→signal→wait" st3
 
 private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
@@ -1383,7 +1383,7 @@ Steps: wait (blocks waiter) → signal (wakes waiter with badge) → verify badg
 private def chain22NotificationBadgeDelivery : IO Unit := do
   let ntfnId : SeLe4n.ObjId := ⟨260⟩
   let waiter : SeLe4n.ThreadId := ⟨12⟩
-  let badge := SeLe4n.Badge.ofNat 0xCAFE
+  let badge := SeLe4n.Badge.ofNatMasked 0xCAFE
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })

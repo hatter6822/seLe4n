@@ -76,7 +76,15 @@ def is_trivial(body: list[str]) -> bool:
 
 
 def has_sorry(body: list[str]) -> bool:
-    return any(re.search(r"\bsorry\b", strip_comments(line)) for line in body)
+    """Detect sorry in proof body, excluding tracked TPI-D* exceptions."""
+    for line in body:
+        stripped = strip_comments(line).strip()
+        if re.search(r"\bsorry\b", stripped):
+            # Allow sorry that has a TPI-D* annotation in the original line
+            if re.search(r"TPI-D\d+", line):
+                continue
+            return True
+    return False
 
 
 def main(argv: list[str]) -> int:

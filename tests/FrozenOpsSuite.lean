@@ -104,7 +104,7 @@ private def fo003_storeObject : IO Unit := do
 private def fo004_endpointReply : IO Unit := do
   let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNat 0 }
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ msg fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
@@ -118,7 +118,7 @@ private def fo004_endpointReply : IO Unit := do
 private def fo005_replyWrongReplier : IO Unit := do
   let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
-  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNat 0 }
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨99⟩ ⟨2⟩ msg fst with
   | .ok _ => throw <| IO.userError "FO-005 wrong replier should fail"
   | .error e => expect "FO-005 wrong replier → replyCapInvalid" (e == .replyCapInvalid)
@@ -242,7 +242,7 @@ private def fo013_cspaceDelete : IO Unit := do
 private def fo014_notificationSignal : IO Unit := do
   let ntfn : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn)]
-  match frozenNotificationSignal ⟨5⟩ (Badge.ofNat 0xFF) fst with
+  match frozenNotificationSignal ⟨5⟩ (Badge.ofNatMasked 0xFF) fst with
   | .ok ((), fst') =>
       match fst'.objects.get? ⟨5⟩ with
       | some (.notification ntfn') =>
@@ -253,12 +253,12 @@ private def fo014_notificationSignal : IO Unit := do
 
 /-- FO-015: frozenNotificationWait — consume pending badge -/
 private def fo015_notificationWait : IO Unit := do
-  let ntfn : Notification := { state := .active, waitingThreads := [], pendingBadge := some (Badge.ofNat 42) }
+  let ntfn : Notification := { state := .active, waitingThreads := [], pendingBadge := some (Badge.ofNatMasked 42) }
   let waiterTcb := mkTcb 2
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn), (⟨2⟩, .tcb waiterTcb)]
   match frozenNotificationWait ⟨5⟩ ⟨2⟩ fst with
   | .ok (badge, _fst') =>
-      expect "FO-015a badge consumed" (badge == some (Badge.ofNat 42))
+      expect "FO-015a badge consumed" (badge == some (Badge.ofNatMasked 42))
   | .error _ => throw <| IO.userError "FO-015 wait should succeed"
 
 end SeLe4n.Testing.FrozenOpsSuite

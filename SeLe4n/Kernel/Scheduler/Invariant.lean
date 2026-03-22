@@ -257,23 +257,6 @@ theorem runnableThreadsAreTCBs_of_scheduler_objects_eq
     runnableThreadsAreTCBs st' := by
   intro tid hMem; rw [hSchedEq] at hMem; rw [hObjEq]; exact hInv tid hMem
 
-/-- WS-F6/D2+D3: Extended full scheduler invariant bundle.
-WS-F6: Extended from 5-tuple to 6-tuple with `runnableThreadsAreTCBs`. -/
-def schedulerInvariantBundleFull (st : SystemState) : Prop :=
-  schedulerInvariantBundle st ∧ timeSlicePositive st ∧
-  currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st ∧
-  contextMatchesCurrent st ∧ runnableThreadsAreTCBs st
-
-/-- Project the structural triad from the full bundle. -/
-theorem schedulerInvariantBundleFull_to_base {st : SystemState}
-    (h : schedulerInvariantBundleFull st) : schedulerInvariantBundle st :=
-  h.1
-
-/-- WS-H12e: Project `contextMatchesCurrent` from the full scheduler bundle. -/
-theorem schedulerInvariantBundleFull_to_contextMatchesCurrent {st : SystemState}
-    (h : schedulerInvariantBundleFull st) : contextMatchesCurrent st :=
-  h.2.2.2.2.1
-
 -- ============================================================================
 -- WS-H6: RunQueue priority-match predicate
 -- ============================================================================
@@ -292,5 +275,81 @@ def schedulerPriorityMatch (st : SystemState) : Prop :=
     | some (.tcb tcb) =>
         st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
     | _ => True
+
+/-- R6-D/L-12: Extended full scheduler invariant bundle.
+    7-tuple: base triad + timeSlice + EDF + context + runnableAreTCBs + priorityMatch.
+    `schedulerPriorityMatch` ensures the RunQueue's priority index stays in sync
+    with the authoritative TCB priority in the object store. -/
+def schedulerInvariantBundleFull (st : SystemState) : Prop :=
+  schedulerInvariantBundle st ∧ timeSlicePositive st ∧
+  currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st ∧
+  contextMatchesCurrent st ∧ runnableThreadsAreTCBs st ∧
+  schedulerPriorityMatch st
+
+/-- Project the structural triad from the full bundle. -/
+theorem schedulerInvariantBundleFull_to_base {st : SystemState}
+    (h : schedulerInvariantBundleFull st) : schedulerInvariantBundle st :=
+  h.1
+
+/-- WS-H12e: Project `contextMatchesCurrent` from the full scheduler bundle. -/
+theorem schedulerInvariantBundleFull_to_contextMatchesCurrent {st : SystemState}
+    (h : schedulerInvariantBundleFull st) : contextMatchesCurrent st :=
+  h.2.2.2.2.1
+
+/-- R6-D: Project `schedulerPriorityMatch` from the full scheduler bundle. -/
+theorem schedulerInvariantBundleFull_to_priorityMatch {st : SystemState}
+    (h : schedulerInvariantBundleFull st) : schedulerPriorityMatch st :=
+  h.2.2.2.2.2.2
+
+/-- R6-D: schedulerPriorityMatch is preserved when both runQueue and objects
+    are unchanged. -/
+theorem schedulerPriorityMatch_of_runQueue_objects_eq
+    (st st' : SystemState)
+    (hInv : schedulerPriorityMatch st)
+    (hRQEq : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hObjEq : st'.objects = st.objects) :
+    schedulerPriorityMatch st' := by
+  intro tid hMem; rw [hRQEq] at hMem; rw [hRQEq, hObjEq]; exact hInv tid hMem
+
+/-- R6-D: schedulerPriorityMatch after inserting the current thread at its priority.
+    If the current thread has a TCB at its ObjId with the given priority,
+    inserting it at that priority preserves the priority match. -/
+theorem schedulerPriorityMatch_insert
+    (st : SystemState) (curTid : ThreadId) (curTcb : TCB)
+    (hPM : schedulerPriorityMatch st)
+    (hQCC : queueCurrentConsistent st.scheduler)
+    (hCur : st.scheduler.current = some curTid)
+    (hObj : st.objects[curTid.toObjId]? = some (.tcb curTcb)) :
+    ∀ tid, tid ∈ st.scheduler.runQueue.insert curTid curTcb.priority →
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) =>
+        (st.scheduler.runQueue.insert curTid curTcb.priority).threadPriority[tid]? = some tcb.priority
+      | _ => True := by
+  intro tid hMem
+  have hNotMem : curTid ∉ st.scheduler.runQueue := by
+    simp [queueCurrentConsistent, hCur] at hQCC
+    intro h; exact hQCC ((RunQueue.mem_toList_iff_mem _ _).2 h)
+  have hContF : st.scheduler.runQueue.contains curTid = false := by
+    cases h : st.scheduler.runQueue.contains curTid; rfl; exact absurd h hNotMem
+  rw [RunQueue.mem_insert] at hMem
+  rw [RunQueue.insert_threadPriority]; simp only [hContF, Bool.false_eq_true, ↓reduceIte]
+  cases hMem with
+  | inl hOld =>
+    have hNeq : curTid ≠ tid := fun h => hNotMem (h ▸ hOld)
+    have hBEq : (curTid == tid) = false := by
+      cases h : (curTid == tid) <;> simp_all
+    -- The goal has `if curTid == tid = true then ... else ...`
+    -- After insert_threadPriority, ite on BEq
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExt]
+    simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
+    have := hPM tid hOld
+    simp only [RHTable_getElem?_eq_get?] at this; exact this
+  | inr hEq =>
+    subst hEq
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExt]
+    simp only [beq_self_eq_true, ↓reduceIte]
+    simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
 
 end SeLe4n.Kernel

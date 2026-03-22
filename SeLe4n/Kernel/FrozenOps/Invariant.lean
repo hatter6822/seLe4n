@@ -192,4 +192,31 @@ theorem frozenRestoreIncomingContext_preserves_objects
   · simp at hOk; rw [← hOk]
   · simp at hOk
 
+-- ============================================================================
+-- R6-A.4: Direct frozen invariant preservation
+-- ============================================================================
+
+/-- R6-A.4: `frozenStoreObject` preserves `apiInvariantBundle_frozenDirect`
+    when the mutation is compatible with a valid `SystemState` transition.
+
+    This theorem uses the frame lemma: `frozenStoreObject` only modifies
+    `objects`, so we delegate to the `frozenDirect_preserved_by_set` theorem
+    from FreezeProofs. The caller must provide the compatibility witness
+    showing that the mutation corresponds to a valid `SystemState` update. -/
+theorem frozenStoreObject_preserves_frozenDirect
+    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
+    (st st' : FrozenSystemState)
+    (hInv : apiInvariantBundle_frozenDirect st)
+    (hOk : frozenStoreObject id obj st = .ok ((), st'))
+    (hCompat : ∀ (sst : SystemState),
+      SeLe4n.Kernel.apiInvariantBundle sst →
+      (∀ (oid : ObjId), (sst.objects.get? oid).map freezeObject = st.objects.get? oid) →
+      ∃ (sst' : SystemState),
+        SeLe4n.Kernel.apiInvariantBundle sst' ∧
+        (∀ (oid : ObjId), (sst'.objects.get? oid).map freezeObject = st'.objects.get? oid)) :
+    apiInvariantBundle_frozenDirect st' := by
+  obtain ⟨objects', _, hSt⟩ := frozenStoreObject_extracts_state id obj st st' hOk
+  subst hSt
+  exact frozenDirect_preserved_by_set st hInv objects' hCompat
+
 end SeLe4n.Kernel.FrozenOps

@@ -134,12 +134,17 @@ instance : Inhabited RegisterFile where
 instance : Repr RegisterFile where
   reprPrec rf _ := s!"RegisterFile(pc={rf.pc.val}, sp={rf.sp.val})"
 
-/-- WS-H12c: Manual `BEq` for `RegisterFile`. Compares `pc`, `sp`, and the
-first 32 GPRs (standard ARM64 register count). This is sufficient for the
-abstract kernel model where GPR indices are bounded by architecture. -/
+/-- R6-C: Number of GPR indices compared in `RegisterFile` equality.
+    ARM64: 32 (x0–x30 plus xzr/zero register). Matches
+    `MachineConfig.registerCount` default. -/
+def registerFileGPRCount : Nat := 32
+
+/-- R6-C: Structural `BEq` for `RegisterFile`. Compares `pc`, `sp`, and
+all `registerFileGPRCount` GPR indices. Uses a named constant instead of
+a magic number to tie the comparison range to the architecture definition. -/
 instance : BEq RegisterFile where
   beq a b := a.pc == b.pc && a.sp == b.sp &&
-    (List.range 32).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
+    (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
 
 /-- Top-level abstract machine state manipulated by kernel transitions. -/
 structure MachineState where
@@ -328,6 +333,11 @@ structure MachineConfig where
       validate register indices at syscall boundaries. -/
   registerCount : Nat := 32
   deriving Repr
+
+/-- R6-C: `registerFileGPRCount` equals `MachineConfig.registerCount`'s default
+    value. Ensures the BEq comparison range stays in sync with the architecture. -/
+theorem registerFileGPRCount_eq_registerCount_default :
+    registerFileGPRCount = 32 := rfl
 
 namespace MachineConfig
 
