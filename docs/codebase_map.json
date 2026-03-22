@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-security-type-safety-EmqYZ",
-      "commit_sha": "68a3ad85b799e145032126a861e2f9381dd52b8e",
-      "tree_sha": "e363eded6255eb10e9d32a1ab3193bf8e493bb11",
-      "committed_at_utc": "2026-03-22T18:35:05+00:00"
+      "commit_sha": "4c1fc429a27359233c2bed0b05ca81b8c1968e6e",
+      "tree_sha": "ba5ffa4757fc03cbd063578d9df1f791bebb93d3",
+      "committed_at_utc": "2026-03-22T18:42:00+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "04b5553f058b2d6f76c12bc9273bc4661428507891701ae9baa1c1a40340b206"
+    "source_digest": "ba22820cc366ad3a72e75e6b879e681c5d39358de2cdb43c9753c11858c5ec37"
   },
   "summary": {
     "module_count": 108,
@@ -27,7 +27,7 @@
     "version": "0.18.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 98,
-    "production_loc": 55724,
+    "production_loc": 55732,
     "test_files": 10,
     "test_loc": 7317,
     "proved_theorem_lemma_decls": 1692,
@@ -13853,13 +13853,13 @@
         {
           "kind": "def",
           "name": "isBetterCandidate",
-          "line": 32,
+          "line": 38,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "isBetterCandidate_irrefl",
-          "line": 44,
+          "line": 50,
           "called": [
             "isBetterCandidate"
           ]
@@ -13867,7 +13867,7 @@
         {
           "kind": "theorem",
           "name": "isBetterCandidate_asymm",
-          "line": 53,
+          "line": 59,
           "called": [
             "isBetterCandidate"
           ]
@@ -13875,7 +13875,7 @@
         {
           "kind": "theorem",
           "name": "isBetterCandidate_transitive",
-          "line": 86,
+          "line": 92,
           "called": [
             "isBetterCandidate"
           ]
@@ -13883,7 +13883,7 @@
         {
           "kind": "def",
           "name": "chooseBestRunnableBy",
-          "line": 131,
+          "line": 137,
           "called": [
             "isBetterCandidate"
           ]
@@ -13891,7 +13891,7 @@
         {
           "kind": "def",
           "name": "chooseBestRunnableInDomain",
-          "line": 156,
+          "line": 162,
           "called": [
             "chooseBestRunnableBy"
           ]
@@ -13899,7 +13899,7 @@
         {
           "kind": "def",
           "name": "chooseBestInBucket",
-          "line": 171,
+          "line": 177,
           "called": [
             "chooseBestRunnableInDomain"
           ]
@@ -13907,7 +13907,7 @@
         {
           "kind": "theorem",
           "name": "bucketFirst_fullScan_equivalence",
-          "line": 187,
+          "line": 193,
           "called": [
             "chooseBestInBucket",
             "chooseBestRunnableInDomain"
@@ -13916,7 +13916,7 @@
         {
           "kind": "def",
           "name": "chooseThread",
-          "line": 207,
+          "line": 213,
           "called": [
             "chooseBestInBucket"
           ]
@@ -13924,13 +13924,13 @@
         {
           "kind": "def",
           "name": "saveOutgoingContext",
-          "line": 217,
+          "line": 223,
           "called": []
         },
         {
           "kind": "def",
           "name": "restoreIncomingContext",
-          "line": 230,
+          "line": 236,
           "called": []
         }
       ]
@@ -16213,7 +16213,7 @@
         {
           "kind": "def",
           "name": "noOverlapAux",
-          "line": 423,
+          "line": 425,
           "called": [
             "MemoryRegion"
           ]
@@ -16221,13 +16221,13 @@
         {
           "kind": "def",
           "name": "isPowerOfTwo",
-          "line": 429,
+          "line": 431,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_spec",
-          "line": 433,
+          "line": 435,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16235,7 +16235,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_pos",
-          "line": 439,
+          "line": 441,
           "called": [
             "isPowerOfTwo",
             "isPowerOfTwo_spec"
@@ -16244,22 +16244,6 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_0",
-          "line": 449,
-          "called": [
-            "isPowerOfTwo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_1",
-          "line": 450,
-          "called": [
-            "isPowerOfTwo"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_2",
           "line": 451,
           "called": [
             "isPowerOfTwo"
@@ -16267,7 +16251,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_3",
+          "name": "isPowerOfTwo_of_pow2_1",
           "line": 452,
           "called": [
             "isPowerOfTwo"
@@ -16275,7 +16259,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_4",
+          "name": "isPowerOfTwo_of_pow2_2",
           "line": 453,
           "called": [
             "isPowerOfTwo"
@@ -16283,7 +16267,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_5",
+          "name": "isPowerOfTwo_of_pow2_3",
           "line": 454,
           "called": [
             "isPowerOfTwo"
@@ -16291,7 +16275,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_12",
+          "name": "isPowerOfTwo_of_pow2_4",
           "line": 455,
           "called": [
             "isPowerOfTwo"
@@ -16299,7 +16283,7 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_16",
+          "name": "isPowerOfTwo_of_pow2_5",
           "line": 456,
           "called": [
             "isPowerOfTwo"
@@ -16307,8 +16291,24 @@
         },
         {
           "kind": "theorem",
-          "name": "isPowerOfTwo_of_pow2_21",
+          "name": "isPowerOfTwo_of_pow2_12",
           "line": 457,
+          "called": [
+            "isPowerOfTwo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isPowerOfTwo_of_pow2_16",
+          "line": 458,
+          "called": [
+            "isPowerOfTwo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isPowerOfTwo_of_pow2_21",
+          "line": 459,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16316,7 +16316,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 465,
+          "line": 467,
           "called": [
             "MachineConfig",
             "endAddr",
@@ -16327,7 +16327,7 @@
         {
           "kind": "structure",
           "name": "SyscallRegisterLayout",
-          "line": 486,
+          "line": 488,
           "called": [
             "RegName"
           ]
@@ -16335,7 +16335,7 @@
         {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 498,
+          "line": 500,
           "called": [
             "SyscallRegisterLayout"
           ]

@@ -419,7 +419,9 @@ def totalRAM (cfg : MachineConfig) : Nat :=
 def addressInMap (cfg : MachineConfig) (addr : PAddr) : Bool :=
   cfg.memoryMap.any (·.contains addr)
 
-/-- A pairwise non-overlap check over the memory map regions. -/
+/-- A pairwise non-overlap check over the memory map regions.
+    S5-J: Complexity is O(n²) where n = memoryMap.length. Acceptable because
+    typical platform memory maps have fewer than 20 regions (RPi5 has 5). -/
 private def noOverlapAux : List MemoryRegion → Bool
   | [] => true
   | r :: rs => rs.all (fun r' => !r.overlaps r') && noOverlapAux rs

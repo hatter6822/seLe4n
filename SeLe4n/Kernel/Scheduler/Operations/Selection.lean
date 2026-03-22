@@ -28,7 +28,13 @@ by the challenger (`chalTid`). The three-level policy is:
    the incumbent is retained (first-in-queue stability).
 
 This mirrors seL4 MCS scheduling semantics where sporadic servers use
-deadline-based selection within fixed-priority bands. -/
+deadline-based selection within fixed-priority bands.
+
+S5-I: Within equal priority levels, tie-breaking follows EDF (Earliest
+Deadline First). When deadlines are also equal, the incumbent is retained
+(line `cd < id` with strict less-than), implementing FIFO ordering among
+equal-priority equal-deadline threads. This matches seL4's round-robin
+behavior at each priority level. -/
 def isBetterCandidate
     (incPrio : SeLe4n.Priority) (incDeadline : SeLe4n.Deadline)
     (chalPrio : SeLe4n.Priority) (chalDeadline : SeLe4n.Deadline) : Bool :=

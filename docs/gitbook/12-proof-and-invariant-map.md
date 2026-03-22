@@ -97,8 +97,9 @@ Badge routing chain (H-03, WS-F5/D1):
 - End-to-end: `badge_notification_routing_consistent` (word-bounded)
 - Merge property: `badge_merge_idempotent` (via `Badge.bor`)
 - Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`, `Badge.ofNatMasked_lt_eq` (R6-B/L-01)
-- **R6-B**: `Badge.ofNat` deprecated in favor of `Badge.ofNatMasked` (64-bit word masking)
+- **R6-B/S1-A**: `Badge.ofNat` removed entirely (WS-S/S1-A); all callers use `Badge.ofNatMasked`
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
+- **S1-G**: `AccessRightSet.valid` (bits < 2^5), `ofNat` masked constructor, `ofNat_valid`, `ofNat_idempotent`
 
 **WS-M audit findings** (v0.16.13 — Phase 1 at v0.16.14; Phase 2 at v0.16.15; Phase 3 at v0.16.17; Phase 4 at v0.16.18; Phase 5 at v0.16.19–v0.17.0 — **PORTFOLIO COMPLETE**):
 
