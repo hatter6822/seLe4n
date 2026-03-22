@@ -75,7 +75,26 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   `projectMemory` returns actual `st.machine.memory` bytes instead of `some 0`.
   All existing NI proofs updated for content-aware projection (12 files, ~30
   proof sites). Zero sorry/axiom.
-- **R6–R8**: Pending. See workstream plan for details.
+- **R6 (v0.18.5) — COMPLETE**: Model & Frozen State Correctness. Fixed frozen
+  invariant existential staleness (M-09) — direct frozen invariant predicate
+  `apiInvariantBundle_frozenDirect` that survives `FrozenMap.set` mutations.
+  Deprecated `Badge.ofNat` in favor of word-bounded `Badge.ofNatMasked` (L-01).
+  Fixed `BEq RegisterFile` partial comparison with named `registerFileGPRCount`
+  constant (L-04). Added `schedulerPriorityMatch` to scheduler invariant bundle
+  (L-12). Zero sorry/axiom.
+- **R7 (v0.18.6) — COMPLETE**: Architecture & Hardware Preparation. Integrated
+  `TlbState` into `SystemState` and added `tlbConsistent` to the
+  `proofLayerInvariantBundle` (M-17). Added TLB-flushing VSpace wrappers
+  (`vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush`) with preservation
+  proofs. Added `RegName.isValid` ARM64 bounds predicate and `arm64GPRCount`
+  constant (L-02). Added `isWord64` predicate and `valid` checks for
+  `RegValue`, `VAddr`, `PAddr` with `machineWordBounded` machine-state
+  invariant (L-03). Added `faultHandler` and `boundNotification` fields to TCB
+  for seL4 fidelity (L-06). Replaced raw `Nat` in
+  `LifecycleRetypeArgs.newType` with typed `KernelObjectType` enum,
+  added `KernelObjectType.toNat`/`ofNat?` conversions with round-trip proofs,
+  and introduced `objectOfKernelType` (L-10). Zero sorry/axiom.
+- **R8**: Pending. See workstream plan for details.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 

@@ -268,6 +268,16 @@ structure TCB where
       the incoming thread's context from here. Zero-initialized by default.
       See `contextMatchesCurrent` in `Scheduler/Invariant.lean`. -/
   registerContext : SeLe4n.RegisterFile := default
+  /-- R7-D/L-06: Capability pointer to the fault handler endpoint.
+      In seL4, when a thread faults (e.g., VM fault, cap fault), the kernel
+      sends a fault IPC message to the endpoint identified by this capability.
+      `none` = no fault handler configured (faults are silently dropped). -/
+  faultHandler : Option SeLe4n.CPtr := none
+  /-- R7-D/L-06: Object ID of the bound notification object.
+      In seL4, a thread may bind one notification object. Signals on the bound
+      notification can wake the thread when it is waiting on an endpoint.
+      `none` = no bound notification. -/
+  boundNotification : Option SeLe4n.ObjId := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -281,7 +291,8 @@ instance : BEq TCB where
     a.timeSlice == b.timeSlice && a.deadline == b.deadline &&
     a.queuePrev == b.queuePrev && a.queuePPrev == b.queuePPrev &&
     a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
-    a.registerContext == b.registerContext
+    a.registerContext == b.registerContext &&
+    a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

@@ -1306,35 +1306,35 @@ def runWSH11Checks : IO Unit := do
   | .error err => throw <| IO.userError s!"WS-H11 execute-only rejected: {reprStr err}"
 
   -- TLB model: empty TLB is consistent
-  let tlb := SeLe4n.Kernel.Architecture.TlbState.empty
+  let tlb := SeLe4n.Model.TlbState.empty
   -- Full flush produces empty TLB
-  let flushed := SeLe4n.Kernel.Architecture.adapterFlushTlb tlb
+  let flushed := SeLe4n.Model.adapterFlushTlb tlb
   if flushed.entries.length = 0 then
     IO.println "positive check passed [WS-H11 full TLB flush clears all entries]"
   else
     throw <| IO.userError "WS-H11 full TLB flush should clear entries"
 
   -- Per-ASID flush removes only matching ASID entries
-  let entry1 : SeLe4n.Kernel.Architecture.TlbEntry :=
+  let entry1 : SeLe4n.Model.TlbEntry :=
     { asid := ⟨1⟩, vaddr := ⟨4096⟩, paddr := ⟨8192⟩, perms := default }
-  let entry2 : SeLe4n.Kernel.Architecture.TlbEntry :=
+  let entry2 : SeLe4n.Model.TlbEntry :=
     { asid := ⟨2⟩, vaddr := ⟨8192⟩, paddr := ⟨16384⟩, perms := default }
-  let tlb2 : SeLe4n.Kernel.Architecture.TlbState := { entries := [entry1, entry2] }
-  let flushedAsid := SeLe4n.Kernel.Architecture.adapterFlushTlbByAsid tlb2 ⟨1⟩
+  let tlb2 : SeLe4n.Model.TlbState := { entries := [entry1, entry2] }
+  let flushedAsid := SeLe4n.Model.adapterFlushTlbByAsid tlb2 ⟨1⟩
   if flushedAsid.entries.length = 1 then
     IO.println "positive check passed [WS-H11 per-ASID TLB flush removes only matching]"
   else
     throw <| IO.userError s!"WS-H11 per-ASID flush: expected 1 entry, got {flushedAsid.entries.length}"
 
   -- Per-VAddr flush removes only matching (ASID, VAddr) entries
-  let entry3 : SeLe4n.Kernel.Architecture.TlbEntry :=
+  let entry3 : SeLe4n.Model.TlbEntry :=
     { asid := ⟨1⟩, vaddr := ⟨4096⟩, paddr := ⟨8192⟩, perms := default }
-  let entry4 : SeLe4n.Kernel.Architecture.TlbEntry :=
+  let entry4 : SeLe4n.Model.TlbEntry :=
     { asid := ⟨1⟩, vaddr := ⟨8192⟩, paddr := ⟨16384⟩, perms := default }
-  let entry5 : SeLe4n.Kernel.Architecture.TlbEntry :=
+  let entry5 : SeLe4n.Model.TlbEntry :=
     { asid := ⟨2⟩, vaddr := ⟨4096⟩, paddr := ⟨24576⟩, perms := default }
-  let tlb3 : SeLe4n.Kernel.Architecture.TlbState := { entries := [entry3, entry4, entry5] }
-  let flushedVAddr := SeLe4n.Kernel.Architecture.adapterFlushTlbByVAddr tlb3 ⟨1⟩ ⟨4096⟩
+  let tlb3 : SeLe4n.Model.TlbState := { entries := [entry3, entry4, entry5] }
+  let flushedVAddr := SeLe4n.Model.adapterFlushTlbByVAddr tlb3 ⟨1⟩ ⟨4096⟩
   if flushedVAddr.entries.length = 2 then
     IO.println "positive check passed [WS-H11 per-VAddr TLB flush removes only matching (ASID,VAddr)]"
   else

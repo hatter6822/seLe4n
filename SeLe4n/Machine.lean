@@ -29,6 +29,23 @@ namespace RegName
 instance : ToString RegName where
   toString r := toString r.toNat
 
+/-- R7-B/L-02: ARM64 GPR count — 31 general-purpose registers (x0–x30) plus
+    the zero register (xzr), totaling 32 GPR indices.
+    PC and SP are separate `RegisterFile` fields, not GPR indices. -/
+def arm64GPRCount : Nat := 32
+
+/-- R7-B/L-02: A register index is valid if it falls within the ARM64 GPR range.
+    This predicate is a refinement — `RegName` wraps unbounded `Nat` for proof
+    ergonomics, but hardware operations should only use valid indices. -/
+def isValid (r : RegName) : Prop := r.val < arm64GPRCount
+
+/-- R7-B/L-02: Decidable validity check for runtime bounds checking. -/
+@[inline] def isValidDec (r : RegName) : Bool := r.val < arm64GPRCount
+
+/-- R7-B/L-02: `isValidDec` reflects `isValid`. -/
+theorem isValidDec_iff (r : RegName) : r.isValidDec = true ↔ r.isValid := by
+  simp [isValidDec, isValid]
+
 /-- Extensionality theorem for RegName. -/
 theorem ext {a b : RegName} (h : a.val = b.val) : a = b := by
   cases a; cases b; simp_all
@@ -50,6 +67,12 @@ namespace RegValue
 
 /-- Projection helper for migration ergonomics. -/
 @[inline] def toNat (r : RegValue) : Nat := r.val
+
+/-- R7-C/L-03: A register value is valid if it fits in one machine word. -/
+@[inline] def valid (r : RegValue) : Prop := isWord64 r.val
+
+/-- R7-C/L-03: Decidable validity check for runtime use. -/
+@[inline] def isValid (r : RegValue) : Bool := isWord64Dec r.val
 
 instance : ToString RegValue where
   toString r := toString r.toNat
@@ -134,10 +157,10 @@ instance : Inhabited RegisterFile where
 instance : Repr RegisterFile where
   reprPrec rf _ := s!"RegisterFile(pc={rf.pc.val}, sp={rf.sp.val})"
 
-/-- R6-C: Number of GPR indices compared in `RegisterFile` equality.
-    ARM64: 32 (x0–x30 plus xzr/zero register). Matches
-    `MachineConfig.registerCount` default. -/
-def registerFileGPRCount : Nat := 32
+/-- R6-C/R7-B: Number of GPR indices compared in `RegisterFile` equality.
+    ARM64: 32 (x0–x30 plus xzr/zero register). Tied to `RegName.arm64GPRCount`
+    for consistency with the hardware register model. -/
+def registerFileGPRCount : Nat := RegName.arm64GPRCount
 
 /-- R6-C: Structural `BEq` for `RegisterFile`. Compares `pc`, `sp`, and
 all `registerFileGPRCount` GPR indices. Uses a named constant instead of
@@ -154,6 +177,23 @@ structure MachineState where
 
 instance : Inhabited MachineState where
   default := { regs := default, memory := (fun _ => 0), timer := 0 }
+
+/-- R7-C/L-03: Machine-state word-boundedness invariant.
+    Asserts that all register values (PC, SP, and all GPRs) fit in one machine
+    word. This is always true on real ARM64 hardware but must be stated as an
+    invariant in the abstract model since the underlying `Nat` type is unbounded. -/
+def machineWordBounded (ms : MachineState) : Prop :=
+  ms.regs.pc.valid ∧ ms.regs.sp.valid ∧
+  ∀ (r : RegName), r.isValid → (ms.regs.gpr r).valid
+
+/-- R7-C/L-03: The default machine state satisfies word-boundedness.
+    All registers are initialized to 0, which is trivially word-bounded. -/
+theorem machineWordBounded_default : machineWordBounded (default : MachineState) := by
+  constructor
+  · show (0 : Nat) < 2 ^ 64; omega
+  constructor
+  · show (0 : Nat) < 2 ^ 64; omega
+  · intro _ _; show (0 : Nat) < 2 ^ 64; omega
 
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
   rf.gpr r

@@ -95,6 +95,48 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
         | some paddr => .ok (paddr, st)
 
 -- ============================================================================
+-- R7-A.3/M-17: TLB-flushing VSpace operations
+-- ============================================================================
+
+/-- R7-A.3/M-17: VSpace map with integrated per-VAddr TLB flush.
+
+    This is the production-safe entry point that composes page table insertion
+    with a targeted TLB flush, ensuring `tlbConsistent` is preserved through
+    the combined operation. The flush targets the specific `(asid, vaddr)` pair
+    that was modified.
+
+    The core `vspaceMapPage` is retained for proof decomposition — it operates
+    on page tables only and does not touch the TLB. -/
+def vspaceMapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions := default) : Kernel Unit :=
+  fun st =>
+    match vspaceMapPage asid vaddr paddr perms st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        .ok ((), { st' with tlb := adapterFlushTlb st'.tlb })
+
+/-- R7-A.3/M-17: VSpace unmap with integrated full TLB flush.
+
+    Composes page table removal with a full TLB invalidation. After unmapping a
+    virtual address, all TLB entries are cleared, preventing use-after-unmap
+    attacks on hardware. A full flush is conservative but simple; hardware
+    platforms may refine to per-ASID or per-VAddr flushes via
+    `adapterFlushTlbByVAddr`. -/
+def vspaceUnmapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
+  fun st =>
+    match vspaceUnmapPage asid vaddr st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        .ok ((), { st' with tlb := adapterFlushTlb st'.tlb })
+
+/-- R7-A.3/M-17: Address-bounds-checked map with integrated TLB flush. -/
+def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions := default) : Kernel Unit :=
+  fun st =>
+    if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    else vspaceMapPageWithFlush asid vaddr paddr perms st
+
+-- ============================================================================
 -- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)
 -- ============================================================================
 

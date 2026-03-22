@@ -210,9 +210,9 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
   | .error err => IO.println s!"[CAT-024] unexpected vspace mapChecked rejected valid address: {reprStr err}"
   | .ok _ => IO.println "[CAT-025] vspace mapChecked valid address accepted"
   -- WS-H11/M-14: TLB full flush produces empty TLB
-  let tlbWithEntries : SeLe4n.Kernel.Architecture.TlbState :=
+  let tlbWithEntries : SeLe4n.Model.TlbState :=
     { entries := [{ asid := ⟨1⟩, vaddr := ⟨4096⟩, paddr := ⟨8192⟩, perms := default }] }
-  let flushed := SeLe4n.Kernel.Architecture.adapterFlushTlb tlbWithEntries
+  let flushed := SeLe4n.Model.adapterFlushTlb tlbWithEntries
   IO.println s!"[CAT-026] TLB flush entry count: {flushed.entries.length}"
   match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll ⟨7⟩ ⟨99⟩ st1 with
   | .error err => IO.println s!"[CAT-027] adapter register write success path error: {reprStr err}"
@@ -1543,9 +1543,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs retypeDecoded with
   | .error e => IO.println s!"[KSD-004] lifecycleRetype decode error: {reprStr e}"
   | .ok retypeArgs =>
-    match SeLe4n.Kernel.objectOfTypeTag retypeArgs.newType retypeArgs.size with
-    | .error e => IO.println s!"[KSD-004] objectOfTypeTag error: {reprStr e}"
-    | .ok newObj =>
+      let newObj := SeLe4n.Kernel.objectOfKernelType retypeArgs.newType retypeArgs.size
       let retypeCap : SeLe4n.Model.Capability := {
         target := .object (ObjId.ofNat retypeArgs.targetObj.toNat)
         rights := AccessRightSet.ofList [.read, .write]

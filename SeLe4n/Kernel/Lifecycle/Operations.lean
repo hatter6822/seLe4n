@@ -1018,6 +1018,47 @@ theorem objectOfTypeTag_type (tag : Nat) (size : Nat) (obj : KernelObject)
   | 5 => simp at hOk; subst hOk; simp [KernelObject.objectType]
   | _ + 6 => simp at hOk
 
+/-- R7-E/L-10: Typed version of `objectOfTypeTag` that takes `KernelObjectType` directly.
+    Eliminates the invalid-tag error path since the type is already validated. -/
+def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObject :=
+  match objType with
+  | .tcb => .tcb {
+      tid := SeLe4n.ThreadId.ofNat 0
+      priority := SeLe4n.Priority.ofNat 0
+      domain := SeLe4n.DomainId.ofNat 0
+      cspaceRoot := SeLe4n.ObjId.ofNat 0
+      vspaceRoot := SeLe4n.ObjId.ofNat 0
+      ipcBuffer := SeLe4n.VAddr.ofNat 0
+    }
+  | .endpoint => .endpoint { sendQ := {}, receiveQ := {} }
+  | .notification => .notification {
+      state := .idle, waitingThreads := [], pendingBadge := none
+    }
+  | .cnode => .cnode {
+      depth := 0, guardWidth := 0, guardValue := 0,
+      radixWidth := 0, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+    }
+  | .vspaceRoot => .vspaceRoot {
+      asid := SeLe4n.ASID.ofNat 0, mappings := {}
+    }
+  | .untyped => .untyped {
+      regionBase := SeLe4n.PAddr.ofNat 0,
+      regionSize := sizeHint,
+      watermark := 0,
+      children := [],
+      isDevice := false
+    }
+
+/-- R7-E/L-10: `objectOfKernelType` produces an object of the requested type. -/
+theorem objectOfKernelType_type (objType : KernelObjectType) (sizeHint : Nat) :
+    (objectOfKernelType objType sizeHint).objectType = objType := by
+  cases objType <;> simp [objectOfKernelType, KernelObject.objectType]
+
+/-- R7-E/L-10: `objectOfKernelType` agrees with `objectOfTypeTag` on valid tags. -/
+theorem objectOfKernelType_eq_objectOfTypeTag (objType : KernelObjectType) (sizeHint : Nat) :
+    objectOfTypeTag objType.toNat sizeHint = .ok (objectOfKernelType objType sizeHint) := by
+  cases objType <;> simp [objectOfKernelType, objectOfTypeTag, KernelObjectType.toNat]
+
 -- ============================================================================
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
 -- ============================================================================

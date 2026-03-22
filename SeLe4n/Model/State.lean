@@ -109,6 +109,49 @@ structure LifecycleMetadata where
   objectTypes : RHTable SeLe4n.ObjId KernelObjectType
   capabilityRefs : RHTable SlotRef CapTarget
 
+/-- R7-A.1/M-17: A single TLB entry caching an address translation.
+
+    On ARM64, the TLB caches `(ASID, VAddr, PAddr, PagePermissions)` tuples.
+    Stale entries after page table modification are a security concern — the
+    `tlbConsistent` invariant (in `TlbModel.lean`) enforces that all cached
+    entries match the current page tables. -/
+structure TlbEntry where
+  asid : SeLe4n.ASID
+  vaddr : SeLe4n.VAddr
+  paddr : SeLe4n.PAddr
+  perms : PagePermissions
+  deriving Repr, DecidableEq, BEq
+
+/-- R7-A.1/M-17: Abstract TLB state: a collection of cached translation entries.
+
+    The list representation is intentionally simple — hardware TLBs are
+    associative caches, but for invariant reasoning we only need membership
+    queries, not performance-optimal lookup. -/
+structure TlbState where
+  entries : List TlbEntry
+  deriving Repr
+
+instance : Inhabited TlbState where
+  default := { entries := [] }
+
+/-- An empty TLB with no cached entries. -/
+def TlbState.empty : TlbState := { entries := [] }
+
+/-- R7-A.3: Full TLB flush — invalidates all cached entries.
+    On ARM64 this corresponds to `TLBI ALLE1` or `TLBI VMALLE1IS`. -/
+def adapterFlushTlb (_tlb : TlbState) : TlbState :=
+  TlbState.empty
+
+/-- R7-A.3: Per-ASID TLB flush — invalidates all entries for a specific ASID.
+    On ARM64 this corresponds to `TLBI ASIDE1, <asid>`. -/
+def adapterFlushTlbByAsid (tlb : TlbState) (asid : SeLe4n.ASID) : TlbState :=
+  { entries := tlb.entries.filter (·.asid != asid) }
+
+/-- R7-A.3: Per-VAddr TLB flush — invalidates entries for a specific (ASID, VAddr).
+    On ARM64 this corresponds to `TLBI VAE1, <asid, vaddr>`. -/
+def adapterFlushTlbByVAddr (tlb : TlbState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : TlbState :=
+  { entries := tlb.entries.filter (fun e => !(e.asid == asid && e.vaddr == vaddr)) }
+
 structure SystemState where
   machine : SeLe4n.MachineState
   /-- Q2-C: Object store backed by `RHTable` (verified Robin Hood hash table)
@@ -153,6 +196,10 @@ structure SystemState where
   cdtSlotNode : RHTable SlotRef CdtNodeId := {}
   cdtNodeSlot : RHTable CdtNodeId SlotRef := {}
   cdtNextNode : CdtNodeId := ⟨0⟩
+  /-- R7-A.1/M-17: Abstract TLB state, tracking cached address translations.
+      Empty by default (no stale entries at boot). Operations that modify page
+      tables must flush the TLB to maintain `tlbConsistent`. -/
+  tlb : TlbState := TlbState.empty
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -180,6 +227,7 @@ instance : Inhabited SystemState where
     cdtSlotNode := {}
     cdtNodeSlot := {}
     cdtNextNode := ⟨0⟩
+    tlb := TlbState.empty
   }
 
 /-- Q2-J: Predicate asserting that every RHTable and RHSet in the system state

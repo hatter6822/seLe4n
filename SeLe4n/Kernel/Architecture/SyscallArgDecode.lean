@@ -107,10 +107,12 @@ structure CSpaceDeleteArgs where
 -- ============================================================================
 
 /-- Per-syscall argument structure for `lifecycleRetype`.
-    Register mapping: x2=targetObj, x3=newType tag, x4=size hint. -/
+    Register mapping: x2=targetObj, x3=newType tag, x4=size hint.
+    R7-E/L-10: `newType` is typed as `KernelObjectType` instead of raw `Nat`,
+    ensuring only valid object types are accepted at the decode boundary. -/
 structure LifecycleRetypeArgs where
   targetObj : ObjId
-  newType   : Nat
+  newType   : KernelObjectType
   size      : Nat
   deriving Repr, DecidableEq
 
@@ -175,15 +177,20 @@ def decodeCSpaceDeleteArgs (decoded : SyscallDecodeResult)
 -- ============================================================================
 
 /-- Decode lifecycle retype arguments from message registers.
-    Requires 3 message registers (targetObj, newType tag, size hint). -/
+    Requires 3 message registers (targetObj, newType tag, size hint).
+    R7-E/L-10: The raw `newType` tag is validated through `KernelObjectType.ofNat?`,
+    rejecting unrecognized type tags at the decode boundary. -/
 def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
     : Except KernelError LifecycleRetypeArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
-  pure { targetObj := ObjId.ofNat r0.val
-         newType   := r1.val
-         size      := r2.val }
+  match KernelObjectType.ofNat? r1.val with
+  | some objType =>
+    pure { targetObj := ObjId.ofNat r0.val
+           newType   := objType
+           size      := r2.val }
+  | none => .error .invalidTypeTag
 
 /-- Decode VSpace map arguments from message registers.
     Requires 4 message registers (asid, vaddr, paddr, perms word). -/
@@ -234,7 +241,7 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
 /-- Encode lifecycle retype arguments into message registers.
     Inverse of `decodeLifecycleRetypeArgs`. -/
 @[inline] def encodeLifecycleRetypeArgs (args : LifecycleRetypeArgs) : Array RegValue :=
-  #[⟨args.targetObj.toNat⟩, ⟨args.newType⟩, ⟨args.size⟩]
+  #[⟨args.targetObj.toNat⟩, ⟨args.newType.toNat⟩, ⟨args.size⟩]
 
 /-- Encode VSpace map arguments into message registers.
     Inverse of `decodeVSpaceMapArgs`. -/
@@ -370,30 +377,30 @@ theorem decodeCSpaceDeleteArgs_error_iff (d : SyscallDecodeResult) :
     simp only [decodeCSpaceDeleteArgs, bind, Except.bind]
     rw [requireMsgReg_unfold_err _ _ (by omega)]
 
-/-- Lifecycle retype decode fails iff fewer than 3 message registers. -/
-theorem decodeLifecycleRetypeArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeLifecycleRetypeArgs d = .error e) ↔ d.msgRegs.size < 3 := by
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 3
-    · exact hlt
-    · exfalso
-      simp only [decodeLifecycleRetypeArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        dif_pos (show 1 < d.msgRegs.size by omega),
-        dif_pos (show 2 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeLifecycleRetypeArgs, bind, Except.bind]
-    by_cases h0 : 0 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h0]; simp
-      by_cases h1 : 1 < d.msgRegs.size
-      · rw [requireMsgReg_unfold_ok _ _ h1]; simp
-        rw [requireMsgReg_unfold_err _ _ (by omega)]
-      · rw [requireMsgReg_unfold_err _ _ h1]
-    · rw [requireMsgReg_unfold_err _ _ h0]
+/-- R7-E/L-10: Lifecycle retype decode fails if fewer than 3 message registers. -/
+theorem decodeLifecycleRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
+    (h : d.msgRegs.size < 3) :
+    ∃ e, decodeLifecycleRetypeArgs d = .error e := by
+  refine ⟨.invalidMessageInfo, ?_⟩
+  simp only [decodeLifecycleRetypeArgs, bind, Except.bind]
+  by_cases h0 : 0 < d.msgRegs.size
+  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+    by_cases h1 : 1 < d.msgRegs.size
+    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+      rw [requireMsgReg_unfold_err _ _ (by omega)]
+    · rw [requireMsgReg_unfold_err _ _ h1]
+  · rw [requireMsgReg_unfold_err _ _ h0]
+
+/-- R7-E/L-10: Lifecycle retype decode fails if the type tag is unrecognized. -/
+theorem decodeLifecycleRetypeArgs_error_of_invalid_type (d : SyscallDecodeResult)
+    (hSize : 3 ≤ d.msgRegs.size)
+    (hTag : KernelObjectType.ofNat? d.msgRegs[1].val = none) :
+    ∃ e, decodeLifecycleRetypeArgs d = .error e := by
+  refine ⟨.invalidTypeTag, ?_⟩
+  simp only [decodeLifecycleRetypeArgs, bind, Except.bind,
+    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+    dif_pos (show 1 < d.msgRegs.size by omega),
+    dif_pos (show 2 < d.msgRegs.size by omega), hTag]
 
 /-- VSpace map decode fails iff fewer than 4 message registers. -/
 theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
@@ -486,10 +493,14 @@ theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs) :
     decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args := by
   rcases args with ⟨t⟩; rfl
 
-/-- Round-trip: encoding then decoding LifecycleRetypeArgs recovers the original. -/
+/-- Round-trip: encoding then decoding LifecycleRetypeArgs recovers the original.
+    R7-E/L-10: Uses `KernelObjectType.ofNat_toNat` for the type tag round-trip. -/
 theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
     decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args := by
-  rcases args with ⟨o, t, s⟩; rfl
+  rcases args with ⟨o, t, s⟩
+  simp only [decodeLifecycleRetypeArgs, encodeLifecycleRetypeArgs, stubDecoded,
+    requireMsgReg, KernelObjectType.toNat]
+  cases t <;> rfl
 
 /-- Round-trip: encoding then decoding VSpaceMapArgs recovers the original. -/
 theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) :

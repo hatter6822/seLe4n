@@ -539,10 +539,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         fun st => match decodeLifecycleRetypeArgs decoded with
         | .error e => .error e
         | .ok args =>
-            match objectOfTypeTag args.newType args.size with
-            | .error e => .error e
-            | .ok newObj =>
-                lifecycleRetypeDirect cap args.targetObj newObj st
+            let newObj := objectOfKernelType args.newType args.size
+            lifecycleRetypeDirect cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
   -- WS-K-D: VSpace map — ASID, vaddr, paddr, perms from message registers.
   -- Uses bounds-checked variant (rejects paddr ≥ 2^52) for user-space entry.
@@ -851,14 +849,12 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.LifecycleRetypeArgs)
-    (newObj : KernelObject)
     (hSyscall : decoded.syscallId = .lifecycleRetype)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args)
-    (hType : objectOfTypeTag args.newType args.size = .ok newObj) :
+    (hDecode : decodeLifecycleRetypeArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      lifecycleRetypeDirect cap args.targetObj newObj := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode, hType]
+      lifecycleRetypeDirect cap args.targetObj (objectOfKernelType args.newType args.size) := by
+  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D: When vspaceMap dispatch succeeds, `vspaceMapPageChecked` is
 invoked with the decoded ASID, vaddr, paddr, and permissions. -/
