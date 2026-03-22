@@ -9,7 +9,7 @@ seLe4n مكتوب بلغة Lean 4 ويستخدم نظام البناء Lake.
 
 ---
 
-🌐 [English](../../../docs/DEVELOPMENT.md) | **العربية**
+🌐 [English](../../../README.md#quick-start) | [简体中文](../zh-CN/QUICKSTART.md) | [Español](../es/QUICKSTART.md) | [日本語](../ja/QUICKSTART.md) | [한국어](../ko/QUICKSTART.md) | **العربية** | [Français](../fr/QUICKSTART.md) | [Português](../pt-BR/QUICKSTART.md) | [Русский](../ru/QUICKSTART.md) | [Deutsch](../de/QUICKSTART.md) | [हिन्दी](../hi/QUICKSTART.md)
 
 ---
 

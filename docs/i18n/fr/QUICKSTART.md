@@ -5,7 +5,7 @@ orienté production écrit en Lean 4 avec des preuves vérifiées par machine.
 
 ---
 
-🌐 [English](../../../README.md#quick-start) | **Français**
+🌐 [English](../../../README.md#quick-start) | [简体中文](../zh-CN/QUICKSTART.md) | [Español](../es/QUICKSTART.md) | [日本語](../ja/QUICKSTART.md) | [한국어](../ko/QUICKSTART.md) | [العربية](../ar/QUICKSTART.md) | **Français** | [Português](../pt-BR/QUICKSTART.md) | [Русский](../ru/QUICKSTART.md) | [Deutsch](../de/QUICKSTART.md) | [हिन्दी](../hi/QUICKSTART.md)
 
 ---
 

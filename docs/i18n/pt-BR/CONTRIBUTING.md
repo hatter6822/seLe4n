@@ -8,7 +8,7 @@ escrito em Lean 4 com provas verificadas por máquina (machine-checked proofs).
 
 ---
 
-🌐 [English](../../../CONTRIBUTING.md) | **Português**
+🌐 [English](../../../CONTRIBUTING.md) | [简体中文](../zh-CN/CONTRIBUTING.md) | [Español](../es/CONTRIBUTING.md) | [日本語](../ja/CONTRIBUTING.md) | [한국어](../ko/CONTRIBUTING.md) | [العربية](../ar/CONTRIBUTING.md) | [Français](../fr/CONTRIBUTING.md) | **Português** | [Русский](../ru/CONTRIBUTING.md) | [Deutsch](../de/CONTRIBUTING.md) | [हिन्दी](../hi/CONTRIBUTING.md)
 
 ---
 

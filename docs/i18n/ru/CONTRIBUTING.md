@@ -5,7 +5,7 @@
 
 ---
 
-🌐 [English](../../../CONTRIBUTING.md) | **Русский**
+🌐 [English](../../../CONTRIBUTING.md) | [简体中文](../zh-CN/CONTRIBUTING.md) | [Español](../es/CONTRIBUTING.md) | [日本語](../ja/CONTRIBUTING.md) | [한국어](../ko/CONTRIBUTING.md) | [العربية](../ar/CONTRIBUTING.md) | [Français](../fr/CONTRIBUTING.md) | [Português](../pt-BR/CONTRIBUTING.md) | **Русский** | [Deutsch](../de/CONTRIBUTING.md) | [हिन्दी](../hi/CONTRIBUTING.md)
 
 ---
 
@@ -23,7 +23,8 @@ seLe4n распространяется по лицензии [GNU General Publi
 2. **Уровни тестирования (Tiered test gates):** [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md)
 3. **Политика CI:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Область проекта и рабочие потоки (workstreams):** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
-5. **История рабочих потоков:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
+5. **Активные результаты аудита:** [`docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
+6. **История рабочих потоков:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
 
 Полное руководство: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)
 
