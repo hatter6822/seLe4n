@@ -44,12 +44,12 @@ ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43
 # R8-A (I-M01): Pin elan binary release version for direct download path.
 # Replaces /releases/latest/ with a specific tag to prevent silent upgrades.
 # SHA-256 hashes for the elan binary tarballs — update these together with the version.
-ELAN_BINARY_VERSION="v4.8.0"
+ELAN_BINARY_VERSION="v4.2.1"
 # To regenerate hashes after version bump:
 #   curl -fsSL "https://github.com/leanprover/elan/releases/download/${ELAN_BINARY_VERSION}/elan-x86_64-unknown-linux-gnu.tar.gz" | sha256sum
 #   curl -fsSL "https://github.com/leanprover/elan/releases/download/${ELAN_BINARY_VERSION}/elan-aarch64-unknown-linux-gnu.tar.gz" | sha256sum
-ELAN_BINARY_SHA256_X86="af1d52d5ee39cfcd4a15e41640e2bf8cc8084e24bfa0d21d5d1b86dffbb74be1"
-ELAN_BINARY_SHA256_ARM="71b6e67e0a7a5db2d8ddd9e4ac5e07509cbbc2980142e29e9861db3a5ba2480f"
+ELAN_BINARY_SHA256_X86="4e717523217af592fa2d7b9c479410a31816c065d66ccbf0c2149337cfec0f5c"
+ELAN_BINARY_SHA256_ARM="bb78726ace6a912c7122a389018bcd69d9122ce04659800101392f7db380d3b3"
 
 # -------- Parse toolchain spec early (needed by fast-path) --------
 if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
@@ -358,8 +358,11 @@ SETTINGSEOF
 
   # --- Wait for elan background download if it was started ---
   if [ -n "${elan_bg_pid}" ]; then
-    wait "${elan_bg_pid}" 2>/dev/null || true
-    log_elapsed "elan binary download complete"
+    if wait "${elan_bg_pid}" 2>/dev/null; then
+      log_elapsed "elan binary download complete (SHA-256 verified)"
+    else
+      log_elapsed "warning: elan binary download failed (SHA-256 mismatch or network error); toolchain symlinks will be used instead"
+    fi
   fi
 
   # --- Create direct symlinks so lean/lake/leanc are on PATH immediately ---

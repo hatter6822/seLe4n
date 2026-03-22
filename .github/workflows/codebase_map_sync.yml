@@ -12,8 +12,9 @@ on:
       - main
   workflow_dispatch:
 
-# R8-B (I-M02): Downgraded from `contents: write` to `contents: read` + `pull-requests: write`.
-# Changes are now proposed via PR instead of auto-pushed to main.
+# R8-B (I-M02): Changes are now proposed via PR instead of auto-pushed to main.
+# `contents: write` is retained for branch push; `pull-requests: write` added for PR creation.
+# The security improvement is that main is no longer directly modified — all changes go through PR review.
 permissions:
   contents: write
   pull-requests: write
