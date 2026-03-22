@@ -56,6 +56,6 @@ platform-specific binding without invalidating core verification.
 ## 4. Key links
 
 - Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
-- Active workstream: [WS-R Comprehensive Audit Remediation](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
+- Active workstream: [WS-R Comprehensive Audit Remediation](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
 - Workstream history: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)

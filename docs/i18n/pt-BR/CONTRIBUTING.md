@@ -25,7 +25,7 @@ também certifica que tem o direito de enviar a contribuição sob esta licença
 2. **Camadas de teste (testing tiers):** [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md)
 3. **Política de CI:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Escopo do projeto + workstreams:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
-5. **Descobertas de auditoria ativas:** [`docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
+5. **Descobertas de auditoria ativas:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
 6. **Histórico de workstreams:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
 
 Manual completo: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)

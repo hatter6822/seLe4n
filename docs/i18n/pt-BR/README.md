@@ -52,7 +52,7 @@ melhorias arquiteturais inovadoras em comparação com outros microkernels:
 | **LoC Lean de testes** | 7.309 em 10 suítes de testes |
 | **Declarações provadas** | 1.686 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Auditoria mais recente** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoria completa pré-lançamento do kernel + codebase Rust |
+| **Auditoria mais recente** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoria completa pré-lançamento do kernel + codebase Rust |
 | **Mapa do codebase** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário de declarações legível por máquina |
 
 As métricas são derivadas do codebase por `./scripts/generate_codebase_map.py`
@@ -169,7 +169,7 @@ agrega todos os invariantes de subsistema em uma única obrigação de prova.
 As prioridades atuais e o histórico completo de workstreams são mantidos em
 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md). Resumo:
 
-- **WS-R** — Remediação Abrangente de Auditoria (8 fases, R1–R8, 111 subtarefas). Aborda todas as 82 descobertas da [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 completas (v0.18.0–v0.18.6), R8 pendente. Plano: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **WS-R** — Remediação Abrangente de Auditoria (8 fases, R1–R8, 111 subtarefas). Aborda todas as 82 descobertas da [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 completas (v0.18.0–v0.18.6), R8 pendente. Plano: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 - **Binding para hardware Raspberry Pi 5** — page table walk ARMv8, roteamento de interrupções GIC-400, sequência de boot (contratos de plataforma RPi5 agora substanciais via WS-H15)
 
 Portfólios anteriores (WS-B até WS-Q) estão todos completos. Auditorias anteriores

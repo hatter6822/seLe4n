@@ -58,7 +58,7 @@ aux autres micro-noyaux :
 | **LoC Lean de test** | 7 309 réparties sur 10 suites de tests |
 | **Déclarations prouvées** | 1 686 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Audit complet pré-publication du noyau et de la base Rust |
+| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Audit complet pré-publication du noyau et de la base Rust |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |
 
 Les métriques sont extraites de la base de code par `./scripts/generate_codebase_map.py`
@@ -159,7 +159,7 @@ en une seule obligation de preuve.
 Les priorités actuelles et l'historique complet des flux de travail sont maintenus dans
 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md). En résumé :
 
-- **WS-R** — Remédiation d'audit complète (8 phases, R1–R8, 111 sous-tâches). Traite les 82 constats de l'[`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 terminées (v0.18.0–v0.18.6), R8 en attente. Plan : [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **WS-R** — Remédiation d'audit complète (8 phases, R1–R8, 111 sous-tâches). Traite les 82 constats de l'[`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 terminées (v0.18.0–v0.18.6), R8 en attente. Plan : [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 - **Liaison matérielle Raspberry Pi 5** — parcours de tables de pages ARMv8, routage d'interruptions GIC-400, séquence de démarrage (les contrats de plateforme RPi5 sont désormais substantifs via WS-H15)
 
 Les portefeuilles précédents (WS-B à WS-Q) sont tous terminés. Les audits antérieurs (v0.8.0–v0.9.32),

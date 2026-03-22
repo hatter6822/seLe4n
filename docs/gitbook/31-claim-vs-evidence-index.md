@@ -39,7 +39,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | WS-M Capability subsystem audit — PORTFOLIO COMPLETE (v0.16.14–v0.17.0) | `./scripts/test_full.sh` |
 | WS-N Robin Hood hashing — PORTFOLIO COMPLETE (v0.17.0–v0.17.5) | `./scripts/test_full.sh` |
 | WS-Q Kernel State Architecture — PORTFOLIO COMPLETE (v0.17.7–v0.17.14, 9 phases) | `./scripts/test_full.sh` |
-| WS-R Comprehensive Audit Remediation — PORTFOLIO COMPLETE (R1–R8, v0.18.0–v0.18.7) | [Workstream plan](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) |
+| WS-R Comprehensive Audit Remediation — PORTFOLIO COMPLETE (R1–R8, v0.18.0–v0.18.7) | [Workstream plan](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) |
 
 ## Proof claim qualification
 

@@ -54,7 +54,7 @@ Mikrokerneln ein:
 | **Test-LoC (Lean)** | 7.309 über 10 Testsuiten |
 | **Bewiesene Deklarationen** | 1.686 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Letztes Audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Vollständiges Kernel- + Rust-Codebase-Pre-Release-Audit |
+| **Letztes Audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Vollständiges Kernel- + Rust-Codebase-Pre-Release-Audit |
 | **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |
 
 Die Metriken werden durch `./scripts/generate_codebase_map.py` aus der Codebasis
@@ -156,7 +156,7 @@ Beweisverpflichtung (Proof Obligation).
 Die aktuellen Prioritäten und die vollständige Workstream-Geschichte werden in
 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) gepflegt. Zusammenfassung:
 
-- **WS-R** — Umfassende Audit-Behebung (Comprehensive Audit Remediation, 8 Phasen, R1–R8, 111 Teilaufgaben). Behandelt alle 82 Befunde aus dem [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 abgeschlossen (v0.18.0–v0.18.6), R8 ausstehend.
+- **WS-R** — Umfassende Audit-Behebung (Comprehensive Audit Remediation, 8 Phasen, R1–R8, 111 Teilaufgaben). Behandelt alle 82 Befunde aus dem [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 abgeschlossen (v0.18.0–v0.18.6), R8 ausstehend.
 - **Raspberry Pi 5 Hardware-Anbindung** — ARMv8 Page-Table-Walk, GIC-400 Interrupt-Routing, Boot-Sequenz (RPi5-Plattformverträge nun substantiell durch WS-H15)
 
 Alle vorherigen Portfolios (WS-B bis WS-Q) sind abgeschlossen. Frühere Audits

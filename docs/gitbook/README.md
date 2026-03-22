@@ -7,7 +7,7 @@ This GitBook is the long-form guide for seLe4n — a production-oriented microke
 ## Current project state
 - **Version:** 0.18.7 (Lean v4.28.0).
 - **Codebase metrics:** 55,499 production LoC across 98 files; 7,309 test LoC across 10 suites; 1,686 theorem/lemma declarations (zero sorry/axiom).
-- **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit.
+- **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit.
 - **Active workstream:** WS-R Comprehensive Audit Remediation (8 phases: R1–R8, 111 sub-tasks). R1–R8 complete (v0.18.0–v0.18.7). All prior portfolios (WS-B through WS-Q) completed.
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
@@ -32,7 +32,7 @@ Specification documents:
 ## Where to find current workstream detail
 
 - Canonical execution matrix:
-  [`docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
+  [`docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
   [Specification & Roadmap](05-specification-and-roadmap.md)
 
