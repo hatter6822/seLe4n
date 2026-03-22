@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-s2-testing-sSCCX",
-      "commit_sha": "30f129504a129aac206e0e25ea8e46fa65442d93",
-      "tree_sha": "2e7e6cb7dbe96d2b8ce20e97a5d19f7a69c2e6bf",
-      "committed_at_utc": "2026-03-22T17:15:27-04:00"
+      "commit_sha": "3e48d698b0b97132af84105a9cd1fd477f05c777",
+      "tree_sha": "97540d1f1bdc2426590a876b535bbfb0672400cd",
+      "committed_at_utc": "2026-03-22T21:46:34+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "53049cbf181eeeef4a69637bd6993ff2199277a5774377b7c9523234f734a6ca"
+    "source_digest": "63a3c6dc3e254786532acfa387769619ddd334d8dc976001c0c61693591f89b1"
   },
   "summary": {
     "module_count": 109,
-    "declaration_count": 3153
+    "declaration_count": 3155
   },
   "readme_sync": {
     "version": "0.19.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 99,
-    "production_loc": 55836,
+    "production_loc": 55845,
     "test_files": 10,
-    "test_loc": 7421,
+    "test_loc": 7518,
     "proved_theorem_lemma_decls": 1692,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -23660,7 +23660,7 @@
     {
       "module": "SeLe4n.Testing.StateBuilder",
       "path": "SeLe4n/Testing/StateBuilder.lean",
-      "declaration_count": 16,
+      "declaration_count": 17,
       "declarations": [
         {
           "kind": "namespace",
@@ -23777,6 +23777,14 @@
           "kind": "def",
           "name": "buildValidated",
           "line": 118,
+          "called": [
+            "BootstrapBuilder"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "buildChecked",
+          "line": 171,
           "called": [
             "BootstrapBuilder"
           ]
@@ -24492,66 +24500,72 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 47,
+      "declaration_count": 48,
       "declarations": [
         {
-          "kind": "namespace",
-          "name": "SeLe4n.Testing",
-          "line": 19,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "endpointId",
+          "kind": "instance",
+          "name": "instBEqExceptS2",
           "line": 21,
           "called": []
         },
         {
-          "kind": "def",
-          "name": "cnodeId",
-          "line": 22,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "wrongTypeId",
-          "line": 23,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "guardedCnodeId",
-          "line": 24,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "notificationId",
-          "line": 25,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "asidPrimary",
-          "line": 26,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "vaddrPrimary",
+          "kind": "namespace",
+          "name": "SeLe4n.Testing",
           "line": 27,
           "called": []
         },
         {
           "kind": "def",
+          "name": "endpointId",
+          "line": 29,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "cnodeId",
+          "line": 30,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "wrongTypeId",
+          "line": 31,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "guardedCnodeId",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "notificationId",
+          "line": 33,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "asidPrimary",
+          "line": 34,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "vaddrPrimary",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "paddrPrimary",
-          "line": 28,
+          "line": 36,
           "called": []
         },
         {
           "kind": "def",
           "name": "slot0",
-          "line": 30,
+          "line": 38,
           "called": [
             "cnodeId"
           ]
@@ -24559,7 +24573,7 @@
         {
           "kind": "def",
           "name": "slot0Path",
-          "line": 31,
+          "line": 39,
           "called": [
             "cnodeId"
           ]
@@ -24567,7 +24581,7 @@
         {
           "kind": "def",
           "name": "guardedPathBadDepth",
-          "line": 32,
+          "line": 40,
           "called": [
             "guardedCnodeId"
           ]
@@ -24575,7 +24589,7 @@
         {
           "kind": "def",
           "name": "badSlot",
-          "line": 33,
+          "line": 41,
           "called": [
             "wrongTypeId"
           ]
@@ -24583,7 +24597,7 @@
         {
           "kind": "def",
           "name": "guardedPathBadGuard",
-          "line": 34,
+          "line": 42,
           "called": [
             "guardedCnodeId"
           ]
@@ -24591,7 +24605,7 @@
         {
           "kind": "def",
           "name": "baseState",
-          "line": 36,
+          "line": 44,
           "called": [
             "asidPrimary",
             "cnodeId",
@@ -24605,7 +24619,7 @@
         {
           "kind": "def",
           "name": "invariantObjectIds",
-          "line": 118,
+          "line": 126,
           "called": [
             "cnodeId",
             "endpointId",
@@ -24617,13 +24631,13 @@
         {
           "kind": "def",
           "name": "expectError",
-          "line": 121,
+          "line": 129,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectOkState",
-          "line": 134,
+          "line": 142,
           "called": [
             "invariantObjectIds"
           ]
@@ -24631,43 +24645,43 @@
         {
           "kind": "def",
           "name": "expectOk",
-          "line": 146,
+          "line": 154,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectThreadQueueLinks",
-          "line": 156,
+          "line": 164,
           "called": []
         },
         {
           "kind": "def",
           "name": "corruptThreadQueueLinks",
-          "line": 173,
+          "line": 181,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedObjId",
-          "line": 189,
+          "line": 197,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedChildId",
-          "line": 190,
+          "line": 198,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedAuthCnode",
-          "line": 191,
+          "line": 199,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2UntypedAuthSlot",
-          "line": 192,
+          "line": 200,
           "called": [
             "f2UntypedAuthCnode"
           ]
@@ -24675,7 +24689,7 @@
         {
           "kind": "def",
           "name": "f2UntypedState",
-          "line": 195,
+          "line": 203,
           "called": [
             "f2UntypedAuthCnode",
             "f2UntypedAuthSlot",
@@ -24685,13 +24699,13 @@
         {
           "kind": "def",
           "name": "f2DeviceUntypedId",
-          "line": 222,
+          "line": 230,
           "called": []
         },
         {
           "kind": "def",
           "name": "f2DeviceState",
-          "line": 224,
+          "line": 232,
           "called": [
             "f2DeviceUntypedId",
             "f2UntypedAuthCnode",
@@ -24701,7 +24715,7 @@
         {
           "kind": "def",
           "name": "runNegativeChecks",
-          "line": 251,
+          "line": 259,
           "called": [
             "asidPrimary",
             "badSlot",
@@ -24733,7 +24747,7 @@
         {
           "kind": "def",
           "name": "runH2NegativeChecks",
-          "line": 1038,
+          "line": 1046,
           "called": [
             "expectError",
             "f2UntypedAuthCnode",
@@ -24745,7 +24759,7 @@
         {
           "kind": "def",
           "name": "runAuditCoverageChecks",
-          "line": 1087,
+          "line": 1095,
           "called": [
             "baseState",
             "endpointId",
@@ -24757,7 +24771,7 @@
         {
           "kind": "def",
           "name": "runWSH7Checks",
-          "line": 1170,
+          "line": 1178,
           "called": [
             "baseState",
             "endpointId",
@@ -24767,7 +24781,7 @@
         {
           "kind": "def",
           "name": "runWSH11Checks",
-          "line": 1227,
+          "line": 1235,
           "called": [
             "expectError",
             "expectOkState"
@@ -24776,7 +24790,7 @@
         {
           "kind": "def",
           "name": "runWSH13Checks",
-          "line": 1414,
+          "line": 1422,
           "called": [
             "expectError"
           ]
@@ -24784,7 +24798,7 @@
         {
           "kind": "def",
           "name": "runWSH15Checks",
-          "line": 1456,
+          "line": 1464,
           "called": [
             "cnodeId",
             "expectError"
@@ -24793,13 +24807,13 @@
         {
           "kind": "def",
           "name": "runWSH15PlatformChecks",
-          "line": 1540,
+          "line": 1548,
           "called": []
         },
         {
           "kind": "def",
           "name": "runWSH16LifecycleChecks",
-          "line": 1596,
+          "line": 1604,
           "called": [
             "expectError"
           ]
@@ -24807,7 +24821,7 @@
         {
           "kind": "def",
           "name": "runWSJ1DecodeChecks",
-          "line": 1795,
+          "line": 1803,
           "called": [
             "expectError",
             "expectOk"
@@ -24816,7 +24830,7 @@
         {
           "kind": "def",
           "name": "runWSKGChecks",
-          "line": 1932,
+          "line": 1940,
           "called": [
             "expectError"
           ]
@@ -24824,7 +24838,7 @@
         {
           "kind": "def",
           "name": "runWSL4BlockedThreadChecks",
-          "line": 2196,
+          "line": 2201,
           "called": [
             "expectError",
             "expectOkState"
@@ -24833,13 +24847,13 @@
         {
           "kind": "def",
           "name": "runWSM3CapTransferNegativeChecks",
-          "line": 2270,
+          "line": 2275,
           "called": []
         },
         {
           "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
-          "line": 2334,
+          "line": 2339,
           "called": [
             "cnodeId"
           ]
@@ -24847,13 +24861,13 @@
         {
           "kind": "def",
           "name": "runWSR2RevocationChecks",
-          "line": 2680,
+          "line": 2685,
           "called": []
         },
         {
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
-          "line": 2781,
+          "line": 2786,
           "called": [
             "expectError"
           ]
@@ -24861,7 +24875,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 2892,
+          "line": 2897,
           "called": [
             "baseState",
             "cnodeId",
@@ -24873,7 +24887,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 2953,
+          "line": 3022,
           "called": [
             "baseState",
             "cnodeId",
@@ -24890,7 +24904,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2989,
+          "line": 3086,
           "called": []
         }
       ]

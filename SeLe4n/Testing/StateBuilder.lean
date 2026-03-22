@@ -164,6 +164,15 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
       else .ok st
     | none => .ok st
 
+/-- S2-F: Build a `SystemState` with invariant validation, panicking on failure.
+    Drop-in replacement for `build` that catches structural violations at test time.
+    Use this for new test states instead of `build` to ensure test states satisfy
+    the same structural invariants as the formal Builder. -/
+def buildChecked (builder : BootstrapBuilder) : SystemState :=
+  match builder.buildValidated with
+  | .ok st => st
+  | .error msg => panic! s!"BootstrapBuilder.buildChecked: {msg}"
+
 end BootstrapBuilder
 
 end SeLe4n.Testing

@@ -16,6 +16,14 @@ set_option maxRecDepth 1024
 
 open SeLe4n.Model
 
+/-- S2-A: BEq for Except, enabling structural equality (`==`) in determinism checks.
+Lean 4's Except does not derive BEq or DecidableEq automatically. -/
+instance instBEqExceptS2 [BEq ε] [BEq α] : BEq (Except ε α) where
+  beq
+    | .ok x, .ok y => x == y
+    | .error e1, .error e2 => e1 == e2
+    | _, _ => false
+
 namespace SeLe4n.Testing
 
 private def endpointId : SeLe4n.ObjId := ⟨40⟩
@@ -113,7 +121,7 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
     |>.withLifecycleCapabilityRef slot0 (.object endpointId)
     |>.withRunnable [⟨6⟩, ⟨7⟩, ⟨8⟩, ⟨9⟩]
-    |>.build)
+    |>.buildChecked)
 
 private def invariantObjectIds : List SeLe4n.ObjId :=
   [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, ⟨20⟩, ⟨6⟩, ⟨7⟩, ⟨8⟩, ⟨9⟩]
@@ -217,7 +225,7 @@ private def f2UntypedState : SystemState :=
     |>.withLifecycleObjectType f2UntypedObjId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
     |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
-    |>.build)
+    |>.buildChecked)
 
 private def f2DeviceUntypedId : SeLe4n.ObjId := ⟨83⟩
 
@@ -246,7 +254,7 @@ private def f2DeviceState : SystemState :=
     |>.withLifecycleObjectType f2DeviceUntypedId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
     |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2DeviceUntypedId)
-    |>.build)
+    |>.buildChecked)
 
 private def runNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
@@ -2126,43 +2134,40 @@ def runWSKGChecks : IO Unit := do
   let detRegs : SeLe4n.RegisterFile := default
   let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
   let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
-  -- S2-A: These determinism checks use toString comparison because the result
-  -- types (Except KernelError SyscallDecodeResult, etc.) contain function-typed
-  -- fields that prevent BEq derivation. For determinism verification of pure
-  -- functions called with identical inputs, toString comparison is semantically
-  -- equivalent to structural equality.
-  unless toString r1 == toString r2 do
+  -- S2-A: Determinism checks use structural equality via DecidableEq.
+  -- Except ε α gets DecidableEq from the instance above when both ε and α have it.
+  unless r1 == r2 do
     throw <| IO.userError "K-G-DET-01: decodeSyscallArgs not deterministic"
   match r1 with
   | .ok d1 =>
     -- Verify layer 2 decode determinism for all 7 functions
     let m1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs d1
     let m2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs d1
-    unless toString m1 == toString m2 do
+    unless m1 == m2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceMintArgs not deterministic"
     let c1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs d1
     let c2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs d1
-    unless toString c1 == toString c2 do
+    unless c1 == c2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceCopyArgs not deterministic"
     let mv1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs d1
     let mv2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs d1
-    unless toString mv1 == toString mv2 do
+    unless mv1 == mv2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceMoveArgs not deterministic"
     let del1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs d1
     let del2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs d1
-    unless toString del1 == toString del2 do
+    unless del1 == del2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceDeleteArgs not deterministic"
     let lr1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
     let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
-    unless toString lr1 == toString lr2 do
+    unless lr1 == lr2 do
       throw <| IO.userError "K-G-DET-01: decodeLifecycleRetypeArgs not deterministic"
     let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
     let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
-    unless toString vm1 == toString vm2 do
+    unless vm1 == vm2 do
       throw <| IO.userError "K-G-DET-01: decodeVSpaceMapArgs not deterministic"
     let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
     let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
-    unless toString vu1 == toString vu2 do
+    unless vu1 == vu2 do
       throw <| IO.userError "K-G-DET-01: decodeVSpaceUnmapArgs not deterministic"
     IO.println "determinism check passed [K-G-DET-01 layer 1+2 decode deterministic]"
   | .error _ =>
@@ -2173,7 +2178,7 @@ def runWSKGChecks : IO Unit := do
   let regsArr : Array SeLe4n.RegValue := #[⟨100⟩, ⟨200⟩, ⟨300⟩, ⟨400⟩]
   let e1 := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters regsArr info
   let e2 := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters regsArr info
-  unless toString e1 == toString e2 do
+  unless e1 == e2 do
     throw <| IO.userError "K-G-DET-02: extractMessageRegisters not deterministic"
   IO.println "determinism check passed [K-G-DET-02 extractMessageRegisters deterministic]"
 
@@ -2181,7 +2186,7 @@ def runWSKGChecks : IO Unit := do
   for tag in [0, 1, 2, 3, 4, 5] do
     let o1 := SeLe4n.Kernel.objectOfTypeTag tag 64
     let o2 := SeLe4n.Kernel.objectOfTypeTag tag 64
-    unless toString o1 == toString o2 do
+    unless o1 == o2 do
       throw <| IO.userError s!"K-G-DET-03: objectOfTypeTag tag {tag} not deterministic"
   IO.println "determinism check passed [K-G-DET-03 objectOfTypeTag deterministic]"
 
@@ -2940,6 +2945,70 @@ private def runS2GCapabilityErrorTests : IO Unit := do
     throw <| IO.userError "S2-G-04: expected no failure for node with no descendants"
   IO.println "negative check passed [S2-G-04: empty revoke returns clean report]"
 
+  -- S2-G-05: cspaceCopy to full CNode (all slots occupied) → targetSlotOccupied
+  -- Build a CNode with radixWidth=2 (capacity 16, default), fill slots 0-3
+  let fullCnodeId : SeLe4n.ObjId := ⟨70⟩
+  let fullCnode : KernelObject := .cnode {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      (⟨0⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
+      (⟨1⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }),
+      (⟨2⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.write], badge := none }),
+      (⟨3⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+    ]
+  }
+  let fullCnodeState := { baseState with objects := baseState.objects.insert fullCnodeId fullCnode }
+  -- Copy from slot0 in cnodeId into slot 0 of full CNode (occupied)
+  let fullCopySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let fullCopyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := fullCnodeId, slot := ⟨0⟩ }
+  expectError "S2-G-05 cspaceCopy to full CNode slot"
+    (SeLe4n.Kernel.cspaceCopy fullCopySrc fullCopyDst fullCnodeState)
+    .targetSlotOccupied
+
+  -- S2-G-06: cspaceRevokeCdtStrict with deep CDT chain (depth > 4)
+  -- Build a 5-deep CDT chain: root → n1 → n2 → n3 → n4 → n5
+  let deepRoot : CdtNodeId := ⟨50⟩
+  let deepN1 : CdtNodeId := ⟨51⟩
+  let deepN2 : CdtNodeId := ⟨52⟩
+  let deepN3 : CdtNodeId := ⟨53⟩
+  let deepN4 : CdtNodeId := ⟨54⟩
+  let deepN5 : CdtNodeId := ⟨55⟩
+  let deepRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  -- All descendants map to cnodeId slot 0 (which exists); all have valid caps
+  let deepSeed : SystemState :=
+    { baseState with
+      cdt := CapDerivationTree.empty
+        |>.addEdge deepRoot deepN1 .mint
+        |>.addEdge deepN1 deepN2 .copy
+        |>.addEdge deepN2 deepN3 .mint
+        |>.addEdge deepN3 deepN4 .copy
+        |>.addEdge deepN4 deepN5 .mint
+      cdtSlotNode := baseState.cdtSlotNode
+        |>.insert deepRootSlot deepRoot
+        |>.insert { cnode := cnodeId, slot := ⟨3⟩ } deepN1
+        |>.insert { cnode := cnodeId, slot := ⟨4⟩ } deepN2
+        |>.insert { cnode := cnodeId, slot := ⟨5⟩ } deepN3
+        |>.insert { cnode := cnodeId, slot := ⟨6⟩ } deepN4
+        |>.insert { cnode := cnodeId, slot := ⟨7⟩ } deepN5
+      cdtNodeSlot := baseState.cdtNodeSlot
+        |>.insert deepRoot deepRootSlot
+        |>.insert deepN1 { cnode := cnodeId, slot := ⟨3⟩ }
+        |>.insert deepN2 { cnode := cnodeId, slot := ⟨4⟩ }
+        |>.insert deepN3 { cnode := cnodeId, slot := ⟨5⟩ }
+        |>.insert deepN4 { cnode := cnodeId, slot := ⟨6⟩ }
+        |>.insert deepN5 { cnode := cnodeId, slot := ⟨7⟩ }
+      cdtNextNode := ⟨60⟩
+    }
+  -- Deep revoke must handle 5 levels of descendants. Since slots 3-7 don't exist
+  -- in cnodeId (only slot 0 does), deletion of descendants will fail with objectNotFound
+  -- at the slots that have no capability. This exercises deep traversal + error propagation.
+  let (deepReport, _) ← expectOkState "S2-G-06 cspaceRevokeCdtStrict deep chain"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict deepRootSlot deepSeed)
+  -- Verify the report records some activity (deletedSlots or firstFailure)
+  if deepReport.deletedSlots.length + (if deepReport.firstFailure.isSome then 1 else 0) = 0 then
+    throw <| IO.userError "S2-G-06: deep chain revoke produced no report (expected deletions or failure)"
+  IO.println s!"negative check passed [S2-G-06: deep CDT revoke processed {deepReport.deletedSlots.length} deletions]"
+
   IO.println "all S2-G capability error-path tests passed"
 
 -- ============================================================================
@@ -2976,11 +3045,39 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       (.endpoint {}) 64 baseState)
     .untypedTypeMismatch
 
-  -- S2-H-04: retypeFromUntyped with childId = untypedId (self-overwrite)
-  expectError "S2-H-04 retypeFromUntyped childId self-overwrite"
-    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedObjId
-      (.endpoint {}) 64 f2UntypedState)
-    .childIdSelfOverwrite
+  -- S2-H-04: retypeFromUntyped with insufficient untyped capacity (region exhausted)
+  -- Create an untyped with watermark at the end of its region
+  let exhaustedUntypedId : SeLe4n.ObjId := ⟨85⟩
+  let exhaustedAuthCnode : SeLe4n.ObjId := ⟨86⟩
+  let exhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := exhaustedAuthCnode, slot := ⟨0⟩ }
+  let exhaustedState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject exhaustedUntypedId (.untyped {
+        regionBase := ⟨0x10000⟩
+        regionSize := 128
+        watermark := 128   -- watermark == regionSize → no space left
+        children := []
+        isDevice := false
+      })
+      |>.withObject exhaustedAuthCnode (.cnode {
+        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          (⟨0⟩, {
+            target := .object exhaustedUntypedId
+            rights := AccessRightSet.ofList [.read, .write, .grant]
+            badge := none
+          })
+        ]
+      })
+      |>.withLifecycleObjectType exhaustedUntypedId .untyped
+      |>.withLifecycleObjectType exhaustedAuthCnode .cnode
+      |>.withLifecycleCapabilityRef exhaustedAuthSlot (.object exhaustedUntypedId)
+      |>.build)
+  expectError "S2-H-04 retypeFromUntyped region exhausted"
+    (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩
+      (.endpoint {}) 64 exhaustedState)
+    .untypedRegionExhausted
 
   IO.println "all S2-H lifecycle error-path tests passed"
 

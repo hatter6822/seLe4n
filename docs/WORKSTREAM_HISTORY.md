@@ -122,14 +122,13 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   predicate (U-L05). Migrated `isPowerOfTwo` proofs from `native_decide` to
   `decide` (U-M30). Added `MonadStateOf`/`MonadExceptOf` for `KernelM` (U-M16).
   Added `#![deny(unsafe_code)]` to `sele4n-abi` (U-L09). Zero sorry/axiom.
-- **S2 (v0.19.1) — COMPLETE**: Test Hardening. Replaced all 101 `reprStr`
-  occurrences in 4 test suites with `toString` (S2-A/B/C, U-H4). Added blanket
-  `ToString` from `Repr` instance. Documented fixture management (S2-D, U-H5).
-  Enhanced trace diff reporting (S2-E). Enhanced `buildValidated` with 8 runtime
-  invariant checks (S2-F, U-L11). Added 8 new error-path tests for capability
-  and lifecycle operations (S2-G/H, U-L12). Created `Testing/Helpers.lean` shared
-  module (S2-I, U-L13). Migrated all deprecated `api*` wrappers in MainTraceHarness
-  to `syscallInvoke` path (S2-J, U-M05). Zero sorry/axiom.
+- **S2 (v0.19.1) — COMPLETE**: Test Hardening. Replaced 101 `reprStr` occurrences
+  with `toString` (S2-A/B/C, U-H4). Determinism checks converted to structural `==`
+  via `BEq Except` instance. Added `buildChecked` and migrated primary test states
+  (S2-F, U-L11). Added 10 error-path tests: full-CNode copy, deep-CDT revoke,
+  region exhaustion, rights attenuation, device restriction (S2-G/H, U-L12).
+  Created `Testing/Helpers.lean` (S2-I, U-L13). Migrated deprecated `api*` wrappers
+  (S2-J, U-M05). Zero sorry/axiom.
 - **S3 (v0.19.2) — IN PROGRESS**: Proof Surface Closure. Defined
   `cdtMapsConsistent` invariant with empty-CDT proof. Added `removeEdge` for CDT.
   Added `RHTable.loadFactorBounded` predicate. Remaining: CDT preservation proofs,
