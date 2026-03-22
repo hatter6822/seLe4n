@@ -198,3 +198,33 @@ theorem storeServiceState_preserves_capabilityInvariantBundle
     have hSlot := hSound cnodeId cn slot cap hCn hMem
     simp only [SystemState.lookupSlotCap, storeServiceState] at hSlot ⊢
     exact hSlot
+
+-- ============================================================================
+-- S3-I/U-M25: Compile-time bridge signature witness
+-- ============================================================================
+
+/-- S3-I: Bridge signature witness — asserts that `servicePolicySurfaceInvariant`
+    follows from `lifecycleInvariantBundle` plus backing-object existence at
+    compile time. If the signature of `servicePolicySurfaceInvariant` or
+    `lifecycleInvariantBundle` changes, this definition will fail to type-check,
+    alerting the developer to update all bridge theorems.
+
+    This is a type-level witness, not a runtime check. -/
+def bridgeSignatureWitness :
+    (∀ (st : SystemState),
+      lifecycleInvariantBundle st →
+      (∀ sid svc, lookupService st sid = some svc →
+        ∃ obj, st.objects[svc.identity.backingObject]? = some obj) →
+      servicePolicySurfaceInvariant st) :=
+  servicePolicySurfaceInvariant_of_lifecycleInvariant
+
+/-- S3-I: Extended bridge witness including the full cross-subsystem bundle.
+    Fails to compile if `serviceLifecycleCapabilityInvariantBundle` changes shape. -/
+def fullBridgeSignatureWitness :
+    (∀ (st : SystemState),
+      servicePolicySurfaceInvariant st →
+      lifecycleInvariantBundle st →
+      capabilityInvariantBundle st →
+      registryInvariant st →
+      serviceLifecycleCapabilityInvariantBundle st) :=
+  serviceLifecycleCapabilityInvariantBundle_of_components

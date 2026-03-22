@@ -53,6 +53,22 @@ theorem RHTable.empty_loadFactorBounded (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).loadFactorBounded := by
   simp [loadFactorBounded, RHTable.empty]
 
+/-- S3-K: Insert triggers resize when load factor reaches 75%.
+    This theorem witnesses that `insert` prevents unbounded load by checking
+    `size * 4 ≥ capacity * 3` before insertion. After resize, the load factor
+    is approximately halved, maintaining the 75% bound. -/
+theorem RHTable.insert_resizes_at_capacity [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β)
+    (hLoad : t.size * 4 ≥ t.capacity * 3) :
+    (t.insert k v) = (t.resize).insertNoResize k v := by
+  simp [RHTable.insert, hLoad]
+
+/-- S3-K: `insertNoResize` increases size by at most 1 (re-export for convenience). -/
+theorem RHTable.insertNoResize_size_le_one [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β) :
+    (t.insertNoResize k v).size ≤ t.size + 1 :=
+  RHTable.insertNoResize_size_le t k v
+
 /-- Composite invariant bundle: well-formedness ∧ distance correctness ∧
     no duplicate keys ∧ Robin Hood ordering. -/
 def RHTable.invariant [BEq α] [Hashable α] (t : RHTable α β) : Prop :=

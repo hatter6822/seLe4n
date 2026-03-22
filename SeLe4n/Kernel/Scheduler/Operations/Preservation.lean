@@ -145,8 +145,8 @@ theorem schedule_preserves_runQueueWellFormed
                 · rfl
                 · split <;> rfl
               unfold setCurrentThread at hStep
-              simp at hStep; cases hStep
-              simp only [hSaveRQ]; exact hwfChoose
+              simp at hStep; subst hStep
+              exact hSaveRQ ▸ hwfChoose
           | some tid =>
               cases hObj : stChoose.objects[tid.toObjId]? with
               | none => simp [hChoose, hObj] at hStep
