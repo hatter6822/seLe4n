@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-s2-testing-sSCCX",
-      "commit_sha": "3e48d698b0b97132af84105a9cd1fd477f05c777",
-      "tree_sha": "97540d1f1bdc2426590a876b535bbfb0672400cd",
-      "committed_at_utc": "2026-03-22T21:46:34+00:00"
+      "commit_sha": "22184a054ca16f78640dcf473b7bee6193196274",
+      "tree_sha": "738c4739ffa91adc16bc1bba00d3d31801a17314",
+      "committed_at_utc": "2026-03-22T21:57:56+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "63a3c6dc3e254786532acfa387769619ddd334d8dc976001c0c61693591f89b1"
+    "source_digest": "00f314076a6190cd9de000d9796bc2711a00caf1b090d2db9a6e0a55c45d2585"
   },
   "summary": {
     "module_count": 109,
@@ -27,9 +27,9 @@
     "version": "0.19.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 99,
-    "production_loc": 55845,
+    "production_loc": 55846,
     "test_files": 10,
-    "test_loc": 7518,
+    "test_loc": 7527,
     "proved_theorem_lemma_decls": 1692,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -23212,121 +23212,121 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing",
-          "line": 16,
+          "line": 17,
           "called": []
         },
         {
           "kind": "def",
           "name": "mkRunQueue",
-          "line": 19,
+          "line": 20,
           "called": []
         },
         {
           "kind": "def",
           "name": "rootSlot",
-          "line": 22,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "rootPath",
           "line": 23,
           "called": []
         },
         {
           "kind": "def",
-          "name": "rootPathAlias",
+          "name": "rootPath",
           "line": 24,
           "called": []
         },
         {
           "kind": "def",
-          "name": "lifecycleAuthSlot",
+          "name": "rootPathAlias",
           "line": 25,
           "called": []
         },
         {
           "kind": "def",
-          "name": "mintedSlot",
+          "name": "lifecycleAuthSlot",
           "line": 26,
           "called": []
         },
         {
           "kind": "def",
-          "name": "siblingSlot",
+          "name": "mintedSlot",
           "line": 27,
           "called": []
         },
         {
           "kind": "def",
-          "name": "demoEndpoint",
+          "name": "siblingSlot",
           "line": 28,
           "called": []
         },
         {
           "kind": "def",
-          "name": "demoNotification",
+          "name": "demoEndpoint",
           "line": 29,
           "called": []
         },
         {
           "kind": "def",
-          "name": "demoUntyped",
+          "name": "demoNotification",
           "line": 30,
           "called": []
         },
         {
           "kind": "def",
-          "name": "untypedAuthSlot",
+          "name": "demoUntyped",
           "line": 31,
           "called": []
         },
         {
           "kind": "def",
-          "name": "svcDb",
-          "line": 33,
+          "name": "untypedAuthSlot",
+          "line": 32,
           "called": []
         },
         {
           "kind": "def",
-          "name": "svcApi",
+          "name": "svcDb",
           "line": 34,
           "called": []
         },
         {
           "kind": "def",
-          "name": "svcDenied",
+          "name": "svcApi",
           "line": 35,
           "called": []
         },
         {
           "kind": "def",
-          "name": "svcBroken",
+          "name": "svcDenied",
           "line": 36,
           "called": []
         },
         {
           "kind": "def",
-          "name": "svcRestart",
+          "name": "svcBroken",
           "line": 37,
           "called": []
         },
         {
           "kind": "def",
-          "name": "svcRestartBroken",
+          "name": "svcRestart",
           "line": 38,
           "called": []
         },
         {
           "kind": "def",
-          "name": "svcMissingBacking",
+          "name": "svcRestartBroken",
           "line": 39,
           "called": []
         },
         {
           "kind": "def",
+          "name": "svcMissingBacking",
+          "line": 40,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "bootstrapInvariantObjectIds",
-          "line": 41,
+          "line": 42,
           "called": [
             "demoEndpoint",
             "demoNotification",
@@ -23336,7 +23336,7 @@
         {
           "kind": "def",
           "name": "bootstrapServiceIds",
-          "line": 44,
+          "line": 45,
           "called": [
             "svcApi",
             "svcBroken",
@@ -23350,7 +23350,7 @@
         {
           "kind": "def",
           "name": "checkInvariants",
-          "line": 49,
+          "line": 50,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds"
@@ -23359,7 +23359,7 @@
         {
           "kind": "def",
           "name": "bootstrapState",
-          "line": 53,
+          "line": 54,
           "called": [
             "demoEndpoint",
             "demoNotification",
@@ -23379,7 +23379,7 @@
         {
           "kind": "def",
           "name": "runCapabilityAndArchitectureTrace",
-          "line": 155,
+          "line": 156,
           "called": [
             "checkInvariants"
           ]
@@ -23387,7 +23387,7 @@
         {
           "kind": "def",
           "name": "runServiceAndStressTrace",
-          "line": 227,
+          "line": 228,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23402,7 +23402,7 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 496,
+          "line": 497,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23416,7 +23416,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 603,
+          "line": 604,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23426,7 +23426,7 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 655,
+          "line": 656,
           "called": [
             "checkInvariants",
             "mkRunQueue"
@@ -23435,7 +23435,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 726,
+          "line": 727,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23444,7 +23444,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 888,
+          "line": 889,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23453,7 +23453,7 @@
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 962,
+          "line": 963,
           "called": [
             "checkInvariants",
             "demoUntyped",
@@ -23465,7 +23465,7 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 1051,
+          "line": 1052,
           "called": [
             "checkInvariants"
           ]
@@ -23473,7 +23473,7 @@
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1109,
+          "line": 1110,
           "called": [
             "checkInvariants"
           ]
@@ -23481,7 +23481,7 @@
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1153,
+          "line": 1154,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23490,7 +23490,7 @@
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1202,
+          "line": 1203,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23500,7 +23500,7 @@
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1282,
+          "line": 1283,
           "called": [
             "checkInvariants"
           ]
@@ -23508,7 +23508,7 @@
         {
           "kind": "def",
           "name": "runRegisterDecodeTrace",
-          "line": 1325,
+          "line": 1326,
           "called": [
             "checkInvariants"
           ]
@@ -23516,7 +23516,7 @@
         {
           "kind": "def",
           "name": "runSyscallDispatchTrace",
-          "line": 1461,
+          "line": 1462,
           "called": [
             "checkInvariants"
           ]
@@ -23524,7 +23524,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1641,
+          "line": 1642,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23533,7 +23533,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 1725,
+          "line": 1726,
           "called": [
             "checkInvariants"
           ]
@@ -23541,7 +23541,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 1823,
+          "line": 1824,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23550,7 +23550,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1903,
+          "line": 1904,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -23580,13 +23580,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1946,
+          "line": 1947,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1997,
+          "line": 1998,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -23594,7 +23594,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2011,
+          "line": 2012,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -23602,13 +23602,13 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2022,
+          "line": 2023,
           "called": []
         },
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2075,
+          "line": 2076,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -24887,7 +24887,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3022,
+          "line": 3024,
           "called": [
             "baseState",
             "cnodeId",
@@ -24895,6 +24895,7 @@
             "expectError",
             "f2DeviceState",
             "f2DeviceUntypedId",
+            "f2UntypedAuthCnode",
             "f2UntypedAuthSlot",
             "f2UntypedObjId",
             "f2UntypedState",
@@ -24904,7 +24905,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 3086,
+          "line": 3095,
           "called": []
         }
       ]

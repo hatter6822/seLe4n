@@ -273,7 +273,7 @@ Specific module builds verified for every modified `.lean` file.
 
 ---
 
-### Phase S2 — Test Hardening (v0.19.1)
+### Phase S2 — Test Hardening (v0.19.1) **COMPLETE**
 
 **Scope**: Eliminate testing brittleness before making behavioral changes in
 subsequent phases. Replace `toString`-based assertions with structural equality.

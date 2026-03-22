@@ -3016,9 +3016,11 @@ private def runS2GCapabilityErrorTests : IO Unit := do
 -- ============================================================================
 
 /-- S2-H: Additional lifecycle operation error-path tests covering:
-    - retypeFromUntyped with insufficient untyped capacity
+    - retypeFromUntyped with allocSize too small
+    - retypeFromUntyped with device untyped → TCB rejection
     - retypeFromUntyped with non-untyped source object
-    - retypeFromUntyped where authority cap points to wrong object -/
+    - retypeFromUntyped with region exhausted
+    - retypeFromUntyped with childId collision -/
 private def runS2HLifecycleErrorTests : IO Unit := do
   -- S2-H-01: retypeFromUntyped with very small untyped (allocSize too small)
   -- The f2UntypedState has a 256-byte untyped; try to retype with tiny allocSize
@@ -3078,6 +3080,13 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩
       (.endpoint {}) 64 exhaustedState)
     .untypedRegionExhausted
+
+  -- S2-H-05: retypeFromUntyped with childId that collides with existing object
+  -- Use f2UntypedAuthCnode as the childId — it already exists in f2UntypedState
+  expectError "S2-H-05 retypeFromUntyped childId collision"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedAuthCnode
+      (.endpoint {}) 64 f2UntypedState)
+    .childIdCollision
 
   IO.println "all S2-H lifecycle error-path tests passed"
 

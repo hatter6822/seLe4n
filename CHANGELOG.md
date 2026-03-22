@@ -39,12 +39,13 @@
 - S2-G (U-L12): Added 6 capability error-path tests: rights attenuation failure,
   copy/mint to occupied slot, empty revoke report, **copy to full CNode**, and
   **deep CDT chain revocation** (5-deep, exercises multi-level traversal).
-- S2-H (U-L12): Added 4 lifecycle error-path tests: allocSize too small, device
+- S2-H (U-L12): Added 5 lifecycle error-path tests: allocSize too small, device
   untyped TCB rejection, non-untyped source, **region exhaustion** (watermark at
-  capacity).
+  capacity), **child ID collision**.
 - S2-I (U-L13): Created `SeLe4n/Testing/Helpers.lean` shared module with
   `expectCond`, `expectError`, `expectOk` helpers. Updated InformationFlowSuite
-  to use shared helpers.
+  to use shared helpers. Added `MainTraceHarness` import for library build
+  reachability.
 - S2-J (U-M05): Migrated all deprecated `api*` wrapper calls in MainTraceHarness
   to direct `syscallInvoke` path. Removed `set_option linter.deprecated false`.
 - Zero sorry/axiom, all tests pass.

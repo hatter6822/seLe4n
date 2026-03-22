@@ -10,6 +10,7 @@ import SeLe4n
 import SeLe4n.Testing.RuntimeContractFixtures
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Testing.Helpers
 
 open SeLe4n.Model
 
