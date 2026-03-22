@@ -1611,14 +1611,52 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
     (hPM : schedulerPriorityMatch st)
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerPriorityMatch st' := by
+  -- Instead of unfolding+simp, we observe: switchDomain only modifies scheduler fields.
+  -- Objects are always preserved. RunQueue may get an insert (if current has a TCB).
+  -- Use the existing proof pattern: unfold, obtain eq, subst, case-split on current.
   unfold switchDomain at hStep
   cases hSched : st.scheduler.domainSchedule with
-  | nil => simp [hSched] at hStep; cases hStep; exact hPM
+  | nil =>
+    simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPM
   | cons entry rest =>
-    simp [hSched] at hStep; split at hStep
-    · cases hStep; exact hPM
-    · rename_i _ hGet; simp at hStep; cases hStep
-      sorry
+    simp [hSched] at hStep
+    split at hStep
+    · obtain ⟨_, rfl⟩ := hStep; exact hPM
+    · rename_i _ hGet
+      -- hStep : .ok ((), { st with scheduler := sched' }) = .ok ((), st')
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, hSt⟩ := hStep
+      -- st' has same objects as st; runQueue depends on current.
+      -- Use frame lemma to transfer schedulerPriorityMatch.
+      -- Extract field equalities from hSt before subst
+      have hObjEq : st'.objects = st.objects := by subst hSt; rfl
+      cases hCur : st.scheduler.current with
+      | none =>
+        have hRQEq : st'.scheduler.runQueue = st.scheduler.runQueue := by
+          subst hSt; simp [hCur]
+        exact schedulerPriorityMatch_of_runQueue_objects_eq st st' hPM hRQEq hObjEq
+      | some curTid =>
+        cases hCurObj : st.objects[curTid.toObjId]? with
+        | none =>
+          have hRQEq : st'.scheduler.runQueue = st.scheduler.runQueue := by
+            subst hSt; simp [hCur, hCurObj]
+          exact schedulerPriorityMatch_of_runQueue_objects_eq st st' hPM hRQEq hObjEq
+        | some obj =>
+          cases obj with
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+            have hRQEq : st'.scheduler.runQueue = st.scheduler.runQueue := by
+              subst hSt; simp [hCur, hCurObj]
+            exact schedulerPriorityMatch_of_runQueue_objects_eq st st' hPM hRQEq hObjEq
+          | tcb curTcb =>
+            -- runQueue = insert curTid curTcb.priority
+            -- Use insert helper on `st`, then transfer to `st'` using field equality
+            have hRQEq : st'.scheduler.runQueue = st.scheduler.runQueue.insert curTid curTcb.priority := by
+              subst hSt; simp [hCur, hCurObj]
+            intro tid hMem
+            rw [hRQEq] at hMem
+            have := schedulerPriorityMatch_insert st curTid curTcb hPM hBase.1 hCur hCurObj tid hMem
+            -- Convert: st.objects → st'.objects and runQueue threadPriority → st'.scheduler.runQueue.threadPriority
+            rw [← hObjEq, ← hRQEq] at this; exact this
 
 /-- WS-H6/WS-H12b/WS-H12e: `switchDomain` preserves the full scheduler invariant bundle. -/
 theorem switchDomain_preserves_schedulerInvariantBundleFull
