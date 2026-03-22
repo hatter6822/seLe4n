@@ -45,10 +45,10 @@ hardware binding.
 |----------|-------------|-------------|----------------|-------|
 | Critical | 0 | 0 | 0 | **0** |
 | High | 0 | 0 | 0 | **0** |
-| Medium | 4 | 2 | 1 | **7** |
-| Low | 11 | 3 | 4 | **18** |
-| Info | 14 | 4 | 3 | **21** |
-| **Total** | **29** | **9** | **8** | **46** |
+| Medium | 6 | 2 | 1 | **9** |
+| Low | 12 | 3 | 4 | **19** |
+| Info | 15 | 4 | 3 | **22** |
+| **Total** | **33** | **9** | **8** | **50** |
 
 **Zero `sorry`. Zero `axiom`. Zero `admit`. Zero `partial` in production code.**
 **Zero external dependencies in Rust workspace.**
@@ -217,6 +217,33 @@ subset assertion: `mask.is_subset_of(&Rts::RIGHTS)`.
 - **Recommendation:** Remove `Badge.ofNat` entirely or make it `private` in the
   next breaking version.
 
+**M-08: `scheduleDomain` lacks `schedulerInvariantBundleFull` preservation theorem**
+- **Location:** `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean:574`
+- **Description:** `scheduleDomain` has preservation for the 3-tuple base
+  `schedulerInvariantBundle` and `currentThreadInActiveDomain`, but not for the
+  full 7-tuple `schedulerInvariantBundleFull` (which adds `timeSlicePositive`,
+  `currentTimeSlicePositive`, `edfCurrentHasEarliestDeadline`,
+  `contextMatchesCurrent`, `runnableThreadsAreTCBs`, `schedulerPriorityMatch`).
+  Since `scheduleDomain` composes `switchDomain` and `schedule`, both of which
+  have full-bundle preservation, the gap is bridgeable.
+- **Impact:** Proof surface incompleteness. Callers of `scheduleDomain` cannot
+  directly carry the full bundle without manual composition.
+- **Recommendation:** Add `scheduleDomain_preserves_schedulerInvariantBundleFull`
+  by composing the existing `switchDomain` and `schedule` full-bundle theorems.
+
+**M-09: No `remove_preserves_wellFormed` theorem for `RunQueue.remove`**
+- **Location:** `SeLe4n/Kernel/Scheduler/RunQueue.lean:170-282`
+- **Description:** `RunQueue.remove` proves structural invariants (`invExt`, size,
+  capacity, `flat_wf`) but does not prove `RunQueue.wellFormed` preservation
+  (priority-bucket consistency). The `schedule` operation calls `remove` for
+  dequeue-on-dispatch, and the EDF bridge theorem works around this by reasoning
+  on the pre-remove state. This is sound but means `wellFormed` is not
+  compositionally preserved through `remove`.
+- **Impact:** Proof fragility — future changes to the scheduler could break the
+  workaround. No runtime correctness issue.
+- **Recommendation:** Prove `remove_preserves_wellFormed` directly to make the
+  proof surface compositional.
+
 ### 4.4 Low Findings
 
 **L-01: `RegisterFile.gpr` is a function type — not structurally comparable**
@@ -296,6 +323,13 @@ subset assertion: `mask.is_subset_of(&Rts::RIGHTS)`.
   updating 4+ theorem proofs.
 - **Recommendation:** Consider a macro or tactic automation for extensible enumerations.
 
+**L-12: `RunQueue.remove` and `rotateToBack` are O(n) on flat list**
+- **Location:** `SeLe4n/Kernel/Scheduler/RunQueue.lean:170-282, 321-350`
+- **Description:** Both operations use `List.filter`/`List.erase` which are linear
+  in run queue size. The hash-set membership is O(1), so selection is fast, but
+  dequeue-on-dispatch and yield are linear.
+- **Recommendation:** Acceptable for expected thread counts. Document complexity.
+
 **L-11: Notification `waitingThreads` is a `List` not a queue**
 - **Location:** `SeLe4n/Model/Object/Types.lean:326-329`
 - **Description:** `Notification.waitingThreads` is a `List ThreadId`. The FIFO
@@ -364,6 +398,11 @@ enabling correctness proofs about the O(1) membership fast path.
 **I-14:** The `storeObject` function (State.lean:305-330) correctly maintains 5
 parallel data structures atomically: `objects`, `objectIndex`, `objectIndexSet`,
 `lifecycle` metadata, and `asidTable`. All frame/preservation theorems are proven.
+
+**I-15:** The scheduler's `switchDomain` (Core.lean:364) has a `| none => .ok ((), st)`
+fallback for the case where modular index lookup returns `none`. This branch is
+provably unreachable (modular index is always valid for non-empty lists), but the
+fallback provides defense-in-depth.
 
 ---
 
@@ -459,8 +498,11 @@ Key verified properties:
   `currentThreadValid`, `runQueueConsistent`, `domainScheduleValid`,
   `noDuplicateThreads`, and `currentNotInQueue`.
 
-No sorry, no axiom, no gaps found. The scheduler subsystem is the most thoroughly
-proven subsystem in the kernel.
+No sorry, no axiom found. Two proof completeness gaps identified (M-08, M-09)
+that are bridgeable but not yet formalized. Two EDF preservation proofs require
+elevated `maxHeartbeats` (800K-1.6M) — candidates for refactoring into smaller
+lemmas. Overall, the scheduler is the most thoroughly proven subsystem in the
+kernel.
 
 ### 5.4 IPC Subsystem
 
@@ -931,7 +973,7 @@ paths, invalid state transitions, and boundary conditions.
 | Overall sorry/axiom count | 0 | 0 (maintained) |
 | Lean file count | 96 | 117 (+22%) |
 | Rust file count | 26 | 26 (stable) |
-| Finding total | 82 | 46 (-44%) |
+| Finding total | 82 | 50 (-39%) |
 | Critical/High findings | 1 | 0 |
 
 **Net assessment: Significant improvement across all dimensions.**
@@ -990,6 +1032,8 @@ paths, invalid state transitions, and boundary conditions.
 | M-05 | Medium | API/Tests | Deprecated wrappers still exercised in tests |
 | M-06 | Medium | Platform/Sim | All-True simulation contracts |
 | M-07 | Medium | Prelude | Deprecated Badge.ofNat not removed |
+| M-08 | Medium | Scheduler | scheduleDomain lacks full-bundle preservation theorem |
+| M-09 | Medium | Scheduler | No remove_preserves_wellFormed for RunQueue.remove |
 | L-01 | Low | Machine | RegisterFile.gpr function type not structurally comparable |
 | L-02 | Low | Machine | MachineConfig.noOverlapAux quadratic |
 | L-03 | Low | Model/CNode | resolveSlot unbounded arithmetic |
@@ -1001,6 +1045,7 @@ paths, invalid state transitions, and boundary conditions.
 | L-09 | Low | Model/Rights | AccessRightSet.bits unbounded Nat |
 | L-10 | Low | Model/Syscall | SyscallId proofs use case-enumeration |
 | L-11 | Low | Model/Notification | waitingThreads List not queue |
+| L-12 | Low | Scheduler | RunQueue remove/rotateToBack O(n) on flat list |
 | I-01 | Info | Global | native_decide usage (24 occurrences, all correct) |
 | I-02 | Info | Prelude | KernelM LawfulMonad instance |
 | I-03 | Info | State | allTablesInvExt covers 16 tables |
@@ -1015,6 +1060,7 @@ paths, invalid state transitions, and boundary conditions.
 | I-12 | Info | Platform/RPi5 | Board constants need datasheet validation |
 | I-13 | Info | State | objectIndexSetSync formal consistency |
 | I-14 | Info | State | storeObject 5-structure atomic maintenance |
+| I-15 | Info | Scheduler | switchDomain unreachable fallback (defense-in-depth) |
 
 ---
 
