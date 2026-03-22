@@ -494,7 +494,8 @@ theorem decodeCSpaceDeleteArgs_roundtrip (args : CSpaceDeleteArgs) :
   rcases args with ⟨t⟩; rfl
 
 /-- Round-trip: encoding then decoding LifecycleRetypeArgs recovers the original.
-    R7-E/L-10: Uses `KernelObjectType.ofNat_toNat` for the type tag round-trip. -/
+    R7-E/L-10: The proof case-splits on `KernelObjectType` — each variant reduces
+    to `rfl` because `ofNat?` and `toNat` are definitional inverses per case. -/
 theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
     decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args := by
   rcases args with ⟨o, t, s⟩

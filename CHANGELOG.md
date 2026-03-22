@@ -1,3 +1,45 @@
+## [0.18.6] — WS-R7 Architecture & Hardware Preparation
+
+- Completed Phase 7 (WS-R7) of the Comprehensive Audit Remediation workstream.
+- R7-A (M-17): TLB flush enforcement — `TlbState` integrated into `SystemState`,
+  `tlbConsistent` added to `proofLayerInvariantBundle` (9th conjunct).
+  `vspaceMapPageWithFlush`/`vspaceUnmapPageWithFlush` compose page-table ops with
+  full TLB flush. 3 preservation theorems + frame lemma for non-VSpace ops.
+- R7-B (L-02): ARM64 register bounds — `RegName.isValid` predicate, `arm64GPRCount`
+  constant (32 GPRs), `registerFileGPRCount` tied to `arm64GPRCount`.
+- R7-C (L-03): 64-bit value bounds — `isWord64` predicate, `RegValue.valid`,
+  `VAddr.valid`, `PAddr.valid`, `machineWordBounded` machine-state invariant with
+  default-state proof.
+- R7-D (L-06): TCB seL4 fidelity — `faultHandler : Option CPtr` and
+  `boundNotification : Option ObjId` fields added with `none` defaults.
+- R7-E (L-10): Typed retype arguments — `KernelObjectType.toNat`/`ofNat?` with
+  round-trip proof and injectivity theorem. `LifecycleRetypeArgs.newType` typed as
+  `KernelObjectType`. `objectOfKernelType` total constructor. Decode boundary
+  validates type tags via `ofNat?`. Dispatch uses `objectOfKernelType`.
+- Zero sorry/axiom, all test tiers pass.
+- Version bump: v0.18.5 → v0.18.6
+
+## [0.18.5] — WS-R6 Model & Frozen State Correctness
+
+- Completed Phase 6 (WS-R6) of the Comprehensive Audit Remediation workstream.
+- R6-A: `apiInvariantBundle_frozenDirect` freeze-time equivalence theorem.
+- R6-B: Badge deprecation — old `badgeValue` usages cleaned up.
+- R6-C: `RegisterFile` structural `BEq` instance for equality comparison.
+- R6-D: `schedulerPriorityMatch` preservation proofs for all scheduler ops,
+  all sorry eliminated.
+- R6-E: Documentation, proof map, and gitbook updated.
+- Zero sorry/axiom, all test tiers pass.
+- Version bump: v0.18.4 → v0.18.5
+
+## [0.18.4] — WS-R5 Information Flow Completion
+
+- Completed Phase 5 (WS-R5) of the Comprehensive Audit Remediation workstream.
+- Internalized IPC non-interference proofs.
+- Service NI composition proofs.
+- Content-aware memory projection.
+- Zero sorry/axiom, all test tiers pass.
+- Version bump: v0.18.3 → v0.18.4
+
 ## [0.18.3] — WS-R4 Lifecycle & Service Coherence
 
 - Completed Phase 4 (WS-R4) of the Comprehensive Audit Remediation workstream.

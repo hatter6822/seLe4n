@@ -48,14 +48,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.18.3` (`lakefile.toml`) |
+| **Package version** | `0.18.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 54,573 across 98 Lean files |
+| **Production LoC** | 55,499 across 98 Lean files |
 | **Test LoC** | 7,309 across 10 Lean test suites |
-| **Proved declarations** | 1,660 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,686 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit |
-| **Active workstream** | **WS-R IN PROGRESS** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). R1–R4 complete (v0.18.0–v0.18.3). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md). Prior portfolios: WS-Q (v0.17.7–v0.17.14), WS-N (v0.17.0–v0.17.5), WS-M (v0.16.14–v0.17.0), WS-L (v0.16.9–v0.16.13), WS-K (v0.16.0–v0.16.8), WS-J1 (v0.15.4–v0.15.10) — all COMPLETE. **Next after WS-R: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-R IN PROGRESS** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). R1–R7 complete (v0.18.0–v0.18.6), R8 pending. Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md). Prior portfolios: WS-Q (v0.17.7–v0.17.14), WS-N (v0.17.0–v0.17.5), WS-M (v0.16.14–v0.17.0), WS-L (v0.16.9–v0.16.13), WS-K (v0.16.0–v0.16.8), WS-J1 (v0.15.4–v0.15.10) — all COMPLETE. **Next after WS-R: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -86,6 +86,10 @@ semantic and proof foundations of the previous one.
 
 | Portfolio | Scope | Workstreams |
 |-----------|-------|-------------|
+| **WS-R7** (v0.18.6) | Architecture & hardware preparation: `TlbState` integrated into `SystemState`, `tlbConsistent` added to `proofLayerInvariantBundle` (M-17); TLB-flushing VSpace wrappers with preservation proofs; `RegName.isValid` ARM64 GPR bounds (L-02); `isWord64` predicate + `machineWordBounded` invariant for 64-bit value bounds (L-03); TCB `faultHandler`/`boundNotification` for seL4 fidelity (L-06); `KernelObjectType` enum replacing raw `Nat` in `LifecycleRetypeArgs` with typed decode boundary (L-10) | WS-R7 completed |
+| **WS-R6** (v0.18.5) | Model & frozen state correctness: `apiInvariantBundle_frozenDirect` freeze-time equivalence, badge deprecation, `RegisterFile` BEq, scheduler bundle extension with `schedulerPriorityMatch`, all preservation proofs sorry-free | WS-R6 completed |
+| **WS-R5** (v0.18.4) | Information flow completion: internalized IPC NI, service NI, content-aware memory projection | WS-R5 completed |
+| **WS-R1–R4** (v0.18.0–v0.18.3) | Pre-release blockers, capability & CDT hardening, IPC invariant completion, lifecycle & service coherence | WS-R1–R4 completed |
 | **WS-M2** (v0.16.15) | Capability subsystem performance optimization: fused revoke path eliminating redundant CDT traversal (M-P01), CDT `parentMap` reverse index for O(1) parent lookup (M-P02/M-P03), reply-capability lemma extraction into dedicated module (M-P05) | WS-M2 completed |
 | **WS-M1** (v0.16.14) | Capability subsystem audit & remediation Phase 1: initial audit findings triage, critical invariant gap closure, baseline proof surface hardening | WS-M1 completed |
 | **WS-F6** | Invariant quality: `capabilityInvariantBundle` reduced from 8-tuple to 6-tuple (tautological predicates removed); `blockedOnNotificationNotRunnable` added to `ipcSchedulerContractPredicates` (6-tuple); `runnableThreadsAreTCBs` in `schedulerInvariantBundleFull` (6-tuple) with sorry-free preservation for all scheduler ops; `vspaceCrossAsidIsolation` in `vspaceInvariantBundle` (6-tuple); `default_serviceCountBounded` and `default_serviceGraphInvariant` proved; zero sorry/axiom | WS-F6 completed |
