@@ -423,7 +423,13 @@ def canAllocate (ut : UntypedObject) (size : Nat) : Bool :=
   size > 0 && ut.watermark + size ≤ ut.regionSize
 
 /-- Allocate `size` bytes from the region, returning the updated untyped and
-    the byte offset of the new allocation. -/
+    the byte offset of the new allocation.
+
+    S4-H: New children are prepended to the `children` list, creating
+    reverse-chronological order (most recent allocation first). Proofs that
+    traverse children must account for this ordering — in particular,
+    `List.mem` witnesses are preserved across allocations since prepending
+    does not remove existing elements. -/
 def allocate (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat) :
     Option (UntypedObject × Nat) :=
   if ut.canAllocate size then

@@ -38,6 +38,21 @@ def RHTable.robinHoodOrdered (t : RHTable α β) : Prop :=
     t.slots[(i + 1) % t.capacity]'(by rw [t.hSlotsLen]; exact Nat.mod_lt _ t.hCapPos) = some ej →
     ej.dist = 0 ∨ ei.dist ≤ ej.dist
 
+/-- S3-K/U-M28: Load factor bound — the table's occupancy ratio stays below 75%.
+    The `insert` function triggers a 2x resize when `size * 4 ≥ capacity * 3`,
+    ensuring the load factor never exceeds 75% after insertion. This bound
+    guarantees O(1) expected probe chain length for Robin Hood hashing.
+
+    **Note:** This is a specification-level bound. The actual resize occurs in
+    `RHTable.insert` (Core.lean) via the check `t.size * 4 ≥ t.capacity * 3`. -/
+def RHTable.loadFactorBounded (t : RHTable α β) : Prop :=
+  t.size * 4 ≤ t.capacity * 3
+
+/-- S3-K: The empty table satisfies the load factor bound (size = 0). -/
+theorem RHTable.empty_loadFactorBounded (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable α β).loadFactorBounded := by
+  simp [loadFactorBounded, RHTable.empty]
+
 /-- Composite invariant bundle: well-formedness ∧ distance correctness ∧
     no duplicate keys ∧ Robin Hood ordering. -/
 def RHTable.invariant [BEq α] [Hashable α] (t : RHTable α β) : Prop :=

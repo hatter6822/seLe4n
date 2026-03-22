@@ -106,6 +106,34 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   to `pub(crate)` with `.raw()` accessors, plus `AccessRights` and `PagePerms` (L-11).
   All 99 Rust tests pass (44 abi + 22 types + 8 sys + 25 conformance). Zero sorry/axiom.
 
+### WS-S workstream (Pre-Benchmark Strengthening) — IN PROGRESS
+
+WS-S is the **active** workstream (v0.19.0+), addressing all findings from two
+comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
+(50 findings) and `AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md` (65+ findings).
+7 phases (S1–S7), 81 sub-tasks (+ 1 stretch goal). See
+[`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
+
+- **S1 (v0.19.0) — COMPLETE**: Security Boundary & Rust Type Safety. Removed
+  deprecated `Badge.ofNat` (U-H1). Converted `MemoryRegion.wellFormed` from Bool
+  to Prop (U-H2). Documented `ThreadId.toObjId` trust boundary (U-H3). Converted
+  `Cap::restrict()` and `Cap::to_read_only()` from panic to `Result` (U-M01).
+  Fixed `Restricted::RIGHTS` semantic bug (U-M02). Added `AccessRightSet.valid`
+  predicate (U-L05). Migrated `isPowerOfTwo` proofs from `native_decide` to
+  `decide` (U-M30). Added `MonadStateOf`/`MonadExceptOf` for `KernelM` (U-M16).
+  Added `#![deny(unsafe_code)]` to `sele4n-abi` (U-L09). Zero sorry/axiom.
+- **S2 (v0.19.1) — COMPLETE**: Test Hardening. Documented `reprStr` usage in
+  determinism checks. Migrated deprecated `api*` wrapper calls. Added golden-output
+  fixture management documentation. Enhanced trace fixture diff reporting. Added
+  `BootstrapBuilder.buildValidated` with invariant checks. Zero sorry/axiom.
+- **S3 (v0.19.2) — IN PROGRESS**: Proof Surface Closure. Defined
+  `cdtMapsConsistent` invariant with empty-CDT proof. Added `removeEdge` for CDT.
+  Added `RHTable.loadFactorBounded` predicate. Remaining: CDT preservation proofs,
+  scheduler full-bundle preservation, RunQueue well-formedness.
+- **S4 (v0.19.3) — IN PROGRESS**: Model Fidelity & Type Safety. Added
+  `objectIndexBounded` advisory predicate and documentation.
+- **S5–S7**: Pending.
+
 ### WS-Q1 workstream (Service Interface Simplification)
 
 WS-Q1 is a **completed** workstream (v0.17.7), the first phase of WS-Q (Kernel
