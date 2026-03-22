@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-phase-r5-workflow-YtfH5",
-      "commit_sha": "2f0a805dbdbadb5f860d2eddd69e857d58c6453f",
-      "tree_sha": "e7fbfddd33ee42ad009de65e7f0ddbe565c3a681",
-      "committed_at_utc": "2026-03-21T23:15:56+00:00"
+      "branch": "main",
+      "commit_sha": "365e3ebd1690bf2e58d8995d1a74407d654a8e63",
+      "tree_sha": "c5cec45db1e5e1576d8af14648174378352db020",
+      "committed_at_utc": "2026-03-21T20:47:03-04:00"
     }
   },
   "source_sync": {
