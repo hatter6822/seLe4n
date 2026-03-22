@@ -111,7 +111,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 
 - **WS-N (Robin Hood hashing, v0.17.0–v0.17.5 — PORTFOLIO COMPLETE):** `RobinHoodSuite.lean` with 12 standalone + 6 integration tests covering insert/get/erase, collision chains, table growth, and kernel API bridge operations. All N1–N5 phases delivered.
 - **WS-Q (Kernel State Architecture, v0.17.7–v0.17.14 — PORTFOLIO COMPLETE):** 9 phases covering the full two-phase architecture. Key test additions: `RadixTreeSuite.lean` (12 scenarios, 43 checks), `FrozenStateSuite.lean` (15 scenarios, 49 checks), `FreezeProofSuite.lean` (22 scenarios, 60 checks), `FrozenOpsSuite.lean` (15 scenarios, TPH-005–TPH-014), `TwoPhaseArchSuite.lean` (14 integration tests, 41 checks, builder→freeze→execution pipeline). Rust conformance: 64 unit tests + 25 conformance tests in `libsele4n` crates.
-- **WS-R (Comprehensive Audit Remediation, v0.18.0+ — IN PROGRESS):** R1–R8 complete (v0.18.0–v0.18.7). Test additions include operation-chain suite extensions, cross-subsystem invariant tests, TLB flush validation, and typed retype decode boundary tests.
+- **WS-R (Comprehensive Audit Remediation, v0.18.0–v0.18.7 — PORTFOLIO COMPLETE):** All 8 phases (R1–R8) delivered. Test additions include operation-chain suite extensions, cross-subsystem invariant tests, TLB flush validation, typed retype decode boundary tests, and R8-D execution of 4 frozen/radix suites (64 scenarios, 171 checks) in Tier 2.
 
 ## Practical failure triage
 

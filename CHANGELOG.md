@@ -11,11 +11,11 @@
   cargo unavailable. Cargo exit codes properly propagated via conditional checks.
 - R8-D (I-M04): 4 compiled-but-never-run test suites (`radix_tree_suite`,
   `frozen_state_suite`, `freeze_proof_suite`, `frozen_ops_suite`) now execute
-  in Tier 2 negative tests (67 additional scenarios validated).
+  in Tier 2 negative tests (64 scenarios, 171 individual checks).
 - R8-E (L-11): 14 Rust newtype identifier inner fields changed from `pub` to
   `pub(crate)` with `.raw()` accessor methods. `AccessRights` and `PagePerms`
   also encapsulated. All cross-crate consumers updated to use `.raw()`/`::from()`.
-  25 conformance tests + 22 unit tests pass.
+  All 99 Rust tests pass (44 abi + 22 types + 8 sys unit + 25 conformance).
 - Zero sorry/axiom, all test tiers pass.
 - Version bump: v0.18.6 → v0.18.7
 

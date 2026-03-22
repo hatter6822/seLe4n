@@ -104,7 +104,7 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   `frozen_state_suite`, `freeze_proof_suite`, `frozen_ops_suite`) to Tier 2 negative
   tests (I-M04). Encapsulated all 14 Rust newtype identifier inner fields from `pub`
   to `pub(crate)` with `.raw()` accessors, plus `AccessRights` and `PagePerms` (L-11).
-  All 25 conformance tests + 22 unit tests pass. Zero sorry/axiom.
+  All 99 Rust tests pass (44 abi + 22 types + 8 sys + 25 conformance). Zero sorry/axiom.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 

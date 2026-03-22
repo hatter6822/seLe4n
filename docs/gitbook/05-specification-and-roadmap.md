@@ -19,7 +19,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Test LoC | 7,309 across 10 suites |
 | Proved declarations | 1,686 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit |
-| Active workstream | **WS-R IN PROGRESS** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). **R1–R8 COMPLETE** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md). Prior: **WS-Q COMPLETE** (v0.17.7–v0.17.14), WS-N, WS-M, WS-L, WS-K, WS-J1 — all COMPLETE. |
+| Active workstream | **WS-R PORTFOLIO COMPLETE** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). All phases complete (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md). Prior: **WS-Q COMPLETE** (v0.17.7–v0.17.14), WS-N, WS-M, WS-L, WS-K, WS-J1 — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
