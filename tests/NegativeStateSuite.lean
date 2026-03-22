@@ -416,7 +416,7 @@ private def runNegativeChecks : IO Unit := do
   | _ => throw <| IO.userError "notification wait #1 expected waiter tcb"
 
   let (_, stN2) ← expectOkState "notification signal wakes waiter"
-    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 55) stN1)
+    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNatMasked 55) stN1)
 
 
   match (stN2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
@@ -428,7 +428,7 @@ private def runNegativeChecks : IO Unit := do
   | _ => throw <| IO.userError "notification signal wake expected waiter tcb"
 
   let (_, stN3) ← expectOkState "notification signal stores active badge"
-    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 66) stN2)
+    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNatMasked 66) stN2)
 
   -- F-03 fix: Badge accumulation — assert badge value BEFORE final signal
   match (stN3.objects[notificationId]? : Option KernelObject) with
@@ -441,12 +441,12 @@ private def runNegativeChecks : IO Unit := do
   | _ => throw <| IO.userError "notification badge precondition expected notification object"
 
   let (_, stN4) ← expectOkState "notification signal accumulates active badge"
-    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNat 5) stN3)
+    (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNatMasked 5) stN3)
 
   match (stN4.objects[notificationId]? : Option KernelObject) with
   | some (.notification ntfn) =>
       -- WS-F5/D1e: Use word-bounded Badge.bor for expected accumulation value
-      let expected := SeLe4n.Badge.bor (SeLe4n.Badge.ofNat 66) (SeLe4n.Badge.ofNat 5)
+      let expected := SeLe4n.Badge.bor (SeLe4n.Badge.ofNatMasked 66) (SeLe4n.Badge.ofNatMasked 5)
       if ntfn.pendingBadge = some expected then
         IO.println "positive check passed [notification signal accumulates active badge via word-bounded OR]"
       else
@@ -489,15 +489,15 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "truncated badge should be valid but isValid returned false"
 
-  -- Un-truncated (raw) badge exceeding 2^64 is NOT valid
-  let rawOversized := SeLe4n.Badge.ofNat oversized
-  if rawOversized.isValid then
-    throw <| IO.userError "raw oversized badge should NOT be valid"
+  -- R6-B: ofNatMasked always produces valid badges (word-bounded by construction)
+  let maskedOversized := SeLe4n.Badge.ofNatMasked oversized
+  if maskedOversized.isValid then
+    IO.println "positive check passed [ofNatMasked always produces valid badge, even from oversized input]"
   else
-    IO.println "positive check passed [raw badge > 2^64 correctly fails isValid]"
+    throw <| IO.userError "ofNatMasked should always produce valid badges"
 
   -- bor of two large badges is still word-bounded
-  let borResult := SeLe4n.Badge.bor (SeLe4n.Badge.ofNat (2 ^ 64 - 1)) (SeLe4n.Badge.ofNat 1)
+  let borResult := SeLe4n.Badge.bor (SeLe4n.Badge.ofNatMasked (2 ^ 64 - 1)) (SeLe4n.Badge.ofNatMasked 1)
   if borResult.isValid then
     IO.println "positive check passed [Badge.bor of near-max values produces valid result]"
   else
@@ -1154,7 +1154,7 @@ private def runAuditCoverageChecks : IO Unit := do
 
   -- POS-MUTATE-BADGE: mutate with badge override
   let (_, stBadgeMutate) ← expectOkState "cspaceMutate with badge override"
-    (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read]) (some (SeLe4n.Badge.ofNat 77)) baseState)
+    (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read]) (some (SeLe4n.Badge.ofNatMasked 77)) baseState)
   match SeLe4n.Kernel.cspaceLookupSlot slot0 stBadgeMutate with
   | .ok (cap, _) =>
       if cap.badge = some ⟨77⟩ then

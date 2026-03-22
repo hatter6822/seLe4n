@@ -145,7 +145,7 @@ def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
   pure { srcSlot := Slot.ofNat r0.val
          dstSlot := Slot.ofNat r1.val
          rights  := ⟨r2.val⟩
-         badge   := Badge.ofNat r3.val }
+         badge   := Badge.ofNatMasked r3.val }
 
 /-- Decode CSpace copy arguments from message registers.
     Requires 2 message registers (srcSlot, dstSlot). -/
@@ -457,10 +457,19 @@ private def stubDecoded (regs : Array RegValue) : SyscallDecodeResult :=
     syscallId := .send
     msgRegs := regs }
 
-/-- Round-trip: encoding then decoding CSpaceMintArgs recovers the original. -/
-theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs) :
+/-- Round-trip: encoding then decoding CSpaceMintArgs recovers the original
+    when the badge is word-bounded. R6-B: `ofNatMasked` decode requires
+    the badge to fit in one machine word for lossless roundtrip. -/
+theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs)
+    (hBadge : args.badge.valid) :
     decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args := by
-  rcases args with ⟨s, d, r, b⟩; rfl
+  rcases args with ⟨s, d, r, ⟨bv⟩⟩
+  simp only [Badge.valid, machineWordMax, machineWordBits] at hBadge
+  show decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs ⟨s, d, r, ⟨bv⟩⟩)) = .ok ⟨s, d, r, ⟨bv⟩⟩
+  have hMod : bv % 18446744073709551616 = bv := Nat.mod_eq_of_lt hBadge
+  unfold decodeCSpaceMintArgs encodeCSpaceMintArgs stubDecoded requireMsgReg
+    Badge.ofNatMasked Badge.toNat machineWordMax machineWordBits
+  exact congrArg Except.ok (congrArg (fun v => (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat, ⟨r.bits⟩, ⟨v⟩⟩ : CSpaceMintArgs)) hMod)
 
 /-- Round-trip: encoding then decoding CSpaceCopyArgs recovers the original. -/
 theorem decodeCSpaceCopyArgs_roundtrip (args : CSpaceCopyArgs) :
@@ -644,10 +653,12 @@ theorem decodeServiceRevokeArgs_roundtrip (args : ServiceRevokeArgs) :
   rcases args with ⟨s⟩; rfl
 
 /-- Composed round-trip: all 9 argument structures satisfy the encode-decode
-    round-trip property. Parallel to `decode_components_roundtrip` in
-    `RegisterDecode.lean`. -/
+    round-trip property. R6-B: CSpaceMintArgs requires badge validity for
+    lossless roundtrip through `ofNatMasked`. Parallel to
+    `decode_components_roundtrip` in `RegisterDecode.lean`. -/
 theorem decode_layer2_roundtrip_all :
-    (∀ args, decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args) ∧
+    (∀ args, args.badge.valid →
+      decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
@@ -656,7 +667,7 @@ theorem decode_layer2_roundtrip_all :
     (∀ args, decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) :=
-  ⟨decodeCSpaceMintArgs_roundtrip,
+  ⟨fun args h => decodeCSpaceMintArgs_roundtrip args h,
    decodeCSpaceCopyArgs_roundtrip,
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,

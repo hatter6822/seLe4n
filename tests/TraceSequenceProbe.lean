@@ -190,7 +190,7 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
   -- WS-F7/D2d: Notification signal — wake a waiter or accumulate badge
   -- (signal does not modify the signalling thread's state, so no guard needed)
   | .notifySignal =>
-      let badge := SeLe4n.Badge.ofNat (tid.toNat * 7 + 1)
+      let badge := SeLe4n.Badge.ofNatMasked (tid.toNat * 7 + 1)
       match SeLe4n.Kernel.notificationSignal probeNotificationId badge st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .notifySignal err

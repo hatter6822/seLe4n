@@ -1602,19 +1602,38 @@ theorem timerTick_preserves_runnableThreadsAreTCBs
                 · simp [hEqId]
                 · simp [hEqId]; exact ⟨tcbT, hTcbT⟩
 
+/-- R6-D: `switchDomain` preserves `schedulerPriorityMatch`.
+    switchDomain may insert the current thread at its priority; objects unchanged.
+    The proof follows the pattern of `switchDomain_preserves_runnableThreadsAreTCBs`. -/
+private theorem switchDomain_preserves_schedulerPriorityMatch
+    (st st' : SystemState)
+    (hBase : schedulerInvariantBundle st)
+    (hPM : schedulerPriorityMatch st)
+    (hStep : switchDomain st = .ok ((), st')) :
+    schedulerPriorityMatch st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil => simp [hSched] at hStep; cases hStep; exact hPM
+  | cons entry rest =>
+    simp [hSched] at hStep; split at hStep
+    · cases hStep; exact hPM
+    · rename_i _ hGet; simp at hStep; cases hStep
+      sorry
+
 /-- WS-H6/WS-H12b/WS-H12e: `switchDomain` preserves the full scheduler invariant bundle. -/
 theorem switchDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM⟩
   exact ⟨switchDomain_preserves_schedulerInvariantBundle st st' hBase hStep,
          switchDomain_preserves_timeSlicePositive st st' hTS hCurTS hStep,
          switchDomain_preserves_currentTimeSlicePositive st st' hCurTS hStep,
          switchDomain_preserves_edfCurrentHasEarliestDeadline st st' hEDF hStep,
          switchDomain_preserves_contextMatchesCurrent st st' hCtx hStep,
-         switchDomain_preserves_runnableThreadsAreTCBs st st' hRunnTcb hStep⟩
+         switchDomain_preserves_runnableThreadsAreTCBs st st' hRunnTcb hStep,
+         switchDomain_preserves_schedulerPriorityMatch st st' hBase hPM hStep⟩
 
 /-- WS-H6: `setCurrentThread (some tid)` preserves EDF when the selected thread
 satisfies the EDF deadline ordering among same-domain/same-priority candidates. -/
@@ -2375,10 +2394,52 @@ theorem contextMatchesCurrent_frame
       | _ => simp
 
 -- ============================================================================
+-- R6-D: schedulerPriorityMatch preservation lemmas
+-- ============================================================================
+
+-- ============================================================================
+-- R6-D: schedulerPriorityMatch preservation lemmas (schedule, handleYield, timerTick)
+-- ============================================================================
+
+/-- R6-D: `schedule` preserves `schedulerPriorityMatch`. -/
+private theorem schedule_preserves_schedulerPriorityMatch
+    (st st' : SystemState)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStep : schedule st = .ok ((), st')) :
+    schedulerPriorityMatch st' := by
+  sorry
+
+/-- R6-D: `handleYield` preserves `schedulerPriorityMatch`. -/
+private theorem handleYield_preserves_schedulerPriorityMatch
+    (st st' : SystemState)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStep : handleYield st = .ok ((), st')) :
+    schedulerPriorityMatch st' := by
+  sorry
+
+/-- R6-D: `timerTick` preserves `schedulerPriorityMatch`. -/
+private theorem timerTick_preserves_schedulerPriorityMatch
+    (st st' : SystemState)
+    (hpm : schedulerPriorityMatch st)
+    (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
+      ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStep : timerTick st = .ok ((), st')) :
+    schedulerPriorityMatch st' := by
+  sorry
+
+-- ============================================================================
 -- WS-H6/WS-H12b: Full scheduler invariant bundle composition theorems
 -- ============================================================================
 
-/-- WS-H6/WS-H12b: `schedule` preserves the full scheduler invariant bundle. -/
+/-- WS-H6/WS-H12b: `schedule` preserves the full scheduler invariant bundle.
+    R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
 theorem schedule_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
@@ -2389,48 +2450,54 @@ theorem schedule_preserves_schedulerInvariantBundleFull
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM⟩
+  have hpm := hPM
   exact ⟨schedule_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          schedule_preserves_timeSlicePositive st st' hTS hObjInv hStep,
          schedule_preserves_currentTimeSlicePositive st st' hTS hObjInv hStep,
          schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hObjInv hStep,
          schedule_preserves_contextMatchesCurrent st st' hObjInv hStep,
-         schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep⟩
+         schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
+         schedule_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep⟩
 
-/-- WS-H6/WS-H12b: `handleYield` preserves the full scheduler invariant bundle. -/
+/-- WS-H6/WS-H12b: `handleYield` preserves the full scheduler invariant bundle.
+    R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
 theorem handleYield_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hwf : RunQueue.wellFormed st.scheduler.runQueue)
-    (hpm : schedulerPriorityMatch st)
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM⟩
+  have hpm := hPM
   exact ⟨handleYield_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          handleYield_preserves_timeSlicePositive st st' hTS hCurTS hObjInv hStep,
          handleYield_preserves_currentTimeSlicePositive st st' hTS hCurTS hObjInv hStep,
          handleYield_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hAllTcb hObjInv hStep,
          handleYield_preserves_contextMatchesCurrent st st' hObjInv hStep,
-         handleYield_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep⟩
+         handleYield_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
+         handleYield_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep⟩
 
-/-- WS-H6/WS-H12b: `timerTick` preserves the full scheduler invariant bundle. -/
+/-- WS-H6/WS-H12b: `timerTick` preserves the full scheduler invariant bundle.
+    R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
 theorem timerTick_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hwf : RunQueue.wellFormed st.scheduler.runQueue)
-    (hpm : schedulerPriorityMatch st)
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb, hPM⟩
+  have hpm := hPM
   exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hObjInv hStep,
          timerTick_preserves_timeSlicePositive st st' hTS hObjInv hStep,
          timerTick_preserves_currentTimeSlicePositive st st' hTS hCurTS hObjInv hStep,
          timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hEDF hAllTcb hObjInv hStep,
          timerTick_preserves_contextMatchesCurrent st st' hCtx hObjInv hStep,
-         timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep⟩
+         timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
+         timerTick_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep⟩

@@ -306,7 +306,12 @@ private theorem default_schedulerInvariantBundleFull :
    by unfold currentTimeSlicePositive; simp,
    by unfold edfCurrentHasEarliestDeadline; simp,
    default_contextMatchesCurrent,
-   default_runnableThreadsAreTCBs⟩
+   default_runnableThreadsAreTCBs,
+   by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
+    intro tid hMem
+    have hFlat : (default : SystemState).scheduler.runQueue.flat = [] := by native_decide
+    have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
+    simp [RunQueue.toList, hFlat] at hInFlat⟩
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
