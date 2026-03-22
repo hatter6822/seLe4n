@@ -9,6 +9,7 @@
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.Architecture.RegisterDecode
+import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Service.Invariant
 import SeLe4n.Kernel.CrossSubsystem
 
@@ -62,7 +63,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     lifecycleInvariantBundle st ∧
     serviceLifecycleCapabilityInvariantBundle st ∧
     vspaceInvariantBundle st ∧
-    crossSubsystemInvariant st
+    crossSubsystemInvariant st ∧
+    tlbConsistent st st.tlb
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -315,7 +317,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -352,6 +354,8 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oidA oidB rA rB hObjA; have h : (default : SystemState).objects[oidA]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObjA; exact absurd hObjA (by simp)
   -- 8. crossSubsystemInvariant (R4-E: registry endpoint valid ∧ dependency consistent ∧ no stale queue refs)
   · exact default_crossSubsystemInvariant
+  -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)
+  · exact tlbConsistent_empty (default : SystemState)
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -467,10 +471,10 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
     proofLayerInvariantBundle (advanceTimerState ticks st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, by exact hCross⟩
+         ?_, ?_, by exact hLife, ?_, ?_, by exact hCross, by exact hTlb⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,

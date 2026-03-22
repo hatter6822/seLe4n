@@ -344,6 +344,20 @@ def machineWordBits : Nat := 64
 /-- WS-F5/D1a: Maximum value representable in one machine word. -/
 def machineWordMax : Nat := 2 ^ machineWordBits
 
+/-- R7-C/L-03: Predicate asserting a natural number fits in one machine word.
+    Hardware registers, virtual addresses, and physical addresses are 64-bit
+    values. This predicate is used as a refinement in invariants — the underlying
+    types keep `Nat` for proof ergonomics, but hardware-bound operations should
+    ensure `isWord64` holds. -/
+@[inline] def isWord64 (n : Nat) : Prop := n < machineWordMax
+
+/-- R7-C/L-03: Decidable `isWord64` check for runtime use. -/
+@[inline] def isWord64Dec (n : Nat) : Bool := n < machineWordMax
+
+/-- R7-C/L-03: `isWord64Dec` reflects `isWord64`. -/
+theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
+  simp [isWord64Dec, isWord64]
+
 /-- Endpoint or notification badge value.
     WS-F5/D1a: Values are logically bounded to `machineWordBits` (64) bits.
     The `valid` predicate asserts word-boundedness; `ofNatMasked` enforces it
@@ -453,6 +467,12 @@ namespace VAddr
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (addr : VAddr) : Nat := addr.val
 
+/-- R7-C/L-03: A virtual address is valid if it fits in one machine word. -/
+@[inline] def valid (addr : VAddr) : Prop := isWord64 addr.val
+
+/-- R7-C/L-03: Decidable validity check for runtime use. -/
+@[inline] def isValid (addr : VAddr) : Bool := isWord64Dec addr.val
+
 instance : ToString VAddr where
   toString addr := toString addr.toNat
 
@@ -475,6 +495,12 @@ namespace PAddr
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (addr : PAddr) : Nat := addr.val
+
+/-- R7-C/L-03: A physical address is valid if it fits in one machine word. -/
+@[inline] def valid (addr : PAddr) : Prop := isWord64 addr.val
+
+/-- R7-C/L-03: Decidable validity check for runtime use. -/
+@[inline] def isValid (addr : PAddr) : Bool := isWord64Dec addr.val
 
 instance : ToString PAddr where
   toString addr := toString addr.toNat

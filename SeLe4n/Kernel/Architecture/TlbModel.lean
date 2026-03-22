@@ -42,47 +42,11 @@ namespace SeLe4n.Kernel.Architecture
 open SeLe4n
 open SeLe4n.Model
 
-/-- A single TLB entry caching an address translation. -/
-structure TlbEntry where
-  asid : ASID
-  vaddr : VAddr
-  paddr : PAddr
-  perms : PagePermissions
-  deriving Repr, DecidableEq, BEq
-
-/-- Abstract TLB state: a collection of cached translation entries.
-
-    The list representation is intentionally simple — hardware TLBs are
-    associative caches, but for invariant reasoning we only need membership
-    queries, not performance-optimal lookup. -/
-structure TlbState where
-  entries : List TlbEntry
-  deriving Repr
-
-instance : Inhabited TlbState where
-  default := { entries := [] }
-
-/-- An empty TLB with no cached entries. -/
-def TlbState.empty : TlbState := { entries := [] }
-
-/-- Full TLB flush: invalidates all cached entries.
-
-    On ARM64 this corresponds to `TLBI ALLE1` or `TLBI VMALLE1IS`. -/
-def adapterFlushTlb (_tlb : TlbState) : TlbState :=
-  TlbState.empty
-
-/-- Per-ASID TLB flush: invalidates all entries for a specific ASID.
-
-    On ARM64 this corresponds to `TLBI ASIDE1, <asid>`. -/
-def adapterFlushTlbByAsid (tlb : TlbState) (asid : ASID) : TlbState :=
-  { entries := tlb.entries.filter (·.asid != asid) }
-
-/-- Per-VAddr TLB flush: invalidates all entries for a specific (ASID, VAddr) pair.
-
-    On ARM64 this corresponds to `TLBI VAE1, <asid, vaddr>`. This is the
-    most targeted flush, used after modifying a single page table entry. -/
-def adapterFlushTlbByVAddr (tlb : TlbState) (asid : ASID) (vaddr : VAddr) : TlbState :=
-  { entries := tlb.entries.filter (fun e => !(e.asid == asid && e.vaddr == vaddr)) }
+-- R7-A.1/R7-A.3: `TlbEntry`, `TlbState`, `TlbState.empty`, `adapterFlushTlb`,
+-- `adapterFlushTlbByAsid`, and `adapterFlushTlbByVAddr` are now defined in
+-- `SeLe4n/Model/State.lean` so that `SystemState` can include a `tlb` field
+-- and `VSpace.lean` can compose page-table ops with TLB flushes without
+-- circular imports. All names are re-exported via `open SeLe4n.Model`.
 
 /-- TLB consistency invariant: every cached TLB entry matches the current
     page table state.
@@ -247,5 +211,65 @@ theorem cross_asid_tlb_isolation
       exact hNe (hContra.symm.trans (eq_of_beq hAsid))
     simp [hNotAsid₁, hAsid]
   · simp [hAsid]
+
+-- ============================================================================
+-- R7-A.4: TLB consistency preservation for WithFlush operations
+-- ============================================================================
+
+/-- R7-A.4/M-17: The combined `vspaceMapPageWithFlush` preserves TLB consistency.
+
+    The full TLB flush after the map clears all cached entries, making the
+    resulting TLB trivially consistent with any page table state. -/
+theorem vspaceMapPageWithFlush_preserves_tlbConsistent
+    (st st' : SystemState)
+    (asid : ASID) (vaddr : VAddr) (paddr : PAddr) (perms : PagePermissions)
+    (_hConsist : tlbConsistent st st.tlb)
+    (hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = Except.ok ((), st')) :
+    tlbConsistent st' st'.tlb := by
+  unfold vspaceMapPageWithFlush at hStep
+  cases hMap : vspaceMapPage asid vaddr paddr perms st with
+  | error e => rw [hMap] at hStep; simp at hStep
+  | ok val =>
+      obtain ⟨_, stMid⟩ := val
+      rw [hMap] at hStep; simp at hStep
+      subst hStep
+      exact tlbConsistent_empty _
+
+/-- R7-A.4/M-17: The combined `vspaceUnmapPageWithFlush` preserves TLB consistency. -/
+theorem vspaceUnmapPageWithFlush_preserves_tlbConsistent
+    (st st' : SystemState)
+    (asid : ASID) (vaddr : VAddr)
+    (_hConsist : tlbConsistent st st.tlb)
+    (hStep : vspaceUnmapPageWithFlush asid vaddr st = Except.ok ((), st')) :
+    tlbConsistent st' st'.tlb := by
+  unfold vspaceUnmapPageWithFlush at hStep
+  cases hUnmap : vspaceUnmapPage asid vaddr st with
+  | error e => rw [hUnmap] at hStep; simp at hStep
+  | ok val =>
+      obtain ⟨_, stMid⟩ := val
+      rw [hUnmap] at hStep; simp at hStep
+      subst hStep
+      exact tlbConsistent_empty _
+
+/-- R7-A.4/M-17: Non-VSpace operations (scheduler, IPC, capability, lifecycle)
+    preserve TLB consistency trivially — they do not modify page tables, so all
+    TLB entries that were consistent before remain consistent after.
+
+    This is a frame lemma: any state transition that preserves
+    `resolveAsidRoot` and `VSpaceRoot.lookup` results preserves `tlbConsistent`. -/
+theorem tlbConsistent_of_objects_eq
+    (st st' : SystemState)
+    (hTlb : st'.tlb = st.tlb)
+    (hObjects : st'.objects = st.objects)
+    (hAsidTable : st'.asidTable = st.asidTable)
+    (hConsist : tlbConsistent st st.tlb) :
+    tlbConsistent st' st'.tlb := by
+  rw [hTlb]
+  intro entry hMem rootId root hResolve
+  have hResolve' : resolveAsidRoot st entry.asid = some (rootId, root) := by
+    unfold resolveAsidRoot at hResolve ⊢
+    rw [hAsidTable, hObjects] at hResolve
+    exact hResolve
+  exact hConsist entry hMem rootId root hResolve'
 
 end SeLe4n.Kernel.Architecture

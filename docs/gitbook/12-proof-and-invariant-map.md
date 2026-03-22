@@ -502,7 +502,9 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `adapterFlushTlbByAsid` — per-ASID invalidation (ARM64 `TLBI ASIDE1`)
 - `adapterFlushTlbByVAddr` — per-(ASID,VAddr) invalidation (ARM64 `TLBI VAE1`)
 - `tlbConsistent` — invariant: all TLB entries match current page tables
-- 10 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`
+- R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent` added to `proofLayerInvariantBundle`
+- `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + TLB-flush operations
+- 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
 
 ## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
 
@@ -1313,6 +1315,17 @@ delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../dev_hi
 - `RegValue` — typed wrapper structure with identical instance suite
 - `RegisterFile.gpr` — updated from `Nat → Nat` to `RegName → RegValue`
 - All 10 machine lemmas (`readReg_writeReg_eq/ne`, `writeReg_preserves_pc/sp`, etc.) re-proved for typed wrappers
+
+**R7 hardware preparation (R7-B/C/D/E, v0.18.6):**
+
+- `RegName.arm64GPRCount` — ARM64 GPR count constant (32), `RegName.isValid`/`isValidDec` bounds predicate (L-02)
+- `isWord64` / `isWord64Dec` — 64-bit word-boundedness predicate for `Nat` (L-03)
+- `RegValue.valid`/`isValid`, `VAddr.valid`/`isValid`, `PAddr.valid`/`isValid` — type-specific 64-bit bounds (L-03)
+- `machineWordBounded` — machine-state invariant asserting all registers are word-bounded (L-03)
+- `TCB.faultHandler : Option CPtr`, `TCB.boundNotification : Option ObjId` — seL4 TCB fidelity fields (L-06)
+- `KernelObjectType.toNat`/`ofNat?` — type tag encoding with `ofNat_toNat` / `toNat_injective` proofs (L-10)
+- `LifecycleRetypeArgs.newType` — typed as `KernelObjectType` instead of raw `Nat` (L-10)
+- `objectOfKernelType` — typed retype constructor with `objectOfKernelType_type` proof (L-10)
 
 **Completed decode layer (WS-J1-B, v0.15.5):**
 

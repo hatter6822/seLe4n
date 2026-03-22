@@ -1784,6 +1784,39 @@ inductive KernelObjectType where
   | untyped
   deriving Repr, DecidableEq
 
+namespace KernelObjectType
+
+/-- R7-E/L-10: Numeric encoding of kernel object types, matching the syscall ABI.
+    These tag values must be stable across ABI versions. -/
+def toNat : KernelObjectType → Nat
+  | .tcb => 0
+  | .endpoint => 1
+  | .notification => 2
+  | .cnode => 3
+  | .vspaceRoot => 4
+  | .untyped => 5
+
+/-- R7-E/L-10: Decode a numeric type tag to `KernelObjectType`.
+    Returns `none` for unrecognized tags, ensuring only valid types are accepted. -/
+def ofNat? : Nat → Option KernelObjectType
+  | 0 => some .tcb
+  | 1 => some .endpoint
+  | 2 => some .notification
+  | 3 => some .cnode
+  | 4 => some .vspaceRoot
+  | 5 => some .untyped
+  | _ + 6 => none
+
+/-- R7-E/L-10: `ofNat?` is a left inverse of `toNat`. -/
+theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
+  cases t <;> rfl
+
+/-- R7-E/L-10: `toNat` is injective. -/
+theorem toNat_injective {a b : KernelObjectType} (h : a.toNat = b.toNat) : a = b := by
+  cases a <;> cases b <;> simp [toNat] at h <;> rfl
+
+end KernelObjectType
+
 namespace KernelObject
 
 def objectType : KernelObject → KernelObjectType
