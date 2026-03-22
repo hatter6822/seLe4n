@@ -81,18 +81,14 @@ impl CapRights for ReadOnly { const RIGHTS: AccessRights = AccessRights::READ; }
 pub struct ReadWrite;
 impl sealed::Sealed for ReadWrite {}
 impl CapRights for ReadWrite {
-    const RIGHTS: AccessRights = AccessRights(
-        AccessRights::READ.0 | AccessRights::WRITE.0
-    );
+    const RIGHTS: AccessRights = AccessRights::READ.union(AccessRights::WRITE);
 }
 
 /// Grant rights (for CSpace operations).
 pub struct GrantRights;
 impl sealed::Sealed for GrantRights {}
 impl CapRights for GrantRights {
-    const RIGHTS: AccessRights = AccessRights(
-        AccessRights::GRANT.0 | AccessRights::READ.0
-    );
+    const RIGHTS: AccessRights = AccessRights::GRANT.union(AccessRights::READ);
 }
 
 // ============================================================================
@@ -158,7 +154,7 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
         assert!(
             AccessRights::READ.is_subset_of(&Rts::RIGHTS),
             "Cap::to_read_only: READ right is not present in current rights 0x{:02x}",
-            Rts::RIGHTS.0
+            Rts::RIGHTS.raw()
         );
         Cap { ptr: self.ptr, _obj: PhantomData, _rts: PhantomData }
     }
@@ -172,7 +168,7 @@ impl<Obj: CapObject, Rts: CapRights> Cap<Obj, Rts> {
         assert!(
             mask.is_subset_of(&Rts::RIGHTS),
             "Cap::restrict: requested rights 0x{:02x} are not a subset of current rights 0x{:02x}",
-            mask.0, Rts::RIGHTS.0
+            mask.raw(), Rts::RIGHTS.raw()
         );
         Cap { ptr: self.ptr, _obj: PhantomData, _rts: PhantomData }
     }
@@ -186,7 +182,7 @@ impl<Obj: CapObject, Rts: CapRights> Copy for Cap<Obj, Rts> {}
 
 impl<Obj: CapObject, Rts: CapRights> core::fmt::Debug for Cap<Obj, Rts> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Cap<{}, rights=0x{:02x}>({})", Obj::NAME, Rts::RIGHTS.0, self.ptr.0)
+        write!(f, "Cap<{}, rights=0x{:02x}>({})", Obj::NAME, Rts::RIGHTS.raw(), self.ptr.raw())
     }
 }
 
@@ -196,52 +192,52 @@ mod tests {
 
     #[test]
     fn cap_preserves_cptr() {
-        let cap: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr(42));
-        assert_eq!(cap.cptr(), CPtr(42));
+        let cap: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr::from(42u64));
+        assert_eq!(cap.cptr(), CPtr::from(42u64));
     }
 
     #[test]
     fn cap_rights() {
-        let cap: Cap<Endpoint, ReadOnly> = Cap::from_cptr(CPtr(1));
+        let cap: Cap<Endpoint, ReadOnly> = Cap::from_cptr(CPtr::from(1u64));
         assert!(cap.rights().contains(sele4n_types::AccessRight::Read));
         assert!(!cap.rights().contains(sele4n_types::AccessRight::Write));
     }
 
     #[test]
     fn cap_to_read_only_always_safe() {
-        let full: Cap<CNode, FullRights> = Cap::from_cptr(CPtr(10));
+        let full: Cap<CNode, FullRights> = Cap::from_cptr(CPtr::from(10u64));
         let ro: Cap<CNode, ReadOnly> = full.to_read_only();
-        assert_eq!(ro.cptr(), CPtr(10));
+        assert_eq!(ro.cptr(), CPtr::from(10u64));
         assert_eq!(ro.rights(), AccessRights::READ);
     }
 
     #[test]
     fn cap_restrict_subset_succeeds() {
-        let full: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr(5));
+        let full: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr::from(5u64));
         let rw_mask = AccessRights::READ | AccessRights::WRITE;
         let restricted: Cap<Endpoint, Restricted> = full.restrict(rw_mask);
-        assert_eq!(restricted.cptr(), CPtr(5));
+        assert_eq!(restricted.cptr(), CPtr::from(5u64));
     }
 
     #[test]
     #[should_panic(expected = "Cap::restrict: requested rights")]
     fn cap_restrict_superset_panics() {
-        let ro: Cap<Endpoint, ReadOnly> = Cap::from_cptr(CPtr(1));
+        let ro: Cap<Endpoint, ReadOnly> = Cap::from_cptr(CPtr::from(1u64));
         // ReadOnly = 0x01, FullRights = 0x1F — 0x1F is NOT a subset of 0x01
         let _ = ro.restrict(AccessRights::ALL);
     }
 
     #[test]
     fn cap_restrict_empty_always_safe() {
-        let ro: Cap<Endpoint, ReadOnly> = Cap::from_cptr(CPtr(7));
+        let ro: Cap<Endpoint, ReadOnly> = Cap::from_cptr(CPtr::from(7u64));
         let restricted = ro.restrict(AccessRights::EMPTY);
-        assert_eq!(restricted.cptr(), CPtr(7));
+        assert_eq!(restricted.cptr(), CPtr::from(7u64));
     }
 
     #[test]
     #[should_panic(expected = "Cap::to_read_only: READ right is not present")]
     fn cap_to_read_only_on_restricted_panics() {
-        let full: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr(3));
+        let full: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr::from(3u64));
         let restricted = full.restrict(AccessRights::WRITE);
         // Restricted::RIGHTS = EMPTY, so READ is not a subset — should panic
         let _ = restricted.to_read_only();

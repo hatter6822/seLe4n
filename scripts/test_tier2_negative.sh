@@ -21,6 +21,15 @@ run_check "TRACE" lake env lean --run tests/NegativeStateSuite.lean
 run_check "TRACE" lake env lean --run tests/OperationChainSuite.lean
 run_check "TRACE" lake env lean --run tests/InformationFlowSuite.lean
 run_check "TRACE" lake env lean --run tests/RobinHoodSuite.lean
+# R8-D (I-M04): Execute frozen/radix test suites that were compiled but never run.
+# Q4: Radix tree O(1) operations (lookup, insert, erase, fold, toList).
+run_check "TRACE" lake exe radix_tree_suite
+# Q5: FrozenMap, FrozenSet, FrozenSystemState.
+run_check "TRACE" lake exe frozen_state_suite
+# Q6: Freeze correctness proofs (lookup equivalence, radix equivalence).
+run_check "TRACE" lake exe freeze_proof_suite
+# Q7: Frozen kernel operations.
+run_check "TRACE" lake exe frozen_ops_suite
 # Q9-A: Two-Phase Architecture integration tests (builder→freeze→execution).
 run_check "TRACE" lake exe two_phase_arch_suite
 

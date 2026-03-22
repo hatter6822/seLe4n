@@ -172,7 +172,7 @@ inclusion based on security relevance and proof chain completeness.
 | 5 | **R5** | Information Flow Completion | 5 / 13 | R3, R4 | v0.18.4 | M-01, M-02, M-03 |
 | 6 | **R6** | Model & Frozen State Correctness | 5 / 10 | R1 | v0.18.5 | M-09, L-01, L-04, L-12 |
 | 7 | **R7** ✅ | Architecture & Hardware Preparation | 5 / 10 | R6 | v0.18.6 | M-17, L-02, L-03, L-06, L-10 |
-| 8 | **R8** | Infrastructure & CI Hardening | 5 / 10 | — | v0.18.7 | I-M01, I-M02, I-M03, I-M04, L-11 |
+| 8 | **R8** ✅ | Infrastructure & CI Hardening | 5 / 10 | — | v0.18.7 | I-M01, I-M02, I-M03, I-M04, L-11 |
 
 **Total**: 8 phases, 45 task groups, 111 atomic sub-tasks, addressing 20 High+Medium + 12 Low findings.
 
@@ -2022,9 +2022,10 @@ Replace `newType : Nat` with `newType : KernelObjectType` in
 
 ---
 
-### Phase R8: Infrastructure & CI Hardening
+### Phase R8: Infrastructure & CI Hardening — **COMPLETE** (v0.18.7)
 
 **Target version**: v0.18.7
+**Status**: **COMPLETE** — all 5 task groups (R8-A through R8-E) delivered.
 **Goal**: Close supply chain, CI, and test infrastructure gaps.
 **Priority**: MEDIUM — these findings do not affect kernel correctness
 but affect development process security.

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "d9de98e8915b5087043a335be2cee9fdd6dd1fe1",
-      "tree_sha": "10bd6cedbf08f87efb8127fca17a565ed1cf9839",
-      "committed_at_utc": "2026-03-21T23:51:28-04:00"
+      "branch": "claude/audit-phase-r8-infrastructure-Nwp1q",
+      "commit_sha": "499826e7f9fec2e7a2d3f07f113dbec0d804fc0b",
+      "tree_sha": "171314d2959625f699a1507d38a786550e96f150",
+      "committed_at_utc": "2026-03-22T03:51:38+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 3128
   },
   "readme_sync": {
-    "version": "0.18.6",
+    "version": "0.18.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 98,
     "production_loc": 55499,

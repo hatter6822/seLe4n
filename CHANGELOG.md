@@ -1,3 +1,23 @@
+## [0.18.7] — WS-R8 Infrastructure & CI Hardening
+
+- Completed Phase 8 (WS-R8) of the Comprehensive Audit Remediation workstream.
+- R8-A (I-M01): Elan binary download pinned to versioned URL (`v4.8.0`) with
+  SHA-256 hash verification. Replaces `/releases/latest/` in the primary
+  download path (`setup_lean_env.sh`).
+- R8-B (I-M02): `codebase_map_sync.yml` converted from auto-push to PR-based
+  workflow. Permissions downgraded, changes proposed via `gh pr create`.
+- R8-C (I-M03): Rust test skip now explicit — `::warning::` CI annotation when
+  cargo unavailable. Cargo exit codes properly propagated via conditional checks.
+- R8-D (I-M04): 4 compiled-but-never-run test suites (`radix_tree_suite`,
+  `frozen_state_suite`, `freeze_proof_suite`, `frozen_ops_suite`) now execute
+  in Tier 2 negative tests (67 additional scenarios validated).
+- R8-E (L-11): 14 Rust newtype identifier inner fields changed from `pub` to
+  `pub(crate)` with `.raw()` accessor methods. `AccessRights` and `PagePerms`
+  also encapsulated. All cross-crate consumers updated to use `.raw()`/`::from()`.
+  25 conformance tests + 22 unit tests pass.
+- Zero sorry/axiom, all test tiers pass.
+- Version bump: v0.18.6 → v0.18.7
+
 ## [0.18.6] — WS-R7 Architecture & Hardware Preparation
 
 - Completed Phase 7 (WS-R7) of the Comprehensive Audit Remediation workstream.

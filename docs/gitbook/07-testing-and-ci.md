@@ -17,6 +17,7 @@ Current stage context: **All prior workstreams completed through WS-L (v0.16.13)
   - executable scenario (`lake exe sele4n`) checked against stable fixture fragments,
   - **mandatory determinism validation** (WS-I1/R-02): `scripts/test_tier2_determinism.sh` runs trace twice and diffs output, failing on any divergence,
   - malformed/negative and IF-M1 runtime suites (`lake exe negative_state_suite`, `lake exe information_flow_suite`) run under `scripts/test_tier2_negative.sh`,
+  - R8-D (I-M04): frozen/radix correctness suites (`radix_tree_suite`, `frozen_state_suite`, `freeze_proof_suite`, `frozen_ops_suite`) now execute in Tier 2 negative tests (67 scenarios),
   - fixture lines use pipe-delimited format with scenario IDs (`SCENARIO_ID | SUBSYSTEM | expected_trace_fragment`) for audit traceability (WS-I1/R-03),
   - all 121 trace output lines tagged with unique scenario IDs across 15 prefix families (ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY),
   - 17 inter-transition invariant assertions (WS-I1/R-01) check 17 invariant families after every major transition group,
@@ -110,7 +111,7 @@ stories remain visible and intentional, especially for milestone claims tied to 
 
 - **WS-N (Robin Hood hashing, v0.17.0–v0.17.5 — PORTFOLIO COMPLETE):** `RobinHoodSuite.lean` with 12 standalone + 6 integration tests covering insert/get/erase, collision chains, table growth, and kernel API bridge operations. All N1–N5 phases delivered.
 - **WS-Q (Kernel State Architecture, v0.17.7–v0.17.14 — PORTFOLIO COMPLETE):** 9 phases covering the full two-phase architecture. Key test additions: `RadixTreeSuite.lean` (12 scenarios, 43 checks), `FrozenStateSuite.lean` (15 scenarios, 49 checks), `FreezeProofSuite.lean` (22 scenarios, 60 checks), `FrozenOpsSuite.lean` (15 scenarios, TPH-005–TPH-014), `TwoPhaseArchSuite.lean` (14 integration tests, 41 checks, builder→freeze→execution pipeline). Rust conformance: 64 unit tests + 25 conformance tests in `libsele4n` crates.
-- **WS-R (Comprehensive Audit Remediation, v0.18.0+ — IN PROGRESS):** R1–R7 complete (v0.18.0–v0.18.6). Test additions include operation-chain suite extensions, cross-subsystem invariant tests, TLB flush validation, and typed retype decode boundary tests.
+- **WS-R (Comprehensive Audit Remediation, v0.18.0+ — IN PROGRESS):** R1–R8 complete (v0.18.0–v0.18.7). Test additions include operation-chain suite extensions, cross-subsystem invariant tests, TLB flush validation, and typed retype decode boundary tests.
 
 ## Practical failure triage
 

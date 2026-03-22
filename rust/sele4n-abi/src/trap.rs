@@ -78,7 +78,7 @@ mod tests {
     #[cfg(not(target_arch = "aarch64"))]
     fn mock_syscall_returns_error() {
         let req = SyscallRequest {
-            cap_addr: CPtr(0),
+            cap_addr: CPtr::from(0u64),
             msg_info: MessageInfo { length: 0, extra_caps: 0, label: 0 },
             msg_regs: [0; 4],
             syscall_id: SyscallId::Send,

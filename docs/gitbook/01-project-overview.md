@@ -81,7 +81,7 @@ wrappers, Q9 integration testing + documentation.
 
 **WS-R** (Comprehensive Audit Remediation) is the **active workstream** — 8 phases
 (R1–R8), 111 sub-tasks addressing all 82 findings from the pre-release audit.
-R1–R7 complete (v0.18.0–v0.18.6), R8 pending.
+R1–R8 complete (v0.18.0–v0.18.7).
 After WS-R: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
