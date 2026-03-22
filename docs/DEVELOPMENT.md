@@ -364,6 +364,36 @@ When adding new trace scenarios to `MainTraceHarness.lean`:
 7. Validate: `./scripts/test_smoke.sh` (includes Tier 0 registry validation +
    Tier 2 fixture comparison).
 
+### Golden-output fixture management (S2-D)
+
+The `tests/fixtures/main_trace_smoke.expected` file is the golden fixture for
+the kernel's executable trace output. Changes to this file require explicit
+rationale because they indicate behavioral changes in kernel transitions.
+
+**When to update the fixture:**
+- Adding new trace scenarios (new kernel operations or test paths)
+- Changing kernel transition semantics that affect trace output
+- Modifying the trace format (e.g., scenario ID prefixes)
+
+**When NOT to update the fixture:**
+- A test fails unexpectedly — investigate the root cause first
+- Cosmetic changes to non-trace output (e.g., `Repr` instances)
+
+**Update procedure:**
+1. Run `lake exe sele4n > /tmp/actual_trace.log` to capture actual output
+2. Compare: `diff tests/fixtures/main_trace_smoke.expected /tmp/actual_trace.log`
+3. Review each changed line — every difference should correspond to an
+   intentional behavioral change
+4. Update the fixture with the new expected output
+5. Document the rationale in the commit message (e.g., "Update fixture: added
+   S3-F RunQueue.remove well-formedness trace scenario")
+6. Run `./scripts/test_smoke.sh` to verify the updated fixture passes
+
+**Test assertions:** All test suites use structural equality (`BEq`/`DecidableEq`)
+for comparison logic, not `reprStr` or `toString`. The `reprStr` function is
+used only in diagnostic error messages when a test fails, not in the comparison
+itself (S2-A). This ensures test stability across `Repr` instance changes.
+
 ### Metrics regeneration process (WS-L5-C)
 
 When modifying production Lean source files:
