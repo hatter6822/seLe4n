@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-security-type-safety-EmqYZ",
-      "commit_sha": "94b00f10acc8d990805351c6eb4ff9c6ea83e702",
-      "tree_sha": "40e005a4b038baf4f4585190ff5248807d881042",
-      "committed_at_utc": "2026-03-22T18:21:12+00:00"
+      "commit_sha": "13a890f210adb500963fbbbf0b91f114af1c06bd",
+      "tree_sha": "b5272b03324bc6fc2087b1a192aea687d0cde94c",
+      "committed_at_utc": "2026-03-22T18:28:07+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f4782df1e3fdb55625a1ddb1637d464cc285d47e1da1580bc24f98b1444fcf90"
+    "source_digest": "de35548b8d11c6621f0eec79e350f091eed7d325c29d5fb2372bcc649040de0c"
   },
   "summary": {
     "module_count": 108,
-    "declaration_count": 3138
+    "declaration_count": 3142
   },
   "readme_sync": {
     "version": "0.18.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 98,
-    "production_loc": 55616,
+    "production_loc": 55676,
     "test_files": 10,
     "test_loc": 7317,
-    "proved_theorem_lemma_decls": 1689,
+    "proved_theorem_lemma_decls": 1691,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -17329,7 +17329,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 127,
+      "declaration_count": 131,
       "declarations": [
         {
           "kind": "namespace",
@@ -18284,17 +18284,49 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "cdtMapsConsistent",
+          "line": 1759,
+          "called": [
+            "CapDerivationTree"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rhtable_default_get",
+          "line": 1771,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_cdtMapsConsistent",
+          "line": 1778,
+          "called": [
+            "CdtNodeId",
+            "rhtable_default_get"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "removeEdge",
+          "line": 1800,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1757,
+          "line": 1817,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1768>",
-          "line": 1768,
+          "name": "<anonymous:instance:1828>",
+          "line": 1828,
           "called": [
             "KernelObject"
           ]
@@ -18302,19 +18334,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1778,
+          "line": 1838,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 1787,
+          "line": 1847,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 1791,
+          "line": 1851,
           "called": [
             "KernelObjectType"
           ]
@@ -18322,7 +18354,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1801,
+          "line": 1861,
           "called": [
             "KernelObjectType"
           ]
@@ -18330,7 +18362,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1811,
+          "line": 1871,
           "called": [
             "KernelObjectType",
             "ofNat"
@@ -18339,7 +18371,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1815,
+          "line": 1875,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -18348,13 +18380,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 1820,
+          "line": 1880,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 1822,
+          "line": 1882,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -18363,7 +18395,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 1834,
+          "line": 1894,
           "called": []
         }
       ]
