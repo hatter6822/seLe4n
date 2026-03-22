@@ -310,6 +310,11 @@ constructors (dedicated `invalidTypeTag` error variant for unrecognized tags);
 double lookup); `PagePermissions.ofNat`/`toNat` provides bitfield codec with
 round-trip proof. 3 delegation theorems proved (`lifecycleRetype`, `vspaceMap`,
 `vspaceUnmap`). All 13 syscalls now fully dispatch through `dispatchWithCap`.
+**(R7-E/L-10, v0.18.6):** `LifecycleRetypeArgs.newType` upgraded from raw `Nat`
+to typed `KernelObjectType` enum; `decodeLifecycleRetypeArgs` validates type tags
+via `KernelObjectType.ofNat?` at the decode boundary; `objectOfKernelType` provides
+the total (error-free) typed constructor; dispatch uses `objectOfKernelType` instead
+of `objectOfTypeTag`.
 **Layer 5 (completed, K-E v0.16.4; updated WS-Q1):** IPC message population.
 *(WS-Q1: `ServiceConfig` and service start/stop dispatch removed — registry-only model.)*
 `extractMessageRegisters` converts
@@ -356,7 +361,21 @@ seLe4n's capability node (`CNode`) slots are backed by a formally verified Robin
 
 The invariant bundle (`invExt`) composes four properties: `WF` (well-formedness: capacity > 0, array size = capacity), `distCorrect`, `noDupKeys`, and `probeChainDominant`. Every mutating operation (`insert`, `erase`, `resize`) preserves `invExt`, and functional correctness theorems (`get_after_insert`, `get_after_erase`, `absent_after_erase`) build on it. The bridge layer (`Bridge.lean`) provides `BEq`, `Inhabited`, `Hashable` instances and adapter lemmas for use in kernel CNode operations.
 
-## 11. Related chapters
+## 11. Architecture & hardware preparation (R7, v0.18.6)
+
+Phase R7 strengthens the architecture model for the Raspberry Pi 5 hardware target:
+
+**TLB flush enforcement (M-17).** `TlbState` (abstract TLB cache) is now a field of `SystemState`, and `tlbConsistent` is a conjunct of the top-level `proofLayerInvariantBundle`. VSpace operations (`vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush`) compose page table modification with full TLB flush, and preservation proofs show the combined operations maintain `tlbConsistent`. Non-VSpace operations preserve TLB consistency via a frame lemma (`tlbConsistent_of_objects_eq`).
+
+**ARM64 register bounds (L-02).** `RegName.isValid` asserts a register index falls within the 32-entry ARM64 GPR range (`arm64GPRCount`). The existing `registerFileGPRCount` constant is now defined as `RegName.arm64GPRCount` for consistency.
+
+**64-bit value bounds (L-03).** `isWord64` is a refinement predicate asserting a `Nat` fits in one machine word. `RegValue.valid`, `VAddr.valid`, and `PAddr.valid` use it. `machineWordBounded` is a machine-state invariant asserting all register values satisfy `isWord64`.
+
+**TCB seL4 fidelity (L-06).** The `TCB` structure gains `faultHandler : Option CPtr` and `boundNotification : Option ObjId`, matching seL4's thread control block. Both default to `none` for backward compatibility.
+
+**Typed retype arguments (L-10).** `LifecycleRetypeArgs.newType` is now `KernelObjectType` (not raw `Nat`). The decode boundary validates type tags via `KernelObjectType.ofNat?`, rejecting unrecognized values. `objectOfKernelType` replaces `objectOfTypeTag` in dispatch, eliminating the error path.
+
+## 12. Related chapters
 
 - [Architecture & Module Map](03-architecture-and-module-map.md) — module responsibilities and dependency flow
 - [Kernel Performance Optimization](08-kernel-performance-optimization.md) — WS-G technical breakdown

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "main",
-      "commit_sha": "0ac4f8291eaf482a1f430edd30c6cdc52236d346",
-      "tree_sha": "e047d8447526adcdb63016c748bf568fbf38f0b3",
-      "committed_at_utc": "2026-03-21T23:21:03-04:00"
+      "branch": "claude/review-architecture-audit-Hr2FV",
+      "commit_sha": "b369b4aafe4175f64ac22e2d88351564acc111ae",
+      "tree_sha": "b422046ec0c4914e0d34fdebb2534b428d1e5864",
+      "committed_at_utc": "2026-03-22T03:21:12+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2f8ac53e26d3101adbbd6d64cc826ff242f2a2f4b1be8d40f0066cc5a6a15eb0"
+    "source_digest": "cec1719f68cd0989f0e3ad3acce86597db126553fd7913a0b3d6ddf59cc2e60e"
   },
   "summary": {
     "module_count": 108,
     "declaration_count": 3128
   },
   "readme_sync": {
-    "version": "0.18.3",
+    "version": "0.18.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 98,
-    "production_loc": 55498,
+    "production_loc": 55499,
     "test_files": 10,
     "test_loc": 7309,
     "proved_theorem_lemma_decls": 1686,
@@ -1782,7 +1782,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_roundtrip",
-          "line": 498,
+          "line": 499,
           "called": [
             "LifecycleRetypeArgs",
             "decodeLifecycleRetypeArgs",
@@ -1794,7 +1794,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_roundtrip",
-          "line": 506,
+          "line": 507,
           "called": [
             "VSpaceMapArgs",
             "decodeVSpaceMapArgs",
@@ -1805,7 +1805,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_roundtrip",
-          "line": 511,
+          "line": 512,
           "called": [
             "VSpaceUnmapArgs",
             "decodeVSpaceUnmapArgs",
@@ -1816,25 +1816,25 @@
         {
           "kind": "structure",
           "name": "ServiceRegisterArgs",
-          "line": 522,
+          "line": 523,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceRevokeArgs",
-          "line": 532,
+          "line": 533,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceQueryArgs",
-          "line": 539,
+          "line": 540,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeServiceRegisterArgs",
-          "line": 549,
+          "line": 550,
           "called": [
             "ServiceRegisterArgs",
             "requireMsgReg"
@@ -1843,7 +1843,7 @@
         {
           "kind": "def",
           "name": "decodeServiceRevokeArgs",
-          "line": 564,
+          "line": 565,
           "called": [
             "ServiceRevokeArgs",
             "requireMsgReg"
@@ -1852,7 +1852,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRegisterArgs",
-          "line": 575,
+          "line": 576,
           "called": [
             "ServiceRegisterArgs"
           ]
@@ -1860,7 +1860,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRevokeArgs",
-          "line": 581,
+          "line": 582,
           "called": [
             "ServiceRevokeArgs"
           ]
@@ -1868,7 +1868,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_deterministic",
-          "line": 588,
+          "line": 589,
           "called": [
             "decodeServiceRegisterArgs"
           ]
@@ -1876,7 +1876,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_deterministic",
-          "line": 591,
+          "line": 592,
           "called": [
             "decodeServiceRevokeArgs"
           ]
@@ -1884,7 +1884,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_error_iff",
-          "line": 599,
+          "line": 600,
           "called": [
             "decodeServiceRegisterArgs",
             "requireMsgReg",
@@ -1895,7 +1895,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_error_iff",
-          "line": 632,
+          "line": 633,
           "called": [
             "decodeServiceRevokeArgs",
             "requireMsgReg",
@@ -1905,7 +1905,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_roundtrip",
-          "line": 653,
+          "line": 654,
           "called": [
             "ServiceRegisterArgs",
             "decodeServiceRegisterArgs",
@@ -1917,7 +1917,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_roundtrip",
-          "line": 662,
+          "line": 663,
           "called": [
             "ServiceRevokeArgs",
             "decodeServiceRevokeArgs",
@@ -1928,7 +1928,7 @@
         {
           "kind": "theorem",
           "name": "decode_layer2_roundtrip_all",
-          "line": 670,
+          "line": 671,
           "called": [
             "decodeCSpaceCopyArgs",
             "decodeCSpaceCopyArgs_roundtrip",
@@ -1963,13 +1963,13 @@
         {
           "kind": "def",
           "name": "decodeExtraCapAddrs",
-          "line": 705,
+          "line": 706,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "decodeExtraCapAddrs_deterministic",
-          "line": 713,
+          "line": 714,
           "called": [
             "decodeExtraCapAddrs"
           ]
