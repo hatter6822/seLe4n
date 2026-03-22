@@ -521,7 +521,16 @@ theorem rightsSubset_sound
   simp only [Membership.mem] at hMem ⊢
   exact rightsSubset_at requested allowed right hSubset hMem
 
-/-- WS-F5/D2b: Build a mint-like derived capability with explicit rights attenuation. -/
+/-- WS-F5/D2b: Build a mint-like derived capability with explicit rights attenuation.
+
+**S1-M: Badge-forging security note.** When minting with a custom `badge`,
+any holder of a capability with Mint authority on an endpoint can construct a
+derived capability with an arbitrary badge value. This matches seL4 semantics:
+badge values are opaque identifiers set by the authority holder and delivered
+to the receiver on IPC. The receiver can distinguish senders by badge but cannot
+authenticate the badge itself — authentication relies on the capability
+derivation tree (CDT) tracking which entity minted the badge. Callers must
+not treat badge values as cryptographic authenticators. -/
 def mintDerivedCap (parent : Capability) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge := parent.badge) : Except KernelError Capability :=
   if rightsSubset rights parent.rights then

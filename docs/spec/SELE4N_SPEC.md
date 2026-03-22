@@ -391,3 +391,29 @@ Security assumptions and trust boundaries are documented in
 The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
+
+### 10.1 Trust Boundaries (WS-S/S1)
+
+The following trust boundaries are documented as part of WS-S Phase S1:
+
+**`ThreadId.toObjId` identity mapping** (`SeLe4n/Prelude.lean`): The conversion
+from `ThreadId` to `ObjId` is an unchecked identity mapping. Callers must verify
+the returned `ObjId` references a TCB by pattern-matching on `.tcb tcb` after
+object store lookup. The checked variant `toObjIdChecked` additionally rejects
+the sentinel value (ID 0). See `ThreadId.toObjId_injective` for the injectivity
+proof.
+
+**Badge forging via Mint** (`SeLe4n/Kernel/Capability/Operations.lean`): Any
+holder of a capability with Mint authority on an endpoint can mint a derived
+capability with an arbitrary badge value. This matches seL4 semantics — badge
+values are opaque sender identifiers, not cryptographic authenticators.
+Authentication relies on the CDT tracking which entity performed the mint.
+
+**`MemoryRegion.wellFormed`** (`SeLe4n/Machine.lean`): Converted from a runtime
+`Bool` check to a `Prop` proof obligation in WS-S/S1-B. Callers must provide
+evidence that `size > 0 ∧ endAddr ≤ 2^physAddrWidth`. A `Decidable` instance
+enables `decide`/`native_decide` and `if`-expressions.
+
+**`AccessRightSet.valid`** (`SeLe4n/Model/Object/Types.lean`): Added in
+WS-S/S1-G. The well-formedness predicate `bits < 2^5` ensures no spurious
+upper bits exist. `AccessRightSet.ofNat` masks inputs to the valid 5-bit range.

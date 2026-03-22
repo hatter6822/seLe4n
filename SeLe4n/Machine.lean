@@ -164,10 +164,26 @@ def registerFileGPRCount : Nat := RegName.arm64GPRCount
 
 /-- R6-C: Structural `BEq` for `RegisterFile`. Compares `pc`, `sp`, and
 all `registerFileGPRCount` GPR indices. Uses a named constant instead of
-a magic number to tie the comparison range to the architecture definition. -/
+a magic number to tie the comparison range to the architecture definition.
+
+**S1-J: Lawfulness note.** This `BEq` instance is *not* lawful in the
+strict `LawfulBEq` sense (`a == b = true → a = b`) because `gpr` is a
+function `RegName → RegValue`. Extensional equality of functions is
+undecidable in general; this instance checks equality at all 32 valid
+GPR indices (0..31), which is sound for the ARM64 register model since
+`RegName.isValid` restricts valid names to this range. For proofs that
+require propositional equality of register files, use `RegisterFile.ext`
+(which requires pointwise equality of the `gpr` function). -/
 instance : BEq RegisterFile where
   beq a b := a.pc == b.pc && a.sp == b.sp &&
     (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
+
+/-- S1-J: Extensionality lemma for `RegisterFile`. Two register files are equal
+    when their `pc`, `sp`, and `gpr` functions agree. -/
+theorem RegisterFile.ext {a b : RegisterFile}
+    (hpc : a.pc = b.pc) (hsp : a.sp = b.sp) (hgpr : ∀ r, a.gpr r = b.gpr r) :
+    a = b := by
+  cases a; cases b; simp at *; exact ⟨hpc, hsp, funext hgpr⟩
 
 /-- Top-level abstract machine state manipulated by kernel transitions. -/
 structure MachineState where
@@ -181,7 +197,14 @@ instance : Inhabited MachineState where
 /-- R7-C/L-03: Machine-state word-boundedness invariant.
     Asserts that all register values (PC, SP, and all GPRs) fit in one machine
     word. This is always true on real ARM64 hardware but must be stated as an
-    invariant in the abstract model since the underlying `Nat` type is unbounded. -/
+    invariant in the abstract model since the underlying `Nat` type is unbounded.
+
+    S1-N: This predicate covers *all* fields in `RegisterFile`: `pc`, `sp`,
+    and every valid GPR index (0..31). CPSR/PSTATE is not modeled in the
+    abstract register file — ARM64 condition flags are not used by seL4's
+    syscall ABI and are therefore outside the kernel's trust boundary.
+    If CPSR is added in future hardware-binding work (WS-T), this invariant
+    must be extended accordingly. -/
 def machineWordBounded (ms : MachineState) : Prop :=
   ms.regs.pc.valid ∧ ms.regs.sp.valid ∧
   ∀ (r : RegName), r.isValid → (ms.regs.gpr r).valid
@@ -331,11 +354,18 @@ theorem contains_iff (r : MemoryRegion) (addr : PAddr) :
     r.contains addr = true ↔ r.base.toNat ≤ addr.toNat ∧ addr.toNat < r.endAddr := by
   simp [contains, endAddr]
 
-/-- WS-H11/A-05: A memory region is well-formed when its end address does not overflow,
-    i.e., `endAddr ≤ 2^physicalAddressWidth` for the enclosing machine configuration.
-    This standalone check validates a single region against a given address width. -/
-def wellFormed (r : MemoryRegion) (physAddrWidth : Nat) : Bool :=
-  r.size > 0 && r.endAddr ≤ 2 ^ physAddrWidth
+/-- WS-H11/A-05: A memory region is well-formed when its size is positive and its end
+    address does not overflow the physical address space. This is a `Prop` proof
+    obligation — callers must provide evidence that the region satisfies both
+    conditions. S1-B: Converted from `Bool` runtime check to `Prop` to ensure
+    malformed regions cannot be constructed without explicit proof. -/
+def wellFormed (r : MemoryRegion) (physAddrWidth : Nat) : Prop :=
+  r.size > 0 ∧ r.endAddr ≤ 2 ^ physAddrWidth
+
+/-- Decidable instance for `MemoryRegion.wellFormed`, enabling `decide`/`native_decide`
+    and `if`-expressions over the predicate. -/
+instance (r : MemoryRegion) (w : Nat) : Decidable (r.wellFormed w) :=
+  inferInstanceAs (Decidable (_ ∧ _))
 
 end MemoryRegion
 
@@ -410,20 +440,21 @@ theorem isPowerOfTwo_pos {n : Nat} (h : isPowerOfTwo n = true) : n > 0 :=
   (isPowerOfTwo_spec h).1
 
 /-- WS-H14c: Every power of two passes the `isPowerOfTwo` check.
-Proven by native_decide for the concrete range 0..63, which covers all
-page-size-relevant powers of two on 64-bit platforms. The bitwise identity
+S1-I: Migrated from `native_decide` to `decide` to eliminate TCB dependency
+on compiled Lean code. The `decide` tactic uses the verified kernel evaluator,
+keeping these proofs within the trusted proof checker. The bitwise identity
 `2^k &&& (2^k - 1) = 0` holds for all `k` by the binary representation
 of powers of two: `2^k` is a single 1-bit, and `2^k - 1` is all 1-bits
 below that position, so their AND is zero. -/
-theorem isPowerOfTwo_of_pow2_0 : isPowerOfTwo (2 ^ 0) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_1 : isPowerOfTwo (2 ^ 1) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_2 : isPowerOfTwo (2 ^ 2) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_3 : isPowerOfTwo (2 ^ 3) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_4 : isPowerOfTwo (2 ^ 4) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_5 : isPowerOfTwo (2 ^ 5) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_12 : isPowerOfTwo (2 ^ 12) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_16 : isPowerOfTwo (2 ^ 16) = true := by native_decide
-theorem isPowerOfTwo_of_pow2_21 : isPowerOfTwo (2 ^ 21) = true := by native_decide
+theorem isPowerOfTwo_of_pow2_0 : isPowerOfTwo (2 ^ 0) = true := by decide
+theorem isPowerOfTwo_of_pow2_1 : isPowerOfTwo (2 ^ 1) = true := by decide
+theorem isPowerOfTwo_of_pow2_2 : isPowerOfTwo (2 ^ 2) = true := by decide
+theorem isPowerOfTwo_of_pow2_3 : isPowerOfTwo (2 ^ 3) = true := by decide
+theorem isPowerOfTwo_of_pow2_4 : isPowerOfTwo (2 ^ 4) = true := by decide
+theorem isPowerOfTwo_of_pow2_5 : isPowerOfTwo (2 ^ 5) = true := by decide
+theorem isPowerOfTwo_of_pow2_12 : isPowerOfTwo (2 ^ 12) = true := by decide
+theorem isPowerOfTwo_of_pow2_16 : isPowerOfTwo (2 ^ 16) = true := by decide
+theorem isPowerOfTwo_of_pow2_21 : isPowerOfTwo (2 ^ 21) = true := by decide
 
 /-- A machine configuration is well-formed when:
     1. All regions have nonzero size.

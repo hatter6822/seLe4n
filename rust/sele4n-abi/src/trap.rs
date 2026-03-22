@@ -18,6 +18,7 @@ use crate::{SyscallRequest, SyscallResponse, encode_syscall, decode_response};
 /// the `std` feature for testing).
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
+#[allow(unsafe_code)]
 pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     // ARM64 ABI: x0=cap_addr, x1=msg_info, x2-x5=msg_regs, x7=syscall_num
     // The kernel writes results back into x0-x5.
@@ -42,6 +43,7 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 /// in the `std` feature instead.
 #[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
+#[allow(unsafe_code)]
 pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     // Mock: set x0 to InvalidSyscallNumber error code
     regs[0] = KernelError::InvalidSyscallNumber as u64;
@@ -59,6 +61,7 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 /// decodes the response. This is the primary entry point for all
 /// high-level wrappers in `sele4n-sys`.
 #[inline]
+#[allow(unsafe_code)]
 pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {
     let mut regs = encode_syscall(&req);
     // SAFETY: `encode_syscall` produces a valid register array from a typed

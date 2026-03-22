@@ -66,6 +66,33 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace AccessRightSet
 
+/-- S1-G: Maximum valid bitmask value — 5 access rights use bits 0..4,
+    so valid values are in `[0, 2^5)`. -/
+private def maxBits : Nat := 2 ^ 5
+
+/-- S1-G: Well-formedness predicate — a rights set is valid when its bitmask
+    fits in the 5-bit rights space (bits 0..4). Values ≥ 32 have spurious
+    upper bits that do not correspond to any access right. -/
+@[inline] def valid (s : AccessRightSet) : Prop := s.bits < maxBits
+
+instance (s : AccessRightSet) : Decidable s.valid :=
+  inferInstanceAs (Decidable (s.bits < maxBits))
+
+/-- S1-G: Construct a rights set from a raw `Nat`, masking to the valid 5-bit
+    range. This is the safe constructor — it guarantees `valid` by construction. -/
+@[inline] def ofNat (n : Nat) : AccessRightSet := ⟨n % maxBits⟩
+
+/-- S1-G: `ofNat` always produces a valid rights set. -/
+theorem ofNat_valid (n : Nat) : (ofNat n).valid := by
+  simp [ofNat, valid, maxBits]
+  exact Nat.mod_lt n (by decide)
+
+/-- S1-G: `ofNat` is idempotent on valid inputs. -/
+theorem ofNat_idempotent (s : AccessRightSet) (h : s.valid) :
+    ofNat s.bits = s := by
+  simp [ofNat, maxBits, valid] at *
+  exact congrArg AccessRightSet.mk (Nat.mod_eq_of_lt h)
+
 /-- The empty rights set (no permissions). -/
 @[inline] def empty : AccessRightSet := ⟨0⟩
 
