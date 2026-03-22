@@ -257,6 +257,37 @@ theorem cdtMapsConsistent_of_withCdtMaps
 def capabilityInvariantBundleFull (st : SystemState) : Prop :=
   capabilityInvariantBundle st ∧ cdtMapsConsistent st ∧ cdtMintCompleteness st
 
+-- ============================================================================
+-- S3-D: cdtMapsConsistent transfer and frame theorems
+-- ============================================================================
+
+/-- S3-D: Transfer `cdtMapsConsistent` through state changes that preserve `cdt`. -/
+theorem cdtMapsConsistent_of_cdt_eq
+    (st st' : SystemState)
+    (hCon : cdtMapsConsistent st)
+    (hCdtEq : st'.cdt = st.cdt) :
+    cdtMapsConsistent st' := by
+  unfold cdtMapsConsistent at hCon ⊢; rw [hCdtEq]; exact hCon
+
+/-- S3-D: `storeObject` preserves `cdtMapsConsistent` (CDT unchanged). -/
+theorem cdtMapsConsistent_of_storeObject
+    (st st' : SystemState) (oid : ObjId) (obj : KernelObject)
+    (hCon : cdtMapsConsistent st)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    cdtMapsConsistent st' :=
+  cdtMapsConsistent_of_cdt_eq st st' hCon (storeObject_cdt_eq st st' oid obj hStore)
+
+/-- S3-D: `detachSlotFromCdt` preserves `cdtMapsConsistent` (CDT unchanged —
+    it only modifies `cdtSlotNode` and `cdtNodeSlot`). -/
+theorem cdtMapsConsistent_of_detachSlotFromCdt
+    (st : SystemState) (ref : SlotRef)
+    (hCon : cdtMapsConsistent st) :
+    cdtMapsConsistent (SystemState.detachSlotFromCdt st ref) := by
+  unfold SystemState.detachSlotFromCdt
+  split
+  · exact hCon  -- none case: state unchanged
+  · exact hCon  -- some case: only cdtSlotNode/cdtNodeSlot modified, cdt unchanged
+
 /-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
 monotonicity so composition proofs can depend on a single named assumption.
 
@@ -477,6 +508,14 @@ theorem storeCapabilityRef_cdt_eq
     st'.cdtSlotNode = st.cdtSlotNode ∧ st'.objects = st.objects := by
   unfold storeCapabilityRef at hStep
   simp at hStep; cases hStep; exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- S3-D: `storeCapabilityRef` preserves `cdtMapsConsistent` (CDT unchanged). -/
+theorem cdtMapsConsistent_of_storeCapabilityRef
+    (st st' : SystemState) (ref : SlotRef) (target : Option CapTarget)
+    (hCon : cdtMapsConsistent st)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    cdtMapsConsistent st' :=
+  cdtMapsConsistent_of_cdt_eq st st' hCon (storeCapabilityRef_cdt_eq st st' ref target hStep).1
 
 /-- WS-H4: Transfer all three new predicates through a storeObject that is
 not a CNode. Combines cspaceSlotCountBounded + cdtCompleteness + cdtAcyclicity. -/

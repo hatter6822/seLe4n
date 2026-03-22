@@ -827,6 +827,19 @@ theorem default_serviceGraphInvariant : serviceGraphInvariant default := by
 -- S3-N/U-L14: Semi-automated dependency graph verification
 -- ============================================================================
 
+-- ============================================================================
+-- S3-N: Semi-Automated Dependency Graph Verification
+--
+-- Lean 4 does not provide compile-time reflection over module imports, so
+-- fully automated derivation from `import` statements is not feasible.
+-- Instead, we maintain a subsystem registry with a compile-time count witness,
+-- a BFS fuel bound, and cross-references to the six subsystem invariant modules:
+--   Scheduler, Capability, IPC, Lifecycle, Service, InformationFlow
+--
+-- When adding a 7th subsystem: update `subsystemModules`, the count witness
+-- (which will fail to compile), and `crossSubsystemPredicates` in CrossSubsystem.lean.
+-- ============================================================================
+
 /-- S3-N: Subsystem module registry — compile-time list of all subsystem
     invariant modules that contribute to the service dependency graph.
     Adding a new subsystem module requires updating this list, which triggers
