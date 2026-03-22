@@ -172,7 +172,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 
 **Known large files** (read in ≤500-line chunks):
 - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2345 lines)
-- `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2446 lines)
+- `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2446 lines)
 - `docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md` (~707 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2170 lines)
@@ -437,7 +437,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-R PORTFOLIO COMPLETE**: Comprehensive Audit Remediation — 8 phases (R1–R8, 111 sub-tasks), all complete (v0.18.0–v0.18.7). See `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`
+- **WS-R PORTFOLIO COMPLETE**: Comprehensive Audit Remediation — 8 phases (R1–R8, 111 sub-tasks), all complete (v0.18.0–v0.18.7). See `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`
 - **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14): Kernel State Architecture — all 9 phases (Q1–Q9, 45 atomic units) delivered. See `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
 - **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`

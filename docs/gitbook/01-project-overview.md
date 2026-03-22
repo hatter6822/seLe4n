@@ -85,7 +85,7 @@ R1–R8 complete (v0.18.0–v0.18.7).
 After WS-R: **Raspberry Pi 5 hardware binding (H3)**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-R workstream plan](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+[WS-R workstream plan](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 
 ## 5. Architecture mental model
 
@@ -126,5 +126,5 @@ For milestone-moving changes:
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
 - Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
-- Active workstream plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) (WS-R)
+- Active workstream plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) (WS-R)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

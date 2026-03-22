@@ -14,7 +14,7 @@ Use this file during planning and PR review to keep documentation status aligned
 |---|---|---|---|
 | Milestones, scope, acceptance | `docs/spec/SELE4N_SPEC.md` | `05-specification-and-roadmap.md` | Update spec first; GitBook summarizes and links back. |
 | seL4 microkernel reference | `docs/spec/SEL4_SPEC.md` | `02-microkernel-and-sel4-primer.md` | Reference-only; update when seL4 spec content changes. |
-| Active audit / workstream (WS-R) | `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` | `05-specification-and-roadmap.md` | Findings and status tables canonical in audit plan; GitBook chapter summarizes and links back. |
+| Active audit / workstream (WS-R) | `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` | `05-specification-and-roadmap.md` | Findings and status tables canonical in audit plan; GitBook chapter summarizes and links back. |
 | Workstream history (all prior portfolios) | `docs/WORKSTREAM_HISTORY.md` | `05-specification-and-roadmap.md` | Canonical record; GitBook chapter provides navigation. |
 | Completed performance portfolio (WS-G) | `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` | `08-kernel-performance-optimization.md` | All findings closed; chapter documents optimizations. Archived to `docs/dev_history/`. |
 | Prior audit findings (WS-E, completed) | `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` | — | Archived to `docs/dev_history/`; WS-E1..E6 all completed. |
@@ -55,7 +55,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- **Active workstream**: WS-R Comprehensive Audit Remediation (`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`). All 8 phases (R1–R8) complete (v0.18.0–v0.18.7).
+- **Active workstream**: WS-R Comprehensive Audit Remediation (`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`, now in `docs/dev_history/audits/`). All 8 phases (R1–R8) complete (v0.18.0–v0.18.7).
 - **Completed portfolios**: WS-B through WS-Q (all completed). See `docs/WORKSTREAM_HISTORY.md`.
 - **Historical baselines**: prior audits and workstream plans archived in `docs/dev_history/audits/`.
 - **Quality-gate contract**: Tier 0–3 required, Tier 4 nightly determinism evidence.

@@ -23,7 +23,7 @@ Beitrag unter dieser Lizenz einzureichen.
 2. **Teststufen (Testing Tiers):** [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md)
 3. **CI-Richtlinie:** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Projektumfang + Workstreams:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
-5. **Aktive Audit-Befunde:** [`docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
+5. **Aktive Audit-Befunde:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
 6. **Workstream-Geschichte:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
 
 Vollständiges Handbuch: [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)

@@ -76,7 +76,7 @@ architectural improvements compared to other microkernels:
 | **Test Lean LoC** | 7,309 across 10 test suites |
 | **Proved declarations** | 1,686 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit |
+| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`
@@ -268,7 +268,7 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). Addresses all 82 findings from the [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R8 complete (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). Addresses all 82 findings from the [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R8 complete (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
 Prior portfolios (WS-B through WS-Q) are all complete. Prior audits (v0.8.0–v0.9.32),

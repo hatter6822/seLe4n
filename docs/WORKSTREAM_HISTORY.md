@@ -20,7 +20,7 @@ previously spread across README.md, GitBook chapters, and audit plans.
 WS-R is the **active** workstream (v0.18.0+), addressing all 82 findings from the
 comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
 8 phases (R1–R8), 111 sub-tasks. See
-[`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 
 - **R1 (v0.18.0) — COMPLETE**: Pre-release blockers. Fixed Rust `Cap::downgrade()`
   rights bypass (H-01), AccessRights/PagePerms silent truncation (R-M01, R-M02),
