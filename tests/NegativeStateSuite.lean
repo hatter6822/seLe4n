@@ -124,12 +124,12 @@ private def expectError
     (expected : KernelError) : IO Unit :=
   match actual with
   | .ok _ =>
-      throw <| IO.userError s!"{label}: expected error {reprStr expected}, got success"
+      throw <| IO.userError s!"{label}: expected error {toString expected}, got success"
   | .error err =>
       if err = expected then
-        IO.println s!"negative check passed [{label}]: {reprStr err}"
+        IO.println s!"negative check passed [{label}]: {toString err}"
       else
-        throw <| IO.userError s!"{label}: expected {reprStr expected}, got {reprStr err}"
+        throw <| IO.userError s!"{label}: expected {toString expected}, got {toString err}"
 
 private def expectOkState
     (label : String)
@@ -141,7 +141,7 @@ private def expectOkState
       assertStateInvariantsFor label invariantObjectIds st
       pure result
   | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
+      throw <| IO.userError s!"{label}: expected success, got {toString err}"
 
 private def expectOk
     (label : String)
@@ -151,7 +151,7 @@ private def expectOk
       IO.println s!"positive check passed [{label}]"
       pure value
   | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
+      throw <| IO.userError s!"{label}: expected success, got {toString err}"
 
 private def expectThreadQueueLinks
     (label : String)
@@ -166,7 +166,7 @@ private def expectThreadQueueLinks
         IO.println s!"positive check passed [{label}]"
       else
         throw <| IO.userError
-          s!"{label}: expected queuePrev={reprStr expectedPrev} queuePPrev={reprStr expectedPPrev} queueNext={reprStr expectedNext}, got prev={reprStr tcb.queuePrev} pprev={reprStr tcb.queuePPrev} next={reprStr tcb.queueNext}"
+          s!"{label}: expected queuePrev={toString expectedPrev} queuePPrev={toString expectedPPrev} queueNext={toString expectedNext}, got prev={toString tcb.queuePrev} pprev={toString tcb.queuePPrev} next={toString tcb.queueNext}"
   | _ =>
       throw <| IO.userError s!"{label}: expected TCB object"
 
@@ -348,7 +348,7 @@ private def runNegativeChecks : IO Unit := do
   if strictReport.deletedSlots = [strictChildSlotOk] then
     IO.println "positive check passed [cspaceRevokeCdtStrict records deleted descendants before failure]"
   else
-    throw <| IO.userError s!"cspaceRevokeCdtStrict deleted slot trace mismatch: {reprStr strictReport.deletedSlots}"
+    throw <| IO.userError s!"cspaceRevokeCdtStrict deleted slot trace mismatch: {toString strictReport.deletedSlots}"
 
   match strictReport.firstFailure with
   | some failure =>
@@ -357,7 +357,7 @@ private def runNegativeChecks : IO Unit := do
           failure.error = .objectNotFound then
         IO.println "positive check passed [cspaceRevokeCdtStrict captures offending slot context]"
       else
-        throw <| IO.userError s!"cspaceRevokeCdtStrict failure context mismatch: {reprStr failure}"
+        throw <| IO.userError s!"cspaceRevokeCdtStrict failure context mismatch: {toString failure}"
   | none =>
       throw <| IO.userError "cspaceRevokeCdtStrict must surface first descendant deletion failure"
 
@@ -388,9 +388,9 @@ private def runNegativeChecks : IO Unit := do
       if paddr = paddrPrimary then
         IO.println "positive check passed [vspace map creates retrievable mapping]"
       else
-        throw <| IO.userError s!"vspace map created wrong mapping: expected paddr={reprStr paddrPrimary}, got {reprStr paddr}"
+        throw <| IO.userError s!"vspace map created wrong mapping: expected paddr={toString paddrPrimary}, got {toString paddr}"
   | .error err =>
-      throw <| IO.userError s!"vspace lookup after map failed: {reprStr err} — mapping was not created"
+      throw <| IO.userError s!"vspace lookup after map failed: {toString err} — mapping was not created"
 
   expectError "vspace duplicate map conflict"
     ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) stMapped)
@@ -437,7 +437,7 @@ private def runNegativeChecks : IO Unit := do
       if ntfn.pendingBadge = some (SeLe4n.Badge.ofNatMasked 66) then
         IO.println "positive check passed [notification badge precondition: badge=66 (word-bounded) before accumulation]"
       else
-        throw <| IO.userError s!"notification badge precondition mismatch: expected some 66, got {reprStr ntfn.pendingBadge}"
+        throw <| IO.userError s!"notification badge precondition mismatch: expected some 66, got {toString ntfn.pendingBadge}"
   | _ => throw <| IO.userError "notification badge precondition expected notification object"
 
   let (_, stN4) ← expectOkState "notification signal accumulates active badge"
@@ -467,7 +467,7 @@ private def runNegativeChecks : IO Unit := do
       if tcb.ipcState = .ready then
         IO.println "positive check passed [notification wait #2 consumer ipcState ready]"
       else
-        throw <| IO.userError s!"notification wait #2 expected consumer ipcState ready, got {reprStr tcb.ipcState}"
+        throw <| IO.userError s!"notification wait #2 expected consumer ipcState ready, got {toString tcb.ipcState}"
   | _ => throw <| IO.userError "notification wait #2 expected consumer tcb"
 
   -- ==========================================================================
@@ -481,7 +481,7 @@ private def runNegativeChecks : IO Unit := do
   if truncated = expected then
     IO.println "positive check passed [badge > 2^64 truncated to word-bounded value via ofNatMasked]"
   else
-    throw <| IO.userError s!"badge word-truncation failed: ofNatMasked({oversized}) = {reprStr truncated}, expected {reprStr expected}"
+    throw <| IO.userError s!"badge word-truncation failed: ofNatMasked({oversized}) = {toString truncated}, expected {toString expected}"
 
   -- Truncated badge must satisfy validity predicate
   if truncated.isValid then
@@ -616,7 +616,7 @@ private def runNegativeChecks : IO Unit := do
       if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 7) then
         IO.println "positive check passed [dual queue sender enqueued]"
       else
-        throw <| IO.userError s!"dual queue sender enqueued expected head=tail=7, got {reprStr ep.sendQ}"
+        throw <| IO.userError s!"dual queue sender enqueued expected head=tail=7, got {toString ep.sendQ}"
   | _ => throw <| IO.userError "dual queue sender enqueued expected endpoint object"
   expectThreadQueueLinks "dual queue sender enqueued link clear"
     stDualSend1 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none
@@ -626,7 +626,7 @@ private def runNegativeChecks : IO Unit := do
   if firstSender = SeLe4n.ThreadId.ofNat 7 then
     IO.println "positive check passed [dual queue first sender delivered]"
   else
-    throw <| IO.userError s!"dual queue first sender expected tid 7, got {reprStr firstSender}"
+    throw <| IO.userError s!"dual queue first sender expected tid 7, got {toString firstSender}"
 
   -- FIFO check across two blocked senders and one receiver consuming twice.
   let (_, stDualFifo1) ← expectOkState "dual queue fifo enqueue sender 7"
@@ -670,7 +670,7 @@ private def runNegativeChecks : IO Unit := do
   if rmFirst = SeLe4n.ThreadId.ofNat 7 ∧ rmSecond = SeLe4n.ThreadId.ofNat 9 then
     IO.println "positive check passed [dual queue remove preserves remaining FIFO order]"
   else
-    throw <| IO.userError s!"dual queue remove expected [7,9], got [{reprStr rmFirst},{reprStr rmSecond}]"
+    throw <| IO.userError s!"dual queue remove expected [7,9], got [{toString rmFirst},{toString rmSecond}]"
 
   let stMalformedHeadPPrev ← expectOk "dual queue malformed pprev state (head points to prev tcbNext)"
     (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
@@ -693,7 +693,7 @@ private def runNegativeChecks : IO Unit := do
   if fifoFirst = SeLe4n.ThreadId.ofNat 7 ∧ fifoSecond = SeLe4n.ThreadId.ofNat 8 then
     IO.println "positive check passed [dual queue fifo ordering preserved]"
   else
-    throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{reprStr fifoFirst},{reprStr fifoSecond}]"
+    throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{toString fifoFirst},{toString fifoSecond}]"
 
   expectError "dual queue sender double-wait prevention"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty stDualFifo1)
@@ -724,7 +724,7 @@ private def runNegativeChecks : IO Unit := do
       if ep.sendQ.head = none ∧ ep.sendQ.tail = none then
         IO.println "positive check passed [dual queue fifo drains send queue]"
       else
-        throw <| IO.userError s!"dual queue fifo expected empty intrusive sendQ, got {reprStr ep.sendQ}"
+        throw <| IO.userError s!"dual queue fifo expected empty intrusive sendQ, got {toString ep.sendQ}"
   | _ => throw <| IO.userError "dual queue fifo expected endpoint object"
 
   -- WS-H12b: dequeue-on-dispatch — current thread 7 is NOT in the runnable queue
@@ -914,13 +914,13 @@ private def runNegativeChecks : IO Unit := do
   if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 7] then
     IO.println "positive check passed [yield runnable rotation]: [7] (8 dequeued as current)"
   else
-    throw <| IO.userError s!"yield runnable rotation expected [7], got {reprStr stYielded.scheduler.runnable}"
+    throw <| IO.userError s!"yield runnable rotation expected [7], got {toString stYielded.scheduler.runnable}"
 
   -- Verify which thread is current after yield (should be tid 8, the highest priority)
   if stYielded.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [yield current thread]: current = tid 8 (highest priority after rotation)"
   else
-    throw <| IO.userError s!"yield current thread expected tid 8, got {reprStr stYielded.scheduler.current}"
+    throw <| IO.userError s!"yield current thread expected tid 8, got {toString stYielded.scheduler.current}"
 
   let malformedSched : SystemState :=
     (BootstrapBuilder.empty
@@ -992,7 +992,7 @@ private def runNegativeChecks : IO Unit := do
     let _ ← expectOk "service dependency idempotent re-registration"
       (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdB svcStateAB)
   | .error err =>
-    throw <| IO.userError s!"service dependency A→B registration failed: {reprStr err}"
+    throw <| IO.userError s!"service dependency A→B registration failed: {toString err}"
 
   -- ── WS-F2: Untyped memory negative tests ──────────────────────────
   -- F2-NEG-01: retype from non-existent object
@@ -1112,7 +1112,7 @@ private def runAuditCoverageChecks : IO Unit := do
       if callerTcb.ipcState = .blockedOnReply endpointId (some (SeLe4n.ThreadId.ofNat 8)) then
         IO.println "positive check passed [replyRecv setup: caller blockedOnReply]"
       else
-        throw <| IO.userError s!"replyRecv setup: expected caller blockedOnReply, got {reprStr callerTcb.ipcState}"
+        throw <| IO.userError s!"replyRecv setup: expected caller blockedOnReply, got {toString callerTcb.ipcState}"
   | _ => throw <| IO.userError "replyRecv setup: expected caller TCB"
   -- Now execute replyRecv: receiver replies to caller and waits on endpoint
   let (_, stReplyRecv) ← expectOkState "replyRecv success"
@@ -1124,7 +1124,7 @@ private def runAuditCoverageChecks : IO Unit := do
       if unblocked.ipcState = .ready then
         IO.println "positive check passed [replyRecv: caller unblocked after reply]"
       else
-        throw <| IO.userError s!"replyRecv: expected caller ready, got {reprStr unblocked.ipcState}"
+        throw <| IO.userError s!"replyRecv: expected caller ready, got {toString unblocked.ipcState}"
   | _ => throw <| IO.userError "replyRecv: expected caller TCB after reply"
   IO.println "endpointReplyRecv coverage checks passed"
 
@@ -1148,9 +1148,9 @@ private def runAuditCoverageChecks : IO Unit := do
       if cap.rights = AccessRightSet.ofList [.read] then
         IO.println "positive check passed [cspaceMutate: rights attenuated to read-only]"
       else
-        throw <| IO.userError s!"cspaceMutate: expected read-only, got {reprStr cap.rights}"
+        throw <| IO.userError s!"cspaceMutate: expected read-only, got {toString cap.rights}"
   | .error err =>
-      throw <| IO.userError s!"cspaceMutate: lookup after mutate failed: {reprStr err}"
+      throw <| IO.userError s!"cspaceMutate: lookup after mutate failed: {toString err}"
 
   -- POS-MUTATE-BADGE: mutate with badge override
   let (_, stBadgeMutate) ← expectOkState "cspaceMutate with badge override"
@@ -1160,9 +1160,9 @@ private def runAuditCoverageChecks : IO Unit := do
       if cap.badge = some ⟨77⟩ then
         IO.println "positive check passed [cspaceMutate: badge override applied]"
       else
-        throw <| IO.userError s!"cspaceMutate: expected badge 77, got {reprStr cap.badge}"
+        throw <| IO.userError s!"cspaceMutate: expected badge 77, got {toString cap.badge}"
   | .error err =>
-      throw <| IO.userError s!"cspaceMutate: lookup after badge mutate failed: {reprStr err}"
+      throw <| IO.userError s!"cspaceMutate: lookup after badge mutate failed: {toString err}"
   IO.println "cspaceMutate coverage checks passed"
 
 
@@ -1199,7 +1199,7 @@ private def runWSH7Checks : IO Unit := do
     match storeObject ⟨500⟩ lifecycleCnode baseState with
     | .ok ((), st') => st'
     | .error err =>
-        panic! s!"unexpected storeObject failure in WS-H7 check (cnode phase): {reprStr err}"
+        panic! s!"unexpected storeObject failure in WS-H7 check (cnode phase): {toString err}"
 
   if SystemState.lookupCapabilityRefMeta stAfterCnode { cnode := ⟨500⟩, slot := ⟨0⟩ } = some capA.target then
     IO.println "positive check passed [WS-H7 storeObject syncs capabilityRef metadata for stored CNode slot]"
@@ -1210,7 +1210,7 @@ private def runWSH7Checks : IO Unit := do
     match storeObject ⟨500⟩ lifecycleEndpoint stAfterCnode with
     | .ok ((), st') => st'
     | .error err =>
-        panic! s!"unexpected storeObject failure in WS-H7 check (overwrite phase): {reprStr err}"
+        panic! s!"unexpected storeObject failure in WS-H7 check (overwrite phase): {toString err}"
 
   if SystemState.lookupCapabilityRefMeta stAfterOverwrite { cnode := ⟨500⟩, slot := ⟨0⟩ } = none then
     IO.println "positive check passed [WS-H7 storeObject clears capabilityRef metadata when overwriting CNode]"
@@ -1259,7 +1259,7 @@ def runWSH11Checks : IO Unit := do
   let validAddr : SeLe4n.PAddr := ⟨2^52 - 1⟩
   match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid ⟨4096⟩ validAddr) st with
   | .ok _ => IO.println "positive check passed [WS-H11 valid address accepted by checked map]"
-  | .error err => throw <| IO.userError s!"WS-H11 valid address rejected: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 valid address rejected: {toString err}"
 
   -- Mapping conflict: duplicate vaddr should fail
   let (_, stMapped) ← expectOkState "WS-H11 map initial"
@@ -1291,19 +1291,19 @@ def runWSH11Checks : IO Unit := do
   let roPerms : PagePermissions := { read := true, write := false, execute := false }
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨8192⟩ ⟨16384⟩ roPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 read-only permissions accepted]"
-  | .error err => throw <| IO.userError s!"WS-H11 read-only rejected: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 read-only rejected: {toString err}"
 
   -- Write-only (no execute) should be W^X compliant
   let woPerms : PagePermissions := { read := false, write := true, execute := false }
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨12288⟩ ⟨20480⟩ woPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 write-only permissions accepted]"
-  | .error err => throw <| IO.userError s!"WS-H11 write-only rejected: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 write-only rejected: {toString err}"
 
   -- Execute-only (no write) should be W^X compliant
   let xoPerms : PagePermissions := { read := false, write := false, execute := true }
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨16384⟩ ⟨24576⟩ xoPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 execute-only permissions accepted]"
-  | .error err => throw <| IO.userError s!"WS-H11 execute-only rejected: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 execute-only rejected: {toString err}"
 
   -- TLB model: empty TLB is consistent
   let tlb := SeLe4n.Model.TlbState.empty
@@ -1343,10 +1343,10 @@ def runWSH11Checks : IO Unit := do
   -- vspaceLookupFull returns permissions
   let permsCheck : PagePermissions := { read := true, write := false, execute := false, user := true }
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨20480⟩ ⟨32768⟩ permsCheck) st with
-  | .error err => throw <| IO.userError s!"WS-H11 lookupFull map error: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 lookupFull map error: {toString err}"
   | .ok (_, stPerm) =>
       match SeLe4n.Kernel.Architecture.vspaceLookupFull asid ⟨20480⟩ stPerm with
-      | .error err => throw <| IO.userError s!"WS-H11 lookupFull error: {reprStr err}"
+      | .error err => throw <| IO.userError s!"WS-H11 lookupFull error: {toString err}"
       | .ok ((paddr, perms), _) =>
           if paddr = ⟨32768⟩ && perms.read == true && perms.write == false &&
              perms.execute == false && perms.user == true then
@@ -1363,7 +1363,7 @@ def runWSH11Checks : IO Unit := do
     |>.withObject vspaceOid2 (.vspaceRoot { asid := asid2, mappings := {} })
     |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).build
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩) st2Asid with
-  | .error err => throw <| IO.userError s!"WS-H11 cross-ASID map failed: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 cross-ASID map failed: {toString err}"
   | .ok (_, stCross) =>
       expectError "WS-H11 cross-ASID isolation"
         (SeLe4n.Kernel.Architecture.vspaceLookup asid2 ⟨4096⟩ stCross)
@@ -1372,13 +1372,13 @@ def runWSH11Checks : IO Unit := do
 
   -- Multiple concurrent mappings: map 3 different vaddrs, verify all retrievable
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩) st with
-  | .error err => throw <| IO.userError s!"WS-H11 multi-map step 1 failed: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 multi-map step 1 failed: {toString err}"
   | .ok (_, stM1) =>
       match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨8192⟩ ⟨16384⟩) stM1 with
-      | .error err => throw <| IO.userError s!"WS-H11 multi-map step 2 failed: {reprStr err}"
+      | .error err => throw <| IO.userError s!"WS-H11 multi-map step 2 failed: {toString err}"
       | .ok (_, stM2) =>
           match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨12288⟩ ⟨24576⟩) stM2 with
-          | .error err => throw <| IO.userError s!"WS-H11 multi-map step 3 failed: {reprStr err}"
+          | .error err => throw <| IO.userError s!"WS-H11 multi-map step 3 failed: {toString err}"
           | .ok (_, stM3) =>
               match SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨4096⟩ stM3,
                     SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨8192⟩ stM3,
@@ -1392,13 +1392,13 @@ def runWSH11Checks : IO Unit := do
 
   -- Sequential map-unmap-map cycle: verify remapping works after unmap
   match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩) st with
-  | .error err => throw <| IO.userError s!"WS-H11 cycle map1 failed: {reprStr err}"
+  | .error err => throw <| IO.userError s!"WS-H11 cycle map1 failed: {toString err}"
   | .ok (_, stC1) =>
       match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid ⟨4096⟩) stC1 with
-      | .error err => throw <| IO.userError s!"WS-H11 cycle unmap failed: {reprStr err}"
+      | .error err => throw <| IO.userError s!"WS-H11 cycle unmap failed: {toString err}"
       | .ok (_, stC2) =>
           match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨16384⟩) stC2 with
-          | .error err => throw <| IO.userError s!"WS-H11 cycle remap failed: {reprStr err}"
+          | .error err => throw <| IO.userError s!"WS-H11 cycle remap failed: {toString err}"
           | .ok (_, stC3) =>
               match SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨4096⟩ stC3 with
               | .ok (pa, _) =>
@@ -1406,7 +1406,7 @@ def runWSH11Checks : IO Unit := do
                     IO.println "positive check passed [WS-H11 map-unmap-remap cycle works correctly]"
                   else
                     throw <| IO.userError s!"WS-H11 cycle: expected 16384, got {pa.toNat}"
-              | .error err => throw <| IO.userError s!"WS-H11 cycle lookup failed: {reprStr err}"
+              | .error err => throw <| IO.userError s!"WS-H11 cycle lookup failed: {toString err}"
 
   IO.println "all WS-H11 VSpace & Architecture checks passed"
 
@@ -1513,7 +1513,7 @@ private def runWSH15Checks : IO Unit := do
       else
         throw <| IO.userError "H15 syscallLookupCap: resolved cap missing expected right"
   | .error err =>
-      throw <| IO.userError s!"H15 syscallLookupCap: expected success, got {reprStr err}"
+      throw <| IO.userError s!"H15 syscallLookupCap: expected success, got {toString err}"
 
   -- H15-NEG-05: S2-J: Replaced deprecated apiEndpointSend with syscallInvoke path
   let msg : IpcMessage := { registers := #[42], caps := #[], badge := none }
@@ -2115,7 +2115,7 @@ def runWSKGChecks : IO Unit := do
   for tag in [0, 1, 2, 3, 4, 5] do
     match SeLe4n.Kernel.objectOfTypeTag tag 64 with
     | .ok _ => pure ()
-    | .error e => throw <| IO.userError s!"K-G-NEG-18: objectOfTypeTag tag {tag} failed: {reprStr e}"
+    | .error e => throw <| IO.userError s!"K-G-NEG-18: objectOfTypeTag tag {tag} failed: {toString e}"
   IO.println "negative check passed [K-G-NEG-18 objectOfTypeTag all 6 valid tags succeed]"
 
   IO.println "K-G3 service/IPC boundary tests passed"
@@ -2126,43 +2126,43 @@ def runWSKGChecks : IO Unit := do
   let detRegs : SeLe4n.RegisterFile := default
   let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
   let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
-  -- S2-A: These determinism checks use reprStr comparison because the result
+  -- S2-A: These determinism checks use toString comparison because the result
   -- types (Except KernelError SyscallDecodeResult, etc.) contain function-typed
   -- fields that prevent BEq derivation. For determinism verification of pure
-  -- functions called with identical inputs, reprStr comparison is semantically
+  -- functions called with identical inputs, toString comparison is semantically
   -- equivalent to structural equality.
-  unless reprStr r1 == reprStr r2 do
+  unless toString r1 == toString r2 do
     throw <| IO.userError "K-G-DET-01: decodeSyscallArgs not deterministic"
   match r1 with
   | .ok d1 =>
     -- Verify layer 2 decode determinism for all 7 functions
     let m1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs d1
     let m2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs d1
-    unless reprStr m1 == reprStr m2 do
+    unless toString m1 == toString m2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceMintArgs not deterministic"
     let c1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs d1
     let c2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs d1
-    unless reprStr c1 == reprStr c2 do
+    unless toString c1 == toString c2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceCopyArgs not deterministic"
     let mv1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs d1
     let mv2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs d1
-    unless reprStr mv1 == reprStr mv2 do
+    unless toString mv1 == toString mv2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceMoveArgs not deterministic"
     let del1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs d1
     let del2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs d1
-    unless reprStr del1 == reprStr del2 do
+    unless toString del1 == toString del2 do
       throw <| IO.userError "K-G-DET-01: decodeCSpaceDeleteArgs not deterministic"
     let lr1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
     let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
-    unless reprStr lr1 == reprStr lr2 do
+    unless toString lr1 == toString lr2 do
       throw <| IO.userError "K-G-DET-01: decodeLifecycleRetypeArgs not deterministic"
     let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
     let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
-    unless reprStr vm1 == reprStr vm2 do
+    unless toString vm1 == toString vm2 do
       throw <| IO.userError "K-G-DET-01: decodeVSpaceMapArgs not deterministic"
     let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
     let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
-    unless reprStr vu1 == reprStr vu2 do
+    unless toString vu1 == toString vu2 do
       throw <| IO.userError "K-G-DET-01: decodeVSpaceUnmapArgs not deterministic"
     IO.println "determinism check passed [K-G-DET-01 layer 1+2 decode deterministic]"
   | .error _ =>
@@ -2173,7 +2173,7 @@ def runWSKGChecks : IO Unit := do
   let regsArr : Array SeLe4n.RegValue := #[⟨100⟩, ⟨200⟩, ⟨300⟩, ⟨400⟩]
   let e1 := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters regsArr info
   let e2 := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters regsArr info
-  unless reprStr e1 == reprStr e2 do
+  unless toString e1 == toString e2 do
     throw <| IO.userError "K-G-DET-02: extractMessageRegisters not deterministic"
   IO.println "determinism check passed [K-G-DET-02 extractMessageRegisters deterministic]"
 
@@ -2181,7 +2181,7 @@ def runWSKGChecks : IO Unit := do
   for tag in [0, 1, 2, 3, 4, 5] do
     let o1 := SeLe4n.Kernel.objectOfTypeTag tag 64
     let o2 := SeLe4n.Kernel.objectOfTypeTag tag 64
-    unless reprStr o1 == reprStr o2 do
+    unless toString o1 == toString o2 do
       throw <| IO.userError s!"K-G-DET-03: objectOfTypeTag tag {tag} not deterministic"
   IO.println "determinism check passed [K-G-DET-03 objectOfTypeTag deterministic]"
 
@@ -2315,7 +2315,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       throw <| IO.userError "M3-G3: state should be unchanged after .noSlot"
     IO.println "M3-G3 check passed [state unchanged after .noSlot]"
   | .error e =>
-    throw <| IO.userError s!"M3-G3: ipcTransferSingleCap returned error: {reprStr e}"
+    throw <| IO.userError s!"M3-G3: ipcTransferSingleCap returned error: {toString e}"
 
   IO.println "all WS-M3-G3 cap transfer negative tests passed"
 
@@ -2359,9 +2359,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       if ref.cnode = guardOnlyRoot ∧ ref.slot = ⟨0⟩ then
         IO.println "M4-A1 check passed [guard-only CNode resolves to slot 0]"
       else
-        throw <| IO.userError s!"M4-A1: expected slot 0 at guardOnlyRoot, got {reprStr ref}"
+        throw <| IO.userError s!"M4-A1: expected slot 0 at guardOnlyRoot, got {toString ref}"
   | .error e =>
-      throw <| IO.userError s!"M4-A1: expected success, got {reprStr e}"
+      throw <| IO.userError s!"M4-A1: expected success, got {toString e}"
 
   -- Wrong guard: addr=0xB (guard extracted = 0xB ≠ 0xA)
   let resultBad := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot ⟨0xB⟩ 4 stGuardOnly
@@ -2369,7 +2369,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .invalidCapability =>
       IO.println "M4-A1 check passed [guard-only CNode rejects wrong guard]"
   | .error e =>
-      throw <| IO.userError s!"M4-A1: expected invalidCapability, got {reprStr e}"
+      throw <| IO.userError s!"M4-A1: expected invalidCapability, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A1: expected error for wrong guard, got success"
 
@@ -2397,9 +2397,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       if ref.cnode = leafRoot ∧ ref.slot = ⟨5⟩ then
         IO.println "M4-A5 check passed [single-level leaf resolves to slot 5]"
       else
-        throw <| IO.userError s!"M4-A5: expected slot 5, got {reprStr ref}"
+        throw <| IO.userError s!"M4-A5: expected slot 5, got {toString ref}"
   | .error e =>
-      throw <| IO.userError s!"M4-A5: expected success, got {reprStr e}"
+      throw <| IO.userError s!"M4-A5: expected success, got {toString e}"
 
   -- M4-A4: Partial bit consumption (bitsRemaining < guardWidth + radixWidth)
   -- CNode needs 6 bits (guardWidth=2 + radixWidth=4), but only 4 available
@@ -2420,7 +2420,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .illegalState =>
       IO.println "M4-A4 check passed [partial bits returns illegalState]"
   | .error e =>
-      throw <| IO.userError s!"M4-A4: expected illegalState, got {reprStr e}"
+      throw <| IO.userError s!"M4-A4: expected illegalState, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A4: expected error for partial bits, got success"
 
@@ -2430,7 +2430,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .illegalState =>
       IO.println "M4-A4 check passed [zero bitsRemaining returns illegalState]"
   | .error e =>
-      throw <| IO.userError s!"M4-A4 zero: expected illegalState, got {reprStr e}"
+      throw <| IO.userError s!"M4-A4 zero: expected illegalState, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A4 zero: expected error for zero bits, got success"
 
@@ -2496,9 +2496,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       if ref.cnode = lvl2 ∧ ref.slot = ⟨7⟩ then
         IO.println "M4-A3 check passed [correct guards resolve through 3 levels]"
       else
-        throw <| IO.userError s!"M4-A3: expected lvl2 slot 7, got {reprStr ref}"
+        throw <| IO.userError s!"M4-A3: expected lvl2 slot 7, got {toString ref}"
   | .error e =>
-      throw <| IO.userError s!"M4-A3: expected success for correct guards, got {reprStr e}"
+      throw <| IO.userError s!"M4-A3: expected success for correct guards, got {toString e}"
 
   -- Wrong guard at level 1: guard1=2 instead of 1
   let resultWrongMid := SeLe4n.Kernel.resolveCapAddress lvl0 ⟨0xC87⟩ 12 stMidGuard
@@ -2506,7 +2506,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .invalidCapability =>
       IO.println "M4-A3 check passed [guard mismatch at intermediate level returns invalidCapability]"
   | .error e =>
-      throw <| IO.userError s!"M4-A3: expected invalidCapability for wrong mid guard, got {reprStr e}"
+      throw <| IO.userError s!"M4-A3: expected invalidCapability for wrong mid guard, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A3: expected error for wrong mid guard, got success"
 
@@ -2556,9 +2556,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       if ref.cnode = maxDepthIds[7]! ∧ ref.slot = ⟨1⟩ then
         IO.println "M4-A2 check passed [64-bit resolution across 8 CNodes succeeds]"
       else
-        throw <| IO.userError s!"M4-A2: expected leaf at level 7 slot 1, got {reprStr ref}"
+        throw <| IO.userError s!"M4-A2: expected leaf at level 7 slot 1, got {toString ref}"
   | .error e =>
-      throw <| IO.userError s!"M4-A2: expected success for 64-bit resolution, got {reprStr e}"
+      throw <| IO.userError s!"M4-A2: expected success for 64-bit resolution, got {toString e}"
 
   -- 65 bits: shiftedAddr = addr >>> 57 at level 0, which shifts the address
   -- one bit further than the 64-bit case, yielding slot index 0 instead of 1.
@@ -2568,7 +2568,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .invalidCapability =>
       IO.println "M4-A2 check passed [65-bit overflow returns invalidCapability (empty slot)]"
   | .error e =>
-      throw <| IO.userError s!"M4-A2 overflow: expected invalidCapability, got {reprStr e}"
+      throw <| IO.userError s!"M4-A2 overflow: expected invalidCapability, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A2 overflow: expected error for 65 bits, got success"
 
@@ -2611,7 +2611,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .invalidCapability =>
       IO.println "M4-A6 check passed [empty slot at intermediate level returns invalidCapability]"
   | .error e =>
-      throw <| IO.userError s!"M4-A6: expected invalidCapability, got {reprStr e}"
+      throw <| IO.userError s!"M4-A6: expected invalidCapability, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A6: expected error for empty intermediate slot, got success"
 
@@ -2640,7 +2640,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .objectNotFound =>
       IO.println "M4-A7 check passed [non-CNode target at intermediate level returns objectNotFound]"
   | .error e =>
-      throw <| IO.userError s!"M4-A7: expected objectNotFound, got {reprStr e}"
+      throw <| IO.userError s!"M4-A7: expected objectNotFound, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A7: expected error for non-CNode mid target, got success"
 
@@ -2652,9 +2652,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       if cap.target = .object leafTarget then
         IO.println "M4-A8 check passed [cspaceLookupMultiLevel returns correct capability]"
       else
-        throw <| IO.userError s!"M4-A8: unexpected cap target {reprStr cap.target}"
+        throw <| IO.userError s!"M4-A8: unexpected cap target {toString cap.target}"
   | .error e =>
-      throw <| IO.userError s!"M4-A8: expected success, got {reprStr e}"
+      throw <| IO.userError s!"M4-A8: expected success, got {toString e}"
 
   -- Wrapper negative: nonexistent slot → invalidCapability
   let resultWrapperBad := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot ⟨15⟩ 4 stLeaf
@@ -2662,7 +2662,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .error .invalidCapability =>
       IO.println "M4-A8 check passed [cspaceLookupMultiLevel empty slot returns invalidCapability]"
   | .error e =>
-      throw <| IO.userError s!"M4-A8 neg: expected invalidCapability, got {reprStr e}"
+      throw <| IO.userError s!"M4-A8 neg: expected invalidCapability, got {toString e}"
   | .ok _ =>
       throw <| IO.userError "M4-A8 neg: expected error for empty slot wrapper, got success"
 
@@ -2702,7 +2702,7 @@ def runWSR2RevocationChecks : IO Unit := do
     if e = .objectNotFound then
       IO.println "negative check passed [R2-NEG-01: processRevokeNode propagates cspaceDeleteSlot error]"
     else
-      throw <| IO.userError s!"R2-NEG-01: expected objectNotFound, got {reprStr e}"
+      throw <| IO.userError s!"R2-NEG-01: expected objectNotFound, got {toString e}"
   | .ok _ =>
     throw <| IO.userError "R2-NEG-01: processRevokeNode should propagate error, not succeed"
 
@@ -2727,7 +2727,7 @@ def runWSR2RevocationChecks : IO Unit := do
     if e = .resourceExhausted then
       IO.println "negative check passed [R2-NEG-02: streamingRevokeBFS fuel exhaustion returns resourceExhausted]"
     else
-      throw <| IO.userError s!"R2-NEG-02: expected resourceExhausted, got {reprStr e}"
+      throw <| IO.userError s!"R2-NEG-02: expected resourceExhausted, got {toString e}"
   | .ok _ =>
     throw <| IO.userError "R2-NEG-02: streamingRevokeBFS with fuel=0 should return error, not succeed"
 
@@ -2765,7 +2765,7 @@ def runWSR2RevocationChecks : IO Unit := do
     if e = .objectNotFound then
       IO.println "negative check passed [R2-NEG-03: cspaceRevokeCdt propagates descendant delete error]"
     else
-      throw <| IO.userError s!"R2-NEG-03: expected objectNotFound from cspaceRevokeCdt, got {reprStr e}"
+      throw <| IO.userError s!"R2-NEG-03: expected objectNotFound from cspaceRevokeCdt, got {toString e}"
   | .ok _ =>
     throw <| IO.userError "R2-NEG-03: cspaceRevokeCdt should propagate descendant delete error, not succeed"
 
@@ -2839,7 +2839,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
         sid := svcSid, iface := iface, endpointCap := svcCap
       }
       match SeLe4n.Kernel.registerService svcReg stIface3 with
-      | .error e => throw <| IO.userError s!"R4-NEG-03: service registration failed: {reprStr e}"
+      | .error e => throw <| IO.userError s!"R4-NEG-03: service registration failed: {toString e}"
       | .ok (_, stSvc3) =>
         -- Verify service is registered
         if stSvc3.serviceRegistry[svcSid]? = none then
@@ -2881,6 +2881,109 @@ private def runWSR4CoherenceChecks : IO Unit := do
 
   IO.println "all R4 lifecycle/service coherence checks passed"
 
+-- ============================================================================
+-- S2-G: Capability error-path coverage tests
+-- ============================================================================
+
+/-- S2-G: Additional capability operation error-path tests covering:
+    - cspaceMint with rights exceeding source (attenuation failure)
+    - cspaceCopy to occupied destination slot
+    - cspaceRevoke on deeply chained CDT -/
+private def runS2GCapabilityErrorTests : IO Unit := do
+  -- S2-G-01: cspaceMint requesting rights beyond source capability
+  -- Source cap has read-only, attempt to mint read+write → invalidCapability
+  let mintSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let mintDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨3⟩ }
+  -- slot0 in baseState has rights [read, write]; create a read-only source
+  let readOnlyCnode : KernelObject := .cnode {
+    depth := 0
+    guardWidth := 0
+    guardValue := 0
+    radixWidth := 0
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      (⟨0⟩, {
+        target := .object endpointId
+        rights := AccessRightSet.ofList [.read]
+        badge := none
+      })
+    ]
+  }
+  let readOnlyState : SystemState :=
+    { baseState with objects := baseState.objects.insert cnodeId readOnlyCnode }
+  -- Attempt to mint with read+write from a read-only source
+  expectError "S2-G-01 cspaceMint rights exceed source"
+    (SeLe4n.Kernel.cspaceMint mintSrc mintDst
+      (AccessRightSet.ofList [.read, .write]) (badge := none) readOnlyState)
+    .invalidCapability
+
+  -- S2-G-02: cspaceCopy to occupied destination slot → targetSlotOccupied
+  -- slot0 is already occupied in baseState; copy to it should fail
+  let copySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  expectError "S2-G-02 cspaceCopy to occupied slot"
+    (SeLe4n.Kernel.cspaceCopy copySrc copyDst baseState)
+    .targetSlotOccupied
+
+  -- S2-G-03: cspaceMint to occupied destination slot → targetSlotOccupied
+  expectError "S2-G-03 cspaceMint to occupied slot"
+    (SeLe4n.Kernel.cspaceMint mintSrc copySrc
+      (AccessRightSet.ofList [.read]) (badge := none) baseState)
+    .targetSlotOccupied
+
+  -- S2-G-04: cspaceRevokeCdtStrict on node with no descendants (empty revoke)
+  let emptyRevokeSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let (emptyReport, _) ← expectOkState "S2-G-04 cspaceRevokeCdtStrict empty descendants"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict emptyRevokeSlot baseState)
+  if emptyReport.deletedSlots ≠ [] then
+    throw <| IO.userError "S2-G-04: expected empty deletedSlots for node with no descendants"
+  if emptyReport.firstFailure.isSome then
+    throw <| IO.userError "S2-G-04: expected no failure for node with no descendants"
+  IO.println "negative check passed [S2-G-04: empty revoke returns clean report]"
+
+  IO.println "all S2-G capability error-path tests passed"
+
+-- ============================================================================
+-- S2-H: Lifecycle error-path coverage tests
+-- ============================================================================
+
+/-- S2-H: Additional lifecycle operation error-path tests covering:
+    - retypeFromUntyped with insufficient untyped capacity
+    - retypeFromUntyped with non-untyped source object
+    - retypeFromUntyped where authority cap points to wrong object -/
+private def runS2HLifecycleErrorTests : IO Unit := do
+  -- S2-H-01: retypeFromUntyped with very small untyped (allocSize too small)
+  -- The f2UntypedState has a 256-byte untyped; try to retype with tiny allocSize
+  expectError "S2-H-01 retypeFromUntyped allocSize too small"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨90⟩
+      (.tcb { tid := ⟨90⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+              cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
+              ipcBuffer := ⟨0⟩, ipcState := .ready }) 0 f2UntypedState)
+    .untypedAllocSizeTooSmall
+
+  -- S2-H-02: retypeFromUntyped with device untyped → TCB rejection
+  -- f2DeviceState has isDevice=true; attempt to create a TCB (not untyped)
+  expectError "S2-H-02 retypeFromUntyped device untyped TCB rejection"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId ⟨91⟩
+      (.tcb { tid := ⟨91⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+              cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
+              ipcBuffer := ⟨0⟩, ipcState := .ready }) 64 f2DeviceState)
+    .untypedDeviceRestriction
+
+  -- S2-H-03: retypeFromUntyped targeting non-untyped object → typeMismatch
+  -- Use endpointId (which is an endpoint, not untyped) as the source
+  expectError "S2-H-03 retypeFromUntyped non-untyped source"
+    (SeLe4n.Kernel.retypeFromUntyped slot0 endpointId ⟨92⟩
+      (.endpoint {}) 64 baseState)
+    .untypedTypeMismatch
+
+  -- S2-H-04: retypeFromUntyped with childId = untypedId (self-overwrite)
+  expectError "S2-H-04 retypeFromUntyped childId self-overwrite"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedObjId
+      (.endpoint {}) 64 f2UntypedState)
+    .childIdSelfOverwrite
+
+  IO.println "all S2-H lifecycle error-path tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -2900,3 +3003,5 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
   SeLe4n.Testing.runWSR2RevocationChecks
   SeLe4n.Testing.runWSR4CoherenceChecks
+  SeLe4n.Testing.runS2GCapabilityErrorTests
+  SeLe4n.Testing.runS2HLifecycleErrorTests

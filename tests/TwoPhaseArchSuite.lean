@@ -219,7 +219,7 @@ private def tph005c_callBlocksForReply : IO Unit := do
             | .blockedOnReply _ _ => true
             | _ => false)
       | none => throw <| IO.userError "TPH-005f caller TCB missing"
-  | .error e => throw <| IO.userError s!"TPH-005c call should succeed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"TPH-005c call should succeed: {toString e}"
 
 -- ============================================================================
 -- TPH-006: Frozen Scheduler Tick (Active Thread)
@@ -239,7 +239,7 @@ private def tph006a_timerTickActive : IO Unit := do
           expect "TPH-006b time slice decremented" (tcb.timeSlice == 2)
       | none => throw <| IO.userError "TPH-006b TCB missing after tick"
       expect "TPH-006c current preserved" (fst'.scheduler.current == some ⟨1⟩)
-  | .error e => throw <| IO.userError s!"TPH-006a tick should succeed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"TPH-006a tick should succeed: {toString e}"
 
 /-- TPH-006b: Timer tick with expired time slice — preemption and reschedule. -/
 private def tph006b_timerTickExpiry : IO Unit := do
@@ -273,7 +273,7 @@ private def tph006b_timerTickExpiry : IO Unit := do
       -- frozenSchedule was called after clearing current. Thread 1 is the
       -- only eligible thread (domain 0, .ready), so it should be re-selected.
       expect "TPH-006f thread re-selected" (fst'.scheduler.current == some ⟨1⟩)
-  | .error e => throw <| IO.userError s!"TPH-006b expiry should succeed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"TPH-006b expiry should succeed: {toString e}"
 
 -- ============================================================================
 -- TPH-010: Commutativity Property
@@ -380,7 +380,7 @@ private def tph014a_frozenSchedule : IO Unit := do
   | .ok ((), fst') =>
       -- A thread should have been selected
       expect "TPH-014a thread selected" (fst'.scheduler.current.isSome)
-  | .error e => throw <| IO.userError s!"TPH-014a schedule should succeed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"TPH-014a schedule should succeed: {toString e}"
 
 /-- TPH-014b: Frozen yield — re-enqueue current and reschedule. -/
 private def tph014b_frozenYield : IO Unit := do
@@ -405,7 +405,7 @@ private def tph014b_frozenYield : IO Unit := do
       -- After yield: current was cleared, then schedule picked a thread
       -- Thread 1 should be re-selected (only eligible thread)
       expect "TPH-014b yield succeeded" true
-  | .error e => throw <| IO.userError s!"TPH-014b yield should succeed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"TPH-014b yield should succeed: {toString e}"
 
 /-- TPH-014c: Frozen schedule with no eligible threads — current stays none. -/
 private def tph014c_scheduleNoEligible : IO Unit := do
@@ -429,7 +429,7 @@ private def tph014c_scheduleNoEligible : IO Unit := do
   match frozenSchedule fst with
   | .ok ((), fst') =>
       expect "TPH-014c no thread selected" (fst'.scheduler.current == none)
-  | .error e => throw <| IO.userError s!"TPH-014c should succeed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"TPH-014c should succeed: {toString e}"
 
 end SeLe4n.Testing.TwoPhaseArchSuite
 

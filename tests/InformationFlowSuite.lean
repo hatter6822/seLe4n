@@ -8,6 +8,7 @@
 
 import SeLe4n
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Testing.Helpers
 
 set_option maxRecDepth 1024
 
@@ -15,11 +16,9 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
-private def expect (label : String) (cond : Bool) : IO Unit := do
-  if cond then
-    IO.println s!"information-flow check passed [{label}]"
-  else
-    throw <| IO.userError s!"information-flow check failed [{label}]"
+/-- S2-I: Local wrapper using shared expectCond helper with information-flow prefix. -/
+private def expect (label : String) (cond : Bool) : IO Unit :=
+  SeLe4n.Testing.expectCond "information-flow" label cond
 
 private def publicLabel : SeLe4n.Kernel.SecurityLabel :=
   { confidentiality := .low, integrity := .untrusted }

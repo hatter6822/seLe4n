@@ -105,29 +105,64 @@ def build (builder : BootstrapBuilder) : SystemState :=
   }
 
 /-- S2-F: Build a `SystemState` with post-construction invariant validation.
-    Returns the state or throws if basic structural invariants are violated.
-    Validates:
-    1. Object index consistency (objectIndex matches objects keys)
-    2. No duplicate object IDs
-    3. Lifecycle objectTypes are a subset of objects
-    4. Scheduler runnable threads reference existing TCBs -/
+    Returns the state or throws if structural invariants are violated.
+    Validates (runtime approximation of formal Builder invariants):
+    1. No duplicate object IDs
+    2. Lifecycle objectTypes reference existing objects with correct type tags
+    3. Scheduler runnable threads reference existing TCB objects
+    4. CNode slot table capacity bounds (4 ≤ capacity, size < capacity)
+    5. IRQ handlers reference existing objects
+    6. Lifecycle capabilityRefs reference existing CNode objects
+    7. VSpaceRoot ASID uniqueness (no two VSpaceRoots share an ASID)
+    8. Current thread (if set) is in the runnable list -/
 def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
   let st := builder.build
-  -- Check 1: No duplicate object IDs in builder input
   let oids := builder.objects.map Prod.fst
   let uniqueOids := oids.eraseDups
+  -- Check 1: No duplicate object IDs in builder input
   if oids.length ≠ uniqueOids.length then
-    .error s!"BuilderTestState: duplicate object IDs in builder (got {oids.length} entries, {uniqueOids.length} unique)"
-  -- Check 2: Lifecycle objectTypes reference existing objects
+    .error s!"BuilderTestState: duplicate object IDs (got {oids.length} entries, {uniqueOids.length} unique)"
+  -- Check 2: Lifecycle objectTypes reference existing objects with correct type
   else if builder.lifecycleObjectTypes.any (fun (oid, _) => !oids.contains oid) then
     .error "BuilderTestState: lifecycleObjectTypes references non-existent object ID"
+  else if builder.lifecycleObjectTypes.any (fun (oid, ty) =>
+    match builder.objects.find? (fun (o, _) => o == oid) with
+    | some (_, obj) => obj.objectType != ty
+    | none => true) then
+    .error "BuilderTestState: lifecycleObjectTypes type tag mismatch with actual object"
   -- Check 3: Runnable threads reference existing TCB objects
   else if builder.runnable.any (fun tid =>
     !builder.objects.any (fun (oid, obj) =>
       oid.toNat = tid.toNat && match obj with | .tcb _ => true | _ => false)) then
     .error "BuilderTestState: runnable thread does not reference an existing TCB"
+  -- Check 4: CNode slot table capacity bounds
+  else if builder.objects.any (fun (_, obj) =>
+    match obj with
+    | .cnode cn => cn.slots.capacity < 4 || cn.slots.size >= cn.slots.capacity
+    | _ => false) then
+    .error "BuilderTestState: CNode slots violate capacity bounds (need 4 ≤ capacity, size < capacity)"
+  -- Check 5: IRQ handlers reference existing objects
+  else if builder.irqHandlers.any (fun (_, oid) => !oids.contains oid) then
+    .error "BuilderTestState: IRQ handler references non-existent object"
+  -- Check 6: Lifecycle capabilityRefs reference existing CNode objects
+  else if builder.lifecycleCapabilityRefs.any (fun (ref, _) =>
+    !builder.objects.any (fun (oid, obj) =>
+      oid == ref.cnode && match obj with | .cnode _ => true | _ => false)) then
+    .error "BuilderTestState: capabilityRef references non-existent CNode"
+  -- Check 7: VSpaceRoot ASID uniqueness
   else
-    .ok st
+    let asids := builder.objects.filterMap (fun (_, obj) =>
+      match obj with | .vspaceRoot vs => some vs.asid | _ => none)
+    let uniqueAsids := asids.eraseDups
+    if asids.length ≠ uniqueAsids.length then
+      .error "BuilderTestState: duplicate ASIDs across VSpaceRoot objects"
+    -- Check 8: Current thread in runnable list
+    else match builder.current with
+    | some tid =>
+      if !builder.runnable.any (fun t => t.toNat == tid.toNat) then
+        .error "BuilderTestState: current thread is not in the runnable list"
+      else .ok st
+    | none => .ok st
 
 end BootstrapBuilder
 

@@ -33,7 +33,7 @@ private def expectOkState
       IO.println s!"operation-chain check passed [{label}]"
       pure result
   | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
+      throw <| IO.userError s!"{label}: expected success, got {toString err}"
 
 private def runKernelState
     (label : String)
@@ -42,19 +42,19 @@ private def runKernelState
   | .ok (_, st) =>
       pure st
   | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {reprStr err}"
+      throw <| IO.userError s!"{label}: expected success, got {toString err}"
 
 private def expectError
     (label : String)
     (actual : Except KernelError α)
     (expected : KernelError) : IO Unit :=
   match actual with
-  | .ok _ => throw <| IO.userError s!"{label}: expected {reprStr expected}, got success"
+  | .ok _ => throw <| IO.userError s!"{label}: expected {toString expected}, got success"
   | .error err =>
       if err = expected then
         IO.println s!"operation-chain check passed [{label}]"
       else
-        throw <| IO.userError s!"{label}: expected {reprStr expected}, got {reprStr err}"
+        throw <| IO.userError s!"{label}: expected {toString expected}, got {toString err}"
 
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
@@ -564,7 +564,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
   -- Step 1: Sender (current) does syscallEntry (send) → queues on endpoint
   let stAfterSend ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
     | .ok (_, st') => pure st'
-    | .error err => throw <| IO.userError s!"chain10 send failed: {reprStr err}"
+    | .error err => throw <| IO.userError s!"chain10 send failed: {toString err}"
   -- Verify sender queued on endpoint
   match stAfterSend.objects[epId]? with
   | some (.endpoint ep) =>
@@ -590,7 +590,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       | _ => throw <| IO.userError "chain10: endpoint not found after receive"
       pure stAfterRecv
   | .error err =>
-      throw <| IO.userError s!"chain10 receive failed: {reprStr err}"
+      throw <| IO.userError s!"chain10 receive failed: {toString err}"
 
   assertInvariants "chain10-register-decode-multi-syscall" stFinal
 
@@ -653,7 +653,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       | _ => throw <| IO.userError "chain11: sender TCB not found"
       pure stAfter
   | .error err =>
-      throw <| IO.userError s!"chain11 send failed: {reprStr err}"
+      throw <| IO.userError s!"chain11 send failed: {toString err}"
 
   assertInvariants "chain11-register-decode-ipc-transfer" stFinal
 
