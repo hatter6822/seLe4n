@@ -130,10 +130,21 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   (S2-G/H, U-L12). Created `Testing/Helpers.lean` with library import via
   `MainTraceHarness` for build reachability (S2-I, U-L13). Migrated deprecated
   `api*` wrappers (S2-J, U-M05). Zero sorry/axiom.
-- **S3 (v0.19.2) — IN PROGRESS**: Proof Surface Closure. Defined
-  `cdtMapsConsistent` invariant with empty-CDT proof. Added `removeEdge` for CDT.
-  Added `RHTable.loadFactorBounded` predicate. Remaining: CDT preservation proofs,
-  scheduler full-bundle preservation, RunQueue well-formedness.
+- **S3 (v0.19.2) — COMPLETE**: Proof Surface Closure (14 sub-tasks including
+  1 stretch goal deferred). CDT maps consistency invariant with state-level
+  `cdtMapsConsistent` predicate and extended capability bundle
+  (`capabilityInvariantBundleFull`) (S3-A/B/C/D). `scheduleDomain` full-bundle
+  preservation composed from `switchDomain` + `schedule` (S3-E).
+  `remove_preserves_wellFormed` for RunQueue with three private helper theorems
+  (S3-F). `schedule_preserves_runQueueWellFormed` using dequeue path (S3-G).
+  SecurityLabel lattice antisymmetry + `Decidable` instance + compile-time
+  witness (S3-H). Bridge signature witness for service policy (S3-I).
+  Parameterized `crossSubsystemInvariant` via list-folded composition (S3-J).
+  RobinHood load factor bound and resize theorem (S3-K). Frozen ops
+  exhaustiveness check with `frozenOpCoverage` and count verification (S3-L).
+  Semi-automated dependency graph with subsystem module registry and BFS fuel
+  bounds (S3-N). Stretch goal S3-M (NI trace indexing) deferred to WS-T.
+  Zero sorry/axiom.
 - **S4 (v0.19.3) — IN PROGRESS**: Model Fidelity & Type Safety. Added
   `objectIndexBounded` advisory predicate and documentation.
 - **S5–S7**: Pending.

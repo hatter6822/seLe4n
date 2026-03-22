@@ -54,6 +54,9 @@ Preservation shape:
 - `handleYield_preserves_*`
 - `timerTick_preserves_schedulerInvariantBundle` (WS-F4 / F-03)
 - `timerTick_preserves_kernelInvariant` (WS-F4 / F-03)
+- `scheduleDomain_preserves_schedulerInvariantBundleFull` (S3-E / U-M08)
+- `schedule_preserves_runQueueWellFormed` (S3-G / U-M09)
+- `remove_preserves_wellFormed` (S3-F / U-M09 — RunQueue.lean)
 - `isBetterCandidate_transitive` (WS-H6 / A-17)
 - `bucketFirst_fullScan_equivalence` (WS-H6 / A-17)
 
@@ -71,6 +74,8 @@ Bridge theorem: `cspaceLookupSound_of_cspaceSlotUnique` derives lookup soundness
 Bundle level:
 
 - `capabilityInvariantBundle` (WS-H4 + WS-H13 + WS-F6/D1: 6-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`, `cspaceDepthConsistent`; 2 tautological predicates removed by WS-F6)
+- `capabilityInvariantBundleWithCdtMaps` (S3-D: base bundle + `cdtMapsConsistent`)
+- `capabilityInvariantBundleFull` (S3-D: base bundle + `cdtMapsConsistent` + `cdtMintCompleteness`)
 - `capabilityInvariantBundle_of_slotUnique` (constructor; requires all CNodes satisfy `slotsUnique` plus WS-H4 components)
 
 Preservation shape:
