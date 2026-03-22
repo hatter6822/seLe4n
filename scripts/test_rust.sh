@@ -3,6 +3,8 @@
 #
 # Q8-D: Validates that all three sele4n Rust crates build and pass tests.
 # Integrated into test_smoke.sh as a Tier 2 gate.
+#
+# R8-C (I-M03): Explicit skip warnings + proper error propagation from cargo.
 
 set -euo pipefail
 
@@ -13,10 +15,14 @@ RUST_DIR="$PROJECT_ROOT/rust"
 echo "=== Rust Syscall Wrappers (Q8) ==="
 echo ""
 
-# Check if cargo is available
+# R8-C (I-M03): Explicit cargo availability check with CI warning annotation.
 if ! command -v cargo &> /dev/null; then
-    echo "[SKIP] cargo not found — skipping Rust tests"
+    echo "::warning::Rust tests SKIPPED — cargo not found in PATH"
+    echo "[SKIP] cargo not found — Rust tests SKIPPED"
     echo "       Install Rust via: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    echo ""
+    echo "       To ensure Rust tests run in CI, add a rustup install step"
+    echo "       to .github/workflows/lean_action_ci.yml"
     exit 0
 fi
 
@@ -28,19 +34,39 @@ fi
 
 cd "$RUST_DIR"
 
+# R8-C (I-M03): Capture cargo output to temp file so we can show tail on success
+# and full output on failure. Exit codes are checked directly, not through pipe.
+
+run_cargo_step() {
+    local step_label="$1"
+    shift
+    local log
+    log="$(mktemp)"
+    if "$@" > "$log" 2>&1; then
+        tail -5 "$log"
+        echo "      ✓ ${step_label}"
+        rm -f "$log"
+        return 0
+    else
+        local rc=$?
+        cat "$log"
+        echo ""
+        echo "      ✗ ${step_label} FAILED (exit code ${rc})"
+        rm -f "$log"
+        return "$rc"
+    fi
+}
+
 echo "[1/3] Building all crates (host target)..."
-cargo build --all 2>&1 | tail -5
-echo "      ✓ Build succeeded"
+run_cargo_step "Build succeeded" cargo build --all
 echo ""
 
 echo "[2/3] Running unit tests..."
-cargo test --all --features std 2>&1 | tail -20
-echo "      ✓ Unit tests passed"
+run_cargo_step "Unit tests passed" cargo test --all --features std
 echo ""
 
 echo "[3/3] Running conformance tests (RUST-XVAL-001..014)..."
-cargo test -p sele4n-abi --features std --test conformance 2>&1 | tail -25
-echo "      ✓ Conformance tests passed"
+run_cargo_step "Conformance tests passed" cargo test -p sele4n-abi --features std --test conformance
 echo ""
 
 echo "=== All Rust tests passed ==="

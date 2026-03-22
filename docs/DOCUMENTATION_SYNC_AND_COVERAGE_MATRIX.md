@@ -55,7 +55,7 @@ For documentation/planning PRs:
 
 ## 4) Current-stage status summary
 
-- **Active workstream**: WS-R Comprehensive Audit Remediation (`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`). R1–R4 complete, R5–R8 pending.
+- **Active workstream**: WS-R Comprehensive Audit Remediation (`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`). All 8 phases (R1–R8) complete (v0.18.0–v0.18.7).
 - **Completed portfolios**: WS-B through WS-Q (all completed). See `docs/WORKSTREAM_HISTORY.md`.
 - **Historical baselines**: prior audits and workstream plans archived in `docs/dev_history/audits/`.
 - **Quality-gate contract**: Tier 0–3 required, Tier 4 nightly determinism evidence.

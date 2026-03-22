@@ -46,7 +46,7 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
 
 impl SyscallResponse {
     /// Interpret x1 as an IPC badge (valid for Receive/ReplyRecv syscalls).
-    pub const fn badge(&self) -> Badge { Badge(self.x1_raw) }
+    pub fn badge(&self) -> Badge { Badge::from(self.x1_raw) }
 
     /// Interpret x1 as message info (valid for Send/Call/Reply syscalls).
     pub fn msg_info(&self) -> KernelResult<MessageInfo> {
@@ -66,7 +66,7 @@ mod tests {
         let regs = [0, 42, 1, 2, 3, 4, 0];
         let resp = decode_response(regs).unwrap();
         assert!(resp.error.is_none());
-        assert_eq!(resp.badge(), Badge(42));
+        assert_eq!(resp.badge(), Badge::from(42u64));
         assert_eq!(resp.x1_raw(), 42);
         assert_eq!(resp.msg_regs, [1, 2, 3, 4]);
     }
@@ -83,7 +83,7 @@ mod tests {
     fn badge_and_msg_info_from_same_x1() {
         let regs = [0, 0xBEEF, 0, 0, 0, 0, 0];
         let resp = decode_response(regs).unwrap();
-        assert_eq!(resp.badge(), Badge(0xBEEF));
+        assert_eq!(resp.badge(), Badge::from(0xBEEFu64));
         // msg_info() interprets the same x1 differently
         assert_eq!(resp.x1_raw(), 0xBEEF);
     }

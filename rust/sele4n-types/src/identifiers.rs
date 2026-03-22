@@ -13,11 +13,15 @@
 /// Lean: `SeLe4n.ObjId` (Prelude.lean:30)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct ObjId(pub u64);
+pub struct ObjId(pub(crate) u64);
 
 impl ObjId {
     /// The sentinel (invalid) object ID.
     pub const SENTINEL: Self = Self(0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
 
     /// Returns `true` if this is the reserved sentinel value.
     #[inline]
@@ -36,11 +40,15 @@ impl From<ObjId> for u64 { #[inline] fn from(id: ObjId) -> u64 { id.0 } }
 /// Lean: `SeLe4n.ThreadId` (Prelude.lean:62)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct ThreadId(pub u64);
+pub struct ThreadId(pub(crate) u64);
 
 impl ThreadId {
     /// The sentinel (invalid) thread ID.
     pub const SENTINEL: Self = Self(0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
 
     #[inline]
     pub const fn is_reserved(&self) -> bool { self.0 == 0 }
@@ -59,11 +67,15 @@ impl From<ThreadId> for u64 { #[inline] fn from(id: ThreadId) -> u64 { id.0 } }
 /// Lean: `SeLe4n.CPtr` (Prelude.lean:284)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct CPtr(pub u64);
+pub struct CPtr(pub(crate) u64);
 
 impl CPtr {
     /// The null capability pointer, analogous to `seL4_CapNull`.
     pub const NULL: Self = Self(0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
 
     #[inline]
     pub const fn is_reserved(&self) -> bool { self.0 == 0 }
@@ -77,7 +89,13 @@ impl From<CPtr> for u64 { #[inline] fn from(p: CPtr) -> u64 { p.0 } }
 /// Lean: `SeLe4n.Slot` (Prelude.lean:318)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Slot(pub u64);
+pub struct Slot(pub(crate) u64);
+
+impl Slot {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for Slot { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<Slot> for u64 { #[inline] fn from(s: Slot) -> u64 { s.0 } }
@@ -87,7 +105,13 @@ impl From<Slot> for u64 { #[inline] fn from(s: Slot) -> u64 { s.0 } }
 /// Lean: `SeLe4n.DomainId` (Prelude.lean:128)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct DomainId(pub u64);
+pub struct DomainId(pub(crate) u64);
+
+impl DomainId {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for DomainId { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<DomainId> for u64 { #[inline] fn from(d: DomainId) -> u64 { d.0 } }
@@ -97,7 +121,13 @@ impl From<DomainId> for u64 { #[inline] fn from(d: DomainId) -> u64 { d.0 } }
 /// Lean: `SeLe4n.Priority` (Prelude.lean:151)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct Priority(pub u64);
+pub struct Priority(pub(crate) u64);
+
+impl Priority {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for Priority { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<Priority> for u64 { #[inline] fn from(p: Priority) -> u64 { p.0 } }
@@ -107,7 +137,7 @@ impl From<Priority> for u64 { #[inline] fn from(p: Priority) -> u64 { p.0 } }
 /// Lean: `SeLe4n.Deadline` (Prelude.lean:178)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Deadline(pub u64);
+pub struct Deadline(pub(crate) u64);
 
 impl Deadline {
     /// No deadline set (infinite deadline, lowest urgency).
@@ -115,6 +145,10 @@ impl Deadline {
 
     /// Immediate deadline (most urgent).
     pub const IMMEDIATE: Self = Self(1);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
 }
 
 impl From<u64> for Deadline { #[inline] fn from(v: u64) -> Self { Self(v) } }
@@ -125,7 +159,13 @@ impl From<Deadline> for u64 { #[inline] fn from(d: Deadline) -> u64 { d.0 } }
 /// Lean: `SeLe4n.Irq` (Prelude.lean:204)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Irq(pub u64);
+pub struct Irq(pub(crate) u64);
+
+impl Irq {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for Irq { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<Irq> for u64 { #[inline] fn from(i: Irq) -> u64 { i.0 } }
@@ -135,10 +175,14 @@ impl From<Irq> for u64 { #[inline] fn from(i: Irq) -> u64 { i.0 } }
 /// Lean: `SeLe4n.ServiceId` (Prelude.lean:227)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct ServiceId(pub u64);
+pub struct ServiceId(pub(crate) u64);
 
 impl ServiceId {
     pub const SENTINEL: Self = Self(0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
 
     #[inline]
     pub const fn is_reserved(&self) -> bool { self.0 == 0 }
@@ -152,10 +196,14 @@ impl From<ServiceId> for u64 { #[inline] fn from(s: ServiceId) -> u64 { s.0 } }
 /// Lean: `SeLe4n.InterfaceId` (Prelude.lean:256)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct InterfaceId(pub u64);
+pub struct InterfaceId(pub(crate) u64);
 
 impl InterfaceId {
     pub const SENTINEL: Self = Self(0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
 
     #[inline]
     pub const fn is_reserved(&self) -> bool { self.0 == 0 }
@@ -170,9 +218,13 @@ impl From<InterfaceId> for u64 { #[inline] fn from(i: InterfaceId) -> u64 { i.0 
 /// Lean: `SeLe4n.Badge` (Prelude.lean:351)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Badge(pub u64);
+pub struct Badge(pub(crate) u64);
 
 impl Badge {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+
     /// Bitwise OR for notification badge accumulation.
     /// Lean: `Badge.bor` (Prelude.lean:380)
     #[inline]
@@ -189,7 +241,13 @@ impl From<Badge> for u64 { #[inline] fn from(b: Badge) -> u64 { b.0 } }
 /// Lean: `SeLe4n.ASID` (Prelude.lean:411)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct Asid(pub u64);
+pub struct Asid(pub(crate) u64);
+
+impl Asid {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for Asid { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<Asid> for u64 { #[inline] fn from(a: Asid) -> u64 { a.0 } }
@@ -199,7 +257,13 @@ impl From<Asid> for u64 { #[inline] fn from(a: Asid) -> u64 { a.0 } }
 /// Lean: `SeLe4n.VAddr` (Prelude.lean:434)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct VAddr(pub u64);
+pub struct VAddr(pub(crate) u64);
+
+impl VAddr {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for VAddr { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<VAddr> for u64 { #[inline] fn from(a: VAddr) -> u64 { a.0 } }
@@ -209,7 +273,13 @@ impl From<VAddr> for u64 { #[inline] fn from(a: VAddr) -> u64 { a.0 } }
 /// Lean: `SeLe4n.PAddr` (Prelude.lean:457)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct PAddr(pub u64);
+pub struct PAddr(pub(crate) u64);
+
+impl PAddr {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for PAddr { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<PAddr> for u64 { #[inline] fn from(a: PAddr) -> u64 { a.0 } }
@@ -219,7 +289,13 @@ impl From<PAddr> for u64 { #[inline] fn from(a: PAddr) -> u64 { a.0 } }
 /// Lean: `SeLe4n.RegValue` (Machine.lean:42)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct RegValue(pub u64);
+pub struct RegValue(pub(crate) u64);
+
+impl RegValue {
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+}
 
 impl From<u64> for RegValue { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<RegValue> for u64 { #[inline] fn from(r: RegValue) -> u64 { r.0 } }

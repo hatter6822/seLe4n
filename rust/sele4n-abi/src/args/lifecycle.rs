@@ -17,13 +17,13 @@ pub struct LifecycleRetypeArgs {
 
 impl LifecycleRetypeArgs {
     pub const fn encode(&self) -> [u64; 3] {
-        [self.target_obj.0, self.new_type, self.size]
+        [self.target_obj.raw(), self.new_type, self.size]
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 3 { return Err(KernelError::InvalidMessageInfo); }
         Ok(Self {
-            target_obj: ObjId(regs[0]),
+            target_obj: ObjId::from(regs[0]),
             new_type: regs[1],
             size: regs[2],
         })
@@ -36,7 +36,7 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        let args = LifecycleRetypeArgs { target_obj: ObjId(42), new_type: 2, size: 4096 };
+        let args = LifecycleRetypeArgs { target_obj: ObjId::from(42u64), new_type: 2, size: 4096 };
         assert_eq!(LifecycleRetypeArgs::decode(&args.encode()).unwrap(), args);
     }
 

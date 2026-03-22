@@ -58,11 +58,15 @@ impl AccessRight {
 /// All operations are O(1) bitwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct AccessRights(pub u8);
+pub struct AccessRights(pub(crate) u8);
 
 impl AccessRights {
     /// Empty rights set (no permissions).
     pub const EMPTY: Self = Self(0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u8 { self.0 }
 
     /// Read-only.
     pub const READ: Self = Self(1 << 0);

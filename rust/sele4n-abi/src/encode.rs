@@ -40,7 +40,7 @@ pub const REG_SYSCALL_NUM: usize = 6; // x7 (mapped to array index 6)
 #[inline]
 pub fn encode_syscall(req: &SyscallRequest) -> [u64; 7] {
     [
-        req.cap_addr.0,           // x0: CPtr
+        req.cap_addr.raw(),       // x0: CPtr
         req.msg_info.encode(),    // x1: MessageInfo
         req.msg_regs[0],          // x2: msg_reg[0]
         req.msg_regs[1],          // x3: msg_reg[1]
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn encode_basic() {
         let req = SyscallRequest {
-            cap_addr: CPtr(100),
+            cap_addr: CPtr::from(100u64),
             msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0 },
             msg_regs: [10, 20, 0, 0],
             syscall_id: SyscallId::Send,
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn encode_cspace_mint() {
         let req = SyscallRequest {
-            cap_addr: CPtr(42),
+            cap_addr: CPtr::from(42u64),
             msg_info: MessageInfo { length: 4, extra_caps: 0, label: 0 },
             msg_regs: [1, 2, 3, 4], // srcSlot, dstSlot, rights, badge
             syscall_id: SyscallId::CSpaceMint,

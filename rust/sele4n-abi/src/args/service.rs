@@ -21,7 +21,7 @@ pub struct ServiceRegisterArgs {
 impl ServiceRegisterArgs {
     pub const fn encode(&self) -> [u64; 5] {
         [
-            self.interface_id.0,
+            self.interface_id.raw(),
             self.method_count,
             self.max_message_size,
             self.max_response_size,
@@ -32,7 +32,7 @@ impl ServiceRegisterArgs {
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 5 { return Err(KernelError::InvalidMessageInfo); }
         Ok(Self {
-            interface_id: InterfaceId(regs[0]),
+            interface_id: InterfaceId::from(regs[0]),
             method_count: regs[1],
             max_message_size: regs[2],
             max_response_size: regs[3],
@@ -52,12 +52,12 @@ pub struct ServiceRevokeArgs {
 
 impl ServiceRevokeArgs {
     pub const fn encode(&self) -> [u64; 1] {
-        [self.target_service.0]
+        [self.target_service.raw()]
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { target_service: ServiceId(regs[0]) })
+        Ok(Self { target_service: ServiceId::from(regs[0]) })
     }
 }
 
@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn register_roundtrip() {
         let args = ServiceRegisterArgs {
-            interface_id: InterfaceId(7),
+            interface_id: InterfaceId::from(7u64),
             method_count: 5,
             max_message_size: 256,
             max_response_size: 128,
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn register_requires_grant_false() {
         let args = ServiceRegisterArgs {
-            interface_id: InterfaceId(1),
+            interface_id: InterfaceId::from(1u64),
             method_count: 1,
             max_message_size: 64,
             max_response_size: 64,
@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn revoke_roundtrip() {
-        let args = ServiceRevokeArgs { target_service: ServiceId(42) };
+        let args = ServiceRevokeArgs { target_service: ServiceId::from(42u64) };
         assert_eq!(ServiceRevokeArgs::decode(&args.encode()).unwrap(), args);
     }
 

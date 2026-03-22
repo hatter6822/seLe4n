@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.18.6.
+Lean 4.28.0 toolchain, Lake build system, version 0.18.7.
 
 ## Build and run
 
@@ -436,7 +436,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-R IN PROGRESS**: Comprehensive Audit Remediation — 8 phases (R1–R8, 111 sub-tasks). See `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`
+- **WS-R PORTFOLIO COMPLETE**: Comprehensive Audit Remediation — 8 phases (R1–R8, 111 sub-tasks), all complete (v0.18.0–v0.18.7). See `docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`
 - **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14): Kernel State Architecture — all 9 phases (Q1–Q9, 45 atomic units) delivered. See `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
 - **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`

@@ -12,8 +12,12 @@ on:
       - main
   workflow_dispatch:
 
+# R8-B (I-M02): Changes are now proposed via PR instead of auto-pushed to main.
+# `contents: write` is retained for branch push; `pull-requests: write` added for PR creation.
+# The security improvement is that main is no longer directly modified — all changes go through PR review.
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: codebase-map-sync-${{ github.ref }}
@@ -30,15 +34,31 @@ jobs:
       - name: Generate codebase map
         run: ./scripts/generate_codebase_map.py --pretty
 
-      - name: Commit updated codebase map
+      - name: Check for changes
+        id: check
         run: |
           if git diff --quiet -- docs/codebase_map.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "docs/codebase_map.json already up to date"
-            exit 0
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # R8-B (I-M02): Create a PR for review instead of auto-pushing to main.
+      # This prevents race conditions and ensures all changes to main are reviewed.
+      - name: Create PR if changed
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="ci/refresh-codebase-map-${{ github.run_id }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${BRANCH}"
           git add docs/codebase_map.json
           git commit -m "ci: refresh codebase map"
-          git push
+          git push -u origin "${BRANCH}"
+          gh pr create \
+            --title "ci: refresh codebase map" \
+            --body "Automated codebase map refresh triggered by push to main." \
+            --base main

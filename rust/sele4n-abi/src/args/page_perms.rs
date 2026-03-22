@@ -10,10 +10,14 @@ use sele4n_types::{KernelError, KernelResult};
 /// the WRITE and EXECUTE bits cannot both be set simultaneously.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct PagePerms(pub u8);
+pub struct PagePerms(pub(crate) u8);
 
 impl PagePerms {
     pub const READ: Self = Self(1 << 0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u8 { self.0 }
     pub const WRITE: Self = Self(1 << 1);
     pub const EXECUTE: Self = Self(1 << 2);
     pub const USER: Self = Self(1 << 3);

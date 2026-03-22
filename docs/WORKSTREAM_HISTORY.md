@@ -15,7 +15,7 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-### WS-R workstream (Comprehensive Audit Remediation) — IN PROGRESS
+### WS-R workstream (Comprehensive Audit Remediation) — PORTFOLIO COMPLETE
 
 WS-R is the **active** workstream (v0.18.0+), addressing all 82 findings from the
 comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
@@ -94,7 +94,17 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   `LifecycleRetypeArgs.newType` with typed `KernelObjectType` enum,
   added `KernelObjectType.toNat`/`ofNat?` conversions with round-trip proofs,
   and introduced `objectOfKernelType` (L-10). Zero sorry/axiom.
-- **R8**: Pending. See workstream plan for details.
+- **R8 (v0.18.7) — COMPLETE**: Infrastructure & CI Hardening. Pinned elan binary
+  download to versioned URL (`v4.2.1`) with SHA-256 hash verification for x86_64
+  and aarch64; SHA mismatch reports diagnostic warning (I-M01). Converted
+  `codebase_map_sync.yml` from auto-push to PR-based workflow — changes go through
+  review before reaching main (I-M02). Made Rust test skip explicit with `::warning::`
+  CI annotation and direct cargo exit code propagation via temp-file capture (I-M03).
+  Added execution of 4 compiled but never-run test suites (`radix_tree_suite`,
+  `frozen_state_suite`, `freeze_proof_suite`, `frozen_ops_suite`) to Tier 2 negative
+  tests (I-M04). Encapsulated all 14 Rust newtype identifier inner fields from `pub`
+  to `pub(crate)` with `.raw()` accessors, plus `AccessRights` and `PagePerms` (L-11).
+  All 99 Rust tests pass (44 abi + 22 types + 8 sys + 25 conformance). Zero sorry/axiom.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 

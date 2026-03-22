@@ -26,7 +26,7 @@ pub fn vspace_map(
     // W^X pre-check (client-side, before syscall)
     perms.validate_wx()?;
 
-    let args = VSpaceMapArgs { asid, vaddr, paddr, perms: perms.0 as u64 };
+    let args = VSpaceMapArgs { asid, vaddr, paddr, perms: perms.raw() as u64 };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: vspace_cap,
@@ -69,7 +69,7 @@ pub fn vspace_map_read_only(
 pub fn vspace_map_read_write(
     vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {
-    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms(PagePerms::READ.0 | PagePerms::WRITE.0))
+    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms::READ | PagePerms::WRITE)
 }
 
 /// Convenience: map a read-execute page (code).
@@ -77,7 +77,7 @@ pub fn vspace_map_read_write(
 pub fn vspace_map_read_execute(
     vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {
-    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms(PagePerms::READ.0 | PagePerms::EXECUTE.0))
+    vspace_map(vspace_cap, asid, vaddr, paddr, PagePerms::READ | PagePerms::EXECUTE)
 }
 
 #[cfg(test)]
@@ -86,8 +86,8 @@ mod tests {
 
     #[test]
     fn wx_violation_rejected() {
-        let wx = PagePerms(PagePerms::WRITE.0 | PagePerms::EXECUTE.0);
-        let result = vspace_map(CPtr(1), Asid(1), VAddr(0x1000), PAddr(0x2000), wx);
+        let wx = PagePerms::WRITE | PagePerms::EXECUTE;
+        let result = vspace_map(CPtr::from(1u64), Asid::from(1u64), VAddr::from(0x1000u64), PAddr::from(0x2000u64), wx);
         assert_eq!(result, Err(KernelError::PolicyDenied));
     }
 }

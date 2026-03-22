@@ -21,7 +21,8 @@ Core type definitions with zero `unsafe` and zero external dependencies:
 
 - **14 newtype identifiers**: `ObjId`, `ThreadId`, `CPtr`, `Slot`, `DomainId`,
   `Priority`, `Deadline`, `Irq`, `ServiceId`, `InterfaceId`, `Badge`, `Asid`,
-  `VAddr`, `PAddr`, `RegValue`
+  `VAddr`, `PAddr`, `RegValue` — inner fields are `pub(crate)` with `.raw()`
+  accessors (R8-E/L-11 encapsulation)
 - **`KernelError`**: 34-variant enum (1:1 with Lean `KernelError`)
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations)
 - **`SyscallId`**: 14-variant enum (0–13)

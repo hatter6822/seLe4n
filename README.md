@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.18.6-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.18.7-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -70,7 +70,7 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.18.6` |
+| **Version** | `0.18.7` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 55,499 across 98 files |
 | **Test Lean LoC** | 7,309 across 10 test suites |
@@ -268,7 +268,7 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). Addresses all 82 findings from the [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 complete (v0.18.0–v0.18.6), R8 pending. Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks). Addresses all 82 findings from the [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R8 complete (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (RPi5 platform contracts now substantive via WS-H15)
 
 Prior portfolios (WS-B through WS-Q) are all complete. Prior audits (v0.8.0–v0.9.32),

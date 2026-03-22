@@ -41,6 +41,16 @@ ELAN_INSTALLER_URL="https://raw.githubusercontent.com/leanprover/elan/87f5ec2f56
 # WS-B9 hardening anchor: commit-pinned installer URL + hash must be updated together intentionally.
 ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43eda9264"
 
+# R8-A (I-M01): Pin elan binary release version for direct download path.
+# Replaces /releases/latest/ with a specific tag to prevent silent upgrades.
+# SHA-256 hashes for the elan binary tarballs — update these together with the version.
+ELAN_BINARY_VERSION="v4.2.1"
+# To regenerate hashes after version bump:
+#   curl -fsSL "https://github.com/leanprover/elan/releases/download/${ELAN_BINARY_VERSION}/elan-x86_64-unknown-linux-gnu.tar.gz" | sha256sum
+#   curl -fsSL "https://github.com/leanprover/elan/releases/download/${ELAN_BINARY_VERSION}/elan-aarch64-unknown-linux-gnu.tar.gz" | sha256sum
+ELAN_BINARY_SHA256_X86="4e717523217af592fa2d7b9c479410a31816c065d66ccbf0c2149337cfec0f5c"
+ELAN_BINARY_SHA256_ARM="bb78726ace6a912c7122a389018bcd69d9122ce04659800101392f7db380d3b3"
+
 # -------- Parse toolchain spec early (needed by fast-path) --------
 if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
   echo "error: lean-toolchain not found at ${LEAN_TOOLCHAIN_FILE}" >&2
@@ -268,19 +278,38 @@ default_toolchain = "${TOOLCHAIN_DIR_NAME}"
 SETTINGSEOF
 
   # --- Download elan binary in background while toolchain downloads ---
+  # R8-A (I-M01): Version-pinned URL with SHA-256 verification.
   local elan_bg_pid=""
   if [ ! -x "${elan_bin_dir}/elan" ]; then
     (
-      local arch_name
+      local arch_name expected_sha
       case "$(uname -m)" in
-        x86_64|amd64)   arch_name="x86_64-unknown-linux-gnu" ;;
-        aarch64|arm64)   arch_name="aarch64-unknown-linux-gnu" ;;
+        x86_64|amd64)
+          arch_name="x86_64-unknown-linux-gnu"
+          expected_sha="${ELAN_BINARY_SHA256_X86}"
+          ;;
+        aarch64|arm64)
+          arch_name="aarch64-unknown-linux-gnu"
+          expected_sha="${ELAN_BINARY_SHA256_ARM}"
+          ;;
         *) exit 1 ;;
       esac
       local elan_tar
       elan_tar="$(mktemp)"
-      curl -fsSL "https://github.com/leanprover/elan/releases/latest/download/elan-${arch_name}.tar.gz" -o "${elan_tar}" \
-        && tar -xzf "${elan_tar}" -C "${elan_bin_dir}/" \
+      curl -fsSL "https://github.com/leanprover/elan/releases/download/${ELAN_BINARY_VERSION}/elan-${arch_name}.tar.gz" -o "${elan_tar}"
+
+      # Verify SHA-256 hash of downloaded binary.
+      local actual_sha
+      actual_sha="$(compute_sha256 "${elan_tar}")"
+      if [ "${actual_sha}" != "${expected_sha}" ]; then
+        echo "error: elan binary checksum verification failed" >&2
+        echo "  expected: ${expected_sha}" >&2
+        echo "  actual:   ${actual_sha}" >&2
+        rm -f "${elan_tar}"
+        exit 1
+      fi
+
+      tar -xzf "${elan_tar}" -C "${elan_bin_dir}/" \
         && chmod +x "${elan_bin_dir}/elan-init"
       rm -f "${elan_tar}"
     ) &
@@ -329,8 +358,11 @@ SETTINGSEOF
 
   # --- Wait for elan background download if it was started ---
   if [ -n "${elan_bg_pid}" ]; then
-    wait "${elan_bg_pid}" 2>/dev/null || true
-    log_elapsed "elan binary download complete"
+    if wait "${elan_bg_pid}" 2>/dev/null; then
+      log_elapsed "elan binary download complete (SHA-256 verified)"
+    else
+      log_elapsed "warning: elan binary download failed (SHA-256 mismatch or network error); toolchain symlinks will be used instead"
+    fi
   fi
 
   # --- Create direct symlinks so lean/lake/leanc are on PATH immediately ---

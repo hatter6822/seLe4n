@@ -18,15 +18,15 @@ pub struct VSpaceMapArgs {
 
 impl VSpaceMapArgs {
     pub const fn encode(&self) -> [u64; 4] {
-        [self.asid.0, self.vaddr.0, self.paddr.0, self.perms]
+        [self.asid.raw(), self.vaddr.raw(), self.paddr.raw(), self.perms]
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 4 { return Err(KernelError::InvalidMessageInfo); }
         Ok(Self {
-            asid: Asid(regs[0]),
-            vaddr: VAddr(regs[1]),
-            paddr: PAddr(regs[2]),
+            asid: Asid::from(regs[0]),
+            vaddr: VAddr::from(regs[1]),
+            paddr: PAddr::from(regs[2]),
             perms: regs[3],
         })
     }
@@ -44,12 +44,12 @@ pub struct VSpaceUnmapArgs {
 
 impl VSpaceUnmapArgs {
     pub const fn encode(&self) -> [u64; 2] {
-        [self.asid.0, self.vaddr.0]
+        [self.asid.raw(), self.vaddr.raw()]
     }
 
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 2 { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { asid: Asid(regs[0]), vaddr: VAddr(regs[1]) })
+        Ok(Self { asid: Asid::from(regs[0]), vaddr: VAddr::from(regs[1]) })
     }
 }
 
@@ -60,14 +60,14 @@ mod tests {
     #[test]
     fn map_roundtrip() {
         let args = VSpaceMapArgs {
-            asid: Asid(1), vaddr: VAddr(0x1000), paddr: PAddr(0x2000), perms: 0x07,
+            asid: Asid::from(1u64), vaddr: VAddr::from(0x1000u64), paddr: PAddr::from(0x2000u64), perms: 0x07,
         };
         assert_eq!(VSpaceMapArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]
     fn unmap_roundtrip() {
-        let args = VSpaceUnmapArgs { asid: Asid(1), vaddr: VAddr(0x3000) };
+        let args = VSpaceUnmapArgs { asid: Asid::from(1u64), vaddr: VAddr::from(0x3000u64) };
         assert_eq!(VSpaceUnmapArgs::decode(&args.encode()).unwrap(), args);
     }
 
