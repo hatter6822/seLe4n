@@ -742,8 +742,8 @@ WS-H8 enforcement soundness (5 theorems):
 
 **H-05 — Composed bundle-level non-interference:**
 
-- `NonInterferenceStep` inductive (35 constructors; extended from 31 by R5-B/M-02: added `registerServiceChecked`. Extended from 28 by v0.13.5 audit: added `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh`. Added `syscallDecodeError`, `syscallDispatchHigh` by WS-J1-D. Original 28 from WS-H9),
-- `step_preserves_projection` — single-step projection preservation (all 35 constructors),
+- `NonInterferenceStep` inductive (32 constructors; extended from 31 by R5-B/M-02: added `registerServiceChecked`. Extended from 28 by v0.13.5 audit: added `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh`. Added `syscallDecodeError`, `syscallDispatchHigh` by WS-J1-D. Original 28 from WS-H9),
+- `step_preserves_projection` — single-step projection preservation (all 32 constructors),
 - `composedNonInterference_step` — primary IF-M4 single-step theorem,
 - `NonInterferenceTrace` inductive (`nil`/`cons`),
 - `trace_preserves_projection`, `composedNonInterference_trace` — multi-step lift,
