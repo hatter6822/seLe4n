@@ -30,6 +30,19 @@
   </div>
 </p>
 
+<p align="center">
+  <a href="docs/i18n/zh-CN/README.md">简体中文</a> ·
+  <a href="docs/i18n/es/README.md">Español</a> ·
+  <a href="docs/i18n/ja/README.md">日本語</a> ·
+  <a href="docs/i18n/ko/README.md">한국어</a> ·
+  <a href="docs/i18n/ar/README.md">العربية</a> ·
+  <a href="docs/i18n/fr/README.md">Français</a> ·
+  <a href="docs/i18n/pt-BR/README.md">Português</a> ·
+  <a href="docs/i18n/ru/README.md">Русский</a> ·
+  <a href="docs/i18n/de/README.md">Deutsch</a> ·
+  <a href="docs/i18n/hi/README.md">हिन्दी</a>
+</p>
+
 ---
 
 ## What is seLe4n?

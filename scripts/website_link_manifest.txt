@@ -116,5 +116,16 @@ SeLe4n/Platform/
 SeLe4n/Platform/Sim/
 SeLe4n/Platform/RPi5/
 docs/
+docs/i18n/
+docs/i18n/zh-CN/
+docs/i18n/es/
+docs/i18n/ja/
+docs/i18n/ko/
+docs/i18n/ar/
+docs/i18n/fr/
+docs/i18n/pt-BR/
+docs/i18n/ru/
+docs/i18n/de/
+docs/i18n/hi/
 scripts/
 tests/
