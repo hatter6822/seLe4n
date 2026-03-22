@@ -7,7 +7,7 @@
 - `docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md` (65+ findings)
 **Prior portfolios**: WS-B through WS-R (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
-**Combined finding count**: 5 High, 30 Medium, 30 Low, 80+ Info (across both audits)
+**Combined finding count**: 5 High, 29 Medium (deduplicated), 30 Low, 80+ Info (across both audits)
 
 ---
 
@@ -27,7 +27,7 @@ The 5 High findings are concentrated in two areas:
 2. **Testing brittleness** — `toString`-based assertions in NegativeStateSuite
    (T-H1), golden-output fixture fragility in MainTraceHarness (T-H2)
 
-The 30 Medium findings cluster around six themes:
+The 29 deduplicated Medium findings cluster around six themes:
 
 1. **Rust type-safety defects** — `Cap::restrict()` panics instead of returning
    `Result` (M-01), `Restricted::RIGHTS = EMPTY` semantic bug (M-02)
@@ -46,10 +46,10 @@ The 30 Medium findings cluster around six themes:
    (T-M1), error-path test coverage gaps (T-M2), `toString` assertions (T-H1)
 
 This workstream plan organizes all actionable findings into **7 phases** (S1–S7)
-with **83 atomic sub-tasks**, explicit dependencies, gate conditions, and scope
-estimates. The plan addresses all 5 High findings, all 30 Medium findings, and
-selects 19 Low findings for inclusion based on security relevance, proof chain
-completeness, and hardware readiness.
+with **81 atomic sub-tasks** (plus 1 stretch goal), explicit dependencies, gate
+conditions, and scope estimates. The plan addresses all 5 High findings, all 29
+deduplicated Medium findings, and selects 19 Low findings for inclusion based on
+security relevance, proof chain completeness, and hardware readiness.
 
 ---
 
@@ -96,13 +96,15 @@ identified the same issue, the finding is listed once with both source IDs.
 | U-M15 | — | F-M5 | `Machine.lean` | `Memory := PAddr → UInt8` — no alignment fault modeling |
 | U-M16 | — | F-M6 | `Prelude.lean:511` | `KernelM` lacks `MonadStateOf`/`MonadExceptOf` instances |
 
-### 2.5 Medium Findings — API & Hygiene (3)
+### 2.5 Medium Findings — API & Hygiene (2)
 
 | Unified ID | Pre-Benchmark ID | Kernel-Rust ID | Location | Description |
 |------------|-------------------|----------------|----------|-------------|
 | U-M05 | M-05 | — | `API.lean:245-360`, tests | Deprecated `api*` wrappers still exercised in test suites |
 | U-M06 | M-06 | — | `Platform/Sim/*` | Simulation platform contracts are all `True` |
-| U-M07 | M-07 | F-H2 | `Prelude.lean:392-393` | `Badge.ofNat` deprecated but not removed (= U-H1) |
+
+Note: Pre-benchmark M-07 / Kernel-Rust F-H2 (`Badge.ofNat`) is consolidated
+under U-H1 in section 2.1. It is not double-counted as a Medium finding.
 
 ### 2.6 Medium Findings — Hardware Binding (5)
 
@@ -201,25 +203,29 @@ identified the same issue, the finding is listed once with both source IDs.
 ```
 S1 (Security & Rust)
  │
- ├──→ S2 (Test Hardening)
- │     │
- │     └──→ S3 (Proof Surface Closure)
- │           │
- │           ├──→ S4 (Model Fidelity & Type Safety)
- │           │     │
- │           │     └──→ S5 (API Cleanup & Platform Contracts)
- │           │           │
- │           │           └──→ S6 (Hardware Preparation)
- │           │                 │
- │           │                 └──→ S7 (Documentation & Polish)
- │           │
- │           └──→ S6 (independent track for hardware items)
- │
- └──→ S3 (Rust items in S1 unblock Lean proof work)
+ └──→ S2 (Test Hardening)
+       │
+       └──→ S3 (Proof Surface Closure)
+             │
+             ├──→ S4 (Model Fidelity & Type Safety)
+             │     │
+             │     └──→ S5 (API Cleanup & Platform Contracts)
+             │
+             └──→ S6 (Hardware Preparation)  ←── parallel track
+                   │
+                   └─── ─── ─── ─── ─── ─── ──┐
+                                                ↓
+                              S7 (Documentation & Polish) ← waits for S4+S5+S6
 ```
 
 **Critical path**: S1 → S2 → S3 → S4 → S5 → S7
-**Hardware track**: S1 → S3 → S6 → S7 (can run partially in parallel with S4–S5)
+**Hardware track**: S3 → S6 → S7 (runs in parallel with S4–S5 after S3)
+**Parallelism opportunity**: After S3 completes, S4, S5, and S6 can proceed
+concurrently on disjoint file sets:
+- **S4** owns: `Model/`, `Machine.lean`, `Architecture/RegisterDecode.lean`
+- **S5** owns: `Kernel/API.lean`, `Platform/Sim/`, `Lifecycle/`, tests, scripts
+- **S6** owns: `Architecture/VSpace*.lean`, `Architecture/TlbModel.lean`,
+  `Platform/RPi5/`, `InformationFlow/` (NI scrubbing proofs only)
 
 ---
 
@@ -243,16 +249,21 @@ Specific module builds verified for every modified `.lean` file.
 
 **Sub-tasks (14):**
 
+**Intra-phase ordering constraints:**
+- Rust chain: S1-D → S1-E → S1-F (restrict → read_only → Restricted rights fix)
+- All Lean tasks are independent of each other and of Rust tasks
+- Documentation tasks (S1-C, S1-M) can run in parallel with everything
+
 | ID | Unified Finding | Description | Files | Estimate |
 |----|-----------------|-------------|-------|----------|
-| S1-A | U-H1 / U-M07 | Remove `Badge.ofNat` entirely — replace with `private` or delete. Migrate any remaining callers to `Badge.ofNatMasked`. Update all test files that reference `Badge.ofNat`. | `Prelude.lean`, test files | Small |
+| S1-A | U-H1 | Remove `Badge.ofNat` entirely — delete the deprecated function and its associated theorems. Zero production and test callers remain (all migrated to `Badge.ofNatMasked` in WS-R6). Verify no references remain via `grep`. | `Prelude.lean` | Trivial |
 | S1-B | U-H2 | Convert `MemoryRegion.wellFormed` from `Bool` function to `Prop` field (refinement subtype or structure field). Update `MemoryRegion.contains`, `MemoryRegion.overlaps`, and all callers to require the proof obligation. | `Machine.lean`, `Platform/RPi5/Board.lean` | Medium |
 | S1-C | U-H3 | Add end-to-end documentation of `ThreadId.toObjId` identity mapping trust boundary. Add a doc comment at the definition site and a validation section in `docs/spec/SELE4N_SPEC.md` explaining that callers must verify `.tcb tcb` after lookup. | `Prelude.lean`, `docs/spec/SELE4N_SPEC.md` | Small |
 | S1-D | U-M01 | Convert `Cap::restrict()` from panic to `Result<Cap<Obj, Restricted>, CapError>`. Update all call sites. Add `CapError` type if not present. | `rust/sele4n-sys/src/cap.rs` | Medium |
 | S1-E | U-M01 | Convert `Cap::to_read_only()` from panic to `Result` return type. Update all call sites. | `rust/sele4n-sys/src/cap.rs` | Small |
 | S1-F | U-M02 | Fix `Restricted::RIGHTS` — store actual computed rights in `Cap` struct field instead of using `EMPTY` constant. Ensure `.rights()` returns the real restricted mask. | `rust/sele4n-sys/src/cap.rs` | Medium |
 | S1-G | U-L05 | Add well-formedness predicate `bits < 2^5` to `AccessRightSet` or mask on construction via `AccessRightSet.ofNat`. Prove the mask is idempotent. | `Model/Object/Types.lean` | Small |
-| S1-H | U-L09 | Add `#[deny(unsafe_code)]` crate-level attribute to `sele4n-abi`. Verify no unsafe exists in the crate. | `rust/sele4n-abi/src/lib.rs` | Trivial |
+| S1-H | U-L09 | Add `#![deny(unsafe_code)]` crate-level attribute to `sele4n-abi`. Add a targeted `#[allow(unsafe_code)]` on `raw_syscall` in `trap.rs` (the single `svc #0` block). This ensures any *new* unsafe is rejected while preserving the necessary syscall instruction. | `rust/sele4n-abi/src/lib.rs`, `rust/sele4n-abi/src/trap.rs` | Small |
 | S1-I | U-M30 | Evaluate replacing `native_decide` with `decide` for `isPowerOfTwo` proofs. If `decide` is feasible without excessive compile time, migrate. Document rationale if `native_decide` is retained. | `Prelude.lean`, affected files | Small |
 | S1-J | U-M14 | Fix `BEq RegisterFile` lawfulness — either prove `a == b → a = b` for the 32-GPR comparison or document the limitation with a `nonLawful` annotation. | `Machine.lean` | Small |
 | S1-K | U-M16 | Add `MonadStateOf` and `MonadExceptOf` typeclass instances for `KernelM` to enable generic monadic composition. Verify existing `LawfulMonad` instance compatibility. | `Prelude.lean` | Small |
@@ -282,16 +293,16 @@ and negative paths. Zero `sorry`/`axiom`.
 
 | ID | Unified Finding | Description | Files | Estimate |
 |----|-----------------|-------------|-------|----------|
-| S2-A | U-H4 | Audit `NegativeStateSuite.lean` for all `toString`-based assertions. Replace each with structural pattern matching or `BEq` comparison on the `KernelError` / result type. | `tests/NegativeStateSuite.lean` | Medium |
-| S2-B | U-H4 | Audit `OperationChainSuite.lean` for `toString`-based assertions. Apply same structural replacement pattern. | `tests/OperationChainSuite.lean` | Small |
-| S2-C | U-H4 | Audit all remaining test files for `toString`-based assertions. Apply structural replacements. | `tests/*.lean` | Small |
+| S2-A | U-H4 | Replace all 78 `reprStr`-based assertions in `NegativeStateSuite.lean` with structural pattern matching or `BEq` comparison on `KernelError` / result types. This is the highest-volume file (78 of 99 total `reprStr` occurrences). | `tests/NegativeStateSuite.lean` | Large |
+| S2-B | U-H4 | Replace 7 `reprStr`-based assertions in `OperationChainSuite.lean` with structural comparisons. | `tests/OperationChainSuite.lean` | Small |
+| S2-C | U-H4 | Replace remaining 14 `reprStr`-based assertions in `TwoPhaseArchSuite.lean` (6) and `TraceSequenceProbe.lean` (8). | `tests/TwoPhaseArchSuite.lean`, `tests/TraceSequenceProbe.lean` | Small |
 | S2-D | U-H5 | Document golden-output fixture management in `docs/DEVELOPMENT.md` — explain when and how to update `main_trace_smoke.expected`, include rationale requirements for fixture changes. | `docs/DEVELOPMENT.md` | Small |
 | S2-E | U-H5 | Add a fixture-diff check to `test_smoke.sh` that reports which specific lines changed (not just pass/fail), making fixture update review easier. | `scripts/test_smoke.sh`, `tests/fixtures/` | Small |
 | S2-F | U-L11 | Create `BuilderTestState` module that wraps `StateBuilder` with `Builder` invariant validation. New test states go through `Builder` checks, failing on invariant violations rather than silently constructing invalid states. | `SeLe4n/Testing/StateBuilder.lean` | Medium |
 | S2-G | U-L12 | Add error-path test cases for capability operations — test `cspaceMint` with insufficient rights, `cspaceCopy` with full destination CNode, `cspaceRevoke` with deep CDT tree. | `tests/OperationChainSuite.lean` or new test file | Medium |
 | S2-H | U-L12 | Add error-path test cases for lifecycle operations — test `retypeFromUntyped` with insufficient untyped capacity, device untyped TCB rejection, child ID collision. | test files | Small |
 | S2-I | U-L13 | Extract duplicated helpers from `InformationFlowSuite.lean` into `Testing/Helpers.lean` shared module. Update imports. | `tests/InformationFlowSuite.lean`, `SeLe4n/Testing/` | Small |
-| S2-J | U-M05 | Migrate remaining test cases from deprecated `api*` wrappers to `syscallEntry`/`dispatchWithCap` path. Track which test cases still use deprecated paths and create migration plan for each. | `tests/OperationChainSuite.lean`, `tests/NegativeStateSuite.lean` | Medium |
+| S2-J | U-M05 | Migrate all remaining test cases from deprecated `api*` wrappers to `syscallEntry`/`dispatchWithCap` path. Only 2 call sites remain: `apiCspaceMint` in `OperationChainSuite.lean:358` and `apiEndpointSend` in `NegativeStateSuite.lean:1519`. After migration, remove `set_option linter.deprecated false` from test files. | `tests/OperationChainSuite.lean`, `tests/NegativeStateSuite.lean` | Small |
 
 ---
 
@@ -313,21 +324,27 @@ downstream consumer exercising it.
 
 **Sub-tasks (14):**
 
+**Intra-phase ordering constraints:**
+- CDT chain: S3-A → S3-B → S3-C → S3-D (each builds on the prior definition/proof)
+- Scheduler chain: S3-F → S3-G (well-formedness proof before consumption)
+- Independent tracks: {S3-E, S3-H, S3-I, S3-J, S3-K, S3-L, S3-N} have no intra-phase deps
+- Stretch: S3-M is independent but has high risk (see risk assessment)
+
 | ID | Unified Finding | Description | Files | Estimate |
 |----|-----------------|-------------|-------|----------|
 | S3-A | U-M03 | Define `cdtMapsConsistent` invariant: `∀ p c, (p, c) ∈ edges ↔ c ∈ childMap[p] ∧ parentMap[c] = some p`. Prove it holds for the empty CDT. | `Model/Object/Structures.lean` | Medium |
-| S3-B | U-M03 | Prove `addEdge_preserves_cdtMapsConsistent` — `addEdge` maintains the bidirectional equivalence between `edges`, `childMap`, and `parentMap`. | `Model/Object/Structures.lean` | Medium |
-| S3-C | U-L03 | Define `removeEdge` for `CapDerivationTree`. Implement as removal from `edges`, `childMap`, and `parentMap`. Prove `removeEdge_preserves_cdtMapsConsistent`. | `Model/Object/Structures.lean` | Medium |
-| S3-D | U-M03 | Add `cdtMapsConsistent` to the capability invariant bundle (`capabilityInvariant`). Update all preservation theorems to carry the new conjunct. | `Capability/Invariant/Defs.lean`, `Capability/Invariant/Preservation.lean` | Large |
+| S3-B | U-M03 | **(Requires S3-A)** Prove `addEdge_preserves_cdtMapsConsistent` — `addEdge` maintains the bidirectional equivalence between `edges`, `childMap`, and `parentMap`. | `Model/Object/Structures.lean` | Medium |
+| S3-C | U-L03 | **(Requires S3-A)** Define `removeEdge` for `CapDerivationTree`. Implement as removal from `edges`, `childMap`, and `parentMap`. Prove `removeEdge_preserves_cdtMapsConsistent`. Expose only through `revokeTargetLocal`; do not export standalone. | `Model/Object/Structures.lean` | Medium |
+| S3-D | U-M03 | **(Requires S3-B, S3-C)** Add `cdtMapsConsistent` to the capability invariant bundle (`capabilityInvariant`). Thread through preservation theorems one operation at a time: mint → copy → move → delete → revoke. | `Capability/Invariant/Defs.lean`, `Capability/Invariant/Preservation.lean` | Large |
 | S3-E | U-M08 | Prove `scheduleDomain_preserves_schedulerInvariantBundleFull` by composing existing `switchDomain_preserves_*` and `schedule_preserves_*` full-bundle theorems. | `Scheduler/Operations/Preservation.lean` | Medium |
 | S3-F | U-M09 | Prove `remove_preserves_wellFormed` for `RunQueue.remove`. Show that removing a thread from a well-formed run queue preserves priority-bucket consistency. | `Scheduler/RunQueue.lean` | Medium |
-| S3-G | U-M09 | Update `schedule` operation's dequeue path to use `remove_preserves_wellFormed` instead of the current workaround that reasons on pre-remove state. | `Scheduler/Operations/Preservation.lean` | Small |
+| S3-G | U-M09 | **(Requires S3-F)** Update `schedule` operation's dequeue path to use `remove_preserves_wellFormed` instead of the current workaround that reasons on pre-remove state. | `Scheduler/Operations/Preservation.lean` | Small |
 | S3-H | U-M11 | Add computational verification for `SecurityLabel` lattice properties — prove reflexivity, transitivity, and antisymmetry of `flowsTo` for concrete test labels. Add a decidable `flowsTo` check function. | `InformationFlow/Policy.lean` | Medium |
 | S3-I | U-M25 | Add compile-time bridge signature witness — define a type alias or constant capturing the operation signature, so bridge theorems fail to compile if signatures change. | `Service/Invariant/Policy.lean` | Small |
 | S3-J | U-M26 | Parameterize `crossSubsystemInvariant` composition — replace hardcoded 6-subsystem conjunction with a list-folded composition so adding a subsystem requires only extending the list. | `CrossSubsystem.lean` | Medium |
 | S3-K | U-M28 | Add explicit load factor bound to `RHTable` specification — document or prove that insert fails when load exceeds 75%. Add a theorem `insert_fails_at_capacity`. | `RobinHood/Core.lean`, `RobinHood/Invariant/Defs.lean` | Small |
 | S3-L | U-M29 | Add a compile-time check that frozen operations cover all `SyscallId` arms. Define a correspondence proof or exhaustiveness check linking `FrozenOps/Operations.lean` to `API.lean`. | `FrozenOps/Operations.lean` | Small |
-| S3-M | U-L15 | Strengthen NI trace composition — index the trace by the actual operation sequence (dependent list) rather than an unindexed `List NonInterferenceStep`. | `InformationFlow/Invariant/Composition.lean` | Large |
+| S3-M | U-L15 | **[STRETCH GOAL]** Strengthen NI trace composition — index the trace by the actual operation sequence (dependent list) rather than an unindexed `List NonInterferenceStep`. This is a deep proof refactoring with high risk of scope expansion. **Defer to WS-T if effort exceeds estimate.** | `InformationFlow/Invariant/Composition.lean` | Large |
 | S3-N | U-L14 | Semi-automate dependency graph construction — derive the graph from subsystem module imports rather than manual enumeration. At minimum, add a compile-time check that the graph matches actual import dependencies. | `Service/Invariant/Acyclicity.lean` | Medium |
 
 ---
@@ -357,7 +374,7 @@ exercised by at least one theorem. Zero `sorry`/`axiom`.
 | S4-B | U-M12 | Add `objectCount_le_maxObjects` invariant to `KernelState` or `SystemState`. Enforce in `storeObject` — return error when capacity exceeded. Update preservation proofs. | `Model/State.lean` | Medium |
 | S4-C | U-L02 | Add `isWord64 cptr.toNat` precondition to `resolveSlot` or mask the input to 64 bits before guard extraction. Prove the mask is idempotent for valid CNode configurations. | `Model/Object/Structures.lean` | Medium |
 | S4-D | U-L04 | Change `IpcMessage.registers` from `Array Nat` to `Array RegValue` for type consistency. Update all IPC operations that read/write message registers. Update all affected proofs. | `Model/Object/Types.lean`, IPC operation files | Medium |
-| S4-E | U-M15 | Document `Memory := PAddr → UInt8` alignment limitation. Add an `alignedAccess` predicate for word-aligned reads/writes that the hardware binding can enforce. | `Machine.lean`, `docs/spec/SELE4N_SPEC.md` | Small |
+| S4-E | U-M15 | Document `Memory := PAddr → UInt8` alignment limitation. Add `alignedRead`/`alignedWrite` predicates for word-aligned memory access that the hardware binding can enforce. Add alignment faults as a documented model gap in `docs/spec/SELE4N_SPEC.md`. (Consolidates with hardware-prep alignment work — S6-F removed as duplicate.) | `Machine.lean`, `docs/spec/SELE4N_SPEC.md` | Small |
 | S4-F | U-L01 | Evaluate replacing `RegisterFile.gpr : RegName → RegValue` with `Array RegValue` (size 32). If migration is feasible without excessive proof rework, implement. Otherwise, document the design rationale. | `Machine.lean` | Medium–Large |
 | S4-G | U-L06 | Evaluate migrating `Notification.waitingThreads` from `List` to intrusive queue (matching endpoints). If the migration is tractable, implement. Otherwise, document the expected bound on waiting thread count and O(n) cost. | `Model/Object/Types.lean` | Medium |
 | S4-H | U-L07 | Document `UntypedObject.allocate` children prepend convention explicitly — add a doc comment explaining reverse-chronological order and how proofs handle it. | `Model/Object/Types.lean` | Trivial |
@@ -388,13 +405,12 @@ changes settled).
 suites. Simulation restrictive contracts produce non-trivial validation.
 Zero `sorry`/`axiom`.
 
-**Sub-tasks (10):**
+**Sub-tasks (9):**
 
 | ID | Unified Finding | Description | Files | Estimate |
 |----|-----------------|-------------|-------|----------|
-| S5-A | U-M05 | Complete migration of all test cases from `api*` wrappers to `syscallEntry`/`dispatchWithCap`. Verify every test exercises the production entry path. | `tests/*.lean` | Medium |
-| S5-B | U-M05 | Remove all 14 deprecated `api*` wrappers from `API.lean`. Remove `set_option linter.deprecated false` from test files. | `Kernel/API.lean` | Medium |
-| S5-C | U-M05 | Update all downstream proof consumers that reference deprecated wrappers. Verify `crossSubsystemInvariant` preservation still holds for `syscallEntry` path. | Invariant files | Medium |
+| S5-A | U-M05 | **(Requires S2-J)** Remove all 14 deprecated `api*` wrappers from `API.lean`. Test migration completed in S2-J; this task is pure deletion. Verify `lake build SeLe4n.Kernel.API` succeeds after removal. | `Kernel/API.lean` | Small |
+| S5-B | U-M05 | Audit invariant files and proofs for any references to removed `api*` wrappers. Update or remove affected proof statements. Verify `crossSubsystemInvariant` preservation holds for `syscallEntry` path only. | Invariant files | Medium |
 | S5-D | U-M06 | Create `SimRestrictive` platform variant with substantive contracts mirroring RPi5 structure. Use simulation-appropriate bounds (e.g., 256MB RAM, 4-core, 1GHz timer) but enforce the same contract shape. | `Platform/Sim/` (new files) | Large |
 | S5-E | U-M06 | Add a `SimRestrictive` test target to `test_smoke.sh` or `test_full.sh` that exercises the restrictive simulation contracts alongside the permissive defaults. | `scripts/test_*.sh` | Small |
 | S5-F | U-M20 | Document BCM2712 address validation requirement — create a checklist for RPi5 board constant verification against the datasheet. Add as a pre-hardware-binding gate. | `Platform/RPi5/Board.lean`, `docs/DEVELOPMENT.md` | Small |
@@ -424,18 +440,17 @@ Can run partially in parallel with S5 if file sets don't overlap.
 `lake build SeLe4n.Platform.RPi5.Contract`. All TLB-related operations use
 the flush-aware wrappers. Zero `sorry`/`axiom`.
 
-**Sub-tasks (8):**
+**Sub-tasks (7):**
 
 | ID | Unified Finding | Description | Files | Estimate |
 |----|-----------------|-------------|-------|----------|
-| S6-A | U-M18 | Audit all `mapPage`/`unmapPage` call sites — verify that all go through the TLB-flushing wrappers (`vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush`). If any bypass, migrate. | `Architecture/VSpace.lean`, kernel operation files | Medium |
-| S6-B | U-M18 | Add a spec-level contract requiring TLB invalidation after page table modification. Make the unflushed `mapPage` private or document it as internal-only. | `Architecture/VSpace.lean`, `Platform/Contract.lean` | Small |
+| S6-A | U-M18 | Audit all `vspaceMapPage`/`vspaceUnmapPage` call sites (7 found in `MainTraceHarness.lean`, plus API dispatch paths). Verify production paths use `vspaceMapPageWithFlush`/`vspaceUnmapPageWithFlush` (added in WS-R7, VSpace.lean:110-137). Migrate test harness calls that should use flushing variants. | `Testing/MainTraceHarness.lean`, `Kernel/API.lean` | Small |
+| S6-B | U-M18 | Make unflushed `vspaceMapPage`/`vspaceUnmapPage` `private` or add `@[deprecated]` annotation marking them as internal proof decomposition helpers. Add spec-level documentation that all external callers must use the `WithFlush` variants. | `Architecture/VSpace.lean` | Small |
 | S6-C | U-M19 | Add memory-scrubbing step to `deleteObject` — zero the backing memory region after object removal. Add a `memoryZeroed` postcondition predicate. | `Lifecycle/Operations.lean` | Medium |
 | S6-D | U-M19 | Prove `deleteObject` memory scrubbing preserves lifecycle invariants. Prove the `memoryZeroed` postcondition holds. | `Lifecycle/Invariant.lean` | Medium |
 | S6-E | U-M19 | Add `memoryZeroed` to the information flow invariant — scrubbed memory must not leak data between security domains. Prove `deleteObject` maintains NI after scrubbing. | `InformationFlow/Invariant/Operations.lean` | Medium |
-| S6-F | U-M15 | Add `alignedRead`/`alignedWrite` predicates to `Machine.lean` for word-aligned memory access. Hardware binding should enforce alignment faults on misaligned access. | `Machine.lean` | Small |
-| S6-G | U-M20 | Create device tree abstraction — define `DeviceTree` structure with parsed board configuration, so RPi5 addresses can be loaded from a device tree blob rather than hardcoded. (Preparation only — actual DT parsing is future work.) | `Platform/RPi5/Board.lean` or new file | Medium |
-| S6-H | — | RPi5 board constant validation — cross-reference every address in `RPi5/Board.lean` against the BCM2712 datasheet. Document verification results as comments at each constant. | `Platform/RPi5/Board.lean` | Medium |
+| S6-F | U-M20 | Create device tree abstraction — define `DeviceTree` structure with parsed board configuration, so RPi5 addresses can be loaded from a device tree blob rather than hardcoded. (Preparation only — actual DT parsing is future work.) | `Platform/RPi5/Board.lean` or new file | Medium |
+| S6-G | — | RPi5 board constant validation — cross-reference every address in `RPi5/Board.lean` against the BCM2712 datasheet. Document verification results as comments at each constant. | `Platform/RPi5/Board.lean` | Medium |
 
 ---
 
@@ -481,22 +496,25 @@ files synchronized. Zero `sorry`/`axiom`. Website link manifest verified.
 | Phase | Version | Sub-tasks | Estimated Complexity |
 |-------|---------|-----------|---------------------|
 | S1 — Security & Rust | v0.19.0 | 14 | Medium |
-| S2 — Test Hardening | v0.19.1 | 10 | Medium |
-| S3 — Proof Surface Closure | v0.19.2 | 14 | Large |
+| S2 — Test Hardening | v0.19.1 | 10 | Medium–Large |
+| S3 — Proof Surface Closure | v0.19.2 | 14 (1 stretch) | Large |
 | S4 — Model Fidelity | v0.19.3 | 13 | Medium |
-| S5 — API Cleanup & Platform | v0.19.4 | 10 | Medium–Large |
-| S6 — Hardware Preparation | v0.19.5 | 8 | Medium |
+| S5 — API Cleanup & Platform | v0.19.4 | 9 | Medium |
+| S6 — Hardware Preparation | v0.19.5 | 7 | Medium |
 | S7 — Documentation & Polish | v0.19.6 | 14 | Small–Medium |
-| **Total** | | **83** | |
+| **Total** | | **81** (+ 1 stretch) | |
 
 ### Finding Coverage
 
-| Severity | Total Found | Addressed in WS-S | Deferred | Coverage |
-|----------|-------------|-------------------|----------|----------|
+| Severity | Total (deduplicated) | Addressed in WS-S | Deferred | Coverage |
+|----------|---------------------|-------------------|----------|----------|
 | High | 5 | 5 | 0 | 100% |
-| Medium | 30 | 30 | 0 | 100% |
+| Medium | 29 | 29 | 0 | 100% |
 | Low | 30 | 19 | 11 | 63% |
 | Info | 80+ | 0 (observational) | 80+ | N/A |
+
+Note: U-M07 (Badge.ofNat) was deduplicated with U-H1 (same finding). Original
+combined count was 30 Medium; after deduplication, 29 unique Medium findings.
 
 ### Files Impacted by Phase
 
@@ -530,8 +548,25 @@ files synchronized. Zero `sorry`/`axiom`. Website link manifest verified.
 | Risk | Mitigation |
 |------|------------|
 | S3 (proof surface) takes longer than estimated | S4 and S5 can start in parallel for non-overlapping files |
-| S6 (hardware prep) reveals new model–hardware gaps | S6 includes a validation sub-task (S6-H) that discovers gaps early |
+| S6 (hardware prep) reveals new model–hardware gaps | S6 includes a validation sub-task (S6-G) that discovers gaps early |
 | Documentation drift during multi-phase work | S7 is dedicated to synchronization; intermediate phases include doc stubs |
+
+### Codebase Validation Notes
+
+The following assumptions were validated against the actual codebase before
+finalizing the plan. Results informed scope estimates and task descriptions:
+
+| Assumption | Validated | Impact on Plan |
+|-----------|-----------|---------------|
+| `Badge.ofNat` has remaining callers | Zero callers (all migrated in WS-R6) | S1-A downgraded from Small → Trivial |
+| `toString`-based test assertions | 99 `reprStr` occurrences across 4 files (78 in NegativeStateSuite alone) | S2-A upgraded from Medium → Large |
+| `MemoryRegion.wellFormed` is Bool | Confirmed: `Bool` function at Machine.lean:337 | S1-B validated |
+| TLB flush wrappers exist (WS-R7) | Confirmed: `vspaceMapPageWithFlush`/`vspaceUnmapPageWithFlush` at VSpace.lean:110-137 with preservation proofs | S6-A/B revised to audit+migrate, not create |
+| Deprecated `api*` test usage | Only 2 remaining call sites (OperationChainSuite:358, NegativeStateSuite:1519) | S2-J downgraded from Medium → Small |
+| `sele4n-abi` has `#[deny(unsafe_code)]` | NOT present; crate contains the `svc #0` unsafe block | S1-H revised to use per-function `#[allow]` |
+| `CDT.removeEdge` exists | NOT present — confirmed absent | S3-C validated |
+| `KernelM` has `MonadStateOf`/`MonadExceptOf` | NOT present — custom helpers only | S1-K validated |
+| `native_decide` count | 24 occurrences across 7 files (9 in Machine.lean for isPowerOfTwo) | S1-I validated |
 
 ---
 
@@ -588,7 +623,7 @@ WS-S is complete when all of the following hold:
 1. **All 5 High findings remediated** — `Badge.ofNat` removed, `MemoryRegion`
    uses refinement type, `ThreadId.toObjId` trust boundary documented, test
    assertions structural, fixture management documented.
-2. **All 30 Medium findings remediated** — each finding either fixed in code/
+2. **All 29 Medium findings remediated** — each finding either fixed in code/
    proof or documented with explicit rationale (for design-intentional findings
    like seL4 badge semantics).
 3. **19 selected Low findings remediated** — per sub-task specifications.
@@ -621,7 +656,7 @@ This matrix maps each unified finding to its phase, sub-task, and source audit.
 | U-M04 | S4 | S4-A | M-04 | — |
 | U-M05 | S5 | S5-A/B/C | M-05 | — |
 | U-M06 | S5 | S5-D/E | M-06 | — |
-| U-M07 | S1 | S1-A | M-07 | F-H2 |
+| ~~U-M07~~ | — | — | M-07 | F-H2 | (deduplicated → U-H1) |
 | U-M08 | S3 | S3-E | M-08 | — |
 | U-M09 | S3 | S3-F/G | M-09 | — |
 | U-M10 | S3 | (deferred note) | — | S-M3 |
