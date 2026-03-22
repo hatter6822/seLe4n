@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-phase-r6-correctness-w27Di",
-      "commit_sha": "94cd5e78d34323cb350d7b01d6758536ff07c3c7",
-      "tree_sha": "1ac7dcf56321e271b48e674e6d96d760533e5d2d",
-      "committed_at_utc": "2026-03-22T01:51:23+00:00"
+      "commit_sha": "4084c5fda8f271b65d0c25beb67e945272a89ee6",
+      "tree_sha": "b40ba1a683f72cc4648fbc5f83632b60287bcc11",
+      "committed_at_utc": "2026-03-22T01:54:17+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5856840a9cd715a3c6c799a030f79531b6310d3885b96096bc30d03cb3438a84"
+    "source_digest": "58011c5a1ecf19f2646a1027e818ecf4181ea5a5c636253ab5e02b79a18f40c1"
   },
   "summary": {
     "module_count": 108,
@@ -27,7 +27,7 @@
     "version": "0.18.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 98,
-    "production_loc": 54970,
+    "production_loc": 55224,
     "test_files": 10,
     "test_loc": 7309,
     "proved_theorem_lemma_decls": 1675,
@@ -13773,25 +13773,31 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerPriorityMatch",
-          "line": 2446,
-          "called": []
+          "line": 2447,
+          "called": [
+            "chooseThread_preserves_state"
+          ]
         },
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerPriorityMatch",
-          "line": 2458,
-          "called": []
+          "line": 2577,
+          "called": [
+            "schedule_preserves_schedulerPriorityMatch"
+          ]
         },
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerPriorityMatch",
-          "line": 2470,
-          "called": []
+          "line": 2643,
+          "called": [
+            "schedule_preserves_schedulerPriorityMatch"
+          ]
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundleFull",
-          "line": 2486,
+          "line": 2741,
           "called": [
             "schedule_preserves_contextMatchesCurrent",
             "schedule_preserves_currentTimeSlicePositive",
@@ -13805,7 +13811,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundleFull",
-          "line": 2508,
+          "line": 2762,
           "called": [
             "handleYield_preserves_contextMatchesCurrent",
             "handleYield_preserves_currentTimeSlicePositive",
@@ -13819,7 +13825,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundleFull",
-          "line": 2529,
+          "line": 2783,
           "called": [
             "timerTick_preserves_contextMatchesCurrent",
             "timerTick_preserves_currentTimeSlicePositive",
