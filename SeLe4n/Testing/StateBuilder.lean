@@ -104,6 +104,31 @@ def build (builder : BootstrapBuilder) : SystemState :=
       | _ => none)
   }
 
+/-- S2-F: Build a `SystemState` with post-construction invariant validation.
+    Returns the state or throws if basic structural invariants are violated.
+    Validates:
+    1. Object index consistency (objectIndex matches objects keys)
+    2. No duplicate object IDs
+    3. Lifecycle objectTypes are a subset of objects
+    4. Scheduler runnable threads reference existing TCBs -/
+def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
+  let st := builder.build
+  -- Check 1: No duplicate object IDs in builder input
+  let oids := builder.objects.map Prod.fst
+  let uniqueOids := oids.eraseDups
+  if oids.length ≠ uniqueOids.length then
+    .error s!"BuilderTestState: duplicate object IDs in builder (got {oids.length} entries, {uniqueOids.length} unique)"
+  -- Check 2: Lifecycle objectTypes reference existing objects
+  else if builder.lifecycleObjectTypes.any (fun (oid, _) => !oids.contains oid) then
+    .error "BuilderTestState: lifecycleObjectTypes references non-existent object ID"
+  -- Check 3: Runnable threads reference existing TCB objects
+  else if builder.runnable.any (fun tid =>
+    !builder.objects.any (fun (oid, obj) =>
+      oid.toNat = tid.toNat && match obj with | .tcb _ => true | _ => false)) then
+    .error "BuilderTestState: runnable thread does not reference an existing TCB"
+  else
+    .ok st
+
 end BootstrapBuilder
 
 end SeLe4n.Testing

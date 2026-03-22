@@ -97,8 +97,9 @@ Badge routing chain (H-03, WS-F5/D1):
 - End-to-end: `badge_notification_routing_consistent` (word-bounded)
 - Merge property: `badge_merge_idempotent` (via `Badge.bor`)
 - Word-bounding: `Badge.ofNatMasked_valid`, `Badge.bor_valid`, `Badge.bor_comm`, `Badge.ofNatMasked_lt_eq` (R6-B/L-01)
-- **R6-B**: `Badge.ofNat` deprecated in favor of `Badge.ofNatMasked` (64-bit word masking)
+- **R6-B/S1-A**: `Badge.ofNat` removed entirely (WS-S/S1-A); all callers use `Badge.ofNatMasked`
 - Access rights: `AccessRightSet.ofList_comm` (order-independence), `rightsSubset_sound`
+- **S1-G**: `AccessRightSet.valid` (bits < 2^5), `ofNat` masked constructor, `ofNat_valid`, `ofNat_idempotent`
 
 **WS-M audit findings** (v0.16.13 — Phase 1 at v0.16.14; Phase 2 at v0.16.15; Phase 3 at v0.16.17; Phase 4 at v0.16.18; Phase 5 at v0.16.19–v0.17.0 — **PORTFOLIO COMPLETE**):
 
@@ -1895,3 +1896,28 @@ pipeline:
 - **TPH-010**: Commutativity — builder mutation→freeze ≈ freeze→frozen mutation.
 - **TPH-012**: Pre-allocated slot retype (FrozenMap.set on existing key).
 - **TPH-014**: RunQueue operations (schedule selection, yield, no-eligible).
+
+## WS-S Phase S1 — Trust Boundaries (v0.19.0)
+
+Phase S1 addressed all 5 High-severity findings and Rust type-safety defects
+from two comprehensive v0.18.7 audits. Key trust boundary documentation:
+
+- **ThreadId.toObjId identity mapping** (`Prelude.lean`): `toObjId` performs no
+  validation — callers must verify the returned `ObjId` references a TCB by
+  pattern-matching `.tcb tcb` after lookup. The checked variant `toObjIdChecked`
+  rejects sentinel values. See `ThreadId.toObjId_injective` for injectivity proof.
+- **Badge forging via Mint** (`Capability/Operations.lean`): Mint authority on
+  an endpoint allows minting derived capabilities with arbitrary badge values.
+  Badges are opaque identifiers, not cryptographic authenticators. Authentication
+  relies on CDT tracking.
+- **MemoryRegion.wellFormed** (`Machine.lean`): Converted from `Bool` runtime
+  check to `Prop` proof obligation with `Decidable` instance, ensuring malformed
+  regions cannot be constructed without explicit proof.
+- **AccessRightSet.valid** (`Model/Object/Types.lean`): `bits < 2^5` predicate
+  enforced via `ofNat` masking constructor. Proofs: `ofNat_valid`, `ofNat_idempotent`.
+- **Rust Cap type safety** (`rust/sele4n-sys/src/cap.rs`): `Cap::restrict()` and
+  `Cap::to_read_only()` return `Result<_, CapError>` (no panics). `Restricted::RIGHTS`
+  fixed to store actual runtime rights. `#![deny(unsafe_code)]` enforced on `sele4n-abi`.
+
+See [`docs/spec/SELE4N_SPEC.md` §10.1](../spec/SELE4N_SPEC.md) for the canonical
+trust boundary specification.

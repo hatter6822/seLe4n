@@ -1,3 +1,49 @@
+## [0.19.0] — WS-S Phase S1: Security Boundary & Rust Type Safety
+
+- Begin WS-S workstream (Pre-Benchmark Strengthening), addressing findings from
+  two comprehensive v0.18.7 audits (115+ combined findings).
+- S1-A (U-H1): Removed deprecated `Badge.ofNat` — zero callers remained after
+  WS-R6 migration. All badge construction uses `Badge.ofNatMasked`.
+- S1-B (U-H2): Converted `MemoryRegion.wellFormed` from `Bool` to `Prop` with
+  `Decidable` instance for decide/native_decide compatibility.
+- S1-C (U-H3): Documented `ThreadId.toObjId` identity mapping trust boundary.
+- S1-D/E (U-M01): Converted `Cap::restrict()` and `Cap::to_read_only()` from
+  panic to `Result<_, CapError>` with new `CapError` error type.
+- S1-F (U-M02): Fixed `Restricted::RIGHTS` semantic bug — `restricted_rights`
+  field in `Cap` struct now stores actual runtime rights.
+- S1-G (U-L05): Added `AccessRightSet.valid` predicate (bits < 2^5), `ofNat`
+  masked constructor with validity proof and idempotence theorem.
+- S1-H (U-L09): Added `#![deny(unsafe_code)]` to `sele4n-abi` with targeted
+  `#[allow(unsafe_code)]` on the single `raw_syscall` function.
+- S1-I (U-M30): Migrated 9 `isPowerOfTwo` proofs from `native_decide` to
+  `decide`, eliminating TCB dependency on compiled Lean code.
+- S1-J (U-M14): Documented `BEq RegisterFile` non-lawfulness, added
+  `RegisterFile.ext` extensionality lemma.
+- S1-K (U-M16): Added `MonadStateOf` and `MonadExceptOf` instances for `KernelM`.
+- S1-M (U-M22): Documented badge-forging implications of Mint right.
+- S1-N (U-M13): Documented `machineWordBounded` complete coverage.
+- Zero sorry/axiom, all tests pass.
+
+## [0.19.1] — WS-S Phase S2: Test Hardening
+
+- S2-A (U-H4): Documented `reprStr` usage in determinism checks (types lack
+  `BEq` due to function-typed fields).
+- S2-D (U-H5): Documented golden-output fixture management in DEVELOPMENT.md.
+- S2-E (U-H5): Enhanced trace fixture diff reporting in test_tier2_trace.sh.
+- S2-F (U-L11): Added `BootstrapBuilder.buildValidated` with invariant checks.
+- S2-J (U-M05): Migrated 2 deprecated `api*` wrapper calls to `syscallInvoke`.
+- Zero sorry/axiom, all tests pass.
+
+## [0.19.2] — WS-S Phase S3 (partial): Proof Surface Closure
+
+- S3-A (U-M03): Defined `cdtMapsConsistent` invariant with empty-CDT proof.
+- S3-C (U-L03): Defined `removeEdge` for `CapDerivationTree`.
+- S3-K (U-M28): Added `RHTable.loadFactorBounded` predicate documenting 75%
+  load factor threshold.
+- S4-A (U-M04): Added `objectIndexBounded` advisory predicate with growth analysis.
+- Documentation updates across spec, gitbook, workstream history.
+- Zero sorry/axiom, all tests pass.
+
 ## [0.18.7] — WS-R8 Infrastructure & CI Hardening
 
 - Completed Phase 8 (WS-R8) of the Comprehensive Audit Remediation workstream.

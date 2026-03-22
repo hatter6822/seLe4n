@@ -55,9 +55,9 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネル (microkern
 |------|-----|
 | **バージョン** | `0.18.6` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 98 ファイルにわたる 55,499 行 |
-| **テスト Lean コード行数** | 10 テストスイートにわたる 7,309 行 |
-| **証明済み宣言数** | 1,686 件の定理 (theorem) / 補題 (lemma) 宣言（sorry/axiom ゼロ） |
+| **本番 Lean コード行数** | 98 ファイルにわたる 55,732 行 |
+| **テスト Lean コード行数** | 10 テストスイートにわたる 7,317 行 |
+| **証明済み宣言数** | 1,692 件の定理 (theorem) / 補題 (lemma) 宣言（sorry/axiom ゼロ） |
 | **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |
 | **最新監査** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — カーネル全体 + Rust コードベースのプレリリース監査 |
 | **コードベースマップ** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 機械可読な宣言インベントリ |

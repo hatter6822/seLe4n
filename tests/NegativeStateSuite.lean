@@ -1451,8 +1451,7 @@ private def runWSH13Checks : IO Unit := do
 
   IO.println "all WS-H13 service negative checks passed"
 
--- R1-D: Suppress deprecation warnings for deprecated api* wrappers exercised in this test.
-set_option linter.deprecated false in
+-- S2-J: Migrated from deprecated api* wrappers to syscallInvoke path.
 /-- WS-H15e: Negative tests for syscall capability-checking wrappers. -/
 private def runWSH15Checks : IO Unit := do
   -- Build a state with a CNode (radixWidth=4, 16 slots) with known capabilities.
@@ -1516,10 +1515,12 @@ private def runWSH15Checks : IO Unit := do
   | .error err =>
       throw <| IO.userError s!"H15 syscallLookupCap: expected success, got {reprStr err}"
 
-  -- H15-NEG-05: apiEndpointSend through gated path with insufficient rights
+  -- H15-NEG-05: S2-J: Replaced deprecated apiEndpointSend with syscallInvoke path
   let msg : IpcMessage := { registers := #[42], caps := #[], badge := none }
-  expectError "H15 apiEndpointSend insufficient rights"
-    (SeLe4n.Kernel.apiEndpointSend wrongRightGate epId msg st)
+  expectError "H15 syscall endpoint send insufficient rights"
+    (SeLe4n.Kernel.syscallInvoke { wrongRightGate with requiredRight := .write } (fun cap =>
+      if cap.target ≠ .object epId then fun _ => .error .invalidCapability
+      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId msg) st)
     .illegalAuthority
 
   -- H15-NEG-06: syscallLookupCap with zero depth → illegalState
@@ -2125,6 +2126,11 @@ def runWSKGChecks : IO Unit := do
   let detRegs : SeLe4n.RegisterFile := default
   let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
   let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
+  -- S2-A: These determinism checks use reprStr comparison because the result
+  -- types (Except KernelError SyscallDecodeResult, etc.) contain function-typed
+  -- fields that prevent BEq derivation. For determinism verification of pure
+  -- functions called with identical inputs, reprStr comparison is semantically
+  -- equivalent to structural equality.
   unless reprStr r1 == reprStr r2 do
     throw <| IO.userError "K-G-DET-01: decodeSyscallArgs not deterministic"
   match r1 with

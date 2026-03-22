@@ -14,7 +14,10 @@
 //! This crate contains exactly **one** `unsafe` block: the inline `svc #0`
 //! instruction in `trap::raw_syscall`. All other code is safe Rust.
 
+// S1-H: Deny unsafe code crate-wide. The single `svc #0` instruction in
+// `trap::raw_syscall` has a targeted `#[allow(unsafe_code)]`.
 #![no_std]
+#![deny(unsafe_code)]
 
 #[cfg(feature = "std")]
 extern crate std;

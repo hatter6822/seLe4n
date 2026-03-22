@@ -108,6 +108,49 @@ else
   while IFS= read -r missing_line || [[ -n "${missing_line}" ]]; do
     log_section "TRACE" "  - ${missing_line}"
   done < "${MISSING_REPORT}"
+  # S2-E: Show a fixture diff to make review easier
+  log_section "TRACE" "--- Fixture diff (expected fragments vs actual trace) ---"
+  # Extract expected fragments for line-by-line comparison
+  EXPECTED_FRAGMENTS="$(mktemp)"
+  while IFS= read -r fline || [[ -n "${fline}" ]]; do
+    [[ -z "${fline}" ]] && continue
+    [[ "${fline}" =~ ^[[:space:]]*# ]] && continue
+    if [[ "${fline}" == *"|"* ]]; then
+      raw_frag="$(printf '%s' "${fline}" | cut -d'|' -f3-)"
+      raw_frag="${raw_frag#"${raw_frag%%[![:space:]]*}"}"
+      raw_frag="${raw_frag%"${raw_frag##*[![:space:]]}"}"
+      printf '%s\n' "${raw_frag}"
+    else
+      printf '%s\n' "${fline}"
+    fi
+  done < "${TRACE_FIXTURE}" > "${EXPECTED_FRAGMENTS}"
+  # Show lines in expected but not in actual (removed/changed)
+  while IFS= read -r eline || [[ -n "${eline}" ]]; do
+    if ! grep -Fq "${eline}" "${TRACE_OUTPUT}" 2>/dev/null; then
+      log_section "TRACE" "  MISSING: ${eline}"
+    fi
+  done < "${EXPECTED_FRAGMENTS}"
+  # Show lines in actual that don't match any expected fragment (new/changed)
+  NEW_LINES=0
+  while IFS= read -r aline || [[ -n "${aline}" ]]; do
+    found=0
+    while IFS= read -r eline || [[ -n "${eline}" ]]; do
+      if [[ "${aline}" == *"${eline}"* ]]; then
+        found=1
+        break
+      fi
+    done < "${EXPECTED_FRAGMENTS}"
+    if [[ "${found}" -eq 0 && -n "${aline}" ]]; then
+      if [[ "${NEW_LINES}" -lt 20 ]]; then
+        log_section "TRACE" "  NEW:     ${aline}"
+      fi
+      NEW_LINES=$((NEW_LINES + 1))
+    fi
+  done < "${TRACE_OUTPUT}"
+  if [[ "${NEW_LINES}" -gt 20 ]]; then
+    log_section "TRACE" "  ... and $((NEW_LINES - 20)) more new lines (run diff manually for full output)"
+  fi
+  rm -f "${EXPECTED_FRAGMENTS}"
   log_section "TRACE" "If behavior changed intentionally, update ${TRACE_FIXTURE} in this PR and explain why."
 fi
 

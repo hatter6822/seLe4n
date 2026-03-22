@@ -1748,6 +1748,66 @@ theorem addEdge_preserves_edgeWellFounded_noParent
         rwa [← this]
   · exact ⟨e, hOld, hep, hec⟩
 
+-- ============================================================================
+-- S3-A: CDT maps consistency invariant
+-- ============================================================================
+
+/-- S3-A/U-M03: The CDT's `childMap` and `parentMap` are consistent with `edges`.
+    For every edge `(p, c)` in the edge list, `c` appears in `childMap[p]` and
+    `parentMap[c] = some p`. This ensures the O(1) lookup indices are faithful
+    to the proof-anchor edge list. -/
+def cdtMapsConsistent (cdt : CapDerivationTree) : Prop :=
+  -- Forward: every edge is reflected in childMap and parentMap
+  (∀ e ∈ cdt.edges, e.child ∈ (cdt.childMap.get? e.parent).getD [] ∧
+                     cdt.parentMap[e.child]? = some e.parent) ∧
+  -- Reverse childMap: every child in childMap has a corresponding edge
+  (∀ p children, cdt.childMap.get? p = some children →
+    ∀ c ∈ children, ∃ e ∈ cdt.edges, e.parent = p ∧ e.child = c) ∧
+  -- Reverse parentMap: every entry in parentMap has a corresponding edge
+  (∀ c p, cdt.parentMap[c]? = some p →
+    ∃ e ∈ cdt.edges, e.parent = p ∧ e.child = c)
+
+/-- Helper: default RHTable lookup returns none. -/
+private theorem rhtable_default_get?_none [BEq α] [Hashable α] (k : α) :
+    (default : SeLe4n.Kernel.RobinHood.RHTable α β).get? k = none :=
+  SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) k
+
+/-- S3-A: The empty CDT trivially satisfies maps consistency.
+    All three conjuncts are vacuously true since the empty CDT has no edges,
+    and both childMap and parentMap are empty tables with no entries. -/
+theorem empty_cdtMapsConsistent : CapDerivationTree.empty.cdtMapsConsistent := by
+  constructor
+  · intro e hMem
+    simp only [CapDerivationTree.empty] at hMem
+    nomatch hMem
+  constructor
+  · intro p children h c _
+    have hNone : CapDerivationTree.empty.childMap.get? p = none := by
+      show (default : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId)).get? p = none
+      exact rhtable_default_get?_none p
+    rw [hNone] at h; exact absurd h (by simp)
+  · intro c p h
+    have hNone : CapDerivationTree.empty.parentMap.get? c = none := by
+      show (default : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId).get? c = none
+      exact rhtable_default_get?_none c
+    -- h uses [c]? which is getElem?, which delegates to get?
+    have hChange : CapDerivationTree.empty.parentMap[c]? = CapDerivationTree.empty.parentMap.get? c := rfl
+    rw [hChange, hNone] at h; exact absurd h (by simp)
+
+/-- S3-C/U-L03: Remove a specific edge from the CDT. Removes from `edges`,
+    updates `childMap` (removes child from parent's list), and erases the
+    child's `parentMap` entry. Exposed only through `revokeTargetLocal`. -/
+def removeEdge (cdt : CapDerivationTree) (parent child : CdtNodeId) : CapDerivationTree :=
+  let currentChildren := (cdt.childMap.get? parent).getD []
+  let filteredChildren := currentChildren.filter (· != child)
+  let childMap' := if filteredChildren.isEmpty then
+    cdt.childMap.erase parent
+  else
+    cdt.childMap.insert parent filteredChildren
+  { edges := cdt.edges.filter (fun e => ¬(e.parent = parent ∧ e.child = child)),
+    childMap := childMap',
+    parentMap := cdt.parentMap.erase child }
+
 end CapDerivationTree
 
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is

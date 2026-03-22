@@ -89,7 +89,15 @@ retrieve a `KernelObject` via `st.objects tid.toObjId` immediately pattern-match
 on `.tcb tcb`, so invalid IDs are caught deterministically at use site. This
 avoids carrying an extra proof obligation through every intermediate function.
 See `ThreadId.toObjId_injective` for the injectivity proof that ensures two
-distinct thread IDs cannot alias the same object. -/
+distinct thread IDs cannot alias the same object.
+
+**S1-C: Trust boundary documentation.** `ThreadId.toObjId` is an identity
+mapping (`ObjId.ofNat id.toNat`) — it performs no validation, bounds checking,
+or type verification. Callers **must** verify the returned `ObjId` references a
+TCB by pattern-matching on `.tcb tcb` after the object store lookup. Failure to
+check the object kind after `toObjId` would allow a thread ID to alias a non-TCB
+object, violating type safety. The checked variant `toObjIdChecked` additionally
+rejects the sentinel value (ID 0). -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
 instance : ToString ThreadId where
@@ -386,12 +394,6 @@ namespace Badge
     silent word-truncation semantics on 64-bit platforms. -/
 @[inline] def ofNatMasked (n : Nat) : Badge := ⟨n % machineWordMax⟩
 
-/-- Constructor helper — **deprecated**: use `ofNatMasked` for word-bounded
-    badge construction. Raw `ofNat` wraps an unbounded `Nat` without masking
-    to 64-bit word size, which is incorrect on hardware (R6-B/L-01). -/
-@[deprecated Badge.ofNatMasked (since := "0.18.5"), inline]
-def ofNat (n : Nat) : Badge := ⟨n⟩
-
 /-- WS-F5/D1b: Bitwise OR combiner for badge accumulation. Masks the result
     to machine word size, matching seL4 notification signal semantics. -/
 @[inline] def bor (a b : Badge) : Badge := ofNatMasked (a.val ||| b.val)
@@ -627,6 +629,29 @@ instance instLawfulMonad {σ ε : Type} : LawfulMonad (KernelM σ ε) where
   bind_assoc m f g := bind_assoc_law m f g
 
 end KernelM
+
+-- ============================================================================
+-- S1-K: MonadStateOf and MonadExceptOf instances for KernelM
+-- ============================================================================
+
+/-- S1-K: `MonadStateOf` instance for `KernelM`, enabling generic monadic
+    state operations (`MonadStateOf.get`, `MonadStateOf.set`, `MonadStateOf.modifyGet`).
+    This allows `KernelM` to compose with generic monadic combinators that
+    require state access through the typeclass interface. -/
+instance {ε : Type} : MonadStateOf σ (KernelM σ ε) where
+  get := fun s => .ok (s, s)
+  set s := fun _ => .ok ((), s)
+  modifyGet f := fun s => let (a, s') := f s; .ok (a, s')
+
+/-- S1-K: `MonadExceptOf` instance for `KernelM`, enabling generic monadic
+    error handling (`MonadExceptOf.throw`, `MonadExceptOf.tryCatch`).
+    This allows `KernelM` to compose with generic error-handling combinators. -/
+instance {σ : Type} : MonadExceptOf ε (KernelM σ ε) where
+  throw err := fun _ => .error err
+  tryCatch m handler := fun s =>
+    match m s with
+    | .ok res => .ok res
+    | .error err => handler err s
 
 -- ============================================================================
 -- WS-G2: LawfulHashable instances for HashMap/HashSet proof support

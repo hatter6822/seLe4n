@@ -303,8 +303,7 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
      | _ => false)
   assertInvariants "chain8: interleaved send/receive queue integrity" st10
 
--- R1-D: Suppress deprecation warnings for deprecated api* wrappers exercised in this test.
-set_option linter.deprecated false in
+-- S2-J: Migrated from deprecated apiCspaceMint to syscallInvoke path.
 private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   let targetId : SeLe4n.ObjId := ⟨2900⟩
   let rootCNode : SeLe4n.ObjId := ⟨2901⟩
@@ -355,9 +354,12 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   expectError "chain9: grandchild syscall gate has no grant right"
     (SeLe4n.Kernel.syscallLookupCap noGrantGate st2)
     .illegalAuthority
-  expectError "chain9: grandchild cannot apiCspaceMint without grant"
-    (SeLe4n.Kernel.apiCspaceMint noGrantGate grandSlot { cnode := grandCNode, slot := ⟨1⟩ }
-      (AccessRightSet.ofList [.read]) none st2)
+  -- S2-J: Replaced deprecated apiCspaceMint with equivalent syscallInvoke path
+  expectError "chain9: grandchild cannot mint via syscall gate without grant"
+    (SeLe4n.Kernel.syscallInvoke { noGrantGate with requiredRight := .grant } (fun cap =>
+      if cap.target ≠ .object grandSlot.cnode then fun _ => .error .invalidCapability
+      else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := ⟨1⟩ }
+        (AccessRightSet.ofList [.read]) none) st2)
     .illegalAuthority
 
   let (_, st3) ← expectOkState "chain9: revoke root cascades descendants"

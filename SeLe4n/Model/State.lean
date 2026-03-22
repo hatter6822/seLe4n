@@ -155,7 +155,13 @@ def adapterFlushTlbByVAddr (tlb : TlbState) (asid : SeLe4n.ASID) (vaddr : SeLe4n
 structure SystemState where
   machine : SeLe4n.MachineState
   /-- Q2-C: Object store backed by `RHTable` (verified Robin Hood hash table)
-      for O(1) amortized lookup with machine-checked invariants. -/
+      for O(1) amortized lookup with machine-checked invariants.
+
+      S4-J: All `objects` uses in production kernel code are lookup-only
+      (`objects[oid]?`, `objects.get?`). No operation iterates over the
+      object store in an order-dependent manner. This is critical because
+      `RHTable` iteration order (via `fold`/`toList`) depends on internal
+      slot layout and is not deterministic across resize operations. -/
   objects : RHTable SeLe4n.ObjId KernelObject
   /-- L-05/WS-E6: Monotonic append-only index of all object IDs that have been
       stored. This list is intentionally never pruned — `storeObject` prepends
@@ -172,7 +178,13 @@ structure SystemState where
       **Migration path:** If bounded-memory semantics or garbage collection are
       added in a future workstream, `objectIndex` can be replaced by a data
       structure supporting removal while preserving the monotonicity invariant
-      for the live-object subset. -/
+      for the live-object subset.
+
+      **S4-A: Growth analysis.** For a typical RPi5 workload with `maxObjects =
+      65536`, the objectIndex list consumes at most `65536 × sizeof(ObjId)` bytes.
+      At 8 bytes per ObjId (Nat on 64-bit), this is 512 KB — well within the
+      RPi5's 8 GB RAM budget. The advisory predicate `objectIndexBounded` below
+      documents the expected bound. -/
   objectIndex : List SeLe4n.ObjId
   /-- WS-G2/F-P10: Shadow hash set for O(1) objectIndex membership checks.
       Maintained in parallel with `objectIndex` — `storeObject` inserts into
@@ -1010,6 +1022,21 @@ theorem ownedSlots_eq_nil_of_lookupCNode_eq_none
   simp [ownedSlots, hNone]
 
 end SystemState
+
+-- ============================================================================
+-- S4-A/S4-B: Object capacity advisory bounds
+-- ============================================================================
+
+/-- S4-A: Advisory maximum object count for RPi5 platform (65536).
+    This is not enforced in the abstract model but serves as documentation
+    of the expected object capacity for typical workloads. -/
+def maxObjects : Nat := 65536
+
+/-- S4-A: Advisory predicate — the object index size is bounded by `maxObjects`.
+    Not enforced as a kernel invariant since the abstract model uses unbounded
+    `Nat`; this is a documentation predicate for hardware-binding readiness. -/
+def objectIndexBounded (st : SystemState) : Prop :=
+  st.objectIndex.length ≤ maxObjects
 
 theorem storeObject_preserves_objectTypeMetadataConsistent
     (st st' : SystemState)
