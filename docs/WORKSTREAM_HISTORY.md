@@ -132,19 +132,23 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   `api*` wrappers (S2-J, U-M05). Zero sorry/axiom.
 - **S3 (v0.19.2) — COMPLETE**: Proof Surface Closure (14 sub-tasks including
   1 stretch goal deferred). CDT maps consistency invariant with state-level
-  `cdtMapsConsistent` predicate and extended capability bundle
-  (`capabilityInvariantBundleFull`) (S3-A/B/C/D). `scheduleDomain` full-bundle
+  `cdtMapsConsistent` predicate, extended capability bundle
+  (`capabilityInvariantBundleFull`), transfer theorems (`cdtMapsConsistent_of_cdt_eq`,
+  `_of_storeObject`, `_of_detachSlotFromCdt`, `_of_storeCapabilityRef`), and
+  **5 operation preservation theorems** (`cspaceMint_preserves_cdtMapsConsistent`,
+  `cspaceDeleteSlot_preserves_`, `cspaceCopy_preserves_`, `cspaceMove_preserves_`,
+  `cspaceRevoke_preserves_`) (S3-A/B/C/D). `scheduleDomain` full-bundle
   preservation composed from `switchDomain` + `schedule` (S3-E).
   `remove_preserves_wellFormed` for RunQueue with three private helper theorems
   (S3-F). `schedule_preserves_runQueueWellFormed` using dequeue path (S3-G).
   SecurityLabel lattice antisymmetry + `Decidable` instance + compile-time
   witness (S3-H). Bridge signature witness for service policy (S3-I).
   Parameterized `crossSubsystemInvariant` via list-folded composition (S3-J).
-  RobinHood load factor bound and resize theorem (S3-K). Frozen ops
-  exhaustiveness check with `frozenOpCoverage` and count verification (S3-L).
-  Semi-automated dependency graph with subsystem module registry and BFS fuel
-  bounds (S3-N). Stretch goal S3-M (NI trace indexing) deferred to WS-T.
-  Zero sorry/axiom.
+  RobinHood load factor bound, resize theorem, and `insert_fails_at_capacity`
+  alias (S3-K). Frozen ops exhaustiveness check with `frozenOpCoverage` and
+  count verification (S3-L). Semi-automated dependency graph with subsystem
+  module registry, BFS fuel bounds, and 6-module cross-reference (S3-N).
+  Stretch goal S3-M (NI trace indexing) deferred to WS-T. Zero sorry/axiom.
 - **S4 (v0.19.3) — IN PROGRESS**: Model Fidelity & Type Safety. Added
   `objectIndexBounded` advisory predicate and documentation.
 - **S5–S7**: Pending.

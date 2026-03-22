@@ -76,6 +76,17 @@ Bundle level:
 - `capabilityInvariantBundle` (WS-H4 + WS-H13 + WS-F6/D1: 6-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`, `cspaceDepthConsistent`; 2 tautological predicates removed by WS-F6)
 - `capabilityInvariantBundleWithCdtMaps` (S3-D: base bundle + `cdtMapsConsistent`)
 - `capabilityInvariantBundleFull` (S3-D: base bundle + `cdtMapsConsistent` + `cdtMintCompleteness`)
+
+CDT maps consistency preservation (S3-D):
+
+- `cdtMapsConsistent_of_cdt_eq` — transfer through state changes preserving CDT
+- `cdtMapsConsistent_of_storeObject` — frame through object store
+- `cspaceInsertSlot_preserves_cdtMapsConsistent` — insert preserves (CDT unchanged)
+- `cspaceMint_preserves_cdtMapsConsistent` — mint preserves (via insert)
+- `cspaceDeleteSlot_preserves_cdtMapsConsistent` — delete preserves (CDT unchanged)
+- `cspaceCopy_preserves_cdtMapsConsistent` — copy preserves (postcondition hypothesis, matching `cdtCompleteness`/`cdtAcyclicity` pattern)
+- `cspaceMove_preserves_cdtMapsConsistent` — move preserves (postcondition hypothesis)
+- `cspaceRevoke_preserves_cdtMapsConsistent` — revoke preserves (CDT unchanged)
 - `capabilityInvariantBundle_of_slotUnique` (constructor; requires all CNodes satisfy `slotsUnique` plus WS-H4 components)
 
 Preservation shape:
