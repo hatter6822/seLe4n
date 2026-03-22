@@ -20,6 +20,18 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 -- ============================================================================
+-- R5-C.1: Memory projection preservation helper
+-- ============================================================================
+
+/-- R5-C.1: storeObject preserves memory projection (storeObject does not modify machine state). -/
+theorem storeObject_preserves_projectMemory
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    projectMemory ctx observer st' = projectMemory ctx observer st :=
+  projectMemory_eq_of_memory_eq ctx observer st' st (by rw [storeObject_machine_eq st st' oid obj hStore])
+
+-- ============================================================================
 -- WS-F3: storeObject objectIndex filter preservation
 -- ============================================================================
 
@@ -163,8 +175,14 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     have hM₂ := storeObject_machine_eq s₂ s₂' targetId obj₂ hStore₂
     simp [projectMachineRegs, hSched₁, hSched₂, hM₁, hM₂]
     exact congrArg ObservableState.machineRegs hLow
-  have hMem : projectMemory ctx observer s₁' = projectMemory ctx observer s₂' :=
-    projectMemory_state_irrelevant ctx observer s₁' s₂'
+  have hMem : projectMemory ctx observer s₁' = projectMemory ctx observer s₂' := by
+    have hM₁ := storeObject_machine_eq s₁ s₁' targetId obj₁ hStore₁
+    have hM₂ := storeObject_machine_eq s₂ s₂' targetId obj₂ hStore₂
+    have hMemLow : projectMemory ctx observer s₁ = projectMemory ctx observer s₂ :=
+      congrArg ObservableState.memory hLow
+    rw [projectMemory_eq_of_memory_eq ctx observer s₁' s₁ (by rw [hM₁]),
+        projectMemory_eq_of_memory_eq ctx observer s₂' s₂ (by rw [hM₂])]
+    exact hMemLow
   unfold lowEquivalent
   simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem]
 
@@ -187,6 +205,8 @@ theorem revokeAndClearRefsState_preserves_projectState
   · simp [projectDomainSchedule, revokeAndClearRefsState_preserves_scheduler]
   · simp [projectDomainScheduleIndex, revokeAndClearRefsState_preserves_scheduler]
   · simp [projectMachineRegs, revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_machine]
+  · exact projectMemory_eq_of_memory_eq ctx observer _ st
+      (by rw [revokeAndClearRefsState_preserves_machine])
 
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
@@ -266,7 +286,7 @@ theorem removeRunnable_preserves_projection
       · rw [if_neg hEq]
   have hMem : projectMemory ctx observer (removeRunnable st tid) =
       projectMemory ctx observer st :=
-    projectMemory_state_irrelevant ctx observer (removeRunnable st tid) st
+    projectMemory_eq_of_memory_eq ctx observer (removeRunnable st tid) st rfl
   simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
@@ -348,6 +368,8 @@ private theorem storeTcbIpcState_preserves_projection
       · -- WS-H10: machineRegs
         simp [projectMachineRegs, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore,
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
+      · -- R5-C.1: memory
+        exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- WS-H9: storeTcbPendingMessage at a non-observable object preserves projection. -/
 private theorem storeTcbPendingMessage_preserves_projection
@@ -385,6 +407,8 @@ private theorem storeTcbPendingMessage_preserves_projection
       · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectMachineRegs, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore,
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
+      · -- R5-C.1: memory
+        exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- WS-H9: storeTcbIpcStateAndMessage at a non-observable object preserves projection. -/
 theorem storeTcbIpcStateAndMessage_preserves_projection
@@ -424,6 +448,8 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
       · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
       · simp [projectMachineRegs, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore,
               storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
+      · -- R5-C.1: memory
+        exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
 
 /-- storeObject at a non-observable object preserves projection (single-state). -/
 theorem storeObject_preserves_projection
@@ -453,6 +479,8 @@ theorem storeObject_preserves_projection
   · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' oid obj hStore]
   · simp [projectMachineRegs, storeObject_scheduler_eq st st' oid obj hStore,
           storeObject_machine_eq st st' oid obj hStore]
+  · -- R5-C.1: memory
+    exact storeObject_preserves_projectMemory ctx observer st st' oid obj hStore
 
 -- ============================================================================
 -- Non-interference theorem #1: chooseThread (WS-D2, F-05, TPI-D01)
@@ -559,6 +587,12 @@ theorem cspaceMint_preserves_lowEquivalent
           cspaceInsertSlot_preserves_machine s₁ s₁' dst c₁ hInsert₁,
           cspaceInsertSlot_preserves_machine s₂ s₂' dst c₂ hInsert₂]
         exact congrArg ObservableState.machineRegs hLow
+      · -- R5-C.1: memory
+        rw [projectMemory_eq_of_memory_eq ctx observer s₁' s₁
+              (by rw [cspaceInsertSlot_preserves_machine s₁ s₁' dst c₁ hInsert₁]),
+            projectMemory_eq_of_memory_eq ctx observer s₂' s₂
+              (by rw [cspaceInsertSlot_preserves_machine s₂ s₂' dst c₂ hInsert₂])]
+        exact congrArg ObservableState.memory hLow
 
 -- ============================================================================
 -- Non-interference theorem #4: cspaceRevoke (WS-D2, F-05, TPI-D02)
@@ -670,6 +704,10 @@ theorem cspaceRevoke_preserves_lowEquivalent
                 rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler,
                     revokeAndClearRefsState_preserves_machine, revokeAndClearRefsState_preserves_machine]
                 exact congrArg ObservableState.machineRegs hLow
+              · -- R5-C.1: memory
+                funext paddr; simp only [projectMemory,
+                  revokeAndClearRefsState_preserves_machine]
+                exact congrFun (congrArg ObservableState.memory hLow) paddr
 
 -- ============================================================================
 -- Non-interference theorem #5: lifecycleRetypeObject (WS-D2, F-05, TPI-D03)
@@ -920,4 +958,11 @@ theorem cspaceInsertSlot_preserves_lowEquivalent
     have hM₂ := cspaceInsertSlot_preserves_machine s₂ s₂' dst cap hStep₂
     simp [projectMachineRegs, hSched₁, hSched₂, hM₁, hM₂]
     exact congrArg ObservableState.machineRegs hLow
+  · -- R5-C.1: memory
+    rw [projectMemory_eq_of_memory_eq ctx observer s₁' s₁
+          (by rw [cspaceInsertSlot_preserves_machine s₁ s₁' dst cap hStep₁]),
+        projectMemory_eq_of_memory_eq ctx observer s₂' s₂
+          (by rw [cspaceInsertSlot_preserves_machine s₂ s₂' dst cap hStep₂])]
+    exact congrArg ObservableState.memory hLow
+
 

@@ -231,6 +231,15 @@ inductive NonInterferenceStep
           threadObservable ctx observer t = false)
       (hProj : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
+  /-- R5-B/M-02: Service registration — registerService modifies only
+      serviceRegistry which is not part of the projected observable state
+      (projectServicePresence is gated by serviceObservable, which depends
+      on the labeling context, not the registry contents). Therefore
+      registerService unconditionally preserves projection. -/
+  | registerServiceChecked
+      (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
+      (hStep : registerServiceChecked ctx caller reg st = .ok ((), st'))
+    : NonInterferenceStep ctx observer st st'
 
 /-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
 projection (one-sided version). -/
@@ -274,6 +283,9 @@ theorem step_preserves_projection
       · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert]
       · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst c hInsert,
               cspaceInsertSlot_preserves_machine st st' dst c hInsert]
+      · -- R5-C.1: memory
+        exact projectMemory_eq_of_memory_eq ctx observer st' st
+          (by rw [cspaceInsertSlot_preserves_machine st st' dst c hInsert])
   | cspaceRevoke addr hAddrH hOp =>
     exact cspaceRevoke_preserves_projection ctx observer addr st st' hAddrH hObjInv hOp
   | lifecycleRetype authority target newObj hTH hOp =>
@@ -310,6 +322,9 @@ theorem step_preserves_projection
     · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp]
     · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst cap hOp,
             cspaceInsertSlot_preserves_machine st st' dst cap hOp]
+    · -- R5-C.1: memory
+      exact projectMemory_eq_of_memory_eq ctx observer st' st
+        (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hOp])
   | schedule hCurH hAllR hOp =>
     exact schedule_preserves_projection ctx observer st st' hCurH hAllR hObjInv hOp
   | vspaceMapPage asid vaddr paddr hRH hOp =>
@@ -375,6 +390,10 @@ theorem step_preserves_projection
     exact timerTick_preserves_projection ctx observer st st' hCH hCOH hAR hObjInv hOp
   | syscallDecodeError hEq => subst hEq; rfl
   | syscallDispatchHigh _ hProj => exact hProj
+  | registerServiceChecked caller reg hOp =>
+    have hFlow := enforcementSoundness_registerServiceChecked ctx caller reg st st' hOp
+    rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg st hFlow] at hOp
+    exact registerService_preserves_projection ctx observer reg st st' hOp
 
 /-- WS-F3/H-05/H-09: Primary IF-M4 composition theorem — single-step bundle
 non-interference. -/
@@ -510,12 +529,11 @@ theorem errorAction_preserves_lowEquiv
 /-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
 in WS-K are covered by existing `NonInterferenceStep` constructors.
 
-The 34 constructors (lines 34–248) cover every operation reachable from
-`dispatchWithCap`:
+The 32 constructors cover every operation reachable from `dispatchWithCap`:
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
 - Lifecycle: `.lifecycleRetype`, `.lifecycleRevokeDeleteRetype`
 - VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
-- Service: (lifecycle operations removed in Q1 simplification)
+- Service: `.registerServiceChecked` (R5-B/M-02)
 - IPC: `.endpointSendDual`, `.endpointCallHigh`, `.endpointReply`,
        `.endpointReceiveDualHigh`
 - Entry: `.syscallDecodeError` (decode failure), `.syscallDispatchHigh`
@@ -534,7 +552,7 @@ The `syscallEntry`-level bridge theorems are in `API.lean`:
 This theorem witnesses (1) that the decode-error constructor is always available
 (state identity), (2) that every `NonInterferenceStep` composes into a single-step
 `NonInterferenceTrace`, and (3) that `step_preserves_projection` handles every
-constructor (checked by the Lean exhaustiveness checker on the 34-arm match). -/
+constructor (checked by the Lean exhaustiveness checker on the 32-arm match). -/
 theorem syscallNI_coverage_witness
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)

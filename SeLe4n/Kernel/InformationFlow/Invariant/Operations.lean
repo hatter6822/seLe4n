@@ -69,33 +69,27 @@ theorem cspaceMintChecked_NI
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
 -- ============================================================================
 
-/-- WS-H8/H-07: If endpointSendDualChecked succeeds, the resulting state
-transition preserves low-equivalence. Bridge theorem for the recommended
-dual-queue IPC path.
+/-- R5-A/M-01: endpointSendDualChecked NI — projection-based (internalized).
 
-The proof reduces the dual-queue checked wrapper to `endpointSendDual`
-via the enforcement flow extraction. The NI property for the underlying
-`endpointSendDual` is taken as a hypothesis. -/
+Replaces the prior hypothesis-accepting version. Instead of accepting the
+two-state NI property as a hypothesis, this version takes a
+one-sided projection preservation hypothesis `hProjection`. The caller proves
+that each individual execution preserves the observer's projection. -/
 theorem endpointSendDualChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hSendDualNI : ∀ t₁ t₂ t₁' t₂',
-        lowEquivalent ctx observer t₁ t₂ →
-        endpointSendDual endpointId sender msg t₁ = .ok ((), t₁') →
-        endpointSendDual endpointId sender msg t₂ = .ok ((), t₂') →
-        lowEquivalent ctx observer t₁' t₂')
+    (hProjection : ∀ t t', endpointSendDual endpointId sender msg t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : endpointSendDualChecked ctx endpointId sender msg s₁ = .ok ((), s₁'))
     (hStep₂ : endpointSendDualChecked ctx endpointId sender msg s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true :=
-    enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg s₁ s₁' hStep₁
-  -- Extract the underlying dual-queue send
+  have hFlow := enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg s₁ s₁' hStep₁
   rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₁ hFlow] at hStep₁
   rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₂ hFlow] at hStep₂
-  exact hSendDualNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
 
 /-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
 transition preserves low-equivalence. -/
@@ -129,52 +123,39 @@ theorem notificationSignalChecked_NI
   exact notificationSignal_preserves_lowEquivalent ctx observer notificationId badge
     s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hWaiterDomain₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
-/-- WS-H8/H-07: If cspaceCopyChecked succeeds, the resulting state transition
-preserves low-equivalence.
-
-The enforcement bridge extracts the flow check from the wrapper, then delegates
-to the underlying `cspaceCopy` NI theorem (taken as hypothesis pending WS-H9
-decomposition lemmas for CDT-aware operations). -/
+/-- R5-A/M-01: cspaceCopyChecked NI — projection-based (internalized).
+Replaces the prior hypothesis-accepting version. -/
 private theorem cspaceCopyChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hCopyNI : ∀ t₁ t₂ t₁' t₂',
-        lowEquivalent ctx observer t₁ t₂ →
-        cspaceCopy src dst t₁ = .ok ((), t₁') →
-        cspaceCopy src dst t₂ = .ok ((), t₂') →
-        lowEquivalent ctx observer t₁' t₂')
+    (hProjection : ∀ t t', cspaceCopy src dst t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : cspaceCopyChecked ctx src dst s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceCopyChecked ctx src dst s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   have hFlow := enforcementSoundness_cspaceCopyChecked ctx src dst s₁ s₁' hStep₁
   rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst s₁ hFlow] at hStep₁
   rw [cspaceCopyChecked_eq_cspaceCopy_when_allowed ctx src dst s₂ hFlow] at hStep₂
-  exact hCopyNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
 
-/-- WS-H8/H-07: If cspaceMoveChecked succeeds, the resulting state transition
-preserves low-equivalence.
-
-Same bridge pattern as cspaceCopyChecked_NI — takes the underlying move NI
-theorem as hypothesis. -/
+/-- R5-A/M-01: cspaceMoveChecked NI — projection-based (internalized).
+Replaces the prior hypothesis-accepting version. -/
 theorem cspaceMoveChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (src dst : CSpaceAddr)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hMoveNI : ∀ t₁ t₂ t₁' t₂',
-        lowEquivalent ctx observer t₁ t₂ →
-        cspaceMove src dst t₁ = .ok ((), t₁') →
-        cspaceMove src dst t₂ = .ok ((), t₂') →
-        lowEquivalent ctx observer t₁' t₂')
+    (hProjection : ∀ t t', cspaceMove src dst t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : cspaceMoveChecked ctx src dst s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceMoveChecked ctx src dst s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   have hFlow := enforcementSoundness_cspaceMoveChecked ctx src dst s₁ s₁' hStep₁
   rw [cspaceMoveChecked_eq_cspaceMove_when_allowed ctx src dst s₁ hFlow] at hStep₁
   rw [cspaceMoveChecked_eq_cspaceMove_when_allowed ctx src dst s₂ hFlow] at hStep₂
-  exact hMoveNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
 
 -- ============================================================================
 -- WS-H9: Scheduler NI proofs (Part A)
@@ -589,6 +570,7 @@ theorem switchDomain_preserves_lowEquivalent
         | exact congrArg ObservableState.irqHandlers hLow
         | exact congrArg ObservableState.objectIndex hLow
         | exact congrArg ObservableState.machineRegs hLow
+        | exact congrArg ObservableState.memory hLow
         | rfl
 
 -- ============================================================================
@@ -888,6 +870,8 @@ private theorem cdt_only_preserves_projection
   · simp [projectDomainSchedule, hScheduler]
   · simp [projectDomainScheduleIndex, hScheduler]
   · simp [projectMachineRegs, hScheduler, hMachine]
+  · -- R5-C.1: memory
+    exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
 
 /-- WS-H9: ensureCdtNodeForSlot preserves projection (modifies only CDT). -/
 private theorem ensureCdtNodeForSlot_preserves_projection
@@ -939,6 +923,9 @@ private theorem cspaceInsertSlot_preserves_projection
   · simp [projectDomainScheduleIndex, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep]
   · simp [projectMachineRegs, cspaceInsertSlot_preserves_scheduler st st' dst cap hStep,
       cspaceInsertSlot_preserves_machine st st' dst cap hStep]
+  · -- R5-C.1: memory
+    exact projectMemory_eq_of_memory_eq ctx observer st' st
+      (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hStep])
 
 /-- WS-H9: cspaceCopy at non-observable CNodes preserves projection.
 cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)
@@ -1140,76 +1127,54 @@ theorem endpointReply_preserves_lowEquivalent
 -- WS-H8/H9: endpointReceiveDualChecked NI bridge + IPC NI completion
 -- ============================================================================
 
-/-- WS-H8/H-07: If endpointReceiveDualChecked succeeds, the resulting state
-transition preserves low-equivalence. Bridge theorem for the dual-queue
-receive path.
-
-The proof extracts the enforcement flow check from the wrapper, then
-delegates to the underlying `endpointReceiveDual` NI hypothesis. -/
+/-- R5-A/M-01: endpointReceiveDualChecked NI — projection-based (internalized). -/
 theorem endpointReceiveDualChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (s₁ s₂ : SystemState) (r₁ r₂ : SeLe4n.ThreadId)
     (s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hRecvDualNI : ∀ t₁ t₂ t₁' t₂' (ret₁ ret₂ : SeLe4n.ThreadId),
-        lowEquivalent ctx observer t₁ t₂ →
-        endpointReceiveDual endpointId receiver t₁ = .ok (ret₁, t₁') →
-        endpointReceiveDual endpointId receiver t₂ = .ok (ret₂, t₂') →
-        lowEquivalent ctx observer t₁' t₂')
+    (hProjection : ∀ t t' (r : SeLe4n.ThreadId),
+        endpointReceiveDual endpointId receiver t = .ok (r, t') →
+        projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : endpointReceiveDualChecked ctx endpointId receiver s₁ = .ok (r₁, s₁'))
     (hStep₂ : endpointReceiveDualChecked ctx endpointId receiver s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true :=
-    enforcementSoundness_endpointReceiveDualChecked ctx endpointId receiver s₁ r₁ s₁' hStep₁
+  have hFlow := enforcementSoundness_endpointReceiveDualChecked ctx endpointId receiver s₁ r₁ s₁' hStep₁
   rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver s₁ hFlow] at hStep₁
   rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver s₂ hFlow] at hStep₂
-  exact hRecvDualNI s₁ s₂ s₁' s₂' r₁ r₂ hLow hStep₁ hStep₂
+  unfold lowEquivalent; rw [hProjection s₁ s₁' r₁ hStep₁, hProjection s₂ s₂' r₂ hStep₂]; exact hLow
 
-/-- WS-H9/Part B: endpointReceiveDual preserves low-equivalence when all
-involved objects are non-observable. The proof takes the projection
-preservation as a hypothesis, following the bridge theorem pattern used
-throughout the enforcement-NI layer.
-
-Full compositional proof requires IPC operation decomposition lemmas that
-decompose `endpointReceiveDual` into constituent `storeObject` calls — these
-will be completed when dual-queue decomposition lemmas become available. -/
+/-- R5-A/M-01: endpointReceiveDual NI — projection-based (internalized). -/
 theorem endpointReceiveDual_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (s₁ s₂ : SystemState) (sender₁ sender₂ : SeLe4n.ThreadId)
     (s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hRecvDualNI : ∀ t₁ t₂ t₁' t₂' (r₁ r₂ : SeLe4n.ThreadId),
-        lowEquivalent ctx observer t₁ t₂ →
-        endpointReceiveDual endpointId receiver t₁ = .ok (r₁, t₁') →
-        endpointReceiveDual endpointId receiver t₂ = .ok (r₂, t₂') →
-        lowEquivalent ctx observer t₁' t₂')
+    (hProjection : ∀ t t' (r : SeLe4n.ThreadId),
+        endpointReceiveDual endpointId receiver t = .ok (r, t') →
+        projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : endpointReceiveDual endpointId receiver s₁ = .ok (sender₁, s₁'))
     (hStep₂ : endpointReceiveDual endpointId receiver s₂ = .ok (sender₂, s₂')) :
-    lowEquivalent ctx observer s₁' s₂' :=
-  hRecvDualNI s₁ s₂ s₁' s₂' sender₁ sender₂ hLow hStep₁ hStep₂
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProjection s₁ s₁' sender₁ hStep₁, hProjection s₂ s₂' sender₂ hStep₂]; exact hLow
 
-/-- WS-H9/Part B: endpointCall preserves low-equivalence when all involved
-objects are non-observable. Same bridge pattern as endpointReceiveDual. -/
+/-- R5-A/M-01: endpointCall NI — projection-based (internalized). -/
 theorem endpointCall_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hCallNI : ∀ t₁ t₂ t₁' t₂',
-        lowEquivalent ctx observer t₁ t₂ →
-        endpointCall endpointId caller msg t₁ = .ok ((), t₁') →
-        endpointCall endpointId caller msg t₂ = .ok ((), t₂') →
-        lowEquivalent ctx observer t₁' t₂')
+    (hProjection : ∀ t t', endpointCall endpointId caller msg t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : endpointCall endpointId caller msg s₁ = .ok ((), s₁'))
     (hStep₂ : endpointCall endpointId caller msg s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' :=
-  hCallNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
 
-/-- WS-H9/Part B: endpointReplyRecv preserves low-equivalence when all
-involved objects are non-observable. Same bridge pattern. -/
+/-- R5-A/M-01: endpointReplyRecv NI — projection-based (internalized). -/
 theorem endpointReplyRecv_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId)
@@ -1217,15 +1182,13 @@ theorem endpointReplyRecv_preserves_lowEquivalent
     (replyMsg : IpcMessage)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hReplyRecvNI : ∀ t₁ t₂ t₁' t₂',
-        lowEquivalent ctx observer t₁ t₂ →
-        endpointReplyRecv endpointId replierReceiver replyTarget replyMsg t₁ = .ok ((), t₁') →
-        endpointReplyRecv endpointId replierReceiver replyTarget replyMsg t₂ = .ok ((), t₂') →
-        lowEquivalent ctx observer t₁' t₂')
+    (hProjection : ∀ t t',
+        endpointReplyRecv endpointId replierReceiver replyTarget replyMsg t = .ok ((), t') →
+        projectState ctx observer t' = projectState ctx observer t)
     (hStep₁ : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg s₁ = .ok ((), s₁'))
     (hStep₂ : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg s₂ = .ok ((), s₂')) :
-    lowEquivalent ctx observer s₁' s₂' :=
-  hReplyRecvNI s₁ s₂ s₁' s₂' hLow hStep₁ hStep₂
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
 
 -- ============================================================================
 -- WS-H9: Scheduler compound operation NI proofs
@@ -1569,5 +1532,54 @@ theorem lifecycleRevokeDeleteRetype_preserves_lowEquivalent
       newObj s₁ s₁' hCleanupHigh hTargetHigh hObjInv₁ hStep₁,
     lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
       newObj s₂ s₂' hCleanupHigh hTargetHigh hObjInv₂ hStep₂]
+  exact hLow
+
+
+-- ============================================================================
+-- R5-B: registerServiceChecked Non-Interference (M-02)
+-- ============================================================================
+
+/-- R5-B.2/M-02: registerService at a non-observable service preserves projection.
+registerService only modifies `serviceRegistry`, which only affects the `services`
+field of `ObservableState`. If the registered service is non-observable, the
+projected service presence is unchanged. -/
+theorem registerService_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (reg : ServiceRegistration) (st st' : SystemState)
+    (hStep : registerService reg st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  -- registerService on success produces { st with serviceRegistry := ... }
+  -- Extract the state equality from the success case
+  unfold registerService at hStep
+  split at hStep <;> try simp at hStep
+  split at hStep <;> try simp at hStep
+  -- Match on CapTarget cases
+  split at hStep
+  · -- .object epId
+    split at hStep <;> try simp at hStep
+    · -- endpoint found
+      split at hStep <;> try simp at hStep
+      · -- hasRight check passed — only serviceRegistry changes, projection unchanged
+        -- because the new service is non-observable (hServiceHigh)
+        cases hStep; simp only [projectState]; congr 1
+  all_goals simp at hStep
+
+/-- R5-B/M-02: registerServiceChecked NI — projection-based.
+If the registered service is non-observable, both executions preserve projection. -/
+theorem registerServiceChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hStep₁ : registerServiceChecked ctx caller reg s₁ = .ok ((), s₁'))
+    (hStep₂ : registerServiceChecked ctx caller reg s₂ = .ok ((), s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hFlow₁ := enforcementSoundness_registerServiceChecked ctx caller reg s₁ s₁' hStep₁
+  rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg s₁ hFlow₁] at hStep₁
+  rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg s₂
+    (enforcementSoundness_registerServiceChecked ctx caller reg s₂ s₂' hStep₂)] at hStep₂
+  unfold lowEquivalent; rw [
+    registerService_preserves_projection ctx observer reg s₁ s₁' hStep₁,
+    registerService_preserves_projection ctx observer reg s₂ s₂' hStep₂]
   exact hLow
 
