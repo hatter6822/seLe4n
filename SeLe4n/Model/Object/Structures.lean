@@ -1099,56 +1099,6 @@ theorem addEdge_preserves_edgeWellFounded_fresh
         exact absurd (he0p.trans hChildIsFirst) (hFreshChild e0 hOld0).1
   · exact ⟨e, hOld, hep, hec⟩
 
-/-- T4-G (M-CAP-2): descendantsOf BFS fuel sufficiency for direct children.
-When the CDT has at least one edge, `descendantsOf` returns at least all
-direct children of the root. The BFS explores root in the first step (fuel
-decremented once), adding `childrenOf root` to both the frontier and accumulator.
-Since fuel = edges.length ≥ 1, the first BFS step always executes.
-
-This is the key building block: combined with transitivity (children of
-children are also processed in subsequent steps), it establishes that
-`descendantsOf` with fuel = edges.length reaches all nodes reachable through
-the CDT edge structure. The full inductive completeness proof requires
-showing that `go` with fuel `k` processes up to `k` frontier nodes, which
-is straightforward by induction on fuel but verbose. -/
-theorem descendantsOf_direct_children_subset
-    (cdt : CapDerivationTree) (root child : CdtNodeId)
-    (hChild : child ∈ cdt.childrenOf root)
-    (hFuel : cdt.edges.length ≥ 1) :
-    child ∈ cdt.descendantsOf root ∨ child = root := by
-  -- descendantsOf root = go edges.length [root] []
-  -- go (n+1) [root] [] = go n ([] ++ newChildren) ([] ++ newChildren)
-  --   where newChildren = (childrenOf root).filter (· ∉ [])
-  -- Since [] is empty, filter keeps all children.
-  -- child ∈ childrenOf root → child ∈ newChildren → child ∈ acc
-  unfold descendantsOf
-  cases hLen : cdt.edges.length with
-  | zero => omega
-  | succ n =>
-    simp only [descendantsOf.go]
-    -- After one step: go n ([] ++ newChildren) ([] ++ newChildren)
-    -- newChildren = (childrenOf root).filter (· ∉ [])
-    -- child ∈ childrenOf root → child ∉ [] → child ∈ newChildren
-    -- child ∈ newChildren → child ∈ acc after go
-    left
-    -- The accumulator after one step includes newChildren
-    -- go n frontier acc returns a list containing acc as a suffix
-    suffices h : ∀ fuel frontier acc, ∀ x, x ∈ acc → x ∈ descendantsOf.go cdt fuel frontier acc by
-      apply h
-      simp only [List.nil_append]
-      exact List.mem_filter.mpr ⟨hChild, by simp⟩
-    intro fuel
-    induction fuel with
-    | zero => intro _ acc x hx; exact hx
-    | succ k ih =>
-      intro frontier acc x hx
-      cases frontier with
-      | nil => exact hx
-      | cons node rest =>
-        simp only [descendantsOf.go]
-        apply ih
-        exact List.mem_append.mpr (Or.inl hx)
-
 /-- WS-H4/M-G03: Runtime cycle-check — returns `true` if adding edge
 (parent → child) would NOT create a cycle. Checks that parent ≠ child and
 parent is not reachable from child via existing edges. -/
@@ -2010,6 +1960,130 @@ theorem mk_checked_cdtMapsConsistent
     (hConsistent : (CapDerivationTree.mk edges childMap parentMap).cdtMapsConsistent) :
     (mk_checked edges childMap parentMap hConsistent).cdtMapsConsistent :=
   hConsistent
+
+-- ============================================================================
+-- T4-G: descendantsOf fuel sufficiency
+-- ============================================================================
+
+/-- T4-G: Reachability via childrenOf — inductive definition of nodes
+reachable from a root through the CDT's child map. -/
+inductive CdtChildReachable (cdt : CapDerivationTree) : CdtNodeId → CdtNodeId → Prop where
+  | child : ∀ {root c}, c ∈ cdt.childrenOf root → CdtChildReachable cdt root c
+  | trans : ∀ {root mid c}, CdtChildReachable cdt root mid →
+      c ∈ cdt.childrenOf mid → CdtChildReachable cdt root c
+
+/-- T4-G: Unfolding lemma for descendantsOf.go at a cons queue step. -/
+private theorem descendantsOf_go_cons (cdt : CapDerivationTree) (fuel : Nat)
+    (node : CdtNodeId) (rest acc : List CdtNodeId) :
+    descendantsOf.go cdt (fuel + 1) (node :: rest) acc =
+    descendantsOf.go cdt fuel
+      (rest ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
+      (acc ++ (cdt.childrenOf node).filter (fun c => c ∉ acc)) := by
+  rfl
+
+/-- T4-G: Unfolding lemma for descendantsOf.go at an empty queue. -/
+private theorem descendantsOf_go_nil (cdt : CapDerivationTree) (fuel : Nat)
+    (acc : List CdtNodeId) :
+    descendantsOf.go cdt (fuel + 1) [] acc = acc := by
+  rfl
+
+/-- T4-G: BFS accumulator monotonicity — `descendantsOf.go` only adds to acc,
+never removes. -/
+theorem descendantsOf_go_acc_subset
+    (cdt : CapDerivationTree) (fuel : Nat) (queue acc : List CdtNodeId) :
+    ∀ x ∈ acc, x ∈ descendantsOf.go cdt fuel queue acc := by
+  induction fuel generalizing queue acc with
+  | zero => intro x hx; exact hx
+  | succ n ih =>
+    intro x hx
+    cases queue with
+    | nil => rw [descendantsOf_go_nil]; exact hx
+    | cons node rest =>
+      rw [descendantsOf_go_cons]
+      exact ih (rest ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
+        (acc ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
+        x (List.mem_append_left _ hx)
+
+/-- T4-G: Direct children of root appear in descendantsOf result when
+fuel ≥ 1 and root is in the BFS queue. -/
+theorem descendantsOf_go_children_found
+    (cdt : CapDerivationTree) (fuel : Nat) (rest acc : List CdtNodeId)
+    (root : CdtNodeId) (c : CdtNodeId)
+    (hChild : c ∈ cdt.childrenOf root)
+    (hNotInAcc : c ∉ acc) :
+    c ∈ descendantsOf.go cdt (fuel + 1) (root :: rest) acc := by
+  rw [descendantsOf_go_cons]
+  have hInNew : c ∈ (cdt.childrenOf root).filter (fun x => x ∉ acc) := by
+    simp only [List.mem_filter, decide_eq_true_eq]
+    exact ⟨hChild, hNotInAcc⟩
+  have hInNewAcc : c ∈ acc ++ (cdt.childrenOf root).filter (fun x => x ∉ acc) :=
+    List.mem_append_right _ hInNew
+  exact descendantsOf_go_acc_subset cdt fuel _ _ c hInNewAcc
+
+/-- T4-G: Direct children of the root are in the descendantsOf result,
+provided the CDT has at least one edge (ensuring fuel ≥ 1). -/
+theorem descendantsOf_children_subset
+    (cdt : CapDerivationTree) (root : CdtNodeId)
+    (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
+    (hEdges : cdt.edges.length > 0) :
+    c ∈ cdt.descendantsOf root := by
+  simp only [descendantsOf]
+  obtain ⟨n, hn⟩ : ∃ n, cdt.edges.length = n + 1 := ⟨cdt.edges.length - 1, by omega⟩
+  rw [hn]
+  exact descendantsOf_go_children_found cdt n [] [] root c hChild (fun h => nomatch h)
+
+/-- T4-G: BFS monotonicity — adding more fuel does not lose results.
+If a node is found with fuel `n`, it is also found with fuel `n + k`. -/
+theorem descendantsOf_go_fuel_mono
+    (cdt : CapDerivationTree) (n : Nat) (queue acc : List CdtNodeId)
+    (x : CdtNodeId) (hIn : x ∈ descendantsOf.go cdt n queue acc) :
+    ∀ k, x ∈ descendantsOf.go cdt (n + k) queue acc := by
+  induction n generalizing queue acc with
+  | zero =>
+    simp only [descendantsOf.go] at hIn
+    intro k
+    have : 0 + k = k := Nat.zero_add k
+    rw [this]; exact descendantsOf_go_acc_subset cdt k queue acc x hIn
+  | succ m ih =>
+    intro k
+    have hRw : m + 1 + k = (m + k) + 1 := by omega
+    cases queue with
+    | nil =>
+      rw [descendantsOf_go_nil] at hIn
+      rw [hRw, descendantsOf_go_nil]; exact hIn
+    | cons node rest =>
+      rw [descendantsOf_go_cons] at hIn
+      rw [hRw, descendantsOf_go_cons]
+      exact ih _ _ hIn k
+
+/-- T4-G: Core BFS property — if `node` is at the head of the queue,
+then all children of `node` end up in the BFS result (go processes
+the head and adds its unvisited children to both queue and acc). -/
+theorem descendantsOf_go_head_children_found
+    (cdt : CapDerivationTree) (fuel : Nat) (rest acc : List CdtNodeId)
+    (node : CdtNodeId) (c : CdtNodeId)
+    (hChild : c ∈ cdt.childrenOf node) :
+    c ∈ descendantsOf.go cdt (fuel + 1) (node :: rest) acc := by
+  rw [descendantsOf_go_cons]
+  by_cases hcAcc : c ∈ acc
+  · exact descendantsOf_go_acc_subset cdt fuel _ _ c (List.mem_append_left _ hcAcc)
+  · have hcNew : c ∈ (cdt.childrenOf node).filter (fun x => x ∉ acc) := by
+      simp only [List.mem_filter, decide_eq_true_eq]; exact ⟨hChild, hcAcc⟩
+    exact descendantsOf_go_acc_subset cdt fuel _ _ c (List.mem_append_right _ hcNew)
+
+/-- T4-G: Fuel bound for `descendantsOf` — with sufficient fuel, all
+direct children of the root are discovered. Combined with
+`descendantsOf_go_fuel_mono`, this establishes that increasing fuel
+never loses previously discovered nodes, providing the foundation
+for the fuel sufficiency argument. -/
+theorem descendantsOf_fuel_bound
+    (cdt : CapDerivationTree) (root : CdtNodeId)
+    (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
+    (fuel : Nat) (hFuel : fuel ≥ 1) :
+    c ∈ descendantsOf.go cdt fuel [root] [] := by
+  obtain ⟨k, hk⟩ : ∃ k, fuel = k + 1 := ⟨fuel - 1, by omega⟩
+  rw [hk]
+  exact descendantsOf_go_children_found cdt k [] [] root c hChild (fun h => nomatch h)
 
 end CapDerivationTree
 
