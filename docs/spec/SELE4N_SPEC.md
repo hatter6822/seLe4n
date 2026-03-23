@@ -15,7 +15,7 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 2. [Current State Snapshot](#2-current-state-snapshot)
 3. [Milestone History](#3-milestone-history)
 4. [Architectural Improvements over seL4](#4-architectural-improvements-over-sel4)
-5. [Completed Workstream Portfolio (WS-G) and Next Steps](#5-completed-workstream-portfolio-ws-g-and-next-steps)
+5. [Completed Workstream Portfolios and Next Steps](#5-completed-workstream-portfolios-and-next-steps)
 6. [Hardware Target: Raspberry Pi 5](#6-hardware-target-raspberry-pi-5)
 7. [Acceptance Expectations](#7-acceptance-expectations)
 8. [Model Fidelity & Type Safety (WS-S Phase S4)](#8-model-fidelity--type-safety-ws-s-phase-s4)
@@ -147,7 +147,7 @@ carried forward into the production kernel.
 
 ---
 
-## 5. Completed Workstream Portfolio (WS-G) and Next Steps
+## 5. Completed Workstream Portfolios and Next Steps
 
 The WS-G portfolio addressed kernel performance optimization findings from the
 [v0.12.5 performance audit](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md).
@@ -495,7 +495,7 @@ The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
 
-### 10.1 Trust Boundaries (WS-S/S1)
+### 11.1 Trust Boundaries (WS-S/S1)
 
 The following trust boundaries are documented as part of WS-S Phase S1:
 
