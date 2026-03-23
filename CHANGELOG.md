@@ -21,7 +21,9 @@
   that sequential `insert` via `fold` preserves `invExt`. Closes M-NEW-3.
 - T2-J (L-NEW-4): Added `CNode.guardBounded` predicate (`guardValue < 2^guardWidth`)
   and integrated into `CNode.wellFormed`. Added `empty_guardBounded` proof.
-  Updated `cspaceDepthConsistent_of_storeObject_sameCNode` theorem to propagate
+  Added `resolveSlot_guardMismatch_of_not_guardBounded` theorem proving that
+  `resolveSlot` always returns `guardMismatch` when `guardValue ≥ 2^guardWidth`.
+  Updated `cspaceDepthConsistent_of_storeObject_sameCNode` to propagate
   guardValue equality. Closes L-NEW-4.
 - T2-K (M-BLD-1): Fixed `Builder.createObject` to update `objectIndex` and
   `objectIndexSet` alongside object store insertion. Previously boot objects

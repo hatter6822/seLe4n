@@ -371,10 +371,6 @@ def guardBounded (cn : CNode) : Prop :=
 instance (cn : CNode) : Decidable cn.guardBounded :=
   inferInstanceAs (Decidable (cn.guardValue < 2 ^ cn.guardWidth))
 
-/-- T2-J: Boolean guard bound check for runtime use in lifecycle validation. -/
-@[inline] def guardBoundedBool (cn : CNode) : Bool :=
-  cn.guardValue < 2 ^ cn.guardWidth
-
 /-- WS-H13 + T2-J: CNode well-formedness — consumed bits fit in remaining depth,
 at least one bit is consumed (ensures termination of multi-level resolution),
 and the guard value fits within the guard width (L-NEW-4). -/
@@ -541,6 +537,40 @@ theorem resolveSlot_depthMismatch
   unfold resolveSlot bitsConsumed at *
   have h : bitsRemaining < node.guardWidth + node.radixWidth := hDepth
   simp [h]
+
+/-- T2-J (L-NEW-4): If a CNode's guard value violates `guardBounded`
+    (i.e., `guardValue ≥ 2^guardWidth`), then `resolveSlot` always returns
+    `guardMismatch` for any CPtr and bitsRemaining (assuming sufficient depth).
+
+    **Proof**: The extracted guard is computed as
+    `(shiftedAddr / 2^radixWidth) % 2^guardWidth`, which is always
+    `< 2^guardWidth`. Since `guardValue ≥ 2^guardWidth`, the equality check
+    `guardExtracted = guardValue` is always false. -/
+theorem resolveSlot_guardMismatch_of_not_guardBounded
+    (node : CNode)
+    (cptr : SeLe4n.CPtr)
+    (bitsRemaining : Nat)
+    (hBits : node.bitsConsumed ≤ bitsRemaining)
+    (hNotBounded : ¬node.guardBounded) :
+    node.resolveSlot cptr bitsRemaining = .error .guardMismatch := by
+  simp only [guardBounded] at hNotBounded
+  unfold resolveSlot
+  have hNotLt : ¬(bitsRemaining < node.bitsConsumed) := by omega
+  simp only [hNotLt, ↓reduceIte]
+  -- After the depth check passes, resolveSlot computes:
+  --   guardExtracted := (shiftedAddr / 2^radixWidth) % 2^guardWidth
+  -- which is always < 2^guardWidth by Nat.mod_lt.
+  -- Since ¬(guardValue < 2^guardWidth), guardExtracted ≠ guardValue.
+  have hGwPos : 0 < 2 ^ node.guardWidth := Nat.pos_of_ne_zero (fun h => by simp [Nat.pow_eq_zero] at h)
+  split
+  · -- guardExtracted = guardValue case: derive contradiction
+    rename_i hEq
+    have hExtractLt := Nat.mod_lt
+      (cptr.toNat % SeLe4n.machineWordMax >>>
+        (bitsRemaining - node.bitsConsumed) / 2 ^ node.radixWidth) hGwPos
+    omega
+  · -- guardExtracted ≠ guardValue case: already .error .guardMismatch
+    rfl
 
 /-- WS-G5: Source slot is preserved by `revokeTargetLocal` because the filter
 predicate always includes entries where `s = sourceSlot`.

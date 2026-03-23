@@ -34,7 +34,8 @@ in Projection.lean) is intentionally retained.
 - `capabilityRefs_filter_preserves_invExt` + `capabilityRefs_fold_preserves_invExt`
   — filter-then-fold chain in `storeObject` preserves `invExt` (M-NEW-3).
 - `CNode.guardBounded` predicate added to `CNode.wellFormed` — guard value
-  must fit in guard width bits (L-NEW-4).
+  must fit in guard width bits. `resolveSlot_guardMismatch_of_not_guardBounded`
+  proves `resolveSlot` always fails for unbounded guards (L-NEW-4).
 - `Builder.createObject` now maintains `objectIndex`/`objectIndexSet` (M-BLD-1).
 
 ## 2. Scheduler invariants (M1)

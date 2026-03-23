@@ -367,7 +367,8 @@ The Lean model bridges abstract `Nat` semantics to 64-bit hardware:
 - **IPC messages**: `IpcMessage.registers` uses `Array RegValue` (typed values).
 - **CPtr resolution**: `resolveSlot` masks input to 64 bits before guard extraction.
 - **CNode guard bounds**: `CNode.guardBounded` predicate (`guardValue < 2^guardWidth`)
-  integrated into `CNode.wellFormed` (T2-J/L-NEW-4).
+  integrated into `CNode.wellFormed`. `resolveSlot_guardMismatch_of_not_guardBounded`
+  proves resolution always fails for out-of-bounds guards (T2-J/L-NEW-4).
 - **CDT access control**: `CapDerivationTree` constructor is `private`; external
   construction requires `mk_checked` with `cdtMapsConsistent` witness (T2-B/C/H-2).
 - **Frozen TLB**: `FrozenSystemState.tlb` field preserves TLB state across freeze;
