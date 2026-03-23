@@ -215,6 +215,10 @@ def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
       match frozenLookupTcb st tid with
       | none => .error .objectNotFound
       | some tcb =>
+          -- Dual-queue invariant: reject if thread already has queue links (T1-A)
+          if tcb.queuePPrev.isSome || tcb.queuePrev.isSome || tcb.queueNext.isSome then
+            .error .illegalState
+          else
           match frozenQueuePushTailObjects st.objects endpointId isReceiveQ tid ep tcb with
           | .ok objects' => .ok { st with objects := objects' }
           | .error e => .error e
@@ -229,9 +233,9 @@ theorem frozenQueuePushTail_only_modifies_objects
     (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
     ∃ objects', st' = { st with objects := objects' } := by
   simp only [frozenQueuePushTail, frozenLookupTcb] at hOk
-  -- Split all nested matches; multiple rounds needed because split only
-  -- processes the first goal, leaving subgoals with unsplit matches
+  -- Split all nested matches including the queue-link precondition `if`
   repeat split at hOk
+  all_goals (repeat split at hOk)
   all_goals (repeat split at hOk)
   -- Close goals: error paths close by simp (derives False), success paths by injection
   all_goals (first | (simp at hOk; done) | (injection hOk with hEq; exact ⟨_, hEq.symm⟩))

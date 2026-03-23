@@ -17,7 +17,23 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-S) are complete.
+through WS-S) are complete. WS-T Phase T1 (Benchmarking Blockers) is complete;
+phases T2–T8 continue the deep-dive audit remediation.
+
+### WS-T workstream (Deep-Dive Audit Remediation) — Phase T1 COMPLETE, T2–T8 IN PROGRESS
+
+WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
+MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
+v0.20.0–v0.20.7. See
+[`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
+
+- **T1 (v0.20.0) — COMPLETE**: Benchmarking Blockers. Fixed frozen IPC queue
+  enqueue semantics (M-FRZ-1/2/3) — implemented `frozenQueuePushTail` with
+  dual-queue invariant precondition checks, integrated into all three frozen
+  endpoint operations (Send/Receive/Call), added 7 preservation theorems.
+  Added 4 missing Rust `KernelError` variants (H-4, discriminants 34-37) with
+  cross-validation tests. Registered `OperationChainSuite` as lakefile target
+  (M-TST-1). Zero sorry, zero axiom. All 10 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

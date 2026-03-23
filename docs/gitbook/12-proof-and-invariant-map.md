@@ -1938,6 +1938,22 @@ roundtrip properties, frame lemmas, structural composition theorems.
 
 **Q7-E**: 18 frozenStoreObject frame/preservation theorems (`Invariant.lean`).
 
+**T1-A**: `frozenQueuePushTail` queue enqueue primitive (`Core.lean`) — appends
+a thread to the tail of a frozen endpoint's intrusive send or receive queue.
+Two-layer architecture: `frozenQueuePushTailObjects` computes the updated
+`FrozenMap` (objects only), `frozenQueuePushTail` wraps in `{ st with objects }`.
+Dual-queue invariant enforced via precondition check (reject if thread already
+has queue links). Structural lemma: `frozenQueuePushTail_only_modifies_objects`.
+
+**T1-B/C/D**: Frozen IPC queue enqueue integration (`Operations.lean`) —
+`frozenEndpointSend`, `frozenEndpointReceive`, and `frozenEndpointCall` now call
+`frozenQueuePushTail` in the "no counterpart" blocking path, ensuring blocked
+threads are visible to subsequent matching operations (fixes M-FRZ-1/2/3).
+
+**T1-E**: 7 `frozenQueuePushTail` preservation theorems (`Commutativity.lean`) —
+`scheduler`, `machine`, `asidTable`, `serviceRegistry`, `cdtEdges`,
+`irqHandlers`. All derived from `frozenQueuePushTail_only_modifies_objects`.
+
 ### Q9: Integration Testing (`tests/TwoPhaseArchSuite.lean`)
 
 14 integration tests (41 checks) verifying the full builder→freeze→execution

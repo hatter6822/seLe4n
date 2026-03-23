@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-t1-blockers-B0P9f",
-      "commit_sha": "520cf4727f0bb4e4b91f14bd6620419dc499c52f",
-      "tree_sha": "1367dbc2385fe6d37589fcc3e064bf381d01ac02",
-      "committed_at_utc": "2026-03-23T03:48:41-04:00"
+      "commit_sha": "550c0d12bb0b81f55b90aa6535c2bcf5daa21782",
+      "tree_sha": "5affb472b46a5e9e87850ac663ab78ac9306439c",
+      "committed_at_utc": "2026-03-23T08:30:34+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3e6292249eea7e60cfb40724ff20c91b5c1e14e0cfb0b150917c865b0fec5135"
+    "source_digest": "85c137d4174a3909551312585636612a72bdc057bb5b61db14d4c7a1c7bd22a7"
   },
   "summary": {
     "module_count": 110,
@@ -27,7 +27,7 @@
     "version": "0.19.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 57658,
+    "production_loc": 57662,
     "test_files": 10,
     "test_loc": 7559,
     "proved_theorem_lemma_decls": 1763,
@@ -4494,7 +4494,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_only_modifies_objects",
-          "line": 226,
+          "line": 230,
           "called": [
             "frozenLookupTcb",
             "frozenQueuePushTail"
@@ -4503,7 +4503,7 @@
         {
           "kind": "theorem",
           "name": "frozenLookupObject_state_unchanged",
-          "line": 244,
+          "line": 248,
           "called": [
             "frozenLookupObject"
           ]
@@ -4511,7 +4511,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_scheduler",
-          "line": 254,
+          "line": 258,
           "called": [
             "frozenStoreObject"
           ]
@@ -4519,7 +4519,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_machine",
-          "line": 265,
+          "line": 269,
           "called": [
             "frozenStoreObject"
           ]
