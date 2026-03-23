@@ -77,6 +77,15 @@ Bundle level:
 - `capabilityInvariantBundleWithCdtMaps` (S3-D: base bundle + `cdtMapsConsistent`)
 - `capabilityInvariantBundleFull` (S3-D: base bundle + `cdtMapsConsistent` + `cdtMintCompleteness`)
 
+CDT edge operations (S3-B/C):
+
+- `addEdge_preserves_cdtMapsConsistent` — composite: addEdge preserves both childMap and parentMap consistency
+- `removeEdge` (private) — single-edge removal from edges, childMap, parentMap
+- `removeEdge_surviving_child_ne` — surviving edges have child ≠ removed child (forest property)
+- `removeEdge_preserves_cdtMapsConsistent` — removal preserves consistency (postcondition pattern)
+- `revokeDerivationEdge` — public CDT wrapper for removeEdge
+- `severDerivationEdge` — kernel-level operation for fine-grained single-edge CDT revocation
+
 CDT maps consistency preservation (S3-D):
 
 - `cdtMapsConsistent_of_cdt_eq` — transfer through state changes preserving CDT
