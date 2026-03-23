@@ -27,10 +27,10 @@ the entire production proof surface.
 | S2 | v0.19.1 | Test Hardening | 10 | COMPLETE |
 | S3 | v0.19.2 | Proof Surface Closure | 14 (1 stretch) | COMPLETE |
 | S4 | v0.19.3 | Model Fidelity & Type Safety | 13 | COMPLETE |
-| S5 | v0.19.4 | API Cleanup & Platform Hardening | 9 | COMPLETE |
+| S5 | v0.19.4 | API Cleanup & Platform Hardening | 10 | COMPLETE |
 | S6 | v0.19.5 | Hardware Preparation | 7 | COMPLETE |
 | S7 | v0.19.6 | Documentation & Polish | 14 | COMPLETE |
-| **Total** | | | **81 + 1 stretch** | |
+| **Total** | | | **82 + 1 stretch (83)** | |
 
 ---
 
