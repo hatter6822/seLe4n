@@ -644,7 +644,8 @@ theorem cspaceDepthConsistent_of_storeObject_sameCNode
     (hStore : storeObject targetOid (.cnode cn') st = .ok ((), st'))
     (hSameDepth : cn'.depth = preCn.depth)
     (hSameGW : cn'.guardWidth = preCn.guardWidth)
-    (hSameRW : cn'.radixWidth = preCn.radixWidth) :
+    (hSameRW : cn'.radixWidth = preCn.radixWidth)
+    (hSameGV : cn'.guardValue = preCn.guardValue) :
     cspaceDepthConsistent st' := by
   intro cnodeId cn hObj
   by_cases hEq : cnodeId = targetOid
@@ -658,9 +659,10 @@ theorem cspaceDepthConsistent_of_storeObject_sameCNode
         unfold CNode.bitsConsumed at hBits ⊢; rw [hSameGW, hSameRW] at hBits; exact hBits
       have hWfPre := hPreBound.2 hBitsPre
       unfold CNode.wellFormed at hWfPre ⊢
-      constructor
+      refine ⟨?_, ?_, ?_⟩
       · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW, hSameDepth]; exact hWfPre.1
-      · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW]; exact hWfPre.2
+      · unfold CNode.bitsConsumed at hWfPre ⊢; rw [hSameGW, hSameRW]; exact hWfPre.2.1
+      · unfold CNode.guardBounded at hWfPre ⊢; rw [hSameGW, hSameGV]; exact hWfPre.2.2
   · rw [storeObject_objects_ne st st' targetOid cnodeId (.cnode cn') hEq hObjInv hStore] at hObj
     exact hDepth cnodeId cn hObj
 

@@ -249,7 +249,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
             have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
               (storeObject_cdt_eq st stMid addr.cnode _ hStore)
             have hDepthMid := cspaceDepthConsistent_of_storeObject_sameCNode
-              st stMid addr.cnode preCn (preCn.remove addr.slot) hDepthPre hObjInv hPre hStore rfl rfl rfl
+              st stMid addr.cnode preCn (preCn.remove addr.slot) hDepthPre hObjInv hPre hStore rfl rfl rfl rfl
             have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
             have hBndRef := cspaceSlotCountBounded_of_objects_eq stMid stRef hBndMid hRefObj
             have hCompRef := cdtCompleteness_of_objects_nodeSlot_eq stMid stRef hCompMid hRefObj hRefNS
@@ -393,7 +393,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
               (storeObject_cdt_eq st stMid addr.cnode _ hStore)
             have hDepthMid := cspaceDepthConsistent_of_storeObject_sameCNode
               st stMid addr.cnode preCn (preCn.revokeTargetLocal addr.slot parent.target)
-              hDepthPre hObjInv hPre hStore rfl rfl rfl
+              hDepthPre hObjInv hPre hStore rfl rfl rfl rfl
             have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
             -- M-P01: Use revokeAndClearRefsState field preservation
             have ⟨hClearCdt, hClearNS, _, hClearObj⟩ :=

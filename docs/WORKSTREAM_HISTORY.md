@@ -35,6 +35,16 @@ v0.20.0–v0.20.7. See
   cross-validation tests. Registered `OperationChainSuite` as lakefile target
   (M-TST-1). Zero sorry, zero axiom. All 10 sub-tasks complete.
 
+- **T2 (v0.20.1) — COMPLETE**: Model & CDT Integrity. Closed 2 HIGH findings:
+  `AccessRightSet.ofList` now has `valid` postcondition (H-1), CDT constructor
+  made `private` with verified `mk_checked` smart constructor (H-2). Closed 4
+  MEDIUM findings: frozen state preserves TLB (M-NEW-1), bundled `storeObject`
+  preservation theorem (M-NEW-2), `capabilityRefs` filter/fold invExt proofs
+  (M-NEW-3), Builder `objectIndex`/`objectIndexSet` updates (M-BLD-1). Closed
+  1 LOW finding: CNode `guardBounded` predicate added to `wellFormed` (L-NEW-4).
+  Documentation-only: `attachSlotToCdtNode` ordering rationale (M-ST-2). Zero
+  sorry, zero axiom. All 12 sub-tasks complete.
+
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 
 WS-S is a completed workstream (v0.19.0–v0.19.6), addressing all findings from

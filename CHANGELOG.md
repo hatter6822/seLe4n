@@ -1,3 +1,35 @@
+## [0.20.1] — WS-T Phase T2: Model & CDT Integrity
+
+- T2-A (H-1): Added `AccessRightSet.ofList_valid` theorem proving that `ofList`
+  always produces a valid rights set (bits < 2^5). Closes HIGH finding H-1.
+- T2-B (H-2): Made `CapDerivationTree` constructor `private` via `private mk ::`
+  syntax. External code can no longer construct CDT values with inconsistent
+  `edges`/`childMap`/`parentMap` fields. Closes HIGH finding H-2.
+- T2-C (H-2): Added `CapDerivationTree.mk_checked` smart constructor requiring
+  `cdtMapsConsistent` witness. Added `mk_checked_cdtMapsConsistent` proof.
+- T2-D (M-NEW-1): Added `tlb : TlbState` field to `FrozenSystemState` structure.
+  TLB state is no longer dropped during freeze.
+- T2-E (M-NEW-1): Updated `freeze` function to transfer `TlbState` from
+  `IntermediateState` to `FrozenSystemState`. Updated test fixtures.
+- T2-F (M-NEW-1): Added `freeze_preserves_tlb` correctness theorem. Closes
+  MEDIUM finding M-NEW-1.
+- T2-G (M-NEW-2): Added bundled `storeObject_preserves_allTablesInvExt` theorem
+  composing 16+ component preservation proofs into a single caller-friendly API.
+- T2-H (M-NEW-3): Added `capabilityRefs_filter_preserves_invExt` proof showing
+  that `RHTable.filter` on capabilityRefs preserves `invExt`.
+- T2-I (M-NEW-3): Added `capabilityRefs_fold_preserves_invExt` proof showing
+  that sequential `insert` via `fold` preserves `invExt`. Closes M-NEW-3.
+- T2-J (L-NEW-4): Added `CNode.guardBounded` predicate (`guardValue < 2^guardWidth`)
+  and integrated into `CNode.wellFormed`. Added `empty_guardBounded` proof.
+  Updated `cspaceDepthConsistent_of_storeObject_sameCNode` theorem to propagate
+  guardValue equality. Closes L-NEW-4.
+- T2-K (M-BLD-1): Fixed `Builder.createObject` to update `objectIndex` and
+  `objectIndexSet` alongside object store insertion. Previously boot objects
+  were not registered in the index. Closes M-BLD-1.
+- T2-L (M-ST-2): Added comprehensive inline documentation to `attachSlotToCdtNode`
+  explaining why the stale-link cleanup ordering is correct. Closes M-ST-2.
+- Zero sorry/axiom, full build passes (174 modules), all tests pass.
+
 ## [0.19.6] — WS-S Phase S7: Documentation & Polish
 
 - S7-A: Synchronized `README.md` metrics from `docs/codebase_map.json` — version

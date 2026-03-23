@@ -142,14 +142,15 @@ def addServiceGraph (ist : IntermediateState) (sid : ServiceId)
 -- Q3-B.4: createObject — simplified boot-time object creation
 -- ============================================================================
 
-/-- Q3-B: Insert a kernel object into the builder state during boot.
+/-- Q3-B + T2-K (M-BLD-1): Insert a kernel object into the builder state
+during boot.
 
 This is a simplified builder-phase operation that inserts the object into the
-store and updates lifecycle `objectTypes` metadata. Unlike the full runtime
-`storeObject`, this does NOT update `capabilityRefs` (which is empty during
-boot), does NOT update `asidTable` (VSpace ASID registration is separate),
-and does NOT update `objectIndex`/`objectIndexSet` (boot objects are registered
-after construction).
+store, updates lifecycle `objectTypes` metadata, and maintains `objectIndex`
+and `objectIndexSet` for consistency with runtime `storeObject` semantics.
+Unlike the full runtime `storeObject`, this does NOT update `capabilityRefs`
+(which is empty during boot) and does NOT update `asidTable` (VSpace ASID
+registration is separate).
 
 Precondition: the inserted CNode (if any) must have `slotsUnique`, and the
 inserted VSpaceRoot (if any) must have `mappings.invExt`. -/
@@ -161,6 +162,10 @@ def createObject (ist : IntermediateState)
   state := {
     ist.state with
       objects := ist.state.objects.insert id obj
+      -- T2-K: Maintain objectIndex/objectIndexSet alongside objects
+      objectIndex := if ist.state.objectIndexSet.contains id then ist.state.objectIndex
+                     else id :: ist.state.objectIndex
+      objectIndexSet := ist.state.objectIndexSet.insert id
       lifecycle := {
         ist.state.lifecycle with
           objectTypes := ist.state.lifecycle.objectTypes.insert id obj.objectType
@@ -169,12 +174,15 @@ def createObject (ist : IntermediateState)
   hAllTables := by
     have h := ist.hAllTables
     unfold SystemState.allTablesInvExt at h ⊢
-    exact ⟨RHTable.insert_preserves_invExt _ _ _ h.1,
+    refine ⟨RHTable.insert_preserves_invExt _ _ _ h.1,
            h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
            RHTable.insert_preserves_invExt _ _ _ h.2.2.2.2.2.1,
            h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
            h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2⟩
+           h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           ?_, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    exact RHSet.insert_preserves_invExt ist.state.objectIndexSet id h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
   hPerObjectSlots := by
     unfold perObjectSlotsInvariant
     intro oid cn hObj

@@ -139,6 +139,46 @@ theorem ofList_comm (a b : AccessRight) (rest : List AccessRight) :
   congr 1
   exact Nat.or_comm (1 <<< a.toBit) (1 <<< b.toBit)
 
+/-- T2-A (H-1): Helper — each `AccessRight.toBit` yields a value < 5, so
+    `1 <<< r.toBit < maxBits` (i.e., < 32). -/
+private theorem singleton_lt_maxBits (r : AccessRight) : 1 <<< r.toBit < maxBits := by
+  cases r <;> simp [AccessRight.toBit, maxBits] <;> decide
+
+/-- T2-A (H-1): Helper — bitwise OR of two values below `2^n` stays
+    below `2^n`. This holds because OR cannot set bits that neither
+    operand has, and both operands fit in n bits. -/
+private theorem or_lt_two_pow (a b : Nat) (n : Nat) (ha : a < 2^n) (hb : b < 2^n) :
+    a ||| b < 2^n :=
+  Nat.or_lt_two_pow ha hb
+
+private theorem or_lt_maxBits (a b : Nat) (ha : a < maxBits) (hb : b < maxBits) :
+    a ||| b < maxBits :=
+  or_lt_two_pow a b 5 ha hb
+
+/-- T2-A (H-1): The fold body preserves `< maxBits` — accumulating one more
+    singleton via OR stays within the 5-bit range. -/
+private theorem foldl_or_lt_maxBits (rs : List AccessRight) (init : Nat)
+    (hInit : init < maxBits) :
+    rs.foldl (fun acc r => acc ||| (1 <<< r.toBit)) init < maxBits := by
+  induction rs generalizing init with
+  | nil => exact hInit
+  | cons r rest ih =>
+    simp only [List.foldl_cons]
+    exact ih _ (or_lt_maxBits init (1 <<< r.toBit) hInit (singleton_lt_maxBits r))
+
+/-- T2-A (H-1): `ofList` always produces a valid rights set.
+
+    **Proof sketch**: `ofList` folds `(fun acc r => acc ||| (1 <<< r.toBit))`
+    starting from 0. Each `1 <<< r.toBit` is < 32 (since `toBit` ∈ {0..4}),
+    and bitwise OR of values < 32 stays < 32. Therefore the result fits in
+    the 5-bit rights space, satisfying `valid` (`.bits < 2^5`).
+
+    This closes finding H-1: `AccessRightSet.ofList` now has a machine-checked
+    `valid` postcondition. -/
+theorem ofList_valid (rs : List AccessRight) : (ofList rs).valid := by
+  simp [ofList, valid]
+  exact foldl_or_lt_maxBits rs 0 (by unfold maxBits; omega)
+
 end AccessRightSet
 
 /-- The addressable target of a capability in the abstract object universe.

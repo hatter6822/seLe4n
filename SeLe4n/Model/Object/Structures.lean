@@ -362,10 +362,24 @@ def slotCount (node : CNode) : Nat :=
 def bitsConsumed (node : CNode) : Nat :=
   node.guardWidth + node.radixWidth
 
-/-- WS-H13: CNode well-formedness — consumed bits fit in remaining depth,
-and at least one bit is consumed (ensures termination of multi-level resolution). -/
+/-- T2-J (L-NEW-4): CNode guard value is bounded by guard width.
+    The guard value must fit in `guardWidth` bits, i.e., `guardValue < 2^guardWidth`.
+    When `guardWidth = 0`, only `guardValue = 0` is valid (no guard bits). -/
+def guardBounded (cn : CNode) : Prop :=
+  cn.guardValue < 2 ^ cn.guardWidth
+
+instance (cn : CNode) : Decidable cn.guardBounded :=
+  inferInstanceAs (Decidable (cn.guardValue < 2 ^ cn.guardWidth))
+
+/-- T2-J: Boolean guard bound check for runtime use in lifecycle validation. -/
+@[inline] def guardBoundedBool (cn : CNode) : Bool :=
+  cn.guardValue < 2 ^ cn.guardWidth
+
+/-- WS-H13 + T2-J: CNode well-formedness — consumed bits fit in remaining depth,
+at least one bit is consumed (ensures termination of multi-level resolution),
+and the guard value fits within the guard width (L-NEW-4). -/
 def wellFormed (node : CNode) : Prop :=
-  node.bitsConsumed ≤ node.depth ∧ 0 < node.bitsConsumed
+  node.bitsConsumed ≤ node.depth ∧ 0 < node.bitsConsumed ∧ node.guardBounded
 
 /-- Resolve a CPtr/depth pair into the local slot index using guard/radix semantics.
 
@@ -541,6 +555,11 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
   simp only [revokeTargetLocal, lookup]
   exact RHTable.filter_preserves_key node.slots _ sourceSlot
     (fun k' _ hBeq => by simp [eq_of_beq hBeq]) hUniq.1
+
+/-- T2-J (L-NEW-4): The empty CNode trivially satisfies `guardBounded`
+    (guardValue = 0 < 2^0 = 1). -/
+theorem empty_guardBounded : CNode.empty.guardBounded := by
+  simp [empty, guardBounded]
 
 /-- WS-N4: The empty CNode's slots satisfy the slot invariant. -/
 theorem empty_slotsUnique : CNode.empty.slotsUnique := by
@@ -809,8 +828,17 @@ end CapDerivationEdge
 /-- The Capability Derivation Tree stored at the system level.
 
 WS-E4/C-03: A list of derivation edges forming a forest. Operations maintain
-the acyclicity invariant: no slot can be both ancestor and descendant of itself. -/
+the acyclicity invariant: no slot can be both ancestor and descendant of itself.
+
+**T2-B (H-2): Access-controlled construction.** Direct construction of
+`CapDerivationTree` values is restricted to the `CapDerivationTree` namespace.
+External code must use `CapDerivationTree.empty` or `CapDerivationTree.mk_checked`
+(which requires a `cdtMapsConsistent` witness). This prevents construction of
+CDT values with inconsistent `edges`/`childMap`/`parentMap` fields. All CDT
+mutation operations (`addEdge`, `removeNode`, etc.) are within this namespace
+and maintain the consistency invariant internally. -/
 structure CapDerivationTree where
+  private mk ::
   edges : List CapDerivationEdge := []
   /-- WS-G8/F-P14: Parent-indexed child map for O(1) `childrenOf` lookup.
   Runtime index maintained in parallel with `edges`; `edges` remains the
@@ -823,7 +851,9 @@ structure CapDerivationTree where
 
 namespace CapDerivationTree
 
-def empty : CapDerivationTree := { edges := [], childMap := {}, parentMap := {} }
+/-- T2-C (H-2): The canonical empty CDT with no edges and empty index maps.
+    Satisfies all CDT invariants by construction (vacuously). -/
+def empty : CapDerivationTree := CapDerivationTree.mk [] {} {}
 
 /-- Add a derivation edge from parent to child.
 WS-G8: Maintains `childMap` index alongside `edges`. -/
@@ -1875,6 +1905,31 @@ private theorem removeEdge_preserves_cdtMapsConsistent
 def revokeDerivationEdge (cdt : CapDerivationTree)
     (parent child : CdtNodeId) : CapDerivationTree :=
   cdt.removeEdge parent child
+
+/-- T2-C (H-2): Verified CDT constructor requiring a `cdtMapsConsistent`
+    witness. External code that needs to construct a CDT from raw components
+    must provide proof that `edges`, `childMap`, and `parentMap` are mutually
+    consistent.
+
+    This is the access-controlled alternative to the private `mk` constructor.
+    Most code should use `empty` + mutation operations (`addEdge`, `removeNode`)
+    instead of constructing CDTs from raw parts. -/
+def mk_checked
+    (edges : List CapDerivationEdge)
+    (childMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId))
+    (parentMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId)
+    (_hConsistent : (CapDerivationTree.mk edges childMap parentMap).cdtMapsConsistent) :
+    CapDerivationTree :=
+  CapDerivationTree.mk edges childMap parentMap
+
+/-- T2-C (H-2): `mk_checked` preserves `cdtMapsConsistent` by construction. -/
+theorem mk_checked_cdtMapsConsistent
+    (edges : List CapDerivationEdge)
+    (childMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId (List CdtNodeId))
+    (parentMap : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId)
+    (hConsistent : (CapDerivationTree.mk edges childMap parentMap).cdtMapsConsistent) :
+    (mk_checked edges childMap parentMap hConsistent).cdtMapsConsistent :=
+  hConsistent
 
 end CapDerivationTree
 

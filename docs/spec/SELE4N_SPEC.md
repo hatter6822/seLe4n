@@ -363,8 +363,17 @@ The Lean model bridges abstract `Nat` semantics to 64-bit hardware:
 - **Register values**: `RegValue` wraps `Nat` with `isWord64` validity predicate.
 - **Badges**: `Badge.ofNatMasked` masks to `2^64` at construction, proven valid.
 - **Access rights**: `AccessRightSet.ofNat` masks to `2^5` (5-bit field).
+  `AccessRightSet.ofList` proven valid (`ofList_valid`, T2-A/H-1).
 - **IPC messages**: `IpcMessage.registers` uses `Array RegValue` (typed values).
 - **CPtr resolution**: `resolveSlot` masks input to 64 bits before guard extraction.
+- **CNode guard bounds**: `CNode.guardBounded` predicate (`guardValue < 2^guardWidth`)
+  integrated into `CNode.wellFormed` (T2-J/L-NEW-4).
+- **CDT access control**: `CapDerivationTree` constructor is `private`; external
+  construction requires `mk_checked` with `cdtMapsConsistent` witness (T2-B/C/H-2).
+- **Frozen TLB**: `FrozenSystemState.tlb` field preserves TLB state across freeze;
+  `freeze_preserves_tlb` correctness theorem (T2-D/E/F/M-NEW-1).
+- **storeObject preservation**: Bundled `storeObject_preserves_allTablesInvExt`
+  theorem composing 16+ component proofs (T2-G/M-NEW-2).
 
 ### 8.3 Memory Alignment Model Gap
 
