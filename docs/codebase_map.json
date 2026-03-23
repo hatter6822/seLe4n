@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-t4-ipc-SN33U",
-      "commit_sha": "192348edea155456ef031637a3d816087b6971da",
-      "tree_sha": "3eed4b268e7f2d20b1d5c6bcfc44d9810327823d",
-      "committed_at_utc": "2026-03-23T19:19:24+00:00"
+      "commit_sha": "382fb816d4cd12ceb59b12546b0d6c6a0c381073",
+      "tree_sha": "e231d1233b73362915e42ab20af916a8a9ddf976",
+      "committed_at_utc": "2026-03-23T19:27:26+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6cf3fc44683f0362e236bc881c1e30a6491a9aed996265f3a956485622e6d9f3"
+    "source_digest": "d42123069966a6b0a0b45c4609ccd36029817fc67964e4ff69488cc8c39119d2"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3277
+    "declaration_count": 3278
   },
   "readme_sync": {
     "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 58394,
+    "production_loc": 58456,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1786,
+    "proved_theorem_lemma_decls": 1787,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -6004,7 +6004,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 93,
+      "declaration_count": 94,
       "declarations": [
         {
           "kind": "namespace",
@@ -6676,8 +6676,17 @@
         },
         {
           "kind": "theorem",
+          "name": "endpointCallWithCaps_preserves_dualQueueSystemInvariant",
+          "line": 3471,
+          "called": [
+            "endpointCall_preserves_dualQueueSystemInvariant",
+            "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "endpointCall_preserves_ipcStateQueueConsistent",
-          "line": 3505,
+          "line": 3567,
           "called": [
             "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
             "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
@@ -6690,7 +6699,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyRecv_preserves_ipcStateQueueConsistent",
-          "line": 3569,
+          "line": 3631,
           "called": [
             "endpointReceiveDual_preserves_ipcStateQueueConsistent",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
@@ -6700,13 +6709,13 @@
         {
           "kind": "theorem",
           "name": "storeObject_notification_preserves_ipcStateQueueConsistent",
-          "line": 3636,
+          "line": 3698,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "notificationSignal_preserves_ipcStateQueueConsistent",
-          "line": 3662,
+          "line": 3724,
           "called": [
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "storeObject_notification_preserves_ipcStateQueueConsistent",
@@ -6716,7 +6725,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_ipcStateQueueConsistent",
-          "line": 3704,
+          "line": 3766,
           "called": [
             "removeRunnable_preserves_ipcStateQueueConsistent",
             "storeObject_notification_preserves_ipcStateQueueConsistent",

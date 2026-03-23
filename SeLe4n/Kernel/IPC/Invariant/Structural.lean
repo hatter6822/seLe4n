@@ -3465,6 +3465,68 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
       | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ =>
         obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
 
+/-- T4-E: endpointCallWithCaps preserves dualQueueSystemInvariant.
+Composes endpointCall base preservation with ipcUnwrapCaps preservation.
+Same structure as endpointSendDualWithCaps_preserves_dualQueueSystemInvariant. -/
+theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : dualQueueSystemInvariant st)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
+    (hCnodeRoot : ∀ (stMid : SystemState) (recvRoot : SeLe4n.ObjId),
+      endpointCall endpointId caller msg st = .ok ((), stMid) →
+      ∃ cn, stMid.objects[recvRoot]? = some (.cnode cn))
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    dualQueueSystemInvariant st' := by
+  simp only [endpointCallWithCaps] at hStep
+  cases hCall : endpointCall endpointId caller msg st with
+  | error e => simp [hCall] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    simp only [hCall] at hStep
+    have hInvMid := endpointCall_preserves_dualQueueSystemInvariant endpointId caller msg
+      st stMid hObjInv hCall hInv hFreshCaller hSendTailFresh
+    have hObjInvMid : stMid.objects.invExt :=
+      endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    cases hObj : st.objects[endpointId]? with
+    | none =>
+      simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some obj =>
+      cases obj with
+      | endpoint ep =>
+        cases hHead : ep.receiveQ.head with
+        | none =>
+          simp [hObj, hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+        | some receiverId =>
+          by_cases hEmpty : msg.caps.isEmpty = true
+          · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+          · simp [hObj, hHead, hEmpty] at hStep
+            cases hLookup : lookupCspaceRoot stMid receiverId with
+            | none => simp [hLookup] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+            | some recvRoot =>
+              simp only [hLookup] at hStep
+              obtain ⟨cn, hCn⟩ := hCnodeRoot stMid recvRoot hCall
+              exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg callerCspaceRoot
+                recvRoot receiverSlotBase _ stMid st' summary cn hCn hInvMid hObjInvMid hStep
+      | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ =>
+        simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+
 -- ============================================================================
 -- T4-D (M-IPC-2): endpointQueueRemoveDual and dualQueueSystemInvariant
 --
