@@ -85,7 +85,7 @@ wrappers, Q9 integration testing + documentation.
 Next: **Raspberry Pi 5 hardware binding**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-S workstream plan](../audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
+[WS-S workstream plan](../dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
 
 ## 5. Architecture mental model
 

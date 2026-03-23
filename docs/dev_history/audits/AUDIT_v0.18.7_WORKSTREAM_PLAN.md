@@ -3,8 +3,8 @@
 **Created**: 2026-03-22
 **Baseline version**: 0.18.7
 **Baseline audits**:
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (50 findings)
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md` (65+ findings)
+- `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (50 findings)
+- `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md` (65+ findings)
 **Prior portfolios**: WS-B through WS-R (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 **Combined finding count**: 5 High, 29 Medium (deduplicated), 30 Low, 80+ Info (across both audits)
@@ -485,7 +485,7 @@ files synchronized. Zero `sorry`/`axiom`. Website link manifest verified.
 | S7-K | — | Run full Rust test suite (`cargo test --workspace`). Verify all tests pass including new `Result`-based `restrict()` tests. | `rust/` | Small |
 | S7-L | — | Final `sorry`/`axiom` scan across entire codebase. Verify zero sorry, zero axiom (outside `Assumptions.lean`). | all `.lean` files | Trivial |
 | S7-M | — | Update `CHANGELOG.md` with WS-S release notes for v0.19.0–v0.19.6. | `CHANGELOG.md` | Small |
-| S7-N | — | Produce WS-S closure report summarizing all remediated findings, test results, and residual items deferred to future workstreams. | `docs/audits/` (new file) | Medium |
+| S7-N | — | Produce WS-S closure report summarizing all remediated findings, test results, and residual items deferred to future workstreams. | `docs/dev_history/audits/` (new file) | Medium |
 
 ---
 

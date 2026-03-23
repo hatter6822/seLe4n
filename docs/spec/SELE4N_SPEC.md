@@ -55,8 +55,8 @@ enforcement, and scheduling.
 | **Test LoC** | 7,559 across 10 Lean test suites |
 | **Proved declarations** | 1,756 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) and [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — dual comprehensive audits (115+ findings, 0 Critical) |
-| **Active workstream** | **WS-S COMPLETE** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks, v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). All 7 phases complete. Prior portfolios: WS-R (v0.18.0–v0.18.7), WS-Q (v0.17.7–v0.17.14), WS-N–WS-B — all COMPLETE. **Next: Raspberry Pi 5 hardware binding.** |
+| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) and [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — dual comprehensive audits (115+ findings, 0 Critical) |
+| **Active workstream** | **WS-S COMPLETE** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks, v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). All 7 phases complete. Prior portfolios: WS-R (v0.18.0–v0.18.7), WS-Q (v0.17.7–v0.17.14), WS-N–WS-B — all COMPLETE. **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
