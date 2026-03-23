@@ -24,8 +24,8 @@ through WS-S) are complete.
 WS-S is a completed workstream (v0.19.0–v0.19.6), addressing all findings from
 dual comprehensive v0.18.7 audits (115+ findings). 7 phases (S1–S7), 83
 sub-tasks. All 5 High, 29 Medium, and 19 Low findings resolved. See
-[`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
-Closure report: [`WS_S_CLOSURE_REPORT.md`](audits/WS_S_CLOSURE_REPORT.md).
+[`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
+Closure report: [`WS_S_CLOSURE_REPORT.md`](dev_history/audits/WS_S_CLOSURE_REPORT.md).
 
 ### WS-R workstream (Comprehensive Audit Remediation) — PORTFOLIO COMPLETE
 
@@ -125,8 +125,8 @@ from two comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMAR
 (50 findings) and `AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md` (65+ findings).
 7 phases (S1–S7), 83 sub-tasks (including 1 stretch goal deferred to WS-T).
 All 5 High, 29 Medium, and 19 Low findings resolved. See
-[`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
-Closure report: [`WS_S_CLOSURE_REPORT.md`](audits/WS_S_CLOSURE_REPORT.md).
+[`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
+Closure report: [`WS_S_CLOSURE_REPORT.md`](dev_history/audits/WS_S_CLOSURE_REPORT.md).
 
 - **S1 (v0.19.0) — COMPLETE**: Security Boundary & Rust Type Safety. Removed
   deprecated `Badge.ofNat` (U-H1). Converted `MemoryRegion.wellFormed` from Bool

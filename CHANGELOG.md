@@ -20,7 +20,7 @@
   testing, proof map, codebase reference) to mirror canonical doc changes.
 - S7-H: Verified `scripts/website_link_manifest.txt` — all protected paths exist.
 - S7-M: Updated `CHANGELOG.md` with WS-S v0.19.0–v0.19.6 release notes.
-- S7-N: Produced WS-S closure report (`docs/audits/WS_S_CLOSURE_REPORT.md`)
+- S7-N: Produced WS-S closure report (`docs/dev_history/audits/WS_S_CLOSURE_REPORT.md`)
   summarizing all remediated findings, test results, and residual items.
 - Version bumped to 0.19.6 in `lakefile.toml`.
 - Zero sorry/axiom, all tests pass.

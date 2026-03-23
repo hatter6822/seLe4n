@@ -173,7 +173,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 **Known large files** (read in ≤500-line chunks):
 - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2345 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2446 lines)
-- `docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md` (~707 lines)
+- `docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md` (~707 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2170 lines)
 - `CHANGELOG.md` (~1659 lines)
@@ -441,8 +441,8 @@ under `docs/` and `docs/gitbook/`.
 - **WS-Q PORTFOLIO COMPLETE** (v0.17.7–v0.17.14): Kernel State Architecture — all 9 phases (Q1–Q9, 45 atomic units) delivered. See `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`
 - **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
-- **Latest audits**: `docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` and `docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`
-- **Active workstream plan**: `docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md` — WS-S: 7 phases, 83 sub-tasks
+- **Latest audits**: `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` and `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`
+- **Active workstream plan**: `docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md` — WS-S: 7 phases, 83 sub-tasks
 - **All prior workstreams completed**: WS-B through WS-R (see `docs/WORKSTREAM_HISTORY.md`)
 - **Next milestone**: WS-S pre-benchmark strengthening, then Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
