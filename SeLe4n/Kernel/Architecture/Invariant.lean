@@ -263,11 +263,17 @@ private theorem default_capabilityInvariantBundle :
 
 private theorem default_dualQueueSystemInvariant :
     dualQueueSystemInvariant (default : SystemState) := by
-  constructor
+  refine ⟨?_, ?_, ?_⟩
   · intro epId ep hObj; have h : (default : SystemState).objects[epId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
   · constructor
     · intro a tcbA hObj; have h : (default : SystemState).objects[a.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
     · intro b tcbB hObj; have h : (default : SystemState).objects[b.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid hp
+    have hEmpty : ∀ (oid : SeLe4n.ObjId), (default : SystemState).objects[oid]? = none :=
+      fun oid => RHTable_get?_empty 16 (by omega)
+    exact match hp with
+    | .single _ _ tcb hObj _ => by rw [hEmpty] at hObj; exact absurd hObj (by simp)
+    | .cons _ _ _ tcb hObj _ _ => by rw [hEmpty] at hObj; exact absurd hObj (by simp)
 
 private theorem default_allPendingMessagesBounded :
     allPendingMessagesBounded (default : SystemState) := by
@@ -465,7 +471,23 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (advanceTimerState ticks st) := by
   obtain ⟨h1, h2, h3, h4⟩ := hIpc
-  exact ⟨by exact h1, by exact h2, by exact h3, by exact h4⟩
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4⟩
+  -- advanceTimerState only changes machine.timer; objects are identical
+  have hObjs : (advanceTimerState ticks st).objects = st.objects := by
+    unfold advanceTimerState; rfl
+  obtain ⟨hEp, hLink, hAcyc⟩ := h2
+  refine ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
+         ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
+          fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
+         fun tid hp => hAcyc tid (transportPath hObjs hp)⟩
+  where
+    transportPath {a b : SeLe4n.ThreadId}
+        (hObjs : (advanceTimerState ticks st).objects = st.objects)
+        (hp : QueueNextPath (advanceTimerState ticks st) a b) :
+        QueueNextPath st a b :=
+      match hp with
+      | .single _ _ tcb hObj hN => .single _ _ tcb (hObjs ▸ hObj) hN
+      | .cons _ _ _ tcb hObj hN tail => .cons _ _ _ tcb (hObjs ▸ hObj) hN (transportPath hObjs tail)
 
 theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)

@@ -117,6 +117,88 @@ theorem endpointQueuePopHead_link_safe (q : IntrusiveQueue) (st : SystemState)
   | none => trivial
   | some next => exact let ⟨t, h, _⟩ := hInteg.1 hd tcb hTcb next hNext; ⟨t, h⟩
 
+-- ---- Helper: QueueNextPath transport across object equality ----
+
+/-- If two states have the same objects, QueueNextPath transfers between them. -/
+private theorem QueueNextPath_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) {a b : SeLe4n.ThreadId}
+    (hp : QueueNextPath st' a b) : QueueNextPath st a b := by
+  induction hp with
+  | single x y tcbA hObj hNext =>
+    exact .single x y tcbA (by rw [← hObjs]; exact hObj) hNext
+  | cons x y z tcbA hObj hNext _ ih =>
+    exact .cons x y z tcbA (by rw [← hObjs]; exact hObj) hNext ih
+
+/-- If objects are unchanged, tcbQueueChainAcyclic transfers to the new state. -/
+private theorem tcbQueueChainAcyclic_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (hAcyclic : tcbQueueChainAcyclic st) :
+    tcbQueueChainAcyclic st' :=
+  fun tid hp => hAcyclic tid (QueueNextPath_of_objects_eq hObjs hp)
+
+/-- Transport QueueNextPath from post-state to pre-state when storeObject replaces
+a TCB at tid with a new TCB that has the same queueNext. -/
+private theorem QueueNextPath_transport_storeObject_tcb
+    {st st' : SystemState} {tid : SeLe4n.ObjId} {tcb tcb' : TCB}
+    (hNextEq : tcb'.queueNext = tcb.queueNext)
+    (hTcbPre : st.objects[tid]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject tid (.tcb tcb') st = .ok ((), st'))
+    {a b : SeLe4n.ThreadId}
+    (hp : QueueNextPath st' a b) : QueueNextPath st a b := by
+  induction hp with
+  | single x y tcbX hObj hNext =>
+    by_cases hx : x.toObjId = tid
+    · rw [hx, storeObject_objects_eq st st' tid _ hObjInv hStore] at hObj
+      cases hObj; rw [hNextEq] at hNext
+      exact .single x y tcb (hx ▸ hTcbPre) hNext
+    · exact .single x y tcbX (by rwa [storeObject_objects_ne st st' tid x.toObjId _ hx hObjInv hStore] at hObj) hNext
+  | cons x y z tcbX hObj hNext _ ih =>
+    by_cases hx : x.toObjId = tid
+    · rw [hx, storeObject_objects_eq st st' tid _ hObjInv hStore] at hObj
+      cases hObj; rw [hNextEq] at hNext
+      exact .cons x y z tcb (hx ▸ hTcbPre) hNext ih
+    · exact .cons x y z tcbX (by rwa [storeObject_objects_ne st st' tid x.toObjId _ hx hObjInv hStore] at hObj) hNext ih
+
+/-- storeObject of a TCB with preserved queueNext preserves tcbQueueChainAcyclic. -/
+private theorem storeObject_tcb_preserves_tcbQueueChainAcyclic
+    (st st' : SystemState) (tid : SeLe4n.ObjId) (tcb tcb' : TCB)
+    (hNextEq : tcb'.queueNext = tcb.queueNext)
+    (hTcbPre : st.objects[tid]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject tid (.tcb tcb') st = .ok ((), st'))
+    (hAcyclic : tcbQueueChainAcyclic st) :
+    tcbQueueChainAcyclic st' :=
+  fun tid' hp => hAcyclic tid' (QueueNextPath_transport_storeObject_tcb hNextEq hTcbPre hObjInv hStore hp)
+
+/-- Transport QueueNextPath from post-state to pre-state when storeObject replaces
+a non-TCB object. No TCB is modified, so all edges are preserved. -/
+private theorem QueueNextPath_transport_storeObject_nonTcb
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {obj : KernelObject}
+    (hNotTcb : ∀ tcb : TCB, obj ≠ .tcb tcb)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    {a b : SeLe4n.ThreadId}
+    (hp : QueueNextPath st' a b) : QueueNextPath st a b := by
+  induction hp with
+  | single x y tcbA hObj hNext =>
+    have hx : x.toObjId ≠ oid := by
+      intro h; rw [h, storeObject_objects_eq st st' oid _ hObjInv hStore] at hObj; cases hObj; exact hNotTcb tcbA rfl
+    exact .single x y tcbA (by rwa [storeObject_objects_ne st st' oid x.toObjId _ hx hObjInv hStore] at hObj) hNext
+  | cons x y z tcbA hObj hNext _ ih =>
+    have hx : x.toObjId ≠ oid := by
+      intro h; rw [h, storeObject_objects_eq st st' oid _ hObjInv hStore] at hObj; cases hObj; exact hNotTcb tcbA rfl
+    exact .cons x y z tcbA (by rwa [storeObject_objects_ne st st' oid x.toObjId _ hx hObjInv hStore] at hObj) hNext ih
+
+/-- storeObject of a non-TCB object preserves tcbQueueChainAcyclic. -/
+private theorem storeObject_nonTcb_preserves_tcbQueueChainAcyclic
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hNotTcb : ∀ tcb : TCB, obj ≠ .tcb tcb)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hAcyclic : tcbQueueChainAcyclic st) :
+    tcbQueueChainAcyclic st' :=
+  fun tid hp => hAcyclic tid (QueueNextPath_transport_storeObject_nonTcb hNotTcb hObjInv hStore hp)
+
 -- ---- Frame lemmas: ensureRunnable / removeRunnable ----
 
 /-- WS-H5: ensureRunnable preserves intrusiveQueueWellFormed. -/
@@ -198,8 +280,9 @@ private theorem ensureRunnable_preserves_dualQueueSystemInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (ensureRunnable st tid) := by
-  obtain ⟨hEp, hLink⟩ := hInv
-  refine ⟨?_, ensureRunnable_preserves_tcbQueueLinkIntegrity st tid hLink⟩
+  obtain ⟨hEp, hLink, hAcyclic⟩ := hInv
+  refine ⟨?_, ensureRunnable_preserves_tcbQueueLinkIntegrity st tid hLink,
+    tcbQueueChainAcyclic_of_objects_eq (ensureRunnable_preserves_objects st tid) hAcyclic⟩
   intro epId ep hObj; rw [ensureRunnable_preserves_objects] at hObj
   exact ensureRunnable_preserves_dualQueueEndpointWellFormed st tid epId (hEp epId ep hObj)
 
@@ -208,8 +291,9 @@ private theorem removeRunnable_preserves_dualQueueSystemInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (removeRunnable st tid) := by
-  obtain ⟨hEp, hLink⟩ := hInv
-  refine ⟨?_, removeRunnable_preserves_tcbQueueLinkIntegrity st tid hLink⟩
+  obtain ⟨hEp, hLink, hAcyclic⟩ := hInv
+  refine ⟨?_, removeRunnable_preserves_tcbQueueLinkIntegrity st tid hLink,
+    tcbQueueChainAcyclic_of_objects_eq (removeRunnable_preserves_objects st tid) hAcyclic⟩
   intro epId ep hObj; rw [removeRunnable_preserves_objects] at hObj
   exact removeRunnable_preserves_dualQueueEndpointWellFormed st tid epId (hEp epId ep hObj)
 
@@ -393,12 +477,13 @@ theorem storeObject_notification_preserves_dualQueueSystemInvariant
                 st.objects[nid]? = none)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpInv, hLink⟩ := hInv
+  obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
   have hNotTcb : ∀ tcb : TCB, st.objects[nid]? ≠ some (.tcb tcb) := by
     intro tcb h; rcases hPreNtfn with ⟨n, hSome⟩ | hNone
     · rw [hSome] at h; cases h
     · rw [hNone] at h; cases h
-  constructor
+  refine ⟨?_, storeObject_notification_preserves_tcbQueueLinkIntegrity
+      st st' nid ntfn' hObjInv hStore hNotTcb hLink, ?_⟩
   · intro epId ep hEpPost
     by_cases hEq : epId = nid
     · subst hEq; rw [storeObject_objects_eq st st' epId _ hObjInv hStore] at hEpPost; cases hEpPost
@@ -411,8 +496,8 @@ theorem storeObject_notification_preserves_dualQueueSystemInvariant
                st st' nid ntfn' hObjInv hStore hNotTcb _ hWf.1,
              storeObject_notification_preserves_intrusiveQueueWellFormed
                st st' nid ntfn' hObjInv hStore hNotTcb _ hWf.2⟩
-  · exact storeObject_notification_preserves_tcbQueueLinkIntegrity
-      st st' nid ntfn' hObjInv hStore hNotTcb hLink
+  · exact storeObject_nonTcb_preserves_tcbQueueChainAcyclic
+      st st' nid (.notification ntfn') (fun _ h => by cases h) hObjInv hStore hAcyclic
 
 -- ---- Derived frame lemmas for storeTcbIpcState, storeTcbIpcStateAndMessage, storeTcbPendingMessage ----
 
@@ -424,7 +509,7 @@ private theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
     (hStep : storeTcbIpcState st tid ipc = .ok st')
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpInv, hLink⟩ := hInv
+  obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
   unfold storeTcbIpcState at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -447,7 +532,9 @@ private theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
           have hPrev : ({ tcb with ipcState := ipc } : TCB).queuePrev = tcb.queuePrev := rfl
           have hNext : ({ tcb with ipcState := ipc } : TCB).queueNext = tcb.queueNext := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
-                       tid.toObjId tcb { tcb with ipcState := ipc } hPrev hNext hTcbPre hObjInv hStore hLink⟩
+                       tid.toObjId tcb { tcb with ipcState := ipc } hPrev hNext hTcbPre hObjInv hStore hLink,
+                 storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
+                       tid.toObjId tcb { tcb with ipcState := ipc } hNext hTcbPre hObjInv hStore hAcyclic⟩
           intro epId ep hObj
           by_cases hEq : epId = tid.toObjId
           · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hObj; cases hObj
@@ -469,7 +556,7 @@ private theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpInv, hLink⟩ := hInv
+  obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
   unfold storeTcbIpcStateAndMessage at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -492,7 +579,9 @@ private theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
           have hPrev : ({ tcb with ipcState := ipc, pendingMessage := msg } : TCB).queuePrev = tcb.queuePrev := rfl
           have hNext : ({ tcb with ipcState := ipc, pendingMessage := msg } : TCB).queueNext = tcb.queueNext := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
-                       tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink⟩
+                       tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
+                 storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
+                       tid.toObjId tcb _ hNext hTcbPre hObjInv hStore hAcyclic⟩
           intro epId ep hObj
           by_cases hEq : epId = tid.toObjId
           · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hObj; cases hObj
@@ -513,7 +602,7 @@ private theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
     (hStep : storeTcbPendingMessage st tid msg = .ok st')
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpInv, hLink⟩ := hInv
+  obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
   unfold storeTcbPendingMessage at hStep
   cases hLookup : lookupTcb st tid with
   | none => simp [hLookup] at hStep
@@ -535,7 +624,9 @@ private theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
           have hPrev : ({ tcb with pendingMessage := msg } : TCB).queuePrev = tcb.queuePrev := rfl
           have hNext : ({ tcb with pendingMessage := msg } : TCB).queueNext = tcb.queueNext := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
-                       tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink⟩
+                       tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
+                 storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
+                       tid.toObjId tcb _ hNext hTcbPre hObjInv hStore hAcyclic⟩
           intro epId ep hObj
           by_cases hEq : epId = tid.toObjId
           · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hObj; cases hObj
@@ -839,6 +930,196 @@ private theorem storeTcbQueueLinks_append_tail_preserves_linkInteg
           exact absurd hNxt (by rw [hTN]; simp)
         · exact ⟨tA, by rw [hOther a.toObjId haT haNeN]; exact hA1, hNxt⟩
 
+-- ---- WS-H5: storeTcbQueueLinks acyclicity helpers ----
+
+/-- storeTcbQueueLinks with next=none (clearing or noprevnext) preserves acyclicity.
+Removing/clearing the outgoing edge from tid cannot create new cycles. -/
+private theorem storeTcbQueueLinks_clearing_preserves_tcbQueueChainAcyclic
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev none = .ok st')
+    (hAcyclic : tcbQueueChainAcyclic st) :
+    tcbQueueChainAcyclic st' := by
+  obtain ⟨origTcb, hLookup, hTcb'⟩ := storeTcbQueueLinks_result_tcb st st' tid prev pprev none hObjInv hStep
+  -- Any QueueNextPath in st' transfers to st: tid has next=none so can't be source,
+  -- other ObjIds unchanged
+  have hTransfer : ∀ a b, QueueNextPath st' a b → QueueNextPath st a b := by
+    intro a b hp
+    induction hp with
+    | single x y tcbX hObj hNext =>
+      by_cases hx : x.toObjId = tid.toObjId
+      · rw [hx, hTcb'] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+      · exact .single x y tcbX (by rwa [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev none x.toObjId hx hObjInv hStep] at hObj) hNext
+    | cons x y z tcbX hObj hNext _ ih =>
+      by_cases hx : x.toObjId = tid.toObjId
+      · rw [hx, hTcb'] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+      · exact .cons x y z tcbX (by rwa [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev none x.toObjId hx hObjInv hStep] at hObj) hNext ih
+  intro t hp; exact hAcyclic t (hTransfer t t hp)
+
+/-- storeTcbQueueLinks preserving queueNext preserves acyclicity.
+The edge set is unchanged: tid's new TCB has the same queueNext. -/
+private theorem storeTcbQueueLinks_preserveNext_preserves_tcbQueueChainAcyclic
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hNextPreserved : ∀ tcb, lookupTcb st tid = some tcb → tcb.queueNext = next)
+    (hAcyclic : tcbQueueChainAcyclic st) :
+    tcbQueueChainAcyclic st' := by
+  obtain ⟨origTcb, hLookup, hTcb'⟩ := storeTcbQueueLinks_result_tcb st st' tid prev pprev next hObjInv hStep
+  have hOrigObj := lookupTcb_some_objects st tid origTcb hLookup
+  have hNextEq : (tcbWithQueueLinks origTcb prev pprev next).queueNext = origTcb.queueNext := by
+    simp [tcbWithQueueLinks]; exact (hNextPreserved origTcb hLookup).symm
+  -- storeTcbQueueLinks preserving queueNext: same edges, same acyclicity.
+  -- Every QueueNextPath in st' transfers to st via the preserved queueNext at tid
+  -- and unchanged objects at all other ObjIds.
+  have hTransfer : ∀ a b, QueueNextPath st' a b → QueueNextPath st a b := by
+    intro a b hp
+    induction hp with
+    | single x y tcbX hObj hNext =>
+      by_cases hx : x.toObjId = tid.toObjId
+      · rw [hx, hTcb'] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+        rw [← hNextPreserved origTcb hLookup] at hNext
+        exact .single x y origTcb (hx ▸ hOrigObj) hNext
+      · exact .single x y tcbX (by rwa [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next x.toObjId hx hObjInv hStep] at hObj) hNext
+    | cons x y z tcbX hObj hNext _ ih =>
+      by_cases hx : x.toObjId = tid.toObjId
+      · rw [hx, hTcb'] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+        rw [← hNextPreserved origTcb hLookup] at hNext
+        exact .cons x y z origTcb (hx ▸ hOrigObj) hNext ih
+      · exact .cons x y z tcbX (by rwa [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next x.toObjId hx hObjInv hStep] at hObj) hNext ih
+  intro t hp; exact hAcyclic t (hTransfer t t hp)
+
+/-- Two-step storeTcbQueueLinks append (tailTid.next=newTid, newTid.next=none) preserves
+acyclicity. The new edge tail→new cannot create a cycle because new.next=none. -/
+private theorem storeTcbQueueLinks_append_preserves_tcbQueueChainAcyclic
+    (st1 st2 stF : SystemState) (tailTid newTid : SeLe4n.ThreadId)
+    (prevT : Option SeLe4n.ThreadId) (pprevT pprevN : Option QueuePPrev)
+    (hObjInv : st1.objects.invExt)
+    (hStep1 : storeTcbQueueLinks st1 tailTid prevT pprevT (some newTid) = .ok st2)
+    (hStep2 : storeTcbQueueLinks st2 newTid (some tailTid) pprevN none = .ok stF)
+    (hNe : tailTid.toObjId ≠ newTid.toObjId)
+    (hTailNext : ∀ t, st1.objects[tailTid.toObjId]? = some (.tcb t) → t.queueNext = none)
+    (hNoFwd : ∀ (a : SeLe4n.ThreadId) (tA : TCB), st1.objects[a.toObjId]? = some (.tcb tA) →
+      tA.queueNext ≠ some newTid)
+    (hAcyclic : tcbQueueChainAcyclic st1) :
+    tcbQueueChainAcyclic stF := by
+  -- Step 2 clears newTid.next. Acyclicity preserved from st2.
+  -- Step 1 sets tailTid.next = some newTid. Prove st2 is acyclic.
+  -- In pairB (=st1 for TCBs), tailTid.next = none.
+  -- In st2, tailTid.next = some newTid, newTid unchanged from st1.
+  -- A cycle in st2 through tail→new needs new→⁺tail, but new.next is original from st1
+  -- and no cycle through tail→new can form because step 2 clears new.next.
+  -- Simplest: compose step 2 (clearing) with step 1 proof.
+  -- Step 2 clears newTid.next → use storeTcbQueueLinks_clearing_preserves_tcbQueueChainAcyclic.
+  -- Need st2 is acyclic. Prove via storeObject_tcb: tailTid.next changed but
+  -- no cycle can go through tail→new since in st1, no TCB has next=some newTid (hNoFwd).
+  -- st2: tailTid has next=some newTid, everything else same as st1 for TCBs.
+  -- Prove st2 acyclic: any cycle in st2 either goes through tailTid (as source) or not.
+  -- If not, all edges from st1, cycle in st1 → contradiction.
+  -- If yes, tailTid→newTid. Then newTid→⁺tailTid in st2.
+  -- newTid in st2 has same TCB as st1 (step 1 only modified tailTid).
+  -- For the sub-path newTid→⁺tailTid in st2:
+  -- Each edge either uses tailTid (with next=newTid) or another thread (same as st1).
+  -- If the path revisits tailTid→newTid, it loops through tail→new→...→tail→new,
+  -- but each return to tail requires going through other st1 edges. Ultimately, removing
+  -- the tail→new edge gives a path in st1 that forms a cycle. Contradiction.
+  -- This is getting very complex. Let me use the two-step composition approach:
+  -- stF is the result of clearing newTid.next in st2. Acyclicity of stF follows if st2 is acyclic.
+  have hObjInv2 := storeTcbQueueLinks_preserves_objects_invExt st1 st2 tailTid prevT pprevT (some newTid) hObjInv hStep1
+  -- Prove st2 is acyclic by showing it satisfies the conditions of storeObject_tcb with
+  -- a changed queueNext. Actually, we can't use that lemma directly since queueNext changed.
+  -- Instead, use the direct clearing approach on step 2 and provide acyclicity of st2.
+  -- For st2 acyclicity, observe:
+  -- st2.objects[tailTid.toObjId] = tcbWithQueueLinks origTail prevT pprevT (some newTid)
+  -- st2.objects[oid] = st1.objects[oid] for oid ≠ tailTid.toObjId
+  -- A QueueNextPath in st2: every edge from oid ≠ tailTid is from st1.
+  -- Edge from tailTid goes to newTid (new). In st1, no edge goes TO newTid (hNoFwd).
+  -- So newTid is "fresh" as a target. The only way to reach newTid in st2 is via tailTid.
+  -- For a cycle, after reaching newTid, we'd need to get back to the cycle start.
+  -- From newTid, edges are from st1 (newTid unchanged). From newTid we can reach
+  -- some set of vertices via st1 edges. If we reach tailTid, in st2 tailTid→newTid,
+  -- creating a loop. But in st1, tailTid.next = none, so tailTid is a dead end.
+  -- The path newTid→...→tailTid in st1 (with st1 edges) can't continue from tailTid.
+  -- So in st2, after going tailTid→newTid→...→tailTid (using st1 edges in between),
+  -- we'd need the path from newTid to reach tailTid through st1 edges.
+  -- If such a path exists, we can construct a path in st1: newTid→...→tailTid.
+  -- Combined with tailTid.next=none, this path can't form a cycle in st1. Fine.
+  -- But the cycle in st2 is: start→...→tailTid→newTid→...→start (through st1 edges and
+  -- the one new edge). Removing the new edge, the rest uses st1 edges: start→...→tailTid
+  -- (in st1) and newTid→...→start (in st1). These don't form a cycle in st1 unless
+  -- connected, but tailTid.next=none in st1 disconnects them.
+  -- Formal approach: transfer path from st2 to st1, handling the tail→new edge specially.
+  obtain ⟨origTail, hLkT, hTailSt2⟩ := storeTcbQueueLinks_result_tcb st1 st2 tailTid prevT pprevT (some newTid) hObjInv hStep1
+  obtain ⟨origNew, hLkN, hNewStF⟩ := storeTcbQueueLinks_result_tcb st2 stF newTid (some tailTid) pprevN none hObjInv2 hStep2
+  have hTailOrig := lookupTcb_some_objects st1 tailTid origTail hLkT
+  have hTailStF : stF.objects[tailTid.toObjId]? =
+      some (.tcb (tcbWithQueueLinks origTail prevT pprevT (some newTid))) := by
+    rw [storeTcbQueueLinks_preserves_objects_ne st2 stF newTid (some tailTid) pprevN none
+      tailTid.toObjId hNe hObjInv2 hStep2]; exact hTailSt2
+  have hOther : ∀ oid, oid ≠ tailTid.toObjId → oid ≠ newTid.toObjId →
+      stF.objects[oid]? = st1.objects[oid]? := by
+    intro oid hne1 hne2
+    rw [storeTcbQueueLinks_preserves_objects_ne st2 stF newTid (some tailTid) pprevN none oid hne2 hObjInv2 hStep2,
+        storeTcbQueueLinks_preserves_objects_ne st1 st2 tailTid prevT pprevT (some newTid) oid hne1 hObjInv hStep1]
+  -- newTid.next = none in stF, so no QueueNextPath starts at newTid
+  have hNoPathFromNew : ∀ a b, QueueNextPath stF a b → a.toObjId ≠ newTid.toObjId := by
+    intro a b hp
+    cases hp with
+    | single x y tcbX hObj hNext =>
+      intro hx; rw [hx, hNewStF] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+    | cons x y z tcbX hObj hNext _ =>
+      intro hx; rw [hx, hNewStF] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+  -- Transfer: QueueNextPath stF a b where a ≠ newTid and (a = tailTid → b = newTid)
+  -- translates to st1 edges (except the impossible tail single-step case which
+  -- only arises when b = newTid, handled by caller)
+  -- For the cycle proof, we handle each first step then use transfer for the tail.
+  intro t hp
+  -- Eliminate the first step of the cycle, then transfer the remaining path
+  cases hp with
+  | single _ _ tcbX hObj hNext =>
+    by_cases hxN : t.toObjId = newTid.toObjId
+    · rw [hxN, hNewStF] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+    · by_cases hxT : t.toObjId = tailTid.toObjId
+      · rw [hxT, hTailStF] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+        exact absurd (hxT ▸ congrArg ThreadId.toObjId hNext : newTid.toObjId = tailTid.toObjId) (Ne.symm hNe)
+      · exact hAcyclic t (.single t t tcbX (by rwa [hOther t.toObjId hxT hxN] at hObj) hNext)
+  | cons _ y _ tcbX hObj hNext hTail =>
+    by_cases hxN : t.toObjId = newTid.toObjId
+    · rw [hxN, hNewStF] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext
+    · by_cases hxT : t.toObjId = tailTid.toObjId
+      · rw [hxT, hTailStF] at hObj; cases hObj; simp [tcbWithQueueLinks] at hNext; subst hNext
+        exact absurd rfl (hNoPathFromNew newTid t hTail)
+      · have hObjSt1 : st1.objects[t.toObjId]? = some (.tcb tcbX) := by
+          rwa [hOther t.toObjId hxT hxN] at hObj
+        -- hTail : QueueNextPath stF y z where z = t = x
+        -- Need to transfer hTail to st1 to get QueueNextPath st1 y x.
+        -- Transfer path y→⁺t from stF to st1. Since t.toObjId ≠ newTid.toObjId,
+        -- the path can't end with tailTid→newTid, so all edges transfer to st1.
+        have hPathTransfer : ∀ a b, QueueNextPath stF a b → b.toObjId ≠ newTid.toObjId → QueueNextPath st1 a b := by
+          intro a b hpab hbN
+          induction hpab with
+          | single x' y' tcbX' hObj' hNext' =>
+            by_cases hxN' : x'.toObjId = newTid.toObjId
+            · rw [hxN', hNewStF] at hObj'; cases hObj'; simp [tcbWithQueueLinks] at hNext'
+            · by_cases hxT' : x'.toObjId = tailTid.toObjId
+              · rw [hxT', hTailStF] at hObj'; cases hObj'; simp [tcbWithQueueLinks] at hNext'
+                subst hNext'; exact absurd rfl hbN
+              · exact .single x' y' tcbX' (by rwa [hOther x'.toObjId hxT' hxN'] at hObj') hNext'
+          | cons x' y' z' tcbX' hObj' hNext' _ ih =>
+            by_cases hxN' : x'.toObjId = newTid.toObjId
+            · rw [hxN', hNewStF] at hObj'; cases hObj'; simp [tcbWithQueueLinks] at hNext'
+            · by_cases hxT' : x'.toObjId = tailTid.toObjId
+              · rw [hxT', hTailStF] at hObj'; cases hObj'; simp [tcbWithQueueLinks] at hNext'
+                subst hNext'
+                exact absurd rfl (hNoPathFromNew newTid z' (by assumption))
+              · exact .cons x' y' z' tcbX' (by rwa [hOther x'.toObjId hxT' hxN'] at hObj') hNext' (ih hbN)
+        suffices hTailSt1 : QueueNextPath st1 y t from
+          hAcyclic t (.cons t y t tcbX hObjSt1 hNext hTailSt1)
+        exact hPathTransfer y t hTail hxN
+
 -- ---- WS-H5: Dual-queue preservation for queue operations ----
 
 /-- WS-H5: endpointQueuePopHead preserves dualQueueSystemInvariant. -/
@@ -849,7 +1130,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
     (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st'))
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpInv, hLink⟩ := hInv
+  obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
   unfold endpointQueuePopHead at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
@@ -915,8 +1196,12 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
                   rw [hHeadTcb] at hA; cases hA; rw [hNext] at hN; exact absurd hN (by simp)
                 have hObjInvEp : pair.2.objects.invExt :=
                   storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStoreEp
+                have hAcycEp := storeObject_nonTcb_preserves_tcbQueueChainAcyclic
+                  st pair.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEp hAcyclic
                 refine ⟨?_, storeTcbQueueLinks_clearing_preserves_linkInteg
-                  pair.2 st3 headTid hObjInvEp hSt2 hLink1 hNoFwd1 hNoRev1⟩
+                  pair.2 st3 headTid hObjInvEp hSt2 hLink1 hNoFwd1 hNoRev1,
+                  storeTcbQueueLinks_clearing_preserves_tcbQueueChainAcyclic
+                  pair.2 st3 headTid none none hObjInvEp hSt2 hAcycEp⟩
                 intro epId' ep' hObj'
                 have hObj1 := storeTcbQueueLinks_endpoint_backward pair.2 st3 headTid none none none
                   epId' ep' hObjInvEp hSt2 hObj'
@@ -1073,8 +1358,15 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
                       rw [hTlEq] at hTl
                       obtain ⟨_, hT, hN⟩ := hWf.2.2 nextTid hTl
                       rw [hNextTcbSt] at hT; cases hT; exact hN
-                    -- SPLIT: endpoint well-formedness ∧ link integrity
-                    refine ⟨?_, ?_⟩
+                    -- SPLIT: endpoint well-formedness ∧ link integrity ∧ acyclicity
+                    have hAcycEpB := storeObject_nonTcb_preserves_tcbQueueChainAcyclic
+                      st pairB.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEpB hAcyclic
+                    have hAcycSt2 := storeTcbQueueLinks_preserveNext_preserves_tcbQueueChainAcyclic
+                      pairB.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hObjInvB hStN
+                      (fun tcb h => by rw [hLkN] at h; cases h; rfl) hAcycEpB
+                    have hAcycSt3 := storeTcbQueueLinks_clearing_preserves_tcbQueueChainAcyclic
+                      st2 st3 headTid none none hObjInvSt2B hClH hAcycSt2
+                    refine ⟨?_, ?_, hAcycSt3⟩
                     -- PART 1: Endpoint well-formedness
                     · intro epId' ep' hObj'
                       have hObjSt2 := storeTcbQueueLinks_endpoint_backward st2 st3 headTid _ _ _
@@ -1210,7 +1502,7 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpInv, hLink⟩ := hInv
+  obtain ⟨hEpInv, hLink, hAcyclic⟩ := hInv
   unfold endpointQueueEnqueue at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
@@ -1294,8 +1586,12 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
                     fun q hWf => storeTcbQueueLinks_preserves_iqwf pairA.2 stA enqueueTid
                       none (some QueuePPrev.endpointHead) none hObjInvA hSt2 q hWf
                       (fun _ _ _ => rfl) (fun _ _ _ => rfl)
+                  have hAcycA := storeTcbQueueLinks_clearing_preserves_tcbQueueChainAcyclic
+                    pairA.2 stA enqueueTid none (some QueuePPrev.endpointHead) hObjInvA hSt2
+                    (storeObject_nonTcb_preserves_tcbQueueChainAcyclic st pairA.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEp hAcyclic)
                   refine ⟨?_, storeTcbQueueLinks_noprevnext_preserves_linkInteg
-                    pairA.2 stA enqueueTid (some QueuePPrev.endpointHead) hObjInvA hSt2 hLink1 hNoFwd hNoRev⟩
+                    pairA.2 stA enqueueTid (some QueuePPrev.endpointHead) hObjInvA hSt2 hLink1 hNoFwd hNoRev,
+                    hAcycA⟩
                   intro epId' ep'A hObj'A
                   have hObj1A := storeTcbQueueLinks_endpoint_backward pairA.2 stA enqueueTid
                     none (some QueuePPrev.endpointHead) none epId' ep'A hObjInvA hSt2 hObj'A
@@ -1444,7 +1740,14 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
                         exact hQT q (storeObject_endpoint_preserves_intrusiveQueueWellFormed
                           st pairB.2 endpointId _ hObjInv hStoreEpB hPreEp q hWfSt)
                           (hHeadTailPrev q hWfSt) hT1 hH2
-                      refine ⟨?_, hLinkFinal⟩
+                      have hAcycB := storeTcbQueueLinks_append_preserves_tcbQueueChainAcyclic
+                        pairB.2 st2B st3B tailTid enqueueTid
+                        tailTcb.queuePrev tailTcb.queuePPrev (some (QueuePPrev.tcbNext tailTid))
+                        hObjInvB hSt2B hSt3B hNeTailEnq
+                        (fun t h => by rw [hTailInPB] at h; cases h; exact hTailNextNone)
+                        hNoFwd
+                        (storeObject_nonTcb_preserves_tcbQueueChainAcyclic st pairB.2 endpointId _ (fun _ h => by cases h) hObjInv hStoreEpB hAcyclic)
+                      refine ⟨?_, hLinkFinal, hAcycB⟩
                       intro epId' ep'F hObj'F
                       have hObj'2 := storeTcbQueueLinks_endpoint_backward st2B st3B enqueueTid
                         (some tailTid) (some (QueuePPrev.tcbNext tailTid)) none epId' ep'F hObjInv2B hSt3B hObj'F
@@ -2733,79 +3036,6 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv hStep,
    hDualQueue', hBounded', hBadge'⟩
 
-/-- T4-K (L-P10): Convenience theorem for composing `ipcInvariantFull` from its
-four individual components. Reduces boilerplate for callers that must manually
-compose the invariant by providing all four proofs in one call. -/
-theorem ipcInvariantFull_compositional
-    (st : SystemState)
-    (hIpc : ipcInvariant st)
-    (hDual : dualQueueSystemInvariant st)
-    (hBounded : allPendingMessagesBounded st)
-    (hBadge : badgeWellFormed st) :
-    ipcInvariantFull st :=
-  ⟨hIpc, hDual, hBounded, hBadge⟩
-
--- ============================================================================
--- T4-E/F (M-IPC-3): WithCaps wrappers preserve ipcInvariantFull
--- ============================================================================
-
-/-- T4-E (M-IPC-3): endpointSendDualWithCaps preserves the full IPC invariant.
-Composes the proven ipcInvariant preservation with caller-supplied proofs for
-the remaining three sub-invariants. -/
-theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBounded' : allPendingMessagesBounded st')
-    (hBadge' : badgeWellFormed st')
-    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
-     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge'⟩
-
-/-- T4-F (M-IPC-3): endpointReceiveDualWithCaps preserves the full IPC invariant.
-Same composition pattern as T4-E for the receive path. -/
-theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (endpointRights : AccessRightSet)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBounded' : allPendingMessagesBounded st')
-    (hBadge' : badgeWellFormed st')
-    (hStep : endpointReceiveDualWithCaps endpointId receiver endpointRights
-             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver endpointRights
-     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge'⟩
-
-/-- T4-E (M-IPC-3): endpointCallWithCaps preserves the full IPC invariant. -/
-theorem endpointCallWithCaps_preserves_ipcInvariantFull
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hBounded' : allPendingMessagesBounded st')
-    (hBadge' : badgeWellFormed st')
-    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
-     endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge'⟩
-
 -- ============================================================================
 -- WS-L3/L3-B: Standalone tcbQueueLinkIntegrity preservation
 -- ============================================================================
@@ -2820,7 +3050,7 @@ theorem endpointQueuePopHead_preserves_tcbQueueLinkIntegrity
     (hInv : dualQueueSystemInvariant st) :
     tcbQueueLinkIntegrity st' :=
   (endpointQueuePopHead_preserves_dualQueueSystemInvariant
-    endpointId isReceiveQ st st' tid hObjInv hStep hInv).2
+    endpointId isReceiveQ st st' tid hObjInv hStep hInv).2.1
 
 /-- WS-L3/L3-B2: Enqueue preserves `tcbQueueLinkIntegrity` as a standalone
 property. Extracts from the bundled `dualQueueSystemInvariant` preservation. -/
@@ -2845,7 +3075,7 @@ theorem endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity
           (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid)) :
     tcbQueueLinkIntegrity st' :=
   (endpointQueueEnqueue_preserves_dualQueueSystemInvariant
-    endpointId isReceiveQ enqueueTid st st' hStep hInv hObjInv hFreshTid hTailFresh).2
+    endpointId isReceiveQ enqueueTid st st' hStep hInv hObjInv hFreshTid hTailFresh).2.1
 
 -- ============================================================================
 -- WS-L3/L3-C2: ipcStateQueueConsistent preservation for queue operations
@@ -3271,7 +3501,7 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
   -- receiverRoot stays CNode throughout the operation
   have ⟨cn', hCn'⟩ := ipcUnwrapCaps_preserves_cnode_at_root msg senderRoot receiverRoot
     slotBase grantRight st st' summary cn hCn hObjInv hStep
-  obtain ⟨hEpWf, hLinkFwd, hLinkBwd⟩ := hInv
+  obtain ⟨hEpWf, hLink, hAcyclic⟩ := hInv
   -- Helper: transfer TCB preservation from st to st' for any oid
   have tcbTransfer : ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
       st.objects[oid]? = some (KernelObject.tcb tcb) →
@@ -3283,6 +3513,8 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
       st'.objects[oid]? = st.objects[oid]? :=
     fun oid hNe => ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase
       grantRight st st' summary oid hNe hObjInv hStep
+  have hLinkFwd := hLink.1
+  have hLinkBwd := hLink.2
   refine ⟨?_, ?_, ?_⟩
   -- Part 1: endpoint well-formedness
   · intro epId ep hEpSt'
@@ -3310,22 +3542,39 @@ theorem ipcUnwrapCaps_preserves_dualQueueSystemInvariant
       fun tl hTail => by
         obtain ⟨tcb, hTcb, hNext⟩ := hR3 tl hTail
         exact ⟨tcb, tcbTransfer _ _ hTcb, hNext⟩⟩⟩
-  -- Part 2: forward TCB link integrity
-  · intro a tcbA hTcbA' b hNext
-    have hTcbAPre : st.objects[a.toObjId]? = some (.tcb tcbA) := by
-      by_cases hNe : a.toObjId = receiverRoot
-      · subst hNe; simp [hCn'] at hTcbA'
-      · rw [objBack _ hNe] at hTcbA'; exact hTcbA'
-    obtain ⟨tcbB, hTcbB, hPrev⟩ := hLinkFwd a tcbA hTcbAPre b hNext
-    exact ⟨tcbB, tcbTransfer _ _ hTcbB, hPrev⟩
-  -- Part 3: backward TCB link integrity
-  · intro b tcbB hTcbB' a hPrev
-    have hTcbBPre : st.objects[b.toObjId]? = some (.tcb tcbB) := by
-      by_cases hNe : b.toObjId = receiverRoot
-      · subst hNe; simp [hCn'] at hTcbB'
-      · rw [objBack _ hNe] at hTcbB'; exact hTcbB'
-    obtain ⟨tcbA, hTcbA, hNext⟩ := hLinkBwd b tcbB hTcbBPre a hPrev
-    exact ⟨tcbA, tcbTransfer _ _ hTcbA, hNext⟩
+  -- Part 2: TCB queue link integrity (forward + backward)
+  · constructor
+    · intro a tcbA hTcbA' b hNext
+      have hTcbAPre : st.objects[a.toObjId]? = some (.tcb tcbA) := by
+        by_cases hNe : a.toObjId = receiverRoot
+        · subst hNe; simp [hCn'] at hTcbA'
+        · rw [objBack _ hNe] at hTcbA'; exact hTcbA'
+      obtain ⟨tcbB, hTcbB, hPrev⟩ := hLinkFwd a tcbA hTcbAPre b hNext
+      exact ⟨tcbB, tcbTransfer _ _ hTcbB, hPrev⟩
+    · intro b tcbB hTcbB' a hPrev
+      have hTcbBPre : st.objects[b.toObjId]? = some (.tcb tcbB) := by
+        by_cases hNe : b.toObjId = receiverRoot
+        · subst hNe; simp [hCn'] at hTcbB'
+        · rw [objBack _ hNe] at hTcbB'; exact hTcbB'
+      obtain ⟨tcbA, hTcbA, hNext⟩ := hLinkBwd b tcbB hTcbBPre a hPrev
+      exact ⟨tcbA, tcbTransfer _ _ hTcbA, hNext⟩
+  -- Part 3: TCB queue chain acyclicity (only CNode at receiverRoot changes, not TCBs)
+  · have hTransfer : ∀ a b, QueueNextPath st' a b → QueueNextPath st a b := by
+      intro a b hp
+      induction hp with
+      | single x y tcbX hObj hNext =>
+        have hObjPre : st.objects[x.toObjId]? = some (.tcb tcbX) := by
+          by_cases hNe : x.toObjId = receiverRoot
+          · subst hNe; simp [hCn'] at hObj
+          · rw [objBack _ hNe] at hObj; exact hObj
+        exact .single x y tcbX hObjPre hNext
+      | cons x y z tcbX hObj hNext _ ih =>
+        have hObjPre : st.objects[x.toObjId]? = some (.tcb tcbX) := by
+          by_cases hNe : x.toObjId = receiverRoot
+          · subst hNe; simp [hCn'] at hObj
+          · rw [objBack _ hNe] at hObj; exact hObj
+        exact .cons x y z tcbX hObjPre hNext ih
+    intro t hp; exact hAcyclic t (hTransfer t t hp)
 
 /-- M3-E4: endpointSendDualWithCaps preserves dualQueueSystemInvariant.
 Composes endpointSendDual base preservation with ipcUnwrapCaps preservation.
@@ -3464,364 +3713,5 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
                 receiverSlotBase _ stMid _ _ cn hCn hInvMid hObjInvMid hUnwrapResult
       | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ =>
         obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
-
-/-- T4-E: endpointCallWithCaps preserves dualQueueSystemInvariant.
-Composes endpointCall base preservation with ipcUnwrapCaps preservation.
-Same structure as endpointSendDualWithCaps_preserves_dualQueueSystemInvariant. -/
-theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hInv : dualQueueSystemInvariant st)
-    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
-      st.objects[epId]? = some (.endpoint ep) →
-      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
-      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
-    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
-      st.objects[endpointId]? = some (.endpoint ep) →
-      ep.sendQ.tail = some tailTid →
-      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
-        st.objects[epId']? = some (.endpoint ep') →
-        (epId' ≠ endpointId →
-          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
-        (epId' = endpointId →
-          ep'.receiveQ.tail ≠ some tailTid))
-    (hCnodeRoot : ∀ (stMid : SystemState) (recvRoot : SeLe4n.ObjId),
-      endpointCall endpointId caller msg st = .ok ((), stMid) →
-      ∃ cn, stMid.objects[recvRoot]? = some (.cnode cn))
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
-    dualQueueSystemInvariant st' := by
-  simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller msg st with
-  | error e => simp [hCall] at hStep
-  | ok pair =>
-    rcases pair with ⟨_, stMid⟩
-    simp only [hCall] at hStep
-    have hInvMid := endpointCall_preserves_dualQueueSystemInvariant endpointId caller msg
-      st stMid hObjInv hCall hInv hFreshCaller hSendTailFresh
-    have hObjInvMid : stMid.objects.invExt :=
-      endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
-    cases hObj : st.objects[endpointId]? with
-    | none =>
-      simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-    | some obj =>
-      cases obj with
-      | endpoint ep =>
-        cases hHead : ep.receiveQ.head with
-        | none =>
-          simp [hObj, hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-        | some receiverId =>
-          by_cases hEmpty : msg.caps.isEmpty = true
-          · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-          · simp [hObj, hHead, hEmpty] at hStep
-            cases hLookup : lookupCspaceRoot stMid receiverId with
-            | none => simp [hLookup] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-            | some recvRoot =>
-              simp only [hLookup] at hStep
-              obtain ⟨cn, hCn⟩ := hCnodeRoot stMid recvRoot hCall
-              exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg callerCspaceRoot
-                recvRoot receiverSlotBase _ stMid st' summary cn hCn hInvMid hObjInvMid hStep
-      | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ =>
-        simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-
--- ============================================================================
--- T4-D (M-IPC-2): endpointQueueRemoveDual and dualQueueSystemInvariant
---
--- The full proof of `endpointQueueRemoveDual_preserves_dualQueueSystemInvariant`
--- requires 3 sub-lemmas across the 4 code paths of endpointQueueRemoveDual:
---   1. intrusiveQueueWellFormed preservation for the modified queue (sendQ or receiveQ)
---   2. intrusiveQueueWellFormed preservation for the unmodified queue
---   3. tcbQueueLinkIntegrity preservation through storeTcbQueueLinks composition
---
--- The non-target endpoint case is straightforward (backward preservation via
--- `endpointQueueRemoveDual_endpoint_backward_ne`, already proven).
--- The target endpoint case requires proving that the 4-path queue link splice
--- (endpointHead no-next, endpointHead with-next, tcbNext no-next, tcbNext with-next)
--- correctly maintains intrusive queue invariants.
---
--- The existing transport infrastructure provides:
---   - `endpointQueueRemoveDual_scheduler_eq` (scheduler unchanged)
---   - `endpointQueueRemoveDual_tcb_forward` (TCB existence forward)
---   - `endpointQueueRemoveDual_tcb_ipcState_backward` (ipcState backward)
---   - `endpointQueueRemoveDual_endpoint_backward_ne` (non-target endpoint backward)
---   - `endpointQueueRemoveDual_preserves_tail_of_nonTail` (tail pointer preservation)
---   - `endpointQueueRemoveDual_tail_update` (tail update correctness)
---
--- The queue-link manipulation sub-lemmas are the next infrastructure step.
--- ============================================================================
-
--- ============================================================================
--- T4-A (M-IPC-1): endpointCall preserves ipcStateQueueConsistent
--- ============================================================================
-
-/-- T4-A (M-IPC-1): endpointCall preserves ipcStateQueueConsistent.
-Handshake path: PopHead (preserves) → storeTcbIpcStateAndMessage to .ready
-(trivial obligation) → ensureRunnable (preserves) → storeTcbIpcState to
-.blockedOnReply (trivial obligation) → removeRunnable (preserves).
-Blocking path: Enqueue (preserves) → storeTcbIpcStateAndMessage to
-.blockedOnCall endpointId (endpoint exists from initial lookup) →
-removeRunnable (preserves). -/
-theorem endpointCall_preserves_ipcStateQueueConsistent
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hInv : ipcStateQueueConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
-    ipcStateQueueConsistent st' := by
-  unfold endpointCall at hStep
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
-    | endpoint ep =>
-      simp only [hObj] at hStep
-      cases hHead : ep.receiveQ.head with
-      | some _ =>
-        cases hPop : endpointQueuePopHead endpointId true st with
-        | error e => simp [hHead, hPop] at hStep
-        | ok pair =>
-          simp only [hHead, hPop] at hStep
-          have hObjInvPop := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
-          have hInvPop := endpointQueuePopHead_preserves_ipcStateQueueConsistent endpointId true st pair.2.2 pair.1 _ hObjInv hPop hInv
-          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
-          | error e => simp [hMsg] at hStep
-          | ok st2 =>
-            simp only [hMsg] at hStep
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 .ready (some msg) hObjInvPop hMsg
-            have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvPop hMsg hInvPop trivial
-            have hInv3 := ensureRunnable_preserves_ipcStateQueueConsistent st2 pair.1 hInv2
-            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) with
-            | error e => simp [hIpc] at hStep
-            | ok st4 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
-              exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
-                storeTcbIpcState_preserves_ipcStateQueueConsistent _ _ _ _ hObjInvEns hIpc hInv3 trivial
-      | none =>
-        cases hEnq : endpointQueueEnqueue endpointId false caller st with
-        | error e => simp [hHead, hEnq] at hStep
-        | ok st1 =>
-          simp only [hHead, hEnq] at hStep
-          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
-          have hInv1 := endpointQueueEnqueue_preserves_ipcStateQueueConsistent endpointId false caller st st1 hObjInv hEnq hInv
-          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
-          | error e => simp [hMsg] at hStep
-          | ok st2 =>
-            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨_, hEq⟩ := hStep; subst hEq
-            exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
-              storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInv1 hMsg hInv1
-                (endpointQueueEnqueue_endpoint_forward _ _ caller st st1 endpointId ep hObjInv hEnq hObj)
-
--- ============================================================================
--- T4-B (M-IPC-1): endpointReplyRecv preserves ipcStateQueueConsistent
--- ============================================================================
-
-/-- T4-B (M-IPC-1): endpointReplyRecv preserves ipcStateQueueConsistent.
-Reply phase: storeTcbIpcStateAndMessage to .ready (trivial) → ensureRunnable
-(preserves). Receive phase: endpointReceiveDual (already proven). -/
-theorem endpointReplyRecv_preserves_ipcStateQueueConsistent
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hInv : ipcStateQueueConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
-    ipcStateQueueConsistent st' := by
-  unfold endpointReplyRecv at hStep
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  cases hLookup : lookupTcb st replyTarget with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
-    cases hIpc : tcb.ipcState with
-    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
-      simp [hIpc] at hStep
-    | blockedOnReply _ _ =>
-      simp only [hIpc] at hStep
-      suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
-          (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
-            ipcStateQueueConsistent stR.2) by
-        split at hStep
-        · split at hStep
-          · revert hStep
-            cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-            | error e => simp
-            | ok st1 =>
-              simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
-              | error e => simp
-              | ok result =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
-                exact this st1 hMsg result hRecv
-          · simp_all
-        · dsimp only at hStep; revert hStep
-          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-          | error e => simp
-          | ok st1 =>
-            simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
-            | error e => simp
-            | ok result =>
-              simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hEq⟩; subst hEq
-              exact this st1 hMsg result hRecv
-      intro st1 hMsg stR hRecv
-      have hInv1 := storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInv hMsg hInv trivial
-      have hInv2 := ensureRunnable_preserves_ipcStateQueueConsistent st1 replyTarget hInv1
-      have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
-      have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
-      exact endpointReceiveDual_preserves_ipcStateQueueConsistent _ stR.2 endpointId receiver stR.1 hInv2 hObjInvEns (by
-        have : stR = (stR.1, stR.2) := Prod.ext rfl rfl
-        rw [this] at hRecv; exact hRecv)
-
--- ============================================================================
--- T4-C (M-IPC-1): notification operations preserve ipcStateQueueConsistent
--- ============================================================================
-
-/-- T4-C helper: storeObject at a notification ID preserves ipcStateQueueConsistent.
-storeObject at a notification ID does not modify any TCB's ipcState and preserves
-all endpoint objects, so the forward implication (blocked → endpoint exists) is
-maintained. -/
-theorem storeObject_notification_preserves_ipcStateQueueConsistent
-    (st : SystemState) (notifId : SeLe4n.ObjId) (ntfn : Notification)
-    (st' : SystemState)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject notifId (.notification ntfn) st = .ok ((), st'))
-    (hInv : ipcStateQueueConsistent st)
-    (hWasNotif : ∃ ntfn₀, st.objects[notifId]? = some (.notification ntfn₀)) :
-    ipcStateQueueConsistent st' := by
-  intro tid tcb hTcb
-  by_cases hEq : tid.toObjId = notifId
-  · have hAtNotif := storeObject_objects_eq st st' notifId (.notification ntfn) hObjInv hStore
-    rw [hEq] at hTcb; rw [hAtNotif] at hTcb; exact absurd hTcb (by simp)
-  · have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-      (storeObject_objects_ne st st' notifId tid.toObjId (.notification ntfn) hEq hObjInv hStore).symm.trans hTcb
-    have hPre := hInv tid tcb hTcbPre
-    match h : tcb.ipcState with
-    | .ready | .blockedOnNotification _ | .blockedOnReply _ _ => trivial
-    | .blockedOnSend epId | .blockedOnReceive epId | .blockedOnCall epId =>
-      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
-      have hEpNe : epId ≠ notifId := by
-        intro hC; subst hC; obtain ⟨ntfn₀, hNtfn₀⟩ := hWasNotif; simp [hNtfn₀] at hEp
-      exact ⟨ep, (storeObject_objects_ne st st' notifId epId (.notification ntfn) hEpNe hObjInv hStore) ▸ hEp⟩
-
-/-- T4-C (M-IPC-1): notificationSignal preserves ipcStateQueueConsistent.
-Signal wakes a waiter (setting ipcState to .ready) or accumulates a badge
-(storeObject on notification). Neither path creates endpoint-blocked states. -/
-theorem notificationSignal_preserves_ipcStateQueueConsistent
-    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (hInv : ipcStateQueueConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
-    ipcStateQueueConsistent st' := by
-  unfold notificationSignal at hStep
-  cases hObj : st.objects[notificationId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
-    | notification ntfn =>
-      simp only [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | cons waiter rest =>
-        -- Wake path: storeObject → storeTcbIpcStateAndMessage → ensureRunnable
-        simp only [hWaiters] at hStep
-        revert hStep
-        cases hStore : storeObject notificationId
-            (.notification { state := if rest.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-          have hInv1 := storeObject_notification_preserves_ipcStateQueueConsistent st notificationId _ pair.2 hObjInv hStore hInv ⟨_, hObj⟩
-          cases hMsg : storeTcbIpcStateAndMessage pair.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
-          | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨_, hEq⟩; subst hEq
-            exact ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
-              storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInv1 hMsg hInv1 trivial
-      | nil =>
-        -- Badge accumulation path: just storeObject on notification
-        simp only [hWaiters] at hStep
-        exact storeObject_notification_preserves_ipcStateQueueConsistent st notificationId _ st' hObjInv hStep hInv ⟨_, hObj⟩
-
-/-- T4-C (M-IPC-1): notificationWait preserves ipcStateQueueConsistent.
-Wait consumes a pending badge (setting ipcState to .ready) or blocks the waiter
-(.blockedOnNotification). Neither path creates endpoint-blocked states. -/
-theorem notificationWait_preserves_ipcStateQueueConsistent
-    (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (result : Option SeLe4n.Badge) (st' : SystemState)
-    (hInv : ipcStateQueueConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
-    ipcStateQueueConsistent st' := by
-  unfold notificationWait at hStep
-  cases hObj : st.objects[notificationId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
-    | notification ntfn =>
-      simp only [hObj] at hStep
-      cases hBadge : ntfn.pendingBadge with
-      | some badge =>
-        -- Consume pending badge: storeObject → storeTcbIpcState to .ready
-        simp only [hBadge] at hStep
-        revert hStep
-        cases hStore : storeObject notificationId
-            (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-          have hInv1 := storeObject_notification_preserves_ipcStateQueueConsistent st notificationId _ pair.2 hObjInv hStore hInv ⟨_, hObj⟩
-          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
-          | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨_, hEq⟩; subst hEq
-            exact storeTcbIpcState_preserves_ipcStateQueueConsistent _ _ _ _ hObjInv1 hTcb hInv1 trivial
-      | none =>
-        simp only [hBadge] at hStep
-        -- Blocking path: check for duplicate wait, then storeObject → storeTcbIpcState_fromTcb → removeRunnable
-        cases hLookup : lookupTcb st waiter with
-        | none => simp [hLookup] at hStep
-        | some tcb =>
-          simp only [hLookup] at hStep
-          by_cases hDup : tcb.ipcState = .blockedOnNotification notificationId
-          · simp [hDup] at hStep
-          · simp only [hDup, ↓reduceIte] at hStep
-            revert hStep
-            cases hStore : storeObject notificationId
-                (.notification { state := .waiting,
-                                 waitingThreads := waiter :: ntfn.waitingThreads,
-                                 pendingBadge := none }) st with
-            | error e => simp
-            | ok pair =>
-              simp only []
-              have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-              have hInv1 := storeObject_notification_preserves_ipcStateQueueConsistent st notificationId _ pair.2 hObjInv hStore hInv ⟨_, hObj⟩
-              rw [storeTcbIpcState_fromTcb_eq (lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore)]
-              cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notificationId) with
-              | error e => simp
-              | ok st2 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
-                exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
-                  storeTcbIpcState_preserves_ipcStateQueueConsistent _ _ _ _ hObjInv1 hTcb hInv1 trivial
 
 end SeLe4n.Kernel
