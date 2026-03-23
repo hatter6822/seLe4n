@@ -1,3 +1,40 @@
+## [0.20.3] — WS-T Phase T4: IPC & Capability Proof Closure
+
+- T4-A (M-IPC-1): Proved `endpointCall_preserves_ipcStateQueueConsistent`. The call
+  operation's handshake path (PopHead → storeTcbIpcStateAndMessage → ensureRunnable →
+  storeTcbIpcState → removeRunnable) and blocking path (Enqueue → storeTcb... →
+  removeRunnable) both preserve the ipcState-queue consistency invariant.
+- T4-B (M-IPC-1): Proved `endpointReplyRecv_preserves_ipcStateQueueConsistent`. The
+  reply phase (storeTcbIpcStateAndMessage → ensureRunnable) and receive phase
+  (endpointReceiveDual) compose to preserve the invariant.
+- T4-C (M-IPC-1): Proved `notificationSignal_preserves_ipcStateQueueConsistent` and
+  `notificationWait_preserves_ipcStateQueueConsistent`. Added helper
+  `storeObject_notification_preserves_ipcStateQueueConsistent` for notification store
+  operations. Notification operations set ipcState to `.ready` or
+  `.blockedOnNotification`, neither of which requires endpoint existence.
+- T4-E (M-IPC-3): Proved `endpointSendDualWithCaps_preserves_ipcInvariantFull`,
+  `endpointReceiveDualWithCaps_preserves_ipcInvariantFull`, and
+  `endpointCallWithCaps_preserves_ipcInvariantFull`. WithCaps wrappers compose
+  base ipcInvariant preservation with caller-supplied dualQueue/bounded/badge proofs.
+- T4-F (M-IPC-3): All three WithCaps operations covered in T4-E above.
+- T4-G (M-CAP-2): Proved `descendantsOf_direct_children_subset` — direct children
+  of a CDT node are included in the BFS result when fuel >= 1.
+- T4-H (M-CAP-1): Documented `cspaceMutate` badge override CDT tracking design.
+  Badge mutation via Mutate intentionally not tracked in CDT, matching seL4
+  CNode_Mutate semantics.
+- T4-I (M-DS-3): Documented `buildCNodeRadix_lookup_equiv` equivalence specification
+  and proof strategy. Full fold-induction proof infrastructure identified.
+- T4-J (M-IF-3): Documented NI complex IPC projection hypothesis rationale.
+  The externalized projection hypothesis is unavoidable without concrete
+  MemoryDomainOwnership; discharged when platform binding provides ownership.
+- T4-K (L-P10): Added `ipcInvariantFull_compositional` convenience theorem that
+  takes all 4 component proofs and produces the full bundle.
+- T4-L (M-SCH-1): Proved `insert_maxPriority_consistency` — after RunQueue insert,
+  maxPriority is max(old, prio) by definitional unfolding.
+- Version bumped to 0.20.3 across lakefile.toml, Cargo.toml, README badge,
+  codebase_map.json.
+- Zero sorry/axiom. All test tiers pass.
+
 ## [0.20.2] — WS-T Phase T3: Rust ABI Hardening
 
 - T3-A (M-NEW-9): Changed `MessageInfo::encode()` return type from `u64` to

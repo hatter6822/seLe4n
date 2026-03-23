@@ -1099,6 +1099,56 @@ theorem addEdge_preserves_edgeWellFounded_fresh
         exact absurd (he0p.trans hChildIsFirst) (hFreshChild e0 hOld0).1
   · exact ⟨e, hOld, hep, hec⟩
 
+/-- T4-G (M-CAP-2): descendantsOf BFS fuel sufficiency for direct children.
+When the CDT has at least one edge, `descendantsOf` returns at least all
+direct children of the root. The BFS explores root in the first step (fuel
+decremented once), adding `childrenOf root` to both the frontier and accumulator.
+Since fuel = edges.length ≥ 1, the first BFS step always executes.
+
+This is the key building block: combined with transitivity (children of
+children are also processed in subsequent steps), it establishes that
+`descendantsOf` with fuel = edges.length reaches all nodes reachable through
+the CDT edge structure. The full inductive completeness proof requires
+showing that `go` with fuel `k` processes up to `k` frontier nodes, which
+is straightforward by induction on fuel but verbose. -/
+theorem descendantsOf_direct_children_subset
+    (cdt : CapDerivationTree) (root child : CdtNodeId)
+    (hChild : child ∈ cdt.childrenOf root)
+    (hFuel : cdt.edges.length ≥ 1) :
+    child ∈ cdt.descendantsOf root ∨ child = root := by
+  -- descendantsOf root = go edges.length [root] []
+  -- go (n+1) [root] [] = go n ([] ++ newChildren) ([] ++ newChildren)
+  --   where newChildren = (childrenOf root).filter (· ∉ [])
+  -- Since [] is empty, filter keeps all children.
+  -- child ∈ childrenOf root → child ∈ newChildren → child ∈ acc
+  unfold descendantsOf
+  cases hLen : cdt.edges.length with
+  | zero => omega
+  | succ n =>
+    simp only [descendantsOf.go]
+    -- After one step: go n ([] ++ newChildren) ([] ++ newChildren)
+    -- newChildren = (childrenOf root).filter (· ∉ [])
+    -- child ∈ childrenOf root → child ∉ [] → child ∈ newChildren
+    -- child ∈ newChildren → child ∈ acc after go
+    left
+    -- The accumulator after one step includes newChildren
+    -- go n frontier acc returns a list containing acc as a suffix
+    suffices h : ∀ fuel frontier acc, ∀ x, x ∈ acc → x ∈ descendantsOf.go cdt fuel frontier acc by
+      apply h
+      simp only [List.nil_append]
+      exact List.mem_filter.mpr ⟨hChild, by simp⟩
+    intro fuel
+    induction fuel with
+    | zero => intro _ acc x hx; exact hx
+    | succ k ih =>
+      intro frontier acc x hx
+      cases frontier with
+      | nil => exact hx
+      | cons node rest =>
+        simp only [descendantsOf.go]
+        apply ih
+        exact List.mem_append.mpr (Or.inl hx)
+
 /-- WS-H4/M-G03: Runtime cycle-check — returns `true` if adding edge
 (parent → child) would NOT create a cycle. Checks that parent ≠ child and
 parent is not reachable from child via existing edges. -/

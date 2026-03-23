@@ -1074,5 +1074,21 @@ theorem remove_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
       exact hpTP
     · exact remove_byPrio_from_orig rq tid p t hTNe hpBucket
 
+/-- T4-L (M-SCH-1): After inserting a thread at priority `prio`, the resulting
+`maxPriority` is `some` of the maximum of the old `maxPriority` (if any) and
+`prio`. When the queue was empty (maxPriority = none), the result is `some prio`.
+When the queue was non-empty, the result is the larger of old and new priorities.
+
+Proof: by definitional unfolding of `insert`; the `maxPriority` field is computed
+by a `match` on the old `maxPriority` + a comparison, which is exactly this
+specification. -/
+theorem insert_maxPriority_consistency (rq : RunQueue) (tid : ThreadId) (prio : Priority)
+    (hNew : rq.contains tid = false) :
+    (rq.insert tid prio).maxPriority =
+      match rq.maxPriority with
+      | none => some prio
+      | some mp => if prio.toNat > mp.toNat then some prio else some mp := by
+  unfold insert; simp [hNew]
+
 end RunQueue
 end SeLe4n.Kernel

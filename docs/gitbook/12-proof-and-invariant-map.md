@@ -21,7 +21,7 @@ have been replaced with verified `RHTable` (Robin Hood hash table), and all
 `Std.HashSet` usage (BFS visited sets in Acyclicity.lean, observable filtering
 in Projection.lean) is intentionally retained.
 
-**WS-T/T3 additions (v0.20.2) — Rust ABI Hardening:**
+**WS-T/T3 additions (v0.20.3) — Rust ABI Hardening:**
 
 - `MessageInfo::encode()` now returns `Result<u64, KernelError>` with 55-bit
   label bound check (`MAX_LABEL = 2^55 - 1`), preventing silent truncation
@@ -1673,6 +1673,19 @@ High-level IPC operation preservation (L3-C3):
 - `endpointSendDual_preserves_ipcStateQueueConsistent`
 - `endpointReceiveDual_preserves_ipcStateQueueConsistent`
 - `endpointReply_preserves_ipcStateQueueConsistent`
+
+**T4-A/B/C: Compound operation ipcStateQueueConsistent preservation** (`Structural.lean`):
+
+- `endpointCall_preserves_ipcStateQueueConsistent` — handshake + blocking paths
+- `endpointReplyRecv_preserves_ipcStateQueueConsistent` — reply + receive composition
+- `notificationSignal_preserves_ipcStateQueueConsistent` — wake + badge accumulation
+- `notificationWait_preserves_ipcStateQueueConsistent` — consume + blocking paths
+- `storeObject_notification_preserves_ipcStateQueueConsistent` — notification store helper
+- `ipcInvariantFull_compositional` — convenience 4-component composition
+
+**T4-L: Scheduler maxPriority consistency** (`RunQueue.lean`):
+
+- `insert_maxPriority_consistency` — after insert, maxPriority = max(old, prio)
 
 **L3-D: Tail consistency** (`DualQueue/Core.lean`):
 

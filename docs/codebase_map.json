@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-model-cdt-integrity-fAJqS",
-      "commit_sha": "31be10252a2bbe2993b04c05895432a4b51eb796",
-      "tree_sha": "df70eae677ba5e3372d1415e9d9f23e1750fc6d3",
-      "committed_at_utc": "2026-03-23T17:29:43+00:00"
+      "branch": "claude/optimize-phase-t4-ipc-SN33U",
+      "commit_sha": "a0b268d501723b2e65a803efd7c7f024ae430ff4",
+      "tree_sha": "a358157873283fc2105ab218e47723ebb2c12f77",
+      "committed_at_utc": "2026-03-23T14:32:41-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a0be7194dec07533e7d81c8667c64739928d79e6bdd01b488627afd7c8207b01"
+    "source_digest": "595d1515ee3bb804659b70e594f1f90a4d49656984dd5cb0f5333ca11b122ae1"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3266
+    "declaration_count": 3277
   },
   "readme_sync": {
-    "version": "0.20.2",
+    "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 57939,
+    "production_loc": 58368,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1775,
+    "proved_theorem_lemma_decls": 1786,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -3945,7 +3945,7 @@
         {
           "kind": "def",
           "name": "cspaceMutate",
-          "line": 701,
+          "line": 709,
           "called": [
             "CSpaceAddr",
             "cspaceLookupSlot",
@@ -3955,7 +3955,7 @@
         {
           "kind": "def",
           "name": "cspaceMintWithCdt",
-          "line": 725,
+          "line": 733,
           "called": [
             "CSpaceAddr",
             "cspaceMint"
@@ -3964,7 +3964,7 @@
         {
           "kind": "def",
           "name": "processRevokeNode",
-          "line": 751,
+          "line": 759,
           "called": [
             "cspaceDeleteSlot"
           ]
@@ -3972,7 +3972,7 @@
         {
           "kind": "def",
           "name": "severDerivationEdge",
-          "line": 773,
+          "line": 781,
           "called": [
             "processRevokeNode"
           ]
@@ -3980,7 +3980,7 @@
         {
           "kind": "def",
           "name": "processRevokeNode_lenient",
-          "line": 782,
+          "line": 790,
           "called": [
             "cspaceDeleteSlot"
           ]
@@ -3988,7 +3988,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdt",
-          "line": 810,
+          "line": 818,
           "called": [
             "CSpaceAddr",
             "cspaceRevoke",
@@ -3998,7 +3998,7 @@
         {
           "kind": "def",
           "name": "streamingRevokeBFS",
-          "line": 849,
+          "line": 857,
           "called": [
             "processRevokeNode"
           ]
@@ -4006,7 +4006,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStreaming",
-          "line": 875,
+          "line": 883,
           "called": [
             "CSpaceAddr",
             "cspaceRevoke",
@@ -4016,7 +4016,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictFailure",
-          "line": 891,
+          "line": 899,
           "called": [
             "CSpaceAddr"
           ]
@@ -4024,7 +4024,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictReport",
-          "line": 901,
+          "line": 909,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure"
@@ -4033,7 +4033,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStrict",
-          "line": 916,
+          "line": 924,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure",
@@ -4045,7 +4045,7 @@
         {
           "kind": "def",
           "name": "ipcTransferSingleCap",
-          "line": 971,
+          "line": 979,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -4054,19 +4054,19 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_scheduler_eq",
-          "line": 994,
+          "line": 1002,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_services_eq",
-          "line": 999,
+          "line": 1007,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
-          "line": 1004,
+          "line": 1012,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4078,7 +4078,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
-          "line": 1037,
+          "line": 1045,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4089,7 +4089,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_services",
-          "line": 1072,
+          "line": 1080,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4101,7 +4101,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_invExt",
-          "line": 1105,
+          "line": 1113,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4112,7 +4112,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 1143,
+          "line": 1151,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4122,7 +4122,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
-          "line": 1165,
+          "line": 1173,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4132,7 +4132,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
-          "line": 1239,
+          "line": 1247,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4142,7 +4142,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 1260,
+          "line": 1268,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4152,7 +4152,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
-          "line": 1282,
+          "line": 1290,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -6004,7 +6004,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 84,
+      "declaration_count": 93,
       "declarations": [
         {
           "kind": "namespace",
@@ -6535,8 +6535,32 @@
         },
         {
           "kind": "theorem",
+          "name": "ipcInvariantFull_compositional",
+          "line": 2739,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualWithCaps_preserves_ipcInvariantFull",
+          "line": 2755,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDualWithCaps_preserves_ipcInvariantFull",
+          "line": 2774,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallWithCaps_preserves_ipcInvariantFull",
+          "line": 2792,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_tcbQueueLinkIntegrity",
-          "line": 2742,
+          "line": 2815,
           "called": [
             "endpointQueuePopHead_preserves_dualQueueSystemInvariant"
           ]
@@ -6544,7 +6568,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity",
-          "line": 2754,
+          "line": 2827,
           "called": [
             "endpointQueueEnqueue_preserves_dualQueueSystemInvariant"
           ]
@@ -6552,49 +6576,49 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
-          "line": 2784,
+          "line": 2857,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
-          "line": 2813,
+          "line": 2886,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_ipcStateQueueConsistent",
-          "line": 2843,
+          "line": 2916,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_ipcStateQueueConsistent",
-          "line": 2853,
+          "line": 2926,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
-          "line": 2867,
+          "line": 2940,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_ipcStateQueueConsistent",
-          "line": 2913,
+          "line": 2986,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeTcbPendingMessage_preserves_ipcStateQueueConsistent",
-          "line": 2957,
+          "line": 3030,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointSendDual_preserves_ipcStateQueueConsistent",
-          "line": 2989,
+          "line": 3062,
           "called": [
             "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
             "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
@@ -6606,7 +6630,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDual_preserves_ipcStateQueueConsistent",
-          "line": 3050,
+          "line": 3123,
           "called": [
             "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
             "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
@@ -6620,7 +6644,7 @@
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_ipcStateQueueConsistent",
-          "line": 3134,
+          "line": 3207,
           "called": [
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
@@ -6629,13 +6653,13 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
-          "line": 3188,
+          "line": 3261,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCaps_preserves_dualQueueSystemInvariant",
-          "line": 3261,
+          "line": 3334,
           "called": [
             "endpointSendDual_preserves_dualQueueSystemInvariant",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
@@ -6644,10 +6668,59 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant",
-          "line": 3326,
+          "line": 3399,
           "called": [
             "endpointReceiveDual_preserves_dualQueueSystemInvariant",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_ipcStateQueueConsistent",
+          "line": 3479,
+          "called": [
+            "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
+            "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcState_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_ipcStateQueueConsistent",
+          "line": 3543,
+          "called": [
+            "endpointReceiveDual_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_notification_preserves_ipcStateQueueConsistent",
+          "line": 3610,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_ipcStateQueueConsistent",
+          "line": 3636,
+          "called": [
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "storeObject_notification_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_ipcStateQueueConsistent",
+          "line": 3678,
+          "called": [
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeObject_notification_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcState_preserves_ipcStateQueueConsistent"
           ]
         }
       ]
@@ -7745,7 +7818,7 @@
         {
           "kind": "theorem",
           "name": "step_preserves_projection",
-          "line": 246,
+          "line": 256,
           "called": [
             "NonInterferenceStep"
           ]
@@ -7753,7 +7826,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_step",
-          "line": 400,
+          "line": 410,
           "called": [
             "NonInterferenceStep",
             "step_preserves_projection"
@@ -7762,7 +7835,7 @@
         {
           "kind": "inductive",
           "name": "NonInterferenceTrace",
-          "line": 414,
+          "line": 424,
           "called": [
             "NonInterferenceStep"
           ]
@@ -7770,7 +7843,7 @@
         {
           "kind": "theorem",
           "name": "trace_preserves_projection",
-          "line": 425,
+          "line": 435,
           "called": [
             "NonInterferenceTrace",
             "step_preserves_projection"
@@ -7779,7 +7852,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_trace",
-          "line": 436,
+          "line": 446,
           "called": [
             "NonInterferenceTrace",
             "trace_preserves_projection"
@@ -7788,19 +7861,19 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_NI",
-          "line": 464,
+          "line": 474,
           "called": []
         },
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 490,
+          "line": 500,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 500,
+          "line": 510,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -7808,7 +7881,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 519,
+          "line": 529,
           "called": [
             "preservesLowEquivalence"
           ]
@@ -7816,7 +7889,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 556,
+          "line": 566,
           "called": [
             "NonInterferenceStep",
             "NonInterferenceTrace",
@@ -14258,7 +14331,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.RunQueue",
       "path": "SeLe4n/Kernel/Scheduler/RunQueue.lean",
-      "declaration_count": 64,
+      "declaration_count": 65,
       "declarations": [
         {
           "kind": "namespace",
@@ -14839,6 +14912,15 @@
             "remove_byPrio_to_orig",
             "remove_tid_not_in_bucket",
             "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_maxPriority_consistency",
+          "line": 1085,
+          "called": [
+            "RunQueue",
+            "insert"
           ]
         }
       ]
@@ -17871,7 +17953,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 142,
+      "declaration_count": 143,
       "declarations": [
         {
           "kind": "namespace",
@@ -18707,9 +18789,19 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "descendantsOf_direct_children_subset",
+          "line": 1114,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "descendantsOf"
+          ]
+        },
+        {
           "kind": "def",
           "name": "addEdgeWouldBeSafe",
-          "line": 1105,
+          "line": 1155,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -18718,7 +18810,7 @@
         {
           "kind": "def",
           "name": "childMapConsistent",
-          "line": 1110,
+          "line": 1160,
           "called": [
             "CapDerivationTree"
           ]
@@ -18726,7 +18818,7 @@
         {
           "kind": "theorem",
           "name": "empty_childMapConsistent",
-          "line": 1115,
+          "line": 1165,
           "called": [
             "CdtNodeId"
           ]
@@ -18734,7 +18826,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_childMapConsistent",
-          "line": 1125,
+          "line": 1175,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18746,7 +18838,7 @@
         {
           "kind": "def",
           "name": "parentMapConsistent",
-          "line": 1174,
+          "line": 1224,
           "called": [
             "CapDerivationTree"
           ]
@@ -18754,7 +18846,7 @@
         {
           "kind": "theorem",
           "name": "empty_parentMapConsistent",
-          "line": 1179,
+          "line": 1229,
           "called": [
             "CdtNodeId"
           ]
@@ -18762,7 +18854,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_parentMapConsistent",
-          "line": 1189,
+          "line": 1239,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18774,7 +18866,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_preserves_cdtMapsConsistent",
-          "line": 1239,
+          "line": 1289,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18788,7 +18880,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_preserves",
-          "line": 1253,
+          "line": 1303,
           "called": [
             "CdtNodeId"
           ]
@@ -18796,7 +18888,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_none",
-          "line": 1275,
+          "line": 1325,
           "called": [
             "CdtNodeId"
           ]
@@ -18804,7 +18896,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_mem",
-          "line": 1295,
+          "line": 1345,
           "called": [
             "CdtNodeId",
             "foldl_erase_none"
@@ -18813,7 +18905,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_parentMapConsistent",
-          "line": 1322,
+          "line": 1372,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18826,7 +18918,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_childMapConsistent",
-          "line": 1442,
+          "line": 1492,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18837,7 +18929,7 @@
         {
           "kind": "structure",
           "name": "ObservedDerivationEdge",
-          "line": 1675,
+          "line": 1725,
           "called": [
             "DerivationOp",
             "SlotAddr"
@@ -18846,7 +18938,7 @@
         {
           "kind": "def",
           "name": "projectObservedEdges",
-          "line": 1682,
+          "line": 1732,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18857,7 +18949,7 @@
         {
           "kind": "def",
           "name": "isAncestor",
-          "line": 1693,
+          "line": 1743,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -18866,7 +18958,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_noParent",
-          "line": 1715,
+          "line": 1765,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18878,7 +18970,7 @@
         {
           "kind": "def",
           "name": "cdtMapsConsistent",
-          "line": 1847,
+          "line": 1897,
           "called": [
             "CapDerivationTree"
           ]
@@ -18886,13 +18978,13 @@
         {
           "kind": "theorem",
           "name": "rhtable_default_get",
-          "line": 1859,
+          "line": 1909,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "empty_cdtMapsConsistent",
-          "line": 1866,
+          "line": 1916,
           "called": [
             "CdtNodeId",
             "rhtable_default_get"
@@ -18901,7 +18993,7 @@
         {
           "kind": "def",
           "name": "removeEdge",
-          "line": 1888,
+          "line": 1938,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -18910,7 +19002,7 @@
         {
           "kind": "theorem",
           "name": "removeEdge_surviving_child_ne",
-          "line": 1900,
+          "line": 1950,
           "called": [
             "CapDerivationEdge",
             "CapDerivationTree",
@@ -18920,7 +19012,7 @@
         {
           "kind": "theorem",
           "name": "removeEdge_preserves_cdtMapsConsistent",
-          "line": 1917,
+          "line": 1967,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18931,7 +19023,7 @@
         {
           "kind": "def",
           "name": "revokeDerivationEdge",
-          "line": 1935,
+          "line": 1985,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -18940,7 +19032,7 @@
         {
           "kind": "def",
           "name": "mk_checked",
-          "line": 1947,
+          "line": 1997,
           "called": [
             "CapDerivationEdge",
             "CapDerivationTree",
@@ -18951,7 +19043,7 @@
         {
           "kind": "theorem",
           "name": "mk_checked_cdtMapsConsistent",
-          "line": 1956,
+          "line": 2006,
           "called": [
             "CapDerivationEdge",
             "CapDerivationTree",
@@ -18963,15 +19055,15 @@
         {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1970,
+          "line": 2020,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1981>",
-          "line": 1981,
+          "name": "<anonymous:instance:2031>",
+          "line": 2031,
           "called": [
             "KernelObject"
           ]
@@ -18979,19 +19071,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1991,
+          "line": 2041,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 2000,
+          "line": 2050,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 2004,
+          "line": 2054,
           "called": [
             "KernelObjectType"
           ]
@@ -18999,7 +19091,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 2014,
+          "line": 2064,
           "called": [
             "KernelObjectType"
           ]
@@ -19007,7 +19099,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 2024,
+          "line": 2074,
           "called": [
             "KernelObjectType",
             "ofNat"
@@ -19016,7 +19108,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 2028,
+          "line": 2078,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -19025,13 +19117,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 2033,
+          "line": 2083,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 2035,
+          "line": 2085,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -19040,7 +19132,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 2047,
+          "line": 2097,
           "called": []
         }
       ]
