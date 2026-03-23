@@ -982,7 +982,26 @@ theorem observedCdtEdges_eq_projection (st : SystemState) :
   simp [observedCdtEdges, lookupCdtSlotOfNode]
 
 /-- Attach slot `ref` to `node` and maintain bidirectional consistency.
-If the slot/node already point elsewhere, stale opposite links are cleared. -/
+If the slot/node already point elsewhere, stale opposite links are cleared.
+
+**T2-L (M-ST-2): Stale-link cleanup ordering rationale.**
+
+The function performs two cleanups before inserting the new bidirectional link:
+1. Erase `cdtSlotNode[prevRef]` — if `node` was previously mapped to a
+   different slot `prevRef`, that stale slot→node link must be removed.
+2. Erase `cdtNodeSlot[prevNode]` — if `ref` was previously mapped to a
+   different node `prevNode`, that stale node→slot link must be removed.
+
+These two cleanups are **independent**: they operate on different maps
+(`cdtSlotNode` vs `cdtNodeSlot`) and target different keys (`prevRef` vs
+`prevNode`). Their ordering does not matter for correctness because:
+- Each cleanup erases from a different map, so they commute.
+- The final `insert` on both maps overwrites any residual stale entry for
+  the primary key pair `(ref, node)`, so even if a cleanup is a no-op
+  (because the stale link was already absent), the result is the same.
+- The CDT consistency invariant (S3-A) requires `cdtSlotNode[ref] = some node`
+  iff `cdtNodeSlot[node] = some ref`. Both cleanups + both inserts are needed
+  to re-establish this; the order of cleanups is irrelevant. -/
 def attachSlotToCdtNode (st : SystemState) (ref : SlotRef) (node : CdtNodeId) : SystemState :=
   let prevNode := st.cdtSlotNode[ref]?
   let prevRef := st.cdtNodeSlot[node]?
@@ -1130,6 +1149,118 @@ theorem storeObject_preserves_lifecycleMetadataConsistent
   rcases hConsistent with ⟨hObjType, hCapRef⟩
   exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hObjInv hObjTypesInv hStep,
     storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
+
+-- ============================================================================
+-- T2-H (M-NEW-3): capabilityRefs filter preserves invExt
+-- ============================================================================
+
+/-- T2-H (M-NEW-3): When `storeObject` filters out old CNode references via
+    `RHTable.filter`, the resulting table's `invExt` is preserved. This follows
+    directly from `RHTable.filter_preserves_invExt`. -/
+theorem capabilityRefs_filter_preserves_invExt
+    (capRefs : RHTable SlotRef CapTarget)
+    (id : SeLe4n.ObjId)
+    (hInv : capRefs.invExt) :
+    (capRefs.filter (fun ref _ => ref.cnode ≠ id)).invExt :=
+  RHTable.filter_preserves_invExt capRefs _ hInv
+
+-- ============================================================================
+-- T2-I (M-NEW-3): capabilityRefs fold insert preserves invExt
+-- ============================================================================
+
+/-- T2-I (M-NEW-3): When `storeObject` inserts new CNode references via `fold`,
+    the resulting table's `invExt` is preserved. Each sequential `insert`
+    preserves `invExt` by `RHTable.insert_preserves_invExt`, and the fold
+    composes these preservations via `RHTable.fold_preserves`. -/
+theorem capabilityRefs_fold_preserves_invExt
+    (cn : CNode)
+    (cleared : RHTable SlotRef CapTarget)
+    (id : SeLe4n.ObjId)
+    (hInv : cleared.invExt) :
+    (cn.slots.fold (init := cleared) fun refs slot cap =>
+      refs.insert { cnode := id, slot := slot } cap.target).invExt :=
+  RHTable.fold_preserves cn.slots cleared _ (fun t => t.invExt) hInv
+    (fun acc _ _ hAcc => RHTable.insert_preserves_invExt acc _ _ hAcc)
+
+-- ============================================================================
+-- T2-G (M-NEW-2): Bundled storeObject preserves allTablesInvExt
+-- ============================================================================
+
+/-- T2-G (M-NEW-2): Bundled preservation theorem for `storeObject`.
+
+    Composes the 16+ component preservation proofs (objects, objectIndex,
+    objectIndexSet, lifecycle.objectTypes, lifecycle.capabilityRefs, asidTable,
+    etc.) into a single theorem. Callers can invoke this instead of manually
+    composing each component.
+
+    The proof works by showing that `storeObject` only modifies fields via
+    `insert`, `filter`, or `erase` — all of which preserve `invExt` — and
+    leaves unchanged fields (scheduler, CDT maps, services) structurally equal
+    to the pre-state. -/
+theorem storeObject_preserves_allTablesInvExt
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hAll : st.allTablesInvExt)
+    (hAsidSize : st.asidTable.size < st.asidTable.capacity)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.allTablesInvExt := by
+  unfold storeObject at hStore; cases hStore
+  unfold SystemState.allTablesInvExt at hAll ⊢
+  simp only
+  -- Extract components from pre-state invariant
+  have hObj := hAll.1
+  have hIrq := hAll.2.1
+  have hAsid := hAll.2.2.1
+  have hCdtSN := hAll.2.2.2.1
+  have hCdtNS := hAll.2.2.2.2.1
+  have hObjTypes := hAll.2.2.2.2.2.1
+  have hCapRefs := hAll.2.2.2.2.2.2.1
+  have hChildMap := hAll.2.2.2.2.2.2.2.1
+  have hParentMap := hAll.2.2.2.2.2.2.2.2.1
+  have hServices := hAll.2.2.2.2.2.2.2.2.2.1
+  have hIfaceReg := hAll.2.2.2.2.2.2.2.2.2.2.1
+  have hSvcReg := hAll.2.2.2.2.2.2.2.2.2.2.2.1
+  have hByPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  -- Prove objects insert preserves invExt
+  have hObj' := RHTable.insert_preserves_invExt st.objects id obj hObj
+  -- Prove objectTypes insert preserves invExt
+  have hObjTypes' := RHTable.insert_preserves_invExt st.lifecycle.objectTypes id obj.objectType hObjTypes
+  -- Prove capabilityRefs filter+fold preserves invExt
+  have hFiltered := capabilityRefs_filter_preserves_invExt st.lifecycle.capabilityRefs id hCapRefs
+  have hCapRefs' : (match obj with
+      | .cnode cn => cn.slots.fold (init := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id))
+          fun refs slot cap => refs.insert { cnode := id, slot := slot } cap.target
+      | _ => st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)).invExt := by
+    cases obj with
+    | cnode cn => exact capabilityRefs_fold_preserves_invExt cn _ id hFiltered
+    | _ => exact hFiltered
+  -- Prove objectIndexSet insert preserves invExt
+  have hObjIdxSet' := RHSet.insert_preserves_invExt st.objectIndexSet id hObjIdxSet
+  -- Prove asidTable preserves invExt (erase + insert depending on obj type)
+  have hAsid' : (let cleared := match st.objects[id]? with
+        | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+        | _ => st.asidTable
+      match obj with
+      | .vspaceRoot newRoot => cleared.insert newRoot.asid id
+      | _ => cleared).invExt := by
+    -- The cleared table preserves invExt via erase or identity
+    have hCleared : (match st.objects[id]? with
+        | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+        | _ => st.asidTable).invExt := by
+      split
+      · rename_i r _; exact RHTable.erase_preserves_invExt st.asidTable r.asid hAsid hAsidSize
+      · exact hAsid
+    cases obj with
+    | vspaceRoot vs => exact RHTable.insert_preserves_invExt _ _ _ hCleared
+    | _ => exact hCleared
+  -- Compose all 16 components
+  exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes', hCapRefs',
+         hChildMap, hParentMap, hServices, hIfaceReg, hSvcReg,
+         hByPri, hThreadPri, hObjIdxSet', hMembership⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proof

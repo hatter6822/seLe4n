@@ -261,6 +261,10 @@ structure FrozenSystemState where
   /-- WS-G2/F-P10: Frozen shadow set for O(1) objectIndex membership checks.
   Mirrors `SystemState.objectIndexSet` (RHSet → FrozenSet). -/
   objectIndexSet    : FrozenSet SeLe4n.ObjId
+  /-- T2-D (M-NEW-1): Abstract TLB state, transferred from `SystemState.tlb`
+  during freeze. The TLB is immutable in the frozen phase (no frozen TLB
+  operations), so this is a direct field copy for completeness. -/
+  tlb               : TlbState
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -367,7 +371,8 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     capabilityRefs := freezeMap st.lifecycle.capabilityRefs
     machine := st.machine
     objectIndex := st.objectIndex
-    objectIndexSet := freezeMap st.objectIndexSet.table }
+    objectIndexSet := freezeMap st.objectIndexSet.table
+    tlb := st.tlb }
 
 -- ============================================================================
 -- Q5-C Proofs
@@ -392,6 +397,12 @@ theorem freeze_preserves_cdtNextNode (ist : IntermediateState) :
 /-- Q5-C: `freeze` preserves the machine state. -/
 theorem freeze_preserves_machine (ist : IntermediateState) :
     (freeze ist).machine = ist.state.machine := rfl
+
+/-- T2-F (M-NEW-1): `freeze` preserves the TLB state — the frozen TLB is
+    identical to the pre-freeze `SystemState.tlb`. This closes M-NEW-1:
+    TLB state is no longer dropped during freeze. -/
+theorem freeze_preserves_tlb (ist : IntermediateState) :
+    (freeze ist).tlb = ist.state.tlb := rfl
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :

@@ -21,6 +21,23 @@ have been replaced with verified `RHTable` (Robin Hood hash table), and all
 `Std.HashSet` usage (BFS visited sets in Acyclicity.lean, observable filtering
 in Projection.lean) is intentionally retained.
 
+**WS-T/T2 additions (v0.20.1):**
+
+- `AccessRightSet.ofList_valid` — proves `ofList` always produces a valid
+  rights set (H-1).
+- `CapDerivationTree.mk` constructor is now `private`; external code must use
+  `empty` or `mk_checked` (which requires `cdtMapsConsistent` witness) (H-2).
+- `FrozenSystemState.tlb` field added; `freeze_preserves_tlb` correctness
+  theorem proves TLB state is preserved across freeze (M-NEW-1).
+- `storeObject_preserves_allTablesInvExt` — bundled theorem composing 16+
+  component preservation proofs for `storeObject` (M-NEW-2).
+- `capabilityRefs_filter_preserves_invExt` + `capabilityRefs_fold_preserves_invExt`
+  — filter-then-fold chain in `storeObject` preserves `invExt` (M-NEW-3).
+- `CNode.guardBounded` predicate added to `CNode.wellFormed` — guard value
+  must fit in guard width bits. `resolveSlot_guardMismatch_of_not_guardBounded`
+  proves `resolveSlot` always fails for unbounded guards (L-NEW-4).
+- `Builder.createObject` now maintains `objectIndex`/`objectIndexSet` (M-BLD-1).
+
 ## 2. Scheduler invariants (M1)
 
 Component level:
