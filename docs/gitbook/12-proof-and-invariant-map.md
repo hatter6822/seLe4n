@@ -21,6 +21,17 @@ have been replaced with verified `RHTable` (Robin Hood hash table), and all
 `Std.HashSet` usage (BFS visited sets in Acyclicity.lean, observable filtering
 in Projection.lean) is intentionally retained.
 
+**WS-T/T3 additions (v0.20.2) — Rust ABI Hardening:**
+
+- `MessageInfo::encode()` now returns `Result<u64, KernelError>` with 55-bit
+  label bound check (`MAX_LABEL = 2^55 - 1`), preventing silent truncation
+  (M-NEW-9). Propagated through `encode_syscall()` and `invoke_syscall()`.
+- `VSpaceMapArgs.perms` changed from raw `u64` to typed `PagePerms` with
+  decode-time validation via `PagePerms::try_from()` (M-NEW-10).
+- `ServiceRegisterArgs.requires_grant` decode changed from permissive `!= 0`
+  to strict `match { 0 => false, 1 => true, _ => error }` (M-NEW-11).
+- 24 pre-existing clippy `double_must_use` warnings resolved in `sele4n-sys`.
+
 **WS-T/T2 additions (v0.20.1):**
 
 - `AccessRightSet.ofList_valid` — proves `ofList` always produces a valid

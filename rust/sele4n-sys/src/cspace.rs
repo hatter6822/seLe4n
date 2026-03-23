@@ -13,7 +13,6 @@ use sele4n_abi::args::cspace::*;
 ///
 /// Creates a new capability in `dst_slot` derived from the capability in
 /// `src_slot`, with rights restricted to `rights` and badge set to `badge`.
-#[must_use]
 #[inline]
 pub fn cspace_mint(
     cnode_cap: CPtr,
@@ -35,7 +34,6 @@ pub fn cspace_mint(
 /// Copy a capability without modification.
 ///
 /// Lean: `apiCspaceCopy` (API.lean) — requires `.grant` right on `cnode_cap`.
-#[must_use]
 #[inline]
 pub fn cspace_copy(
     cnode_cap: CPtr,
@@ -55,7 +53,6 @@ pub fn cspace_copy(
 /// Move a capability from one slot to another.
 ///
 /// Lean: `apiCspaceMove` (API.lean) — requires `.grant` right on `cnode_cap`.
-#[must_use]
 #[inline]
 pub fn cspace_move(
     cnode_cap: CPtr,
@@ -75,7 +72,6 @@ pub fn cspace_move(
 /// Delete a capability from a slot.
 ///
 /// Lean: `apiCspaceDelete` (API.lean) — requires `.write` right on `cnode_cap`.
-#[must_use]
 #[inline]
 pub fn cspace_delete(
     cnode_cap: CPtr,

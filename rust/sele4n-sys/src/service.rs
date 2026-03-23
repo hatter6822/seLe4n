@@ -18,7 +18,6 @@ use sele4n_abi::args::service::*;
 /// The kernel reads `msgRegs[4]` via `requireMsgReg decoded.msgRegs 4`,
 /// which falls through to the IPC buffer when the inline array has only
 /// 4 entries.
-#[must_use]
 #[inline]
 pub fn service_register(
     endpoint_cap: CPtr,
@@ -50,7 +49,6 @@ pub fn service_register(
 /// Revoke (unregister) a service by its ServiceId.
 ///
 /// Lean: `apiServiceRevoke` (API.lean) — requires `.write` right.
-#[must_use]
 #[inline]
 pub fn service_revoke(
     service_cap: CPtr,
@@ -71,7 +69,6 @@ pub fn service_revoke(
 /// Lean: `apiServiceQuery` (API.lean) — requires `.read` right.
 /// No additional message registers — the endpoint object ID comes from
 /// the capability target.
-#[must_use]
 #[inline]
 pub fn service_query(
     endpoint_cap: CPtr,

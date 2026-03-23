@@ -20,8 +20,10 @@
 - T3-F (M-NEW-11): Added ServiceRegisterArgs strict bool conformance tests:
   0 → false, 1 → true, 2 and u64::MAX → rejected.
 - T3-G: Verified `#![deny(unsafe_code)]` crate-level attribute already present
-  in `sele4n-abi/src/lib.rs` (added in WS-S S1-H). Single `#[allow(unsafe_code)]`
-  on `raw_syscall` in `trap.rs`. No additional changes needed.
+  in `sele4n-abi/src/lib.rs` (added in WS-S S1-H). Three targeted
+  `#[allow(unsafe_code)]` annotations in `trap.rs`: both `raw_syscall` variants
+  (aarch64 and mock) and `invoke_syscall` (calls unsafe `raw_syscall`). No
+  additional changes needed.
 - T3-H: All Rust tests pass — 119 tests across 4 crates (50 sele4n-abi unit,
   32 conformance, 12 sele4n-sys, 25 sele4n-types). Zero failures.
 - Version bumped to 0.20.2 across lakefile.toml, Cargo.toml workspace, README
