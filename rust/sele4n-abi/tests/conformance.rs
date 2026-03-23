@@ -457,14 +457,14 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(14).is_none());
 }
 
-/// Verify KernelError roundtrip for all 34 variants.
+/// Verify KernelError roundtrip for all 38 variants (T1-F/H-4: 4 new at 34-37).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=33u32 {
-        let err = KernelError::from_u32(i).expect("valid error");
+    for i in 0..=37u32 {
+        let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(34).is_none());
+    assert!(KernelError::from_u32(38).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 6 variants.

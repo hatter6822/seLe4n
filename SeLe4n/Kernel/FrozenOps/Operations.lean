@@ -324,7 +324,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                     | .ok ((), st'') => .ok ((), st'')
                 | none => .error .objectNotFound
         | none =>
-            -- No receiver: block sender with message
+            -- No receiver: block sender with message, then enqueue into sendQ (T1-B/M-FRZ-1)
             match frozenLookupTcb st sender with
             | some senderTcb =>
                 let senderTcb' := { senderTcb with
@@ -332,7 +332,11 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                   pendingMessage := some msg }
                 match frozenStoreTcb sender senderTcb' st with
                 | .error e => .error e
-                | .ok ((), st') => .ok ((), st')
+                | .ok ((), st') =>
+                    -- Enqueue sender into sendQ so subsequent receive can find it
+                    match frozenQueuePushTail endpointId false sender st' with
+                    | .error e => .error e
+                    | .ok st'' => .ok ((), st'')
             | none => .error .objectNotFound
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
@@ -368,13 +372,17 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
         | none =>
-            -- No sender: block receiver
+            -- No sender: block receiver, then enqueue into receiveQ (T1-C/M-FRZ-2)
             match frozenLookupTcb st receiver with
             | some recvTcb =>
                 let recvTcb' := { recvTcb with ipcState := .blockedOnReceive endpointId }
                 match frozenStoreTcb receiver recvTcb' st with
                 | .error e => .error e
-                | .ok ((), st') => .ok (receiver, st')
+                | .ok ((), st') =>
+                    -- Enqueue receiver into receiveQ so subsequent send can find it
+                    match frozenQueuePushTail endpointId true receiver st' with
+                    | .error e => .error e
+                    | .ok st'' => .ok (receiver, st'')
             | none => .error .objectNotFound
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
@@ -412,7 +420,7 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
         | none =>
-            -- No receiver: block caller with message
+            -- No receiver: block caller with message, then enqueue into sendQ (T1-D/M-FRZ-3)
             match frozenLookupTcb st caller with
             | some callerTcb =>
                 let callerTcb' := { callerTcb with
@@ -420,7 +428,11 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                   pendingMessage := some msg }
                 match frozenStoreTcb caller callerTcb' st with
                 | .error e => .error e
-                | .ok ((), st') => .ok ((), st')
+                | .ok ((), st') =>
+                    -- Enqueue caller into sendQ (caller is a sender until reply)
+                    match frozenQueuePushTail endpointId false caller st' with
+                    | .error e => .error e
+                    | .ok st'' => .ok ((), st'')
             | none => .error .objectNotFound
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound

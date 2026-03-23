@@ -50,3 +50,9 @@ root = "tests.FrozenOpsSuite"
 [[lean_exe]]
 name = "two_phase_arch_suite"
 root = "tests.TwoPhaseArchSuite"
+
+# T1-I (M-TST-1): Register OperationChainSuite as a lean_exe target
+# so it can be compiled and run via `lake exe operation_chain_suite`.
+[[lean_exe]]
+name = "operation_chain_suite"
+root = "tests.OperationChainSuite"
