@@ -137,7 +137,11 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   `_of_storeObject`, `_of_detachSlotFromCdt`, `_of_storeCapabilityRef`), and
   **5 operation preservation theorems** (`cspaceMint_preserves_cdtMapsConsistent`,
   `cspaceDeleteSlot_preserves_`, `cspaceCopy_preserves_`, `cspaceMove_preserves_`,
-  `cspaceRevoke_preserves_`) (S3-A/B/C/D). `scheduleDomain` full-bundle
+  `cspaceRevoke_preserves_`) (S3-A/B/C/D). CDT `addEdge_preserves_cdtMapsConsistent`
+  composite theorem (S3-B). Private `removeEdge` with `removeEdge_surviving_child_ne`
+  helper, `removeEdge_preserves_cdtMapsConsistent`, public `revokeDerivationEdge`
+  wrapper, and production `severDerivationEdge` in Operations (S3-C).
+  `scheduleDomain` full-bundle
   preservation composed from `switchDomain` + `schedule` (S3-E).
   `remove_preserves_wellFormed` for RunQueue with three private helper theorems
   (S3-F). `schedule_preserves_runQueueWellFormed` using dequeue path (S3-G).

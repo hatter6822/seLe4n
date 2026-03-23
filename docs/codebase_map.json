@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-s3-workstream-HJ7f6",
-      "commit_sha": "6edfdd485ed987dc5f70f5a7329695bb382cc266",
-      "tree_sha": "b0d233495d29c7f039ceb1f30bb2fb15e66af92e",
-      "committed_at_utc": "2026-03-23T01:28:55+00:00"
+      "commit_sha": "aef3b0509662342ca4f08d14012123b2884147d7",
+      "tree_sha": "c6823726df9a685c23e6b6d16437d9869ef98981",
+      "committed_at_utc": "2026-03-23T01:30:39+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "703e32b034c62e1e53df3ea259c22a984fa5d2bda4ecaa34878b9c2e3bf3f335"
+    "source_digest": "a937d30c224bb9212330246be7feeb853df48d592a7ee2512933d35de9934d65"
   },
   "summary": {
     "module_count": 109,
-    "declaration_count": 3201
+    "declaration_count": 3203
   },
   "readme_sync": {
     "version": "0.19.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 99,
-    "production_loc": 56623,
+    "production_loc": 56653,
     "test_files": 10,
     "test_loc": 7527,
     "proved_theorem_lemma_decls": 1728,
@@ -3774,7 +3774,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 59,
+      "declaration_count": 60,
       "declarations": [
         {
           "kind": "namespace",
@@ -4117,8 +4117,16 @@
         },
         {
           "kind": "def",
+          "name": "severDerivationEdge",
+          "line": 758,
+          "called": [
+            "processRevokeNode"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "processRevokeNode_lenient",
-          "line": 752,
+          "line": 767,
           "called": [
             "cspaceDeleteSlot"
           ]
@@ -4126,7 +4134,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdt",
-          "line": 780,
+          "line": 795,
           "called": [
             "CSpaceAddr",
             "cspaceRevoke",
@@ -4136,7 +4144,7 @@
         {
           "kind": "def",
           "name": "streamingRevokeBFS",
-          "line": 819,
+          "line": 834,
           "called": [
             "processRevokeNode"
           ]
@@ -4144,7 +4152,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStreaming",
-          "line": 845,
+          "line": 860,
           "called": [
             "CSpaceAddr",
             "cspaceRevoke",
@@ -4154,7 +4162,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictFailure",
-          "line": 861,
+          "line": 876,
           "called": [
             "CSpaceAddr"
           ]
@@ -4162,7 +4170,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictReport",
-          "line": 871,
+          "line": 886,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure"
@@ -4171,7 +4179,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStrict",
-          "line": 886,
+          "line": 901,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure",
@@ -4183,7 +4191,7 @@
         {
           "kind": "def",
           "name": "ipcTransferSingleCap",
-          "line": 941,
+          "line": 956,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -4192,19 +4200,19 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_scheduler_eq",
-          "line": 964,
+          "line": 979,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_services_eq",
-          "line": 969,
+          "line": 984,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
-          "line": 974,
+          "line": 989,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4216,7 +4224,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
-          "line": 1007,
+          "line": 1022,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4227,7 +4235,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_services",
-          "line": 1042,
+          "line": 1057,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4239,7 +4247,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_invExt",
-          "line": 1075,
+          "line": 1090,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4250,7 +4258,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 1113,
+          "line": 1128,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4260,7 +4268,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
-          "line": 1135,
+          "line": 1150,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4270,7 +4278,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
-          "line": 1209,
+          "line": 1224,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4280,7 +4288,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 1230,
+          "line": 1245,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4290,7 +4298,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
-          "line": 1252,
+          "line": 1267,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -17688,7 +17696,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 134,
+      "declaration_count": 135,
       "declarations": [
         {
           "kind": "namespace",
@@ -18710,17 +18718,26 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "revokeDerivationEdge",
+          "line": 1861,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1856,
+          "line": 1871,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1867>",
-          "line": 1867,
+          "name": "<anonymous:instance:1882>",
+          "line": 1882,
           "called": [
             "KernelObject"
           ]
@@ -18728,19 +18745,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1877,
+          "line": 1892,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 1886,
+          "line": 1901,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 1890,
+          "line": 1905,
           "called": [
             "KernelObjectType"
           ]
@@ -18748,7 +18765,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1900,
+          "line": 1915,
           "called": [
             "KernelObjectType"
           ]
@@ -18756,7 +18773,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1910,
+          "line": 1925,
           "called": [
             "KernelObjectType",
             "ofNat"
@@ -18765,7 +18782,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1914,
+          "line": 1929,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -18774,13 +18791,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 1919,
+          "line": 1934,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 1921,
+          "line": 1936,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -18789,7 +18806,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 1933,
+          "line": 1948,
           "called": []
         }
       ]

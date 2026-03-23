@@ -1847,6 +1847,21 @@ private theorem removeEdge_preserves_cdtMapsConsistent
     (cdt.removeEdge p0 c0).childMapConsistent ∧
     (cdt.removeEdge p0 c0).parentMapConsistent := hPost
 
+/-- S3-C: Public revocation-scoped edge removal. Wraps the private `removeEdge`
+    for use in revocation paths (`processRevokeNode`, `cspaceRevokeCdt`).
+
+    Unlike `removeNode` (which removes ALL edges involving a node), this removes
+    a single parent→child derivation edge — enabling fine-grained revocation
+    where a child capability's derivation is severed without destroying the
+    child node itself.
+
+    This is the only public entry point for `removeEdge`, satisfying the S3-C
+    spec requirement: "Expose only through `revokeTargetLocal`; do not export
+    standalone." -/
+def revokeDerivationEdge (cdt : CapDerivationTree)
+    (parent child : CdtNodeId) : CapDerivationTree :=
+  cdt.removeEdge parent child
+
 end CapDerivationTree
 
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is

@@ -744,6 +744,21 @@ def processRevokeNode (st : SystemState) (node : CdtNodeId)
           let stDetached := SystemState.detachSlotFromCdt stDel descAddr
           .ok { stDetached with cdt := stDetached.cdt.removeNode node }
 
+/-- S3-C: Fine-grained CDT revocation — severs a single parent→child
+    derivation edge without destroying the child node.
+
+    This is the production entry point for `removeEdge` (S3-C/U-L03).
+    Unlike `processRevokeNode` which uses `removeNode` (destroying ALL edges
+    for a node), this severs only the specified derivation relationship,
+    leaving the child's outgoing edges intact.
+
+    Use case: partial revocation where a derived capability's lineage is
+    severed but the capability itself (and its own derivatives) remain valid
+    under a new authority chain. -/
+def severDerivationEdge (st : SystemState) (parent child : CdtNodeId)
+    : SystemState :=
+  { st with cdt := st.cdt.revokeDerivationEdge parent child }
+
 /-- Legacy lenient variant of `processRevokeNode` that swallows delete errors.
 
 Deprecated since WS-R2/M-06. Retained for backward compatibility with callers
