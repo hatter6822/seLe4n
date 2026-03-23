@@ -32,7 +32,7 @@ Specification documents:
 ## Where to find current workstream detail
 
 - Canonical execution matrix:
-  [`docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
+  [`docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md)
 - GitBook planning chapter:
   [Specification & Roadmap](05-specification-and-roadmap.md)
 
