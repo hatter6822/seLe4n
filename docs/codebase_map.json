@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-t4-ipc-SN33U",
-      "commit_sha": "a0b268d501723b2e65a803efd7c7f024ae430ff4",
-      "tree_sha": "a358157873283fc2105ab218e47723ebb2c12f77",
-      "committed_at_utc": "2026-03-23T14:32:41-04:00"
+      "commit_sha": "192348edea155456ef031637a3d816087b6971da",
+      "tree_sha": "3eed4b268e7f2d20b1d5c6bcfc44d9810327823d",
+      "committed_at_utc": "2026-03-23T19:19:24+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "595d1515ee3bb804659b70e594f1f90a4d49656984dd5cb0f5333ca11b122ae1"
+    "source_digest": "6cf3fc44683f0362e236bc881c1e30a6491a9aed996265f3a956485622e6d9f3"
   },
   "summary": {
     "module_count": 110,
@@ -27,7 +27,7 @@
     "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 58368,
+    "production_loc": 58394,
     "test_files": 10,
     "test_loc": 7561,
     "proved_theorem_lemma_decls": 1786,
@@ -6677,7 +6677,7 @@
         {
           "kind": "theorem",
           "name": "endpointCall_preserves_ipcStateQueueConsistent",
-          "line": 3479,
+          "line": 3505,
           "called": [
             "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
             "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
@@ -6690,7 +6690,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyRecv_preserves_ipcStateQueueConsistent",
-          "line": 3543,
+          "line": 3569,
           "called": [
             "endpointReceiveDual_preserves_ipcStateQueueConsistent",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
@@ -6700,13 +6700,13 @@
         {
           "kind": "theorem",
           "name": "storeObject_notification_preserves_ipcStateQueueConsistent",
-          "line": 3610,
+          "line": 3636,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "notificationSignal_preserves_ipcStateQueueConsistent",
-          "line": 3636,
+          "line": 3662,
           "called": [
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "storeObject_notification_preserves_ipcStateQueueConsistent",
@@ -6716,7 +6716,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_ipcStateQueueConsistent",
-          "line": 3678,
+          "line": 3704,
           "called": [
             "removeRunnable_preserves_ipcStateQueueConsistent",
             "storeObject_notification_preserves_ipcStateQueueConsistent",

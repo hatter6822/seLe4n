@@ -3466,6 +3466,32 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
         obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
 
 -- ============================================================================
+-- T4-D (M-IPC-2): endpointQueueRemoveDual and dualQueueSystemInvariant
+--
+-- The full proof of `endpointQueueRemoveDual_preserves_dualQueueSystemInvariant`
+-- requires 3 sub-lemmas across the 4 code paths of endpointQueueRemoveDual:
+--   1. intrusiveQueueWellFormed preservation for the modified queue (sendQ or receiveQ)
+--   2. intrusiveQueueWellFormed preservation for the unmodified queue
+--   3. tcbQueueLinkIntegrity preservation through storeTcbQueueLinks composition
+--
+-- The non-target endpoint case is straightforward (backward preservation via
+-- `endpointQueueRemoveDual_endpoint_backward_ne`, already proven).
+-- The target endpoint case requires proving that the 4-path queue link splice
+-- (endpointHead no-next, endpointHead with-next, tcbNext no-next, tcbNext with-next)
+-- correctly maintains intrusive queue invariants.
+--
+-- The existing transport infrastructure provides:
+--   - `endpointQueueRemoveDual_scheduler_eq` (scheduler unchanged)
+--   - `endpointQueueRemoveDual_tcb_forward` (TCB existence forward)
+--   - `endpointQueueRemoveDual_tcb_ipcState_backward` (ipcState backward)
+--   - `endpointQueueRemoveDual_endpoint_backward_ne` (non-target endpoint backward)
+--   - `endpointQueueRemoveDual_preserves_tail_of_nonTail` (tail pointer preservation)
+--   - `endpointQueueRemoveDual_tail_update` (tail update correctness)
+--
+-- The queue-link manipulation sub-lemmas are the next infrastructure step.
+-- ============================================================================
+
+-- ============================================================================
 -- T4-A (M-IPC-1): endpointCall preserves ipcStateQueueConsistent
 -- ============================================================================
 
