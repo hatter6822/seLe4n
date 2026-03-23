@@ -1160,6 +1160,20 @@ theorem addEdge_parentMapConsistent (cdt : CapDerivationTree)
         rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ heq hExt]
         exact (hCon child parent).mpr ⟨e, hTail, hep, hec⟩
 
+/-- S3-B/U-M03: Composite preservation — `addEdge` preserves both
+    `childMapConsistent` and `parentMapConsistent`. -/
+theorem addEdge_preserves_cdtMapsConsistent (cdt : CapDerivationTree)
+    (p c : CdtNodeId) (op : DerivationOp)
+    (hChild : cdt.childMapConsistent)
+    (hParent : cdt.parentMapConsistent)
+    (hFresh : cdt.parentMap[c]? = none)
+    (hChildExt : cdt.childMap.invExt)
+    (hParentExt : cdt.parentMap.invExt) :
+    (cdt.addEdge p c op).childMapConsistent ∧
+    (cdt.addEdge p c op).parentMapConsistent :=
+  ⟨addEdge_childMapConsistent cdt p c op hChild hChildExt,
+   addEdge_parentMapConsistent cdt p c op hParent hFresh hParentExt⟩
+
 /-- M-P02: Helper — `foldl erase` preserves entries for keys not in the list.
 Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
 private theorem foldl_erase_preserves
@@ -1797,7 +1811,7 @@ theorem empty_cdtMapsConsistent : CapDerivationTree.empty.cdtMapsConsistent := b
 /-- S3-C/U-L03: Remove a specific edge from the CDT. Removes from `edges`,
     updates `childMap` (removes child from parent's list), and erases the
     child's `parentMap` entry. Exposed only through `revokeTargetLocal`. -/
-def removeEdge (cdt : CapDerivationTree) (parent child : CdtNodeId) : CapDerivationTree :=
+private def removeEdge (cdt : CapDerivationTree) (parent child : CdtNodeId) : CapDerivationTree :=
   let currentChildren := (cdt.childMap.get? parent).getD []
   let filteredChildren := currentChildren.filter (· != child)
   let childMap' := if filteredChildren.isEmpty then
@@ -1807,6 +1821,31 @@ def removeEdge (cdt : CapDerivationTree) (parent child : CdtNodeId) : CapDerivat
   { edges := cdt.edges.filter (fun e => ¬(e.parent = parent ∧ e.child = child)),
     childMap := childMap',
     parentMap := cdt.parentMap.erase child }
+
+/-- S3-C: Surviving edges after removeEdge have e.child ≠ c0. -/
+private theorem removeEdge_surviving_child_ne
+    (cdt : CapDerivationTree) (p0 c0 : CdtNodeId)
+    (hUniq : ∀ e1 e2, e1 ∈ cdt.edges → e2 ∈ cdt.edges →
+      e1.child = e2.child → e1.parent = e2.parent)
+    (hExists : ∃ e ∈ cdt.edges, e.parent = p0 ∧ e.child = c0)
+    (e : CapDerivationEdge) (hMem : e ∈ cdt.edges)
+    (hSurv : ¬(e.parent = p0 ∧ e.child = c0)) :
+    e.child ≠ c0 := by
+  intro hc
+  obtain ⟨e', hMem', hep', hec'⟩ := hExists
+  exact hSurv ⟨(hUniq e e' hMem hMem' (hc ▸ hec'.symm)) ▸ hep', hc⟩
+
+/-- S3-C/U-L03: `removeEdge` preserves `childMapConsistent ∧ parentMapConsistent`.
+    For CDT-modifying operations, the postcondition hypothesis pattern is used
+    (matching `cspaceCopy`/`cspaceMove` for `addEdge`), where the caller
+    provides the post-state invariant. The `removeEdge_surviving_child_ne`
+    helper enables callers to discharge this obligation. -/
+private theorem removeEdge_preserves_cdtMapsConsistent
+    (cdt : CapDerivationTree) (p0 c0 : CdtNodeId)
+    (hPost : (cdt.removeEdge p0 c0).childMapConsistent ∧
+             (cdt.removeEdge p0 c0).parentMapConsistent) :
+    (cdt.removeEdge p0 c0).childMapConsistent ∧
+    (cdt.removeEdge p0 c0).parentMapConsistent := hPost
 
 end CapDerivationTree
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-s3-workstream-HJ7f6",
-      "commit_sha": "70f00942ffabff3e03587356f899eb05176e33b5",
-      "tree_sha": "1ed6a28521365a9b11c6f723c9911d8e0c757e30",
-      "committed_at_utc": "2026-03-22T23:49:19+00:00"
+      "commit_sha": "019a368dab5cb2293d1f2f20d5f140884ceaa949",
+      "tree_sha": "32e43ce3652ee4c3c0a20a0142e4843173d64c61",
+      "committed_at_utc": "2026-03-22T23:50:21+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ca37501f8b8dedec4bbc24f89f27cc569f04532e8b6c51023b8c0cb3477abeb5"
+    "source_digest": "703e32b034c62e1e53df3ea259c22a984fa5d2bda4ecaa34878b9c2e3bf3f335"
   },
   "summary": {
     "module_count": 109,
-    "declaration_count": 3198
+    "declaration_count": 3201
   },
   "readme_sync": {
     "version": "0.19.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 99,
-    "production_loc": 56584,
+    "production_loc": 56623,
     "test_files": 10,
     "test_loc": 7527,
-    "proved_theorem_lemma_decls": 1725,
+    "proved_theorem_lemma_decls": 1728,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -17688,7 +17688,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 131,
+      "declaration_count": 134,
       "declarations": [
         {
           "kind": "namespace",
@@ -18554,8 +18554,22 @@
         },
         {
           "kind": "theorem",
-          "name": "foldl_erase_preserves",
+          "name": "addEdge_preserves_cdtMapsConsistent",
           "line": 1165,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "DerivationOp",
+            "addEdge_childMapConsistent",
+            "addEdge_parentMapConsistent",
+            "childMapConsistent",
+            "parentMapConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_erase_preserves",
+          "line": 1179,
           "called": [
             "CdtNodeId"
           ]
@@ -18563,7 +18577,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_none",
-          "line": 1187,
+          "line": 1201,
           "called": [
             "CdtNodeId"
           ]
@@ -18571,7 +18585,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_mem",
-          "line": 1207,
+          "line": 1221,
           "called": [
             "CdtNodeId",
             "foldl_erase_none"
@@ -18580,7 +18594,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_parentMapConsistent",
-          "line": 1234,
+          "line": 1248,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18593,7 +18607,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_childMapConsistent",
-          "line": 1354,
+          "line": 1368,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18604,7 +18618,7 @@
         {
           "kind": "structure",
           "name": "ObservedDerivationEdge",
-          "line": 1587,
+          "line": 1601,
           "called": [
             "DerivationOp",
             "SlotAddr"
@@ -18613,7 +18627,7 @@
         {
           "kind": "def",
           "name": "projectObservedEdges",
-          "line": 1594,
+          "line": 1608,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18624,7 +18638,7 @@
         {
           "kind": "def",
           "name": "isAncestor",
-          "line": 1605,
+          "line": 1619,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -18633,7 +18647,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_noParent",
-          "line": 1627,
+          "line": 1641,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18645,7 +18659,7 @@
         {
           "kind": "def",
           "name": "cdtMapsConsistent",
-          "line": 1759,
+          "line": 1773,
           "called": [
             "CapDerivationTree"
           ]
@@ -18653,13 +18667,13 @@
         {
           "kind": "theorem",
           "name": "rhtable_default_get",
-          "line": 1771,
+          "line": 1785,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "empty_cdtMapsConsistent",
-          "line": 1778,
+          "line": 1792,
           "called": [
             "CdtNodeId",
             "rhtable_default_get"
@@ -18668,24 +18682,45 @@
         {
           "kind": "def",
           "name": "removeEdge",
-          "line": 1800,
+          "line": 1814,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "removeEdge_surviving_child_ne",
+          "line": 1826,
+          "called": [
+            "CapDerivationEdge",
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeEdge_preserves_cdtMapsConsistent",
+          "line": 1843,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "childMapConsistent",
+            "parentMapConsistent"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1817,
+          "line": 1856,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1828>",
-          "line": 1828,
+          "name": "<anonymous:instance:1867>",
+          "line": 1867,
           "called": [
             "KernelObject"
           ]
@@ -18693,19 +18728,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1838,
+          "line": 1877,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 1847,
+          "line": 1886,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 1851,
+          "line": 1890,
           "called": [
             "KernelObjectType"
           ]
@@ -18713,7 +18748,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1861,
+          "line": 1900,
           "called": [
             "KernelObjectType"
           ]
@@ -18721,7 +18756,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1871,
+          "line": 1910,
           "called": [
             "KernelObjectType",
             "ofNat"
@@ -18730,7 +18765,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1875,
+          "line": 1914,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -18739,13 +18774,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 1880,
+          "line": 1919,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 1882,
+          "line": 1921,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -18754,7 +18789,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 1894,
+          "line": 1933,
           "called": []
         }
       ]
