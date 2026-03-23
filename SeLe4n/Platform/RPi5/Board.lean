@@ -136,4 +136,40 @@ theorem mmioRegionDisjoint_holds : mmioRegionDisjointCheck = true := by native_d
     and all region end addresses fit within the 44-bit physical address space. -/
 theorem rpi5MachineConfig_wellFormed : rpi5MachineConfig.wellFormed = true := by native_decide
 
+/-!
+## S5-F: BCM2712 Address Validation Checklist
+
+**Pre-hardware-binding gate.** Before the H3 hardware binding workstream begins,
+every address constant in this module must be cross-referenced against the
+BCM2712 ARM Peripherals datasheet and ARM Cortex-A76 TRM. This checklist
+tracks validation status.
+
+| Constant | Expected Source | Datasheet Section | Validated? |
+|----------|----------------|-------------------|------------|
+| `peripheralBaseLow` (0xFE00_0000) | BCM2712 peripheral base | §1.2 Address Map | Pending |
+| `peripheralBaseHigh` (0x10_0000_0000) | BCM2712 high-peripheral window | §1.2 Address Map | Pending |
+| `gicDistributorBase` (0xFF84_1000) | GIC-400 distributor | §6.3 GIC-400 | Pending |
+| `gicCpuInterfaceBase` (0xFF84_2000) | GIC-400 CPU interface | §6.3 GIC-400 | Pending |
+| `timerFrequencyHz` (54 MHz) | ARM Generic Timer CNTFRQ_EL0 | Crystal spec | Pending |
+| `uart0Base` (0xFE20_1000) | PL011 UART0 | §2.1 UART | Pending |
+| `rpi5MemoryMap` RAM region (4032 MiB) | DRAM controller config | §1.2 Address Map | Pending |
+| `rpi5MemoryMap` GPU region (32 MiB @ 0xFC00_0000) | VideoCore firmware reservation | GPU firmware | Pending |
+| `rpi5MemoryMap` peripheral window (24.3 MiB) | Legacy peripheral range | §1.2 Address Map | Pending |
+| `rpi5MachineConfig.physicalAddressWidth` (44-bit) | BCM2712 PA width | §1.1 Overview | Pending |
+| `gicSpiCount` (192) | GIC-400 SPI count | §6.3 GIC-400 | Pending |
+| `timerPpiId` (INTID 30) | NS physical timer PPI | ARM GIC spec | Pending |
+| `virtualTimerPpiId` (INTID 27) | Virtual timer PPI | ARM GIC spec | Pending |
+| `mmioRegions` (3 regions) | UART + GIC register spaces | §2.1, §6.3 | Pending |
+
+**Process**: For each constant, record the exact datasheet reference (document
+title, revision, page number) and the value found. Mark "Validated" only when
+the model value matches the datasheet. Discrepancies must be resolved before
+H3 proceeds.
+
+**Automated verification**: `rpi5MachineConfig_wellFormed` (above) proves
+structural well-formedness (non-overlap, valid sizes, PA width bounds) via
+`native_decide`. This does not validate against the datasheet — it only
+ensures internal consistency of the declared values.
+-/
+
 end SeLe4n.Platform.RPi5

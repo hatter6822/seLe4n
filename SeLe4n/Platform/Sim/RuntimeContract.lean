@@ -50,4 +50,44 @@ def simRuntimeContractRestrictive : RuntimeBoundaryContract :=
     memoryAccessAllowedDecidable := by intro st addr; infer_instance
   }
 
+/-- S5-D: Simulation memory map — single 256 MiB RAM region at physical address 0.
+    Defined locally so the substantive runtime contract can reference it using the
+    same `memoryMap.any` pattern as RPi5. Must be kept in sync with
+    `simMachineConfig.memoryMap` in `Platform/Sim/Contract.lean`. -/
+private def simSubstantiveMemoryMap : List SeLe4n.MemoryRegion :=
+  [ { base := SeLe4n.PAddr.ofNat 0
+      size := 256 * 1024 * 1024  -- 256 MiB
+      kind := .ram } ]
+
+/-- S5-D: Substantive simulation runtime contract mirroring the RPi5 contract
+    structure with simulation-appropriate bounds. This replaces the all-False
+    restrictive contract for non-trivial validation:
+
+    - **Timer monotonicity**: ARM Generic Timer semantics — CNTPCT_EL0 is
+      monotonically non-decreasing (same predicate as RPi5 production).
+    - **Register context stability**: Denied (same as RPi5 restrictive). Needed
+      because `contextMatchesCurrent` requires full register-file equality, and
+      arbitrary register writes break this invariant.
+    - **Memory access**: Restricted to declared RAM regions in the simulation
+      memory map using the same `memoryMap.any` pattern as RPi5. The simulation
+      declares a single 256 MiB RAM region at PA 0.
+
+    This contract enables substantive preservation proofs: timer advancement is
+    validated (not vacuously true), and memory reads are checked against bounds. -/
+def simRuntimeContractSubstantive : RuntimeBoundaryContract :=
+  {
+    timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
+    registerContextStable := fun _ _ => False
+    memoryAccessAllowed := fun _ addr =>
+      -- S5-D: Same memoryMap.any pattern as RPi5 (rpi5RuntimeContract line 58-60).
+      simSubstantiveMemoryMap.any fun region =>
+        region.kind == .ram && region.contains addr
+    timerMonotonicDecidable := by intro st st'; infer_instance
+    registerContextStableDecidable := by intro st st'; infer_instance
+    memoryAccessAllowedDecidable := by
+      intro _ addr
+      simp only [simSubstantiveMemoryMap]
+      infer_instance
+  }
+
 end SeLe4n.Platform.Sim

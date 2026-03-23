@@ -60,6 +60,12 @@ Preservation shape:
 - `isBetterCandidate_transitive` (WS-H6 / A-17)
 - `bucketFirst_fullScan_equivalence` (WS-H6 / A-17)
 
+Documented semantics:
+
+- `chooseThread` uses EDF tie-breaking with FIFO ordering: among threads with the
+  earliest deadline in the highest-priority bucket, the thread at the head of the
+  bucket list (longest-waiting) is selected (S5-I / U-M22).
+
 ## 3. Capability invariants (M2)
 
 Component level:
@@ -489,6 +495,22 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - `noStaleEndpointQueueReferences` — every endpoint queue head/tail has a live TCB
   - `registryDependencyConsistent` — every dependency edge references a registered service
   - `crossSubsystemInvariant` — composed bundle added to `proofLayerInvariantBundle`
+
+## 9.2 S5-G/H: Page-alignment check for VSpace-bound retype (S5 complete)
+
+*(S5-G/S5-H: Page-alignment enforcement in `retypeFromUntyped` for VSpace roots and CNodes)*
+
+`retypeFromUntyped` now enforces page-aligned allocation bases for object types
+that require it:
+
+- **`requiresPageAlignment`** — predicate identifying `KernelObjectType` values
+  requiring page-aligned allocation (VSpace roots, CNodes).
+- **`allocationBasePageAligned`** — checks 4 KiB alignment of the allocation base.
+- **`allocationMisaligned`** — new `KernelError` variant returned when the
+  alignment check fails.
+- **Lifecycle invariant preservation**: all existing lifecycle preservation proofs
+  updated to account for the new error branch (trivially preserving — error returns
+  unchanged state).
 
 ## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06; WS-G6 / F-P05 updated)
 
@@ -1259,6 +1281,14 @@ Introduces the seL4-style capability-gated syscall entry pattern:
   - 3 end-to-end theorems: `rpi5Restrictive_adapterAdvanceTimer_preserves`,
     `rpi5Restrictive_adapterWriteRegister_preserves`,
     `rpi5Restrictive_adapterReadMemory_preserves`.
+- **SimRestrictive platform** (`Platform/Sim/RuntimeContract.lean`, `Platform/Sim/Contract.lean`, `Platform/Sim/ProofHooks.lean` — S5-D):
+  - `simRuntimeContractSubstantive` — substantive simulation contract with timer
+    monotonicity validation, memory access restricted to 256 MiB RAM, register
+    writes denied.
+  - `SimRestrictivePlatform` — `PlatformBinding` instance using the substantive
+    contract.
+  - Substantive proof hooks in `Platform/Sim/ProofHooks.lean` for the restrictive
+    simulation variant.
 
 ### Testing (WS-H15e)
 

@@ -24,6 +24,10 @@ run_check "META" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate
 run_check "META" "${SCRIPT_DIR}/test_tier2_trace.sh" "${sub_args[@]}"
 run_check "META" "${SCRIPT_DIR}/test_tier2_determinism.sh" "${sub_args[@]}"
 run_check "META" "${SCRIPT_DIR}/test_tier2_negative.sh" "${sub_args[@]}"
+# S5-E: Verify SimRestrictive platform binding compiles with substantive contracts.
+# This ensures the non-trivial simulation contracts (timer monotonicity, RAM-bounded
+# memory access) and their proof hooks build correctly alongside the permissive defaults.
+run_check "BUILD" lake build SeLe4n.Platform.Sim.Contract
 # Q8-D: Rust syscall wrappers build + test + conformance.
 run_check "META" "${SCRIPT_DIR}/test_rust.sh"
 # M-19: documentation sync check — catches navigation/link drift on every PR.

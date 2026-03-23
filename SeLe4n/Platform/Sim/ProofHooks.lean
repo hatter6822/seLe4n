@@ -75,4 +75,55 @@ theorem simRestrictive_adapterReadMemory_preserves
     simRuntimeContractRestrictive simRestrictiveAdapterProofHooks
     addr st st' byte hInv hOk
 
+-- ============================================================================
+-- S5-D: Substantive AdapterProofHooks for simRuntimeContractSubstantive
+-- ============================================================================
+
+/-- S5-D: Concrete `AdapterProofHooks` for the simulation substantive runtime
+contract. Timer preservation uses the generic lemma (substantive, not vacuous);
+register write is vacuously satisfied (denied by contract); memory read is
+state-preserving. -/
+def simSubstantiveAdapterProofHooks :
+    AdapterProofHooks simRuntimeContractSubstantive where
+  preserveAdvanceTimer := fun ticks st hInv _ _ =>
+    advanceTimerState_preserves_proofLayerInvariantBundle ticks st hInv
+  preserveWriteRegister := fun _ _ _ _ hStable =>
+    absurd hStable (by simp [simRuntimeContractSubstantive])
+  preserveReadMemory := fun _ st hInv _ => hInv
+
+/-- S5-D: End-to-end timer advancement preservation for Sim (substantive).
+The substantive contract accepts timer operations when timer is monotonically
+non-decreasing — the proof is non-vacuous and delegates to the generic
+adapter preservation theorem. -/
+theorem simSubstantive_adapterAdvanceTimer_preserves
+    (st st' : SystemState) (ticks : Nat)
+    (hInv : proofLayerInvariantBundle st)
+    (hOk : adapterAdvanceTimer simRuntimeContractSubstantive ticks st = .ok ((), st')) :
+    proofLayerInvariantBundle st' :=
+  adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle
+    simRuntimeContractSubstantive simSubstantiveAdapterProofHooks
+    ticks st st' hInv hOk
+
+/-- S5-D: End-to-end register write preservation for Sim substantive (vacuous).
+The substantive contract rejects all register writes. -/
+theorem simSubstantive_adapterWriteRegister_preserves
+    (st st' : SystemState) (reg : SeLe4n.RegName) (value : SeLe4n.RegValue)
+    (hInv : proofLayerInvariantBundle st)
+    (hOk : adapterWriteRegister simRuntimeContractSubstantive reg value st = .ok ((), st')) :
+    proofLayerInvariantBundle st' :=
+  adapterWriteRegister_ok_preserves_proofLayerInvariantBundle
+    simRuntimeContractSubstantive simSubstantiveAdapterProofHooks
+    reg value st st' hInv hOk
+
+/-- S5-D: End-to-end memory read preservation for Sim substantive.
+Memory reads are state-preserving — the pre-state is returned unchanged. -/
+theorem simSubstantive_adapterReadMemory_preserves
+    (st st' : SystemState) (addr : SeLe4n.PAddr) (byte : UInt8)
+    (hInv : proofLayerInvariantBundle st)
+    (hOk : adapterReadMemory simRuntimeContractSubstantive addr st = .ok (byte, st')) :
+    proofLayerInvariantBundle st' :=
+  adapterReadMemory_ok_preserves_proofLayerInvariantBundle
+    simRuntimeContractSubstantive simSubstantiveAdapterProofHooks
+    addr st st' byte hInv hOk
+
 end SeLe4n.Platform.Sim

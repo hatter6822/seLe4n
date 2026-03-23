@@ -106,7 +106,7 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   to `pub(crate)` with `.raw()` accessors, plus `AccessRights` and `PagePerms` (L-11).
   All 99 Rust tests pass (44 abi + 22 types + 8 sys + 25 conformance). Zero sorry/axiom.
 
-### WS-S workstream (Pre-Benchmark Strengthening) — IN PROGRESS
+### WS-S workstream (Pre-Benchmark Strengthening) — IN PROGRESS (S1–S5 complete)
 
 WS-S is the **active** workstream (v0.19.0+), addressing all findings from two
 comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
@@ -176,7 +176,25 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   (U-M23): Documented `cspaceRevoke`/`cspaceRevokeCdt` O(n)/O(maxObjects)
   complexity. **S4-M** (U-M24): Documented `endpointCall` timeout absence
   matching seL4 semantics. Zero sorry/axiom.
-- **S5–S7**: Pending.
+- **S5 (v0.19.4) — COMPLETE**: API Cleanup, Platform Hardening & Lifecycle Fidelity
+  (10 sub-tasks). **S5-A** (U-M05b): Removed 14 deprecated `api*` wrappers from
+  `API.lean`; production path: `syscallEntry` → `dispatchSyscall` → `syscallInvoke`
+  → `dispatchWithCap`. **S5-B**: Audited invariant files — zero references to
+  removed wrappers. **S5-D** (U-M18): Created `SimRestrictive` platform variant
+  with substantive contracts (`simRuntimeContractSubstantive`): timer monotonicity,
+  256 MiB RAM memory bound, register writes denied; `SimRestrictivePlatform`
+  binding in `Platform/Sim/Contract.lean`; substantive proof hooks in
+  `Platform/Sim/ProofHooks.lean`. **S5-E**: Added `SimRestrictive` build check to
+  `test_smoke.sh`. **S5-F** (U-M19): BCM2712 address validation checklist in
+  `Platform/RPi5/Board.lean`; pre-hardware-binding gate in `DEVELOPMENT.md`.
+  **S5-G/S5-H** (U-M20/U-M21): Page-alignment check in `retypeFromUntyped` for
+  VSpace roots and CNodes — `requiresPageAlignment`, `allocationBasePageAligned`,
+  `allocationMisaligned` error variant; all lifecycle invariant preservation proofs
+  updated. **S5-I** (U-M22): EDF tie-breaking FIFO semantics documented at
+  `chooseThread` (`Selection.lean`). **S5-J** (U-M23b): Complexity documentation
+  for `TlbState` operations (O(n)), `RunQueue.remove` (O(k+n)),
+  `RunQueue.rotateHead` (O(k+n)). Zero sorry/axiom.
+- **S6–S7**: Pending.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 
