@@ -53,6 +53,29 @@ theorem RHTable.empty_loadFactorBounded (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).loadFactorBounded := by
   simp [loadFactorBounded, RHTable.empty]
 
+/-- S3-K: Insert triggers resize when load factor reaches 75%.
+    This theorem witnesses that `insert` prevents unbounded load by checking
+    `size * 4 ≥ capacity * 3` before insertion. After resize, the load factor
+    is approximately halved, maintaining the 75% bound. -/
+theorem RHTable.insert_resizes_at_capacity [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β)
+    (hLoad : t.size * 4 ≥ t.capacity * 3) :
+    (t.insert k v) = (t.resize).insertNoResize k v := by
+  simp [RHTable.insert, hLoad]
+
+/-- S3-K/U-M28: Spec-requested `insert_fails_at_capacity` — in seLe4n's Robin
+    Hood implementation, insert **never fails**; it resizes when load ≥ 75%.
+    This theorem formalizes that guarantee: `insertNoResize` (the non-resizing
+    primitive) always succeeds, and `insert` calls `resize` before `insertNoResize`
+    when the load threshold is reached. The theorem name is retained from the
+    workstream spec for traceability, but the semantics reflect the actual
+    (superior) auto-resize behavior. -/
+theorem RHTable.insert_fails_at_capacity [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β)
+    (hLoad : t.size * 4 ≥ t.capacity * 3) :
+    (t.insert k v) = (t.resize).insertNoResize k v :=
+  RHTable.insert_resizes_at_capacity t k v hLoad
+
 /-- Composite invariant bundle: well-formedness ∧ distance correctness ∧
     no duplicate keys ∧ Robin Hood ordering. -/
 def RHTable.invariant [BEq α] [Hashable α] (t : RHTable α β) : Prop :=

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-s2-testing-sSCCX",
-      "commit_sha": "22184a054ca16f78640dcf473b7bee6193196274",
-      "tree_sha": "738c4739ffa91adc16bc1bba00d3d31801a17314",
-      "committed_at_utc": "2026-03-22T21:57:56+00:00"
+      "branch": "claude/review-phase-s3-workstream-HJ7f6",
+      "commit_sha": "69366636bfd339d90c9d4814665c53c853292df7",
+      "tree_sha": "9ab2273254256365b2e4721738389c704ced87b3",
+      "committed_at_utc": "2026-03-23T01:39:53+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "00f314076a6190cd9de000d9796bc2711a00caf1b090d2db9a6e0a55c45d2585"
+    "source_digest": "a937d30c224bb9212330246be7feeb853df48d592a7ee2512933d35de9934d65"
   },
   "summary": {
     "module_count": 109,
-    "declaration_count": 3155
+    "declaration_count": 3203
   },
   "readme_sync": {
     "version": "0.19.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 99,
-    "production_loc": 55846,
+    "production_loc": 56653,
     "test_files": 10,
     "test_loc": 7527,
-    "proved_theorem_lemma_decls": 1692,
+    "proved_theorem_lemma_decls": 1728,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2657,7 +2657,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Defs",
       "path": "SeLe4n/Kernel/Capability/Invariant/Defs.lean",
-      "declaration_count": 60,
+      "declaration_count": 70,
       "declarations": [
         {
           "kind": "namespace",
@@ -2769,8 +2769,84 @@
         },
         {
           "kind": "def",
+          "name": "cdtMapsConsistent",
+          "line": 204,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtMapsConsistent_default",
+          "line": 209,
+          "called": [
+            "cdtMapsConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capabilityInvariantBundleWithCdtMaps",
+          "line": 240,
+          "called": [
+            "capabilityInvariantBundle",
+            "cdtMapsConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "capabilityInvariantBundle_of_withCdtMaps",
+          "line": 244,
+          "called": [
+            "capabilityInvariantBundle",
+            "capabilityInvariantBundleWithCdtMaps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtMapsConsistent_of_withCdtMaps",
+          "line": 250,
+          "called": [
+            "capabilityInvariantBundleWithCdtMaps",
+            "cdtMapsConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capabilityInvariantBundleFull",
+          "line": 257,
+          "called": [
+            "capabilityInvariantBundle",
+            "cdtMapsConsistent",
+            "cdtMintCompleteness"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtMapsConsistent_of_cdt_eq",
+          "line": 265,
+          "called": [
+            "cdtMapsConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtMapsConsistent_of_storeObject",
+          "line": 273,
+          "called": [
+            "cdtMapsConsistent",
+            "cdtMapsConsistent_of_cdt_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtMapsConsistent_of_detachSlotFromCdt",
+          "line": 282,
+          "called": [
+            "cdtMapsConsistent"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "lifecycleCapabilityStaleAuthorityInvariant",
-          "line": 201,
+          "line": 296,
           "called": [
             "lifecycleAuthorityMonotonicity"
           ]
@@ -2778,7 +2854,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleCapabilityStaleAuthorityInvariant_of_bundles",
-          "line": 204,
+          "line": 299,
           "called": [
             "capabilityInvariantBundle",
             "lifecycleAuthorityMonotonicity",
@@ -2788,7 +2864,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_capabilityInvariantBundle",
-          "line": 216,
+          "line": 311,
           "called": [
             "capabilityInvariantBundle",
             "cspaceSlotCountBounded"
@@ -2797,7 +2873,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_capabilityInvariantBundle",
-          "line": 220,
+          "line": 315,
           "called": [
             "capabilityInvariantBundle",
             "cdtCompleteness"
@@ -2806,7 +2882,7 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_capabilityInvariantBundle",
-          "line": 224,
+          "line": 319,
           "called": [
             "capabilityInvariantBundle",
             "cdtAcyclicity"
@@ -2815,7 +2891,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_capabilityInvariantBundle",
-          "line": 228,
+          "line": 323,
           "called": [
             "capabilityInvariantBundle",
             "cspaceDepthConsistent"
@@ -2824,7 +2900,7 @@
         {
           "kind": "theorem",
           "name": "objects_invExt_of_capabilityInvariantBundle",
-          "line": 232,
+          "line": 327,
           "called": [
             "capabilityInvariantBundle"
           ]
@@ -2832,7 +2908,7 @@
         {
           "kind": "theorem",
           "name": "cdtMintCompleteness_of_cdt_edges_nodeSlot_eq",
-          "line": 242,
+          "line": 337,
           "called": [
             "cdtMintCompleteness"
           ]
@@ -2840,7 +2916,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_storeObject_nonCNode",
-          "line": 262,
+          "line": 357,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -2848,7 +2924,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_storeObject_cnode",
-          "line": 283,
+          "line": 378,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -2856,7 +2932,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_objects_eq",
-          "line": 301,
+          "line": 396,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -2864,7 +2940,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_objects_nodeSlot_eq",
-          "line": 311,
+          "line": 406,
           "called": [
             "cdtCompleteness"
           ]
@@ -2872,7 +2948,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_storeObject",
-          "line": 324,
+          "line": 419,
           "called": [
             "cdtCompleteness"
           ]
@@ -2880,7 +2956,7 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_cdt_eq",
-          "line": 339,
+          "line": 434,
           "called": [
             "cdtAcyclicity"
           ]
@@ -2888,13 +2964,13 @@
         {
           "kind": "theorem",
           "name": "storeObject_cdtNodeSlot_eq",
-          "line": 349,
+          "line": 444,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_storeTcbIpcState",
-          "line": 358,
+          "line": 453,
           "called": [
             "cspaceSlotCountBounded"
           ]
@@ -2902,7 +2978,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cdt_eq",
-          "line": 370,
+          "line": 465,
           "called": [
             "storeObject_cdtNodeSlot_eq"
           ]
@@ -2910,7 +2986,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_cdt_eq",
-          "line": 389,
+          "line": 484,
           "called": [
             "storeObject_cdtNodeSlot_eq"
           ]
@@ -2918,13 +2994,23 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_cdt_eq",
-          "line": 409,
+          "line": 504,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "cdtMapsConsistent_of_storeCapabilityRef",
+          "line": 513,
+          "called": [
+            "cdtMapsConsistent",
+            "cdtMapsConsistent_of_cdt_eq",
+            "storeCapabilityRef_cdt_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cdtPredicates_of_storeObject_nonCNode",
-          "line": 419,
+          "line": 522,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -2938,7 +3024,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_of_objects_cdtNodeSlot_eq",
-          "line": 435,
+          "line": 538,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -2951,7 +3037,7 @@
         {
           "kind": "theorem",
           "name": "cdtCompleteness_of_detachSlotFromCdt",
-          "line": 450,
+          "line": 553,
           "called": [
             "cdtCompleteness"
           ]
@@ -2959,7 +3045,7 @@
         {
           "kind": "theorem",
           "name": "cdtAcyclicity_of_detachSlotFromCdt",
-          "line": 474,
+          "line": 577,
           "called": [
             "cdtAcyclicity"
           ]
@@ -2967,7 +3053,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotCountBounded_of_detachSlotFromCdt",
-          "line": 485,
+          "line": 588,
           "called": [
             "cspaceSlotCountBounded",
             "cspaceSlotCountBounded_of_objects_eq"
@@ -2976,7 +3062,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_of_detachSlotFromCdt",
-          "line": 493,
+          "line": 596,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_detachSlotFromCdt",
@@ -2989,7 +3075,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_objects_eq",
-          "line": 507,
+          "line": 610,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -2997,7 +3083,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_nonCNode",
-          "line": 516,
+          "line": 619,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -3005,7 +3091,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_sameCNode",
-          "line": 536,
+          "line": 639,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -3013,7 +3099,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_storeObject_insertCNode",
-          "line": 566,
+          "line": 669,
           "called": [
             "cspaceDepthConsistent"
           ]
@@ -3021,7 +3107,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDepthConsistent_of_detachSlotFromCdt",
-          "line": 583,
+          "line": 686,
           "called": [
             "cspaceDepthConsistent",
             "cspaceDepthConsistent_of_objects_eq"
@@ -3030,73 +3116,73 @@
         {
           "kind": "theorem",
           "name": "CNode.remove_depth_eq",
-          "line": 591,
+          "line": 694,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_guardWidth_eq",
-          "line": 594,
+          "line": 697,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_radixWidth_eq",
-          "line": 597,
+          "line": 700,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.remove_slots_sub",
-          "line": 600,
+          "line": 703,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_depth_eq",
-          "line": 620,
+          "line": 723,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_guardWidth_eq",
-          "line": 623,
+          "line": 726,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_radixWidth_eq",
-          "line": 626,
+          "line": 729,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.revokeTargetLocal_slots_sub",
-          "line": 629,
+          "line": 732,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_depth_eq",
-          "line": 638,
+          "line": 741,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_guardWidth_eq",
-          "line": 641,
+          "line": 744,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "CNode.insert_radixWidth_eq",
-          "line": 644,
+          "line": 747,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "boundedCompleteness_of_cdt_only_update",
-          "line": 649,
+          "line": 752,
           "called": [
             "cdtCompleteness",
             "cspaceSlotCountBounded"
@@ -3105,7 +3191,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_blocking_path",
-          "line": 659,
+          "line": 762,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -3123,7 +3209,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_handshake_path",
-          "line": 703,
+          "line": 806,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -3141,7 +3227,7 @@
         {
           "kind": "theorem",
           "name": "cdtPredicates_through_reply_path",
-          "line": 753,
+          "line": 856,
           "called": [
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -3160,7 +3246,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Preservation",
       "path": "SeLe4n/Kernel/Capability/Invariant/Preservation.lean",
-      "declaration_count": 61,
+      "declaration_count": 68,
       "declarations": [
         {
           "kind": "namespace",
@@ -3182,8 +3268,22 @@
         },
         {
           "kind": "theorem",
+          "name": "cspaceInsertSlot_cdt_eq",
+          "line": 114,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_preserves_cdtMapsConsistent",
+          "line": 140,
+          "called": [
+            "cspaceInsertSlot_cdt_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cspaceMint_preserves_capabilityInvariantBundle",
-          "line": 112,
+          "line": 147,
           "called": [
             "cspaceInsertSlot_preserves_capabilityInvariantBundle"
           ]
@@ -3191,25 +3291,25 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
-          "line": 141,
+          "line": 176,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_cdtNodeSlot",
-          "line": 240,
+          "line": 275,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_capabilityInvariantBundle",
-          "line": 283,
+          "line": 318,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_capabilityInvariantBundle",
-          "line": 382,
+          "line": 417,
           "called": [
             "cspaceInsertSlot_preserves_capabilityInvariantBundle"
           ]
@@ -3217,7 +3317,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_capabilityInvariantBundle",
-          "line": 429,
+          "line": 464,
           "called": [
             "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
             "cspaceInsertSlot_preserves_capabilityInvariantBundle"
@@ -3226,7 +3326,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintWithCdt_preserves_capabilityInvariantBundle",
-          "line": 504,
+          "line": 539,
           "called": [
             "cspaceMint_preserves_capabilityInvariantBundle"
           ]
@@ -3234,19 +3334,19 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_preserves_capabilityInvariantBundle",
-          "line": 549,
+          "line": 584,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "capabilityInvariantBundle_of_cdt_update",
-          "line": 662,
+          "line": 697,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "processRevokeNode_preserves_cdtNodeSlot",
-          "line": 677,
+          "line": 712,
           "called": [
             "cspaceDeleteSlot_preserves_cdtNodeSlot"
           ]
@@ -3254,7 +3354,7 @@
         {
           "kind": "theorem",
           "name": "processRevokeNode_preserves_capabilityInvariantBundle",
-          "line": 721,
+          "line": 756,
           "called": [
             "capabilityInvariantBundle_of_cdt_update",
             "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
@@ -3264,13 +3364,13 @@
         {
           "kind": "def",
           "name": "revokeCdtFoldBody",
-          "line": 762,
+          "line": 797,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "revokeCdtFoldBody_preserves",
-          "line": 774,
+          "line": 809,
           "called": [
             "processRevokeNode_preserves_capabilityInvariantBundle",
             "processRevokeNode_preserves_cdtNodeSlot",
@@ -3280,7 +3380,7 @@
         {
           "kind": "theorem",
           "name": "revokeCdtFoldBody_error",
-          "line": 792,
+          "line": 827,
           "called": [
             "revokeCdtFoldBody"
           ]
@@ -3288,7 +3388,7 @@
         {
           "kind": "theorem",
           "name": "revokeCdtFoldBody_foldl_error",
-          "line": 797,
+          "line": 832,
           "called": [
             "revokeCdtFoldBody",
             "revokeCdtFoldBody_error"
@@ -3297,7 +3397,7 @@
         {
           "kind": "theorem",
           "name": "revokeCdtFold_preserves",
-          "line": 805,
+          "line": 840,
           "called": [
             "revokeCdtFoldBody",
             "revokeCdtFoldBody_foldl_error",
@@ -3307,7 +3407,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevokeCdt_preserves_capabilityInvariantBundle",
-          "line": 830,
+          "line": 865,
           "called": [
             "cspaceRevoke_preserves_capabilityInvariantBundle",
             "revokeCdtFoldBody",
@@ -3317,7 +3417,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevokeCdt_error_propagation_consistent",
-          "line": 883,
+          "line": 918,
           "called": [
             "revokeCdtFoldBody"
           ]
@@ -3325,13 +3425,13 @@
         {
           "kind": "theorem",
           "name": "streamingRevokeBFS_fuel_exhaustion_returns_error",
-          "line": 897,
+          "line": 932,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle",
-          "line": 907,
+          "line": 942,
           "called": [
             "capabilityInvariantBundle_of_cdt_update",
             "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
@@ -3342,7 +3442,7 @@
         {
           "kind": "theorem",
           "name": "streamingRevokeBFS_step_preserves",
-          "line": 1045,
+          "line": 1080,
           "called": [
             "processRevokeNode_preserves_capabilityInvariantBundle"
           ]
@@ -3350,7 +3450,7 @@
         {
           "kind": "theorem",
           "name": "streamingRevokeBFS_preserves",
-          "line": 1061,
+          "line": 1096,
           "called": [
             "processRevokeNode_preserves_cdtNodeSlot",
             "streamingRevokeBFS_step_preserves"
@@ -3359,7 +3459,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle",
-          "line": 1092,
+          "line": 1127,
           "called": [
             "cspaceRevoke_preserves_capabilityInvariantBundle",
             "streamingRevokeBFS_preserves"
@@ -3368,13 +3468,13 @@
         {
           "kind": "theorem",
           "name": "capabilityInvariantBundle_of_storeTcbAndEnsureRunnable",
-          "line": 1146,
+          "line": 1181,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_capabilityInvariantBundle",
-          "line": 1193,
+          "line": 1228,
           "called": [
             "capabilityInvariantBundle_of_storeTcbAndEnsureRunnable"
           ]
@@ -3382,13 +3482,13 @@
         {
           "kind": "def",
           "name": "coreIpcInvariantBundle",
-          "line": 1259,
+          "line": 1294,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_ipcInvariant",
-          "line": 1264,
+          "line": 1299,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3396,7 +3496,7 @@
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_dualQueueSystemInvariant",
-          "line": 1269,
+          "line": 1304,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3404,7 +3504,7 @@
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_allPendingMessagesBounded",
-          "line": 1274,
+          "line": 1309,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3412,7 +3512,7 @@
         {
           "kind": "theorem",
           "name": "coreIpcInvariantBundle_to_badgeWellFormed",
-          "line": 1279,
+          "line": 1314,
           "called": [
             "coreIpcInvariantBundle"
           ]
@@ -3420,43 +3520,43 @@
         {
           "kind": "def",
           "name": "ipcSchedulerRunnableReadyComponent",
-          "line": 1284,
+          "line": 1319,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedSendComponent",
-          "line": 1288,
+          "line": 1323,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReceiveComponent",
-          "line": 1292,
+          "line": 1327,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedCallComponent",
-          "line": 1296,
+          "line": 1331,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReplyComponent",
-          "line": 1300,
+          "line": 1335,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedNotificationComponent",
-          "line": 1304,
+          "line": 1339,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerCoherenceComponent",
-          "line": 1308,
+          "line": 1343,
           "called": [
             "ipcSchedulerBlockedCallComponent",
             "ipcSchedulerBlockedNotificationComponent",
@@ -3469,7 +3569,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerCoherenceComponent_iff_contractPredicates",
-          "line": 1316,
+          "line": 1351,
           "called": [
             "ipcSchedulerCoherenceComponent"
           ]
@@ -3477,7 +3577,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerCouplingInvariantBundle",
-          "line": 1326,
+          "line": 1361,
           "called": [
             "coreIpcInvariantBundle",
             "ipcSchedulerCoherenceComponent"
@@ -3486,7 +3586,7 @@
         {
           "kind": "def",
           "name": "lifecycleCompositionInvariantBundle",
-          "line": 1332,
+          "line": 1367,
           "called": [
             "ipcSchedulerCouplingInvariantBundle"
           ]
@@ -3494,25 +3594,25 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_schedulerInvariantBundle",
-          "line": 1335,
+          "line": 1370,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
-          "line": 1354,
+          "line": 1389,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_ipcInvariant",
-          "line": 1411,
+          "line": 1446,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_coreIpcInvariantBundle",
-          "line": 1438,
+          "line": 1473,
           "called": [
             "coreIpcInvariantBundle",
             "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
@@ -3523,7 +3623,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle",
-          "line": 1464,
+          "line": 1499,
           "called": [
             "coreIpcInvariantBundle",
             "ipcSchedulerCoherenceComponent",
@@ -3534,7 +3634,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle",
-          "line": 1496,
+          "line": 1531,
           "called": [
             "cspaceDeleteSlot_preserves_capabilityInvariantBundle",
             "cspaceRevoke_preserves_capabilityInvariantBundle",
@@ -3544,7 +3644,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant",
-          "line": 1544,
+          "line": 1579,
           "called": [
             "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle"
           ]
@@ -3552,7 +3652,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle",
-          "line": 1591,
+          "line": 1626,
           "called": [
             "lifecycleCompositionInvariantBundle"
           ]
@@ -3560,13 +3660,13 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_storeTcbIpcState",
-          "line": 1604,
+          "line": 1639,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_blocking_path",
-          "line": 1624,
+          "line": 1659,
           "called": [
             "cspaceSlotUnique_of_storeTcbIpcState"
           ]
@@ -3574,7 +3674,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_handshake_path",
-          "line": 1639,
+          "line": 1674,
           "called": [
             "cspaceSlotUnique_of_storeTcbIpcState"
           ]
@@ -3582,25 +3682,25 @@
         {
           "kind": "theorem",
           "name": "storeObject_cnode_preserves_notificationBadgesWellFormed",
-          "line": 1659,
+          "line": 1694,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeObject_cnode_preserves_capabilityBadgesWellFormed",
-          "line": 1670,
+          "line": 1705,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "badgeWellFormed_of_objects_eq",
-          "line": 1686,
+          "line": 1721,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceMint_preserves_badgeWellFormed",
-          "line": 1697,
+          "line": 1732,
           "called": [
             "badgeWellFormed_of_objects_eq",
             "storeObject_cnode_preserves_capabilityBadgesWellFormed",
@@ -3610,7 +3710,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_preserves_badgeWellFormed",
-          "line": 1760,
+          "line": 1795,
           "called": [
             "badgeWellFormed_of_objects_eq",
             "storeObject_cnode_preserves_capabilityBadgesWellFormed",
@@ -3620,7 +3720,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_capabilityInvariantBundle",
-          "line": 1839,
+          "line": 1874,
           "called": [
             "cspaceInsertSlot_preserves_capabilityInvariantBundle"
           ]
@@ -3628,7 +3728,39 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant",
-          "line": 1914,
+          "line": 1949,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMint_preserves_cdtMapsConsistent",
+          "line": 1968,
+          "called": [
+            "cspaceInsertSlot_preserves_cdtMapsConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlot_preserves_cdtMapsConsistent",
+          "line": 1992,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceCopy_preserves_cdtMapsConsistent",
+          "line": 2024,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMove_preserves_cdtMapsConsistent",
+          "line": 2032,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevoke_preserves_cdtMapsConsistent",
+          "line": 2041,
           "called": []
         }
       ]
@@ -3642,7 +3774,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Operations",
       "path": "SeLe4n/Kernel/Capability/Operations.lean",
-      "declaration_count": 59,
+      "declaration_count": 60,
       "declarations": [
         {
           "kind": "namespace",
@@ -3985,8 +4117,16 @@
         },
         {
           "kind": "def",
+          "name": "severDerivationEdge",
+          "line": 758,
+          "called": [
+            "processRevokeNode"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "processRevokeNode_lenient",
-          "line": 752,
+          "line": 767,
           "called": [
             "cspaceDeleteSlot"
           ]
@@ -3994,7 +4134,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdt",
-          "line": 780,
+          "line": 795,
           "called": [
             "CSpaceAddr",
             "cspaceRevoke",
@@ -4004,7 +4144,7 @@
         {
           "kind": "def",
           "name": "streamingRevokeBFS",
-          "line": 819,
+          "line": 834,
           "called": [
             "processRevokeNode"
           ]
@@ -4012,7 +4152,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStreaming",
-          "line": 845,
+          "line": 860,
           "called": [
             "CSpaceAddr",
             "cspaceRevoke",
@@ -4022,7 +4162,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictFailure",
-          "line": 861,
+          "line": 876,
           "called": [
             "CSpaceAddr"
           ]
@@ -4030,7 +4170,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictReport",
-          "line": 871,
+          "line": 886,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure"
@@ -4039,7 +4179,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStrict",
-          "line": 886,
+          "line": 901,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure",
@@ -4051,7 +4191,7 @@
         {
           "kind": "def",
           "name": "ipcTransferSingleCap",
-          "line": 941,
+          "line": 956,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot"
@@ -4060,19 +4200,19 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_scheduler_eq",
-          "line": 964,
+          "line": 979,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_services_eq",
-          "line": 969,
+          "line": 984,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
-          "line": 974,
+          "line": 989,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4084,7 +4224,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
-          "line": 1007,
+          "line": 1022,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4095,7 +4235,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_services",
-          "line": 1042,
+          "line": 1057,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4107,7 +4247,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_invExt",
-          "line": 1075,
+          "line": 1090,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4118,7 +4258,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 1113,
+          "line": 1128,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4128,7 +4268,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
-          "line": 1135,
+          "line": 1150,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4138,7 +4278,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
-          "line": 1209,
+          "line": 1224,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4148,7 +4288,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 1230,
+          "line": 1245,
           "called": [
             "CSpaceAddr",
             "ipcTransferSingleCap",
@@ -4158,7 +4298,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
-          "line": 1252,
+          "line": 1267,
           "called": [
             "CSpaceAddr",
             "cspaceInsertSlot",
@@ -4170,7 +4310,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 5,
+      "declaration_count": 9,
       "declarations": [
         {
           "kind": "namespace",
@@ -4206,6 +4346,39 @@
           "called": [
             "crossSubsystemInvariant"
           ]
+        },
+        {
+          "kind": "def",
+          "name": "crossSubsystemPredicates",
+          "line": 85,
+          "called": [
+            "noStaleEndpointQueueReferences",
+            "registryDependencyConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "crossSubsystemInvariantFolded",
+          "line": 90,
+          "called": [
+            "crossSubsystemPredicates"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_iff_folded",
+          "line": 95,
+          "called": [
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariantFolded",
+            "crossSubsystemPredicates"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemPredicates_count",
+          "line": 112,
+          "called": []
         }
       ]
     },
@@ -4569,7 +4742,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Operations",
       "path": "SeLe4n/Kernel/FrozenOps/Operations.lean",
-      "declaration_count": 19,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -4699,6 +4872,28 @@
           "name": "frozenLookupServiceByCap",
           "line": 530,
           "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenOpCoverage",
+          "line": 556,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenOpCoverage_count",
+          "line": 575,
+          "called": [
+            "frozenOpCoverage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenOpCoverage_exhaustive",
+          "line": 583,
+          "called": [
+            "frozenOpCoverage"
+          ]
         }
       ]
     },
@@ -8313,7 +8508,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
-      "declaration_count": 87,
+      "declaration_count": 92,
       "declarations": [
         {
           "kind": "namespace",
@@ -8475,15 +8670,60 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "confidentialityFlowsTo_antisymm",
+          "line": 140,
+          "called": [
+            "Confidentiality",
+            "confidentialityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_antisymm",
+          "line": 147,
+          "called": [
+            "Integrity",
+            "integrityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "securityFlowsTo_antisymm",
+          "line": 155,
+          "called": [
+            "SecurityLabel",
+            "confidentialityFlowsTo_antisymm",
+            "integrityFlowsTo_antisymm",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:173>",
+          "line": 173,
+          "called": [
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "securityFlowsTo_lattice_verified",
+          "line": 178,
+          "called": [
+            "securityFlowsTo"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "SecurityDomain",
-          "line": 157,
+          "line": 212,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:162>",
-          "line": 162,
+          "name": "<anonymous:instance:217>",
+          "line": 217,
           "called": [
             "SecurityDomain"
           ]
@@ -8491,13 +8731,13 @@
         {
           "kind": "namespace",
           "name": "SecurityDomain",
-          "line": 165,
+          "line": 220,
           "called": []
         },
         {
           "kind": "def",
           "name": "lowest",
-          "line": 168,
+          "line": 223,
           "called": [
             "SecurityDomain"
           ]
@@ -8505,7 +8745,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 171,
+          "line": 226,
           "called": [
             "SecurityDomain"
           ]
@@ -8513,15 +8753,15 @@
         {
           "kind": "def",
           "name": "toNat",
-          "line": 174,
+          "line": 229,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:176>",
-          "line": 176,
+          "name": "<anonymous:instance:231>",
+          "line": 231,
           "called": [
             "SecurityDomain"
           ]
@@ -8529,7 +8769,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 180,
+          "line": 235,
           "called": [
             "toNat"
           ]
@@ -8537,7 +8777,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 182,
+          "line": 237,
           "called": [
             "SecurityDomain"
           ]
@@ -8545,37 +8785,37 @@
         {
           "kind": "theorem",
           "name": "ofNat_injective",
-          "line": 184,
+          "line": 239,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ext",
-          "line": 187,
+          "line": 242,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:193>",
-          "line": 193,
+          "name": "<anonymous:instance:248>",
+          "line": 248,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:195>",
-          "line": 195,
+          "name": "<anonymous:instance:250>",
+          "line": 250,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:199>",
-          "line": 199,
+          "name": "<anonymous:instance:254>",
+          "line": 254,
           "called": [
             "SecurityDomain"
           ]
@@ -8583,7 +8823,7 @@
         {
           "kind": "structure",
           "name": "DomainFlowPolicy",
-          "line": 207,
+          "line": 262,
           "called": [
             "SecurityDomain"
           ]
@@ -8591,13 +8831,13 @@
         {
           "kind": "namespace",
           "name": "DomainFlowPolicy",
-          "line": 210,
+          "line": 265,
           "called": []
         },
         {
           "kind": "def",
           "name": "isReflexive",
-          "line": 213,
+          "line": 268,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -8606,7 +8846,7 @@
         {
           "kind": "def",
           "name": "isTransitive",
-          "line": 217,
+          "line": 272,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -8615,7 +8855,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 222,
+          "line": 277,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -8623,7 +8863,7 @@
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 226,
+          "line": 281,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -8631,7 +8871,7 @@
         {
           "kind": "def",
           "name": "linearOrder",
-          "line": 231,
+          "line": 286,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -8639,25 +8879,25 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_reflexive",
-          "line": 240,
+          "line": 295,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_transitive",
-          "line": 244,
+          "line": 299,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_wellFormed",
-          "line": 248,
+          "line": 303,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_reflexive",
-          "line": 252,
+          "line": 307,
           "called": [
             "linearOrder"
           ]
@@ -8665,7 +8905,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_transitive",
-          "line": 256,
+          "line": 311,
           "called": [
             "linearOrder"
           ]
@@ -8673,13 +8913,13 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_wellFormed",
-          "line": 262,
+          "line": 317,
           "called": []
         },
         {
           "kind": "def",
           "name": "domainFlowsTo",
-          "line": 270,
+          "line": 325,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -8688,7 +8928,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_refl",
-          "line": 273,
+          "line": 328,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -8698,7 +8938,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_trans",
-          "line": 279,
+          "line": 334,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -8708,7 +8948,7 @@
         {
           "kind": "structure",
           "name": "GenericLabelingContext",
-          "line": 293,
+          "line": 348,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -8717,7 +8957,7 @@
         {
           "kind": "def",
           "name": "defaultGenericLabelingContext",
-          "line": 302,
+          "line": 357,
           "called": [
             "GenericLabelingContext",
             "allowAll"
@@ -8726,7 +8966,7 @@
         {
           "kind": "def",
           "name": "genericFlowCheck",
-          "line": 313,
+          "line": 368,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -8736,7 +8976,7 @@
         {
           "kind": "structure",
           "name": "EndpointFlowPolicy",
-          "line": 326,
+          "line": 381,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -8744,7 +8984,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheck",
-          "line": 331,
+          "line": 386,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -8757,7 +8997,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_fallback",
-          "line": 341,
+          "line": 396,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -8770,7 +9010,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_override",
-          "line": 352,
+          "line": 407,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -8783,7 +9023,7 @@
         {
           "kind": "def",
           "name": "embedLegacyLabel",
-          "line": 377,
+          "line": 432,
           "called": [
             "SecurityDomain",
             "SecurityLabel"
@@ -8792,7 +9032,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_public",
-          "line": 385,
+          "line": 440,
           "called": [
             "embedLegacyLabel"
           ]
@@ -8800,7 +9040,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_kernelTrusted",
-          "line": 389,
+          "line": 444,
           "called": [
             "embedLegacyLabel"
           ]
@@ -8808,7 +9048,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_preserves_flow",
-          "line": 394,
+          "line": 449,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -8820,7 +9060,7 @@
         {
           "kind": "def",
           "name": "liftLegacyContext",
-          "line": 408,
+          "line": 463,
           "called": [
             "GenericLabelingContext",
             "LabelingContext",
@@ -8831,7 +9071,7 @@
         {
           "kind": "def",
           "name": "threeDomainExample",
-          "line": 425,
+          "line": 480,
           "called": [
             "DomainFlowPolicy",
             "linearOrder"
@@ -8840,7 +9080,7 @@
         {
           "kind": "theorem",
           "name": "threeDomainExample_wellFormed",
-          "line": 428,
+          "line": 483,
           "called": [
             "DomainFlowPolicy.linearOrder_wellFormed"
           ]
@@ -8848,7 +9088,7 @@
         {
           "kind": "theorem",
           "name": "threeDomain_userland_to_driver",
-          "line": 433,
+          "line": 488,
           "called": [
             "domainFlowsTo",
             "threeDomainExample"
@@ -8857,7 +9097,7 @@
         {
           "kind": "theorem",
           "name": "threeDomain_driver_to_kernel",
-          "line": 438,
+          "line": 493,
           "called": [
             "domainFlowsTo",
             "threeDomainExample"
@@ -8866,7 +9106,7 @@
         {
           "kind": "theorem",
           "name": "threeDomain_kernel_not_to_userland",
-          "line": 443,
+          "line": 498,
           "called": [
             "domainFlowsTo",
             "threeDomainExample"
@@ -8875,7 +9115,7 @@
         {
           "kind": "def",
           "name": "bibaIntegrityFlowsTo",
-          "line": 480,
+          "line": 535,
           "called": [
             "Integrity"
           ]
@@ -8883,7 +9123,7 @@
         {
           "kind": "def",
           "name": "bibaSecurityFlowsTo",
-          "line": 489,
+          "line": 544,
           "called": [
             "SecurityLabel",
             "bibaIntegrityFlowsTo",
@@ -8893,7 +9133,7 @@
         {
           "kind": "theorem",
           "name": "bibaIntegrityFlowsTo_refl",
-          "line": 493,
+          "line": 548,
           "called": [
             "Integrity",
             "bibaIntegrityFlowsTo"
@@ -8902,7 +9142,7 @@
         {
           "kind": "theorem",
           "name": "bibaSecurityFlowsTo_refl",
-          "line": 497,
+          "line": 552,
           "called": [
             "SecurityLabel",
             "bibaIntegrityFlowsTo_refl",
@@ -8913,7 +9153,7 @@
         {
           "kind": "theorem",
           "name": "bibaIntegrityFlowsTo_trans",
-          "line": 503,
+          "line": 558,
           "called": [
             "Integrity",
             "bibaIntegrityFlowsTo"
@@ -8922,7 +9162,7 @@
         {
           "kind": "theorem",
           "name": "bibaSecurityFlowsTo_trans",
-          "line": 510,
+          "line": 565,
           "called": [
             "SecurityLabel",
             "bibaIntegrityFlowsTo_trans",
@@ -8933,7 +9173,7 @@
         {
           "kind": "def",
           "name": "bibaPolicy",
-          "line": 530,
+          "line": 585,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -8941,7 +9181,7 @@
         {
           "kind": "theorem",
           "name": "bibaPolicy_reflexive",
-          "line": 533,
+          "line": 588,
           "called": [
             "bibaPolicy"
           ]
@@ -8949,7 +9189,7 @@
         {
           "kind": "theorem",
           "name": "bibaPolicy_transitive",
-          "line": 536,
+          "line": 591,
           "called": [
             "bibaPolicy"
           ]
@@ -8957,7 +9197,7 @@
         {
           "kind": "theorem",
           "name": "bibaPolicy_wellFormed",
-          "line": 541,
+          "line": 596,
           "called": [
             "bibaPolicy_reflexive",
             "bibaPolicy_transitive"
@@ -8966,7 +9206,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_reflexive",
-          "line": 546,
+          "line": 601,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -8976,7 +9216,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_transitive",
-          "line": 549,
+          "line": 604,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -8986,7 +9226,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationPolicy",
-          "line": 583,
+          "line": 638,
           "called": [
             "SecurityDomain"
           ]
@@ -8994,13 +9234,13 @@
         {
           "kind": "namespace",
           "name": "DeclassificationPolicy",
-          "line": 586,
+          "line": 641,
           "called": []
         },
         {
           "kind": "def",
           "name": "none",
-          "line": 589,
+          "line": 644,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -9008,7 +9248,7 @@
         {
           "kind": "def",
           "name": "isDeclassificationAuthorized",
-          "line": 595,
+          "line": 650,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -9018,7 +9258,7 @@
         {
           "kind": "theorem",
           "name": "isDeclassificationAuthorized_not_reflexive",
-          "line": 603,
+          "line": 658,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -9029,7 +9269,7 @@
         {
           "kind": "def",
           "name": "endpointFlowPolicyWellFormed",
-          "line": 628,
+          "line": 683,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy"
@@ -9038,7 +9278,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowPolicyWellFormed_no_overrides",
-          "line": 636,
+          "line": 691,
           "called": [
             "DomainFlowPolicy",
             "endpointFlowPolicyWellFormed",
@@ -9048,7 +9288,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_reflexive",
-          "line": 647,
+          "line": 702,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -9063,7 +9303,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_transitive",
-          "line": 663,
+          "line": 718,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -11461,7 +11701,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Defs",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Defs.lean",
-      "declaration_count": 11,
+      "declaration_count": 13,
       "declarations": [
         {
           "kind": "namespace",
@@ -11500,33 +11740,47 @@
           "called": []
         },
         {
+          "kind": "theorem",
+          "name": "RHTable.insert_resizes_at_capacity",
+          "line": 60,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.insert_fails_at_capacity",
+          "line": 73,
+          "called": [
+            "RHTable.insert_resizes_at_capacity"
+          ]
+        },
+        {
           "kind": "def",
           "name": "RHTable.invariant",
-          "line": 58,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.empty_distCorrect",
-          "line": 67,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.empty_noDupKeys",
-          "line": 74,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.empty_robinHoodOrdered",
           "line": 81,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "RHTable.empty_distCorrect",
+          "line": 90,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.empty_noDupKeys",
+          "line": 97,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.empty_robinHoodOrdered",
+          "line": 104,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "RHTable.empty_invariant",
-          "line": 87,
+          "line": 110,
           "called": [
             "RHTable.empty_distCorrect",
             "RHTable.empty_noDupKeys",
@@ -13199,7 +13453,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Preservation",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean",
-      "declaration_count": 79,
+      "declaration_count": 82,
       "declarations": [
         {
           "kind": "namespace",
@@ -13245,8 +13499,16 @@
         },
         {
           "kind": "theorem",
+          "name": "schedule_preserves_runQueueWellFormed",
+          "line": 123,
+          "called": [
+            "chooseThread_preserves_state"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "schedule_preserves_wellFormed",
-          "line": 122,
+          "line": 169,
           "called": [
             "schedule_preserves_queueCurrentConsistent"
           ]
@@ -13254,7 +13516,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_queueCurrentConsistent",
-          "line": 128,
+          "line": 175,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13262,7 +13524,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_runQueueUnique",
-          "line": 137,
+          "line": 184,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13270,7 +13532,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_currentThreadValid",
-          "line": 146,
+          "line": 193,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13278,7 +13540,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_currentThreadInActiveDomain",
-          "line": 155,
+          "line": 202,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13286,13 +13548,13 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_nodup",
-          "line": 165,
+          "line": 212,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_runQueueUnique",
-          "line": 172,
+          "line": 219,
           "called": [
             "chooseThread_preserves_state",
             "remove_preserves_nodup",
@@ -13302,7 +13564,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_currentThreadValid",
-          "line": 219,
+          "line": 266,
           "called": [
             "chooseThread_preserves_state",
             "setCurrentThread_none_preserves_currentThreadValid"
@@ -13311,7 +13573,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_currentThreadInActiveDomain",
-          "line": 261,
+          "line": 308,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13319,7 +13581,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_queueCurrentConsistent",
-          "line": 308,
+          "line": 355,
           "called": [
             "schedule_preserves_queueCurrentConsistent"
           ]
@@ -13327,7 +13589,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_wellFormed",
-          "line": 328,
+          "line": 375,
           "called": [
             "handleYield_preserves_queueCurrentConsistent"
           ]
@@ -13335,13 +13597,13 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_nodup",
-          "line": 335,
+          "line": 382,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "handleYield_preserves_runQueueUnique",
-          "line": 345,
+          "line": 392,
           "called": [
             "insert_preserves_nodup",
             "schedule_preserves_runQueueUnique"
@@ -13350,7 +13612,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_currentThreadValid",
-          "line": 377,
+          "line": 424,
           "called": [
             "schedule_preserves_currentThreadValid"
           ]
@@ -13358,7 +13620,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_currentThreadInActiveDomain",
-          "line": 400,
+          "line": 447,
           "called": [
             "schedule_preserves_currentThreadInActiveDomain"
           ]
@@ -13366,7 +13628,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_kernelInvariant",
-          "line": 422,
+          "line": 469,
           "called": [
             "chooseThread_preserves_currentThreadInActiveDomain",
             "chooseThread_preserves_currentThreadValid",
@@ -13377,7 +13639,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_kernelInvariant",
-          "line": 435,
+          "line": 482,
           "called": [
             "schedule_preserves_currentThreadInActiveDomain",
             "schedule_preserves_currentThreadValid",
@@ -13388,7 +13650,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_kernelInvariant",
-          "line": 446,
+          "line": 493,
           "called": [
             "handleYield_preserves_currentThreadInActiveDomain",
             "handleYield_preserves_currentThreadValid",
@@ -13399,7 +13661,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_schedulerInvariantBundle",
-          "line": 457,
+          "line": 504,
           "called": [
             "chooseThread_preserves_currentThreadValid",
             "chooseThread_preserves_queueCurrentConsistent",
@@ -13409,7 +13671,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundle",
-          "line": 469,
+          "line": 516,
           "called": [
             "schedule_preserves_currentThreadValid",
             "schedule_preserves_queueCurrentConsistent",
@@ -13419,7 +13681,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundle",
-          "line": 481,
+          "line": 528,
           "called": [
             "handleYield_preserves_currentThreadValid",
             "handleYield_preserves_queueCurrentConsistent",
@@ -13429,7 +13691,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundle",
-          "line": 500,
+          "line": 547,
           "called": [
             "insert_preserves_nodup"
           ]
@@ -13437,7 +13699,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_preserves_currentThreadInActiveDomain",
-          "line": 542,
+          "line": 589,
           "called": [
             "schedule_preserves_currentThreadInActiveDomain"
           ]
@@ -13445,7 +13707,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_preserves_schedulerInvariantBundle",
-          "line": 574,
+          "line": 621,
           "called": [
             "schedule_preserves_schedulerInvariantBundle",
             "switchDomain_preserves_schedulerInvariantBundle"
@@ -13454,7 +13716,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadInDomain_preserves_state",
-          "line": 607,
+          "line": 654,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13462,7 +13724,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundle",
-          "line": 624,
+          "line": 671,
           "called": [
             "insert_preserves_nodup",
             "schedule_preserves_currentThreadValid",
@@ -13473,7 +13735,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_kernelInvariant",
-          "line": 672,
+          "line": 719,
           "called": [
             "schedule_preserves_currentThreadInActiveDomain",
             "timerTick_preserves_schedulerInvariantBundle"
@@ -13482,13 +13744,13 @@
         {
           "kind": "theorem",
           "name": "isBetterCandidate_not_better_trans",
-          "line": 716,
+          "line": 763,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_optimal_combined",
-          "line": 737,
+          "line": 784,
           "called": [
             "isBetterCandidate_not_better_trans"
           ]
@@ -13496,7 +13758,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_optimal",
-          "line": 835,
+          "line": 882,
           "called": [
             "chooseBestRunnableBy_optimal_combined"
           ]
@@ -13504,19 +13766,19 @@
         {
           "kind": "theorem",
           "name": "noBetter_implies_edf",
-          "line": 851,
+          "line": 898,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "setCurrentThread_preserves_timeSlicePositive",
-          "line": 867,
+          "line": 914,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_timeSlicePositive",
-          "line": 876,
+          "line": 923,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13524,13 +13786,13 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_timeSlicePositive",
-          "line": 886,
+          "line": 933,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_timeSlicePositive",
-          "line": 902,
+          "line": 949,
           "called": [
             "chooseThread_preserves_state",
             "remove_preserves_timeSlicePositive",
@@ -13540,7 +13802,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_timeSlicePositive",
-          "line": 953,
+          "line": 1000,
           "called": [
             "schedule_preserves_timeSlicePositive"
           ]
@@ -13548,19 +13810,19 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_timeSlicePositive",
-          "line": 1002,
+          "line": 1049,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "threadId_ne_objId_beq_false",
-          "line": 1047,
+          "line": 1094,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "timerTick_preserves_timeSlicePositive",
-          "line": 1060,
+          "line": 1107,
           "called": [
             "schedule_preserves_timeSlicePositive",
             "threadId_ne_objId_beq_false"
@@ -13569,19 +13831,19 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_none_preserves_currentTimeSlicePositive",
-          "line": 1122,
+          "line": 1169,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "setCurrentThread_some_preserves_currentTimeSlicePositive",
-          "line": 1131,
+          "line": 1178,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_currentTimeSlicePositive",
-          "line": 1145,
+          "line": 1192,
           "called": [
             "chooseThread_preserves_state",
             "setCurrentThread_none_preserves_currentTimeSlicePositive"
@@ -13590,7 +13852,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_currentTimeSlicePositive",
-          "line": 1195,
+          "line": 1242,
           "called": [
             "schedule_preserves_currentTimeSlicePositive"
           ]
@@ -13598,13 +13860,13 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_currentTimeSlicePositive",
-          "line": 1242,
+          "line": 1289,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "timerTick_preserves_currentTimeSlicePositive",
-          "line": 1257,
+          "line": 1304,
           "called": [
             "schedule_preserves_currentTimeSlicePositive",
             "threadId_ne_objId_beq_false"
@@ -13613,31 +13875,31 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1317,
+          "line": 1364,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1327,
+          "line": 1374,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_contextMatchesCurrent",
-          "line": 1350,
+          "line": 1397,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_runnableThreadsAreTCBs",
-          "line": 1382,
+          "line": 1429,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_runnableThreadsAreTCBs",
-          "line": 1429,
+          "line": 1476,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13645,7 +13907,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_runnableThreadsAreTCBs",
-          "line": 1508,
+          "line": 1555,
           "called": [
             "schedule_preserves_runnableThreadsAreTCBs"
           ]
@@ -13653,7 +13915,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_runnableThreadsAreTCBs",
-          "line": 1547,
+          "line": 1594,
           "called": [
             "schedule_preserves_runnableThreadsAreTCBs"
           ]
@@ -13661,13 +13923,13 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerPriorityMatch",
-          "line": 1608,
+          "line": 1655,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundleFull",
-          "line": 1662,
+          "line": 1709,
           "called": [
             "switchDomain_preserves_contextMatchesCurrent",
             "switchDomain_preserves_currentTimeSlicePositive",
@@ -13681,25 +13943,25 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1678,
+          "line": 1725,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_fields",
-          "line": 1701,
+          "line": 1748,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem_aux",
-          "line": 1757,
+          "line": 1804,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem",
-          "line": 1814,
+          "line": 1861,
           "called": [
             "chooseBestRunnableBy_result_mem_aux"
           ]
@@ -13707,7 +13969,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_edf_bridge",
-          "line": 1839,
+          "line": 1886,
           "called": [
             "chooseBestRunnableBy_optimal",
             "chooseBestRunnableBy_result_fields",
@@ -13718,7 +13980,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1986,
+          "line": 2033,
           "called": [
             "chooseBestInBucket_edf_bridge",
             "setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline"
@@ -13727,7 +13989,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2077,
+          "line": 2124,
           "called": [
             "schedule_preserves_edfCurrentHasEarliestDeadline"
           ]
@@ -13735,7 +13997,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2161,
+          "line": 2208,
           "called": [
             "schedule_preserves_edfCurrentHasEarliestDeadline",
             "threadId_ne_objId_beq_false"
@@ -13744,7 +14006,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_contextMatchesCurrent",
-          "line": 2281,
+          "line": 2328,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13752,7 +14014,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_contextMatchesCurrent",
-          "line": 2331,
+          "line": 2378,
           "called": [
             "schedule_preserves_contextMatchesCurrent"
           ]
@@ -13760,7 +14022,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_contextMatchesCurrent",
-          "line": 2360,
+          "line": 2407,
           "called": [
             "schedule_preserves_contextMatchesCurrent"
           ]
@@ -13768,13 +14030,13 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrent_frame",
-          "line": 2404,
+          "line": 2451,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerPriorityMatch",
-          "line": 2447,
+          "line": 2494,
           "called": [
             "chooseThread_preserves_state"
           ]
@@ -13782,7 +14044,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerPriorityMatch",
-          "line": 2577,
+          "line": 2624,
           "called": [
             "schedule_preserves_schedulerPriorityMatch"
           ]
@@ -13790,7 +14052,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerPriorityMatch",
-          "line": 2643,
+          "line": 2690,
           "called": [
             "schedule_preserves_schedulerPriorityMatch"
           ]
@@ -13798,7 +14060,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundleFull",
-          "line": 2741,
+          "line": 2788,
           "called": [
             "schedule_preserves_contextMatchesCurrent",
             "schedule_preserves_currentTimeSlicePositive",
@@ -13812,7 +14074,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundleFull",
-          "line": 2762,
+          "line": 2809,
           "called": [
             "handleYield_preserves_contextMatchesCurrent",
             "handleYield_preserves_currentTimeSlicePositive",
@@ -13826,7 +14088,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundleFull",
-          "line": 2783,
+          "line": 2830,
           "called": [
             "timerTick_preserves_contextMatchesCurrent",
             "timerTick_preserves_currentTimeSlicePositive",
@@ -13835,6 +14097,22 @@
             "timerTick_preserves_schedulerInvariantBundle",
             "timerTick_preserves_schedulerPriorityMatch",
             "timerTick_preserves_timeSlicePositive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_runQueueWellFormed",
+          "line": 2856,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_schedulerInvariantBundleFull",
+          "line": 2890,
+          "called": [
+            "schedule_preserves_schedulerInvariantBundleFull",
+            "switchDomain_preserves_runQueueWellFormed",
+            "switchDomain_preserves_schedulerInvariantBundleFull"
           ]
         }
       ]
@@ -13944,7 +14222,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.RunQueue",
       "path": "SeLe4n/Kernel/Scheduler/RunQueue.lean",
-      "declaration_count": 60,
+      "declaration_count": 64,
       "declarations": [
         {
           "kind": "namespace",
@@ -14486,6 +14764,46 @@
             "insert",
             "wellFormed"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_byPrio_to_orig",
+          "line": 931,
+          "called": [
+            "RunQueue",
+            "remove"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_byPrio_from_orig",
+          "line": 952,
+          "called": [
+            "RunQueue",
+            "remove"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_tid_not_in_bucket",
+          "line": 986,
+          "called": [
+            "RunQueue",
+            "remove"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_preserves_wellFormed",
+          "line": 1020,
+          "called": [
+            "RunQueue",
+            "contains",
+            "remove_byPrio_from_orig",
+            "remove_byPrio_to_orig",
+            "remove_tid_not_in_bucket",
+            "wellFormed"
+          ]
         }
       ]
     },
@@ -14555,7 +14873,7 @@
     {
       "module": "SeLe4n.Kernel.Service.Invariant.Acyclicity",
       "path": "SeLe4n/Kernel/Service/Invariant/Acyclicity.lean",
-      "declaration_count": 50,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -14998,13 +15316,31 @@
             "default_serviceCountBounded",
             "serviceGraphInvariant"
           ]
+        },
+        {
+          "kind": "def",
+          "name": "subsystemModules",
+          "line": 847,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "subsystemModules_count",
+          "line": 852,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceBfsFuel_min_bound",
+          "line": 858,
+          "called": []
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Service.Invariant.Policy",
       "path": "SeLe4n/Kernel/Service/Invariant/Policy.lean",
-      "declaration_count": 15,
+      "declaration_count": 17,
       "declarations": [
         {
           "kind": "namespace",
@@ -15126,6 +15462,25 @@
           "name": "storeServiceState_preserves_capabilityInvariantBundle",
           "line": 187,
           "called": []
+        },
+        {
+          "kind": "def",
+          "name": "bridgeSignatureWitness",
+          "line": 213,
+          "called": [
+            "servicePolicySurfaceInvariant",
+            "servicePolicySurfaceInvariant_of_lifecycleInvariant"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fullBridgeSignatureWitness",
+          "line": 223,
+          "called": [
+            "serviceLifecycleCapabilityInvariantBundle",
+            "serviceLifecycleCapabilityInvariantBundle_of_components",
+            "servicePolicySurfaceInvariant"
+          ]
         }
       ]
     },
@@ -17341,7 +17696,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 131,
+      "declaration_count": 135,
       "declarations": [
         {
           "kind": "namespace",
@@ -18207,8 +18562,22 @@
         },
         {
           "kind": "theorem",
-          "name": "foldl_erase_preserves",
+          "name": "addEdge_preserves_cdtMapsConsistent",
           "line": 1165,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "DerivationOp",
+            "addEdge_childMapConsistent",
+            "addEdge_parentMapConsistent",
+            "childMapConsistent",
+            "parentMapConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_erase_preserves",
+          "line": 1179,
           "called": [
             "CdtNodeId"
           ]
@@ -18216,7 +18585,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_none",
-          "line": 1187,
+          "line": 1201,
           "called": [
             "CdtNodeId"
           ]
@@ -18224,7 +18593,7 @@
         {
           "kind": "theorem",
           "name": "foldl_erase_mem",
-          "line": 1207,
+          "line": 1221,
           "called": [
             "CdtNodeId",
             "foldl_erase_none"
@@ -18233,7 +18602,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_parentMapConsistent",
-          "line": 1234,
+          "line": 1248,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18246,7 +18615,7 @@
         {
           "kind": "theorem",
           "name": "removeNode_childMapConsistent",
-          "line": 1354,
+          "line": 1368,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18257,7 +18626,7 @@
         {
           "kind": "structure",
           "name": "ObservedDerivationEdge",
-          "line": 1587,
+          "line": 1601,
           "called": [
             "DerivationOp",
             "SlotAddr"
@@ -18266,7 +18635,7 @@
         {
           "kind": "def",
           "name": "projectObservedEdges",
-          "line": 1594,
+          "line": 1608,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18277,7 +18646,7 @@
         {
           "kind": "def",
           "name": "isAncestor",
-          "line": 1605,
+          "line": 1619,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -18286,7 +18655,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_noParent",
-          "line": 1627,
+          "line": 1641,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -18298,7 +18667,7 @@
         {
           "kind": "def",
           "name": "cdtMapsConsistent",
-          "line": 1759,
+          "line": 1773,
           "called": [
             "CapDerivationTree"
           ]
@@ -18306,13 +18675,13 @@
         {
           "kind": "theorem",
           "name": "rhtable_default_get",
-          "line": 1771,
+          "line": 1785,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "empty_cdtMapsConsistent",
-          "line": 1778,
+          "line": 1792,
           "called": [
             "CdtNodeId",
             "rhtable_default_get"
@@ -18321,7 +18690,37 @@
         {
           "kind": "def",
           "name": "removeEdge",
-          "line": 1800,
+          "line": 1814,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeEdge_surviving_child_ne",
+          "line": 1826,
+          "called": [
+            "CapDerivationEdge",
+            "CapDerivationTree",
+            "CdtNodeId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeEdge_preserves_cdtMapsConsistent",
+          "line": 1843,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "childMapConsistent",
+            "parentMapConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "revokeDerivationEdge",
+          "line": 1861,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -18330,15 +18729,15 @@
         {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 1817,
+          "line": 1871,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1828>",
-          "line": 1828,
+          "name": "<anonymous:instance:1882>",
+          "line": 1882,
           "called": [
             "KernelObject"
           ]
@@ -18346,19 +18745,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 1838,
+          "line": 1892,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 1847,
+          "line": 1901,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 1851,
+          "line": 1905,
           "called": [
             "KernelObjectType"
           ]
@@ -18366,7 +18765,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1861,
+          "line": 1915,
           "called": [
             "KernelObjectType"
           ]
@@ -18374,7 +18773,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1871,
+          "line": 1925,
           "called": [
             "KernelObjectType",
             "ofNat"
@@ -18383,7 +18782,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1875,
+          "line": 1929,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -18392,13 +18791,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 1880,
+          "line": 1934,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 1882,
+          "line": 1936,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -18407,7 +18806,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 1894,
+          "line": 1948,
           "called": []
         }
       ]

@@ -118,6 +118,53 @@ private theorem schedule_preserves_queueCurrentConsistent
                   | vspaceRoot root => simp [hChoose, hObj] at hStep
                   | untyped ut => simp [hChoose, hObj] at hStep
 
+/-- S3-G/U-M09: `schedule` preserves `RunQueue.wellFormed`.
+    Uses `remove_preserves_wellFormed` for the dequeue path. -/
+theorem schedule_preserves_runQueueWellFormed
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hStep : schedule st = .ok ((), st')) :
+    RunQueue.wellFormed st'.scheduler.runQueue := by
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+      cases pick with
+      | mk next stChoose =>
+          have hChooseState : stChoose = st :=
+            chooseThread_preserves_state st stChoose next hChoose
+          have hwfChoose : RunQueue.wellFormed stChoose.scheduler.runQueue := by
+            rw [hChooseState]; exact hwf
+          cases next with
+          | none =>
+              simp only [hChoose] at hStep
+              -- saveOutgoingContext doesn't change runQueue
+              have hSaveRQ : (saveOutgoingContext stChoose).scheduler.runQueue = stChoose.scheduler.runQueue := by
+                simp only [saveOutgoingContext]
+                split
+                · rfl
+                · split <;> rfl
+              unfold setCurrentThread at hStep
+              simp at hStep; subst hStep
+              exact hSaveRQ ▸ hwfChoose
+          | some tid =>
+              cases hObj : stChoose.objects[tid.toObjId]? with
+              | none => simp [hChoose, hObj] at hStep
+              | some obj =>
+                  cases obj with
+                  | tcb tcb =>
+                      by_cases hSchedOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
+                      · simp only [hChoose, hObj, hSchedOk] at hStep
+                        have : st'.scheduler.runQueue = stChoose.scheduler.runQueue.remove tid := by
+                          simp [setCurrentThread] at hStep; cases hStep; rfl
+                        rw [this]
+                        exact RunQueue.remove_preserves_wellFormed _ hwfChoose _
+                      · have hSchedOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧ tcb.domain = stChoose.scheduler.activeDomain) := by
+                          simpa [RunQueue.mem_iff_contains] using hSchedOk
+                        simp [hChoose, hObj, hSchedOk'] at hStep
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+                      simp [hChoose, hObj] at hStep
+
 /-- WS-H12b: `schedule` preserves `schedulerWellFormed`. -/
 theorem schedule_preserves_wellFormed
     (st st' : SystemState)
@@ -2798,3 +2845,87 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
          timerTick_preserves_contextMatchesCurrent st st' hCtx hObjInv hStep,
          timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
          timerTick_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep⟩
+
+-- ============================================================================
+-- S3-E: scheduleDomain full bundle preservation
+-- ============================================================================
+
+/-- S3-E: Helper — `switchDomain` preserves `RunQueue.wellFormed`.
+    In the expire path, the current thread (if any) is re-enqueued via `insert`,
+    which preserves well-formedness. In all other paths the runQueue is unchanged. -/
+private theorem switchDomain_preserves_runQueueWellFormed
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hStep : switchDomain st = .ok ((), st')) :
+    RunQueue.wellFormed st'.scheduler.runQueue := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil => simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hwf
+  | cons entry rest =>
+    simp only [hSched] at hStep
+    split at hStep
+    · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hwf
+    · rename_i hGet
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      simp only
+      cases hCur : st.scheduler.current with
+      | none => exact hwf
+      | some tid =>
+        simp only []
+        cases hObj : st.objects[tid.toObjId]? with
+        | none => exact hwf
+        | some obj =>
+          cases obj with
+          | tcb tcb => exact RunQueue.insert_preserves_wellFormed _ hwf _ _
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+            exact hwf
+
+/-- S3-E/U-M08: `scheduleDomain` preserves `schedulerInvariantBundleFull`.
+
+    Composes `switchDomain_preserves_schedulerInvariantBundleFull` and
+    `schedule_preserves_schedulerInvariantBundleFull` for the expire path.
+    In the non-expire path, only `domainTimeRemaining` is decremented,
+    preserving all invariant components trivially. -/
+theorem scheduleDomain_preserves_schedulerInvariantBundleFull
+    (st st' : SystemState)
+    (hInv : schedulerInvariantBundleFull st)
+    (hwf : RunQueue.wellFormed st.scheduler.runQueue)
+    (hObjInv : st.objects.invExt)
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    schedulerInvariantBundleFull st' := by
+  unfold scheduleDomain at hStep
+  by_cases hExpire : st.scheduler.domainTimeRemaining ≤ 1
+  · simp [hExpire] at hStep
+    cases hSw : switchDomain st with
+    | error e => simp [hSw] at hStep
+    | ok pair =>
+        cases pair with
+        | mk _ stSw =>
+            have hSched : schedule stSw = .ok ((), st') := by simpa [hSw] using hStep
+            -- switchDomain preserves the full bundle
+            have hSwInv : schedulerInvariantBundleFull stSw :=
+              switchDomain_preserves_schedulerInvariantBundleFull st stSw hInv (by simp [hSw])
+            -- switchDomain preserves objects (scheduler-only change)
+            have hSwObj : stSw.objects = st.objects := by
+              unfold switchDomain at hSw
+              revert hSw
+              cases hSched' : st.scheduler.domainSchedule with
+              | nil => intro hSw; simp at hSw; obtain ⟨_, rfl⟩ := hSw; rfl
+              | cons entry rest =>
+                intro hSw; simp only [hSched'] at hSw
+                split at hSw
+                · simp at hSw; obtain ⟨_, rfl⟩ := hSw; rfl
+                · simp at hSw; obtain ⟨_, rfl⟩ := hSw; rfl
+            -- switchDomain preserves RunQueue.wellFormed
+            have hSwWf : RunQueue.wellFormed stSw.scheduler.runQueue :=
+              switchDomain_preserves_runQueueWellFormed st stSw hwf (by simp [hSw])
+            -- Extract runnableThreadsAreTCBs from the full bundle
+            have hSwAllTcb : ∀ t, t ∈ stSw.scheduler.runnable →
+                ∃ tcb, stSw.objects[t.toObjId]? = some (.tcb tcb) :=
+              hSwInv.2.2.2.2.2.1
+            exact schedule_preserves_schedulerInvariantBundleFull stSw st'
+              hSwInv hSwWf hSwAllTcb (hSwObj ▸ hObjInv) hSched
+  · simp [hExpire] at hStep
+    cases hStep
+    exact hInv

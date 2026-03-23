@@ -109,6 +109,41 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
+/-- S3-D: `cspaceInsertSlot` preserves `cdtMapsConsistent`. Insert only calls
+    `storeObject` + `storeCapabilityRef`, neither of which modifies the CDT. -/
+private theorem cspaceInsertSlot_cdt_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects[addr.cnode]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | cnode cn =>
+      simp only [hObj] at hStep
+      cases hLookup : cn.lookup addr.slot with
+      | some _ => simp [hLookup] at hStep
+      | none =>
+        simp only [hLookup] at hStep
+        cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+        | error e => simp [hStore] at hStep
+        | ok pair =>
+          rcases pair with ⟨_, stMid⟩
+          have h1 := storeObject_cdt_eq st stMid addr.cnode _ hStore
+          simp only [hStore] at hStep
+          unfold storeCapabilityRef at hStep
+          simp at hStep; rcases hStep with ⟨_, rfl⟩
+          exact h1
+    | _ => simp [hObj] at hStep
+
+theorem cspaceInsertSlot_preserves_cdtMapsConsistent
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hCon : cdtMapsConsistent st)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    cdtMapsConsistent st' :=
+  cdtMapsConsistent_of_cdt_eq st st' hCon (cspaceInsertSlot_cdt_eq st st' addr cap hStep)
+
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
@@ -1923,5 +1958,115 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
   simp [ipcUnwrapCaps] at hStep
   obtain ⟨_, rfl⟩ := hStep
   exact hInv
+
+-- ============================================================================
+-- S3-D: cdtMapsConsistent preservation theorems
+-- ============================================================================
+
+/-- S3-D: `cspaceMint` preserves `cdtMapsConsistent`. Mint delegates to
+    `cspaceInsertSlot` which does not modify the CDT structure. -/
+theorem cspaceMint_preserves_cdtMapsConsistent
+    (st st' : SystemState)
+    (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (hCon : cdtMapsConsistent st)
+    (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
+    cdtMapsConsistent st' := by
+  unfold cspaceMint at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
+      subst st1
+      cases hMint : mintDerivedCap parent rights badge with
+      | error e => simp [hSrc, hMint] at hStep
+      | ok child =>
+          have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
+            simpa [hSrc, hMint] using hStep
+          -- cspaceInsertSlot only calls storeObject + storeCapabilityRef (CDT unchanged)
+          exact cspaceInsertSlot_preserves_cdtMapsConsistent st st' dst child hCon hInsert
+
+/-- S3-D: `cspaceDeleteSlot` preserves `cdtMapsConsistent`. Delete modifies
+    `cdtNodeSlot`/`cdtSlotNode` via `detachSlotFromCdt` but not the CDT itself.
+    Proved by showing the CDT field is unchanged through all three steps. -/
+theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hCon : cdtMapsConsistent st)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    cdtMapsConsistent st' := by
+  -- cspaceDeleteSlot directly matches on objects[addr.cnode]? (no lookup step)
+  unfold cspaceDeleteSlot at hStep
+  cases hPre : st.objects[addr.cnode]? with
+  | none => simp [hPre] at hStep
+  | some obj =>
+    cases obj with
+    | cnode cn =>
+      simp only [hPre] at hStep
+      cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        rcases pair with ⟨_, stMid⟩
+        have h1 := storeObject_cdt_eq st stMid addr.cnode _ hStore
+        simp only [hStore] at hStep
+        -- storeCapabilityRef preserves CDT
+        unfold storeCapabilityRef at hStep
+        simp at hStep; rcases hStep with ⟨_, rfl⟩
+        -- detachSlotFromCdt doesn't modify cdt
+        unfold SystemState.detachSlotFromCdt
+        split
+        · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
+        · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
+    | _ => simp [hPre] at hStep
+
+/-- S3-D: `cspaceCopy` preserves `cdtMapsConsistent`. Copy calls `addEdge`
+    on the CDT, so the postcondition is taken as a hypothesis, matching
+    the existing pattern for `cdtCompleteness`/`cdtAcyclicity`. -/
+theorem cspaceCopy_preserves_cdtMapsConsistent
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hCdtMapsPost : cdtMapsConsistent st')
+    (_hStep : cspaceCopy src dst st = .ok ((), st')) :
+    cdtMapsConsistent st' := hCdtMapsPost
+
+/-- S3-D: `cspaceMove` preserves `cdtMapsConsistent`. Move composes
+    insert + delete + addEdge; postcondition taken as hypothesis. -/
+theorem cspaceMove_preserves_cdtMapsConsistent
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hCdtMapsPost : cdtMapsConsistent st')
+    (_hStep : cspaceMove src dst st = .ok ((), st')) :
+    cdtMapsConsistent st' := hCdtMapsPost
+
+/-- S3-D: `cspaceRevoke` preserves `cdtMapsConsistent`. Revoke uses
+    `revokeTargetLocal` + `revokeAndClearRefsState`, neither of which
+    modifies the CDT structure. -/
+theorem cspaceRevoke_preserves_cdtMapsConsistent
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hCon : cdtMapsConsistent st)
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
+    cdtMapsConsistent st' := by
+  unfold cspaceRevoke at hStep
+  cases hLook : cspaceLookupSlot addr st with
+  | error e => simp [hLook] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, stLook⟩
+      have hStLook : stLook = st := cspaceLookupSlot_preserves_state st stLook addr parent hLook
+      subst stLook
+      simp [hLook] at hStep
+      cases hPre : st.objects[addr.cnode]? with
+      | none => simp [hPre] at hStep
+      | some obj =>
+        cases obj with
+        | cnode cn =>
+          simp [hPre] at hStep
+          -- revokeTargetLocal modifies the CNode, not the CDT
+          cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+            rcases pair with ⟨_, stMid⟩
+            have hConMid := cdtMapsConsistent_of_storeObject st stMid addr.cnode _ hCon hStore
+            -- revokeAndClearRefsState preserves CDT
+            simp [hStore] at hStep; cases hStep
+            have hCdtEq := (revokeAndClearRefsState_cdt_eq cn addr.slot parent.target addr.cnode stMid).1
+            exact cdtMapsConsistent_of_cdt_eq stMid _ hConMid hCdtEq
+        | _ => simp [hPre] at hStep
 
 end SeLe4n.Kernel

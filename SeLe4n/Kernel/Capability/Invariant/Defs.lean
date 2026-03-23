@@ -193,6 +193,101 @@ theorem cdtMintCompleteness_of_withMintCompleteness
     (h : capabilityInvariantBundleWithMintCompleteness st) :
     cdtMintCompleteness st := h.2
 
+-- ============================================================================
+-- S3-D/U-M03: CDT maps consistency as state-level invariant
+-- ============================================================================
+
+/-- S3-D: CDT maps consistency — the bidirectional maps (`childMap`,
+    `parentMap`) are consistent with the canonical `edges` list.
+    This lifts the CDT-level `childMapConsistent ∧ parentMapConsistent`
+    to a state-level invariant predicate. -/
+def cdtMapsConsistent (st : SystemState) : Prop :=
+  st.cdt.childMapConsistent ∧ st.cdt.parentMapConsistent
+
+/-- S3-D: Default state has empty CDT, so maps consistency holds vacuously.
+    Both directions of the iff are trivially false (no edges, no map entries). -/
+theorem cdtMapsConsistent_default : cdtMapsConsistent (default : SystemState) := by
+  -- Empty CDT: edges = [], childMap = empty, parentMap = empty.
+  -- Both iff directions have one side trivially false.
+  refine ⟨?_, ?_⟩
+  · -- childMapConsistent
+    intro parent child; constructor
+    · intro hMem
+      -- childMap.get? parent = none for empty table
+      exfalso
+      have hGet : (default : SystemState).cdt.childMap.get? parent = none :=
+        RobinHood.RHTable.getElem?_empty 16 (by omega) parent
+      -- The goal's getD uses default.cdt.childMap.get?, which equals none
+      change child ∈ ((default : SystemState).cdt.childMap.get? parent).getD [] at hMem
+      rw [hGet] at hMem; exact (nomatch hMem)
+    · intro ⟨_, hE, _, _⟩
+      have : (default : SystemState).cdt.edges = [] := rfl
+      rw [this] at hE; exact (nomatch hE)
+  · -- parentMapConsistent
+    intro child parent; constructor
+    · intro hLookup
+      have hGet : (default : SystemState).cdt.parentMap.get? child = none :=
+        RobinHood.RHTable.getElem?_empty 16 (by omega) child
+      change (default : SystemState).cdt.parentMap.get? child = some parent at hLookup
+      rw [hGet] at hLookup; exact (nomatch hLookup)
+    · intro ⟨_, hE, _, _⟩
+      have : (default : SystemState).cdt.edges = [] := rfl
+      rw [this] at hE; exact (nomatch hE)
+
+/-- S3-D: Extended capability invariant bundle with CDT maps consistency.
+    Following the pattern of `cdtMintCompleteness`, this is kept separate
+    from the base 7-tuple bundle to avoid churn on 60+ existing theorems. -/
+def capabilityInvariantBundleWithCdtMaps (st : SystemState) : Prop :=
+  capabilityInvariantBundle st ∧ cdtMapsConsistent st
+
+/-- S3-D: Extract the base bundle from the CDT maps extended bundle. -/
+theorem capabilityInvariantBundle_of_withCdtMaps
+    (st : SystemState)
+    (h : capabilityInvariantBundleWithCdtMaps st) :
+    capabilityInvariantBundle st := h.1
+
+/-- S3-D: Extract CDT maps consistency from the extended bundle. -/
+theorem cdtMapsConsistent_of_withCdtMaps
+    (st : SystemState)
+    (h : capabilityInvariantBundleWithCdtMaps st) :
+    cdtMapsConsistent st := h.2
+
+/-- S3-D: Full extended capability invariant bundle — combines base bundle,
+    CDT maps consistency, and mint completeness. -/
+def capabilityInvariantBundleFull (st : SystemState) : Prop :=
+  capabilityInvariantBundle st ∧ cdtMapsConsistent st ∧ cdtMintCompleteness st
+
+-- ============================================================================
+-- S3-D: cdtMapsConsistent transfer and frame theorems
+-- ============================================================================
+
+/-- S3-D: Transfer `cdtMapsConsistent` through state changes that preserve `cdt`. -/
+theorem cdtMapsConsistent_of_cdt_eq
+    (st st' : SystemState)
+    (hCon : cdtMapsConsistent st)
+    (hCdtEq : st'.cdt = st.cdt) :
+    cdtMapsConsistent st' := by
+  unfold cdtMapsConsistent at hCon ⊢; rw [hCdtEq]; exact hCon
+
+/-- S3-D: `storeObject` preserves `cdtMapsConsistent` (CDT unchanged). -/
+theorem cdtMapsConsistent_of_storeObject
+    (st st' : SystemState) (oid : ObjId) (obj : KernelObject)
+    (hCon : cdtMapsConsistent st)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    cdtMapsConsistent st' :=
+  cdtMapsConsistent_of_cdt_eq st st' hCon (storeObject_cdt_eq st st' oid obj hStore)
+
+/-- S3-D: `detachSlotFromCdt` preserves `cdtMapsConsistent` (CDT unchanged —
+    it only modifies `cdtSlotNode` and `cdtNodeSlot`). -/
+theorem cdtMapsConsistent_of_detachSlotFromCdt
+    (st : SystemState) (ref : SlotRef)
+    (hCon : cdtMapsConsistent st) :
+    cdtMapsConsistent (SystemState.detachSlotFromCdt st ref) := by
+  unfold SystemState.detachSlotFromCdt
+  split
+  · exact hCon  -- none case: state unchanged
+  · exact hCon  -- some case: only cdtSlotNode/cdtNodeSlot modified, cdt unchanged
+
 /-- M4-B bridge bundle: ties stale-reference exclusion to lifecycle transition authority
 monotonicity so composition proofs can depend on a single named assumption.
 
@@ -413,6 +508,14 @@ theorem storeCapabilityRef_cdt_eq
     st'.cdtSlotNode = st.cdtSlotNode ∧ st'.objects = st.objects := by
   unfold storeCapabilityRef at hStep
   simp at hStep; cases hStep; exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- S3-D: `storeCapabilityRef` preserves `cdtMapsConsistent` (CDT unchanged). -/
+theorem cdtMapsConsistent_of_storeCapabilityRef
+    (st st' : SystemState) (ref : SlotRef) (target : Option CapTarget)
+    (hCon : cdtMapsConsistent st)
+    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
+    cdtMapsConsistent st' :=
+  cdtMapsConsistent_of_cdt_eq st st' hCon (storeCapabilityRef_cdt_eq st st' ref target hStep).1
 
 /-- WS-H4: Transfer all three new predicates through a storeObject that is
 not a CNode. Combines cspaceSlotCountBounded + cdtCompleteness + cdtAcyclicity. -/

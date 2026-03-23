@@ -927,5 +927,138 @@ theorem insert_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
             show t ∈ (rq.byPriority[p]?).getD []
             exact hBucket
 
+/-- S3-F helper: byPriority bucket membership transfers from removed to original. -/
+private theorem remove_byPrio_to_orig (rq : RunQueue)
+    (tid : ThreadId) (p : Priority) (t : ThreadId)
+    (hMem : t ∈ ((rq.remove tid).byPriority.get? p).getD []) :
+    t ∈ (rq.byPriority.get? p).getD [] := by
+  simp only [remove, RHTable_getElem?_eq_get?] at hMem
+  split at hMem
+  · exact hMem
+  · next p_tid _ =>
+    split at hMem
+    · by_cases hPEq : (p_tid == p) = true
+      · rw [eq_of_beq hPEq, RHTable_get?_erase_self rq.byPriority p rq.byPrio_invExt] at hMem
+        simp [Option.getD] at hMem
+      · rwa [RHTable_get?_erase_ne rq.byPriority p_tid p hPEq
+               rq.byPrio_invExt rq.byPrio_sizeOk] at hMem
+    · by_cases hPEq : (p_tid == p) = true
+      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExt] at hMem
+        simp only [Option.getD] at hMem
+        exact (List.mem_filter.mp hMem).1
+      · rwa [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExt] at hMem
+
+/-- S3-F helper: byPriority bucket membership transfers from original to removed. -/
+private theorem remove_byPrio_from_orig (rq : RunQueue)
+    (tid : ThreadId) (p : Priority) (t : ThreadId) (hNe : t ≠ tid)
+    (hBucket : t ∈ (rq.byPriority.get? p).getD []) :
+    t ∈ ((rq.remove tid).byPriority.get? p).getD [] := by
+  simp only [remove, RHTable_getElem?_eq_get?]
+  split
+  · exact hBucket
+  · next p_tid _ =>
+    split
+    · -- Filtered bucket empty → erased from byPriority
+      by_cases hPEq : (p_tid == p) = true
+      · next hEmpty =>
+        exfalso
+        have hPEq' := eq_of_beq hPEq
+        have hFiltEmpty := List.isEmpty_iff.mp hEmpty
+        -- The filtered list is empty but t ∈ original bucket and t ≠ tid
+        -- so t survives the filter → contradiction
+        have hInBucket : t ∈ ((rq.byPriority.get? p_tid).getD []) := hPEq' ▸ hBucket
+        have : t ∈ ((rq.byPriority.get? p_tid).getD []).filter (· ≠ tid) := by
+          simp only [List.mem_filter]
+          exact ⟨hInBucket, by simp [hNe]⟩
+        rw [hFiltEmpty] at this
+        simp at this
+      · rw [RHTable_get?_erase_ne rq.byPriority p_tid p hPEq rq.byPrio_invExt rq.byPrio_sizeOk]
+        exact hBucket
+    · -- Filtered bucket non-empty → inserted
+      by_cases hPEq : (p_tid == p) = true
+      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExt]
+        simp only [Option.getD]
+        exact List.mem_filter.mpr ⟨hBucket, by simpa [beq_iff_eq] using hNe⟩
+      · rw [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExt]
+        exact hBucket
+
+/-- S3-F helper: tid is not in any bucket of the removed RunQueue. -/
+private theorem remove_tid_not_in_bucket (rq : RunQueue) (hwf : rq.wellFormed)
+    (tid : ThreadId) (p : Priority)
+    (hMem : tid ∈ ((rq.remove tid).byPriority.get? p).getD []) : False := by
+  simp only [remove, RHTable_getElem?_eq_get?] at hMem
+  split at hMem
+  · -- byPriority unchanged, so tid in original bucket
+    next hNone =>
+      have hFwd := (hwf.1 p tid hMem).2
+      simp only [RHTable_getElem?_eq_get?] at hFwd
+      rw [hNone] at hFwd; exact absurd hFwd (by simp)
+  · next p_tid hTP =>
+    split at hMem
+    · by_cases hPEq : (p_tid == p) = true
+      · rw [eq_of_beq hPEq, RHTable_get?_erase_self rq.byPriority p rq.byPrio_invExt] at hMem
+        simp [Option.getD] at hMem
+      · rw [RHTable_get?_erase_ne rq.byPriority p_tid p hPEq
+              rq.byPrio_invExt rq.byPrio_sizeOk] at hMem
+        have hFwd := (hwf.1 p tid hMem).2
+        simp only [RHTable_getElem?_eq_get?] at hFwd
+        rw [hTP] at hFwd
+        exact absurd (Option.some.inj hFwd) (by simpa [beq_iff_eq] using hPEq)
+    · by_cases hPEq : (p_tid == p) = true
+      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExt] at hMem
+        simp [Option.getD] at hMem
+      · rw [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExt] at hMem
+        have hFwd := (hwf.1 p tid hMem).2
+        simp only [RHTable_getElem?_eq_get?] at hFwd
+        rw [hTP] at hFwd
+        exact absurd (Option.some.inj hFwd) (by simpa [beq_iff_eq] using hPEq)
+
+/-- S3-F/U-M09: Removing a thread from a well-formed RunQueue preserves
+    well-formedness.  The key insight is that `remove` erases `tid` from
+    `membership`, `threadPriority`, and `byPriority` simultaneously.
+    Any `t ≠ tid` retains its original relationships across all three. -/
+theorem remove_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
+    (tid : ThreadId) :
+    (rq.remove tid).wellFormed := by
+  constructor
+  · -- Forward: bucket member → membership ∧ threadPriority
+    intro p t hMem
+    simp only [RHTable_getElem?_eq_get?] at hMem ⊢
+    -- t ≠ tid: tid is not in any removed bucket
+    have hTNe : t ≠ tid := by
+      intro hEq; rw [hEq] at hMem
+      exact remove_tid_not_in_bucket rq hwf tid p hMem
+    have hNeBeq : ¬(tid == t) = true := by simp [beq_iff_eq]; exact Ne.symm hTNe
+    -- Extract original membership and transfer
+    have hOrigMem := remove_byPrio_to_orig rq tid p t hMem
+    have hFwd := hwf.1 p t hOrigMem
+    simp only [RHTable_getElem?_eq_get?] at hFwd
+    refine ⟨?_, ?_⟩
+    · show (rq.membership.erase tid).contains t = true
+      rw [RHSet.contains_erase_ne rq.membership tid t hNeBeq rq.mem_invExt rq.mem_sizeOk]
+      exact hFwd.1
+    · show (rq.threadPriority.erase tid).get? t = some p
+      rw [RHTable_get?_erase_ne rq.threadPriority tid t hNeBeq rq.threadPrio_invExt rq.threadPrio_sizeOk]
+      exact hFwd.2
+  · -- Reverse: membership → ∃ prio with bucket entry
+    intro t hMem
+    simp only [RHTable_getElem?_eq_get?] at hMem ⊢
+    have hTNe : t ≠ tid := by
+      intro hEq; rw [hEq] at hMem
+      change (rq.membership.erase tid).contains tid = true at hMem
+      rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExt] at hMem
+      exact absurd hMem (by simp)
+    have hNeBeq : ¬(tid == t) = true := by simp [beq_iff_eq]; exact Ne.symm hTNe
+    have hOldMem : rq.membership.contains t = true := by
+      change (rq.membership.erase tid).contains t = true at hMem
+      rwa [RHSet.contains_erase_ne rq.membership tid t hNeBeq rq.mem_invExt rq.mem_sizeOk] at hMem
+    obtain ⟨p, hpTP, hpBucket⟩ := hwf.2 t hOldMem
+    simp only [RHTable_getElem?_eq_get?] at hpTP hpBucket
+    refine ⟨p, ?_, ?_⟩
+    · show (rq.threadPriority.erase tid).get? t = some p
+      rw [RHTable_get?_erase_ne rq.threadPriority tid t hNeBeq rq.threadPrio_invExt rq.threadPrio_sizeOk]
+      exact hpTP
+    · exact remove_byPrio_from_orig rq tid p t hTNe hpBucket
+
 end RunQueue
 end SeLe4n.Kernel
