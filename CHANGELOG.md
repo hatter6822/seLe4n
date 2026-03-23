@@ -1,3 +1,30 @@
+## [0.19.6] — WS-S Phase S7: Documentation & Polish
+
+- S7-A: Synchronized `README.md` metrics from `docs/codebase_map.json` — version
+  0.19.6, 100 production files, 57,506 production LoC, 1,756 proved declarations.
+- S7-B: Updated `docs/spec/SELE4N_SPEC.md` with all spec changes from S1–S6:
+  trust boundary documentation, alignment requirements, memory scrubbing,
+  timeout semantics, capacity enforcement, typed IPC registers.
+- S7-C: Updated `docs/DEVELOPMENT.md` with new testing practices (structural
+  assertions, golden-output fixture management, Builder-based test states,
+  SimRestrictive platform variant).
+- S7-D: Updated `docs/CLAIM_EVIDENCE_INDEX.md` with new claims from WS-S:
+  CDT maps consistency, RunQueue well-formedness, memory scrubbing, page
+  alignment, object capacity enforcement, SecurityLabel lattice properties.
+- S7-E: Updated `docs/WORKSTREAM_HISTORY.md` with WS-S completion summary
+  (7 phases, 83 sub-tasks, version range v0.19.0–v0.19.6). WS-S marked
+  PORTFOLIO COMPLETE.
+- S7-F: Regenerated `docs/codebase_map.json` — 110 modules, 3,242 declarations,
+  1,756 proved theorem/lemma declarations.
+- S7-G: Updated affected GitBook chapters (project overview, specification,
+  testing, proof map, codebase reference) to mirror canonical doc changes.
+- S7-H: Verified `scripts/website_link_manifest.txt` — all protected paths exist.
+- S7-M: Updated `CHANGELOG.md` with WS-S v0.19.0–v0.19.6 release notes.
+- S7-N: Produced WS-S closure report (`docs/audits/WS_S_CLOSURE_REPORT.md`)
+  summarizing all remediated findings, test results, and residual items.
+- Version bumped to 0.19.6 in `lakefile.toml`.
+- Zero sorry/axiom, all tests pass.
+
 ## [0.19.5] — WS-S Phase S6: Hardware Preparation
 
 - S6-A (U-M18): Migrated API dispatch to `WithFlush` VSpace variants

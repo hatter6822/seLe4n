@@ -7,14 +7,15 @@ production-oriented microkernel written in Lean 4 with machine-checked proofs.
 
 It is aligned to the **current project state**:
 
-- **active workstream:** WS-S (Pre-Benchmark Strengthening) — **IN PROGRESS** (7 phases, S1–S7, 81 sub-tasks). WS-R (Comprehensive Audit Remediation) — **PORTFOLIO COMPLETE** (8 phases, R1–R8, 111 sub-tasks). Addresses all 82 findings from the pre-release audit. All phases complete (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md). All prior portfolios complete: WS-Q (v0.17.7–v0.17.14, Kernel State Architecture — 9 phases), WS-N (v0.17.0–v0.17.5, Robin Hood hashing — 5 phases), WS-M (v0.16.14–v0.17.0, Capability subsystem — 5 phases), WS-L (v0.16.9–v0.16.13, IPC subsystem — 5 phases), WS-K (v0.16.0–v0.16.8), WS-J1 (v0.15.4–v0.15.10), WS-F (F1..F8),
+- **latest workstream:** WS-S (Pre-Benchmark Strengthening) — **PORTFOLIO COMPLETE** (7 phases, S1–S7, 83 sub-tasks, v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). WS-R (Comprehensive Audit Remediation) — **PORTFOLIO COMPLETE** (8 phases, R1–R8, 111 sub-tasks, v0.18.0–v0.18.7). All prior portfolios complete: WS-Q (v0.17.7–v0.17.14, Kernel State Architecture — 9 phases), WS-N (v0.17.0–v0.17.5, Robin Hood hashing — 5 phases), WS-M (v0.16.14–v0.17.0, Capability subsystem — 5 phases), WS-L (v0.16.9–v0.16.13, IPC subsystem — 5 phases), WS-K (v0.16.0–v0.16.8), WS-J1 (v0.15.4–v0.15.10), WS-F (F1..F8),
 - **recently completed:** WS-J1-C audit refinements (v0.15.7 — CSpace/lifecycle/VSpace dispatch returns `illegalState` for MR-dependent ops, `syscallEntry` accepts `regCount` parameter, `syscallEntry_implies_capability_held` strengthened to full capability-resolution chain; zero sorry/axiom), WS-J1-C (v0.15.6, syscall entry point and dispatch — `syscallEntry` top-level entry point, `lookupThreadRegisterContext` TCB register extraction, `dispatchSyscall` routing through `SyscallGate`/`syscallInvoke` to 13 internal kernel operations, `dispatchWithCap` per-syscall routing, `syscallRequiredRight` total right mapping, `MachineConfig.registerCount` promoted to field; 5 soundness theorems; zero sorry/axiom), WS-J1-B (v0.15.5, register decode layer — `SyscallId` inductive with 13 syscalls, `MessageInfo` bit-field structure, `SyscallDecodeResult`, total deterministic decode functions in `RegisterDecode.lean`, round-trip/determinism/error-exclusivity theorems, `SyscallRegisterLayout` with ARM64 default, 3 new `KernelError` variants; zero sorry/axiom), WS-J1-A (v0.15.4, typed register wrappers — replaced `abbrev RegName/RegValue := Nat` with typed wrapper structures, full instance suites, all 10 machine lemmas re-proved, downstream compilation fixed across Architecture/Platform/Testing; zero sorry/axiom), WS-H15 (v0.14.7, platform & API hardening — `InterruptBoundaryContract` decidability, RPi5 contract hardening with substantive predicates, 13 capability-gated syscall wrappers, `AdapterProofHooks` concrete instantiation for Sim/RPi5, MMIO disjointness proof; closes A-33, A-41, A-42, M-13), WS-H14 (v0.14.6, type safety & Prelude foundations — `EquivBEq`/`LawfulBEq` for 14 identifier types, `LawfulMonad` for `KernelM`, `isPowerOfTwo` correctness proof, identifier roundtrip/injectivity theorems, `OfNat` instance removal for type-safety enforcement, sentinel predicate completion), Module restructuring (v0.14.5, decomposed 9 monolithic files into 24 focused submodules via re-export hub pattern; zero code loss, 50 new helper theorems extracted, 209 Tier 3 anchor checks updated), WS-H13 (v0.14.4, CSpace/service model enrichment — `cspaceDepthConsistent` invariant, `resolveCapAddress` theorems, `serviceGraphInvariant` preservation, `cspaceMove` atomicity; addresses H-01, A-21, A-29, A-30, M-17/A-31; WS-Q1: `serviceStop` backing-object verification removed), WS-H12f (v0.14.3, test harness update & documentation sync — dequeue-on-dispatch, context switch, and bounded message trace scenarios; legacy `endpointInvariant` comment cleanup; expected fixture updated; Tier 3 anchors added; documentation synchronized), WS-H12e (v0.14.2, cross-subsystem invariant reconciliation), WS-H12d (v0.14.1, IPC message payload bounds — A-09 closed), WS-H12c (v0.14.0, per-TCB register context with inline context switch — H-03 closed), WS-H12b (v0.13.9, dequeue-on-dispatch scheduler semantics — H-04 closed), WS-H12a (v0.13.8, legacy endpoint removal), WS-H11 (v0.13.7, VSpace & architecture enrichment), End-to-end audit (v0.13.6), WS-H10 (v0.13.6, security model foundations), WS-H7/H8/H9 gaps closed (v0.13.5), WS-H9 (v0.13.4, NI coverage >80%), WS-H8 (v0.13.2, enforcement-NI bridge), WS-H6 (v0.13.1, scheduler proof completion), WS-H5 (v0.12.19, IPC dual-queue invariant), WS-H4 (v0.12.18, capability invariant redesign), WS-H3 (v0.12.17, build/CI), WS-H2 (v0.12.16, lifecycle safety), WS-H1 (v0.12.16, IPC call-path fix), WS-G (v0.12.15, kernel performance), WS-F1..F4 (critical audit remediation),
 - **findings baseline:** [`AUDIT_CODEBASE_v0.12.2_v1.md`](dev_history/audits/AUDIT_CODEBASE_v0.12.2_v1.md), [`v2`](dev_history/audits/AUDIT_CODEBASE_v0.12.2_v2.md),
-- **latest audit:** [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — full kernel + Rust codebase pre-release audit,
+- **latest audit:** [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) and [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — dual comprehensive audits (115+ findings, 0 Critical),
 - **hardware target:** Raspberry Pi 5 (ARM64).
 
 Canonical planning sources:
-[`docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) for WS-R (active),
+[`docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md) for WS-S (completed),
+[`docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) for WS-R (completed),
 [`docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md`](dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md) for WS-Q (completed), and
 [`docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md) for completed WS-H remediation lineage.
 
@@ -129,12 +130,34 @@ operations (N1, v0.17.1), invariant proofs (N2, v0.17.2), kernel API bridge
 documentation (N5, v0.17.5). ~4,655 LoC, zero sorry/axiom.
 See [`AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md).
 
-The **active workstream** is **WS-R** (Comprehensive Audit Remediation) —
-8 phases (R1–R8), 111 sub-tasks addressing all 82 findings from
-[`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md).
-R1–R8 complete (v0.18.0–v0.18.7).
+The **WS-S** portfolio (Pre-Benchmark Strengthening) is **fully complete**
+(v0.19.0–v0.19.6) — 7 phases (S1–S7), 83 sub-tasks addressing all findings from
+dual comprehensive v0.18.7 audits (115+ findings, 0 Critical). All 5 High, 29
+Medium, and 19 Low findings resolved. Closure report:
+[`WS_S_CLOSURE_REPORT.md`](audits/WS_S_CLOSURE_REPORT.md).
 
-The **next major milestone** after WS-S is **Raspberry Pi 5 hardware binding**:
+**WS-S testing practices introduced (S2):**
+- **Structural assertions**: test determinism checks use `BEq Except` structural
+  equality instead of `toString`-based string comparison. All 101 `reprStr`
+  occurrences replaced with `toString`.
+- **Builder-based test states**: `buildChecked` enforces 8 runtime invariant
+  checks during test state construction; primary test states (`baseState`,
+  `f2UntypedState`, `f2DeviceState`) use `buildChecked`.
+- **Error-path coverage**: 11 error-path tests covering capability failures
+  (rights attenuation, full CNode, deep CDT revoke) and lifecycle failures
+  (region exhaustion, child ID collision, device untyped rejection).
+- **Golden-output fixture management**: `test_tier2_trace.sh` provides enhanced
+  diff reporting when `tests/fixtures/main_trace_smoke.expected` drifts.
+- **Shared test helpers**: `Testing/Helpers.lean` module with `expectCond`,
+  `expectError`, `expectOk` shared across test suites.
+- **SimRestrictive platform variant** (S5-D): substantive contracts with timer
+  monotonicity, 256 MiB RAM bound, and register write denial for testing.
+
+The **WS-R** portfolio (Comprehensive Audit Remediation) is **fully complete**
+(v0.18.0–v0.18.7) — 8 phases (R1–R8), 111 sub-tasks addressing all 82 findings from
+[`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md).
+
+The **next major milestone** is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing
 ARMv8 multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
 binding, and verified boot sequence construction.

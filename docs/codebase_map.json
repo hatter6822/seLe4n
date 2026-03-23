@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-phase-s6-hardware-Z4PUa",
-      "commit_sha": "307c3e276412f6d033a705d9dabafaa0af772a47",
-      "tree_sha": "ef900b7b8e1fc974f3aab18b1bd433b47eedc228",
-      "committed_at_utc": "2026-03-23T04:15:51+00:00"
+      "branch": "claude/review-workstream-docs-DM0DW",
+      "commit_sha": "87733e755e9dc5d0187cfbcbb4d0c645848709aa",
+      "tree_sha": "c85bd584136a8b8fe757139150a0a923c9c00370",
+      "committed_at_utc": "2026-03-23T00:46:44-04:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 3242
   },
   "readme_sync": {
-    "version": "0.19.3",
+    "version": "0.19.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
     "production_loc": 57506,

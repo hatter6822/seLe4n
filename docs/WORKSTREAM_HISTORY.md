@@ -15,9 +15,21 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
+**Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
+GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
+through WS-S) are complete.
+
+### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
+
+WS-S is a completed workstream (v0.19.0–v0.19.6), addressing all findings from
+dual comprehensive v0.18.7 audits (115+ findings). 7 phases (S1–S7), 83
+sub-tasks. All 5 High, 29 Medium, and 19 Low findings resolved. See
+[`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
+Closure report: [`WS_S_CLOSURE_REPORT.md`](audits/WS_S_CLOSURE_REPORT.md).
+
 ### WS-R workstream (Comprehensive Audit Remediation) — PORTFOLIO COMPLETE
 
-WS-R is the **active** workstream (v0.18.0+), addressing all 82 findings from the
+WS-R is a completed workstream (v0.18.0–v0.18.7), addressing all 82 findings from the
 comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
 8 phases (R1–R8), 111 sub-tasks. See
 [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
@@ -106,13 +118,15 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   to `pub(crate)` with `.raw()` accessors, plus `AccessRights` and `PagePerms` (L-11).
   All 99 Rust tests pass (44 abi + 22 types + 8 sys + 25 conformance). Zero sorry/axiom.
 
-### WS-S workstream (Pre-Benchmark Strengthening) — IN PROGRESS (S1–S6 complete)
+### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE (v0.19.0–v0.19.6)
 
-WS-S is the **active** workstream (v0.19.0+), addressing all findings from two
-comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
+WS-S is a **completed** workstream (v0.19.0–v0.19.6), addressing all findings
+from two comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
 (50 findings) and `AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md` (65+ findings).
-7 phases (S1–S7), 81 sub-tasks (+ 1 stretch goal). See
+7 phases (S1–S7), 83 sub-tasks (including 1 stretch goal deferred to WS-T).
+All 5 High, 29 Medium, and 19 Low findings resolved. See
 [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
+Closure report: [`WS_S_CLOSURE_REPORT.md`](audits/WS_S_CLOSURE_REPORT.md).
 
 - **S1 (v0.19.0) — COMPLETE**: Security Boundary & Rust Type Safety. Removed
   deprecated `Badge.ofNat` (U-H1). Converted `MemoryRegion.wellFormed` from Bool
@@ -208,7 +222,16 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   `DeviceTree` structure; RPi5 `Board.lean` constructs `rpi5DeviceTree`. **S6-G**:
   Validated all BCM2712 address constants against datasheet; comprehensive
   validation table added to `Board.lean`. Zero sorry/axiom.
-- **S7**: Pending.
+- **S7 (v0.19.6) — COMPLETE**: Documentation & Polish (14 sub-tasks). **S7-A**:
+  Synchronized `README.md` metrics from `codebase_map.json` — v0.19.6, 100
+  production files, 57,506 LoC, 1,756 proved declarations. **S7-B**: Updated
+  `SELE4N_SPEC.md` with all S1–S6 spec changes. **S7-C**: Updated
+  `DEVELOPMENT.md` with WS-S testing practices. **S7-D**: Updated
+  `CLAIM_EVIDENCE_INDEX.md` with WS-S claims. **S7-E**: Updated
+  `WORKSTREAM_HISTORY.md` with WS-S completion. **S7-F**: Regenerated
+  `codebase_map.json`. **S7-G**: Updated GitBook chapters. **S7-H**: Verified
+  website link manifest. **S7-M**: Updated `CHANGELOG.md`. **S7-N**: Produced
+  WS-S closure report. Version bumped to 0.19.6. Zero sorry/axiom.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 

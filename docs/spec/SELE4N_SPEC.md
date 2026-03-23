@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,660 theorem/lemma declarations),
+2. machine-checked invariant preservation (1,756 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.19.2` (`lakefile.toml`) |
+| **Package version** | `0.19.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 55,732 across 98 Lean files |
-| **Test LoC** | 7,317 across 10 Lean test suites |
-| **Proved declarations** | 1,692 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 57,506 across 100 Lean files |
+| **Test LoC** | 7,559 across 10 Lean test suites |
+| **Proved declarations** | 1,756 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) and [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — dual comprehensive audits (115+ findings, 0 Critical) |
-| **Active workstream** | **WS-S IN PROGRESS** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). S1 (Security Boundary & Rust Type Safety) and S2 (Test Hardening) complete. Prior portfolios: WS-R (v0.18.0–v0.18.7), WS-Q (v0.17.7–v0.17.14), WS-N–WS-B — all COMPLETE. **Next after WS-S: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-S COMPLETE** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks, v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). All 7 phases complete. Prior portfolios: WS-R (v0.18.0–v0.18.7), WS-Q (v0.17.7–v0.17.14), WS-N–WS-B — all COMPLETE. **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -87,6 +87,8 @@ semantic and proof foundations of the previous one.
 
 | Portfolio | Scope | Workstreams |
 |-----------|-------|-------------|
+| **WS-S** (v0.19.0–v0.19.6) | Pre-Benchmark Strengthening: 7 phases (S1–S7), 83 sub-tasks addressing 115+ findings from dual v0.18.7 audits. Security boundary hardening, Rust type safety, test hardening, proof surface closure (CDT maps consistency, RunQueue well-formedness, SecurityLabel lattice), model fidelity (capacity enforcement, typed IPC registers, alignment predicates), API cleanup (removed deprecated wrappers, SimRestrictive platform), hardware preparation (WithFlush VSpace, memory scrubbing, DeviceTree abstraction), documentation & polish. 5 High, 29 Medium, 19 Low findings resolved. Zero sorry/axiom | WS-S completed |
+| **WS-R8** (v0.18.7) | Infrastructure & CI hardening: elan binary pinning with SHA-256, PR-based codebase map workflow, Rust test skip annotation, compiled test suite execution, Rust newtype encapsulation | WS-R8 completed |
 | **WS-R7** (v0.18.6) | Architecture & hardware preparation: `TlbState` integrated into `SystemState`, `tlbConsistent` added to `proofLayerInvariantBundle` (M-17); TLB-flushing VSpace wrappers with preservation proofs; `RegName.isValid` ARM64 GPR bounds (L-02); `isWord64` predicate + `machineWordBounded` invariant for 64-bit value bounds (L-03); TCB `faultHandler`/`boundNotification` for seL4 fidelity (L-06); `KernelObjectType` enum replacing raw `Nat` in `LifecycleRetypeArgs` with typed decode boundary (L-10) | WS-R7 completed |
 | **WS-R6** (v0.18.5) | Model & frozen state correctness: `apiInvariantBundle_frozenDirect` freeze-time equivalence, badge deprecation, `RegisterFile` BEq, scheduler bundle extension with `schedulerPriorityMatch`, all preservation proofs sorry-free | WS-R6 completed |
 | **WS-R5** (v0.18.4) | Information flow completion: internalized IPC NI, service NI, content-aware memory projection | WS-R5 completed |
