@@ -432,8 +432,11 @@ def retypeFromUntyped
     match st.objects[untypedId]? with
     | none => .error .objectNotFound
     | some (.untyped ut) =>
+        -- S4-B: Capacity check — reject allocation when object store is at capacity
+        if st.objectIndex.length ≥ maxObjects then
+          .error .objectStoreCapacityExceeded
         -- WS-H2/H-06: childId must not equal untypedId (self-overwrite guard)
-        if childId = untypedId then
+        else if childId = untypedId then
           .error .childIdSelfOverwrite
         -- WS-H2/A-26: childId must not collide with an existing object
         else if st.objects[childId]?.isSome then
@@ -501,6 +504,10 @@ theorem retypeFromUntyped_ok_decompose
       | vspaceRoot _ => simp [hObj] at hStep
       | untyped ut =>
           simp only [hObj] at hStep
+          -- S4-B: Discharge capacity check
+          have hCapOk : ¬(st.objectIndex.length ≥ maxObjects) := by
+            intro h; simp [h] at hStep
+          simp only [hCapOk, ↓reduceIte, decide_eq_true_eq] at hStep
           -- WS-H2: Discharge childId safety guards (each .error contradicts .ok)
           have hNeSelf : childId ≠ untypedId := by
             intro h; simp [h] at hStep
@@ -596,6 +603,7 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject)
     (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hCapOk : st.objectIndex.length < maxObjects)
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
@@ -604,7 +612,8 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedAllocSizeTooSmall := by
   unfold retypeFromUntyped
-  simp [hObj, hNeSelf, hNoCollision, hFreshChildren]
+  have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
+  simp [hObj, hCapF, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
   | inl hFalse => simp [hFalse, hSmall]
   | inr hUt =>
@@ -619,6 +628,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
     (allocSize : Nat) (ut : UntypedObject) (cap : Capability)
     (hObj : st.objects[untypedId]? = some (.untyped ut))
+    (hCapOk : st.objectIndex.length < maxObjects)
     (hNeSelf : childId ≠ untypedId)
     (hNoCollision : st.objects[childId]?.isSome = false)
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
@@ -630,7 +640,8 @@ theorem retypeFromUntyped_error_regionExhausted
     retypeFromUntyped authority untypedId childId newObj allocSize st =
       .error .untypedRegionExhausted := by
   unfold retypeFromUntyped
-  simp [hObj, hNeSelf, hNoCollision, hFreshChildren]
+  have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
+  simp [hObj, hCapF, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
   | inl hFalse => simp [hFalse, hAllocSzOk, hLookup, hAuth, hNoFit]
   | inr hUt =>

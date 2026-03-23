@@ -59,21 +59,29 @@ open SeLe4n.Model
     2. `maxMessageRegisters` (120) — the seL4 protocol maximum.
     3. `msgRegs.size` — the platform's inline register count (4 on ARM64).
 
-    Returns `Array Nat` to match `IpcMessage.registers : Array Nat`. -/
+    S4-D: Returns `Array RegValue` to match `IpcMessage.registers : Array RegValue`.
+    Previously returned `Array Nat` via `.map RegValue.val`; now preserves the
+    typed wrapper throughout the IPC pipeline. -/
 @[inline] def extractMessageRegisters (msgRegs : Array RegValue)
-    (info : MessageInfo) : Array Nat :=
+    (info : MessageInfo) : Array RegValue :=
   let count := min info.length (min maxMessageRegisters msgRegs.size)
-  (msgRegs.extract 0 count).map RegValue.val
+  msgRegs.extract 0 count
 
 -- ============================================================================
 -- Decode functions — total with explicit error returns
 -- ============================================================================
 
 /-- Decode a raw register value into a capability pointer.
-    The CPtr address space is unbounded in the abstract model, so this decode
-    is always successful — every natural number is a valid CPtr. -/
+
+    S4-K: Returns `invalidCapPtr` for register values exceeding 64-bit word
+    bounds (`rv.val ≥ 2^64`). In the abstract model with unbounded `Nat`, this
+    rejects values that cannot be represented in a hardware register. On real
+    ARM64 hardware, all register values are inherently 64-bit and this check
+    is always satisfied. The bounds check ensures model-level consistency:
+    proofs about CPtr values hold for the hardware word size. -/
 @[inline] def decodeCapPtr (rv : RegValue) : Except KernelError CPtr :=
-  .ok (CPtr.ofNat rv.val)
+  if isWord64Dec rv.val then .ok (CPtr.ofNat rv.val)
+  else .error .invalidCapPtr
 
 /-- Decode a raw register value into a message info word.
     Extracts length, extra caps count, and label from bit fields.
@@ -124,10 +132,17 @@ open SeLe4n.Model
 -- Round-trip lemmas
 -- ============================================================================
 
-/-- Round-trip: encoding then decoding a CPtr recovers the original. -/
-theorem decodeCapPtr_roundtrip (c : CPtr) :
+/-- Round-trip: encoding then decoding a CPtr recovers the original,
+    provided the CPtr value fits in a 64-bit word.
+
+    S4-K: The `isWord64` precondition is required because `decodeCapPtr` now
+    rejects out-of-range values. On real ARM64 hardware, all register values
+    are inherently 64-bit, so `hBound` is trivially satisfied. -/
+theorem decodeCapPtr_roundtrip (c : CPtr) (hBound : isWord64 c.toNat) :
     decodeCapPtr (encodeCapPtr c) = .ok c := by
-  simp [decodeCapPtr, encodeCapPtr, CPtr.ofNat, CPtr.toNat]
+  unfold decodeCapPtr encodeCapPtr CPtr.toNat at *
+  have h64 : isWord64Dec c.val = true := (SeLe4n.isWord64Dec_iff c.val).mpr hBound
+  simp [h64, CPtr.ofNat]
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem decodeSyscallId_roundtrip (s : SyscallId) :
@@ -157,12 +172,13 @@ theorem decodeMsgRegs_roundtrip (vals : Array RegValue) :
     call site for any register layout. -/
 theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
     (hLen : decoded.msgInfo.length ≤ maxMessageRegisters)
-    (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps) :
+    (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps)
+    (hCapBound : isWord64 decoded.capAddr.toNat) :
     decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
     decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
     decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId ∧
     encodeMsgRegs decoded.msgRegs = decoded.msgRegs :=
-  ⟨decodeCapPtr_roundtrip decoded.capAddr,
+  ⟨decodeCapPtr_roundtrip decoded.capAddr hCapBound,
    decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps,
    decodeSyscallId_roundtrip decoded.syscallId,
    decodeMsgRegs_roundtrip decoded.msgRegs⟩
@@ -178,7 +194,7 @@ theorem extractMessageRegisters_length (msgRegs : Array RegValue)
     (info : MessageInfo) :
     (extractMessageRegisters msgRegs info).size ≤ maxMessageRegisters := by
   unfold extractMessageRegisters
-  simp [Array.size_map, Array.size_extract]
+  simp [Array.size_extract]
   omega
 
 /-- An IpcMessage constructed from extracted registers with empty caps
@@ -194,25 +210,21 @@ theorem extractMessageRegisters_ipc_bounded (msgRegs : Array RegValue)
   · exact extractMessageRegisters_length msgRegs info
   · simp [maxExtraCaps, Array.size]
 
-/-- Round-trip: encoding `Nat` values as `RegValue` wrappers then extracting
-    via `extractMessageRegisters` recovers the originals, provided the
-    `MessageInfo.length` equals the array size and both are within
-    `maxMessageRegisters`. -/
+/-- S4-D: Round-trip — extracting message registers from an array whose size
+    matches the message info length recovers the original array, provided the
+    size is within bounds. -/
 theorem extractMessageRegisters_roundtrip
-    (vals : Array Nat)
+    (vals : Array RegValue)
     (info : MessageInfo)
     (hLen : info.length = vals.size)
     (hBound : vals.size ≤ maxMessageRegisters) :
-    extractMessageRegisters (vals.map (fun n => ⟨n⟩)) info = vals := by
+    extractMessageRegisters vals info = vals := by
   unfold extractMessageRegisters
-  have hSz : (vals.map (fun n => (⟨n⟩ : RegValue))).size = vals.size := Array.size_map ..
-  -- The count simplifies to vals.size given our hypotheses
-  have hCount : min info.length (min maxMessageRegisters (vals.map (fun n => (⟨n⟩ : RegValue))).size)
-      = vals.size := by rw [hSz, hLen]; omega
-  -- Array.extract 0 n with n ≥ size returns the full array, then map RegValue.val ∘ RegValue.mk = id
+  have hCount : min info.length (min maxMessageRegisters vals.size)
+      = vals.size := by omega
   ext i
-  · simp [Array.size_extract, Array.size_map, hSz]; omega
-  · simp [Array.getElem_extract, Array.getElem_map]
+  · simp [Array.size_extract]; omega
+  · simp [Array.getElem_extract]
 
 /-- Determinism: extracting message registers from the same inputs produces
     the same result. Trivially `rfl` since the function is pure. -/
@@ -256,10 +268,18 @@ theorem decodeMsgInfo_error_iff (rv : RegValue) :
   · intro h; split at h <;> simp_all
   · intro h; simp [h]
 
-/-- decodeCapPtr never fails — every register value is a valid CPtr. -/
-theorem decodeCapPtr_always_ok (rv : RegValue) :
-    ∃ c, decodeCapPtr rv = .ok c := by
-  exact ⟨CPtr.ofNat rv.val, rfl⟩
+/-- S4-K: decodeCapPtr succeeds iff the register value is word64-bounded. -/
+theorem decodeCapPtr_ok_iff (rv : RegValue) :
+    (∃ c, decodeCapPtr rv = .ok c) ↔ isWord64Dec rv.val = true := by
+  unfold decodeCapPtr
+  constructor
+  · intro ⟨c, h⟩; split at h <;> simp_all
+  · intro h; exact ⟨CPtr.ofNat rv.val, by simp [h]⟩
+
+/-- S4-K: decodeCapPtr succeeds for word64-bounded values. -/
+theorem decodeCapPtr_ok_of_word64 (rv : RegValue) (h : isWord64Dec rv.val = true) :
+    decodeCapPtr rv = .ok (CPtr.ofNat rv.val) := by
+  unfold decodeCapPtr; simp [h]
 
 /-- Register bound validation succeeds iff the index is within bounds. -/
 theorem validateRegBound_ok_iff (r : RegName) (bound : Nat) :

@@ -143,7 +143,33 @@ The `RuntimeBoundaryContract.memoryAccessAllowed` predicate already provides
 the extension point for this transition. -/
 abbrev Memory := PAddr → UInt8
 
-/-- Pure register file state used by scheduler/context-switch modeling. -/
+/-- Pure register file state used by scheduler/context-switch modeling.
+
+S4-F: **Design rationale for `gpr : RegName → RegValue` (function representation).**
+An `Array RegValue` (size 32) alternative was evaluated and rejected because:
+
+1. **Proof simplicity.** The function representation enables `readReg_writeReg_eq`
+   and `readReg_writeReg_ne` to be proved by simple `simp [readReg, writeReg]`.
+   Array-based proofs would require bounds checking (`h : i < 32`) threaded
+   through every read/write lemma, adding ~50 additional proof obligations.
+
+2. **Extensionality.** `RegisterFile.ext` (pointwise equality) is natural for
+   functions. For arrays, extensionality requires `Array.ext_iff` with index
+   bounds, complicating preservation proofs across the scheduler and IPC
+   subsystems.
+
+3. **BEq instance.** The existing BEq compares all 32 GPR indices in a loop.
+   This is semantically equivalent for both representations, but the function
+   representation avoids array bounds checks in the BEq implementation.
+
+4. **No performance impact.** The Lean model is not compiled to machine code
+   for execution — it exists purely for proof. Register file access in the
+   trace harness is infrequent. There is no runtime benefit to array backing.
+
+The function representation will be revisited if/when the model targets
+extracted executable code (e.g., via Lean-to-C compilation for the RPi5
+bring-up). At that point, a `Fin 32 → RegValue` or `Vector RegValue 32`
+representation may be preferable for extraction efficiency. -/
 structure RegisterFile where
   pc : RegValue
   sp : RegValue
@@ -308,6 +334,62 @@ theorem default_registerFile_sp_zero :
 /-- L-02/WS-E6: Default timer starts at zero. -/
 theorem default_timer_zero :
     (default : MachineState).timer = 0 := rfl
+
+-- ============================================================================
+-- S4-E: Memory alignment predicates (hardware-binding readiness)
+-- ============================================================================
+
+/-- S4-E: Word alignment predicate — a physical address is word-aligned when
+    it is a multiple of 8 (64-bit word size on ARM64).
+
+    **Model gap:** The abstract `Memory := PAddr → UInt8` type is byte-addressable
+    and accepts any address. Real ARM64 hardware requires word-aligned access for
+    register-width loads/stores (LDR/STR instructions with 64-bit operands).
+    Misaligned access generates an alignment fault (unless SCTLR_EL1.A is clear
+    and the access is to Normal memory).
+
+    This predicate documents the alignment requirement. The hardware binding
+    (WS-T) must enforce it via `RuntimeBoundaryContract.memoryAccessAllowed`
+    or an equivalent platform-level precondition. -/
+def wordAligned (addr : PAddr) : Prop :=
+  addr.toNat % 8 = 0
+
+instance (addr : PAddr) : Decidable (wordAligned addr) :=
+  inferInstanceAs (Decidable (_ = _))
+
+/-- S4-E: Page alignment predicate — a physical address is page-aligned when
+    it is a multiple of 4096 (standard 4KB page on ARM64). -/
+def pageAligned (addr : PAddr) : Prop :=
+  addr.toNat % 4096 = 0
+
+instance (addr : PAddr) : Decidable (pageAligned addr) :=
+  inferInstanceAs (Decidable (_ = _))
+
+/-- S4-E: Aligned read predicate — asserts the address satisfies word alignment
+    before a register-width memory read. The abstract model's `readMem` is
+    total and accepts any address; this predicate is an advisory constraint
+    for hardware binding. -/
+def alignedRead (addr : PAddr) : Prop := wordAligned addr
+
+/-- S4-E: Aligned write predicate — asserts the address satisfies word alignment
+    before a register-width memory write. -/
+def alignedWrite (addr : PAddr) : Prop := wordAligned addr
+
+/-- S4-E: Page-aligned addresses are also word-aligned. -/
+theorem pageAligned_implies_wordAligned (addr : PAddr)
+    (h : pageAligned addr) : wordAligned addr := by
+  unfold wordAligned pageAligned at *
+  omega
+
+/-- S4-E: Zero address is word-aligned. -/
+theorem wordAligned_zero : wordAligned ⟨0⟩ := by
+  unfold wordAligned PAddr.toNat
+  simp
+
+/-- S4-E: Zero address is page-aligned. -/
+theorem pageAligned_zero : pageAligned ⟨0⟩ := by
+  unfold pageAligned PAddr.toNat
+  simp
 
 -- ============================================================================
 -- H3 preparation: MachineConfig and MemoryRegion (platform-binding readiness)

@@ -371,13 +371,20 @@ def wellFormed (node : CNode) : Prop :=
 
 WS-H13: Uses `guardWidth` and `radixWidth` fields directly for compressed-path
 resolution. The `bitsRemaining` parameter indicates how many address bits
-remain to be resolved at this level. -/
+remain to be resolved at this level.
+
+S4-C: The input CPtr is masked to 64 bits before guard extraction, ensuring
+that the abstract model's unbounded `Nat` address space produces identical
+results to 64-bit hardware registers. The mask is idempotent for values
+already within word64 bounds: `(n % 2^64) % 2^64 = n % 2^64`. -/
 def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) : Except ResolveError SeLe4n.Slot :=
   let consumed := node.bitsConsumed
   if bitsRemaining < consumed then
     .error .depthMismatch
   else
-    let shiftedAddr := cptr.toNat >>> (bitsRemaining - consumed)
+    -- S4-C: Mask CPtr to 64 bits for hardware-faithful bit extraction
+    let maskedAddr := cptr.toNat % SeLe4n.machineWordMax
+    let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
     let radixMask := 2 ^ node.radixWidth
     let slotIndex := shiftedAddr % radixMask
     let guardExtracted := (shiftedAddr / radixMask) % (2 ^ node.guardWidth)
@@ -385,6 +392,13 @@ def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) : Exce
       .ok (SeLe4n.Slot.ofNat slotIndex)
     else
       .error .guardMismatch
+
+/-- S4-C: The word64 mask is idempotent — masking an already-bounded value
+    produces the same result. This ensures `resolveSlot` behaves identically
+    for bounded and unbounded inputs when the value fits in 64 bits. -/
+theorem resolveSlot_mask_idempotent (n : Nat) (h : n < SeLe4n.machineWordMax) :
+    n % SeLe4n.machineWordMax = n :=
+  Nat.mod_eq_of_lt h
 
 /-- WS-G5/F-P03: O(1) amortized slot lookup via `RHTable.get?`. -/
 def lookup (node : CNode) (slot : SeLe4n.Slot) : Option Capability :=

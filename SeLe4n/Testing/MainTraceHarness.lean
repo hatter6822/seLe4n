@@ -729,7 +729,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   let epId : SeLe4n.ObjId := demoEndpoint
   let senderId : SeLe4n.ThreadId := ⟨1⟩
   let receiverId : SeLe4n.ThreadId := ⟨12⟩
-  let testMsg : IpcMessage := { registers := #[42, 7], caps := #[], badge := some ⟨123⟩ }
+  let testMsg : IpcMessage := { registers := #[⟨42⟩, ⟨7⟩], caps := #[], badge := some ⟨123⟩ }
   -- Fresh endpoint for dual-queue test
   let ep0 : KernelObject := .endpoint {
     sendQ := {}, receiveQ := {} }
@@ -751,7 +751,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
             | some tcb => tcb.pendingMessage
             | none => none
           let msgRegs := match recvMsg with
-            | some m => m.registers.toList
+            | some m => m.registers.toList.map SeLe4n.RegValue.val
             | none => []
           IO.println s!"[IMT-004] message transfer registers: {reprStr msgRegs}"
           let msgBadge := match recvMsg with
@@ -772,7 +772,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   | .error err => IO.println s!"[IMT-007] F1-02 receive-first error: {reprStr err}"
   | .ok (_, stWait) =>
       -- Sender sends with message (receiver queued → rendezvous)
-      let rendezvousMsg : IpcMessage := { registers := #[99], caps := #[], badge := none }
+      let rendezvousMsg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := none }
       match SeLe4n.Kernel.endpointSendDual epId senderId rendezvousMsg stWait with
       | .error err => IO.println s!"[IMT-008] F1-02 send error: {reprStr err}"
       | .ok (_, stRend) =>
@@ -780,7 +780,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
             | some tcb => tcb.pendingMessage
             | none => none
           let rendRegs := match rendMsg with
-            | some m => m.registers.toList
+            | some m => m.registers.toList.map SeLe4n.RegValue.val
             | none => []
           IO.println s!"[IMT-009] rendezvous delivery registers: {reprStr rendRegs}"
   checkInvariants counter "post-ipc-send-receive-rendezvous" st1
@@ -793,7 +793,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   | .error err => IO.println s!"[IMT-010] F1-03 receive error: {reprStr err}"
   | .ok (_, stWait2) =>
       -- Caller calls with message
-      let callMsg : IpcMessage := { registers := #[10, 20, 30], caps := #[], badge := some ⟨456⟩ }
+      let callMsg : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩, ⟨30⟩], caps := #[], badge := some ⟨456⟩ }
       match SeLe4n.Kernel.endpointCall epId senderId callMsg stWait2 with
       | .error err => IO.println s!"[IMT-011] F1-03 call error: {reprStr err}"
       | .ok (_, stCalled) =>
@@ -806,7 +806,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
             | none => false
           IO.println s!"[IMT-012] call/reply caller blocked: {callerBlocked}"
           -- WS-H1/M-02: Reply with response message — receiverId is the authorized replier
-          let replyMsg : IpcMessage := { registers := #[100, 200], caps := #[], badge := none }
+          let replyMsg : IpcMessage := { registers := #[⟨100⟩, ⟨200⟩], caps := #[], badge := none }
           match SeLe4n.Kernel.endpointReply receiverId senderId replyMsg stCalled with
           | .error err => IO.println s!"[IMT-013] F1-03 reply error: {reprStr err}"
           | .ok (_, stReplied) =>
@@ -814,7 +814,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
                 | some tcb => tcb.pendingMessage
                 | none => none
               let replyRegs := match replyResult with
-                | some m => m.registers.toList
+                | some m => m.registers.toList.map SeLe4n.RegValue.val
                 | none => []
               IO.println s!"[IMT-014] call/reply response registers: {reprStr replyRegs}"
   -- WS-H1: Call blocking-path — caller enqueues as blockedOnCall, receiver dequeues,
@@ -825,7 +825,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   let serverId : SeLe4n.ThreadId := receiverId  -- reuse thread 12
   let stH1 : SystemState := { st1 with objects := st1.objects.insert epId ep3 }
   -- No receiver queued → caller enqueues on sendQ with blockedOnCall
-  let h1CallMsg : IpcMessage := { registers := #[77], caps := #[], badge := none }
+  let h1CallMsg : IpcMessage := { registers := #[⟨77⟩], caps := #[], badge := none }
   match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
   | .error err => IO.println s!"[IMT-015] H1-01 call error: {reprStr err}"
   | .ok (_, stBlocked) =>
@@ -854,7 +854,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
           IO.println s!"[IMT-018] H1 caller blockedOnReply after dequeue: {isBlockedOnReply}"
           IO.println s!"[IMT-019] H1 caller not ready after dequeue: {callerNotReady}"
           -- Explicit Reply from the authorized server unblocks the caller
-          let h1ReplyMsg : IpcMessage := { registers := #[88], caps := #[], badge := none }
+          let h1ReplyMsg : IpcMessage := { registers := #[⟨88⟩], caps := #[], badge := none }
           match SeLe4n.Kernel.endpointReply serverId callerId h1ReplyMsg stDequeued with
           | .error err => IO.println s!"[IMT-020] H1-03 reply error: {reprStr err}"
           | .ok (_, stReplied) =>
@@ -892,7 +892,7 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- H12d-01: Message with too many registers (> 120) should be rejected
   let oversizedRegs : IpcMessage := {
-    registers := Array.mk (List.replicate 121 0), caps := #[], badge := none }
+    registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none }
   match SeLe4n.Kernel.endpointSendDual epId senderId oversizedRegs st1 with
   | .error .ipcMessageTooLarge =>
       IO.println s!"[IMB-001] H12d oversized registers rejected: true"
@@ -920,7 +920,7 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- H12d-03: Message at exact boundary (120 regs, 3 caps) should be accepted
   let boundaryMsg : IpcMessage := {
-    registers := Array.mk (List.replicate 120 42),
+    registers := Array.mk (List.replicate 120 ⟨42⟩),
     caps := #[
       { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
       { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
@@ -1165,7 +1165,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
       IO.println s!"[BME-002] H12f empty message accepted: true"
   -- H12f-B02: Message at register boundary minus one (119 regs) — should succeed
   let subBoundaryMsg : IpcMessage := {
-    registers := Array.mk (List.replicate 119 1), caps := #[], badge := none }
+    registers := Array.mk (List.replicate 119 ⟨1⟩), caps := #[], badge := none }
   let stFresh2 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
   match SeLe4n.Kernel.endpointSendDual epId senderId subBoundaryMsg stFresh2 with
   | .error err =>
@@ -1226,7 +1226,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
     callerId := callerId, cspaceRoot := cnodeId,
     capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
   }
-  let msg : IpcMessage := { registers := #[42], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := none }
   -- S2-J: Using syscallInvoke directly instead of deprecated apiEndpointSend
   let sendViaGate (gate : SeLe4n.Kernel.SyscallGate) (st : SystemState) :=
     SeLe4n.Kernel.syscallInvoke { gate with requiredRight := .write }
@@ -1613,7 +1613,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   let msgRegsArr : Array SeLe4n.RegValue := #[⟨111⟩, ⟨222⟩, ⟨333⟩, ⟨444⟩]
   let msgInfo : MessageInfo := { length := 4, extraCaps := 0, label := 0 }
   let extracted := SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters msgRegsArr msgInfo
-  IO.println s!"[KSD-007] IPC message body from registers: {reprStr extracted}"
+  IO.println s!"[KSD-007] IPC message body from registers: {reprStr (extracted.map SeLe4n.RegValue.val)}"
 
   -- KSD-008: Full layer 1+2 decode round-trip exercise
   let regsForRoundtrip : SeLe4n.RegisterFile :=
@@ -1654,7 +1654,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
   let stFresh : SystemState := { st1 with
     objects := (st1.objects.insert epId ep).insert ⟨13⟩ callerB }
   -- Step 1: Caller A calls endpoint (no receiver yet → enqueues on sendQ)
-  let callMsgA : IpcMessage := { registers := #[50, 60], caps := #[], badge := some ⟨789⟩ }
+  let callMsgA : IpcMessage := { registers := #[⟨50⟩, ⟨60⟩], caps := #[], badge := some ⟨789⟩ }
   match SeLe4n.Kernel.endpointCall epId callerAId callMsgA stFresh with
   | .error err => IO.println s!"[RRC-001] replyRecv call1 error: {reprStr err}"
   | .ok (_, stCalledA) =>
@@ -1671,14 +1671,14 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
           IO.println s!"[RRC-001] replyRecv caller state after receive: {callerState}"
           -- Step 3 (L4-A2): Caller B calls the same endpoint while A awaits reply
           -- B enqueues on sendQ with blockedOnCall
-          let callMsgB : IpcMessage := { registers := #[70, 80, 90], caps := #[], badge := some ⟨456⟩ }
+          let callMsgB : IpcMessage := { registers := #[⟨70⟩, ⟨80⟩, ⟨90⟩], caps := #[], badge := some ⟨456⟩ }
           match SeLe4n.Kernel.endpointCall epId callerBId callMsgB stRecvd with
           | .error err => IO.println s!"[RRC-002] replyRecv callerB call error: {reprStr err}"
           | .ok (_, stCalledB) =>
               -- Step 4: Server uses endpointReplyRecv to reply to A AND receive B's message
               -- This exercises the rendezvous-after-reply path: reply delivers to A,
               -- then receive immediately dequeues B from sendQ
-              let replyMsg : IpcMessage := { registers := #[100, 200, 300], caps := #[], badge := none }
+              let replyMsg : IpcMessage := { registers := #[⟨100⟩, ⟨200⟩, ⟨300⟩], caps := #[], badge := none }
               match SeLe4n.Kernel.endpointReplyRecv epId serverId callerAId replyMsg stCalledB with
               | .error err =>
                   IO.println s!"[RRC-003] replyRecv operation error: {reprStr err}"
@@ -1692,7 +1692,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
                   IO.println s!"[RRC-003] replyRecv caller unblocked: {callerAReady}"
                   -- Verify caller A received the reply message
                   let callerAReply := match SeLe4n.Kernel.lookupTcb stReplyRecvd callerAId with
-                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList.map SeLe4n.RegValue.val)
                     | none => none
                   IO.println s!"[RRC-004] replyRecv caller reply registers: {reprStr callerAReply}"
                   -- L4-A2: Verify caller B transitioned to blockedOnReply
@@ -1713,7 +1713,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
                   IO.println s!"[RRC-005] replyRecv server ready after rendezvous: {serverReady}"
                   -- L4-A2: Verify server received B's message registers
                   let serverMsg := match SeLe4n.Kernel.lookupTcb stReplyRecvd serverId with
-                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList.map SeLe4n.RegValue.val)
                     | none => none
                   IO.println s!"[RRC-006] replyRecv server received callerB registers: {reprStr serverMsg}"
 
@@ -1762,11 +1762,11 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
       |>.withLifecycleCapabilityRef lcAuthSlot (.object lcEpId)
     ).build
   -- B1: Block both senders on the endpoint's sendQ
-  let msg1 : IpcMessage := { registers := #[10, 20], caps := #[], badge := none }
+  let msg1 : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩], caps := #[], badge := none }
   match SeLe4n.Kernel.endpointSendDual lcEpId lcSender1 msg1 stBase with
   | .error err => IO.println s!"[ELC-001] lifecycle sender1 block error: {reprStr err}"
   | .ok (_, stBlk1) =>
-      let msg2 : IpcMessage := { registers := #[30, 40], caps := #[], badge := none }
+      let msg2 : IpcMessage := { registers := #[⟨30⟩, ⟨40⟩], caps := #[], badge := none }
       match SeLe4n.Kernel.endpointSendDual lcEpId lcSender2 msg2 stBlk1 with
       | .error err => IO.println s!"[ELC-001] lifecycle sender2 block error: {reprStr err}"
       | .ok (_, stBlk2) =>
@@ -1808,7 +1808,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
               -- The endpoint was retyped to a notification, so endpointSendDual
               -- pattern-matches `some (.endpoint ep)` which fails → falls to
               -- `some _ => .error .invalidCapability`
-              let msg3 : IpcMessage := { registers := #[99], caps := #[], badge := none }
+              let msg3 : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := none }
               let staleResult := SeLe4n.Kernel.endpointSendDual lcEpId ⟨1⟩ msg3 stRetyped
               let staleRejected := match staleResult with
                 | .error .invalidCapability => true
@@ -1834,7 +1834,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
   let stFresh : SystemState := { st1 with
     objects := ((st1.objects.insert epId1 ep1).insert epId2 ep2).insert epId3 ep3 }
   -- Send on endpoint 1
-  let msg1 : IpcMessage := { registers := #[11, 22], caps := #[], badge := some ⟨100⟩ }
+  let msg1 : IpcMessage := { registers := #[⟨11⟩, ⟨22⟩], caps := #[], badge := some ⟨100⟩ }
   match SeLe4n.Kernel.endpointSendDual epId1 senderId msg1 stFresh with
   | .error err => IO.println s!"[MEI-001] multi-ep send1 error: {reprStr err}"
   | .ok (_, stSent1) =>
@@ -1843,11 +1843,11 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
       | .error err => IO.println s!"[MEI-002] multi-ep recv1 error: {reprStr err}"
       | .ok (_, stRecv1) =>
           let recvRegs1 := match SeLe4n.Kernel.lookupTcb stRecv1 receiverId with
-            | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+            | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList.map SeLe4n.RegValue.val)
             | none => none
           IO.println s!"[MEI-001] multi-ep recv1 registers: {reprStr recvRegs1}"
           -- Send on endpoint 2
-          let msg2 : IpcMessage := { registers := #[33, 44], caps := #[], badge := some ⟨200⟩ }
+          let msg2 : IpcMessage := { registers := #[⟨33⟩, ⟨44⟩], caps := #[], badge := some ⟨200⟩ }
           match SeLe4n.Kernel.endpointSendDual epId2 senderId msg2 stRecv1 with
           | .error err => IO.println s!"[MEI-003] multi-ep send2 error: {reprStr err}"
           | .ok (_, stSent2) =>
@@ -1856,7 +1856,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
               | .error err => IO.println s!"[MEI-004] multi-ep recv2 error: {reprStr err}"
               | .ok (_, stRecv2) =>
                   let recvRegs2 := match SeLe4n.Kernel.lookupTcb stRecv2 receiverId with
-                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList.map SeLe4n.RegValue.val)
                     | none => none
                   IO.println s!"[MEI-002] multi-ep recv2 registers: {reprStr recvRegs2}"
                   -- Verify cross-endpoint independence: ep1 queue is empty
@@ -1866,7 +1866,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                   IO.println s!"[MEI-003] multi-ep endpoint1 queues empty: {ep1Empty}"
                   -- L4-D2/D3: 3rd endpoint out-of-order receive
                   -- Send on EP3 via sender, receive EP3 out-of-order (before EP1 second round)
-                  let msg3 : IpcMessage := { registers := #[55, 66], caps := #[], badge := some ⟨300⟩ }
+                  let msg3 : IpcMessage := { registers := #[⟨55⟩, ⟨66⟩], caps := #[], badge := some ⟨300⟩ }
                   match SeLe4n.Kernel.endpointSendDual epId3 senderId msg3 stRecv2 with
                   | .error err => IO.println s!"[MEI-004] multi-ep send3 error: {reprStr err}"
                   | .ok (_, stSent3) =>
@@ -1875,12 +1875,12 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                       | .error err => IO.println s!"[MEI-004] multi-ep recv-ep3 error: {reprStr err}"
                       | .ok (_, stRecv3) =>
                           let recvRegs3 := match SeLe4n.Kernel.lookupTcb stRecv3 receiverId with
-                            | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+                            | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList.map SeLe4n.RegValue.val)
                             | none => none
                           IO.println s!"[MEI-004] multi-ep ep3 out-of-order recv registers: {reprStr recvRegs3}"
                           -- Now sender is free again (unblocked by EP3 receive)
                           -- Send on EP1 again to verify FIFO with second message
-                          let msg4 : IpcMessage := { registers := #[77, 88], caps := #[], badge := some ⟨101⟩ }
+                          let msg4 : IpcMessage := { registers := #[⟨77⟩, ⟨88⟩], caps := #[], badge := some ⟨101⟩ }
                           match SeLe4n.Kernel.endpointSendDual epId1 senderId msg4 stRecv3 with
                           | .error err => IO.println s!"[MEI-005] multi-ep send4-ep1 error: {reprStr err}"
                           | .ok (_, stSent4) =>
@@ -1889,7 +1889,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                               | .error err => IO.println s!"[MEI-005] multi-ep recv4-ep1 error: {reprStr err}"
                               | .ok (_, stRecv4) =>
                                   let recvRegs4 := match SeLe4n.Kernel.lookupTcb stRecv4 receiverId with
-                                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList)
+                                    | some tcb => tcb.pendingMessage.map (fun (m : IpcMessage) => m.registers.toList.map SeLe4n.RegValue.val)
                                     | none => none
                                   IO.println s!"[MEI-005] multi-ep ep1 FIFO second recv registers: {reprStr recvRegs4}"
                                   -- Verify all 3 endpoints are now drained

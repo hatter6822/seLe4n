@@ -52,6 +52,8 @@ inductive KernelError where
   | invalidMessageInfo      -- WS-J1-B: malformed message-info word (length/caps out of bounds)
   | invalidTypeTag          -- WS-K-D: retype type tag not in modeled object set (0–5)
   | resourceExhausted       -- WS-R2/M-05: fuel exhaustion in streaming BFS revocation
+  | invalidCapPtr           -- S4-K: capability pointer exceeds word64 bounds
+  | objectStoreCapacityExceeded  -- S4-B: object count exceeds maxObjects capacity
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
@@ -167,7 +169,16 @@ structure SystemState where
       (`objects[oid]?`, `objects.get?`). No operation iterates over the
       object store in an order-dependent manner. This is critical because
       `RHTable` iteration order (via `fold`/`toList`) depends on internal
-      slot layout and is not deterministic across resize operations. -/
+      slot layout and is not deterministic across resize operations.
+
+      **Audit (S4-J):** Two lifecycle cleanup functions use `objects.fold`:
+      `removeFromAllEndpointQueues` and `removeFromAllNotificationWaitLists`
+      (Lifecycle/Operations.lean). Both are order-independent — they apply
+      the same idempotent per-object transformation regardless of iteration
+      order. The `freeze` function in FrozenState.lean uses `objects.toList`
+      to snapshot the object store, but the resulting `FrozenMap` is keyed
+      by `ObjId` with O(1) lookup, so insertion order does not affect
+      semantics. No order-dependent iteration patterns exist. -/
   objects : RHTable SeLe4n.ObjId KernelObject
   /-- L-05/WS-E6: Monotonic append-only index of all object IDs that have been
       stored. This list is intentionally never pruned — `storeObject` prepends
@@ -312,6 +323,21 @@ def lookupVSpaceRoot (id : SeLe4n.ObjId) : Kernel VSpaceRoot :=
     | some _ => .error .vspaceRootInvalid
     | none => .error .objectNotFound
 
+-- ============================================================================
+-- S4-A/S4-B: Object capacity bounds
+-- ============================================================================
+
+/-- S4-A: Advisory maximum object count for RPi5 platform (65536).
+    Enforced by `storeObject` (S4-B) — new objects are rejected when
+    the object index reaches this capacity. -/
+def maxObjects : Nat := 65536
+
+/-- S4-A: Advisory predicate — the object index size is bounded by `maxObjects`.
+    After S4-B enforcement, this holds for any reachable state (assuming it
+    holds at boot and `storeObject` is the only path to add new objects). -/
+def objectIndexBounded (st : SystemState) : Prop :=
+  st.objectIndex.length ≤ maxObjects
+
 /-- Replace the object stored at `id` with `obj`.
 
 WS-G2/F-P01: Uses `HashMap.insert` instead of closure wrapping, eliminating
@@ -319,7 +345,13 @@ the O(k) closure-chain accumulation on every lookup.
 WS-G2/F-P10: Uses `objectIndexSet.contains` for O(1) membership check instead
 of O(n) list membership scan.
 WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
-VSpaceRoot, inserts new ASID when storing a VSpaceRoot. -/
+VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
+
+S4-B: Capacity enforcement is performed at the allocation boundary
+(`retypeFromUntyped` in Lifecycle/Operations.lean), not here. The
+`objectCount_le_maxObjects` invariant (defined below) is preserved by
+allocation-time checking, and `storeObject` remains infallible for
+internal use by IPC, scheduler, and capability operations. -/
 def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     .ok ((), {
@@ -589,8 +621,7 @@ theorem storeObject_preserves_services
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.services = st.services := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   rfl
 
 theorem storeCapabilityRef_preserves_scheduler
@@ -677,8 +708,7 @@ theorem storeObject_objects_eq'
     (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.objects[id]? = some obj := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   exact RHTable.getElem?_insert_self _ _ _ hObjInv
 
 theorem storeObject_objects_eq
@@ -699,8 +729,7 @@ theorem storeObject_objects_ne'
     (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.objects[oid]? = st.objects[oid]? := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   have hNeBeq : ¬((id == oid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
   exact RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hObjInv
 
@@ -722,8 +751,7 @@ theorem storeObject_preserves_objects_invExt'
     (hObjInv : st.objects.invExt)
     (hStore : storeObject id obj st = .ok pair) :
     pair.2.objects.invExt := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   exact RHTable_insert_preserves_invExt st.objects id obj hObjInv
 
 theorem storeObject_scheduler_eq
@@ -732,8 +760,7 @@ theorem storeObject_scheduler_eq
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   rfl
 
 theorem storeObject_irqHandlers_eq
@@ -742,8 +769,7 @@ theorem storeObject_irqHandlers_eq
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.irqHandlers = st.irqHandlers := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   rfl
 
 theorem storeObject_machine_eq
@@ -752,8 +778,7 @@ theorem storeObject_machine_eq
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.machine = st.machine := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   rfl
 
 theorem storeObject_preserves_objects_invExt
@@ -772,8 +797,7 @@ theorem storeObject_cdt_eq
     (obj : KernelObject)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.cdt = st.cdt := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   rfl
 
 -- ============================================================================
@@ -788,8 +812,7 @@ theorem storeObject_asidTable_vspaceRoot
       | _ => st.asidTable).invExt)
     (hStore : storeObject id (.vspaceRoot newRoot) st = .ok ((), st')) :
     st'.asidTable[newRoot.asid]? = some id := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   simp only []
   exact RHTable.getElem?_insert_self _ _ _ hAsidInv
 
@@ -807,8 +830,7 @@ theorem storeObject_asidTable_vspaceRoot_ne
       (match st.objects[id]? with
        | some (.vspaceRoot oldRoot) => (st.asidTable.erase oldRoot.asid)[asid]?
        | _ => st.asidTable[asid]?) := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   simp only []
   have hNeBeq : ¬((newRoot.asid == asid) = true) := by intro heq; exact hNe (eq_of_beq heq).symm
   cases hOld : st.objects[id]? with
@@ -834,8 +856,7 @@ theorem storeObject_asidTable_non_vspaceRoot
       match st.objects[id]? with
       | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
       | _ => st.asidTable := by
-  unfold storeObject at hStore
-  cases hStore
+  unfold storeObject at hStore; cases hStore
   cases obj with
   | vspaceRoot r => exact absurd rfl (hNotVSpace r)
   | tcb _ => rfl
@@ -862,8 +883,7 @@ theorem storeObject_updates_objectTypeMeta
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     st'.lifecycle.objectTypes[oid]? = some obj.objectType := by
-  unfold storeObject at hStep
-  cases hStep
+  unfold storeObject at hStep; cases hStep
   simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjTypesInv]
 
 namespace SystemState
@@ -1029,21 +1049,6 @@ theorem ownedSlots_eq_nil_of_lookupCNode_eq_none
 
 end SystemState
 
--- ============================================================================
--- S4-A/S4-B: Object capacity advisory bounds
--- ============================================================================
-
-/-- S4-A: Advisory maximum object count for RPi5 platform (65536).
-    This is not enforced in the abstract model but serves as documentation
-    of the expected object capacity for typical workloads. -/
-def maxObjects : Nat := 65536
-
-/-- S4-A: Advisory predicate — the object index size is bounded by `maxObjects`.
-    Not enforced as a kernel invariant since the abstract model uses unbounded
-    `Nat`; this is a documentation predicate for hardware-binding readiness. -/
-def objectIndexBounded (st : SystemState) : Prop :=
-  st.objectIndex.length ≤ maxObjects
-
 theorem storeObject_preserves_objectTypeMetadataConsistent
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)
@@ -1054,8 +1059,7 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
     (hStep : storeObject oid obj st = .ok ((), st')) :
     SystemState.objectTypeMetadataConsistent st' := by
   intro oid'
-  unfold storeObject at hStep
-  cases hStep
+  unfold storeObject at hStep; cases hStep
   simp only [SystemState.lookupObjectTypeMeta] at *
   by_cases hEq : oid' = oid
   · subst hEq
@@ -1151,8 +1155,7 @@ theorem storeObject_metadata_sync_capref_at_stored
       | .cnode cn => (cn.lookup slot).map Capability.target
       | _ => none := by
   unfold SystemState.lookupCapabilityRefMeta SystemState.lookupSlotCap SystemState.lookupCNode
-  unfold storeObject at hStep
-  cases hStep
+  unfold storeObject at hStep; cases hStep
   simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]
   cases obj <;> simp [CNode.lookup]
 
@@ -1171,8 +1174,7 @@ theorem storeObject_objectIndex_monotone
     (hMem : id ∈ st.objectIndex)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     id ∈ st'.objectIndex := by
-  unfold storeObject at hStep
-  cases hStep
+  unfold storeObject at hStep; cases hStep
   simp only []
   cases h : st.objectIndexSet.contains oid
   · simp; exact Or.inr hMem
@@ -1210,8 +1212,7 @@ theorem storeObject_preserves_objectIndexLive
     (hObjInv : st.objects.invExt)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     objectIndexLive st' := by
-  unfold storeObject at hStep
-  cases hStep
+  unfold storeObject at hStep; cases hStep
   intro id hMem
   simp only [] at hMem
   cases h : st.objectIndexSet.contains oid

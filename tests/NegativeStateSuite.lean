@@ -527,7 +527,7 @@ private def runNegativeChecks : IO Unit := do
   -- Oversized registers (> 120) rejected
   expectError "endpointSendDual rejects oversized registers"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 1)
-      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+      { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- Oversized caps (> 3) rejected
@@ -544,7 +544,7 @@ private def runNegativeChecks : IO Unit := do
   -- endpointCall rejects oversized registers
   expectError "endpointCall rejects oversized registers"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
-      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+      { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- endpointCall rejects oversized caps
@@ -562,7 +562,7 @@ private def runNegativeChecks : IO Unit := do
   expectError "endpointReply rejects oversized registers"
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
-      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+      { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- endpointReply rejects oversized caps
@@ -581,7 +581,7 @@ private def runNegativeChecks : IO Unit := do
   expectError "endpointReplyRecv rejects oversized registers"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
-      { registers := Array.mk (List.replicate 121 0), caps := #[], badge := none } baseState)
+      { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- endpointReplyRecv rejects oversized caps
@@ -599,7 +599,7 @@ private def runNegativeChecks : IO Unit := do
   -- Boundary message (exactly 120 regs, 3 caps) should NOT be rejected by bounds check
   -- (may still fail due to other reasons like endpoint state)
   let boundaryMsg : SeLe4n.Model.IpcMessage := {
-    registers := Array.mk (List.replicate 120 42),
+    registers := Array.mk (List.replicate 120 ⟨42⟩),
     caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
               { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
               { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }],
@@ -1524,7 +1524,7 @@ private def runWSH15Checks : IO Unit := do
       throw <| IO.userError s!"H15 syscallLookupCap: expected success, got {toString err}"
 
   -- H15-NEG-05: S2-J: Replaced deprecated apiEndpointSend with syscallInvoke path
-  let msg : IpcMessage := { registers := #[42], caps := #[], badge := none }
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := none }
   expectError "H15 syscall endpoint send insufficient rights"
     (SeLe4n.Kernel.syscallInvoke { wrongRightGate with requiredRight := .write } (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error .invalidCapability

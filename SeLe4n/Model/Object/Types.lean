@@ -182,14 +182,18 @@ WS-H12d/A-09: Registers and caps are bounded `Array` types matching seL4's
 `seL4_MsgMaxLength` (120) and `seL4_MsgMaxExtraCaps` (3). Bounds are enforced
 at IPC send boundaries. -/
 structure IpcMessage where
-  registers : Array Nat
+  /-- S4-D: Changed from `Array Nat` to `Array RegValue` for type consistency
+      with the machine register model. All register values in IPC messages
+      are now typed, matching the `RegValue` wrapper used throughout the
+      register decode and context-switch infrastructure. -/
+  registers : Array SeLe4n.RegValue
   caps : Array Capability := #[]
   badge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
 namespace IpcMessage
 
-def empty : IpcMessage := { registers := #[], caps := #[], badge := none }
+def empty : IpcMessage := { registers := (#[] : Array SeLe4n.RegValue), caps := #[], badge := none }
 
 /-- WS-H12d/A-09: Predicate asserting that a message's payload respects
 seL4 message-register and extra-capability bounds. -/
@@ -349,7 +353,33 @@ inductive NotificationState where
 
 /-- Minimal notification object model for WS-B6.
 
-`active` stores a single pending badge, while `waiting` tracks blocked receivers. -/
+`active` stores a single pending badge, while `waiting` tracks blocked receivers.
+
+**S4-G: `waitingThreads` representation evaluation.** An intrusive queue
+(matching the endpoint dual-queue design) was evaluated and not implemented:
+
+1. **Low cardinality.** Unlike endpoint send/receive queues which can grow to
+   hundreds of threads in server workloads, notification waiting lists are
+   typically short (1-3 threads). The seL4 spec notes that most notifications
+   are 1:1 or 1:N with small N.
+
+2. **No ordering requirement.** `notificationSignal` wakes the head waiter
+   (`List.head?`), but seL4 does not guarantee FIFO ordering for notification
+   waiters. Any waiter may be woken, so the prepend-based O(1) enqueue in
+   `notificationWait` is semantically correct.
+
+3. **O(n) cost is acceptable.** The only O(n) operation is
+   `List.filter` in `removeFromAllNotificationWaitLists` (lifecycle cleanup),
+   which iterates over all notifications' waiting lists during TCB deletion.
+   With the expected bound of ≤8 waiters per notification (typical RPi5 core
+   count), this is effectively O(1).
+
+4. **Migration cost.** Intrusive queues require adding `notifQueuePrev`/
+   `notifQueueNext` fields to TCB (6 new fields including PPrev metadata),
+   duplicating the endpoint queue infrastructure for minimal benefit.
+
+The `List` representation is retained. If future profiling reveals notification
+queue pressure, migration to intrusive queues remains straightforward. -/
 structure Notification where
   state : NotificationState
   waitingThreads : List SeLe4n.ThreadId
@@ -722,25 +752,22 @@ instance : ToString SyscallId where
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
   cases s <;> rfl
 
-/-- Round-trip: decoding then encoding preserves the numeric value. -/
+/-- Round-trip: decoding then encoding preserves the numeric value.
+
+S4-I: This proof uses a uniform `match`/`simp`/`subst` pattern for each of
+the 14 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
+used for `ofNat_toNat` is not applicable here because the hypothesis is on `n`
+(a `Nat`) rather than on a finite inductive type. A `decide`-based approach
+would require `BEq`/`DecidableEq` on the `Option SyscallId × Nat` pair and
+scales poorly for larger enums. The current explicit case enumeration is the
+most robust approach for Lean 4's pattern matching. -/
 theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) :
     s.toNat = n := by
   revert s
   match n with
-  | 0  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 1  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 2  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 3  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 4  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 5  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 6  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 7  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 8  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 9  => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 10 => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 11 => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 12 => intro s h; simp [ofNat?] at h; subst h; rfl
-  | 13 => intro s h; simp [ofNat?] at h; subst h; rfl
+  | 0  | 1  | 2  | 3  | 4  | 5  | 6
+  | 7  | 8  | 9  | 10 | 11 | 12 | 13 =>
+    intro s h; simp [ofNat?] at h; subst h; rfl
   | n + 14 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/

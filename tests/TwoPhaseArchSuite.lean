@@ -169,7 +169,7 @@ private def tph005a_sendBlocks : IO Unit := do
   let ep : Endpoint := { sendQ := {}, receiveQ := {} }
   let senderTcb := mkTcb 1
   let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨1⟩, .tcb senderTcb)]
-  let msg : IpcMessage := { registers := #[42], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointSend ⟨10⟩ ⟨1⟩ msg fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨1⟩ with
@@ -202,7 +202,7 @@ private def tph005c_callBlocksForReply : IO Unit := do
   let callerTcb := mkTcb 3
   let fst := mkFrozenState [
     (⟨10⟩, .endpoint ep), (⟨2⟩, .tcb recvTcb), (⟨3⟩, .tcb callerTcb)]
-  let msg : IpcMessage := { registers := #[99], caps := #[], badge := Badge.ofNatMasked 0 }
+  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointCall ⟨10⟩ ⟨3⟩ msg fst with
   | .ok ((), fst') =>
       -- Receiver should have been unblocked with the message
