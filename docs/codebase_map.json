@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-phase-s5-api-E0UCT",
-      "commit_sha": "cc7514a20cca1cb5c05075b56a9c1af750093f80",
-      "tree_sha": "8054aa8a512fcc7f7d350b4f06cb83df7090767d",
-      "committed_at_utc": "2026-03-22T22:48:19-04:00"
+      "commit_sha": "5e371fdaa1f1d10021a224460649a1f1ed02e0cb",
+      "tree_sha": "ecc2f498531d2ef2301f6ceabf4b17ad7e09398b",
+      "committed_at_utc": "2026-03-23T03:25:11+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "db75d536aff7584a61c2a6a03d2d97ad835d670d8b1174d51ee856d5f59ef854"
+    "source_digest": "59bef5046ac8f7b1c50a6594e95bfa9700d995c49789b993b24ddc2256a736ce"
   },
   "summary": {
     "module_count": 109,
-    "declaration_count": 3212
+    "declaration_count": 3213
   },
   "readme_sync": {
     "version": "0.19.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 99,
-    "production_loc": 56977,
+    "production_loc": 56993,
     "test_files": 10,
     "test_loc": 7559,
     "proved_theorem_lemma_decls": 1738,
@@ -14204,7 +14204,7 @@
         {
           "kind": "def",
           "name": "rotateToBack",
-          "line": 331,
+          "line": 335,
           "called": [
             "RunQueue"
           ]
@@ -14212,7 +14212,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 362,
+          "line": 366,
           "called": [
             "RunQueue"
           ]
@@ -14220,7 +14220,7 @@
         {
           "kind": "def",
           "name": "filterToList",
-          "line": 363,
+          "line": 367,
           "called": [
             "RunQueue"
           ]
@@ -14228,14 +14228,6 @@
         {
           "kind": "def",
           "name": "atPriority",
-          "line": 364,
-          "called": [
-            "RunQueue"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "maxPriorityBucket",
           "line": 368,
           "called": [
             "RunQueue"
@@ -14243,8 +14235,16 @@
         },
         {
           "kind": "def",
+          "name": "maxPriorityBucket",
+          "line": 372,
+          "called": [
+            "RunQueue"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "maxPriorityValue",
-          "line": 374,
+          "line": 378,
           "called": [
             "RunQueue"
           ]
@@ -14252,7 +14252,7 @@
         {
           "kind": "def",
           "name": "ofList",
-          "line": 376,
+          "line": 380,
           "called": [
             "RunQueue",
             "empty"
@@ -14261,7 +14261,7 @@
         {
           "kind": "theorem",
           "name": "mem_iff_contains",
-          "line": 381,
+          "line": 385,
           "called": [
             "RunQueue"
           ]
@@ -14269,7 +14269,7 @@
         {
           "kind": "theorem",
           "name": "contains_false_of_not_mem",
-          "line": 384,
+          "line": 388,
           "called": [
             "RunQueue"
           ]
@@ -14277,7 +14277,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_empty",
-          "line": 388,
+          "line": 392,
           "called": [
             "RunQueue",
             "contains",
@@ -14288,7 +14288,7 @@
         {
           "kind": "theorem",
           "name": "mem_insert",
-          "line": 397,
+          "line": 401,
           "called": [
             "RunQueue",
             "contains",
@@ -14298,7 +14298,7 @@
         {
           "kind": "theorem",
           "name": "mem_remove",
-          "line": 421,
+          "line": 425,
           "called": [
             "RunQueue",
             "contains",
@@ -14308,7 +14308,7 @@
         {
           "kind": "theorem",
           "name": "mem_rotateHead",
-          "line": 441,
+          "line": 445,
           "called": [
             "RunQueue",
             "contains",
@@ -14318,7 +14318,7 @@
         {
           "kind": "theorem",
           "name": "mem_rotateToBack",
-          "line": 453,
+          "line": 457,
           "called": [
             "RunQueue",
             "contains",
@@ -14328,7 +14328,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_self",
-          "line": 461,
+          "line": 465,
           "called": [
             "RunQueue",
             "mem_remove"
@@ -14337,7 +14337,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_toList_of_not_mem",
-          "line": 467,
+          "line": 471,
           "called": [
             "RunQueue",
             "mem_iff_contains",
@@ -14347,7 +14347,7 @@
         {
           "kind": "theorem",
           "name": "membership_implies_flat",
-          "line": 475,
+          "line": 479,
           "called": [
             "RunQueue",
             "mem_iff_contains"
@@ -14356,7 +14356,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_iff_mem",
-          "line": 481,
+          "line": 485,
           "called": [
             "RunQueue",
             "mem_iff_contains",
@@ -14366,7 +14366,7 @@
         {
           "kind": "theorem",
           "name": "toList_empty",
-          "line": 489,
+          "line": 493,
           "called": [
             "RunQueue",
             "empty",
@@ -14376,7 +14376,7 @@
         {
           "kind": "theorem",
           "name": "toList_insert_not_mem",
-          "line": 491,
+          "line": 495,
           "called": [
             "RunQueue",
             "contains",
@@ -14388,13 +14388,13 @@
         {
           "kind": "theorem",
           "name": "filter_filter_ne_of_false",
-          "line": 502,
+          "line": 506,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg",
-          "line": 515,
+          "line": 519,
           "called": [
             "RunQueue",
             "toList_insert_not_mem"
@@ -14403,7 +14403,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg'",
-          "line": 524,
+          "line": 528,
           "called": [
             "RunQueue",
             "insert",
@@ -14414,7 +14414,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_congr",
-          "line": 537,
+          "line": 541,
           "called": [
             "RunQueue",
             "contains",
@@ -14428,7 +14428,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_remove_neg",
-          "line": 567,
+          "line": 571,
           "called": [
             "RunQueue",
             "filter_filter_ne_of_false",
@@ -14439,7 +14439,7 @@
         {
           "kind": "theorem",
           "name": "toList_nodup_of_flat_nodup",
-          "line": 575,
+          "line": 579,
           "called": [
             "RunQueue"
           ]
@@ -14447,7 +14447,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_toList",
-          "line": 579,
+          "line": 583,
           "called": [
             "RunQueue",
             "remove",
@@ -14457,7 +14457,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_rotateToBack_self",
-          "line": 588,
+          "line": 592,
           "called": [
             "RunQueue",
             "mem_iff_contains",
@@ -14468,7 +14468,7 @@
         {
           "kind": "theorem",
           "name": "toList_rotateToBack_nodup",
-          "line": 596,
+          "line": 600,
           "called": [
             "RunQueue",
             "mem_iff_contains",
@@ -14479,7 +14479,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_rotateToBack_ne",
-          "line": 614,
+          "line": 618,
           "called": [
             "RunQueue",
             "rotateToBack",
@@ -14489,13 +14489,13 @@
         {
           "kind": "theorem",
           "name": "filter_erase_of_false",
-          "line": 630,
+          "line": 634,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "toList_filter_rotateToBack_neg",
-          "line": 645,
+          "line": 649,
           "called": [
             "RunQueue",
             "filter_erase_of_false",
@@ -14506,7 +14506,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 671,
+          "line": 675,
           "called": [
             "RunQueue"
           ]
@@ -14514,7 +14514,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_subset",
-          "line": 680,
+          "line": 684,
           "called": [
             "RunQueue",
             "atPriority",
@@ -14525,7 +14525,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_threadPriority",
-          "line": 692,
+          "line": 696,
           "called": [
             "RunQueue",
             "atPriority",
@@ -14535,7 +14535,7 @@
         {
           "kind": "theorem",
           "name": "mem_maxPriorityBucket_of_threadPriority",
-          "line": 704,
+          "line": 708,
           "called": [
             "RunQueue",
             "atPriority"
@@ -14544,7 +14544,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_membership",
-          "line": 722,
+          "line": 726,
           "called": [
             "RunQueue",
             "rotateToBack"
@@ -14553,7 +14553,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_threadPriority",
-          "line": 728,
+          "line": 732,
           "called": [
             "RunQueue",
             "rotateToBack"
@@ -14562,7 +14562,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_maxPriority",
-          "line": 734,
+          "line": 738,
           "called": [
             "RunQueue",
             "rotateToBack"
@@ -14571,7 +14571,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_contains",
-          "line": 740,
+          "line": 744,
           "called": [
             "RunQueue",
             "contains",
@@ -14581,7 +14581,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_mem_iff",
-          "line": 745,
+          "line": 749,
           "called": [
             "RunQueue",
             "mem_iff_contains",
@@ -14591,7 +14591,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_flat_subset",
-          "line": 750,
+          "line": 754,
           "called": [
             "RunQueue",
             "rotateToBack"
@@ -14600,7 +14600,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_flat_superset",
-          "line": 762,
+          "line": 766,
           "called": [
             "RunQueue",
             "rotateToBack"
@@ -14609,7 +14609,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_preserves_wellFormed",
-          "line": 774,
+          "line": 778,
           "called": [
             "RunQueue",
             "rotateToBack",
@@ -14619,7 +14619,7 @@
         {
           "kind": "theorem",
           "name": "insert_threadPriority",
-          "line": 840,
+          "line": 844,
           "called": [
             "RunQueue",
             "insert"
@@ -14628,7 +14628,7 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_wellFormed",
-          "line": 850,
+          "line": 854,
           "called": [
             "RunQueue",
             "insert",
@@ -14638,7 +14638,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_to_orig",
-          "line": 941,
+          "line": 945,
           "called": [
             "RunQueue",
             "remove"
@@ -14647,7 +14647,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_from_orig",
-          "line": 962,
+          "line": 966,
           "called": [
             "RunQueue",
             "remove"
@@ -14656,7 +14656,7 @@
         {
           "kind": "theorem",
           "name": "remove_tid_not_in_bucket",
-          "line": 996,
+          "line": 1000,
           "called": [
             "RunQueue",
             "remove"
@@ -14665,7 +14665,7 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_wellFormed",
-          "line": 1030,
+          "line": 1034,
           "called": [
             "RunQueue",
             "contains",
@@ -21174,7 +21174,7 @@
     {
       "module": "SeLe4n.Platform.Sim.RuntimeContract",
       "path": "SeLe4n/Platform/Sim/RuntimeContract.lean",
-      "declaration_count": 4,
+      "declaration_count": 5,
       "declarations": [
         {
           "kind": "namespace",
@@ -21196,9 +21196,17 @@
         },
         {
           "kind": "def",
-          "name": "simRuntimeContractSubstantive",
-          "line": 68,
+          "name": "simSubstantiveMemoryMap",
+          "line": 57,
           "called": []
+        },
+        {
+          "kind": "def",
+          "name": "simRuntimeContractSubstantive",
+          "line": 77,
+          "called": [
+            "simSubstantiveMemoryMap"
+          ]
         }
       ]
     },

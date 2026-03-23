@@ -328,6 +328,10 @@ def rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
             else rq
   else rq
 
+/-- S5-J: Complexity is O(k + n) where k = priority bucket size and n = flat
+    list length. Filters the thread from the bucket O(k), appends to end O(1),
+    then erases from flat list O(n) and appends. Same bounds as `remove` and
+    `rotateHead` — acceptable for systems with < 256 threads. -/
 def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   if hc : rq.contains tid then
     let prio := rq.threadPriority[tid]?.getD ⟨0⟩
