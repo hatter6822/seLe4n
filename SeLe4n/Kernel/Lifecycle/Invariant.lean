@@ -463,7 +463,11 @@ theorem retypeFromUntyped_ok_childId_ne
       | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ =>
           simp [hObj] at hStep
       | untyped _ =>
-          simp only [hObj] at hStep; simp [h] at hStep
+          simp only [hObj] at hStep
+          -- S4-B: discharge capacity check
+          by_cases hCap : st.objectIndex.length ≥ maxObjects
+          · simp [hCap] at hStep
+          · simp [hCap] at hStep; simp [h] at hStep
 
 /-- WS-H2/B-5: If `retypeFromUntyped` succeeds, the childId is fresh among
 the source untyped's existing children. The A-27 collision guard returns
@@ -484,6 +488,12 @@ theorem retypeFromUntyped_ok_childId_fresh
   have hStep' := hStep
   unfold retypeFromUntyped at hStep'
   simp only [hObj] at hStep'
+  -- S4-B: discharge capacity check
+  have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by
+    by_cases hCap : st.objectIndex.length ≥ maxObjects
+    · simp [hCap] at hStep'
+    · exact hCap
+  simp only [hCapF, ↓reduceIte] at hStep'
   have hCollF : st.objects[childId]?.isSome = false := by
     cases h : st.objects[childId]?.isSome
     · rfl

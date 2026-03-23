@@ -153,8 +153,29 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   count verification (S3-L). Semi-automated dependency graph with subsystem
   module registry, BFS fuel bounds, and 6-module cross-reference (S3-N).
   Stretch goal S3-M (NI trace indexing) deferred to WS-T. Zero sorry/axiom.
-- **S4 (v0.19.3) — IN PROGRESS**: Model Fidelity & Type Safety. Added
-  `objectIndexBounded` advisory predicate and documentation.
+- **S4 (v0.19.3) — COMPLETE**: Model Fidelity & Type Safety (13 sub-tasks).
+  **S4-A** (U-M04): `objectIndexBounded` advisory predicate with RPi5 growth
+  analysis; spec section 8 added. **S4-B** (U-M12): Capacity enforcement in
+  `retypeFromUntyped` — returns `objectStoreCapacityExceeded` at `maxObjects`
+  (65536); `objectCount_le_maxObjects` invariant. **S4-C** (U-L02): `resolveSlot`
+  masks CPtr to 64 bits before guard extraction; `resolveSlot_mask_idempotent`
+  proof. **S4-D** (U-L04): Changed `IpcMessage.registers` from `Array Nat` to
+  `Array RegValue`; updated `extractMessageRegisters`, all construction sites,
+  all test files, and all proof references. **S4-E** (U-M15): Added
+  `wordAligned`/`pageAligned` predicates, `alignedRead`/`alignedWrite` advisory
+  predicates, alignment theorems, and spec documentation of the memory alignment
+  model gap. **S4-F** (U-L01): Evaluated `RegisterFile.gpr` Array migration —
+  rejected due to proof complexity; documented design rationale. **S4-G** (U-L06):
+  Evaluated `Notification.waitingThreads` intrusive queue migration — rejected
+  due to low cardinality; documented bounds analysis. **S4-H** (U-L07):
+  Documented `UntypedObject.allocate` prepend convention. **S4-I** (U-L08):
+  Simplified `SyscallId.toNat_ofNat` proof with collapsed match arms; documented
+  tactic limitation. **S4-J** (U-M27): Audited all `objects` iteration sites;
+  documented order-independence. **S4-K** (U-M17): `decodeCapPtr` now returns
+  `invalidCapPtr` for out-of-range values; updated roundtrip proofs. **S4-L**
+  (U-M23): Documented `cspaceRevoke`/`cspaceRevokeCdt` O(n)/O(maxObjects)
+  complexity. **S4-M** (U-M24): Documented `endpointCall` timeout absence
+  matching seL4 semantics. Zero sorry/axiom.
 - **S5–S7**: Pending.
 
 ### WS-Q1 workstream (Service Interface Simplification)

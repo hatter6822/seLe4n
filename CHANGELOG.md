@@ -1,3 +1,43 @@
+## [0.19.3] — WS-S Phase S4: Model Fidelity & Type Safety
+
+- S4-A (U-M04): Added `objectIndexBounded` advisory predicate with RPi5 growth
+  analysis (512 KB at maxObjects=65536). Added spec section 8 documenting
+  object capacity bounds, word-boundedness invariants, alignment model gap,
+  and IPC timeout semantics.
+- S4-B (U-M12): Added capacity enforcement to `retypeFromUntyped` — returns
+  `objectStoreCapacityExceeded` when object count reaches `maxObjects` (65536).
+  Added `objectStoreCapacityExceeded` and `invalidCapPtr` to `KernelError`.
+- S4-C (U-L02): `CNode.resolveSlot` now masks CPtr to 64 bits (`% machineWordMax`)
+  before guard extraction. Added `resolveSlot_mask_idempotent` theorem proving
+  the mask is identity for already-bounded values.
+- S4-D (U-L04): Changed `IpcMessage.registers` from `Array Nat` to
+  `Array RegValue`. Updated `extractMessageRegisters` to return `Array RegValue`
+  directly (removed `.map RegValue.val`). Updated all 40+ construction sites
+  and 9 display sites across kernel, test, and harness files.
+- S4-E (U-M15): Added `wordAligned`/`pageAligned` predicates and
+  `alignedRead`/`alignedWrite` advisory predicates to Machine.lean.
+  Proved `pageAligned_implies_wordAligned`, `wordAligned_zero`, `pageAligned_zero`.
+- S4-F (U-L01): Evaluated `RegisterFile.gpr : RegName → RegValue` Array
+  migration — rejected due to ~50 additional proof obligations. Documented
+  design rationale in Machine.lean.
+- S4-G (U-L06): Evaluated `Notification.waitingThreads` intrusive queue
+  migration — rejected (low cardinality, no ordering requirement, O(n) bounded
+  by ≤8 waiters). Documented analysis in Types.lean.
+- S4-H (U-L07): Documented `UntypedObject.allocate` prepend convention.
+- S4-I (U-L08): Simplified `SyscallId.toNat_ofNat` proof with collapsed match
+  arms. Documented tactic evaluation for case-enumeration automation.
+- S4-J (U-M27): Audited all `objects` iteration sites — confirmed order-
+  independence. Documented audit results at `SystemState.objects` field.
+- S4-K (U-M17): Changed `decodeCapPtr` to check `isWord64` bounds. Returns
+  `invalidCapPtr` for out-of-range values. Updated roundtrip proof with
+  `isWord64` precondition. Added `decodeCapPtr_ok_iff` and
+  `decodeCapPtr_ok_of_word64` theorems.
+- S4-L (U-M23): Documented `cspaceRevoke` O(n) and `cspaceRevokeCdt`
+  O(maxObjects) CDT traversal complexity.
+- S4-M (U-M24): Documented `endpointCall` timeout absence — matches seL4's
+  design where timeout monitoring is scheduler/fault-handler responsibility.
+- Zero sorry/axiom, all tests pass.
+
 ## [0.19.0] — WS-S Phase S1: Security Boundary & Rust Type Safety
 
 - Begin WS-S workstream (Pre-Benchmark Strengthening), addressing findings from

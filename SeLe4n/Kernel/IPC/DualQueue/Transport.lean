@@ -1618,7 +1618,26 @@ If a receiver is queued: handshake with receiver (transfer `msg`), then block ca
 WS-H1/M-02: The caller's `blockedOnReply` records the receiver's ThreadId as `replyTarget`.
 If no receiver queued: enqueue caller as sender with message stored in TCB.
 WS-H1/C-01: The caller is enqueued with `blockedOnCall` (not `blockedOnSend`) so that
-when a receiver later dequeues, the caller transitions to `blockedOnReply` instead of `.ready`. -/
+when a receiver later dequeues, the caller transitions to `blockedOnReply` instead of `.ready`.
+
+**S4-M: Timeout semantics.** seL4's `Call` operation provides no caller-side
+timeout mechanism. Once a caller enters `blockedOnCall` (or subsequently
+`blockedOnReply`), it remains blocked indefinitely until a server thread
+executes `Reply` or `ReplyRecv` targeting this caller. This matches seL4's
+design: timeout monitoring and recovery are the responsibility of the
+scheduler and fault handler, not the IPC subsystem.
+
+A misbehaving or crashed server can cause the caller to block forever. In
+production seL4 deployments, this is mitigated by:
+1. A watchdog/monitor thread that tracks call durations and faults
+   unresponsive servers.
+2. The fault handler endpoint (`TCB.faultHandler`) which receives fault
+   messages when threads are destroyed while blocked.
+3. Domain scheduling, which bounds the time any domain (and its threads)
+   can run before preemption.
+
+The abstract model faithfully captures this: there is no timeout parameter
+to `endpointCall` and no automatic unblocking mechanism. -/
 def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>

@@ -572,7 +572,22 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
 This is the local (single-CNode) revocation variant. For cross-CNode revocation
 using CDT traversal, see `cspaceRevokeCdt` and `cspaceRevokeCdtStrict`.
 
-The source slot remains present and sibling slots naming the same target are removed. -/
+The source slot remains present and sibling slots naming the same target are removed.
+
+**S4-L: Complexity analysis.** Local revocation performs a single `RHTable.fold`
+pass over the source CNode's slots, filtering entries whose `CapTarget` matches
+the source capability. This is O(n) in the slot count of the containing CNode.
+The slot count is bounded by the CNode's `2^radixWidth` capacity, which is at
+most `2^maxCSpaceDepth = 2^64` in theory but typically ≤ 1024 in practice.
+
+For CDT-based cross-CNode revocation (`cspaceRevokeCdt`), the traversal visits
+all descendants of the source node in the Capability Derivation Tree. This is
+O(d) where `d` is the total number of CDT descendants, bounded by
+`maxObjects` (65536 for RPi5). Each descendant triggers one `processRevokeNode`
+call (O(1) amortized via RHTable operations). Total worst-case: O(maxObjects)
+per revocation. The streaming BFS variant (`cspaceRevokeCdtStreaming`) uses
+fuel-bounded iteration with fuel = CDT edge count, providing the same
+O(maxObjects) bound with guaranteed termination. -/
 def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match cspaceLookupSlot addr st with

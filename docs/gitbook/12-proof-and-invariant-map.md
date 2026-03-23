@@ -1382,7 +1382,8 @@ Determinism & error exclusivity:
 - `decodeSyscallArgs_deterministic` — identical inputs produce identical results
 - `decodeSyscallId_error_iff` — fails iff `SyscallId.ofNat?` returns `none`
 - `decodeMsgInfo_error_iff` — fails iff `MessageInfo.decode` returns `none`
-- `decodeCapPtr_always_ok` — every register value decodes to some CPtr
+- `decodeCapPtr_ok_iff` — S4-K: decodeCapPtr succeeds iff register value is word64-bounded
+- `decodeCapPtr_ok_of_word64` — S4-K: decodeCapPtr succeeds for word64-bounded values
 - `validateRegBound_ok_iff` / `validateRegBound_error_iff` — bounds iff-theorems
 
 **Completed syscall entry point and dispatch (WS-J1-C, v0.15.6; refinements v0.15.7):**

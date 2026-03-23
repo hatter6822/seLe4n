@@ -704,7 +704,7 @@ private def chain12IpcCapTransfer : IO Unit := do
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
 
   -- Step 2: Sender sends with caps (immediate rendezvous)
-  let msg : IpcMessage := { registers := #[42], caps := #[cap1, cap2, cap3], badge := none }
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[cap1, cap2, cap3], badge := none }
   let (summary, st2) ← expectOkState "chain12: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
@@ -754,7 +754,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let (_, st1) ← expectOkState "chain13: receiver blocks"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
 
-  let msg : IpcMessage := { registers := #[99], caps := #[cap1], badge := none }
+  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[cap1], badge := none }
   let (summary, st2) ← expectOkState "chain13: send without grant right"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg noGrantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
@@ -816,7 +816,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
 
   -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
   let badgeVal : SeLe4n.Badge := ⟨0xCAFE⟩
-  let msg : IpcMessage := { registers := #[77], caps := #[cap1, cap2], badge := some badgeVal }
+  let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[cap1, cap2], badge := some badgeVal }
   let (summary, st2) ← expectOkState "chain14: send with badge + caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
@@ -843,7 +843,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let regCheck := match st2.objects[receiver.toObjId]? with
     | some (.tcb tcb) =>
         match tcb.pendingMessage with
-        | some recvMsg => recvMsg.registers == #[77]
+        | some recvMsg => recvMsg.registers == #[⟨77⟩]
         | none => false
     | _ => false
   expect "chain14: receiver got register payload" regCheck

@@ -18,9 +18,10 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 5. [Completed Workstream Portfolio (WS-G) and Next Steps](#5-completed-workstream-portfolio-ws-g-and-next-steps)
 6. [Hardware Target: Raspberry Pi 5](#6-hardware-target-raspberry-pi-5)
 7. [Acceptance Expectations](#7-acceptance-expectations)
-8. [Non-Negotiable Baseline Contracts](#8-non-negotiable-baseline-contracts)
-9. [Audit Baselines](#9-audit-baselines)
-10. [Security and Threat Model](#10-security-and-threat-model)
+8. [Model Fidelity & Type Safety (WS-S Phase S4)](#8-model-fidelity--type-safety-ws-s-phase-s4)
+9. [Non-Negotiable Baseline Contracts](#9-non-negotiable-baseline-contracts)
+10. [Audit Baselines](#10-audit-baselines)
+11. [Security and Threat Model](#11-security-and-threat-model)
 
 ---
 
@@ -339,7 +340,53 @@ Every milestone-moving PR should include:
 
 ---
 
-## 8. Non-Negotiable Baseline Contracts
+## 8. Model Fidelity & Type Safety (WS-S Phase S4)
+
+### 8.1 Object Capacity Bounds
+
+The abstract model uses unbounded `Nat` for object indices. For the RPi5
+hardware target, the expected maximum object count is `maxObjects = 65536`.
+
+- **objectIndex growth**: The `objectIndex` list consumes at most
+  `65536 × 8 = 512 KB` at maximum capacity — well within RPi5's 8 GB RAM.
+- **Advisory predicate**: `objectIndexBounded st` asserts
+  `st.objectIndex.length ≤ maxObjects` (defined in `Model/State.lean`).
+- **Capacity enforcement**: `storeObject` returns `objectStoreCapacityExceeded`
+  when the object count reaches `maxObjects`, preventing unbounded growth.
+
+### 8.2 Word-Boundedness Invariants
+
+The Lean model bridges abstract `Nat` semantics to 64-bit hardware:
+
+- **Register values**: `RegValue` wraps `Nat` with `isWord64` validity predicate.
+- **Badges**: `Badge.ofNatMasked` masks to `2^64` at construction, proven valid.
+- **Access rights**: `AccessRightSet.ofNat` masks to `2^5` (5-bit field).
+- **IPC messages**: `IpcMessage.registers` uses `Array RegValue` (typed values).
+- **CPtr resolution**: `resolveSlot` masks input to 64 bits before guard extraction.
+
+### 8.3 Memory Alignment Model Gap
+
+The abstract model uses `Memory := PAddr → UInt8` (byte-addressable). Real ARM64
+hardware requires word-aligned access for register-width loads/stores:
+
+- **Alignment predicates**: `alignedRead`/`alignedWrite` in `Machine.lean` document
+  the word-alignment requirement.
+- **Alignment faults**: Not modeled — the abstract `Memory` function accepts any
+  address. Hardware binding (WS-T) must enforce alignment via the platform contract.
+- This is a documented model gap, not a soundness issue: proofs about memory
+  semantics hold for the abstract model; hardware binding adds the alignment
+  constraint as an additional platform-level precondition.
+
+### 8.4 IPC Timeout Semantics
+
+seL4's `Call` operation provides no caller-side timeout. Once blocked, a caller
+remains blocked until a server executes `Reply`/`ReplyRecv`. Timeout monitoring
+is the responsibility of the scheduler/fault handler, not the IPC subsystem.
+This matches the seL4 specification and is faithfully modeled.
+
+---
+
+## 9. Non-Negotiable Baseline Contracts
 
 Unless a PR explicitly proposes spec-level change control, preserve:
 
@@ -358,9 +405,9 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 9. Audit Baselines
+## 10. Audit Baselines
 
-### 9.1 Active Baselines
+### 10.1 Active Baselines
 
 | Artifact | Path |
 |----------|------|
@@ -368,7 +415,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 | Codebase audit v2 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`](../dev_history/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Execution baseline (WS-F) | [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) |
 
-### 9.2 Prior Baselines (completed)
+### 10.2 Prior Baselines (completed)
 
 | Artifact | Path |
 |----------|------|
@@ -377,13 +424,13 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 | Findings baseline (v0.11.0) | [`docs/dev_history/audits/AUDIT_v0.11.0.md`](../dev_history/audits/AUDIT_v0.11.0.md) |
 | Execution baseline (WS-D) | [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
 
-### 9.3 Historical Baselines
+### 10.3 Historical Baselines
 
 Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits/).
 
 ---
 
-## 10. Security and Threat Model
+## 11. Security and Threat Model
 
 Security assumptions and trust boundaries are documented in
 [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
