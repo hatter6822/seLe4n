@@ -4,14 +4,14 @@ version = 4
 
 [[package]]
 name = "sele4n-abi"
-version = "0.18.7"
+version = "0.20.2"
 dependencies = [
  "sele4n-types",
 ]
 
 [[package]]
 name = "sele4n-sys"
-version = "0.18.7"
+version = "0.20.2"
 dependencies = [
  "sele4n-abi",
  "sele4n-types",
@@ -19,4 +19,4 @@ dependencies = [
 
 [[package]]
 name = "sele4n-types"
-version = "0.18.7"
+version = "0.20.2"

@@ -14,7 +14,6 @@ use sele4n_abi::args::{VSpaceMapArgs, VSpaceUnmapArgs, PagePerms};
 ///
 /// Enforces W^X: the WRITE and EXECUTE permission bits cannot both be set.
 /// Returns `PolicyDenied` if the W^X constraint is violated.
-#[must_use]
 #[inline]
 pub fn vspace_map(
     vspace_cap: CPtr,
@@ -26,7 +25,7 @@ pub fn vspace_map(
     // W^X pre-check (client-side, before syscall)
     perms.validate_wx()?;
 
-    let args = VSpaceMapArgs { asid, vaddr, paddr, perms: perms.raw() as u64 };
+    let args = VSpaceMapArgs { asid, vaddr, paddr, perms };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: vspace_cap,
@@ -39,7 +38,6 @@ pub fn vspace_map(
 /// Unmap a page from a virtual address space.
 ///
 /// Lean: `apiVspaceUnmap` (API.lean) — requires `.write` right on `vspace_cap`.
-#[must_use]
 #[inline]
 pub fn vspace_unmap(
     vspace_cap: CPtr,
@@ -57,7 +55,6 @@ pub fn vspace_unmap(
 }
 
 /// Convenience: map a read-only page.
-#[must_use]
 pub fn vspace_map_read_only(
     vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {
@@ -65,7 +62,6 @@ pub fn vspace_map_read_only(
 }
 
 /// Convenience: map a read-write page.
-#[must_use]
 pub fn vspace_map_read_write(
     vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {
@@ -73,7 +69,6 @@ pub fn vspace_map_read_write(
 }
 
 /// Convenience: map a read-execute page (code).
-#[must_use]
 pub fn vspace_map_read_execute(
     vspace_cap: CPtr, asid: Asid, vaddr: VAddr, paddr: PAddr,
 ) -> KernelResult<SyscallResponse> {

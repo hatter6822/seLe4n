@@ -13,7 +13,6 @@ use sele4n_abi::args::{LifecycleRetypeArgs, TypeTag};
 /// The `type_tag` specifies the target object type (0=TCB, 1=Endpoint,
 /// 2=Notification, 3=CNode, 4=VSpaceRoot, 5=Untyped). The `size` is a
 /// hint for variable-size objects (e.g., CNode radix width).
-#[must_use]
 #[inline]
 pub fn lifecycle_retype(
     untyped_cap: CPtr,
@@ -36,31 +35,26 @@ pub fn lifecycle_retype(
 }
 
 /// Convenience: retype to create a TCB.
-#[must_use]
 pub fn retype_tcb(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
     lifecycle_retype(untyped_cap, target, TypeTag::Tcb, 0)
 }
 
 /// Convenience: retype to create an Endpoint.
-#[must_use]
 pub fn retype_endpoint(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
     lifecycle_retype(untyped_cap, target, TypeTag::Endpoint, 0)
 }
 
 /// Convenience: retype to create a Notification.
-#[must_use]
 pub fn retype_notification(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
     lifecycle_retype(untyped_cap, target, TypeTag::Notification, 0)
 }
 
 /// Convenience: retype to create a CNode with the given radix width.
-#[must_use]
 pub fn retype_cnode(untyped_cap: CPtr, target: ObjId, radix_bits: u64) -> KernelResult<SyscallResponse> {
     lifecycle_retype(untyped_cap, target, TypeTag::CNode, radix_bits)
 }
 
 /// Convenience: retype to create a VSpaceRoot.
-#[must_use]
 pub fn retype_vspace_root(untyped_cap: CPtr, target: ObjId) -> KernelResult<SyscallResponse> {
     lifecycle_retype(untyped_cap, target, TypeTag::VSpaceRoot, 0)
 }

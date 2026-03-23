@@ -65,10 +65,13 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 /// Encodes the request into registers, invokes the syscall trap, and
 /// decodes the response. This is the primary entry point for all
 /// high-level wrappers in `sele4n-sys`.
+///
+/// T3-A: Returns `InvalidMessageInfo` if the MessageInfo label exceeds
+/// the 55-bit encoding limit (detected during encode).
 #[inline]
 #[allow(unsafe_code)]
 pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {
-    let mut regs = encode_syscall(&req);
+    let mut regs = encode_syscall(&req)?;
     // SAFETY: `encode_syscall` produces a valid register array from a typed
     // `SyscallRequest`. The kernel validates all parameters on entry. This is
     // the single syscall boundary in the entire library.

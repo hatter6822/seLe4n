@@ -53,7 +53,6 @@ impl IpcMessage {
 /// Send a message to an endpoint.
 ///
 /// Lean: `apiEndpointSend` (API.lean) — requires `.write` right.
-#[must_use]
 #[inline]
 pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo {
@@ -74,7 +73,6 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 /// Lean: `apiEndpointReceive` (API.lean) — requires `.read` right.
 ///
 /// Returns the received badge and response registers.
-#[must_use]
 #[inline]
 pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
     let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
@@ -90,7 +88,6 @@ pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
 /// Call an endpoint (send + blocking receive in one syscall).
 ///
 /// Lean: `apiEndpointCall` (API.lean) — requires `.write` right.
-#[must_use]
 #[inline]
 pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo {
@@ -109,7 +106,6 @@ pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 /// Reply to a caller (one-shot reply capability).
 ///
 /// Lean: `apiEndpointReply` (API.lean) — requires `.write` right.
-#[must_use]
 #[inline]
 pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo {
@@ -135,7 +131,6 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
 /// Lean: `notificationSignal` (Endpoint.lean) — badge comes from
 /// the resolved capability, not from message registers.
 /// seL4 equivalent: `seL4_Signal(dest)`.
-#[must_use]
 #[inline]
 pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
@@ -150,7 +145,6 @@ pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
 /// Wait on a notification object. Blocks until signaled.
 ///
 /// Returns the accumulated badge value.
-#[must_use]
 #[inline]
 pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
     let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };

@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.19.6` |
+| Version | `0.20.2` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 57,506 across 100 Lean files |
-| Test LoC | 7,559 across 10 suites |
-| Proved declarations | 1,756 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) and [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — dual comprehensive audits (115+ findings, 0 Critical) |
-| Active workstream | **WS-S PORTFOLIO COMPLETE** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks, v0.19.0–v0.19.6). Prior: **WS-R COMPLETE** (v0.18.0–v0.18.7), **WS-Q COMPLETE** (v0.17.7–v0.17.14), WS-N, WS-M, WS-L, WS-K, WS-J1 — all COMPLETE. |
+| Production LoC | 57,939 across 100 Lean files |
+| Test LoC | 7,561 across 10 suites |
+| Proved declarations | 1,775 theorem/lemma declarations (zero sorry/axiom) |
+| Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
+| Active workstream | **WS-T IN PROGRESS** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). T1–T3 complete. Prior: **WS-S COMPLETE** (v0.19.0–v0.19.6), **WS-R COMPLETE** (v0.18.0–v0.18.7), WS-Q through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

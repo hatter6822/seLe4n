@@ -1,3 +1,35 @@
+## [0.20.2] — WS-T Phase T3: Rust ABI Hardening
+
+- T3-A (M-NEW-9): Changed `MessageInfo::encode()` return type from `u64` to
+  `Result<u64, KernelError>`. Labels >= 2^55 now return `InvalidMessageInfo`
+  instead of silently truncating. Added `MAX_LABEL` constant. Updated
+  `MessageInfo::new()` to also reject oversized labels. Propagated Result
+  through `encode_syscall()` and `invoke_syscall()`. Closes M-NEW-9.
+- T3-B (M-NEW-9): Added MessageInfo label boundary conformance tests: roundtrip
+  at 0 and 2^55-1, error at 2^55 and u64::MAX. Added `encode_syscall` rejection
+  test for oversized labels.
+- T3-C (M-NEW-10): Changed `VSpaceMapArgs.perms` field from raw `u64` to typed
+  `PagePerms`. Decode now validates via `PagePerms::try_from()`, rejecting values
+  > 0x1F at the ABI boundary. Closes M-NEW-10.
+- T3-D (M-NEW-10): Added VSpaceMapArgs perms roundtrip conformance tests for all
+  32 valid values (0x00–0x1F) and rejection tests for 0x20, 0xFF, u64::MAX.
+- T3-E (M-NEW-11): Changed `ServiceRegisterArgs` `requires_grant` decode from
+  permissive `regs[4] != 0` to strict `match regs[4] { 0 => false, 1 => true,
+  _ => error }`. Corrupted register contents no longer silently accepted as
+  `true`. Closes M-NEW-11.
+- T3-F (M-NEW-11): Added ServiceRegisterArgs strict bool conformance tests:
+  0 → false, 1 → true, 2 and u64::MAX → rejected.
+- T3-G: Verified `#![deny(unsafe_code)]` crate-level attribute already present
+  in `sele4n-abi/src/lib.rs` (added in WS-S S1-H). Three targeted
+  `#[allow(unsafe_code)]` annotations in `trap.rs`: both `raw_syscall` variants
+  (aarch64 and mock) and `invoke_syscall` (calls unsafe `raw_syscall`). No
+  additional changes needed.
+- T3-H: All Rust tests pass — 119 tests across 4 crates (50 sele4n-abi unit,
+  32 conformance, 12 sele4n-sys, 25 sele4n-types). Zero failures.
+- Version bumped to 0.20.2 across lakefile.toml, Cargo.toml workspace, README
+  badge, codebase_map.json, SELE4N_SPEC.md, gitbook, and i18n READMEs.
+- Zero sorry/axiom. Full `test_full.sh` passes. All Rust tests pass.
+
 ## [0.20.1] — WS-T Phase T2: Model & CDT Integrity
 
 - T2-A (H-1): Added `AccessRightSet.ofList_valid` theorem proving that `ofList`

@@ -17,10 +17,11 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-S) are complete. WS-T Phase T1 (Benchmarking Blockers) is complete;
-phases T2–T8 continue the deep-dive audit remediation.
+through WS-S) are complete. WS-T Phases T1–T3 complete (Benchmarking Blockers,
+Model & CDT Integrity, Rust ABI Hardening); phases T4–T8 continue the deep-dive
+audit remediation.
 
-### WS-T workstream (Deep-Dive Audit Remediation) — Phase T1 COMPLETE, T2–T8 IN PROGRESS
+### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T3 COMPLETE, T4–T8 IN PROGRESS
 
 WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
 MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
@@ -44,6 +45,15 @@ v0.20.0–v0.20.7. See
   1 LOW finding: CNode `guardBounded` predicate added to `wellFormed` (L-NEW-4).
   Documentation-only: `attachSlotToCdtNode` ordering rationale (M-ST-2). Zero
   sorry, zero axiom. All 12 sub-tasks complete.
+
+- **T3 (v0.20.2) — COMPLETE**: Rust ABI Hardening. Closed 3 MEDIUM findings:
+  `MessageInfo::encode()` now returns `Result` with 55-bit label bound check
+  preventing silent truncation (M-NEW-9). `VSpaceMapArgs.perms` changed from
+  raw `u64` to typed `PagePerms` with decode-time validation (M-NEW-10).
+  `ServiceRegisterArgs` `requires_grant` decode changed from permissive
+  `!= 0` to strict `match { 0 => false, 1 => true, _ => error }` (M-NEW-11).
+  `#![deny(unsafe_code)]` confirmed present (WS-S S1-H). 119 Rust tests pass
+  (50 unit + 32 conformance + 12 sys + 25 types). All 8 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

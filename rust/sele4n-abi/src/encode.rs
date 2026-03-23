@@ -6,7 +6,7 @@
 //! - x2–x5: message registers [0..3]
 //! - x7: syscall number (SyscallId.toNat)
 
-use sele4n_types::{CPtr, SyscallId};
+use sele4n_types::{CPtr, SyscallId, KernelError};
 use crate::MessageInfo;
 
 /// A syscall request, ready to be encoded into registers.
@@ -37,17 +37,20 @@ pub const REG_SYSCALL_NUM: usize = 6; // x7 (mapped to array index 6)
 ///
 /// The syscall number is placed at index 6, corresponding to x7 in the
 /// ARM64 convention (seLe4n uses x7, not x8).
+///
+/// T3-A: Returns `InvalidMessageInfo` if the MessageInfo label exceeds
+/// the 55-bit encoding limit.
 #[inline]
-pub fn encode_syscall(req: &SyscallRequest) -> [u64; 7] {
-    [
-        req.cap_addr.raw(),       // x0: CPtr
-        req.msg_info.encode(),    // x1: MessageInfo
-        req.msg_regs[0],          // x2: msg_reg[0]
-        req.msg_regs[1],          // x3: msg_reg[1]
-        req.msg_regs[2],          // x4: msg_reg[2]
-        req.msg_regs[3],          // x5: msg_reg[3]
-        req.syscall_id.to_u64(),  // x7: syscall number
-    ]
+pub fn encode_syscall(req: &SyscallRequest) -> Result<[u64; 7], KernelError> {
+    Ok([
+        req.cap_addr.raw(),              // x0: CPtr
+        req.msg_info.encode()?,          // x1: MessageInfo
+        req.msg_regs[0],                 // x2: msg_reg[0]
+        req.msg_regs[1],                 // x3: msg_reg[1]
+        req.msg_regs[2],                 // x4: msg_reg[2]
+        req.msg_regs[3],                 // x5: msg_reg[3]
+        req.syscall_id.to_u64(),         // x7: syscall number
+    ])
 }
 
 #[cfg(test)]
@@ -62,7 +65,7 @@ mod tests {
             msg_regs: [10, 20, 0, 0],
             syscall_id: SyscallId::Send,
         };
-        let regs = encode_syscall(&req);
+        let regs = encode_syscall(&req).unwrap();
         assert_eq!(regs[0], 100);  // x0 = CPtr
         assert_eq!(regs[1], 2);    // x1 = MessageInfo(length=2)
         assert_eq!(regs[2], 10);   // x2 = msg_reg[0]
@@ -78,7 +81,18 @@ mod tests {
             msg_regs: [1, 2, 3, 4], // srcSlot, dstSlot, rights, badge
             syscall_id: SyscallId::CSpaceMint,
         };
-        let regs = encode_syscall(&req);
+        let regs = encode_syscall(&req).unwrap();
         assert_eq!(regs[6], 4); // CSpaceMint = 4
+    }
+
+    #[test]
+    fn encode_rejects_oversized_label() {
+        let req = SyscallRequest {
+            cap_addr: CPtr::from(0u64),
+            msg_info: MessageInfo { length: 0, extra_caps: 0, label: 1u64 << 55 },
+            msg_regs: [0; 4],
+            syscall_id: SyscallId::Send,
+        };
+        assert_eq!(encode_syscall(&req), Err(KernelError::InvalidMessageInfo));
     }
 }
