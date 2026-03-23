@@ -31,18 +31,19 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Generate codebase map
-        run: ./scripts/generate_codebase_map.py --pretty
-
-      - name: Check for changes
+      - name: Check for source changes
         id: check
         run: |
-          if git diff --quiet -- docs/codebase_map.json; then
+          if ./scripts/generate_codebase_map.py --pretty --check; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "docs/codebase_map.json already up to date"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Generate codebase map
+        if: steps.check.outputs.changed == 'true'
+        run: ./scripts/generate_codebase_map.py --pretty
 
       # R8-B (I-M02): Create a PR for review instead of auto-pushing to main.
       # This prevents race conditions and ensures all changes to main are reviewed.
