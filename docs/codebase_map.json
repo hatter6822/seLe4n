@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-s6-hardware-Z4PUa",
-      "commit_sha": "27534fff4609f7f471ffb76a051352561e34861d",
-      "tree_sha": "3cfd92567ffb55ba0a3eddfb174acf138b5c1019",
-      "committed_at_utc": "2026-03-22T23:39:01-04:00"
+      "commit_sha": "307c3e276412f6d033a705d9dabafaa0af772a47",
+      "tree_sha": "ef900b7b8e1fc974f3aab18b1bd433b47eedc228",
+      "committed_at_utc": "2026-03-23T04:15:51+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bc78c0215948a46b3558feb7c38b6cab1a104c25e16d9768d378a5f1a1d4119a"
+    "source_digest": "94b6dca5629d8e266f16e3afcad8673b89c2970a81452e180b59a761226f4014"
   },
   "summary": {
     "module_count": 110,
@@ -27,7 +27,7 @@
     "version": "0.19.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 57505,
+    "production_loc": 57506,
     "test_files": 10,
     "test_loc": 7559,
     "proved_theorem_lemma_decls": 1756,
@@ -24204,7 +24204,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1644,
+          "line": 1645,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -24213,7 +24213,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 1728,
+          "line": 1729,
           "called": [
             "checkInvariants"
           ]
@@ -24221,7 +24221,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 1826,
+          "line": 1827,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -24230,7 +24230,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1906,
+          "line": 1907,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -24260,13 +24260,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1949,
+          "line": 1950,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 2000,
+          "line": 2001,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -24274,7 +24274,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2014,
+          "line": 2015,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -24282,13 +24282,13 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2025,
+          "line": 2026,
           "called": []
         },
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2078,
+          "line": 2079,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
