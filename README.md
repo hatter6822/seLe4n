@@ -76,7 +76,7 @@ architectural improvements compared to other microkernels:
 | **Test Lean LoC** | 7,561 across 10 test suites |
 | **Proved declarations** | 1,775 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
+| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`

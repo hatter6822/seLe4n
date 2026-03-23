@@ -3,7 +3,7 @@
   "current_state_bullets": [
     "**Version:** 0.20.2 (Lean v4.28.0).",
     "**Codebase metrics:** 57,939 production LoC across 100 files; 7,561 test LoC across 10 suites; 1,775 theorem/lemma declarations (zero sorry/axiom).",
-    "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical).",
+    "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical).",
     "**Active workstream:** WS-T Deep-Dive Audit Remediation — Phases T1–T3 COMPLETE, T4–T8 IN PROGRESS (8 phases, 94 sub-tasks, v0.20.0–v0.20.7). All prior portfolios (WS-B through WS-S) completed.",
     "**Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",
