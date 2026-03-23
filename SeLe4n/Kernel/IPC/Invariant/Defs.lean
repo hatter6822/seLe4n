@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.IPC.DualQueue
+import SeLe4n.Kernel.IPC.Invariant.Acyclicity
 
 namespace SeLe4n.Kernel
 
@@ -142,14 +143,20 @@ def dualQueueEndpointWellFormed (epId : SeLe4n.ObjId) (st : SystemState) : Prop 
   | _ => True  -- Non-endpoint objects trivially satisfy
 
 /-- WS-H5: System-level dual-queue invariant — all endpoints in the system
-maintain dual-queue well-formedness AND system-wide TCB link integrity holds.
-tcbQueueLinkIntegrity is a system-level property (not per-endpoint) that
-ensures every TCB's queueNext/queuePrev links are consistent. -/
+maintain dual-queue well-formedness, system-wide TCB link integrity holds,
+and queue chains are acyclic.
+
+- `tcbQueueLinkIntegrity`: every queueNext/queuePrev link has a matching
+  reverse link (doubly-linked consistency).
+- `tcbQueueChainAcyclic` (T4-D): no thread can reach itself via queueNext
+  links, preventing self-loops, 2-cycles, and N-cycles. This enables
+  the `prevTid ≠ nextTid` derivation needed for mid-queue removal. -/
 def dualQueueSystemInvariant (st : SystemState) : Prop :=
   (∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
     st.objects[epId]? = some (.endpoint ep) →
     dualQueueEndpointWellFormed epId st) ∧
-  tcbQueueLinkIntegrity st
+  tcbQueueLinkIntegrity st ∧
+  tcbQueueChainAcyclic st
 
 /-- WS-H12c: IPC invariant — all notifications satisfy notification queue
 well-formedness. The former `endpointInvariant` conjunct (vacuous `True`
