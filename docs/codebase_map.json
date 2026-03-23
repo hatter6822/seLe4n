@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-workstream-docs-DM0DW",
-      "commit_sha": "87733e755e9dc5d0187cfbcbb4d0c645848709aa",
-      "tree_sha": "c85bd584136a8b8fe757139150a0a923c9c00370",
-      "committed_at_utc": "2026-03-23T00:46:44-04:00"
+      "branch": "main",
+      "commit_sha": "695bba7e8072993cedab5028ee6c87fccf321c25",
+      "tree_sha": "ec017cb3b2cfc2bbc19830489924ce0e289ce5df",
+      "committed_at_utc": "2026-03-23T02:15:49-04:00"
     }
   },
   "source_sync": {
