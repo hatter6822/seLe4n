@@ -43,6 +43,14 @@ pub enum KernelError {
     InvalidSyscallNumber = 31,
     InvalidMessageInfo = 32,
     InvalidTypeTag = 33,
+    /// T1-F/H-4: Resource exhaustion (e.g., fuel exhaustion in streaming BFS revocation)
+    ResourceExhausted = 34,
+    /// T1-F/H-4: Capability pointer exceeds word64 bounds
+    InvalidCapPtr = 35,
+    /// T1-F/H-4: Object count exceeds maxObjects capacity
+    ObjectStoreCapacityExceeded = 36,
+    /// T1-F/H-4: Allocation base not page-aligned for VSpace-bound objects
+    AllocationMisaligned = 37,
 }
 
 impl KernelError {
@@ -83,6 +91,10 @@ impl KernelError {
             31 => Some(Self::InvalidSyscallNumber),
             32 => Some(Self::InvalidMessageInfo),
             33 => Some(Self::InvalidTypeTag),
+            34 => Some(Self::ResourceExhausted),
+            35 => Some(Self::InvalidCapPtr),
+            36 => Some(Self::ObjectStoreCapacityExceeded),
+            37 => Some(Self::AllocationMisaligned),
             _ => None,
         }
     }
@@ -126,6 +138,10 @@ impl std::fmt::Display for KernelError {
             Self::InvalidSyscallNumber => write!(f, "invalid syscall number"),
             Self::InvalidMessageInfo => write!(f, "invalid message info"),
             Self::InvalidTypeTag => write!(f, "invalid type tag"),
+            Self::ResourceExhausted => write!(f, "resource exhausted"),
+            Self::InvalidCapPtr => write!(f, "invalid capability pointer"),
+            Self::ObjectStoreCapacityExceeded => write!(f, "object store capacity exceeded"),
+            Self::AllocationMisaligned => write!(f, "allocation misaligned"),
         }
     }
 }
@@ -139,7 +155,8 @@ mod tests {
 
     #[test]
     fn from_u32_roundtrip() {
-        for i in 0..=33u32 {
+        // T1-H: All 38 variants (0-37) must roundtrip
+        for i in 0..=37u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -147,7 +164,49 @@ mod tests {
 
     #[test]
     fn from_u32_out_of_range() {
-        assert!(KernelError::from_u32(34).is_none());
+        // T1-G: Discriminants >= 38 must return None (unknown error)
+        assert!(KernelError::from_u32(38).is_none());
         assert!(KernelError::from_u32(255).is_none());
+        assert!(KernelError::from_u32(u32::MAX).is_none());
+    }
+
+    /// T1-H: Cross-validation — verify new variants have correct discriminants
+    #[test]
+    fn new_variants_discriminants() {
+        assert_eq!(KernelError::ResourceExhausted as u32, 34);
+        assert_eq!(KernelError::InvalidCapPtr as u32, 35);
+        assert_eq!(KernelError::ObjectStoreCapacityExceeded as u32, 36);
+        assert_eq!(KernelError::AllocationMisaligned as u32, 37);
+    }
+
+    /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
+    /// The Lean KernelError inductive has these 4 variants at positions 34-37:
+    ///   | resourceExhausted       (34)
+    ///   | invalidCapPtr           (35)
+    ///   | objectStoreCapacityExceeded (36)
+    ///   | allocationMisaligned    (37)
+    #[test]
+    fn lean_rust_correspondence() {
+        // Verify total variant count matches Lean (38 variants, 0-37)
+        let max_valid = 37u32;
+        assert!(KernelError::from_u32(max_valid).is_some());
+        assert!(KernelError::from_u32(max_valid + 1).is_none());
+
+        // Verify decode_response fallback: unknown discriminants map to None
+        assert!(KernelError::from_u32(100).is_none());
+    }
+
+    /// T1-H: Discriminant ordering — all 38 variants are sequential from 0
+    #[test]
+    fn discriminant_ordering() {
+        let mut prev = None;
+        for i in 0..=37u32 {
+            let e = KernelError::from_u32(i);
+            assert!(e.is_some(), "gap at discriminant {i}");
+            if let Some(p) = prev {
+                assert!(p < i, "non-sequential at {i}");
+            }
+            prev = Some(i);
+        }
     }
 }

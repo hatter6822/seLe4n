@@ -30,8 +30,8 @@ pub struct SyscallResponse {
 #[inline]
 pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
     if regs[0] != 0 {
-        // Truncate u64 → u32 is safe: kernel error codes are 0–33.
-        // Unrecognized codes map to InvalidSyscallNumber (protocol violation).
+        // Truncate u64 → u32 is safe: kernel error codes are 0–37 (T1-G).
+        // Unrecognized codes (≥38) map to InvalidSyscallNumber (protocol violation).
         let err = KernelError::from_u32(regs[0] as u32)
             .unwrap_or(KernelError::InvalidSyscallNumber);
         return Err(err);

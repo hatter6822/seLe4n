@@ -157,6 +157,86 @@ def frozenSetCurrentThread (tid : Option SeLe4n.ThreadId)
   .ok ((), { st with scheduler := { st.scheduler with current := tid } })
 
 -- ============================================================================
+-- T1-A: Frozen Queue Push Tail (M-FRZ-1/2/3)
+-- ============================================================================
+
+/-- T1-A: Internal helper — compute the updated objects map for queue push tail.
+Returns only the modified `FrozenMap`, not the full state. This separation
+makes preservation proofs trivial: the caller wraps in `{ st with objects }`. -/
+def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObject)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
+    : Except KernelError (FrozenMap SeLe4n.ObjId FrozenKernelObject) :=
+  let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+  match q.tail with
+  | none =>
+      let q' : IntrusiveQueue := { head := some tid, tail := some tid }
+      let ep' : Endpoint := if isReceiveQ
+        then { ep with receiveQ := q' }
+        else { ep with sendQ := q' }
+      let tcb' := { tcb with
+        queuePrev := none
+        queuePPrev := some .endpointHead
+        queueNext := none }
+      match objects.set endpointId (.endpoint ep') with
+      | some objects1 =>
+          match objects1.set tid.toObjId (.tcb tcb') with
+          | some objects2 => .ok objects2
+          | none => .error .objectNotFound
+      | none => .error .objectNotFound
+  | some tailTid =>
+      match objects.get? tailTid.toObjId with
+      | some (.tcb tailTcb) =>
+          let q' : IntrusiveQueue := { head := q.head, tail := some tid }
+          let ep' : Endpoint := if isReceiveQ
+            then { ep with receiveQ := q' }
+            else { ep with sendQ := q' }
+          let tailTcb' := { tailTcb with queueNext := some tid }
+          let tcb' := { tcb with
+            queuePrev := some tailTid
+            queuePPrev := some (.tcbNext tailTid)
+            queueNext := none }
+          match objects.set endpointId (.endpoint ep') with
+          | some objects1 =>
+              match objects1.set tailTid.toObjId (.tcb tailTcb') with
+              | some objects2 =>
+                  match objects2.set tid.toObjId (.tcb tcb') with
+                  | some objects3 => .ok objects3
+                  | none => .error .objectNotFound
+              | none => .error .objectNotFound
+          | none => .error .objectNotFound
+      | _ => .error .objectNotFound
+
+def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st : FrozenSystemState)
+    : Except KernelError FrozenSystemState :=
+  match st.objects.get? endpointId with
+  | some (.endpoint ep) =>
+      match frozenLookupTcb st tid with
+      | none => .error .objectNotFound
+      | some tcb =>
+          match frozenQueuePushTailObjects st.objects endpointId isReceiveQ tid ep tcb with
+          | .ok objects' => .ok { st with objects := objects' }
+          | .error e => .error e
+  | some _ => .error .invalidCapability
+  | none => .error .objectNotFound
+
+/-- T1-E: Key structural lemma: `frozenQueuePushTail` only modifies `objects`.
+Every success path returns `{ st with objects := _ }`. -/
+theorem frozenQueuePushTail_only_modifies_objects
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
+    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
+    ∃ objects', st' = { st with objects := objects' } := by
+  simp only [frozenQueuePushTail, frozenLookupTcb] at hOk
+  -- Split all nested matches; multiple rounds needed because split only
+  -- processes the first goal, leaving subgoals with unsplit matches
+  repeat split at hOk
+  all_goals (repeat split at hOk)
+  -- Close goals: error paths close by simp (derives False), success paths by injection
+  all_goals (first | (simp at hOk; done) | (injection hOk with hEq; exact ⟨_, hEq.symm⟩))
+
+-- ============================================================================
 -- Q7-A: Core Theorems
 -- ============================================================================
 

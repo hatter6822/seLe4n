@@ -204,4 +204,64 @@ theorem frozenStoreObject_preserves_objectIndexSet
   | some objects' => simp [hSet] at hOk; rw [← hOk]
   | none => simp [hSet] at hOk
 
+-- ============================================================================
+-- T1-E: frozenQueuePushTail Preservation Theorems (M-FRZ-1/2/3)
+-- ============================================================================
+
+/-- T1-E: `frozenQueuePushTail` preserves the scheduler state.
+All preservation proofs follow from `frozenQueuePushTail_only_modifies_objects`:
+the function only modifies `st.objects`, so all other fields are preserved. -/
+theorem frozenQueuePushTail_preserves_scheduler
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
+    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
+    st'.scheduler = st.scheduler := by
+  obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
+  subst hSt; rfl
+
+/-- T1-E: `frozenQueuePushTail` preserves the machine state. -/
+theorem frozenQueuePushTail_preserves_machine
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
+    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
+    st'.machine = st.machine := by
+  obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
+  subst hSt; rfl
+
+/-- T1-E: `frozenQueuePushTail` preserves the ASID table. -/
+theorem frozenQueuePushTail_preserves_asidTable
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
+    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
+    st'.asidTable = st.asidTable := by
+  obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
+  subst hSt; rfl
+
+/-- T1-E: `frozenQueuePushTail` preserves the service registry. -/
+theorem frozenQueuePushTail_preserves_serviceRegistry
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
+    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
+    st'.serviceRegistry = st.serviceRegistry := by
+  obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
+  subst hSt; rfl
+
+/-- T1-E: `frozenQueuePushTail` preserves CDT edges. -/
+theorem frozenQueuePushTail_preserves_cdtEdges
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
+    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
+    st'.cdtEdges = st.cdtEdges := by
+  obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
+  subst hSt; rfl
+
+/-- T1-E: `frozenQueuePushTail` preserves IRQ handlers. -/
+theorem frozenQueuePushTail_preserves_irqHandlers
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : FrozenSystemState)
+    (hOk : frozenQueuePushTail endpointId isReceiveQ tid st = .ok st') :
+    st'.irqHandlers = st.irqHandlers := by
+  obtain ⟨_, hSt⟩ := frozenQueuePushTail_only_modifies_objects endpointId isReceiveQ tid st st' hOk
+  subst hSt; rfl
+
 end SeLe4n.Kernel.FrozenOps

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-workstream-docs-DM0DW",
-      "commit_sha": "87733e755e9dc5d0187cfbcbb4d0c645848709aa",
-      "tree_sha": "c85bd584136a8b8fe757139150a0a923c9c00370",
-      "committed_at_utc": "2026-03-23T00:46:44-04:00"
+      "branch": "claude/optimize-phase-t1-blockers-B0P9f",
+      "commit_sha": "520cf4727f0bb4e4b91f14bd6620419dc499c52f",
+      "tree_sha": "1367dbc2385fe6d37589fcc3e064bf381d01ac02",
+      "committed_at_utc": "2026-03-23T03:48:41-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "94b6dca5629d8e266f16e3afcad8673b89c2970a81452e180b59a761226f4014"
+    "source_digest": "3e6292249eea7e60cfb40724ff20c91b5c1e14e0cfb0b150917c865b0fec5135"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3242
+    "declaration_count": 3251
   },
   "readme_sync": {
     "version": "0.19.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 57506,
+    "production_loc": 57658,
     "test_files": 10,
     "test_loc": 7559,
-    "proved_theorem_lemma_decls": 1756,
+    "proved_theorem_lemma_decls": 1763,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -4239,7 +4239,7 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Commutativity",
       "path": "SeLe4n/Kernel/FrozenOps/Commutativity.lean",
-      "declaration_count": 14,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
@@ -4326,13 +4326,49 @@
           "name": "frozenStoreObject_preserves_objectIndexSet",
           "line": 197,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenQueuePushTail_preserves_scheduler",
+          "line": 214,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenQueuePushTail_preserves_machine",
+          "line": 223,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenQueuePushTail_preserves_asidTable",
+          "line": 232,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenQueuePushTail_preserves_serviceRegistry",
+          "line": 241,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenQueuePushTail_preserves_cdtEdges",
+          "line": 250,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenQueuePushTail_preserves_irqHandlers",
+          "line": 259,
+          "called": []
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.FrozenOps.Core",
       "path": "SeLe4n/Kernel/FrozenOps/Core.lean",
-      "declaration_count": 18,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -4441,9 +4477,33 @@
           "called": []
         },
         {
+          "kind": "def",
+          "name": "frozenQueuePushTailObjects",
+          "line": 166,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "frozenQueuePushTail",
+          "line": 210,
+          "called": [
+            "frozenLookupTcb",
+            "frozenQueuePushTailObjects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "frozenQueuePushTail_only_modifies_objects",
+          "line": 226,
+          "called": [
+            "frozenLookupTcb",
+            "frozenQueuePushTail"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "frozenLookupObject_state_unchanged",
-          "line": 164,
+          "line": 244,
           "called": [
             "frozenLookupObject"
           ]
@@ -4451,7 +4511,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_scheduler",
-          "line": 174,
+          "line": 254,
           "called": [
             "frozenStoreObject"
           ]
@@ -4459,7 +4519,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_machine",
-          "line": 185,
+          "line": 265,
           "called": [
             "frozenStoreObject"
           ]
@@ -4670,7 +4730,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReceive",
-          "line": 342,
+          "line": 346,
           "called": [
             "frozenQueuePopHead"
           ]
@@ -4678,7 +4738,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointCall",
-          "line": 384,
+          "line": 392,
           "called": [
             "frozenQueuePopHead"
           ]
@@ -4686,19 +4746,19 @@
         {
           "kind": "def",
           "name": "frozenEndpointReply",
-          "line": 430,
+          "line": 442,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 455,
+          "line": 467,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 467,
+          "line": 479,
           "called": [
             "frozenCspaceLookup"
           ]
@@ -4706,37 +4766,37 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 476,
+          "line": 488,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 490,
+          "line": 502,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 509,
+          "line": 521,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 530,
+          "line": 542,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 556,
+          "line": 568,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 575,
+          "line": 587,
           "called": [
             "frozenOpCoverage"
           ]
@@ -4744,7 +4804,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 583,
+          "line": 595,
           "called": [
             "frozenOpCoverage"
           ]
