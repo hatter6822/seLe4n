@@ -467,7 +467,9 @@ theorem retypeFromUntyped_ok_childId_ne
           -- S4-B: discharge capacity check
           by_cases hCap : st.objectIndex.length ≥ maxObjects
           · simp [hCap] at hStep
-          · simp [hCap] at hStep; simp [h] at hStep
+          · simp only [hCap, ↓reduceIte] at hStep
+            -- Self-overwrite guard fires: childId = untypedId → .error
+            simp [h] at hStep
 
 /-- WS-H2/B-5: If `retypeFromUntyped` succeeds, the childId is fresh among
 the source untyped's existing children. The A-27 collision guard returns
@@ -497,11 +499,13 @@ theorem retypeFromUntyped_ok_childId_fresh
   have hCollF : st.objects[childId]?.isSome = false := by
     cases h : st.objects[childId]?.isSome
     · rfl
-    · simp [hNe, h] at hStep'
+    · simp only [hNe, ↓reduceIte, h, ↓reduceIte] at hStep'
+      simp at hStep'
   have hFrF : (ut.children.any fun c => c.objId == childId) = false := by
     cases h : ut.children.any (fun c => c.objId == childId)
     · rfl
-    · simp [hNe, hCollF, h] at hStep'
+    · simp only [hNe, ↓reduceIte, hCollF, ↓reduceIte, h, ↓reduceIte] at hStep'
+      simp at hStep'
   have hAny : (ut.children.any fun c' => c'.objId == childId) = true :=
     List.any_eq_true.mpr ⟨c, hMem, by simp [hEq]⟩
   rw [hAny] at hFrF

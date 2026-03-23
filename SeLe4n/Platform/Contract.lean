@@ -37,6 +37,10 @@ and test harnesses instantiate a concrete platform.
   harness and test execution. Defines permissive contracts parallel to
   `SeLe4n.Testing.RuntimeContractFixtures` (functionally equivalent but
   organized under the Platform namespace).
+- `SeLe4n.Platform.Sim.simRestrictivePlatformBinding` — S5-D: simulation
+  restrictive target with substantive contracts mirroring RPi5 structure
+  (timer monotonicity, RAM-bounded memory access, deny register writes).
+  Catches contract-level bugs in simulation before hardware bring-up.
 - `SeLe4n.Platform.RPi5.rpi5PlatformBinding` — Raspberry Pi 5 (BCM2712/ARM64)
   stub for H3 hardware binding.
 -/

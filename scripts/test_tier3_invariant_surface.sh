@@ -176,11 +176,14 @@ run_check "INVARIANT" rg -n '^def syscallInvoke' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallLookupCap_state_unchanged' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def apiEndpointSend' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def apiCspaceMint' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def apiLifecycleRetype' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def apiVspaceMap' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def apiServiceRegister' SeLe4n/Kernel/API.lean
+# S5-A: Deprecated api* wrappers removed in v0.19.4. Verify removal and
+# presence of production syscall dispatch path.
+run_check "INVARIANT" rg -n '^def dispatchSyscall' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallEntry' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^private def dispatchWithCap' SeLe4n/Kernel/API.lean
+# S5-G: Page-alignment check in retypeFromUntyped
+run_check "INVARIANT" rg -n '^def requiresPageAlignment' SeLe4n/Kernel/Lifecycle/Operations.lean
+run_check "INVARIANT" rg -n '^def allocationBasePageAligned' SeLe4n/Kernel/Lifecycle/Operations.lean
 
 # WS-H15d: AdapterProofHooks concrete instantiation (Sim + RPi5)
 run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
@@ -188,6 +191,9 @@ run_check "INVARIANT" rg -n '^def simRestrictiveAdapterProofHooks' SeLe4n/Platfo
 run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterAdvanceTimer_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
 run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterWriteRegister_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
 run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterReadMemory_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
+# S5-D: Substantive simulation proof hooks
+run_check "INVARIANT" rg -n '^def simSubstantiveAdapterProofHooks' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simSubstantive_adapterAdvanceTimer_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
 run_check "INVARIANT" rg -n '^def rpi5RestrictiveAdapterProofHooks' SeLe4n/Platform/RPi5/ProofHooks.lean
 run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterAdvanceTimer_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean
 run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterWriteRegister_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean

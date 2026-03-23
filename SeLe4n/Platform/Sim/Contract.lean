@@ -60,4 +60,26 @@ instance simPlatformBinding : SeLe4n.Platform.PlatformBinding SimPlatform where
   bootContract := simBootContract
   interruptContract := simInterruptContract
 
+/-- S5-D: Marker type for the simulation restrictive (substantive) platform. -/
+structure SimRestrictivePlatform where
+  deriving Repr
+
+/-- S5-D: Simulation restrictive platform binding with substantive contracts.
+
+Uses `simRuntimeContractSubstantive` which mirrors RPi5 contract structure:
+- Timer monotonicity validated (substantive, not vacuous)
+- Memory access restricted to 256 MiB RAM region
+- Register writes denied (enables proof hooks)
+
+This platform variant catches contract-level bugs in simulation that would
+otherwise only surface on hardware. Test harnesses using this binding exercise
+the same contract validation logic as the RPi5 production platform. -/
+instance simRestrictivePlatformBinding :
+    SeLe4n.Platform.PlatformBinding SimRestrictivePlatform where
+  name := "Simulation (substantive-restrictive)"
+  machineConfig := simMachineConfig
+  runtimeContract := simRuntimeContractSubstantive
+  bootContract := simBootContract
+  interruptContract := simInterruptContract
+
 end SeLe4n.Platform.Sim

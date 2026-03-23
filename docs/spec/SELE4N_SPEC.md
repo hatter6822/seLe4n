@@ -377,7 +377,27 @@ hardware requires word-aligned access for register-width loads/stores:
   semantics hold for the abstract model; hardware binding adds the alignment
   constraint as an additional platform-level precondition.
 
-### 8.4 IPC Timeout Semantics
+### 8.4 Page-Alignment Requirement for VSpace-Bound Retype
+
+`retypeFromUntyped` enforces page-aligned allocation bases (4 KiB) for object
+types that require it. This applies to VSpace roots and CNodes, which must be
+page-aligned for correct hardware page-table walks and CNode radix indexing.
+
+- **`requiresPageAlignment`** -- predicate identifying `KernelObjectType` values
+  that require page-aligned allocation (VSpace roots, CNodes).
+- **`allocationBasePageAligned`** -- checks 4 KiB alignment of the allocation base
+  (`base % 4096 == 0`).
+- **`allocationMisaligned`** -- `KernelError` variant returned when the alignment
+  check fails.
+- **Lifecycle invariant preservation**: all existing lifecycle preservation proofs
+  are updated to account for the new error branch. Error returns preserve the
+  unchanged state trivially.
+
+This enforcement closes the gap between the abstract model (which previously
+accepted any allocation base) and hardware requirements for ARM64 page-table
+structures. See `SeLe4n/Kernel/Lifecycle/Operations.lean` (S5-G/S5-H).
+
+### 8.5 IPC Timeout Semantics
 
 seL4's `Call` operation provides no caller-side timeout. Once blocked, a caller
 remains blocked until a server executes `Reply`/`ReplyRecv`. Timeout monitoring
@@ -400,7 +420,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 6. fixture-backed executable evidence (`Main.lean` + trace fixture),
 7. tiered validation command behavior (`test_fast`/`smoke`/`full`/`nightly`),
 8. top-level import hygiene: `SeLe4n/Kernel/API.lean` is the canonical aggregate API surface.
-9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; 13 `api*` wrappers gate user-space invocations; 3 soundness theorems prove capability requirements.
+9. syscall capability-checking: `SyscallGate` + `syscallLookupCap` model the seL4 CSpace-lookup + rights-check pattern; production path `syscallEntry` -> `dispatchSyscall` -> `syscallInvoke` -> `dispatchWithCap` (S5-A: deprecated `api*` wrappers removed); 3 soundness theorems prove capability requirements.
 10. HashMap-backed equality for `VSpaceRoot` and `CNode` is order-independent (size + fold containment), and the migrated state stores (`services`, `irqHandlers`, `capabilityRefs`, `cdtSlotNode`, `cdtNodeSlot`) are `Std.HashMap`-backed (no closure-chain metadata stores).
 
 ---

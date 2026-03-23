@@ -50,4 +50,32 @@ def simRuntimeContractRestrictive : RuntimeBoundaryContract :=
     memoryAccessAllowedDecidable := by intro st addr; infer_instance
   }
 
+/-- S5-D: Substantive simulation runtime contract mirroring the RPi5 contract
+    structure with simulation-appropriate bounds. This replaces the all-False
+    restrictive contract for non-trivial validation:
+
+    - **Timer monotonicity**: ARM Generic Timer semantics — CNTPCT_EL0 is
+      monotonically non-decreasing (same predicate as RPi5 production).
+    - **Register context stability**: Denied (same as RPi5 restrictive). Needed
+      because `contextMatchesCurrent` requires full register-file equality, and
+      arbitrary register writes break this invariant.
+    - **Memory access**: Restricted to the simulation RAM region (0x0 to 256 MiB).
+      Mirrors RPi5's `memoryMap.any (kind == .ram && contains addr)` pattern
+      using `simMachineConfig`'s single 256 MiB RAM region.
+
+    This contract enables substantive preservation proofs: timer advancement is
+    validated (not vacuously true), and memory reads are checked against bounds. -/
+def simRuntimeContractSubstantive : RuntimeBoundaryContract :=
+  {
+    timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
+    registerContextStable := fun _ _ => False
+    memoryAccessAllowed := fun _ addr =>
+      -- S5-D: Restrict memory access to the simulation RAM region (0 to 256 MiB).
+      -- Mirrors RPi5's memoryMap-based predicate using inline region bounds.
+      addr.toNat < 256 * 1024 * 1024
+    timerMonotonicDecidable := by intro st st'; infer_instance
+    registerContextStableDecidable := by intro st st'; infer_instance
+    memoryAccessAllowedDecidable := by intro _ addr; infer_instance
+  }
+
 end SeLe4n.Platform.Sim

@@ -134,10 +134,17 @@ The **active workstream** is **WS-R** (Comprehensive Audit Remediation) —
 [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md).
 R1–R8 complete (v0.18.0–v0.18.7).
 
-The **next major milestone** after WS-R is **Raspberry Pi 5 hardware binding**:
+The **next major milestone** after WS-S is **Raspberry Pi 5 hardware binding**:
 populating RPi5 platform stubs with hardware-validated contracts, implementing
 ARMv8 multi-level page table walk, GIC-400 interrupt routing, ARM Generic Timer
 binding, and verified boot sequence construction.
+
+**S5-F: Pre-hardware-binding gate — BCM2712 address validation.** Before H3
+begins, every address constant in `SeLe4n/Platform/RPi5/Board.lean` must be
+cross-referenced against the BCM2712 ARM Peripherals datasheet. A validation
+checklist is maintained in `Board.lean` (see the "BCM2712 Address Validation
+Checklist" section). The gate requires all 14 constants to be marked "Validated"
+with exact datasheet references (document title, revision, page number).
 
 **WS-J1 (completed):** register-indexed authoritative
 namespace migration with typed register wrappers, syscall argument decode layer,

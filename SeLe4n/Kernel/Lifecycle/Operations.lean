@@ -408,6 +408,20 @@ def objectTypeAllocSize : KernelObjectType → Nat
   | .vspaceRoot => 4096
   | .untyped => 4096
 
+/-- S5-G: Predicate for object types that require page-aligned allocation bases.
+VSpace roots and CNodes back page-table structures on ARM64, so their backing
+memory must start on a 4KB page boundary. This matches seL4's alignment
+requirement for page-table objects (seL4_PageTableObject, seL4_VSpaceObject). -/
+def requiresPageAlignment : KernelObjectType → Bool
+  | .vspaceRoot => true
+  | .cnode => true
+  | _ => false
+
+/-- S5-G: Check whether the untyped allocation base (regionBase + watermark)
+is page-aligned. Returns `true` when alignment is satisfied. -/
+def allocationBasePageAligned (ut : UntypedObject) : Bool :=
+  (ut.regionBase.toNat + ut.watermark) % 4096 == 0
+
 /-- WS-F2: Retype a new typed object from an untyped memory region.
 
 Deterministic branch contract:
@@ -416,11 +430,15 @@ Deterministic branch contract:
    (`untypedDeviceRestriction` if violated).
 3. The allocation size must be at least `objectTypeAllocSize` for the target type
    (`untypedAllocSizeTooSmall` otherwise).
-4. Authority capability must target the untyped object and include `write` rights
+4. S5-G: For VSpace roots and CNodes, the allocation base address
+   (`regionBase + watermark`) must be page-aligned (4KB boundary).
+   Returns `allocationMisaligned` if violated. This matches seL4's requirement
+   that page-table backing memory be page-aligned.
+5. Authority capability must target the untyped object and include `write` rights
    (`illegalAuthority` otherwise).
-5. The requested allocation size must fit within the remaining region space
+6. The requested allocation size must fit within the remaining region space
    (`untypedRegionExhausted` otherwise).
-6. On success: watermark is advanced, new child is recorded, and the new typed
+7. On success: watermark is advanced, new child is recorded, and the new typed
    object is stored at `childId` via `storeObject`. -/
 def retypeFromUntyped
     (authority : CSpaceAddr)
@@ -450,6 +468,9 @@ def retypeFromUntyped
         -- Allocation size must be at least the minimum for the target object type
         else if allocSize < objectTypeAllocSize newObj.objectType then
           .error .untypedAllocSizeTooSmall
+        -- S5-G: Page-alignment check for VSpace-bound objects
+        else if requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut then
+          .error .allocationMisaligned
         else
           match cspaceLookupSlot authority st with
           | .error e => .error e
@@ -475,7 +496,10 @@ def lookupUntyped (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject 
   | some (.untyped ut) => some ut
   | _ => none
 
-/-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps. -/
+/-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
+S5-G: The alignment check is an additional error guard (returns `allocationMisaligned`
+for VSpace/CNode objects on unaligned bases); it does not affect the decomposition
+since success implies the guard passed. -/
 theorem retypeFromUntyped_ok_decompose
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -520,41 +544,24 @@ theorem retypeFromUntyped_ok_decompose
             · rfl
             · simp [hNeSelf, hCollF, h] at hStep
           simp only [hNeSelf, hCollF, hFrF, ↓reduceIte] at hStep
+          -- S5-G: The function now has an alignment check between allocSz and cspaceLookup.
+          -- We discharge all early guards (device, allocSz, alignment) uniformly, leaving
+          -- the cspaceLookup → authority → allocate → storeObject chain for extraction.
+          -- S5-G: Helper — all early guards (device, allocSz, alignment) are
+          -- discharged uniformly. The alignment check is a new if-then-else
+          -- between allocSz and cspaceLookup.
+          -- Strategy: rewrite retypeFromUntyped as a chain of nested matches,
+          -- use `omega`/`simp`/`split` to navigate each guard to contradiction or success.
           cases hDevBool : ut.isDevice <;> simp only [hDevBool] at hStep
           · -- ut.isDevice = false: device check trivially passes
             simp only [Bool.false_and, Bool.false_eq_true, ↓reduceIte] at hStep
             by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
             · simp [hAllocSz] at hStep
-            · simp [hAllocSz] at hStep
-              cases hLookup : cspaceLookupSlot authority st with
-              | error e => simp [hLookup] at hStep
-              | ok pair =>
-                  rcases pair with ⟨cap, stLookup⟩
-                  simp [hLookup] at hStep
-                  by_cases hAuth : lifecycleRetypeAuthority cap untypedId
-                  · simp [hAuth] at hStep
-                    cases hAlloc : UntypedObject.allocate ut childId allocSize with
-                    | none => simp [hAlloc] at hStep
-                    | some result =>
-                        rcases result with ⟨ut', offset⟩
-                        simp [hAlloc] at hStep
-                        cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
-                        | error e => simp [hStoreUt] at hStep
-                        | ok pair2 =>
-                            rcases pair2 with ⟨_, stUt⟩
-                            simp [hStoreUt] at hStep
-                            exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
-                  · simp [hAuth] at hStep
-          · -- ut.isDevice = true: need objectType check
-            by_cases hObjType : newObj.objectType = KernelObjectType.untyped
-            · -- objectType = untyped: device check passes
-              have hBne : (newObj.objectType != KernelObjectType.untyped) = false := by
-                simp [bne, hObjType]
-              simp [hBne] at hStep
-              by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
-              · simp [hAllocSz] at hStep
-              · simp [hAllocSz] at hStep
-                cases hLookup : cspaceLookupSlot authority st with
+            · simp only [hAllocSz, ↓reduceIte] at hStep
+              -- S5-G: split on alignment condition
+              split at hStep
+              · simp at hStep
+              · cases hLookup : cspaceLookupSlot authority st with
                 | error e => simp [hLookup] at hStep
                 | ok pair =>
                     rcases pair with ⟨cap, stLookup⟩
@@ -571,9 +578,40 @@ theorem retypeFromUntyped_ok_decompose
                           | ok pair2 =>
                               rcases pair2 with ⟨_, stUt⟩
                               simp [hStoreUt] at hStep
-                              exact ⟨ut, ut', cap, stLookup, stUt, offset,
-                                rfl, Or.inr hObjType, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
+                              exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
                     · simp [hAuth] at hStep
+          · -- ut.isDevice = true: need objectType check
+            by_cases hObjType : newObj.objectType = KernelObjectType.untyped
+            · -- objectType = untyped: device check passes
+              have hBne : (newObj.objectType != KernelObjectType.untyped) = false := by
+                simp [bne, hObjType]
+              simp [hBne] at hStep
+              by_cases hAllocSz : allocSize < objectTypeAllocSize newObj.objectType
+              · simp [hAllocSz] at hStep
+              · simp only [hAllocSz, ↓reduceIte] at hStep
+                -- S5-G: split on alignment condition
+                split at hStep
+                · simp at hStep
+                · cases hLookup : cspaceLookupSlot authority st with
+                  | error e => simp [hLookup] at hStep
+                  | ok pair =>
+                      rcases pair with ⟨cap, stLookup⟩
+                      simp [hLookup] at hStep
+                      by_cases hAuth : lifecycleRetypeAuthority cap untypedId
+                      · simp [hAuth] at hStep
+                        cases hAlloc : UntypedObject.allocate ut childId allocSize with
+                        | none => simp [hAlloc] at hStep
+                        | some result =>
+                            rcases result with ⟨ut', offset⟩
+                            simp [hAlloc] at hStep
+                            cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
+                            | error e => simp [hStoreUt] at hStep
+                            | ok pair2 =>
+                                rcases pair2 with ⟨_, stUt⟩
+                                simp [hStoreUt] at hStep
+                                exact ⟨ut, ut', cap, stLookup, stUt, offset,
+                                  rfl, Or.inr hObjType, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
+                      · simp [hAuth] at hStep
             · -- objectType != untyped: device restriction fires -> contradiction
               have hBne : (newObj.objectType != KernelObjectType.untyped) = true := by
                 simp [bne, hObjType]
@@ -622,7 +660,8 @@ theorem retypeFromUntyped_error_allocSizeTooSmall
       · simp [hDevBool, hUt, hSmall]
       · simp [hDevBool, hUt, hSmall]
 
-/-- WS-F2: `retypeFromUntyped` returns `untypedRegionExhausted` when allocation cannot fit. -/
+/-- WS-F2: `retypeFromUntyped` returns `untypedRegionExhausted` when allocation cannot fit.
+S5-G: Alignment check must pass (or type doesn't require it) for this error to be reached. -/
 theorem retypeFromUntyped_error_regionExhausted
     (st : SystemState) (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject)
@@ -634,6 +673,7 @@ theorem retypeFromUntyped_error_regionExhausted
     (hFreshChildren : ut.children.any (fun c => c.objId == childId) = false)
     (hNotDev : ut.isDevice = false ∨ newObj.objectType = .untyped)
     (hAllocSzOk : ¬(allocSize < objectTypeAllocSize newObj.objectType))
+    (hAlignOk : (requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut) = false)
     (hLookup : cspaceLookupSlot authority st = .ok (cap, st))
     (hAuth : lifecycleRetypeAuthority cap untypedId = true)
     (hNoFit : ut.allocate childId allocSize = none) :
@@ -641,14 +681,19 @@ theorem retypeFromUntyped_error_regionExhausted
       .error .untypedRegionExhausted := by
   unfold retypeFromUntyped
   have hCapF : ¬(st.objectIndex.length ≥ maxObjects) := by omega
-  simp [hObj, hCapF, hNeSelf, hNoCollision, hFreshChildren]
+  simp only [hObj, hCapF, ↓reduceIte, hNeSelf, hNoCollision, hFreshChildren]
   cases hNotDev with
-  | inl hFalse => simp [hFalse, hAllocSzOk, hLookup, hAuth, hNoFit]
+  | inl hFalse =>
+      simp only [hFalse, Bool.false_and, Bool.false_eq_true, ↓reduceIte, hAllocSzOk, hAlignOk,
+        ↓reduceIte, hLookup, hAuth, hNoFit]
   | inr hUt =>
-      rw [hUt] at hAllocSzOk
       by_cases hDevBool : ut.isDevice
-      · simp [hDevBool, hUt, hAllocSzOk, hLookup, hAuth, hNoFit]
-      · simp [hDevBool, hUt, hAllocSzOk, hLookup, hAuth, hNoFit]
+      · have hBne : (newObj.objectType != KernelObjectType.untyped) = false := by
+          simp [bne, hUt]
+        simp only [hDevBool, hBne, Bool.true_and, Bool.false_eq_true, ↓reduceIte,
+          hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
+      · simp only [hDevBool, Bool.false_and, Bool.false_eq_true, ↓reduceIte,
+          hAllocSzOk, hAlignOk, ↓reduceIte, hLookup, hAuth, hNoFit]
 
 /- Local lifecycle transition helper lemmas (M4-A step 4).
 These theorems keep preservation scripts focused on invariant obligations rather than

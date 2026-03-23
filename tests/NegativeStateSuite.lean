@@ -1039,7 +1039,39 @@ private def runNegativeChecks : IO Unit := do
       (.endpoint {}) 1 f2UntypedState)
     .untypedAllocSizeTooSmall
 
-  IO.println "WS-F2 untyped memory negative checks passed"
+  -- S5-G-NEG: page-alignment check — misaligned base for VSpace root
+  let f2MisalignedState : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject f2UntypedObjId (.untyped {
+        regionBase := ⟨0x10001⟩  -- deliberately misaligned (not 4KB-aligned)
+        regionSize := 8192
+        watermark := 0
+        children := []
+        isDevice := false
+      })
+      |>.withObject f2UntypedAuthCnode (.cnode {
+        depth := 0
+        guardWidth := 0
+        guardValue := 0
+        radixWidth := 0
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          (⟨0⟩, {
+            target := .object f2UntypedObjId
+            rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
+            badge := none
+          })
+        ]
+      })
+      |>.withLifecycleObjectType f2UntypedObjId .untyped
+      |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
+      |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
+      |>.build)
+  expectError "S5-G misaligned base for VSpace root"
+    (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
+      (.vspaceRoot { asid := ⟨0⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }) 4096 f2MisalignedState)
+    .allocationMisaligned
+
+  IO.println "WS-F2 untyped memory negative checks passed (incl. S5-G alignment)"
 
 /-- WS-H2: Lifecycle safety guards negative tests.
     Split into a separate function to avoid maxRecDepth limits in the main do block. -/

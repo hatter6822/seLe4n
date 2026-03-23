@@ -208,6 +208,13 @@ WS-G4/F-P07: Uses bucket-first strategy — scans only the max-priority bucket
 first (O(k) where k is bucket size), falling back to full-list scan only if
 the max-priority bucket has no eligible thread in the active domain.
 
+S5-I: FIFO tie-breaking semantics — within a priority level, `List.head?` on
+the filtered candidate list selects the first thread inserted (FIFO order).
+When multiple threads share the same priority and EDF deadline,
+`isBetterCandidate` retains the incumbent (`cd < id` with strict less-than),
+so the earliest-queued thread wins. This matches seL4's round-robin behavior
+at each fixed-priority band.
+
 This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=

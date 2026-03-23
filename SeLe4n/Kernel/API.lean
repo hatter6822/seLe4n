@@ -65,13 +65,13 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked` | Info-flow | Stable |
-| `apiEndpointSend`, `apiEndpointReceive` | Syscall IPC (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
-| `apiEndpointCall`, `apiEndpointReply` | Syscall IPC (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
-| `apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove` | Syscall Capability (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
-| `apiCspaceDelete` | Syscall Capability (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
-| `apiLifecycleRetype` | Syscall Lifecycle (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
-| `apiVspaceMap`, `apiVspaceUnmap` | Syscall VSpace (WS-H15c) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
-| `apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery` | Syscall Service (WS-Q1-D) | **Deprecated** (R1-D/M-04 v0.18.0) — use `syscallEntry` |
+| ~~`apiEndpointSend`, `apiEndpointReceive`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
+| ~~`apiEndpointCall`, `apiEndpointReply`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
+| ~~`apiCspaceMint`, `apiCspaceCopy`, `apiCspaceMove`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
+| ~~`apiCspaceDelete`~~ | Syscall Capability (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
+| ~~`apiLifecycleRetype`~~ | Syscall Lifecycle (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
+| ~~`apiVspaceMap`, `apiVspaceUnmap`~~ | Syscall VSpace (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
+| ~~`apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`~~ | Syscall Service (WS-Q1-D) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
 | `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable |
 | `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
 | `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable |
@@ -124,17 +124,17 @@ The raw kernel operations above (e.g., `endpointSendDual`, `cspaceMint`) are
 IPC subsystem, lifecycle engine). They do not perform capability checks because
 the kernel itself is the trusted computing base.
 
-The `api*` wrappers below are **syscall entry points** — they model user-space
-invocations. Each wrapper resolves a capability via `resolveCapAddress` (WS-H13)
-and verifies the caller holds sufficient rights before delegating to the
-underlying kernel operation.
+The production syscall path is `syscallEntry → dispatchSyscall → syscallInvoke
+→ dispatchWithCap`, which reads the caller's register file, decodes typed
+arguments, resolves capabilities, and dispatches to the appropriate internal
+operation. The legacy `api*` wrappers were removed in S5-A (v0.19.4).
 
 ### Internal vs syscall operations
 
 | Category | Capability check? | Invoked by |
 |---|---|---|
 | **Internal** (`schedule`, `endpointSendDual`, etc.) | No | Kernel paths |
-| **Syscall** (`apiEndpointSend`, `apiCspaceMint`, etc.) | Yes | User-space |
+| **Syscall** (`syscallEntry` → `dispatchSyscall`) | Yes | User-space |
 | **Scheduler** (`schedule`, `handleYield`, `timerTick`) | No | Timer IRQ, kernel |
 -/
 
@@ -237,134 +237,16 @@ theorem syscallInvoke_requires_right
     exact ⟨cap, ref, hResolve, hSlot, hRight⟩
 
 -- ============================================================================
--- Capability-gated syscall wrappers
+-- S5-A: Deprecated api* wrappers removed (v0.19.4)
+--
+-- All 14 deprecated wrappers (apiEndpointSend, apiEndpointReceive,
+-- apiEndpointCall, apiEndpointReply, apiCspaceMint, apiCspaceCopy,
+-- apiCspaceMove, apiCspaceDelete, apiLifecycleRetype, apiVspaceMap,
+-- apiVspaceUnmap, apiServiceRegister, apiServiceRevoke, apiServiceQuery)
+-- were removed in S5-A. The production syscall path is:
+--   syscallEntry → dispatchSyscall → syscallInvoke → dispatchWithCap
+-- Test migration was completed in S2-J (v0.19.1).
 -- ============================================================================
-
-/-- R1-D/M-04: Capability-gated endpoint send. Requires `.write` right.
-Validates that the resolved capability targets the specified endpoint. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiEndpointSend (gate : SyscallGate) (epId : SeLe4n.ObjId) (msg : IpcMessage) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    if cap.target ≠ .object epId then fun _ => .error .invalidCapability
-    else endpointSendDual epId gate.callerId msg
-
-/-- R1-D/M-04: Capability-gated endpoint receive. Requires `.read` right.
-Validates that the resolved capability targets the specified endpoint.
-Returns the sender's ThreadId; the transferred message is in the receiver's
-TCB.pendingMessage (matching seL4's IPC buffer model). -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiEndpointReceive (gate : SyscallGate) (epId : SeLe4n.ObjId) : Kernel SeLe4n.ThreadId :=
-  syscallInvoke { gate with requiredRight := .read } fun cap =>
-    if cap.target ≠ .object epId then fun _ => .error .invalidCapability
-    else endpointReceiveDual epId gate.callerId
-
-/-- R1-D/M-04: Capability-gated endpoint call (send then block for reply).
-Requires `.write` right. Validates capability-target binding. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiEndpointCall (gate : SyscallGate) (epId : SeLe4n.ObjId) (msg : IpcMessage) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    if cap.target ≠ .object epId then fun _ => .error .invalidCapability
-    else endpointCall epId gate.callerId msg
-
-/-- R1-D/M-04: Capability-gated endpoint reply. Requires `.write` right.
-The gate's callerId serves as the replier; validates capability targets a
-reply cap for the intended thread. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiEndpointReply (gate : SyscallGate) (targetId : SeLe4n.ThreadId) (msg : IpcMessage) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    if cap.target ≠ .replyCap targetId then fun _ => .error .invalidCapability
-    else endpointReply gate.callerId targetId msg
-
-/-- R1-D/M-04: Capability-gated CSpace mint. Requires `.grant` right on source.
-Validates capability targets the specified CNode. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiCspaceMint (gate : SyscallGate) (src dest : CSpaceAddr)
-    (newRights : AccessRightSet) (newBadge : Option SeLe4n.Badge) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .grant } fun cap =>
-    if cap.target ≠ .object src.cnode then fun _ => .error .invalidCapability
-    else cspaceMint src dest newRights newBadge
-
-/-- R1-D/M-04: Capability-gated CSpace copy. Requires `.grant` right.
-Validates capability targets the specified CNode. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiCspaceCopy (gate : SyscallGate) (src dest : CSpaceAddr) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .grant } fun cap =>
-    if cap.target ≠ .object src.cnode then fun _ => .error .invalidCapability
-    else cspaceCopy src dest
-
-/-- R1-D/M-04: Capability-gated CSpace move. Requires `.grant` right.
-Validates capability targets the specified CNode. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiCspaceMove (gate : SyscallGate) (src dest : CSpaceAddr) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .grant } fun cap =>
-    if cap.target ≠ .object src.cnode then fun _ => .error .invalidCapability
-    else cspaceMove src dest
-
-/-- R1-D/M-04: Capability-gated CSpace delete. Requires `.write` right.
-Validates capability targets the specified CNode. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiCspaceDelete (gate : SyscallGate) (addr : CSpaceAddr) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    if cap.target ≠ .object addr.cnode then fun _ => .error .invalidCapability
-    else cspaceDeleteSlot addr
-
-/-- R1-D/M-04: Capability-gated lifecycle retype. Requires `.retype` right.
-Validates capability targets an object (the authority). -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiLifecycleRetype (gate : SyscallGate) (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId) (newObj : KernelObject) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .retype } fun cap =>
-    match cap.target with
-    | .object _ => lifecycleRetypeObject authority target newObj
-    | _ => fun _ => .error .invalidCapability
-
-/-- R1-D/M-04: Capability-gated VSpace map. Requires `.write` right.
-Validates capability targets an object. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiVspaceMap (gate : SyscallGate) (asid : SeLe4n.ASID)
-    (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) (perms : PagePermissions := default) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    match cap.target with
-    | .object _ => Architecture.vspaceMapPage asid vaddr paddr perms
-    | _ => fun _ => .error .invalidCapability
-
-/-- R1-D/M-04: Capability-gated VSpace unmap. Requires `.write` right.
-Validates capability targets an object. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiVspaceUnmap (gate : SyscallGate) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    match cap.target with
-    | .object _ => Architecture.vspaceUnmapPage asid vaddr
-    | _ => fun _ => .error .invalidCapability
-
-/-- R1-D/M-04: Capability-gated service registration. Requires `.write` right.
-Validates capability targets an object. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiServiceRegister (gate : SyscallGate) (reg : ServiceRegistration) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    match cap.target with
-    | .object _ => registerService reg
-    | _ => fun _ => .error .invalidCapability
-
-/-- R1-D/M-04: Capability-gated service revocation. Requires `.write` right.
-Validates capability targets an object. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiServiceRevoke (gate : SyscallGate) (svcId : ServiceId) : Kernel Unit :=
-  syscallInvoke { gate with requiredRight := .write } fun cap =>
-    match cap.target with
-    | .object _ => revokeService svcId
-    | _ => fun _ => .error .invalidCapability
-
-/-- R1-D/M-04: Capability-gated service query. Requires `.read` right.
-Validates capability targets the specified endpoint. -/
-@[deprecated "Use syscallEntry/dispatchWithCap for new code (M-04)" (since := "v0.18.0")]
-def apiServiceQuery (gate : SyscallGate) (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
-  fun st =>
-    match syscallLookupCap { gate with requiredRight := .read } st with
-    | .error e => .error e
-    | .ok (cap, st') =>
-      if cap.target ≠ .object epId then .error .invalidCapability
-      else lookupServiceByCap epId st'
 
 -- ============================================================================
 -- WS-J1-C: Syscall entry point and dispatch

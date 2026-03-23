@@ -54,6 +54,7 @@ inductive KernelError where
   | resourceExhausted       -- WS-R2/M-05: fuel exhaustion in streaming BFS revocation
   | invalidCapPtr           -- S4-K: capability pointer exceeds word64 bounds
   | objectStoreCapacityExceeded  -- S4-B: object count exceeds maxObjects capacity
+  | allocationMisaligned  -- S5-G: allocation base not page-aligned for VSpace-bound objects
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
@@ -146,17 +147,26 @@ instance : Inhabited TlbState where
 def TlbState.empty : TlbState := { entries := [] }
 
 /-- R7-A.3: Full TLB flush — invalidates all cached entries.
-    On ARM64 this corresponds to `TLBI ALLE1` or `TLBI VMALLE1IS`. -/
+    On ARM64 this corresponds to `TLBI ALLE1` or `TLBI VMALLE1IS`.
+
+    S5-J: Complexity is O(1) — returns a fresh empty TLB state. -/
 def adapterFlushTlb (_tlb : TlbState) : TlbState :=
   TlbState.empty
 
 /-- R7-A.3: Per-ASID TLB flush — invalidates all entries for a specific ASID.
-    On ARM64 this corresponds to `TLBI ASIDE1, <asid>`. -/
+    On ARM64 this corresponds to `TLBI ASIDE1, <asid>`.
+
+    S5-J: Complexity is O(n) where n = `entries.length`. Acceptable because
+    TLB sizes are bounded by hardware (ARM Cortex-A76 TLB has ≤1280 entries
+    across all levels, and the model tracks only actively cached entries). -/
 def adapterFlushTlbByAsid (tlb : TlbState) (asid : SeLe4n.ASID) : TlbState :=
   { entries := tlb.entries.filter (·.asid != asid) }
 
 /-- R7-A.3: Per-VAddr TLB flush — invalidates entries for a specific (ASID, VAddr).
-    On ARM64 this corresponds to `TLBI VAE1, <asid, vaddr>`. -/
+    On ARM64 this corresponds to `TLBI VAE1, <asid, vaddr>`.
+
+    S5-J: Complexity is O(n) where n = `entries.length`. Same bound as
+    `adapterFlushTlbByAsid` — hardware TLB sizes are fixed and small. -/
 def adapterFlushTlbByVAddr (tlb : TlbState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : TlbState :=
   { entries := tlb.entries.filter (fun e => !(e.asid == asid && e.vaddr == vaddr)) }
 

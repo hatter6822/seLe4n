@@ -167,6 +167,12 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
           have := rq.threadPrio_capGe4; omega
         · rw [RHTable.insertNoResize_capacity]; exact rq.threadPrio_capGe4 }
 
+/-- S5-J: Complexity is O(k + n) where k = priority bucket size for the
+    removed thread, and n = flat list length. The bucket filter is O(k) and
+    the flat-list filter is O(n). Both are acceptable because typical real-time
+    systems have fewer than 256 threads, and k ≪ n (most buckets contain 1-3
+    threads). The O(1) RHTable erase for membership and threadPriority is
+    amortized constant. -/
 def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   -- WS-G4 refinement: compute filtered bucket once, reuse for both byPriority and maxPriority
   let byPrio' := match rq.threadPriority.get? tid with
@@ -281,6 +287,10 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
         simp only [RHTable.erase]; split <;> simp_all
       rw [this]; exact rq.threadPrio_capGe4 }
 
+/-- S5-J: Complexity is O(k + n) where k = priority bucket size and n = flat
+    list length. The bucket rotation is O(k) (`tl ++ [tid]`), and the flat-list
+    erase + append is O(n). Acceptable for the same reasons as `remove`: k is
+    typically 1-3 and n < 256 in production real-time systems. -/
 def rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
   if hc : rq.contains tid then
     match rq.byPriority[prio]? with
