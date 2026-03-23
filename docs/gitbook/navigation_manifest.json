@@ -1,10 +1,10 @@
 {
   "description": "This GitBook is the long-form guide for seLe4n \u2014 a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.",
   "current_state_bullets": [
-    "**Version:** 0.18.7 (Lean v4.28.0).",
-    "**Codebase metrics:** 55,499 production LoC across 98 files; 7,309 test LoC across 10 suites; 1,686 theorem/lemma declarations (zero sorry/axiom).",
-    "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Full kernel + Rust codebase pre-release audit.",
-    "**Active workstream:** WS-R Comprehensive Audit Remediation (8 phases: R1–R8, 111 sub-tasks). R1–R8 complete (v0.18.0–v0.18.7). All prior portfolios (WS-B through WS-Q) completed.",
+    "**Version:** 0.19.6 (Lean v4.28.0).",
+    "**Codebase metrics:** 57,506 production LoC across 100 files; 7,559 test LoC across 10 suites; 1,756 theorem/lemma declarations (zero sorry/axiom).",
+    "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) and [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — dual comprehensive audits (115+ findings, 0 Critical).",
+    "**Active workstream:** WS-S Pre-Benchmark Strengthening — PORTFOLIO COMPLETE (7 phases: S1–S7, 83 sub-tasks, v0.19.0–v0.19.6). All prior portfolios (WS-B through WS-R) completed.",
     "**Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",
     "**Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.",

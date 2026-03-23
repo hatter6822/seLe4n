@@ -10,8 +10,8 @@ every invariant is machine-checked.
 
 ### Concrete artifacts
 
-- **54,573 lines** of production Lean code across 98 files.
-- **1,660 theorem/lemma declarations** with zero sorry/axiom.
+- **57,506 lines** of production Lean code across 100 files.
+- **1,756 theorem/lemma declarations** with zero sorry/axiom.
 - **4-tier CI** with hygiene, build, trace, and invariant surface gates.
 - **Negative-state test suite** with corruption testing and per-mutation invariant checks.
 - **Executable trace harness** with fixture-backed evidence.
@@ -56,6 +56,6 @@ platform-specific binding without invalidating core verification.
 ## 4. Key links
 
 - Specification: [Specification & Roadmap](05-specification-and-roadmap.md)
-- Active workstream: [WS-R Comprehensive Audit Remediation](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)
+- Completed workstream: [WS-S Pre-Benchmark Strengthening](../audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)
 - Workstream history: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)

@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 54,573 lines of production Lean across 98 files, 7,309 lines across 10 Lean test suites,
-1,660 theorem/lemma declarations, zero unsound constructs.
+Current state: 57,506 lines of production Lean across 100 files, 7,559 lines across 10 Lean test suites,
+1,756 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -79,13 +79,13 @@ migration, Q3 IntermediateState formalization, Q4 CNode radix tree, Q5 FrozenSys
 freeze, Q6 freeze correctness proofs, Q7 frozen kernel operations, Q8 Rust syscall
 wrappers, Q9 integration testing + documentation.
 
-**WS-R** (Comprehensive Audit Remediation) is the **active workstream** — 8 phases
-(R1–R8), 111 sub-tasks addressing all 82 findings from the pre-release audit.
-R1–R8 complete (v0.18.0–v0.18.7).
-After WS-R: **Raspberry Pi 5 hardware binding (H3)**.
+**WS-S** (Pre-Benchmark Strengthening) is **PORTFOLIO COMPLETE** (v0.19.0–v0.19.6) —
+7 phases (S1–S7), 83 sub-tasks addressing 115+ findings from dual v0.18.7 audits.
+**WS-R** (Comprehensive Audit Remediation) is **PORTFOLIO COMPLETE** (v0.18.0–v0.18.7).
+Next: **Raspberry Pi 5 hardware binding**.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-R workstream plan](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+[WS-S workstream plan](../audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
 
 ## 5. Architecture mental model
 
