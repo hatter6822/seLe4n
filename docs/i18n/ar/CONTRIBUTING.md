@@ -34,7 +34,7 @@ seLe4n مرخص بموجب [رخصة جنو العمومية الإصدار 3.0 
 2. **مستويات الاختبار:** [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md)
 3. **سياسة التكامل المستمر (CI):** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **نطاق المشروع وتيارات العمل:** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
-5. **نتائج التدقيق النشطة:** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
+5. **نتائج التدقيق النشطة:** [`docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md)
 6. **تاريخ تيارات العمل:** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
 
 <div dir="rtl">

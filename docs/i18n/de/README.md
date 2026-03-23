@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.19.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.19.6-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -48,13 +48,13 @@ Mikrokerneln ein:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.19.3` |
+| **Version** | `0.19.6` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 55.732 über 98 Dateien |
-| **Test-LoC (Lean)** | 7.317 über 10 Testsuiten |
-| **Bewiesene Deklarationen** | 1.692 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 57.506 über 100 Dateien |
+| **Test-LoC (Lean)** | 7.559 über 10 Testsuiten |
+| **Bewiesene Deklarationen** | 1.756 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Letztes Audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Vollständiges Kernel- + Rust-Codebase-Pre-Release-Audit |
+| **Letztes Audit** | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) und [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — Duale umfassende Audits (115+ Befunde, 0 Kritisch) |
 | **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |
 
 Die Metriken werden durch `./scripts/generate_codebase_map.py` aus der Codebasis
@@ -156,10 +156,11 @@ Beweisverpflichtung (Proof Obligation).
 Die aktuellen Prioritäten und die vollständige Workstream-Geschichte werden in
 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) gepflegt. Zusammenfassung:
 
-- **WS-R** — Umfassende Audit-Behebung (Comprehensive Audit Remediation, 8 Phasen, R1–R8, 111 Teilaufgaben). Behandelt alle 82 Befunde aus dem [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 abgeschlossen (v0.18.0–v0.18.6), R8 ausstehend.
-- **Raspberry Pi 5 Hardware-Anbindung** — ARMv8 Page-Table-Walk, GIC-400 Interrupt-Routing, Boot-Sequenz (RPi5-Plattformverträge nun substantiell durch WS-H15)
+- **WS-S** — Vorbenchmark-Stärkung (Pre-Benchmark Strengthening, 7 Phasen, S1–S7, 83 Teilaufgaben) **ABGESCHLOSSEN** (v0.19.0–v0.19.6). Behandelt alle Befunde der dualen umfassenden v0.18.7-Audits (115+ Befunde). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../../../docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Abschlussbericht: [`WS_S_CLOSURE_REPORT.md`](../../../docs/audits/WS_S_CLOSURE_REPORT.md).
+- **WS-R** — Umfassende Audit-Behebung (Comprehensive Audit Remediation, 8 Phasen, R1–R8, 111 Teilaufgaben) **ABGESCHLOSSEN** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **Raspberry Pi 5 Hardware-Anbindung** — ARMv8 Page-Table-Walk, GIC-400 Interrupt-Routing, Boot-Sequenz (nächster Workstream)
 
-Alle vorherigen Portfolios (WS-B bis WS-Q) sind abgeschlossen. Frühere Audits
+Alle vorherigen Portfolios (WS-B bis WS-R) sind abgeschlossen. Frühere Audits
 (v0.8.0–v0.9.32), Meilensteinabschlüsse und ältere GitBook-Kapitel sind in
 [`docs/dev_history/`](../../../docs/dev_history/README.md) archiviert.
 

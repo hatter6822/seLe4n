@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.19.3-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.19.6-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -46,13 +46,13 @@ melhorias arquiteturais inovadoras em comparação com outros microkernels:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.18.6` |
+| **Versão** | `0.19.6` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 55.732 em 98 arquivos |
-| **LoC Lean de testes** | 7.317 em 10 suítes de testes |
-| **Declarações provadas** | 1.692 declarações de teorema/lema (zero sorry/axiom) |
+| **LoC Lean de produção** | 57.506 em 100 arquivos |
+| **LoC Lean de testes** | 7.559 em 10 suítes de testes |
+| **Declarações provadas** | 1.756 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Auditoria mais recente** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoria completa pré-lançamento do kernel + codebase Rust |
+| **Auditoria mais recente** | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) e [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — Auditorias duais abrangentes (115+ descobertas, 0 Críticas) |
 | **Mapa do codebase** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário de declarações legível por máquina |
 
 As métricas são derivadas do codebase por `./scripts/generate_codebase_map.py`
@@ -169,10 +169,11 @@ agrega todos os invariantes de subsistema em uma única obrigação de prova.
 As prioridades atuais e o histórico completo de workstreams são mantidos em
 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md). Resumo:
 
-- **WS-R** — Remediação Abrangente de Auditoria (8 fases, R1–R8, 111 subtarefas). Aborda todas as 82 descobertas da [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 completas (v0.18.0–v0.18.6), R8 pendente. Plano: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
-- **Binding para hardware Raspberry Pi 5** — page table walk ARMv8, roteamento de interrupções GIC-400, sequência de boot (contratos de plataforma RPi5 agora substanciais via WS-H15)
+- **WS-S** — Fortalecimento Pré-Benchmark (7 fases, S1–S7, 83 subtarefas) **COMPLETO** (v0.19.0–v0.19.6). Aborda todas as descobertas das auditorias duais abrangentes v0.18.7 (115+ descobertas). Plano: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../../../docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Relatório de encerramento: [`WS_S_CLOSURE_REPORT.md`](../../../docs/audits/WS_S_CLOSURE_REPORT.md).
+- **WS-R** — Remediação Abrangente de Auditoria (8 fases, R1–R8, 111 subtarefas) **COMPLETO** (v0.18.0–v0.18.7). Plano: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **Binding para hardware Raspberry Pi 5** — page table walk ARMv8, roteamento de interrupções GIC-400, sequência de boot (próximo workstream)
 
-Portfólios anteriores (WS-B até WS-Q) estão todos completos. Auditorias anteriores
+Portfólios anteriores (WS-B até WS-R) estão todos completos. Auditorias anteriores
 (v0.8.0–v0.9.32), fechamentos de marcos e capítulos legados do GitBook estão
 arquivados em [`docs/dev_history/`](../../../docs/dev_history/README.md).
 

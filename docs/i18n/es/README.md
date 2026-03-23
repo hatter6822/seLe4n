@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.19.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.19.6-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -48,13 +48,13 @@ microkernels:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.18.6` |
+| **Versión** | `0.19.6` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 55.732 en 98 archivos |
-| **LoC de pruebas en Lean** | 7.317 en 10 suites de pruebas |
-| **Declaraciones demostradas** | 1.692 declaraciones de teorema/lema (theorem/lemma) (cero sorry/axiom) |
+| **LoC de producción en Lean** | 57.506 en 100 archivos |
+| **LoC de pruebas en Lean** | 7.559 en 10 suites de pruebas |
+| **Declaraciones demostradas** | 1.756 declaraciones de teorema/lema (theorem/lemma) (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Última auditoría** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoría completa pre-lanzamiento del núcleo y código Rust |
+| **Última auditoría** | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) y [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — Auditorías duales exhaustivas (115+ hallazgos, 0 Críticos) |
 | **Mapa del código** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventario de declaraciones legible por máquina |
 
 Las métricas se derivan del código fuente mediante `./scripts/generate_codebase_map.py`
@@ -157,10 +157,11 @@ una sola obligación de prueba.
 Las prioridades actuales y el historial completo de flujos de trabajo se mantienen en
 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md). Resumen:
 
-- **WS-R** — Remediación integral de auditoría (Comprehensive Audit Remediation) (8 fases, R1–R8, 111 sub-tareas). Aborda los 82 hallazgos de [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 completas (v0.18.0–v0.18.6), R8 pendiente. Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
-- **Vinculación con hardware Raspberry Pi 5** — recorrido de tablas de páginas ARMv8, enrutamiento de interrupciones GIC-400, secuencia de arranque (boot) (los contratos de plataforma RPi5 ya son sustantivos gracias a WS-H15)
+- **WS-S** — Fortalecimiento previo al benchmark (Pre-Benchmark Strengthening) (7 fases, S1–S7, 83 sub-tareas) **COMPLETO** (v0.19.0–v0.19.6). Aborda todos los hallazgos de las auditorías duales exhaustivas v0.18.7 (115+ hallazgos). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../../../docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Informe de cierre: [`WS_S_CLOSURE_REPORT.md`](../../../docs/audits/WS_S_CLOSURE_REPORT.md).
+- **WS-R** — Remediación integral de auditoría (Comprehensive Audit Remediation) (8 fases, R1–R8, 111 sub-tareas) **COMPLETO** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **Vinculación con hardware Raspberry Pi 5** — recorrido de tablas de páginas ARMv8, enrutamiento de interrupciones GIC-400, secuencia de arranque (siguiente workstream)
 
-Los portafolios anteriores (WS-B a WS-Q) están todos completos. Las auditorías
+Los portafolios anteriores (WS-B a WS-R) están todos completos. Las auditorías
 previas (v0.8.0–v0.9.32), los cierres de hitos y los capítulos heredados de
 GitBook están archivados en [`docs/dev_history/`](../../../docs/dev_history/README.md).
 

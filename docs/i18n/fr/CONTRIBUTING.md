@@ -22,7 +22,7 @@ certifiez également que vous avez le droit de soumettre la contribution sous ce
 2. **Niveaux de tests :** [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md)
 3. **Politique CI :** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **Portée du projet et workstreams :** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
-5. **Constats d'audit actifs :** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
+5. **Constats d'audit actifs :** [`docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md)
 6. **Historique des workstreams :** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
 
 Manuel complet : [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)

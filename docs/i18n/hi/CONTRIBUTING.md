@@ -18,7 +18,7 @@ seLe4n [GNU General Public License v3.0 या बाद के संस्क�
 2. **परीक्षण स्तर (Testing tiers):** [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md)
 3. **CI नीति (CI policy):** [`docs/CI_POLICY.md`](../../../docs/CI_POLICY.md)
 4. **परियोजना दायरा + कार्यधाराएँ (Project scope + workstreams):** [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md)
-5. **सक्रिय ऑडिट निष्कर्ष (Active audit findings):** [`docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md)
+5. **सक्रिय ऑडिट निष्कर्ष (Active audit findings):** [`docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md)
 6. **कार्यधारा इतिहास (Workstream history):** [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md)
 
 पूर्ण पुस्तिका (handbook): [`docs/gitbook/README.md`](../../../docs/gitbook/README.md)

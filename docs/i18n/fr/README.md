@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.19.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.19.6-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -52,13 +52,13 @@ aux autres micro-noyaux :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.19.3` |
+| **Version** | `0.19.6` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 55 499 réparties sur 98 fichiers |
-| **LoC Lean de test** | 7 309 réparties sur 10 suites de tests |
-| **Déclarations prouvées** | 1 686 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 57 506 réparties sur 100 fichiers |
+| **LoC Lean de test** | 7 559 réparties sur 10 suites de tests |
+| **Déclarations prouvées** | 1 756 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Audit complet pré-publication du noyau et de la base Rust |
+| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) et [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — Double audit exhaustif (115+ constatations, 0 Critique) |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |
 
 Les métriques sont extraites de la base de code par `./scripts/generate_codebase_map.py`
@@ -159,10 +159,11 @@ en une seule obligation de preuve.
 Les priorités actuelles et l'historique complet des flux de travail sont maintenus dans
 [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md). En résumé :
 
-- **WS-R** — Remédiation d'audit complète (8 phases, R1–R8, 111 sous-tâches). Traite les 82 constats de l'[`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 terminées (v0.18.0–v0.18.6), R8 en attente. Plan : [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
-- **Liaison matérielle Raspberry Pi 5** — parcours de tables de pages ARMv8, routage d'interruptions GIC-400, séquence de démarrage (les contrats de plateforme RPi5 sont désormais substantifs via WS-H15)
+- **WS-S** — Renforcement pré-benchmark (7 phases, S1–S7, 83 sous-tâches) **TERMINÉ** (v0.19.0–v0.19.6). Traite tous les constats des audits exhaustifs doubles v0.18.7 (115+ constatations). Plan : [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](../../../docs/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Rapport de clôture : [`WS_S_CLOSURE_REPORT.md`](../../../docs/audits/WS_S_CLOSURE_REPORT.md).
+- **WS-R** — Remédiation d'audit complète (8 phases, R1–R8, 111 sous-tâches) **TERMINÉ** (v0.18.0–v0.18.7). Plan : [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
+- **Liaison matérielle Raspberry Pi 5** — parcours de tables de pages ARMv8, routage d'interruptions GIC-400, séquence de démarrage (prochain workstream)
 
-Les portefeuilles précédents (WS-B à WS-Q) sont tous terminés. Les audits antérieurs (v0.8.0–v0.9.32),
+Les portefeuilles précédents (WS-B à WS-R) sont tous terminés. Les audits antérieurs (v0.8.0–v0.9.32),
 les clôtures de jalons et les chapitres GitBook historiques sont archivés dans
 [`docs/dev_history/`](../../../docs/dev_history/README.md).
 
