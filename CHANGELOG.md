@@ -1,3 +1,46 @@
+## [0.19.5] — WS-S Phase S6: Hardware Preparation
+
+- S6-A (U-M18): Migrated API dispatch to `WithFlush` VSpace variants
+  (`vspaceMapPageCheckedWithFlush`, `vspaceUnmapPageWithFlush`). Trace harness
+  updated to use flushing variants on all production paths.
+- S6-B (U-M18): Documented unflushed `vspaceMapPage`/`vspaceUnmapPage` as
+  internal proof decomposition helpers with clear warnings against direct use.
+- S6-C (U-M19): Added memory scrubbing (`zeroMemoryRange`, `scrubObjectMemory`)
+  to `lifecycleRetypeWithCleanup`. `Machine.lean` gets `zeroMemoryRange` primitive
+  and `memoryZeroed` postcondition predicate.
+- S6-D (U-M19): Proved `scrubObjectMemory` preserves lifecycle invariants
+  (trivially — only modifies `machine.memory`, not kernel state structures).
+- S6-E (U-M19): Proved `scrubObjectMemory` preserves NI (`lowEquivalent`) for
+  non-observable targets — scrubbing memory outside an observer's domain does
+  not affect their projected state.
+- S6-F (U-M20): Created `Platform/DeviceTree.lean` abstraction with `DeviceTree`
+  structure. RPi5 `Board.lean` constructs `rpi5DeviceTree`.
+- S6-G: Validated all BCM2712 address constants against datasheet. Added
+  comprehensive validation table to `Board.lean`.
+- Zero sorry/axiom, all tests pass.
+
+## [0.19.4] — WS-S Phase S5: API Cleanup, Platform Hardening & Lifecycle Fidelity
+
+- S5-A (U-M05b): Removed 14 deprecated `api*` wrappers from `API.lean`.
+  Production path: `syscallEntry` -> `dispatchSyscall` -> `syscallInvoke` ->
+  `dispatchWithCap`.
+- S5-B: Audited invariant files — zero references to removed wrappers.
+- S5-D (U-M18): Created `SimRestrictive` platform variant with substantive
+  contracts (`simRuntimeContractSubstantive`): timer monotonicity, 256 MiB RAM
+  memory bound, register writes denied. `SimRestrictivePlatform` binding and
+  substantive proof hooks.
+- S5-E: Added `SimRestrictive` build check to `test_smoke.sh`.
+- S5-F (U-M19): BCM2712 address validation checklist in `Platform/RPi5/Board.lean`;
+  pre-hardware-binding gate in `DEVELOPMENT.md`.
+- S5-G/S5-H (U-M20/U-M21): Page-alignment check in `retypeFromUntyped` for
+  VSpace roots and CNodes — `requiresPageAlignment`, `allocationBasePageAligned`,
+  `allocationMisaligned` error variant. All lifecycle invariant preservation
+  proofs updated.
+- S5-I (U-M22): EDF tie-breaking FIFO semantics documented at `chooseThread`.
+- S5-J (U-M23b): Complexity documentation for `TlbState` operations (O(n)),
+  `RunQueue.remove` (O(k+n)), `RunQueue.rotateHead` (O(k+n)).
+- Zero sorry/axiom, all tests pass.
+
 ## [0.19.3] — WS-S Phase S4: Model Fidelity & Type Safety
 
 - S4-A (U-M04): Added `objectIndexBounded` advisory predicate with RPi5 growth

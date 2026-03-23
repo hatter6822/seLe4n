@@ -537,4 +537,44 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
     hObjInv
     hStep
 
+-- ============================================================================
+-- S6-D: Memory scrubbing preserves lifecycle invariants
+-- ============================================================================
+
+/-- S6-D: `scrubObjectMemory` preserves the lifecycle invariant bundle.
+
+    Memory scrubbing only modifies `machine.memory` — it does not touch the
+    object store, lifecycle metadata, capabilities, or slots. All lifecycle
+    invariants (`lifecycleIdentityTypeExact`, `lifecycleCapabilityRefExact`,
+    etc.) operate on `objects` and `lifecycle` fields, so they are trivially
+    preserved. -/
+theorem scrubObjectMemory_preserves_lifecycleInvariantBundle
+    (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
+    (hInv : lifecycleInvariantBundle st) :
+    lifecycleInvariantBundle (scrubObjectMemory st objectId objType) := by
+  -- scrubObjectMemory only changes machine.memory; all fields that lifecycle
+  -- invariants reference (objects, lifecycle, cdt) are definitionally equal
+  have : (scrubObjectMemory st objectId objType).objects = st.objects :=
+    scrubObjectMemory_objects_eq st objectId objType
+  have : (scrubObjectMemory st objectId objType).lifecycle = st.lifecycle :=
+    scrubObjectMemory_lifecycle_eq st objectId objType
+  -- The invariant bundle only mentions objects/lifecycle/cdt fields which are
+  -- unchanged by scrubObjectMemory. The scrubbed state's objects/lifecycle/cdt
+  -- are definitionally equal to the original, so the invariant transfers directly.
+  exact hInv
+
+/-- S6-D: `scrubObjectMemory` preserves the stale-reference exclusion invariant. -/
+theorem scrubObjectMemory_preserves_lifecycleStaleReferenceExclusionInvariant
+    (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
+    (hInv : lifecycleStaleReferenceExclusionInvariant st) :
+    lifecycleStaleReferenceExclusionInvariant (scrubObjectMemory st objectId objType) :=
+  hInv
+
+/-- S6-D: `scrubObjectMemory` preserves the full identity + stale-reference bundle. -/
+theorem scrubObjectMemory_preserves_lifecycleIdentityStaleReferenceInvariant
+    (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
+    (hInv : lifecycleIdentityStaleReferenceInvariant st) :
+    lifecycleIdentityStaleReferenceInvariant (scrubObjectMemory st objectId objType) :=
+  hInv
+
 end SeLe4n.Kernel

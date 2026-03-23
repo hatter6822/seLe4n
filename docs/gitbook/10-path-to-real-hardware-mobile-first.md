@@ -75,6 +75,25 @@ provides the organizational infrastructure for hardware binding:
     (`rpi5RestrictiveAdapterProofHooks`) with end-to-end preservation theorems
     (WS-H15d).
 
+**WS-S Phase S6 — Hardware Preparation** (v0.19.5, COMPLETE):
+
+- **TLB flush enforcement (S6-A/B):** Production API dispatch paths
+  (`vspaceMap`, `vspaceUnmap`) now use `WithFlush` variants that integrate
+  TLB invalidation. Unflushed variants documented as internal proof helpers.
+- **Memory scrubbing (S6-C/D):** `scrubObjectMemory` zeros backing memory
+  on `lifecycleRetypeWithCleanup`, preventing inter-domain information leakage.
+  Preservation proofs for lifecycle invariants (trivial — only `machine.memory`
+  changes).
+- **NI for scrubbing (S6-E):** `scrubObjectMemory_preserves_lowEquivalent`
+  proves non-interference is maintained when scrubbing non-observable targets.
+- **Device tree abstraction (S6-F):** `Platform/DeviceTree.lean` defines a
+  platform-independent `DeviceTree` structure. `rpi5DeviceTree` constructs
+  an instance from Board.lean constants. `DeviceTree.fromDtb` stub prepared
+  for WS-T DTB parsing.
+- **BCM2712 validation (S6-G):** All RPi5 address constants cross-referenced
+  against BCM2712 documentation and ARM specifications. Validation results
+  documented in Board.lean.
+
 **Remaining H3 work** (WS-H15 has now populated substantive predicates):
 
 1. ~~Populate RPi5 runtime contract with hardware-validated predicates.~~ **DONE** (WS-H15b).
@@ -82,6 +101,7 @@ provides the organizational infrastructure for hardware binding:
 3. Implement interrupt routing for GIC-400 with IRQ acknowledgment.
 4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
 5. Define boot sequence as a verified initial state construction.
+6. Implement DTB parsing in `DeviceTree.fromDtb` (S6-F preparation complete).
 
 ### H4 — Planned: evidence convergence
 

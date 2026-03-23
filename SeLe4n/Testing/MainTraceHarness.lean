@@ -174,14 +174,16 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
   | .error err => IO.println s!"[CAT-009] adapter read success path error: {reprStr err}"
   | .ok (byte, _) =>
       IO.println s!"[CAT-010] adapter read success path byte: {reprStr byte}"
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage ⟨1⟩ ⟨4096⟩ ⟨8192⟩) st1 with
+  -- S6-A: Production-path VSpace trace uses WithFlush variants (R7-A.3/M-17).
+  -- TLB is flushed after map/unmap to maintain tlbConsistent on hardware.
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ ⟨4096⟩ ⟨8192⟩) st1 with
   | .error err => IO.println s!"[CAT-011] vspace map error: {reprStr err}"
   | .ok (_, stV1) =>
       match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨4096⟩ stV1 with
       | .error err => IO.println s!"[CAT-012] vspace lookup error: {reprStr err}"
       | .ok (paddr, stV2) =>
           IO.println s!"[CAT-013] vspace lookup mapped paddr: {paddr.toNat}"
-          match SeLe4n.Kernel.Architecture.vspaceUnmapPage ⟨1⟩ ⟨4096⟩ stV2 with
+          match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ ⟨4096⟩ stV2 with
           | .error err => IO.println s!"[CAT-014] vspace unmap error: {reprStr err}"
           | .ok (_, stV3) =>
               match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨4096⟩ stV3 with
@@ -1582,7 +1584,8 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
   | .ok mapArgs =>
     let readPerms := PagePermissions.ofNat mapArgs.perms
-    match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked mapArgs.asid mapArgs.vaddr mapArgs.paddr readPerms) stVspace with
+    -- S6-A: Use WithFlush variant to match production dispatch path
+    match (SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlush mapArgs.asid mapArgs.vaddr mapArgs.paddr readPerms) stVspace with
     | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
     | .ok (_, stMapped) =>
       match SeLe4n.Kernel.Architecture.vspaceLookup mapArgs.asid mapArgs.vaddr stMapped with

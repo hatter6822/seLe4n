@@ -392,6 +392,74 @@ theorem pageAligned_zero : pageAligned ⟨0⟩ := by
   simp
 
 -- ============================================================================
+-- S6-C: Memory scrubbing primitives (hardware-binding readiness)
+-- ============================================================================
+
+/-- S6-C: Zero a contiguous range of physical memory.
+
+    Replaces `memory(addr)` with `0` for all addresses in
+    `[base, base + size)`. Addresses outside the range are unchanged.
+
+    This models the hardware operation of zeroing backing memory after
+    object deletion. On ARM64, this corresponds to a `DC ZVA` loop or
+    `memset(addr, 0, size)` in the kernel's C runtime.
+
+    **Security rationale:** When a kernel object is deleted and its
+    backing memory returned to the untyped pool, the memory must be
+    zeroed to prevent information leakage between security domains.
+    Without scrubbing, a newly allocated object could read data from
+    the previous object's memory, violating non-interference. -/
+def zeroMemoryRange (ms : MachineState) (base : PAddr) (size : Nat) : MachineState :=
+  { ms with memory := fun addr =>
+      if base.toNat ≤ addr.toNat ∧ addr.toNat < base.toNat + size
+      then 0
+      else ms.memory addr }
+
+/-- S6-C: Postcondition predicate — all bytes in `[base, base + size)` are zero. -/
+def memoryZeroed (ms : MachineState) (base : PAddr) (size : Nat) : Prop :=
+  ∀ (addr : PAddr), base.toNat ≤ addr.toNat → addr.toNat < base.toNat + size →
+    ms.memory addr = 0
+
+/-- S6-C: `zeroMemoryRange` establishes the `memoryZeroed` postcondition. -/
+theorem zeroMemoryRange_establishes_memoryZeroed
+    (ms : MachineState) (base : PAddr) (size : Nat) :
+    memoryZeroed (zeroMemoryRange ms base size) base size := by
+  intro addr hGe hLt
+  simp only [zeroMemoryRange]
+  split
+  · rfl
+  · rename_i h; exact absurd ⟨hGe, hLt⟩ h
+
+/-- S6-C: `zeroMemoryRange` does not modify memory outside the zeroed range. -/
+theorem zeroMemoryRange_frame
+    (ms : MachineState) (base : PAddr) (size : Nat) (addr : PAddr)
+    (hOut : ¬(base.toNat ≤ addr.toNat ∧ addr.toNat < base.toNat + size)) :
+    (zeroMemoryRange ms base size).memory addr = ms.memory addr := by
+  simp only [zeroMemoryRange]
+  split
+  · rename_i h; exact absurd h hOut
+  · rfl
+
+/-- S6-C: `zeroMemoryRange` preserves register state. -/
+theorem zeroMemoryRange_preserves_regs
+    (ms : MachineState) (base : PAddr) (size : Nat) :
+    (zeroMemoryRange ms base size).regs = ms.regs := rfl
+
+/-- S6-C: `zeroMemoryRange` preserves timer state. -/
+theorem zeroMemoryRange_preserves_timer
+    (ms : MachineState) (base : PAddr) (size : Nat) :
+    (zeroMemoryRange ms base size).timer = ms.timer := rfl
+
+/-- S6-C: Zero-size scrub is a no-op (memory function unchanged). -/
+theorem zeroMemoryRange_zero_size_memory
+    (ms : MachineState) (base : PAddr) (addr : PAddr) :
+    (zeroMemoryRange ms base 0).memory addr = ms.memory addr := by
+  simp only [zeroMemoryRange]
+  split
+  · rename_i h; omega
+  · rfl
+
+-- ============================================================================
 -- H3 preparation: MachineConfig and MemoryRegion (platform-binding readiness)
 -- ============================================================================
 

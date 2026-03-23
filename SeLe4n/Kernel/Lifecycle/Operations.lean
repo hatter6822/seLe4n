@@ -371,7 +371,12 @@ Failure branches remain explicit and ordered:
 - aliasing `authority = cleanup` is rejected as `illegalState`,
 - revoke/delete failures are propagated directly,
 - unexpected post-delete lookup success is rejected as `illegalState`,
-- final retype failures are propagated directly. -/
+- final retype failures are propagated directly.
+
+**S6-C note:** This is a low-level composition that does not perform memory
+scrubbing. Callers requiring memory scrubbing (to prevent inter-domain
+information leakage) should use `lifecycleRetypeWithCleanup`, which
+integrates `scrubObjectMemory` between cleanup and retype. -/
 def lifecycleRevokeDeleteRetype
     (authority cleanup : CSpaceAddr)
     (target : SeLe4n.ObjId)
@@ -421,6 +426,74 @@ def requiresPageAlignment : KernelObjectType → Bool
 is page-aligned. Returns `true` when alignment is satisfied. -/
 def allocationBasePageAligned (ut : UntypedObject) : Bool :=
   (ut.regionBase.toNat + ut.watermark) % 4096 == 0
+
+-- ============================================================================
+-- S6-C: Memory scrubbing on object deletion/retype
+-- ============================================================================
+
+/-- S6-C: Scrub backing memory for a deleted/retyped kernel object.
+
+    Zeros the memory region that backed the old object, preventing information
+    leakage when the memory is reallocated to a different security domain.
+    The scrub region is determined by the object type's allocation size
+    and a base address derived from the object ID.
+
+    **Security rationale:** Without scrubbing, `retypeFromUntyped` could
+    allocate a new object in memory that still contains data from a
+    deleted object belonging to a different security domain. This violates
+    non-interference even though the Lean-level object store is correctly
+    updated, because the underlying machine memory retains the old data.
+
+    **Abstract model note:** The base address is computed as
+    `objectId.toNat × objectTypeAllocSize` — this is an abstract convention
+    for the formal model. The hardware binding (WS-T) will use the actual
+    physical addresses from the untyped allocator. -/
+def scrubObjectMemory (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) : SystemState :=
+  let size := objectTypeAllocSize objType
+  let base : SeLe4n.PAddr := ⟨objectId.toNat * size⟩
+  { st with machine := SeLe4n.zeroMemoryRange st.machine base size }
+
+/-- S6-C: `scrubObjectMemory` preserves the object store. -/
+theorem scrubObjectMemory_objects_eq (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).objects = st.objects := rfl
+
+/-- S6-C: `scrubObjectMemory` preserves the scheduler state. -/
+theorem scrubObjectMemory_scheduler_eq (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).scheduler = st.scheduler := rfl
+
+/-- S6-C: `scrubObjectMemory` preserves lifecycle metadata. -/
+theorem scrubObjectMemory_lifecycle_eq (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).lifecycle = st.lifecycle := rfl
+
+/-- S6-C: `scrubObjectMemory` preserves the TLB state. -/
+theorem scrubObjectMemory_tlb_eq (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).tlb = st.tlb := rfl
+
+/-- S6-C: `scrubObjectMemory` establishes the `memoryZeroed` postcondition
+    for the scrubbed region. -/
+theorem scrubObjectMemory_establishes_memoryZeroed
+    (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    let size := objectTypeAllocSize objType
+    let base : SeLe4n.PAddr := ⟨objectId.toNat * size⟩
+    SeLe4n.memoryZeroed (scrubObjectMemory st objectId objType).machine base size := by
+  simp [scrubObjectMemory]
+  exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _
+
+/-- S6-C: `scrubObjectMemory` preserves the objectIndex. -/
+theorem scrubObjectMemory_objectIndex_eq (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).objectIndex = st.objectIndex := rfl
+
+/-- S6-C: `scrubObjectMemory` preserves the objectIndexSet. -/
+theorem scrubObjectMemory_objectIndexSet_eq (st : SystemState) (objectId : SeLe4n.ObjId)
+    (objType : KernelObjectType) :
+    (scrubObjectMemory st objectId objType).objectIndexSet = st.objectIndexSet := rfl
 
 /-- WS-F2: Retype a new typed object from an untyped memory region.
 
@@ -945,20 +1018,25 @@ theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps
 
 
 -- ============================================================================
--- WS-H2: Safe lifecycle retype wrapper (cleanup + retype)
+-- WS-H2/S6-C: Safe lifecycle retype wrapper (cleanup + scrub + retype)
 -- ============================================================================
 
-/-- WS-H2: Safe lifecycle retype with reference cleanup.
-    Composes `lifecyclePreRetypeCleanup` (TCB scheduler dequeue + CNode CDT detach)
-    with `lifecycleRetypeObject`.  The cleanup runs on the pre-retype state;
-    the actual retype operates on the cleaned state.
+/-- WS-H2/S6-C: Safe lifecycle retype with reference cleanup and memory scrubbing.
+    Composes three phases:
+    1. `lifecyclePreRetypeCleanup` — TCB scheduler dequeue + CNode CDT detach
+    2. `scrubObjectMemory` — zero the backing memory of the old object (S6-C)
+    3. `lifecycleRetypeObject` — replace the object in the store
 
-    Since cleanup preserves `objects` and `lifecycle`, the retype authority check
-    and lifecycle metadata check succeed on the cleaned state iff they succeed on
-    the original state.
+    The cleanup runs on the pre-retype state; scrubbing zeros machine memory
+    to prevent information leakage between security domains; the actual retype
+    operates on the cleaned+scrubbed state.
+
+    Since cleanup and scrubbing preserve `objects` and `lifecycle`, the retype
+    authority check and lifecycle metadata check succeed on the scrubbed state
+    iff they succeed on the original state.
 
     This wrapper is the recommended entry point for callers that need the
-    H-05 safety guarantee (`lifecycleRetypeWithCleanup_ok_runnable_no_dangling`). -/
+    H-05 safety guarantee and S6-C memory scrubbing guarantee. -/
 def lifecycleRetypeWithCleanup
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
@@ -968,10 +1046,14 @@ def lifecycleRetypeWithCleanup
     | none => lifecycleRetypeObject authority target newObj st
     | some currentObj =>
         let stClean := lifecyclePreRetypeCleanup st target currentObj newObj
-        lifecycleRetypeObject authority target newObj stClean
+        -- S6-C: Scrub backing memory before retype to prevent info leakage
+        let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
+        lifecycleRetypeObject authority target newObj stScrubbed
 
-/-- WS-H2/H-05: After a TCB retype via the safe wrapper, the old ThreadId is
-    not in the run queue.  This is the key safety property required by H-05. -/
+/-- WS-H2/H-05/S6-C: After a TCB retype via the safe wrapper, the old ThreadId is
+    not in the run queue.  This is the key safety property required by H-05.
+    The proof threads through both cleanup and scrubbing phases, using the fact
+    that `scrubObjectMemory` preserves the scheduler state. -/
 theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -983,13 +1065,14 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     ¬(tcb.tid ∈ st'.scheduler.runQueue) := by
   unfold lifecycleRetypeWithCleanup at hStep
   simp only [hObj] at hStep
-  -- hStep now has lifecycleRetypeObject on the cleaned state
+  -- hStep now has lifecycleRetypeObject on the scrubbed+cleaned state
   rcases lifecycleRetypeObject_ok_as_storeObject _ st' authority target newObj hStep with
     ⟨_, _, _, _, _, _, hStore⟩
   have hSchedEq : st'.scheduler =
-      (lifecyclePreRetypeCleanup st target (.tcb tcb) newObj).scheduler :=
+      (scrubObjectMemory (lifecyclePreRetypeCleanup st target (.tcb tcb) newObj)
+        target (KernelObject.tcb tcb).objectType).scheduler :=
     lifecycle_storeObject_scheduler_eq _ st' target newObj hStore
-  rw [hSchedEq]
+  rw [hSchedEq, scrubObjectMemory_scheduler_eq]
   unfold lifecyclePreRetypeCleanup
   simp only []
   exact cleanupTcbReferences_removes_from_runnable st tcb.tid

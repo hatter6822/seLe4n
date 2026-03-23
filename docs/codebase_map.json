@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-phase-s5-api-E0UCT",
-      "commit_sha": "5e371fdaa1f1d10021a224460649a1f1ed02e0cb",
-      "tree_sha": "ecc2f498531d2ef2301f6ceabf4b17ad7e09398b",
-      "committed_at_utc": "2026-03-23T03:25:11+00:00"
+      "branch": "claude/review-phase-s6-hardware-Z4PUa",
+      "commit_sha": "307c3e276412f6d033a705d9dabafaa0af772a47",
+      "tree_sha": "ef900b7b8e1fc974f3aab18b1bd433b47eedc228",
+      "committed_at_utc": "2026-03-23T04:15:51+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "59bef5046ac8f7b1c50a6594e95bfa9700d995c49789b993b24ddc2256a736ce"
+    "source_digest": "94b6dca5629d8e266f16e3afcad8673b89c2970a81452e180b59a761226f4014"
   },
   "summary": {
-    "module_count": 109,
-    "declaration_count": 3213
+    "module_count": 110,
+    "declaration_count": 3242
   },
   "readme_sync": {
     "version": "0.19.3",
     "lean_toolchain": "v4.28.0",
-    "production_files": 99,
-    "production_loc": 56993,
+    "production_files": 100,
+    "production_loc": 57506,
     "test_files": 10,
     "test_loc": 7559,
-    "proved_theorem_lemma_decls": 1738,
+    "proved_theorem_lemma_decls": 1756,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -141,7 +141,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 494,
+          "line": 496,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -152,7 +152,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 523,
+          "line": 525,
           "called": [
             "dispatchSyscall",
             "lookupThreadRegisterContext"
@@ -161,7 +161,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 543,
+          "line": 545,
           "called": [
             "lookupThreadRegisterContext",
             "syscallEntry"
@@ -170,7 +170,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 571,
+          "line": 573,
           "called": [
             "dispatchSyscall",
             "dispatchWithCap",
@@ -181,7 +181,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 610,
+          "line": 612,
           "called": [
             "dispatchSyscall_requires_right",
             "lookupThreadRegisterContext",
@@ -192,7 +192,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 645,
+          "line": 647,
           "called": [
             "lookupThreadRegisterContext"
           ]
@@ -200,7 +200,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 655,
+          "line": 657,
           "called": [
             "syscallRequiredRight"
           ]
@@ -208,7 +208,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 665,
+          "line": 667,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -217,7 +217,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 682,
+          "line": 684,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -226,7 +226,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 697,
+          "line": 699,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -235,7 +235,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 712,
+          "line": 714,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -244,7 +244,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 730,
+          "line": 732,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -253,7 +253,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 743,
+          "line": 746,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -262,7 +262,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 757,
+          "line": 761,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -271,7 +271,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 774,
+          "line": 778,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -281,7 +281,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 793,
+          "line": 797,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -291,7 +291,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 812,
+          "line": 816,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -300,7 +300,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 827,
+          "line": 831,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -310,7 +310,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 836,
+          "line": 840,
           "called": [
             "syscallEntry"
           ]
@@ -318,7 +318,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 846,
+          "line": 850,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -327,7 +327,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 863,
+          "line": 867,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -337,13 +337,13 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 893,
+          "line": 897,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 902,
+          "line": 906,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -352,7 +352,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 913,
+          "line": 917,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -361,7 +361,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 928,
+          "line": 932,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -371,7 +371,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 943,
+          "line": 947,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -381,7 +381,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 966,
+          "line": 970,
           "called": [
             "syscallEntry"
           ]
@@ -389,7 +389,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 981,
+          "line": 985,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -399,13 +399,13 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1009,
+          "line": 1013,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1035,
+          "line": 1039,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -2003,7 +2003,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPage",
-          "line": 43,
+          "line": 51,
           "called": [
             "resolveAsidRoot"
           ]
@@ -2011,7 +2011,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageChecked",
-          "line": 58,
+          "line": 68,
           "called": [
             "physicalAddressBound",
             "vspaceMapPage"
@@ -2020,7 +2020,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPage",
-          "line": 65,
+          "line": 78,
           "called": [
             "resolveAsidRoot"
           ]
@@ -2028,7 +2028,7 @@
         {
           "kind": "def",
           "name": "vspaceLookupFull",
-          "line": 76,
+          "line": 89,
           "called": [
             "resolveAsidRoot"
           ]
@@ -2036,7 +2036,7 @@
         {
           "kind": "def",
           "name": "vspaceLookup",
-          "line": 88,
+          "line": 101,
           "called": [
             "resolveAsidRoot"
           ]
@@ -2044,7 +2044,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageWithFlush",
-          "line": 110,
+          "line": 123,
           "called": [
             "vspaceMapPage"
           ]
@@ -2052,7 +2052,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithFlush",
-          "line": 125,
+          "line": 138,
           "called": [
             "vspaceUnmapPage"
           ]
@@ -2060,7 +2060,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlush",
-          "line": 133,
+          "line": 147,
           "called": [
             "physicalAddressBound",
             "vspaceMapPageWithFlush"
@@ -2069,13 +2069,13 @@
         {
           "kind": "def",
           "name": "vspaceAsidRootsUnique",
-          "line": 144,
+          "line": 158,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_implies_obj",
-          "line": 153,
+          "line": 167,
           "called": [
             "resolveAsidRoot"
           ]
@@ -2083,7 +2083,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_of_asidTable_entry",
-          "line": 190,
+          "line": 204,
           "called": [
             "resolveAsidRoot"
           ]
@@ -2091,7 +2091,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objectIndex_eq_of_mem",
-          "line": 206,
+          "line": 220,
           "called": []
         }
       ]
@@ -7949,7 +7949,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 58,
+      "declaration_count": 60,
       "declarations": [
         {
           "kind": "namespace",
@@ -8349,6 +8349,20 @@
           "line": 1569,
           "called": [
             "registerService_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_preserves_projection",
+          "line": 1606,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_preserves_lowEquivalent",
+          "line": 1643,
+          "called": [
+            "scrubObjectMemory_preserves_projection"
           ]
         }
       ]
@@ -9582,7 +9596,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Invariant",
       "path": "SeLe4n/Kernel/Lifecycle/Invariant.lean",
-      "declaration_count": 36,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -9879,13 +9893,37 @@
             "retypeFromUntyped_preserves_untypedMemoryInvariant",
             "untypedMemoryInvariant"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_preserves_lifecycleInvariantBundle",
+          "line": 551,
+          "called": [
+            "lifecycleInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_preserves_lifecycleStaleReferenceExclusionInvariant",
+          "line": 567,
+          "called": [
+            "lifecycleStaleReferenceExclusionInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_preserves_lifecycleIdentityStaleReferenceInvariant",
+          "line": 574,
+          "called": [
+            "lifecycleIdentityStaleReferenceInvariant"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations",
       "path": "SeLe4n/Kernel/Lifecycle/Operations.lean",
-      "declaration_count": 68,
+      "declaration_count": 76,
       "declarations": [
         {
           "kind": "namespace",
@@ -10130,7 +10168,7 @@
         {
           "kind": "def",
           "name": "lifecycleRevokeDeleteRetype",
-          "line": 375,
+          "line": 380,
           "called": [
             "lifecycleRetypeObject"
           ]
@@ -10138,25 +10176,90 @@
         {
           "kind": "def",
           "name": "objectTypeAllocSize",
-          "line": 403,
+          "line": 408,
           "called": []
         },
         {
           "kind": "def",
           "name": "requiresPageAlignment",
-          "line": 415,
+          "line": 420,
           "called": []
         },
         {
           "kind": "def",
           "name": "allocationBasePageAligned",
-          "line": 422,
+          "line": 427,
           "called": []
         },
         {
           "kind": "def",
+          "name": "scrubObjectMemory",
+          "line": 451,
+          "called": [
+            "objectTypeAllocSize"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_objects_eq",
+          "line": 458,
+          "called": [
+            "scrubObjectMemory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_scheduler_eq",
+          "line": 463,
+          "called": [
+            "scrubObjectMemory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_lifecycle_eq",
+          "line": 468,
+          "called": [
+            "scrubObjectMemory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_tlb_eq",
+          "line": 473,
+          "called": [
+            "scrubObjectMemory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_establishes_memoryZeroed",
+          "line": 479,
+          "called": [
+            "objectTypeAllocSize",
+            "scrubObjectMemory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_objectIndex_eq",
+          "line": 489,
+          "called": [
+            "scrubObjectMemory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scrubObjectMemory_objectIndexSet_eq",
+          "line": 494,
+          "called": [
+            "scrubObjectMemory"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "retypeFromUntyped",
-          "line": 443,
+          "line": 516,
           "called": [
             "allocationBasePageAligned",
             "lifecycleRetypeAuthority",
@@ -10167,13 +10270,13 @@
         {
           "kind": "def",
           "name": "lookupUntyped",
-          "line": 494,
+          "line": 567,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_decompose",
-          "line": 503,
+          "line": 576,
           "called": [
             "lifecycleRetypeAuthority",
             "objectTypeAllocSize",
@@ -10183,7 +10286,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_typeMismatch",
-          "line": 621,
+          "line": 694,
           "called": [
             "retypeFromUntyped"
           ]
@@ -10191,7 +10294,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_allocSizeTooSmall",
-          "line": 639,
+          "line": 712,
           "called": [
             "objectTypeAllocSize",
             "retypeFromUntyped"
@@ -10200,7 +10303,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_regionExhausted",
-          "line": 665,
+          "line": 738,
           "called": [
             "allocationBasePageAligned",
             "lifecycleRetypeAuthority",
@@ -10212,31 +10315,31 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_eq",
-          "line": 702,
+          "line": 775,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_ne",
-          "line": 711,
+          "line": 784,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_scheduler_eq",
-          "line": 721,
+          "line": 794,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_state_eq",
-          "line": 729,
+          "line": 802,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_as_storeObject",
-          "line": 748,
+          "line": 821,
           "called": [
             "cspaceLookupSlot_ok_state_eq",
             "lifecycleRetypeAuthority",
@@ -10246,7 +10349,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_lookup_preserved_ne",
-          "line": 779,
+          "line": 852,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10256,7 +10359,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_runnable_membership",
-          "line": 792,
+          "line": 865,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10266,7 +10369,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_not_runnable_membership",
-          "line": 807,
+          "line": 880,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10276,7 +10379,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalState",
-          "line": 822,
+          "line": 895,
           "called": [
             "lifecycleRetypeObject"
           ]
@@ -10284,7 +10387,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalAuthority",
-          "line": 833,
+          "line": 906,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeObject"
@@ -10293,7 +10396,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_success_updates_object",
-          "line": 848,
+          "line": 921,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeObject",
@@ -10304,7 +10407,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias",
-          "line": 878,
+          "line": 951,
           "called": [
             "lifecycleRevokeDeleteRetype"
           ]
@@ -10312,7 +10415,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup",
-          "line": 888,
+          "line": 961,
           "called": [
             "lifecycleRevokeDeleteRetype",
             "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias"
@@ -10321,7 +10424,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_staged_steps",
-          "line": 901,
+          "line": 974,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRevokeDeleteRetype"
@@ -10330,34 +10433,37 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanup",
-          "line": 962,
+          "line": 1040,
           "called": [
             "lifecyclePreRetypeCleanup",
-            "lifecycleRetypeObject"
+            "lifecycleRetypeObject",
+            "scrubObjectMemory"
           ]
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_ok_runnable_no_dangling",
-          "line": 975,
+          "line": 1057,
           "called": [
             "cleanupTcbReferences_removes_from_runnable",
             "lifecyclePreRetypeCleanup",
             "lifecycleRetypeObject_ok_as_storeObject",
             "lifecycleRetypeWithCleanup",
-            "lifecycle_storeObject_scheduler_eq"
+            "lifecycle_storeObject_scheduler_eq",
+            "scrubObjectMemory",
+            "scrubObjectMemory_scheduler_eq"
           ]
         },
         {
           "kind": "def",
           "name": "objectOfTypeTag",
-          "line": 1009,
+          "line": 1092,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_deterministic",
-          "line": 1041,
+          "line": 1124,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10365,7 +10471,7 @@
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_error_iff",
-          "line": 1045,
+          "line": 1128,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10373,7 +10479,7 @@
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_type",
-          "line": 1059,
+          "line": 1142,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10381,13 +10487,13 @@
         {
           "kind": "def",
           "name": "objectOfKernelType",
-          "line": 1079,
+          "line": 1162,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "objectOfKernelType_type",
-          "line": 1109,
+          "line": 1192,
           "called": [
             "objectOfKernelType"
           ]
@@ -10395,7 +10501,7 @@
         {
           "kind": "theorem",
           "name": "objectOfKernelType_eq_objectOfTypeTag",
-          "line": 1114,
+          "line": 1197,
           "called": [
             "objectOfKernelType",
             "objectOfTypeTag"
@@ -10404,7 +10510,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirect",
-          "line": 1132,
+          "line": 1215,
           "called": [
             "lifecycleRetypeAuthority"
           ]
@@ -10412,7 +10518,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_deterministic",
-          "line": 1148,
+          "line": 1231,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10420,7 +10526,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_eq_lifecycleRetypeObject",
-          "line": 1156,
+          "line": 1239,
           "called": [
             "lifecycleRetypeDirect",
             "lifecycleRetypeObject"
@@ -10429,7 +10535,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_objectNotFound",
-          "line": 1171,
+          "line": 1254,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10437,7 +10543,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_illegalState",
-          "line": 1179,
+          "line": 1262,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10445,7 +10551,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_illegalAuthority",
-          "line": 1188,
+          "line": 1271,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeDirect"
@@ -15781,7 +15887,7 @@
     {
       "module": "SeLe4n.Machine",
       "path": "SeLe4n/Machine.lean",
-      "declaration_count": 104,
+      "declaration_count": 111,
       "declarations": [
         {
           "kind": "namespace",
@@ -16395,15 +16501,77 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "zeroMemoryRange",
+          "line": 412,
+          "called": [
+            "MachineState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "memoryZeroed",
+          "line": 419,
+          "called": [
+            "MachineState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zeroMemoryRange_establishes_memoryZeroed",
+          "line": 424,
+          "called": [
+            "MachineState",
+            "memoryZeroed",
+            "zeroMemoryRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zeroMemoryRange_frame",
+          "line": 434,
+          "called": [
+            "MachineState",
+            "zeroMemoryRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zeroMemoryRange_preserves_regs",
+          "line": 444,
+          "called": [
+            "MachineState",
+            "zeroMemoryRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zeroMemoryRange_preserves_timer",
+          "line": 449,
+          "called": [
+            "MachineState",
+            "zeroMemoryRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "zeroMemoryRange_zero_size_memory",
+          "line": 454,
+          "called": [
+            "MachineState",
+            "zeroMemoryRange"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "MemoryKind",
-          "line": 403,
+          "line": 471,
           "called": []
         },
         {
           "kind": "structure",
           "name": "MemoryRegion",
-          "line": 416,
+          "line": 484,
           "called": [
             "MemoryKind"
           ]
@@ -16411,13 +16579,13 @@
         {
           "kind": "namespace",
           "name": "MemoryRegion",
-          "line": 422,
+          "line": 490,
           "called": []
         },
         {
           "kind": "def",
           "name": "endAddr",
-          "line": 425,
+          "line": 493,
           "called": [
             "MemoryRegion"
           ]
@@ -16425,7 +16593,7 @@
         {
           "kind": "def",
           "name": "contains",
-          "line": 428,
+          "line": 496,
           "called": [
             "MemoryRegion"
           ]
@@ -16433,7 +16601,7 @@
         {
           "kind": "def",
           "name": "overlaps",
-          "line": 432,
+          "line": 500,
           "called": [
             "MemoryRegion",
             "endAddr"
@@ -16442,7 +16610,7 @@
         {
           "kind": "theorem",
           "name": "contains_iff",
-          "line": 435,
+          "line": 503,
           "called": [
             "MemoryRegion",
             "contains",
@@ -16452,15 +16620,15 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 444,
+          "line": 512,
           "called": [
             "MemoryRegion"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:449>",
-          "line": 449,
+          "name": "<anonymous:instance:517>",
+          "line": 517,
           "called": [
             "MemoryRegion"
           ]
@@ -16468,7 +16636,7 @@
         {
           "kind": "structure",
           "name": "MachineConfig",
-          "line": 470,
+          "line": 538,
           "called": [
             "MemoryRegion"
           ]
@@ -16476,7 +16644,7 @@
         {
           "kind": "theorem",
           "name": "registerFileGPRCount_eq_registerCount_default",
-          "line": 491,
+          "line": 559,
           "called": [
             "registerFileGPRCount"
           ]
@@ -16484,13 +16652,13 @@
         {
           "kind": "namespace",
           "name": "MachineConfig",
-          "line": 494,
+          "line": 562,
           "called": []
         },
         {
           "kind": "def",
           "name": "totalRAM",
-          "line": 497,
+          "line": 565,
           "called": [
             "MachineConfig"
           ]
@@ -16498,7 +16666,7 @@
         {
           "kind": "def",
           "name": "addressInMap",
-          "line": 501,
+          "line": 569,
           "called": [
             "MachineConfig",
             "contains"
@@ -16507,7 +16675,7 @@
         {
           "kind": "def",
           "name": "noOverlapAux",
-          "line": 507,
+          "line": 575,
           "called": [
             "MemoryRegion"
           ]
@@ -16515,13 +16683,13 @@
         {
           "kind": "def",
           "name": "isPowerOfTwo",
-          "line": 513,
+          "line": 581,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_spec",
-          "line": 517,
+          "line": 585,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16529,7 +16697,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_pos",
-          "line": 523,
+          "line": 591,
           "called": [
             "isPowerOfTwo",
             "isPowerOfTwo_spec"
@@ -16538,7 +16706,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_0",
-          "line": 533,
+          "line": 601,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16546,7 +16714,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_1",
-          "line": 534,
+          "line": 602,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16554,7 +16722,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_2",
-          "line": 535,
+          "line": 603,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16562,7 +16730,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_3",
-          "line": 536,
+          "line": 604,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16570,7 +16738,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_4",
-          "line": 537,
+          "line": 605,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16578,7 +16746,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_5",
-          "line": 538,
+          "line": 606,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16586,7 +16754,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_12",
-          "line": 539,
+          "line": 607,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16594,7 +16762,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_16",
-          "line": 540,
+          "line": 608,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16602,7 +16770,7 @@
         {
           "kind": "theorem",
           "name": "isPowerOfTwo_of_pow2_21",
-          "line": 541,
+          "line": 609,
           "called": [
             "isPowerOfTwo"
           ]
@@ -16610,7 +16778,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 549,
+          "line": 617,
           "called": [
             "MachineConfig",
             "endAddr",
@@ -16621,7 +16789,7 @@
         {
           "kind": "structure",
           "name": "SyscallRegisterLayout",
-          "line": 570,
+          "line": 638,
           "called": [
             "RegName"
           ]
@@ -16629,7 +16797,7 @@
         {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 582,
+          "line": 650,
           "called": [
             "SyscallRegisterLayout"
           ]
@@ -20782,62 +20950,122 @@
       ]
     },
     {
+      "module": "SeLe4n.Platform.DeviceTree",
+      "path": "SeLe4n/Platform/DeviceTree.lean",
+      "declaration_count": 7,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform",
+          "line": 48,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "DeviceEntry",
+          "line": 54,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "InterruptControllerInfo",
+          "line": 66,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "DeviceTree",
+          "line": 86,
+          "called": [
+            "DeviceEntry",
+            "InterruptControllerInfo"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "DeviceTree.validate",
+          "line": 104,
+          "called": [
+            "DeviceTree"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "DeviceTree.fromBoardConstants",
+          "line": 111,
+          "called": [
+            "DeviceEntry",
+            "DeviceTree",
+            "InterruptControllerInfo"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "DeviceTree.fromDtb",
+          "line": 133,
+          "called": [
+            "DeviceTree"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Platform.RPi5.Board",
       "path": "SeLe4n/Platform/RPi5/Board.lean",
-      "declaration_count": 16,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5",
-          "line": 31,
+          "line": 32,
           "called": []
         },
         {
           "kind": "def",
           "name": "peripheralBaseLow",
-          "line": 38,
+          "line": 39,
           "called": []
         },
         {
           "kind": "def",
           "name": "peripheralBaseHigh",
-          "line": 41,
+          "line": 42,
           "called": []
         },
         {
           "kind": "def",
           "name": "gicDistributorBase",
-          "line": 44,
+          "line": 45,
           "called": []
         },
         {
           "kind": "def",
           "name": "gicCpuInterfaceBase",
-          "line": 47,
+          "line": 48,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerFrequencyHz",
-          "line": 50,
+          "line": 51,
           "called": []
         },
         {
           "kind": "def",
           "name": "uart0Base",
-          "line": 53,
+          "line": 54,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5MemoryMap",
-          "line": 67,
+          "line": 68,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5MachineConfig",
-          "line": 87,
+          "line": 88,
           "called": [
             "rpi5MemoryMap"
           ]
@@ -20845,25 +21073,25 @@
         {
           "kind": "def",
           "name": "gicSpiCount",
-          "line": 102,
+          "line": 103,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerPpiId",
-          "line": 106,
+          "line": 107,
           "called": []
         },
         {
           "kind": "def",
           "name": "virtualTimerPpiId",
-          "line": 109,
+          "line": 110,
           "called": []
         },
         {
           "kind": "def",
           "name": "mmioRegions",
-          "line": 117,
+          "line": 118,
           "called": [
             "gicCpuInterfaceBase",
             "gicDistributorBase",
@@ -20873,13 +21101,13 @@
         {
           "kind": "def",
           "name": "mmioRegionDisjointCheck",
-          "line": 126,
+          "line": 127,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "mmioRegionDisjoint_holds",
-          "line": 132,
+          "line": 133,
           "called": [
             "mmioRegionDisjointCheck"
           ]
@@ -20887,7 +21115,27 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfig_wellFormed",
-          "line": 137,
+          "line": 138,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "rpi5DeviceTree",
+          "line": 183,
+          "called": [
+            "gicCpuInterfaceBase",
+            "gicDistributorBase",
+            "gicSpiCount",
+            "rpi5MachineConfig",
+            "timerFrequencyHz",
+            "timerPpiId",
+            "uart0Base"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5DeviceTree_valid",
+          "line": 199,
           "called": []
         }
       ]
@@ -23819,7 +24067,7 @@
         {
           "kind": "def",
           "name": "runServiceAndStressTrace",
-          "line": 228,
+          "line": 230,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23834,7 +24082,7 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 497,
+          "line": 499,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23848,7 +24096,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 604,
+          "line": 606,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23858,7 +24106,7 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 656,
+          "line": 658,
           "called": [
             "checkInvariants",
             "mkRunQueue"
@@ -23867,7 +24115,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 727,
+          "line": 729,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23876,7 +24124,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 889,
+          "line": 891,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23885,7 +24133,7 @@
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 963,
+          "line": 965,
           "called": [
             "checkInvariants",
             "demoUntyped",
@@ -23897,7 +24145,7 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 1052,
+          "line": 1054,
           "called": [
             "checkInvariants"
           ]
@@ -23905,7 +24153,7 @@
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1110,
+          "line": 1112,
           "called": [
             "checkInvariants"
           ]
@@ -23913,7 +24161,7 @@
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1154,
+          "line": 1156,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23922,7 +24170,7 @@
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1203,
+          "line": 1205,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -23932,7 +24180,7 @@
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1283,
+          "line": 1285,
           "called": [
             "checkInvariants"
           ]
@@ -23940,7 +24188,7 @@
         {
           "kind": "def",
           "name": "runRegisterDecodeTrace",
-          "line": 1326,
+          "line": 1328,
           "called": [
             "checkInvariants"
           ]
@@ -23948,7 +24196,7 @@
         {
           "kind": "def",
           "name": "runSyscallDispatchTrace",
-          "line": 1462,
+          "line": 1464,
           "called": [
             "checkInvariants"
           ]
@@ -23956,7 +24204,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1642,
+          "line": 1645,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23965,7 +24213,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 1726,
+          "line": 1729,
           "called": [
             "checkInvariants"
           ]
@@ -23973,7 +24221,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 1824,
+          "line": 1827,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -23982,7 +24230,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1904,
+          "line": 1907,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -24012,13 +24260,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1947,
+          "line": 1950,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 1998,
+          "line": 2001,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -24026,7 +24274,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2012,
+          "line": 2015,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -24034,13 +24282,13 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2023,
+          "line": 2026,
           "called": []
         },
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2076,
+          "line": 2079,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",

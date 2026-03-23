@@ -62,7 +62,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
-| `vspaceMapPage`, `vspaceUnmapPage`, `vspaceLookup` | VSpace | Stable |
+| `vspaceMapPageCheckedWithFlush`, `vspaceUnmapPageWithFlush`, `vspaceLookup` | VSpace | Stable (S6-A: production uses WithFlush variants) |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked` | Info-flow | Stable |
 | ~~`apiEndpointSend`, `apiEndpointReceive`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
@@ -424,25 +424,27 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let newObj := objectOfKernelType args.newType args.size
             lifecycleRetypeDirect cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
-  -- WS-K-D: VSpace map — ASID, vaddr, paddr, perms from message registers.
-  -- Uses bounds-checked variant (rejects paddr ≥ 2^52) for user-space entry.
+  -- WS-K-D/S6-A: VSpace map — ASID, vaddr, paddr, perms from message registers.
+  -- Uses bounds-checked + TLB-flushing variant for user-space entry.
+  -- Production paths must use WithFlush to maintain tlbConsistent (R7-A.3/M-17).
   | .vspaceMap =>
     match cap.target with
     | .object _ =>
         fun st => match decodeVSpaceMapArgs decoded with
         | .error e => .error e
         | .ok args =>
-            Architecture.vspaceMapPageChecked args.asid args.vaddr args.paddr
+            Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
               (PagePermissions.ofNat args.perms) st
     | _ => fun _ => .error .invalidCapability
-  -- WS-K-D: VSpace unmap — ASID and vaddr from message registers.
+  -- WS-K-D/S6-A: VSpace unmap — ASID and vaddr from message registers.
+  -- Uses TLB-flushing variant to prevent use-after-unmap on hardware (R7-A.3/M-17).
   | .vspaceUnmap =>
     match cap.target with
     | .object _ =>
         fun st => match decodeVSpaceUnmapArgs decoded with
         | .error e => .error e
         | .ok args =>
-            Architecture.vspaceUnmapPage args.asid args.vaddr st
+            Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st
     | _ => fun _ => .error .invalidCapability
   -- WS-Q1-D: Service register — decode interface spec from message registers,
   -- construct ServiceRegistration, and register the service.
@@ -738,8 +740,9 @@ theorem dispatchWithCap_lifecycleRetype_delegates
       lifecycleRetypeDirect cap args.targetObj (objectOfKernelType args.newType args.size) := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D: When vspaceMap dispatch succeeds, `vspaceMapPageChecked` is
-invoked with the decoded ASID, vaddr, paddr, and permissions. -/
+/-- WS-K-D/S6-A: When vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithFlush` is
+invoked with the decoded ASID, vaddr, paddr, and permissions.
+Production API uses the TLB-flushing variant to maintain `tlbConsistent`. -/
 theorem dispatchWithCap_vspaceMap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -748,12 +751,13 @@ theorem dispatchWithCap_vspaceMap_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      Architecture.vspaceMapPageChecked args.asid args.vaddr args.paddr
+      Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
         (PagePermissions.ofNat args.perms) := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D: When vspaceUnmap dispatch succeeds, `vspaceUnmapPage` is
-invoked with the decoded ASID and vaddr. -/
+/-- WS-K-D/S6-A: When vspaceUnmap dispatch succeeds, `vspaceUnmapPageWithFlush` is
+invoked with the decoded ASID and vaddr.
+Production API uses the TLB-flushing variant to prevent use-after-unmap. -/
 theorem dispatchWithCap_vspaceUnmap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -762,7 +766,7 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceUnmapArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      Architecture.vspaceUnmapPage args.asid args.vaddr := by
+      Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
 -- ============================================================================

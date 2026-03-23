@@ -106,7 +106,7 @@ comprehensive pre-release audit (`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`).
   to `pub(crate)` with `.raw()` accessors, plus `AccessRights` and `PagePerms` (L-11).
   All 99 Rust tests pass (44 abi + 22 types + 8 sys + 25 conformance). Zero sorry/axiom.
 
-### WS-S workstream (Pre-Benchmark Strengthening) — IN PROGRESS (S1–S5 complete)
+### WS-S workstream (Pre-Benchmark Strengthening) — IN PROGRESS (S1–S6 complete)
 
 WS-S is the **active** workstream (v0.19.0+), addressing all findings from two
 comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
@@ -194,7 +194,21 @@ comprehensive v0.18.7 audits: `AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`
   `chooseThread` (`Selection.lean`). **S5-J** (U-M23b): Complexity documentation
   for `TlbState` operations (O(n)), `RunQueue.remove` (O(k+n)),
   `RunQueue.rotateHead` (O(k+n)). Zero sorry/axiom.
-- **S6–S7**: Pending.
+- **S6 (v0.19.5) — COMPLETE**: Hardware Preparation (7 sub-tasks). **S6-A**
+  (U-M18): Migrated API dispatch to `WithFlush` VSpace variants
+  (`vspaceMapPageCheckedWithFlush`, `vspaceUnmapPageWithFlush`); trace harness
+  updated. **S6-B** (U-M18): Documented unflushed `vspaceMapPage`/`vspaceUnmapPage`
+  as internal proof decomposition helpers with clear warnings against direct use.
+  **S6-C** (U-M19): Added memory scrubbing (`zeroMemoryRange`, `scrubObjectMemory`)
+  to `lifecycleRetypeWithCleanup`; `Machine.lean` gets `zeroMemoryRange`/`memoryZeroed`
+  primitives. **S6-D** (U-M19): Proved `scrubObjectMemory` preserves lifecycle
+  invariants (trivially — only modifies `machine.memory`). **S6-E** (U-M19):
+  Proved `scrubObjectMemory` preserves NI (`lowEquivalent`) for non-observable
+  targets. **S6-F** (U-M20): Created `Platform/DeviceTree.lean` abstraction with
+  `DeviceTree` structure; RPi5 `Board.lean` constructs `rpi5DeviceTree`. **S6-G**:
+  Validated all BCM2712 address constants against datasheet; comprehensive
+  validation table added to `Board.lean`. Zero sorry/axiom.
+- **S7**: Pending.
 
 ### WS-Q1 workstream (Service Interface Simplification)
 
