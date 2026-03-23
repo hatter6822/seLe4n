@@ -5,10 +5,10 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.19.6 (Lean v4.28.0).
-- **Codebase metrics:** 57,506 production LoC across 100 files; 7,559 test LoC across 10 suites; 1,756 theorem/lemma declarations (zero sorry/axiom).
-- **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md) and [`AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md) — dual comprehensive audits (115+ findings, 0 Critical).
-- **Active workstream:** WS-S Pre-Benchmark Strengthening — PORTFOLIO COMPLETE (7 phases: S1–S7, 83 sub-tasks, v0.19.0–v0.19.6). All prior portfolios (WS-B through WS-R) completed.
+- **Version:** 0.20.2 (Lean v4.28.0).
+- **Codebase metrics:** 57,939 production LoC across 100 files; 7,561 test LoC across 10 suites; 1,775 theorem/lemma declarations (zero sorry/axiom).
+- **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical).
+- **Active workstream:** WS-T Deep-Dive Audit Remediation — Phases T1–T3 COMPLETE, T4–T8 IN PROGRESS (8 phases, 94 sub-tasks, v0.20.0–v0.20.7). All prior portfolios (WS-B through WS-S) completed.
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.

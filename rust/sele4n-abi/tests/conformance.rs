@@ -15,7 +15,7 @@ use sele4n_abi::args::{cspace, lifecycle, vspace, service, TypeTag, PagePerms};
 
 /// Helper: encode a syscall request and verify register contents.
 fn verify_regs(req: &SyscallRequest, expected: &[(usize, u64, &str)]) {
-    let regs = encode_syscall(req);
+    let regs = encode_syscall(req).unwrap();
     for &(idx, expected_val, name) in expected {
         assert_eq!(
             regs[idx], expected_val,
@@ -216,7 +216,7 @@ fn xval_010_vspace_map() {
         asid: Asid::from(1u64),
         vaddr: VAddr::from(0x1000u64),
         paddr: PAddr::from(0x2000u64),
-        perms: 0x05, // read|execute
+        perms: PagePerms::try_from(0x05u64).unwrap(), // read|execute
     };
     let encoded = args.encode();
     let req = SyscallRequest {
@@ -338,7 +338,7 @@ fn xval_015_notification_signal() {
         msg_regs: [0; 4],
         syscall_id: SyscallId::Send,
     };
-    let regs = encode_syscall(&req);
+    let regs = encode_syscall(&req).unwrap();
     // Verify no payload: all msg_regs must be zero
     assert_eq!(regs[0], 500, "x0=CPtr(notification)");
     assert_eq!(regs[1], 0, "x1=MessageInfo(empty)");
@@ -362,7 +362,7 @@ fn xval_016_notification_wait() {
         msg_regs: [0; 4],
         syscall_id: SyscallId::Receive,
     };
-    let regs = encode_syscall(&req);
+    let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[0], 600, "x0=CPtr(notification)");
     assert_eq!(regs[6], SyscallId::Receive.to_u64(), "x7=SyscallId::Receive");
 
@@ -440,7 +440,7 @@ fn message_info_exhaustive_bounds() {
         for caps in [0u8, 1, 2, 3] {
             for label in [0u64, 1, 0xFFFF, 0x7FFFFF] {
                 let mi = MessageInfo { length: len, extra_caps: caps, label };
-                let decoded = MessageInfo::decode(mi.encode()).unwrap();
+                let decoded = MessageInfo::decode(mi.encode().unwrap()).unwrap();
                 assert_eq!(decoded, mi, "Roundtrip failed for len={}, caps={}, label={}", len, caps, label);
             }
         }
@@ -509,4 +509,153 @@ fn page_perms_wx_enforcement() {
     // Unsafe: W+X
     assert!(!PagePerms::try_from(0x06u64).unwrap().is_wx_safe()); // WX
     assert!(!PagePerms::try_from(0x07u64).unwrap().is_wx_safe()); // RWX
+}
+
+// ============================================================================
+// T3 — Rust ABI Hardening conformance tests
+// ============================================================================
+
+/// T3-B/M-NEW-9: MessageInfo label 55-bit bound enforcement.
+///
+/// Verify that encode(decode(x)) == x for boundary values and that
+/// encode returns error for labels >= 2^55.
+#[test]
+fn t3b_message_info_label_boundary_roundtrip() {
+    use sele4n_abi::message_info::MAX_LABEL;
+
+    // Boundary value: label = 0 (minimum)
+    let mi_zero = MessageInfo { length: 0, extra_caps: 0, label: 0 };
+    let encoded = mi_zero.encode().unwrap();
+    assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_zero);
+
+    // Boundary value: label = 2^55 - 1 (maximum valid)
+    let mi_max = MessageInfo { length: 0, extra_caps: 0, label: MAX_LABEL };
+    let encoded = mi_max.encode().unwrap();
+    assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_max);
+
+    // Boundary value: label = 2^55 (first invalid — encode must fail)
+    let mi_overflow = MessageInfo { length: 0, extra_caps: 0, label: 1u64 << 55 };
+    assert_eq!(mi_overflow.encode(), Err(KernelError::InvalidMessageInfo));
+
+    // Extreme: label = u64::MAX (encode must fail)
+    let mi_max_u64 = MessageInfo { length: 0, extra_caps: 0, label: u64::MAX };
+    assert_eq!(mi_max_u64.encode(), Err(KernelError::InvalidMessageInfo));
+}
+
+/// T3-B: encode_syscall rejects oversized labels.
+#[test]
+fn t3b_encode_syscall_rejects_oversized_label() {
+    let req = SyscallRequest {
+        cap_addr: CPtr::from(0u64),
+        msg_info: MessageInfo { length: 0, extra_caps: 0, label: 1u64 << 55 },
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::Send,
+    };
+    assert_eq!(encode_syscall(&req), Err(KernelError::InvalidMessageInfo));
+}
+
+/// T3-B: MessageInfo::new rejects oversized labels.
+#[test]
+fn t3b_message_info_new_rejects_oversized_label() {
+    use sele4n_abi::message_info::MAX_LABEL;
+    assert!(MessageInfo::new(0, 0, MAX_LABEL).is_ok());
+    assert_eq!(MessageInfo::new(0, 0, MAX_LABEL + 1), Err(KernelError::InvalidMessageInfo));
+}
+
+/// T3-D/M-NEW-10: VSpaceMapArgs perms validation at decode boundary.
+///
+/// Verify valid permission values roundtrip correctly and invalid values
+/// are rejected at decode.
+#[test]
+fn t3d_vspace_map_args_perms_roundtrip() {
+    // All valid 5-bit values (0x00 through 0x1F) roundtrip correctly
+    for perm_val in 0..=0x1Fu64 {
+        let args = vspace::VSpaceMapArgs {
+            asid: Asid::from(1u64),
+            vaddr: VAddr::from(0x1000u64),
+            paddr: PAddr::from(0x2000u64),
+            perms: PagePerms::try_from(perm_val).unwrap(),
+        };
+        let decoded = vspace::VSpaceMapArgs::decode(&args.encode()).unwrap();
+        assert_eq!(decoded, args, "Roundtrip failed for perms=0x{:02x}", perm_val);
+    }
+}
+
+/// T3-D: Invalid permission values are rejected at decode.
+#[test]
+fn t3d_vspace_map_args_invalid_perms_rejected() {
+    // 0x20 — first value outside 5-bit range
+    assert_eq!(
+        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
+        Err(KernelError::InvalidMessageInfo)
+    );
+
+    // 0xFF — common garbage value
+    assert_eq!(
+        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
+        Err(KernelError::InvalidMessageInfo)
+    );
+
+    // u64::MAX — extreme case
+    assert_eq!(
+        vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
+        Err(KernelError::InvalidMessageInfo)
+    );
+}
+
+/// T3-F/M-NEW-11: ServiceRegisterArgs strict boolean conformance.
+///
+/// Verify that regs[4] = 0 → false, regs[4] = 1 → true, and values
+/// 2, 0xFFFFFFFFFFFFFFFF are rejected.
+#[test]
+fn t3f_service_register_strict_bool() {
+    let base = [7u64, 5, 256, 128];
+
+    // regs[4] = 0 → false
+    let mut regs = [base[0], base[1], base[2], base[3], 0];
+    let args = service::ServiceRegisterArgs::decode(&regs).unwrap();
+    assert!(!args.requires_grant, "regs[4]=0 must decode to false");
+
+    // regs[4] = 1 → true
+    regs[4] = 1;
+    let args = service::ServiceRegisterArgs::decode(&regs).unwrap();
+    assert!(args.requires_grant, "regs[4]=1 must decode to true");
+
+    // regs[4] = 2 → rejected
+    regs[4] = 2;
+    assert_eq!(
+        service::ServiceRegisterArgs::decode(&regs),
+        Err(KernelError::InvalidMessageInfo),
+        "regs[4]=2 must be rejected"
+    );
+
+    // regs[4] = 0xFFFFFFFFFFFFFFFF → rejected
+    regs[4] = u64::MAX;
+    assert_eq!(
+        service::ServiceRegisterArgs::decode(&regs),
+        Err(KernelError::InvalidMessageInfo),
+        "regs[4]=u64::MAX must be rejected"
+    );
+}
+
+/// T3-F: ServiceRegisterArgs roundtrip with strict bool.
+#[test]
+fn t3f_service_register_roundtrip_strict() {
+    let args_true = service::ServiceRegisterArgs {
+        interface_id: InterfaceId::from(7u64),
+        method_count: 5,
+        max_message_size: 256,
+        max_response_size: 128,
+        requires_grant: true,
+    };
+    assert_eq!(service::ServiceRegisterArgs::decode(&args_true.encode()).unwrap(), args_true);
+
+    let args_false = service::ServiceRegisterArgs {
+        interface_id: InterfaceId::from(7u64),
+        method_count: 5,
+        max_message_size: 256,
+        max_response_size: 128,
+        requires_grant: false,
+    };
+    assert_eq!(service::ServiceRegisterArgs::decode(&args_false.encode()).unwrap(), args_false);
 }

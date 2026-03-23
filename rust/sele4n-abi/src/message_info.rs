@@ -1,11 +1,11 @@
-//\! MessageInfo bitfield — matches `SeLe4n.Model.MessageInfo` encoding.
-//\!
-//\! Lean source: `SeLe4n/Model/Object/Types.lean` lines 717–860.
-//\!
-//\! Bit layout (seL4 convention):
-//\! - bits 0–6:  length (7 bits, max 120)
-//\! - bits 7–8:  extraCaps (2 bits, max 3)
-//\! - bits 9+:   label (user-defined)
+//! MessageInfo bitfield — matches `SeLe4n.Model.MessageInfo` encoding.
+//!
+//! Lean source: `SeLe4n/Model/Object/Types.lean` lines 717–860.
+//!
+//! Bit layout (seL4 convention):
+//! - bits 0–6:  length (7 bits, max 120)
+//! - bits 7–8:  extraCaps (2 bits, max 3)
+//! - bits 9–63: label (55 bits, user-defined)
 
 use sele4n_types::KernelError;
 
@@ -14,6 +14,12 @@ pub const MAX_MSG_LENGTH: u64 = 120;
 
 /// Maximum extra capabilities per message (seL4_MsgMaxExtraCaps).
 pub const MAX_EXTRA_CAPS: u64 = 3;
+
+/// Maximum label value: 2^55 - 1 (55 bits available in bits 9–63).
+///
+/// T3-A/M-NEW-9: Labels at or above 2^55 cannot be encoded without
+/// silent truncation. The encode method now rejects them explicitly.
+pub const MAX_LABEL: u64 = (1u64 << 55) - 1;
 
 /// Decoded message-info word, matching `seL4_MessageInfo_t`.
 ///
@@ -24,14 +30,17 @@ pub struct MessageInfo {
     pub length: u8,
     /// Number of extra capability addresses (0..=3).
     pub extra_caps: u8,
-    /// User-defined label.
+    /// User-defined label (must fit in 55 bits: 0..=2^55-1).
     pub label: u64,
 }
 
 impl MessageInfo {
     /// Create a new MessageInfo with bounds checking.
+    ///
+    /// Returns `InvalidMessageInfo` if length > 120, extraCaps > 3,
+    /// or label >= 2^55.
     pub const fn new(length: u8, extra_caps: u8, label: u64) -> Result<Self, KernelError> {
-        if length as u64 > MAX_MSG_LENGTH || extra_caps as u64 > MAX_EXTRA_CAPS {
+        if length as u64 > MAX_MSG_LENGTH || extra_caps as u64 > MAX_EXTRA_CAPS || label > MAX_LABEL {
             Err(KernelError::InvalidMessageInfo)
         } else {
             Ok(Self { length, extra_caps, label })
@@ -40,16 +49,26 @@ impl MessageInfo {
 
     /// Encode into a single 64-bit register word.
     ///
+    /// T3-A/M-NEW-9: Returns `InvalidMessageInfo` if `self.label >= 2^55`,
+    /// preventing silent truncation of the upper bits.
+    ///
     /// Lean: `MessageInfo.encode` (Types.lean:737)
     #[inline]
-    pub const fn encode(&self) -> u64 {
-        (self.length as u64 & 0x7F)
+    pub const fn encode(&self) -> Result<u64, KernelError> {
+        if self.label > MAX_LABEL {
+            return Err(KernelError::InvalidMessageInfo);
+        }
+        Ok((self.length as u64 & 0x7F)
             | ((self.extra_caps as u64 & 0x3) << 7)
-            | (self.label << 9)
+            | (self.label << 9))
     }
 
     /// Decode a raw 64-bit word into MessageInfo.
     /// Returns `InvalidMessageInfo` if length > 120 or extraCaps > 3.
+    ///
+    /// Note: decode cannot produce an out-of-range label because the label
+    /// field occupies exactly bits 9–63 of a u64, which is 55 bits — the
+    /// maximum representable value is 2^55-1 = MAX_LABEL.
     ///
     /// Lean: `MessageInfo.decode` (Types.lean:742)
     #[inline]
@@ -72,7 +91,7 @@ mod tests {
     #[test]
     fn encode_decode_roundtrip() {
         let mi = MessageInfo { length: 42, extra_caps: 2, label: 0x1234 };
-        let encoded = mi.encode();
+        let encoded = mi.encode().unwrap();
         let decoded = MessageInfo::decode(encoded).unwrap();
         assert_eq!(decoded, mi);
     }
@@ -80,13 +99,13 @@ mod tests {
     #[test]
     fn roundtrip_zero() {
         let mi = MessageInfo { length: 0, extra_caps: 0, label: 0 };
-        assert_eq!(MessageInfo::decode(mi.encode()).unwrap(), mi);
+        assert_eq!(MessageInfo::decode(mi.encode().unwrap()).unwrap(), mi);
     }
 
     #[test]
     fn roundtrip_max_valid() {
         let mi = MessageInfo { length: 120, extra_caps: 3, label: 0xFFFF };
-        assert_eq!(MessageInfo::decode(mi.encode()).unwrap(), mi);
+        assert_eq!(MessageInfo::decode(mi.encode().unwrap()).unwrap(), mi);
     }
 
     #[test]
@@ -99,19 +118,19 @@ mod tests {
     #[test]
     fn bit_layout_length() {
         let mi = MessageInfo { length: 42, extra_caps: 0, label: 0 };
-        assert_eq!(mi.encode(), 42);
+        assert_eq!(mi.encode().unwrap(), 42);
     }
 
     #[test]
     fn bit_layout_extra_caps() {
         let mi = MessageInfo { length: 0, extra_caps: 3, label: 0 };
-        assert_eq!(mi.encode(), 3 << 7);
+        assert_eq!(mi.encode().unwrap(), 3 << 7);
     }
 
     #[test]
     fn bit_layout_label() {
         let mi = MessageInfo { length: 0, extra_caps: 0, label: 5 };
-        assert_eq!(mi.encode(), 5 << 9);
+        assert_eq!(mi.encode().unwrap(), 5 << 9);
     }
 
     #[test]
@@ -119,5 +138,26 @@ mod tests {
         assert!(MessageInfo::new(120, 3, 0).is_ok());
         assert!(MessageInfo::new(121, 0, 0).is_err());
         assert!(MessageInfo::new(0, 4, 0).is_err());
+    }
+
+    // T3-A: Label bound enforcement tests
+    #[test]
+    fn new_rejects_oversized_label() {
+        assert!(MessageInfo::new(0, 0, MAX_LABEL).is_ok());
+        assert!(MessageInfo::new(0, 0, MAX_LABEL + 1).is_err());
+        assert!(MessageInfo::new(0, 0, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn encode_rejects_oversized_label() {
+        // Construct directly to bypass new() validation
+        let mi = MessageInfo { length: 0, extra_caps: 0, label: 1u64 << 55 };
+        assert_eq!(mi.encode(), Err(KernelError::InvalidMessageInfo));
+    }
+
+    #[test]
+    fn encode_max_label_succeeds() {
+        let mi = MessageInfo { length: 0, extra_caps: 0, label: MAX_LABEL };
+        assert!(mi.encode().is_ok());
     }
 }

@@ -29,14 +29,25 @@ impl ServiceRegisterArgs {
         ]
     }
 
+    /// Decode register values into typed ServiceRegisterArgs.
+    ///
+    /// T3-E/M-NEW-11: The `requires_grant` field uses strict boolean parsing:
+    /// `regs[4] == 0` → false, `regs[4] == 1` → true, any other value
+    /// returns `InvalidMessageInfo`. This prevents corrupted register
+    /// contents from being silently accepted as `true`.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 5 { return Err(KernelError::InvalidMessageInfo); }
+        let requires_grant = match regs[4] {
+            0 => false,
+            1 => true,
+            _ => return Err(KernelError::InvalidMessageInfo),
+        };
         Ok(Self {
             interface_id: InterfaceId::from(regs[0]),
             method_count: regs[1],
             max_message_size: regs[2],
             max_response_size: regs[3],
-            requires_grant: regs[4] != 0,
+            requires_grant,
         })
     }
 }

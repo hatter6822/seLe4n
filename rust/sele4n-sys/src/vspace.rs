@@ -26,7 +26,7 @@ pub fn vspace_map(
     // W^X pre-check (client-side, before syscall)
     perms.validate_wx()?;
 
-    let args = VSpaceMapArgs { asid, vaddr, paddr, perms: perms.raw() as u64 };
+    let args = VSpaceMapArgs { asid, vaddr, paddr, perms };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: vspace_cap,
