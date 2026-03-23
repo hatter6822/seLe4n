@@ -507,7 +507,7 @@ theorem retypeFromUntyped_ok_decompose
           -- S4-B: Discharge capacity check
           have hCapOk : ¬(st.objectIndex.length ≥ maxObjects) := by
             intro h; simp [h] at hStep
-          simp only [hCapOk, ↓reduceIte, decide_eq_true_eq] at hStep
+          simp only [hCapOk, ↓reduceIte] at hStep
           -- WS-H2: Discharge childId safety guards (each .error contradicts .ok)
           have hNeSelf : childId ≠ untypedId := by
             intro h; simp [h] at hStep

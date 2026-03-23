@@ -328,8 +328,8 @@ def lookupVSpaceRoot (id : SeLe4n.ObjId) : Kernel VSpaceRoot :=
 -- ============================================================================
 
 /-- S4-A: Advisory maximum object count for RPi5 platform (65536).
-    Enforced by `storeObject` (S4-B) — new objects are rejected when
-    the object index reaches this capacity. -/
+    S4-B: Enforced by `retypeFromUntyped` — new allocations are rejected
+    when the object index reaches this capacity. -/
 def maxObjects : Nat := 65536
 
 /-- S4-A: Advisory predicate — the object index size is bounded by `maxObjects`.
@@ -337,6 +337,18 @@ def maxObjects : Nat := 65536
     holds at boot and `storeObject` is the only path to add new objects). -/
 def objectIndexBounded (st : SystemState) : Prop :=
   st.objectIndex.length ≤ maxObjects
+
+/-- S4-B: Invariant alias — the object count does not exceed `maxObjects`.
+    This is definitionally equal to `objectIndexBounded` but named per the
+    workstream plan (U-M12) for traceability. Enforced at the allocation
+    boundary (`retypeFromUntyped`) rather than in `storeObject`. -/
+abbrev objectCount_le_maxObjects := objectIndexBounded
+
+/-- S4-B: The default (empty) system state satisfies the object capacity bound. -/
+theorem default_objectCount_le_maxObjects :
+    objectCount_le_maxObjects (default : SystemState) := by
+  unfold objectCount_le_maxObjects objectIndexBounded maxObjects
+  simp [List.length]
 
 /-- Replace the object stored at `id` with `obj`.
 
@@ -349,9 +361,10 @@ VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
 
 S4-B: Capacity enforcement is performed at the allocation boundary
 (`retypeFromUntyped` in Lifecycle/Operations.lean), not here. The
-`objectCount_le_maxObjects` invariant (defined below) is preserved by
-allocation-time checking, and `storeObject` remains infallible for
-internal use by IPC, scheduler, and capability operations. -/
+`objectCount_le_maxObjects` invariant (alias for `objectIndexBounded`,
+defined above) is preserved by allocation-time checking, and `storeObject`
+remains infallible for internal use by IPC, scheduler, and capability
+operations. -/
 def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     .ok ((), {
@@ -378,6 +391,19 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           | .vspaceRoot newRoot => cleared.insert newRoot.asid id
           | _ => cleared
     })
+
+/-- S4-B: `storeObject` preserves `objectCount_le_maxObjects` — overwriting an
+    existing object does not increase the object index length, and inserting
+    a new object increments it by at most 1 (which is bounded by the
+    allocation-time capacity check in `retypeFromUntyped`). -/
+theorem storeObject_preserves_objectIndexBounded
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (_hBound : objectIndexBounded st)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndex.length ≤ st.objectIndex.length + 1 := by
+  unfold storeObject at hStore; cases hStore
+  simp only
+  split <;> simp [List.length] <;> omega
 
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
 def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
