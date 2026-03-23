@@ -1977,3 +1977,26 @@ from two comprehensive v0.18.7 audits. Key trust boundary documentation:
 
 See [`docs/spec/SELE4N_SPEC.md` §10.1](../spec/SELE4N_SPEC.md) for the canonical
 trust boundary specification.
+
+## 23. Hardware preparation — memory scrubbing and TLB enforcement (WS-S Phase S6)
+
+**Memory scrubbing** (`Machine.lean`, `Lifecycle/Operations.lean`):
+- `zeroMemoryRange` — zeros a contiguous physical memory range.
+- `memoryZeroed` — postcondition predicate asserting all bytes in range are zero.
+- `scrubObjectMemory` — composes `zeroMemoryRange` for an object's backing memory.
+- Preservation: `scrubObjectMemory_preserves_lifecycleInvariantBundle` (trivial —
+  only modifies `machine.memory`, lifecycle invariants are over `objects`/`lifecycle`).
+- NI: `scrubObjectMemory_preserves_lowEquivalent` — scrubbing non-observable
+  targets preserves low-equivalence.
+
+**TLB flush enforcement** (`Architecture/VSpace.lean`, `Kernel/API.lean`):
+- Production API dispatch uses `vspaceMapPageCheckedWithFlush` and
+  `vspaceUnmapPageWithFlush` exclusively (S6-A).
+- Unflushed variants (`vspaceMapPage`, `vspaceUnmapPage`) documented as
+  internal proof decomposition helpers with explicit warnings (S6-B).
+
+**Device tree abstraction** (`Platform/DeviceTree.lean`):
+- `DeviceTree` structure — platform-independent board configuration.
+- `DeviceTree.fromBoardConstants` — static construction from hardcoded constants.
+- `DeviceTree.fromDtb` — stub for future DTB parsing (WS-T).
+- `rpi5DeviceTree` — RPi5 instance with validation proof (`rpi5DeviceTree_valid`).

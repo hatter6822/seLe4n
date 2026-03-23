@@ -38,8 +38,16 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
 /-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit). -/
 def physicalAddressBound : Nat := 2^52
 
-/-- WS-H11: Deterministic VSpace map transition with explicit failures.
-Accepts per-page permissions; enforces W^X at insertion time. -/
+/-- WS-H11/S6-B: Core VSpace map transition — page table only, no TLB flush.
+
+**Internal proof decomposition helper.** This function operates on the page table
+without touching the TLB. It is used by invariant proofs that need to reason
+about page table updates independently from TLB effects.
+
+**All external callers must use `vspaceMapPageWithFlush` or
+`vspaceMapPageCheckedWithFlush`** to maintain `tlbConsistent` on hardware.
+Direct use of this function in production dispatch paths will cause stale TLB
+entries on ARM64 (use-after-unmap vulnerability). -/
 def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := default) : Kernel Unit :=
   fun st =>
@@ -53,15 +61,20 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
           | some root' =>
               storeObject rootId (.vspaceRoot root') st
 
-/-- WS-H11/A-05: Address-bounds-checked VSpace map — rejects physical addresses ≥ 2^52.
-This is the production entry point; `vspaceMapPage` is the core transition used by proofs. -/
+/-- WS-H11/A-05/S6-B: Address-bounds-checked VSpace map — no TLB flush.
+
+**Internal proof decomposition helper.** Use `vspaceMapPageCheckedWithFlush`
+for production paths. See `vspaceMapPage` for rationale. -/
 def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := default) : Kernel Unit :=
   fun st =>
     if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
     else vspaceMapPage asid vaddr paddr perms st
 
-/-- Deterministic VSpace unmap transition with explicit failures. -/
+/-- S6-B: Core VSpace unmap transition — page table only, no TLB flush.
+
+**Internal proof decomposition helper.** Use `vspaceUnmapPageWithFlush` for
+production paths. Direct use without TLB flush creates stale entries on ARM64. -/
 def vspaceUnmapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
   fun st =>
     match resolveAsidRoot st asid with
@@ -98,15 +111,15 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
 -- R7-A.3/M-17: TLB-flushing VSpace operations
 -- ============================================================================
 
-/-- R7-A.3/M-17: VSpace map with integrated per-VAddr TLB flush.
+/-- R7-A.3/M-17/S6-A: **Production entry point** — VSpace map with integrated TLB flush.
 
-    This is the production-safe entry point that composes page table insertion
-    with a targeted TLB flush, ensuring `tlbConsistent` is preserved through
-    the combined operation. The flush targets the specific `(asid, vaddr)` pair
-    that was modified.
+    Composes page table insertion with a full TLB flush, ensuring `tlbConsistent`
+    is preserved through the combined operation. All production dispatch paths
+    (syscall API, platform adapters) must use this function or
+    `vspaceMapPageCheckedWithFlush`.
 
-    The core `vspaceMapPage` is retained for proof decomposition — it operates
-    on page tables only and does not touch the TLB. -/
+    The core `vspaceMapPage` is retained as an internal proof decomposition
+    helper — it operates on page tables only and does not touch the TLB. -/
 def vspaceMapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := default) : Kernel Unit :=
   fun st =>
@@ -115,7 +128,7 @@ def vspaceMapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : 
     | .ok ((), st') =>
         .ok ((), { st' with tlb := adapterFlushTlb st'.tlb })
 
-/-- R7-A.3/M-17: VSpace unmap with integrated full TLB flush.
+/-- R7-A.3/M-17/S6-A: **Production entry point** — VSpace unmap with integrated TLB flush.
 
     Composes page table removal with a full TLB invalidation. After unmapping a
     virtual address, all TLB entries are cleared, preventing use-after-unmap
@@ -129,7 +142,8 @@ def vspaceUnmapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kerne
     | .ok ((), st') =>
         .ok ((), { st' with tlb := adapterFlushTlb st'.tlb })
 
-/-- R7-A.3/M-17: Address-bounds-checked map with integrated TLB flush. -/
+/-- R7-A.3/M-17/S6-A: **Production entry point** — address-bounds-checked map with TLB flush.
+This is the recommended entry point for user-space-initiated VSpace map operations. -/
 def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr) (perms : PagePermissions := default) : Kernel Unit :=
   fun st =>

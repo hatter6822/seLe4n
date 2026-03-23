@@ -404,6 +404,40 @@ remains blocked until a server executes `Reply`/`ReplyRecv`. Timeout monitoring
 is the responsibility of the scheduler/fault handler, not the IPC subsystem.
 This matches the seL4 specification and is faithfully modeled.
 
+### 8.6 Memory Scrubbing on Delete (WS-S Phase S6)
+
+When an object is deleted via `lifecycleRetypeWithCleanup`, the backing memory
+region is zeroed using `scrubObjectMemory` before the memory is returned to the
+untyped pool. This prevents information leakage between security domains when
+memory is retyped for a different purpose.
+
+- **`zeroMemoryRange`** (`Machine.lean`): Primitive that zeroes a contiguous
+  range of physical memory addresses.
+- **`memoryZeroed`** (`Machine.lean`): Postcondition predicate asserting all
+  bytes in a range are zero after scrubbing.
+- **`scrubObjectMemory`** (`Lifecycle/Operations.lean`): Applies `zeroMemoryRange`
+  to the object's backing region during cleanup.
+- **Invariant preservation**: `scrubObjectMemory` preserves lifecycle invariants
+  trivially (only modifies `machine.memory`, not kernel state structures).
+- **NI preservation**: `scrubObjectMemory` preserves `lowEquivalent` for
+  non-observable targets — scrubbing memory outside an observer's domain does
+  not affect their projected state.
+
+### 8.7 TLB Flush Requirements for Production Paths (WS-S Phase S6)
+
+All production VSpace operations must use TLB-flushing variants to ensure
+hardware TLB consistency:
+
+- **`vspaceMapPageCheckedWithFlush`**: Production path for mapping pages.
+  Performs W^X checks, bounds validation, and TLB flush after insertion.
+- **`vspaceUnmapPageWithFlush`**: Production path for unmapping pages.
+  Flushes the TLB entry after removal.
+- **Internal helpers**: The unflushed `vspaceMapPage`/`vspaceUnmapPage` are
+  internal proof decomposition helpers only. They carry explicit warnings
+  against direct use in production paths.
+- **API dispatch**: `dispatchWithCap` routes VSpace syscalls through the
+  `WithFlush` variants exclusively.
+
 ---
 
 ## 9. Non-Negotiable Baseline Contracts

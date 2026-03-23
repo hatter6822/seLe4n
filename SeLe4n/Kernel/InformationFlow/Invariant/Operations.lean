@@ -1583,3 +1583,78 @@ theorem registerServiceChecked_NI
     registerService_preserves_projection ctx observer reg s₂ s₂' hStep₂]
   exact hLow
 
+-- ============================================================================
+-- S6-E: Memory scrubbing preserves non-interference
+-- ============================================================================
+
+/-- S6-E: `scrubObjectMemory` preserves the observer projection.
+
+    Memory scrubbing zeros a contiguous region in `machine.memory`. Since all
+    non-memory projection fields (objects, scheduler, services, etc.) are
+    unchanged, and `projectMemory` returns the same result when `machine.memory`
+    is deterministically modified, the overall projection is preserved when
+    scrubbing non-observable memory.
+
+    The key insight: if the scrubbed region is NOT observable to the observer
+    (`memoryAddressObservable` returns false for all addresses in the range),
+    then `projectMemory` returns `none` for those addresses both before and
+    after scrubbing. If the region IS observable, the values change from
+    arbitrary data to 0, but this is a deterministic function of the object ID
+    and type — not of the state — so both s₁ and s₂ get the same change.
+
+    For the single-state projection preservation (used by projection lemmas): -/
+theorem scrubObjectMemory_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
+    (st : SystemState)
+    (hNotObs : ∀ addr : SeLe4n.PAddr,
+      objectId.toNat * objectTypeAllocSize objType ≤ addr.toNat →
+      addr.toNat < objectId.toNat * objectTypeAllocSize objType +
+        objectTypeAllocSize objType →
+      memoryAddressObservable ctx observer addr = false) :
+    projectState ctx observer (scrubObjectMemory st objectId objType) =
+      projectState ctx observer st := by
+  -- scrubObjectMemory only modifies machine.memory. All non-memory fields
+  -- (objects, scheduler, services, etc.) are definitionally unchanged.
+  -- Only the memory projection needs case analysis.
+  simp only [projectState]; congr 1
+  -- memory projection: for each address, if observable and in range → contradiction;
+  -- if observable and not in range → value unchanged; if not observable → both none
+  funext addr
+  simp only [projectMemory, scrubObjectMemory, SeLe4n.zeroMemoryRange]
+  split
+  · -- Address observable
+    split
+    · -- In scrubbed range — contradicts hNotObs
+      rename_i hObs hInRange
+      have hNotObs' := hNotObs addr hInRange.1 hInRange.2
+      rw [hNotObs'] at hObs; cases hObs
+    · -- Outside scrubbed range — value unchanged
+      rfl
+  · rfl
+
+/-- S6-E: `scrubObjectMemory` preserves low-equivalence when applied
+    symmetrically to both states with a non-observable target.
+
+    When a deleted object's security label does NOT flow to the observer,
+    the scrubbing region is not observable, so `lowEquivalent` is preserved.
+    This is the standard NI pattern for lifecycle operations that operate
+    on high-domain objects. -/
+theorem scrubObjectMemory_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
+    (s₁ s₂ : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hNotObs : ∀ addr : SeLe4n.PAddr,
+      objectId.toNat * objectTypeAllocSize objType ≤ addr.toNat →
+      addr.toNat < objectId.toNat * objectTypeAllocSize objType +
+        objectTypeAllocSize objType →
+      memoryAddressObservable ctx observer addr = false) :
+    lowEquivalent ctx observer
+      (scrubObjectMemory s₁ objectId objType)
+      (scrubObjectMemory s₂ objectId objType) := by
+  unfold lowEquivalent
+  rw [scrubObjectMemory_preserves_projection ctx observer objectId objType s₁ hNotObs,
+      scrubObjectMemory_preserves_projection ctx observer objectId objType s₂ hNotObs]
+  exact hLow
+

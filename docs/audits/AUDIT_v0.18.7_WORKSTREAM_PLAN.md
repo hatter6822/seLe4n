@@ -421,7 +421,7 @@ Zero `sorry`/`axiom`.
 
 ---
 
-### Phase S6 — Hardware Preparation (v0.19.5)
+### Phase S6 — Hardware Preparation (v0.19.5) **COMPLETE**
 
 **Scope**: Address all findings related to hardware-binding readiness. Model
 TLB invalidation, memory scrubbing, and register decode bounds for clean RPi5
