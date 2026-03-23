@@ -17,13 +17,22 @@
   `endpointCallWithCaps_preserves_ipcInvariantFull`. WithCaps wrappers compose
   base ipcInvariant preservation with caller-supplied dualQueue/bounded/badge proofs.
 - T4-F (M-IPC-3): All three WithCaps operations covered in T4-E above.
-- T4-G (M-CAP-2): Proved `descendantsOf_direct_children_subset` — direct children
-  of a CDT node are included in the BFS result when fuel >= 1.
+- T4-G (M-CAP-2): Proved `descendantsOf_fuel_sufficiency` and 8 supporting BFS
+  lemmas (go_cons, go_nil, go_acc_subset, go_children_found, children_subset,
+  go_fuel_mono, go_head_children_found, fuel_bound). Direct children of any CDT
+  node are included in the BFS result, providing the foundation for revocation
+  completeness.
 - T4-H (M-CAP-1): Documented `cspaceMutate` badge override CDT tracking design.
   Badge mutation via Mutate intentionally not tracked in CDT, matching seL4
   CNode_Mutate semantics.
-- T4-I (M-DS-3): Documented `buildCNodeRadix_lookup_equiv` equivalence specification
-  and proof strategy. Full fold-induction proof infrastructure identified.
+- T4-D (M-IPC-2): Documented `endpointQueueRemoveDual` preservation proof
+  architecture with 6 transport lemmas proven. The endpointHead cases require
+  a `storeTcbQueueLinks_splicing_preserves_linkInteg` lemma for non-clearing
+  link splices; deferred to WS-U infrastructure.
+- T4-I (M-DS-3): Proved `buildCNodeRadix_lookup_equiv` — bidirectional lookup
+  equivalence between RHTable and CNodeRadix after construction. The proof uses
+  3 private fold lemmas (foldl_preserves_none, foldl_preserves_some,
+  foldl_establishes_some) with list induction over the hash table's slot array.
 - T4-J (M-IF-3): Documented NI complex IPC projection hypothesis rationale.
   The externalized projection hypothesis is unavoidable without concrete
   MemoryDomainOwnership; discharged when platform binding provides ownership.

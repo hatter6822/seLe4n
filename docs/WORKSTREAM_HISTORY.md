@@ -55,17 +55,18 @@ v0.20.0–v0.20.7. See
   `#![deny(unsafe_code)]` confirmed present (WS-S S1-H). 119 Rust tests pass
   (50 unit + 32 conformance + 12 sys + 25 types). All 8 sub-tasks complete.
 
-- **T4 (v0.20.3) — COMPLETE**: IPC & Capability Proof Closure. Closed 3 MEDIUM
-  IPC findings: `ipcStateQueueConsistent` preservation for `endpointCall`,
-  `endpointReplyRecv`, `notificationSignal`, and `notificationWait` (M-IPC-1).
-  `dualQueueSystemInvariant` preservation for `endpointQueueRemoveDual` (M-IPC-2).
-  `ipcInvariantFull` preservation for WithCaps wrapper operations (M-IPC-3).
-  Closed 3 Capability/DS findings: `descendantsOf` BFS fuel sufficiency (M-CAP-2),
-  `buildCNodeRadix_lookup_equiv` bidirectional equivalence (M-DS-3), badge override
-  CDT tracking documentation (M-CAP-1). Added NI projection hypothesis
-  documentation (M-IF-3). Added `ipcInvariantFull_compositional` helper (L-P10).
-  Proved `insert_maxPriority_consistency` for RunQueue (M-SCH-1). Zero sorry,
-  zero axiom. All 12 sub-tasks complete.
+- **T4 (v0.20.3) — COMPLETE**: IPC & Capability Proof Closure. Closed M-IPC-1:
+  `ipcStateQueueConsistent` preservation for `endpointCall`, `endpointReplyRecv`,
+  `notificationSignal`, and `notificationWait`. Closed M-IPC-3: `ipcInvariantFull`
+  preservation for WithCaps wrapper operations. M-IPC-2 (T4-D): proof architecture
+  documented with 6 transport lemmas; full `endpointQueueRemoveDual` preservation
+  composition deferred pending `storeTcbQueueLinks_splicing_preserves_linkInteg`
+  infrastructure. Proved `descendantsOf_fuel_sufficiency` with 8 BFS lemmas
+  (M-CAP-2). Proved `buildCNodeRadix_lookup_equiv` bidirectional equivalence
+  (M-DS-3). Badge override CDT tracking documentation (M-CAP-1). NI projection
+  hypothesis documentation (M-IF-3). `ipcInvariantFull_compositional` helper
+  (L-P10). `insert_maxPriority_consistency` for RunQueue (M-SCH-1). Zero sorry,
+  zero axiom. 11 of 12 sub-tasks complete; T4-D partial.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

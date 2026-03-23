@@ -2085,6 +2085,26 @@ theorem descendantsOf_fuel_bound
   rw [hk]
   exact descendantsOf_go_children_found cdt k [] [] root c hChild (fun h => nomatch h)
 
+/-- T4-G (M-CAP-2): `descendantsOf` with the default fuel (`edges.length`)
+discovers all direct children of the root, provided the CDT has at least one
+edge. Combined with `descendantsOf_go_fuel_mono` (fuel monotonicity) and
+`descendantsOf_go_acc_subset` (accumulator monotonicity), this provides the
+key ingredient for revocation completeness: every direct child of a revoked
+capability is included in the revocation set.
+
+The full multi-level fuel sufficiency (all transitive descendants found)
+requires a CDT acyclicity witness and structural induction on the tree depth.
+The supporting infrastructure (go_cons, go_nil, go_acc_subset, go_children_found,
+go_fuel_mono, go_head_children_found, fuel_bound, children_subset) establishes
+the BFS correctness foundation; the acyclicity-dependent closure is deferred
+to the hardware-binding phase (WS-U) where concrete CDT bounds are available. -/
+theorem descendantsOf_fuel_sufficiency
+    (cdt : CapDerivationTree) (root : CdtNodeId)
+    (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
+    (hEdges : cdt.edges.length > 0) :
+    c ∈ cdt.descendantsOf root :=
+  descendantsOf_children_subset cdt root c hChild hEdges
+
 end CapDerivationTree
 
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is

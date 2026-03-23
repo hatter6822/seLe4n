@@ -311,6 +311,11 @@ CDT structural invariants (WS-G8):
 - `removeNode_childMapConsistent` — `removeNode` preserves `childMapConsistent` (R3/R2-C, closing CDT consistency gap),
 - `childrenOf` — O(1) HashMap lookup replacing O(E) edge-list scan,
 - `descendantsOf` — O(N+E) total via `childrenOf`-backed BFS traversal.
+- `descendantsOf_fuel_sufficiency` — **(T4-G, M-CAP-2)** direct children of any
+  CDT node are included in the BFS result, providing the foundation for
+  revocation completeness. Supported by 8 proven lemmas: `go_cons`, `go_nil`,
+  `go_acc_subset`, `go_children_found`, `children_subset`, `go_fuel_mono`,
+  `go_head_children_found`, `fuel_bound`.
 - `cdtChildMapConsistentCheck` — runtime verification of `childMapConsistent` invariant (v0.12.15), checking both forward (childMap→edges) and backward (edges→childMap) directions.
 
 ## 4. IPC invariants (M3)
@@ -1213,6 +1218,12 @@ Builder equivalence bridge (`RadixTree/Bridge.lean`):
 - `buildCNodeRadix_guardWidth/guardValue/radixWidth` — parameter preservation
 - `buildCNodeRadix_wf` — built tree is well-formed
 - `CNodeRadix.ofCNode` — convenience conversion from CNode
+- `buildCNodeRadix_lookup_equiv` — **(T4-I, M-DS-3)** bidirectional lookup
+  equivalence: `(buildCNodeRadix rt config).lookup slot = rt.get? slot`.
+  Proved via 3 private fold lemmas (foldl_preserves_none, foldl_preserves_some,
+  foldl_establishes_some) with list induction over the hash table's slot array.
+  Preconditions: `invExt`, `UniqueRadixIndices`, and `hNoPhantom` (no radix
+  index collision between absent keys and present keys).
 
 Resolution theorems:
 

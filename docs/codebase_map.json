@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-t4-ipc-SN33U",
-      "commit_sha": "735e0a0c03b9b4f345532c8a98c78d4dffd76976",
-      "tree_sha": "ed5f4fb5e9b47bde82e81a1c613fe010bdf54290",
-      "committed_at_utc": "2026-03-23T19:30:07+00:00"
+      "commit_sha": "b02c4891f08d347ad1ab35c94331c9b6192ae070",
+      "tree_sha": "e6e7cd7a256a64907112478c0a41c26a44137697",
+      "committed_at_utc": "2026-03-23T19:32:29+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "58baab898293bd8adcea16d55b29db338c40872c65f54999477d3a0370785473"
+    "source_digest": "521234cb909bbd97f564b50647e33cc7e3352681c7f116bc6a1e46dfeeb454e3"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3286
+    "declaration_count": 3292
   },
   "readme_sync": {
     "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 58530,
+    "production_loc": 58778,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1794,
+    "proved_theorem_lemma_decls": 1800,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -10704,7 +10704,7 @@
     {
       "module": "SeLe4n.Kernel.RadixTree.Bridge",
       "path": "SeLe4n/Kernel/RadixTree/Bridge.lean",
-      "declaration_count": 18,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -10813,9 +10813,48 @@
           "called": []
         },
         {
+          "kind": "theorem",
+          "name": "get_ne_none_of_slot_occupied",
+          "line": 174,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_preserves_none",
+          "line": 185,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_preserves_some",
+          "line": 214,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_establishes_some",
+          "line": 246,
+          "called": [
+            "foldl_preserves_some"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadix_lookup_equiv",
+          "line": 323,
+          "called": [
+            "CNodeConfig",
+            "UniqueRadixIndices",
+            "buildCNodeRadix",
+            "foldl_establishes_some",
+            "foldl_preserves_none",
+            "get_ne_none_of_slot_occupied"
+          ]
+        },
+        {
           "kind": "def",
           "name": "freezeCNodeSlots",
-          "line": 188,
+          "line": 416,
           "called": [
             "CNodeRadix.ofCNode"
           ]
@@ -10823,7 +10862,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardWidth",
-          "line": 192,
+          "line": 420,
           "called": [
             "CNodeConfig.ofCNode",
             "buildCNodeRadix_guardWidth",
@@ -10833,7 +10872,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardValue",
-          "line": 197,
+          "line": 425,
           "called": [
             "CNodeConfig.ofCNode",
             "buildCNodeRadix_guardValue",
@@ -10843,7 +10882,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_radixWidth",
-          "line": 202,
+          "line": 430,
           "called": [
             "CNodeConfig.ofCNode",
             "buildCNodeRadix_radixWidth",
@@ -10853,7 +10892,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_wf",
-          "line": 207,
+          "line": 435,
           "called": [
             "CNodeConfig.ofCNode",
             "buildCNodeRadix_wf",
@@ -17962,7 +18001,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 151,
+      "declaration_count": 152,
       "declarations": [
         {
           "kind": "namespace",
@@ -19144,17 +19183,27 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "descendantsOf_fuel_sufficiency",
+          "line": 2101,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "descendantsOf_children_subset"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 2094,
+          "line": 2114,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2105>",
-          "line": 2105,
+          "name": "<anonymous:instance:2125>",
+          "line": 2125,
           "called": [
             "KernelObject"
           ]
@@ -19162,19 +19211,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 2115,
+          "line": 2135,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 2124,
+          "line": 2144,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 2128,
+          "line": 2148,
           "called": [
             "KernelObjectType"
           ]
@@ -19182,7 +19231,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 2138,
+          "line": 2158,
           "called": [
             "KernelObjectType"
           ]
@@ -19190,7 +19239,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 2148,
+          "line": 2168,
           "called": [
             "KernelObjectType",
             "ofNat"
@@ -19199,7 +19248,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 2152,
+          "line": 2172,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -19208,13 +19257,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 2157,
+          "line": 2177,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 2159,
+          "line": 2179,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -19223,7 +19272,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 2171,
+          "line": 2191,
           "called": []
         }
       ]
