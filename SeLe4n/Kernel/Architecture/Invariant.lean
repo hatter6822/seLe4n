@@ -358,7 +358,7 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
     · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
     · intro oidA oidB rA rB hObjA; have h : (default : SystemState).objects[oidA]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObjA; exact absurd hObjA (by simp)
-  -- 8. crossSubsystemInvariant (R4-E: registry endpoint valid ∧ dependency consistent ∧ no stale queue refs)
+  -- 8. crossSubsystemInvariant (R4-E + T5-J: registry ∧ dependency ∧ queue refs ∧ notification refs)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)
   · exact tlbConsistent_empty (default : SystemState)
@@ -496,7 +496,7 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
   obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, by exact hCross, by exact hTlb⟩
+         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,
@@ -515,6 +515,9 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
            by exact hR⟩
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
+  -- crossSubsystemInvariant (T5-J: 4 conjuncts, all only depend on objects/services/serviceRegistry)
+  · obtain ⟨h1, h2, h3, h4⟩ := hCross
+    exact ⟨h1, h2, h3, h4⟩
 
 -- ============================================================================
 -- WS-J1-D: Register decode consistency predicate

@@ -2186,6 +2186,41 @@ def objectType : KernelObject → KernelObjectType
   | .vspaceRoot _ => .vspaceRoot
   | .untyped _ => .untyped
 
+/-- T5-C (M-NEW-5): Object well-formedness predicate parameterized by the object store.
+
+For each object kind, this checks structural validity constraints that must hold
+at construction time:
+- **TCB**: `cspaceRoot` and `vspaceRoot` must reference existing objects in the store.
+- **CNode**: guard value must be bounded by guard width (`guardBounded` from T2-J).
+- **Endpoint**: always well-formed (no structural constraints beyond queue invariants,
+  which are tracked separately by `ipcInvariant`).
+- **Notification**: always well-formed (waiter validity tracked by `crossSubsystemInvariant`).
+- **VSpaceRoot**: always well-formed (ASID validity is a platform-level concern,
+  tracked by `asidTableInvariant`).
+- **Untyped**: always well-formed (size constraints are enforced by the allocator). -/
+def wellFormed (obj : KernelObject)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  match obj with
+  | .tcb t =>
+      objects[t.cspaceRoot]? ≠ none ∧
+      objects[t.vspaceRoot]? ≠ none
+  | .cnode c => c.guardBounded
+  | .endpoint _ => True
+  | .notification _ => True
+  | .vspaceRoot _ => True
+  | .untyped _ => True
+
+/-- T5-C: `wellFormed` is decidable for all object kinds, enabling runtime validation. -/
+instance (obj : KernelObject)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    Decidable (obj.wellFormed objects) := by
+  unfold wellFormed
+  match obj with
+  | .tcb _ => exact instDecidableAnd
+  | .cnode _ => exact inferInstance
+  | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _ =>
+    exact instDecidableTrue
+
 end KernelObject
 
 /-- Construct a capability that names an object directly.

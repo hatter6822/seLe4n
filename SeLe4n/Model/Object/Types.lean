@@ -422,6 +422,13 @@ The `List` representation is retained. If future profiling reveals notification
 queue pressure, migration to intrusive queues remains straightforward. -/
 structure Notification where
   state : NotificationState
+  /-- T5-L (M-MOD-6): Blocked waiter list. Uses `List.cons` prepend (LIFO ordering),
+      matching seL4's notification wait semantics. `notificationWait` prepends the
+      caller's ThreadId, and `notificationSignal` wakes via `List.head?` (most
+      recently blocked waiter). This LIFO order is deliberate: seL4 does not
+      guarantee FIFO for notification waiters, and prepend gives O(1) enqueue.
+      Thread removal during lifecycle cleanup uses `List.filter` (O(n), acceptable
+      for ≤8 waiters per notification). -/
   waitingThreads : List SeLe4n.ThreadId
   pendingBadge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq

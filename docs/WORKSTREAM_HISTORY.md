@@ -21,7 +21,7 @@ through WS-S) are complete. WS-T Phases T1–T4 complete (Benchmarking Blockers,
 Model & CDT Integrity, Rust ABI Hardening, IPC & Capability Proof Closure);
 phases T5–T8 continue the deep-dive audit remediation.
 
-### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T4 COMPLETE, T5–T8 IN PROGRESS
+### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T5 COMPLETE, T6–T8 IN PROGRESS
 
 WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
 MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
@@ -67,6 +67,28 @@ v0.20.0–v0.20.7. See
   projection hypothesis documentation (M-IF-3). `ipcInvariantFull_compositional`
   helper (L-P10). `insert_maxPriority_consistency` for RunQueue (M-SCH-1). Zero
   sorry, zero axiom. 12 of 12 sub-tasks complete.
+
+- **T5 (v0.20.4) — COMPLETE**: Lifecycle, Service & Cross-Subsystem. Closed 4
+  MEDIUM findings: `lifecycleRetypeObject`/`lifecycleRetypeDirect` marked as
+  internal building blocks with safety annotations (M-NEW-4). Defined
+  `KernelObject.wellFormed` predicate with decidable validation in
+  `lifecycleRetypeWithCleanup` (M-NEW-5). Fixed intrusive queue cleanup for
+  mid-queue nodes via `spliceOutMidQueueNode` with predecessor/successor link
+  patching (M-LCS-1). Extended `noStaleEndpointQueueReferences` to check
+  interior queue members via bounded `collectQueueMembers` traversal (M-CS-1).
+  Closed 3 LOW findings: `cleanupEndpointServiceRegistrations` now calls
+  `removeDependenciesOf` to prevent orphaned dependency edges (L-NEW-1), with
+  `registryEndpointValid` preservation proof (L-NEW-2). Defined
+  `noStaleNotificationWaitReferences` predicate and added to
+  `crossSubsystemInvariant` 4-tuple (L-NEW-3). Proved
+  `threadPriority_membership_consistent` closing scheduler M-SCH-3 gap with
+  insert/remove preservation proofs. Added `@[deprecated]` annotations to
+  `lifecycleRetypeObject`/`lifecycleRetypeDirect` for compile-time enforcement.
+  Fixed `spliceOutMidQueueNode` circular-queue correctness bug (successor
+  lookup now reads patched objects table).
+  Documentation: `lookupServiceByCap` first-match semantics (M-LCS-2),
+  `Notification.waitingThreads` LIFO semantics (M-MOD-6). Zero sorry, zero
+  axiom. All 13 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

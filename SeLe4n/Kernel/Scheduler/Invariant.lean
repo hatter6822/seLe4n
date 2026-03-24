@@ -352,4 +352,137 @@ theorem schedulerPriorityMatch_insert
     simp only [beq_self_eq_true, ↓reduceIte]
     simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
 
+-- ============================================================================
+-- T5-M (M-SCH-3): threadPriority ↔ membership consistency
+-- ============================================================================
+
+/-- T5-M (M-SCH-3): The `threadPriority` and `membership` fields of the RunQueue
+    are bidirectionally consistent: a thread has a `threadPriority` entry if and
+    only if it appears in the `membership` set.
+
+    This was previously an implicit invariant (RunQueue.lean lines 46-52)
+    maintained structurally by `insert` (which adds to both) and `remove`
+    (which erases from both), but not formally proven. This definition makes
+    the invariant explicit and verifiable. -/
+def threadPriority_membership_consistent (rq : RunQueue) : Prop :=
+  (∀ tid, rq.threadPriority[tid]? ≠ none → rq.membership.contains tid = true) ∧
+  (∀ tid, rq.membership.contains tid = true → rq.threadPriority[tid]? ≠ none)
+
+/-- T5-M: The empty RunQueue satisfies threadPriority/membership consistency. -/
+theorem threadPriority_membership_consistent_empty :
+    threadPriority_membership_consistent RunQueue.empty := by
+  constructor
+  · intro tid h
+    exfalso; apply h
+    have : (∅ : SeLe4n.Kernel.RobinHood.RHTable ThreadId Priority).get? tid = none :=
+      RHTable_get?_empty 16 (by omega)
+    simp only [RunQueue.empty, RHTable_getElem?_eq_get?, EmptyCollection.emptyCollection] at this ⊢
+    exact this
+  · intro tid h
+    exact absurd (show tid ∈ (RunQueue.empty : RunQueue) from h) (RunQueue.not_mem_empty tid)
+
+/-- T5-M: `runQueueThreadPriorityConsistent` can be derived from
+    `threadPriority_membership_consistent`.
+
+    The `RunQueue.Membership` instance defines `tid ∈ rq` as
+    `rq.membership.contains tid = true`, so the proof directly connects
+    membership-set presence with `threadPriority` presence.
+
+    This closes the M-SCH-3 gap: the `threadPriority`/`membership` relationship
+    is no longer an external hypothesis — it follows from the formalized predicate. -/
+theorem runQueueThreadPriorityConsistent_of_tpmc
+    (st : SystemState)
+    (hTPMC : threadPriority_membership_consistent st.scheduler.runQueue) :
+    runQueueThreadPriorityConsistent st := by
+  constructor
+  · intro tid hMem
+    -- tid ∈ runQueue ↔ membership.contains tid = true
+    exact hTPMC.2 tid hMem
+  · intro tid hPrio
+    -- threadPriority[tid]? ≠ none → membership.contains tid = true
+    exact hTPMC.1 tid hPrio
+
+/-- T5-M: `RunQueue.insert` preserves `threadPriority_membership_consistent`.
+    Insert adds tid to both `membership` and `threadPriority` atomically,
+    maintaining bidirectional consistency. When tid is already present,
+    insert is a no-op and the invariant trivially holds. -/
+theorem threadPriority_membership_consistent_insert
+    (rq : RunQueue) (tid : ThreadId) (prio : Priority)
+    (hTPMC : threadPriority_membership_consistent rq) :
+    threadPriority_membership_consistent (rq.insert tid prio) := by
+  unfold threadPriority_membership_consistent
+  by_cases hContains : rq.contains tid
+  · -- tid already in queue: insert returns rq unchanged
+    have : rq.insert tid prio = rq := by unfold RunQueue.insert; simp [hContains]
+    rw [this]; exact hTPMC
+  · -- tid not in queue: both membership and threadPriority updated
+    have hTPEq : (rq.insert tid prio).threadPriority = rq.threadPriority.insert tid prio := by
+      rw [RunQueue.insert_threadPriority]; simp [hContains]
+    have hMemEq : (rq.insert tid prio).membership = rq.membership.insert tid := by
+      unfold RunQueue.insert; simp [hContains]
+    constructor
+    · intro tid' hTP
+      rw [hMemEq]
+      rw [RHTable_getElem?_eq_get?, hTPEq] at hTP
+      by_cases hEq : (tid == tid') = true
+      · have hEqV := eq_of_beq hEq; subst hEqV
+        exact RobinHood.RHSet.contains_insert_self rq.membership tid rq.mem_invExt
+      · have hTP' : rq.threadPriority.get? tid' ≠ none := by
+          rwa [RobinHood.RHTable.getElem?_insert_ne rq.threadPriority tid tid' prio hEq
+              rq.threadPrio_invExt] at hTP
+        rw [RobinHood.RHSet.contains_insert_ne rq.membership tid tid' hEq rq.mem_invExt]
+        exact hTPMC.1 tid' (by rwa [RHTable_getElem?_eq_get?])
+    · intro tid' hMem
+      rw [hMemEq] at hMem
+      rw [RHTable_getElem?_eq_get?, hTPEq]
+      by_cases hEq : (tid == tid') = true
+      · have hEqV := eq_of_beq hEq; subst hEqV
+        rw [RobinHood.RHTable.getElem?_insert_self rq.threadPriority tid prio rq.threadPrio_invExt]
+        simp
+      · rw [RobinHood.RHTable.getElem?_insert_ne rq.threadPriority tid tid' prio hEq
+            rq.threadPrio_invExt, ← RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHSet.contains_insert_ne rq.membership tid tid' hEq rq.mem_invExt] at hMem
+        exact hTPMC.2 tid' hMem
+
+/-- T5-M: `RunQueue.remove` preserves `threadPriority_membership_consistent`.
+    Remove erases tid from both `membership` and `threadPriority` atomically,
+    maintaining bidirectional consistency. -/
+theorem threadPriority_membership_consistent_remove
+    (rq : RunQueue) (tid : ThreadId)
+    (hTPMC : threadPriority_membership_consistent rq) :
+    threadPriority_membership_consistent (rq.remove tid) := by
+  unfold threadPriority_membership_consistent
+  have hTP : (rq.remove tid).threadPriority = rq.threadPriority.erase tid := by
+    unfold RunQueue.remove; rfl
+  have hMem : (rq.remove tid).membership = rq.membership.erase tid := by
+    unfold RunQueue.remove; rfl
+  constructor
+  · intro tid' hTP'
+    simp only [RHTable_getElem?_eq_get?, hTP] at hTP'
+    by_cases hEq : (tid == tid') = true
+    · -- tid == tid': erase_self yields none, contradiction
+      have hEqV := eq_of_beq hEq; subst hEqV
+      rw [RobinHood.RHTable.getElem?_erase_self rq.threadPriority tid rq.threadPrio_invExt] at hTP'
+      exact absurd rfl hTP'
+    · rw [RobinHood.RHTable.getElem?_erase_ne rq.threadPriority tid tid' hEq
+          rq.threadPrio_invExt rq.threadPrio_sizeOk] at hTP'
+      rw [hMem, RobinHood.RHSet.contains_erase_ne rq.membership tid tid' hEq rq.mem_invExt
+          rq.mem_sizeOk]
+      have : rq.threadPriority[tid']? ≠ none := by
+        rw [RHTable_getElem?_eq_get?]; exact hTP'
+      exact hTPMC.1 tid' this
+  · intro tid' hMem'
+    rw [hMem] at hMem'
+    by_cases hEq : (tid == tid') = true
+    · have hEqV := eq_of_beq hEq
+      subst hEqV
+      rw [RobinHood.RHSet.contains_erase_self rq.membership tid rq.mem_invExt] at hMem'
+      exact absurd hMem' (by simp)
+    · rw [RobinHood.RHSet.contains_erase_ne rq.membership tid tid' hEq rq.mem_invExt
+          rq.mem_sizeOk] at hMem'
+      simp only [RHTable_getElem?_eq_get?, hTP]
+      rw [RobinHood.RHTable.getElem?_erase_ne rq.threadPriority tid tid' hEq
+          rq.threadPrio_invExt rq.threadPrio_sizeOk, ← RHTable_getElem?_eq_get?]
+      exact hTPMC.2 tid' hMem'
+
 end SeLe4n.Kernel
