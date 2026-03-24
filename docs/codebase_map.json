@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-t4-ipc-SN33U",
-      "commit_sha": "ccdcff22c23acca76f19a2d56d798d9e0441e0d6",
-      "tree_sha": "38074e13ba29a5248a19be94e3a12c8f9848c9b0",
-      "committed_at_utc": "2026-03-24T03:35:34+00:00"
+      "branch": "claude/audit-pr516-phase-t4-sfa8U",
+      "commit_sha": "04660769b296aa11f3c36a1e2b452f52ff5f9bd4",
+      "tree_sha": "e6eebd0b3eb12f731f1dd8460d4c11c0c9cfd4e2",
+      "committed_at_utc": "2026-03-24T03:38:32+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9f662bb0db810fa80fe3cc3b672cce64dd45d5f9509fe1adcf460a204a4b47d0"
+    "source_digest": "c50fd66a809d8e6f59271eb0f5ac9592210c62b13a8a30067c8d18d4594b1923"
   },
   "summary": {
-    "module_count": 111,
-    "declaration_count": 3311
+    "module_count": 110,
+    "declaration_count": 3306
   },
   "readme_sync": {
     "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
-    "production_files": 101,
-    "production_loc": 60179,
+    "production_files": 100,
+    "production_loc": 60118,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1813,
+    "proved_theorem_lemma_decls": 1812,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -5220,74 +5220,6 @@
       "declarations": []
     },
     {
-      "module": "SeLe4n.Kernel.IPC.Invariant.Acyclicity",
-      "path": "SeLe4n/Kernel/IPC/Invariant/Acyclicity.lean",
-      "declaration_count": 8,
-      "declarations": [
-        {
-          "kind": "namespace",
-          "name": "SeLe4n.Kernel",
-          "line": 29,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "tcbQueueNextEdge",
-          "line": 38,
-          "called": []
-        },
-        {
-          "kind": "inductive",
-          "name": "tcbQueueNontrivialPath",
-          "line": 43,
-          "called": [
-            "tcbQueueNextEdge"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "tcbQueueChainAcyclic",
-          "line": 51,
-          "called": [
-            "tcbQueueNontrivialPath"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "tcbQueueNontrivialPath_of_edge",
-          "line": 59,
-          "called": [
-            "tcbQueueNextEdge",
-            "tcbQueueNontrivialPath"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "tcbQueueNontrivialPath_trans",
-          "line": 64,
-          "called": [
-            "tcbQueueNontrivialPath"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "acyclic_no_self_loop",
-          "line": 72,
-          "called": [
-            "tcbQueueChainAcyclic"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "acyclic_no_two_cycle",
-          "line": 81,
-          "called": [
-            "tcbQueueChainAcyclic"
-          ]
-        }
-      ]
-    },
-    {
       "module": "SeLe4n.Kernel.IPC.Invariant.CallReplyRecv",
       "path": "SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean",
       "declaration_count": 11,
@@ -5366,7 +5298,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Defs",
       "path": "SeLe4n/Kernel/IPC/Invariant/Defs.lean",
-      "declaration_count": 47,
+      "declaration_count": 50,
       "declarations": [
         {
           "kind": "namespace",
@@ -5458,9 +5390,33 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "QueueNextPath_trans",
+          "line": 149,
+          "called": [
+            "QueueNextPath"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbQueueChainAcyclic_no_self_loop",
+          "line": 157,
+          "called": [
+            "tcbQueueChainAcyclic"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbQueueChainAcyclic_no_two_cycle",
+          "line": 166,
+          "called": [
+            "tcbQueueChainAcyclic"
+          ]
+        },
+        {
           "kind": "def",
           "name": "dualQueueEndpointWellFormed",
-          "line": 152,
+          "line": 180,
           "called": [
             "intrusiveQueueWellFormed"
           ]
@@ -5468,7 +5424,7 @@
         {
           "kind": "def",
           "name": "dualQueueSystemInvariant",
-          "line": 165,
+          "line": 193,
           "called": [
             "dualQueueEndpointWellFormed",
             "tcbQueueChainAcyclic",
@@ -5478,7 +5434,7 @@
         {
           "kind": "def",
           "name": "ipcInvariant",
-          "line": 176,
+          "line": 204,
           "called": [
             "notificationInvariant"
           ]
@@ -5486,31 +5442,31 @@
         {
           "kind": "def",
           "name": "allPendingMessagesBounded",
-          "line": 183,
+          "line": 211,
           "called": []
         },
         {
           "kind": "def",
           "name": "badgeValid",
-          "line": 194,
+          "line": 222,
           "called": []
         },
         {
           "kind": "def",
           "name": "notificationBadgesWellFormed",
-          "line": 200,
+          "line": 228,
           "called": []
         },
         {
           "kind": "def",
           "name": "capabilityBadgesWellFormed",
-          "line": 209,
+          "line": 237,
           "called": []
         },
         {
           "kind": "def",
           "name": "badgeWellFormed",
-          "line": 219,
+          "line": 247,
           "called": [
             "capabilityBadgesWellFormed",
             "notificationBadgesWellFormed"
@@ -5519,7 +5475,7 @@
         {
           "kind": "def",
           "name": "ipcInvariantFull",
-          "line": 232,
+          "line": 260,
           "called": [
             "allPendingMessagesBounded",
             "badgeWellFormed",
@@ -5530,43 +5486,43 @@
         {
           "kind": "def",
           "name": "runnableThreadIpcReady",
-          "line": 240,
+          "line": 268,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnSendNotRunnable",
-          "line": 244,
+          "line": 272,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnReceiveNotRunnable",
-          "line": 249,
+          "line": 277,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnCallNotRunnable",
-          "line": 255,
+          "line": 283,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnReplyNotRunnable",
-          "line": 261,
+          "line": 289,
           "called": []
         },
         {
           "kind": "def",
           "name": "blockedOnNotificationNotRunnable",
-          "line": 270,
+          "line": 298,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcSchedulerContractPredicates",
-          "line": 277,
+          "line": 305,
           "called": [
             "blockedOnCallNotRunnable",
             "blockedOnNotificationNotRunnable",
@@ -5579,25 +5535,25 @@
         {
           "kind": "def",
           "name": "currentThreadIpcReady",
-          "line": 286,
+          "line": 314,
           "called": []
         },
         {
           "kind": "def",
           "name": "currentNotEndpointQueueHead",
-          "line": 294,
+          "line": 322,
           "called": []
         },
         {
           "kind": "def",
           "name": "currentNotOnNotificationWaitList",
-          "line": 305,
+          "line": 333,
           "called": []
         },
         {
           "kind": "def",
           "name": "currentThreadDequeueCoherent",
-          "line": 316,
+          "line": 344,
           "called": [
             "currentNotEndpointQueueHead",
             "currentNotOnNotificationWaitList",
@@ -5607,19 +5563,19 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_returns_head",
-          "line": 320,
+          "line": 348,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_returns_pre_tcb",
-          "line": 367,
+          "line": 395,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "scheduler_unchanged_through_store_tcb",
-          "line": 420,
+          "line": 448,
           "called": [
             "storeObject_scheduler_eq"
           ]
@@ -5627,7 +5583,7 @@
         {
           "kind": "theorem",
           "name": "tcb_preserved_through_endpoint_store",
-          "line": 430,
+          "line": 458,
           "called": [
             "storeObject_objects_ne"
           ]
@@ -5635,13 +5591,13 @@
         {
           "kind": "def",
           "name": "notificationWaiterConsistent",
-          "line": 448,
+          "line": 476,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "not_mem_waitingThreads_of_ipcState_ne",
-          "line": 457,
+          "line": 485,
           "called": [
             "notificationWaiterConsistent"
           ]
@@ -5649,13 +5605,13 @@
         {
           "kind": "def",
           "name": "uniqueWaiters",
-          "line": 474,
+          "line": 502,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_uniqueWaiters",
-          "line": 480,
+          "line": 508,
           "called": [
             "not_mem_waitingThreads_of_ipcState_ne",
             "notificationWaiterConsistent",
@@ -5666,7 +5622,7 @@
         {
           "kind": "theorem",
           "name": "default_notificationWaiterConsistent",
-          "line": 587,
+          "line": 615,
           "called": [
             "notificationWaiterConsistent"
           ]
@@ -5674,7 +5630,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_result_wellFormed_wake",
-          "line": 649,
+          "line": 677,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -5682,7 +5638,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_result_wellFormed_merge",
-          "line": 661,
+          "line": 689,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -5690,7 +5646,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_result_wellFormed_badge",
-          "line": 671,
+          "line": 699,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -5698,7 +5654,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_result_wellFormed_wait",
-          "line": 678,
+          "line": 706,
           "called": [
             "notificationQueueWellFormed"
           ]
@@ -5706,7 +5662,7 @@
         {
           "kind": "def",
           "name": "ipcStateQueueConsistent",
-          "line": 704,
+          "line": 732,
           "called": []
         }
       ]
@@ -19353,7 +19309,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_fuel_sufficiency",
-          "line": 2101,
+          "line": 2103,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -19363,15 +19319,15 @@
         {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 2114,
+          "line": 2116,
           "called": [
             "VSpaceRoot"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2125>",
-          "line": 2125,
+          "name": "<anonymous:instance:2127>",
+          "line": 2127,
           "called": [
             "KernelObject"
           ]
@@ -19379,19 +19335,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 2135,
+          "line": 2137,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 2144,
+          "line": 2146,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 2148,
+          "line": 2150,
           "called": [
             "KernelObjectType"
           ]
@@ -19399,7 +19355,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 2158,
+          "line": 2160,
           "called": [
             "KernelObjectType"
           ]
@@ -19407,7 +19363,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 2168,
+          "line": 2170,
           "called": [
             "KernelObjectType",
             "ofNat"
@@ -19416,7 +19372,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 2172,
+          "line": 2174,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -19425,13 +19381,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 2177,
+          "line": 2179,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 2179,
+          "line": 2181,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -19440,7 +19396,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 2191,
+          "line": 2193,
           "called": []
         }
       ]

@@ -2092,12 +2092,14 @@ edge. Combined with `descendantsOf_go_fuel_mono` (fuel monotonicity) and
 key ingredient for revocation completeness: every direct child of a revoked
 capability is included in the revocation set.
 
-The full multi-level fuel sufficiency (all transitive descendants found)
-requires a CDT acyclicity witness and structural induction on the tree depth.
-The supporting infrastructure (go_cons, go_nil, go_acc_subset, go_children_found,
-go_fuel_mono, go_head_children_found, fuel_bound, children_subset) establishes
-the BFS correctness foundation; the acyclicity-dependent closure is deferred
-to the hardware-binding phase (WS-U) where concrete CDT bounds are available. -/
+**Scope note:** This theorem proves discovery of *direct* children (depth 1).
+The full multi-level fuel sufficiency (all transitive descendants via
+`CdtChildReachable` found) requires a CDT acyclicity witness and structural
+induction on the tree depth. The supporting infrastructure (go_cons, go_nil,
+go_acc_subset, go_children_found, go_fuel_mono, go_head_children_found,
+fuel_bound, children_subset) establishes the BFS correctness foundation;
+the acyclicity-dependent transitive closure is deferred to the hardware-binding
+phase (WS-U) where concrete CDT bounds are available. -/
 theorem descendantsOf_fuel_sufficiency
     (cdt : CapDerivationTree) (root : CdtNodeId)
     (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)

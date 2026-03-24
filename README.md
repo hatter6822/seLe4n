@@ -72,9 +72,9 @@ architectural improvements compared to other microkernels:
 |-----------|-------|
 | **Version** | `0.20.3` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 58,778 across 100 files |
+| **Production Lean LoC** | 60,116 across 100 files |
 | **Test Lean LoC** | 7,561 across 10 test suites |
-| **Proved declarations** | 1,800 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,812 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -268,7 +268,7 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **T1 COMPLETE** (v0.20.0). Phase T1 fixes frozen IPC queue enqueue (M-FRZ-1/2/3), Rust KernelError ABI drift (H-4), OperationChainSuite registration (M-TST-1). Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
+- **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **T1–T4 COMPLETE** (v0.20.0–v0.20.3). Phase T4 closes IPC & capability proof chains: `ipcStateQueueConsistent` preservation, `dualQueueSystemInvariant` with acyclicity, WithCaps invariant composition, CDT BFS infrastructure, RadixTree bridge equivalence, run queue maxPriority consistency. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
 - **WS-S** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks) **COMPLETE** (v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Closure: [`WS_S_CLOSURE_REPORT.md`](docs/dev_history/audits/WS_S_CLOSURE_REPORT.md).
 - **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks) **COMPLETE** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (next workstream after WS-T)

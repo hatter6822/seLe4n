@@ -46,11 +46,11 @@ melhorias arquiteturais inovadoras em comparação com outros microkernels:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.18.6` |
+| **Versão** | `0.20.3` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 55.732 em 98 arquivos |
-| **LoC Lean de testes** | 7.317 em 10 suítes de testes |
-| **Declarações provadas** | 1.692 declarações de teorema/lema (zero sorry/axiom) |
+| **LoC Lean de produção** | 60.116 em 100 arquivos |
+| **LoC Lean de testes** | 7.561 em 10 suítes de testes |
+| **Declarações provadas** | 1.812 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Auditoria mais recente** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoria completa pré-lançamento do kernel + codebase Rust |
 | **Mapa do codebase** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário de declarações legível por máquina |

@@ -50,9 +50,9 @@ Mikrokerneln ein:
 |-------------|------|
 | **Version** | `0.20.3` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 55.732 über 98 Dateien |
-| **Test-LoC (Lean)** | 7.317 über 10 Testsuiten |
-| **Bewiesene Deklarationen** | 1.692 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 60.116 über 100 Dateien |
+| **Test-LoC (Lean)** | 7.561 über 10 Testsuiten |
+| **Bewiesene Deklarationen** | 1.812 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Letztes Audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Vollständiges Kernel- + Rust-Codebase-Pre-Release-Audit |
 | **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |
