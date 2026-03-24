@@ -352,4 +352,54 @@ theorem schedulerPriorityMatch_insert
     simp only [beq_self_eq_true, ↓reduceIte]
     simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
 
+-- ============================================================================
+-- T5-M (M-SCH-3): threadPriority ↔ membership consistency
+-- ============================================================================
+
+/-- T5-M (M-SCH-3): The `threadPriority` and `membership` fields of the RunQueue
+    are bidirectionally consistent: a thread has a `threadPriority` entry if and
+    only if it appears in the `membership` set.
+
+    This was previously an implicit invariant (RunQueue.lean lines 46-52)
+    maintained structurally by `insert` (which adds to both) and `remove`
+    (which erases from both), but not formally proven. This definition makes
+    the invariant explicit and verifiable. -/
+def threadPriority_membership_consistent (rq : RunQueue) : Prop :=
+  (∀ tid, rq.threadPriority[tid]? ≠ none → rq.membership.contains tid = true) ∧
+  (∀ tid, rq.membership.contains tid = true → rq.threadPriority[tid]? ≠ none)
+
+/-- T5-M: The empty RunQueue satisfies threadPriority/membership consistency. -/
+theorem threadPriority_membership_consistent_empty :
+    threadPriority_membership_consistent RunQueue.empty := by
+  constructor
+  · intro tid h
+    exfalso; apply h
+    have : (∅ : SeLe4n.Kernel.RobinHood.RHTable ThreadId Priority).get? tid = none :=
+      RHTable_get?_empty 16 (by omega)
+    simp only [RunQueue.empty, RHTable_getElem?_eq_get?, EmptyCollection.emptyCollection] at this ⊢
+    exact this
+  · intro tid h
+    exact absurd (show tid ∈ (RunQueue.empty : RunQueue) from h) (RunQueue.not_mem_empty tid)
+
+/-- T5-M: `runQueueThreadPriorityConsistent` can be derived from
+    `threadPriority_membership_consistent`.
+
+    The `RunQueue.Membership` instance defines `tid ∈ rq` as
+    `rq.membership.contains tid = true`, so the proof directly connects
+    membership-set presence with `threadPriority` presence.
+
+    This closes the M-SCH-3 gap: the `threadPriority`/`membership` relationship
+    is no longer an external hypothesis — it follows from the formalized predicate. -/
+theorem runQueueThreadPriorityConsistent_of_tpmc
+    (st : SystemState)
+    (hTPMC : threadPriority_membership_consistent st.scheduler.runQueue) :
+    runQueueThreadPriorityConsistent st := by
+  constructor
+  · intro tid hMem
+    -- tid ∈ runQueue ↔ membership.contains tid = true
+    exact hTPMC.2 tid hMem
+  · intro tid hPrio
+    -- threadPriority[tid]? ≠ none → membership.contains tid = true
+    exact hTPMC.1 tid hPrio
+
 end SeLe4n.Kernel

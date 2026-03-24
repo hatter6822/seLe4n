@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-pr516-phase-t4-sfa8U",
-      "commit_sha": "04660769b296aa11f3c36a1e2b452f52ff5f9bd4",
-      "tree_sha": "e6eebd0b3eb12f731f1dd8460d4c11c0c9cfd4e2",
-      "committed_at_utc": "2026-03-24T03:38:32+00:00"
+      "branch": "claude/optimize-phase-t5-workstream-hCNBH",
+      "commit_sha": "2e491da253967c54a0bf69e7d14247dc3d7c5768",
+      "tree_sha": "6b0253482fd3dd9c620186d0a2395b09339645ba",
+      "committed_at_utc": "2026-03-24T00:15:51-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c50fd66a809d8e6f59271eb0f5ac9592210c62b13a8a30067c8d18d4594b1923"
+    "source_digest": "df0b89f16e354a6d666c8b517dc8fdafb689de417bce584c0ef4e4de894ebd49"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3306
+    "declaration_count": 3322
   },
   "readme_sync": {
     "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 60118,
+    "production_loc": 60489,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1812,
+    "proved_theorem_lemma_decls": 1822,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -943,13 +943,13 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 549,
+          "line": 552,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 555,
+          "line": 558,
           "called": [
             "registerDecodeConsistent"
           ]
@@ -957,7 +957,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 562,
+          "line": 565,
           "called": [
             "proofLayerInvariantBundle",
             "registerDecodeConsistent"
@@ -966,7 +966,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 576,
+          "line": 579,
           "called": [
             "registerDecodeConsistent"
           ]
@@ -974,7 +974,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 584,
+          "line": 587,
           "called": [
             "registerDecodeConsistent"
           ]
@@ -4164,39 +4164,54 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 9,
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 28,
+          "line": 29,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "collectQueueMembers",
+          "line": 38,
           "called": []
         },
         {
           "kind": "def",
           "name": "noStaleEndpointQueueReferences",
-          "line": 36,
+          "line": 58,
+          "called": [
+            "collectQueueMembers"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "noStaleNotificationWaitReferences",
+          "line": 76,
           "called": []
         },
         {
           "kind": "def",
           "name": "registryDependencyConsistent",
-          "line": 46,
+          "line": 84,
           "called": []
         },
         {
           "kind": "def",
           "name": "crossSubsystemInvariant",
-          "line": 55,
+          "line": 94,
           "called": [
             "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
             "registryDependencyConsistent"
           ]
         },
         {
           "kind": "theorem",
           "name": "default_crossSubsystemInvariant",
-          "line": 61,
+          "line": 101,
           "called": [
             "crossSubsystemInvariant"
           ]
@@ -4204,16 +4219,17 @@
         {
           "kind": "def",
           "name": "crossSubsystemPredicates",
-          "line": 85,
+          "line": 131,
           "called": [
             "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
             "registryDependencyConsistent"
           ]
         },
         {
           "kind": "def",
           "name": "crossSubsystemInvariantFolded",
-          "line": 90,
+          "line": 137,
           "called": [
             "crossSubsystemPredicates"
           ]
@@ -4221,7 +4237,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_iff_folded",
-          "line": 95,
+          "line": 142,
           "called": [
             "crossSubsystemInvariant",
             "crossSubsystemInvariantFolded",
@@ -4231,7 +4247,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemPredicates_count",
-          "line": 112,
+          "line": 162,
           "called": []
         }
       ]
@@ -10189,7 +10205,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Operations",
       "path": "SeLe4n/Kernel/Lifecycle/Operations.lean",
-      "declaration_count": 76,
+      "declaration_count": 80,
       "declarations": [
         {
           "kind": "namespace",
@@ -10211,22 +10227,29 @@
         },
         {
           "kind": "def",
+          "name": "spliceOutMidQueueNode",
+          "line": 48,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "removeFromAllEndpointQueues",
-          "line": 47,
+          "line": 81,
           "called": [
-            "removeThreadFromQueue"
+            "removeThreadFromQueue",
+            "spliceOutMidQueueNode"
           ]
         },
         {
           "kind": "def",
           "name": "removeFromAllNotificationWaitLists",
-          "line": 60,
+          "line": 96,
           "called": []
         },
         {
           "kind": "def",
           "name": "cleanupTcbReferences",
-          "line": 75,
+          "line": 111,
           "called": [
             "removeFromAllEndpointQueues",
             "removeFromAllNotificationWaitLists"
@@ -10234,16 +10257,42 @@
         },
         {
           "kind": "theorem",
-          "name": "removeFromAllEndpointQueues_scheduler_eq",
-          "line": 85,
+          "name": "spliceOutMidQueueNode_scheduler_eq",
+          "line": 122,
           "called": [
-            "removeFromAllEndpointQueues"
+            "spliceOutMidQueueNode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_lifecycle_eq",
+          "line": 128,
+          "called": [
+            "spliceOutMidQueueNode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "spliceOutMidQueueNode_serviceRegistry_eq",
+          "line": 134,
+          "called": [
+            "spliceOutMidQueueNode"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeFromAllEndpointQueues_scheduler_eq",
+          "line": 140,
+          "called": [
+            "removeFromAllEndpointQueues",
+            "removeThreadFromQueue",
+            "spliceOutMidQueueNode_scheduler_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "removeFromAllNotificationWaitLists_scheduler_eq",
-          "line": 94,
+          "line": 161,
           "called": [
             "removeFromAllNotificationWaitLists"
           ]
@@ -10251,15 +10300,17 @@
         {
           "kind": "theorem",
           "name": "removeFromAllEndpointQueues_lifecycle_eq",
-          "line": 103,
+          "line": 170,
           "called": [
-            "removeFromAllEndpointQueues"
+            "removeFromAllEndpointQueues",
+            "removeThreadFromQueue",
+            "spliceOutMidQueueNode_lifecycle_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "removeFromAllNotificationWaitLists_lifecycle_eq",
-          "line": 112,
+          "line": 191,
           "called": [
             "removeFromAllNotificationWaitLists"
           ]
@@ -10267,15 +10318,17 @@
         {
           "kind": "theorem",
           "name": "removeFromAllEndpointQueues_serviceRegistry_eq",
-          "line": 121,
+          "line": 200,
           "called": [
-            "removeFromAllEndpointQueues"
+            "removeFromAllEndpointQueues",
+            "removeThreadFromQueue",
+            "spliceOutMidQueueNode_serviceRegistry_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "removeFromAllNotificationWaitLists_serviceRegistry_eq",
-          "line": 130,
+          "line": 221,
           "called": [
             "removeFromAllNotificationWaitLists"
           ]
@@ -10283,7 +10336,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_removes_from_runnable",
-          "line": 139,
+          "line": 230,
           "called": [
             "cleanupTcbReferences",
             "removeFromAllEndpointQueues_scheduler_eq",
@@ -10293,7 +10346,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_preserves_runnable_ne",
-          "line": 149,
+          "line": 240,
           "called": [
             "cleanupTcbReferences",
             "removeFromAllEndpointQueues_scheduler_eq",
@@ -10303,7 +10356,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_lifecycle_eq",
-          "line": 161,
+          "line": 252,
           "called": [
             "cleanupTcbReferences",
             "removeFromAllEndpointQueues_lifecycle_eq",
@@ -10313,7 +10366,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_serviceRegistry_eq",
-          "line": 169,
+          "line": 260,
           "called": [
             "cleanupTcbReferences",
             "removeFromAllEndpointQueues_serviceRegistry_eq",
@@ -10323,25 +10376,25 @@
         {
           "kind": "theorem",
           "name": "detachSlotFromCdt_objects_eq",
-          "line": 177,
+          "line": 268,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "detachSlotFromCdt_lifecycle_eq",
-          "line": 182,
+          "line": 273,
           "called": []
         },
         {
           "kind": "def",
           "name": "detachCNodeSlots",
-          "line": 189,
+          "line": 280,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "detachCNodeSlots_objects_eq",
-          "line": 195,
+          "line": 286,
           "called": [
             "detachCNodeSlots",
             "detachSlotFromCdt_objects_eq"
@@ -10350,7 +10403,7 @@
         {
           "kind": "theorem",
           "name": "detachCNodeSlots_lifecycle_eq",
-          "line": 204,
+          "line": 295,
           "called": [
             "detachCNodeSlots",
             "detachSlotFromCdt_lifecycle_eq"
@@ -10359,7 +10412,7 @@
         {
           "kind": "def",
           "name": "lifecyclePreRetypeCleanup",
-          "line": 219,
+          "line": 310,
           "called": [
             "cleanupTcbReferences",
             "detachCNodeSlots"
@@ -10368,7 +10421,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_objects_eq_non_tcb",
-          "line": 238,
+          "line": 329,
           "called": [
             "detachCNodeSlots_objects_eq",
             "lifecyclePreRetypeCleanup"
@@ -10377,7 +10430,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_lifecycle_eq",
-          "line": 256,
+          "line": 347,
           "called": [
             "cleanupTcbReferences_lifecycle_eq",
             "detachCNodeSlots_lifecycle_eq",
@@ -10387,7 +10440,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_flat_subset",
-          "line": 276,
+          "line": 367,
           "called": [
             "cleanupTcbReferences",
             "removeFromAllEndpointQueues_scheduler_eq",
@@ -10397,7 +10450,7 @@
         {
           "kind": "theorem",
           "name": "detachCNodeSlots_scheduler_eq",
-          "line": 288,
+          "line": 379,
           "called": [
             "detachCNodeSlots"
           ]
@@ -10405,7 +10458,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_scheduler_eq_removeRunnable",
-          "line": 299,
+          "line": 390,
           "called": [
             "cleanupTcbReferences",
             "removeFromAllEndpointQueues_scheduler_eq",
@@ -10415,7 +10468,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_flat_subset",
-          "line": 308,
+          "line": 399,
           "called": [
             "cleanupTcbReferences_scheduler_eq_removeRunnable",
             "detachCNodeSlots",
@@ -10426,7 +10479,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeObject",
-          "line": 343,
+          "line": 442,
           "called": [
             "lifecycleRetypeAuthority"
           ]
@@ -10434,7 +10487,7 @@
         {
           "kind": "def",
           "name": "lifecycleRevokeDeleteRetype",
-          "line": 380,
+          "line": 479,
           "called": [
             "lifecycleRetypeObject"
           ]
@@ -10442,25 +10495,25 @@
         {
           "kind": "def",
           "name": "objectTypeAllocSize",
-          "line": 408,
+          "line": 507,
           "called": []
         },
         {
           "kind": "def",
           "name": "requiresPageAlignment",
-          "line": 420,
+          "line": 519,
           "called": []
         },
         {
           "kind": "def",
           "name": "allocationBasePageAligned",
-          "line": 427,
+          "line": 526,
           "called": []
         },
         {
           "kind": "def",
           "name": "scrubObjectMemory",
-          "line": 451,
+          "line": 550,
           "called": [
             "objectTypeAllocSize"
           ]
@@ -10468,7 +10521,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objects_eq",
-          "line": 458,
+          "line": 557,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10476,7 +10529,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_scheduler_eq",
-          "line": 463,
+          "line": 562,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10484,7 +10537,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_lifecycle_eq",
-          "line": 468,
+          "line": 567,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10492,7 +10545,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_tlb_eq",
-          "line": 473,
+          "line": 572,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10500,7 +10553,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_establishes_memoryZeroed",
-          "line": 479,
+          "line": 578,
           "called": [
             "objectTypeAllocSize",
             "scrubObjectMemory"
@@ -10509,7 +10562,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objectIndex_eq",
-          "line": 489,
+          "line": 588,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10517,7 +10570,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objectIndexSet_eq",
-          "line": 494,
+          "line": 593,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10525,7 +10578,7 @@
         {
           "kind": "def",
           "name": "retypeFromUntyped",
-          "line": 516,
+          "line": 615,
           "called": [
             "allocationBasePageAligned",
             "lifecycleRetypeAuthority",
@@ -10536,13 +10589,13 @@
         {
           "kind": "def",
           "name": "lookupUntyped",
-          "line": 567,
+          "line": 666,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_decompose",
-          "line": 576,
+          "line": 675,
           "called": [
             "lifecycleRetypeAuthority",
             "objectTypeAllocSize",
@@ -10552,7 +10605,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_typeMismatch",
-          "line": 694,
+          "line": 793,
           "called": [
             "retypeFromUntyped"
           ]
@@ -10560,7 +10613,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_allocSizeTooSmall",
-          "line": 712,
+          "line": 811,
           "called": [
             "objectTypeAllocSize",
             "retypeFromUntyped"
@@ -10569,7 +10622,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_regionExhausted",
-          "line": 738,
+          "line": 837,
           "called": [
             "allocationBasePageAligned",
             "lifecycleRetypeAuthority",
@@ -10581,31 +10634,31 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_eq",
-          "line": 775,
+          "line": 874,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_ne",
-          "line": 784,
+          "line": 883,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_scheduler_eq",
-          "line": 794,
+          "line": 893,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_state_eq",
-          "line": 802,
+          "line": 901,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_as_storeObject",
-          "line": 821,
+          "line": 920,
           "called": [
             "cspaceLookupSlot_ok_state_eq",
             "lifecycleRetypeAuthority",
@@ -10615,7 +10668,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_lookup_preserved_ne",
-          "line": 852,
+          "line": 951,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10625,7 +10678,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_runnable_membership",
-          "line": 865,
+          "line": 964,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10635,7 +10688,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_not_runnable_membership",
-          "line": 880,
+          "line": 979,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10645,7 +10698,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalState",
-          "line": 895,
+          "line": 994,
           "called": [
             "lifecycleRetypeObject"
           ]
@@ -10653,7 +10706,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalAuthority",
-          "line": 906,
+          "line": 1005,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeObject"
@@ -10662,7 +10715,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_success_updates_object",
-          "line": 921,
+          "line": 1020,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeObject",
@@ -10673,7 +10726,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias",
-          "line": 951,
+          "line": 1050,
           "called": [
             "lifecycleRevokeDeleteRetype"
           ]
@@ -10681,7 +10734,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup",
-          "line": 961,
+          "line": 1060,
           "called": [
             "lifecycleRevokeDeleteRetype",
             "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias"
@@ -10690,7 +10743,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_staged_steps",
-          "line": 974,
+          "line": 1073,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRevokeDeleteRetype"
@@ -10699,7 +10752,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanup",
-          "line": 1040,
+          "line": 1145,
           "called": [
             "lifecyclePreRetypeCleanup",
             "lifecycleRetypeObject",
@@ -10709,7 +10762,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_ok_runnable_no_dangling",
-          "line": 1057,
+          "line": 1166,
           "called": [
             "cleanupTcbReferences_removes_from_runnable",
             "lifecyclePreRetypeCleanup",
@@ -10723,13 +10776,13 @@
         {
           "kind": "def",
           "name": "objectOfTypeTag",
-          "line": 1092,
+          "line": 1206,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_deterministic",
-          "line": 1124,
+          "line": 1238,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10737,7 +10790,7 @@
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_error_iff",
-          "line": 1128,
+          "line": 1242,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10745,7 +10798,7 @@
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_type",
-          "line": 1142,
+          "line": 1256,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10753,13 +10806,13 @@
         {
           "kind": "def",
           "name": "objectOfKernelType",
-          "line": 1162,
+          "line": 1276,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "objectOfKernelType_type",
-          "line": 1192,
+          "line": 1306,
           "called": [
             "objectOfKernelType"
           ]
@@ -10767,7 +10820,7 @@
         {
           "kind": "theorem",
           "name": "objectOfKernelType_eq_objectOfTypeTag",
-          "line": 1197,
+          "line": 1311,
           "called": [
             "objectOfKernelType",
             "objectOfTypeTag"
@@ -10776,7 +10829,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirect",
-          "line": 1215,
+          "line": 1336,
           "called": [
             "lifecycleRetypeAuthority"
           ]
@@ -10784,7 +10837,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_deterministic",
-          "line": 1231,
+          "line": 1352,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10792,7 +10845,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_eq_lifecycleRetypeObject",
-          "line": 1239,
+          "line": 1360,
           "called": [
             "lifecycleRetypeDirect",
             "lifecycleRetypeObject"
@@ -10801,7 +10854,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_objectNotFound",
-          "line": 1254,
+          "line": 1375,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10809,7 +10862,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_illegalState",
-          "line": 1262,
+          "line": 1383,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10817,7 +10870,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_illegalAuthority",
-          "line": 1271,
+          "line": 1392,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeDirect"
@@ -13389,7 +13442,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 27,
+      "declaration_count": 30,
       "declarations": [
         {
           "kind": "namespace",
@@ -13597,6 +13650,29 @@
           "called": [
             "queueCurrentConsistent",
             "schedulerPriorityMatch"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "threadPriority_membership_consistent",
+          "line": 367,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "threadPriority_membership_consistent_empty",
+          "line": 372,
+          "called": [
+            "threadPriority_membership_consistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runQueueThreadPriorityConsistent_of_tpmc",
+          "line": 393,
+          "called": [
+            "runQueueThreadPriorityConsistent",
+            "threadPriority_membership_consistent"
           ]
         }
       ]
@@ -15904,7 +15980,7 @@
     {
       "module": "SeLe4n.Kernel.Service.Registry.Invariant",
       "path": "SeLe4n/Kernel/Service/Registry/Invariant.lean",
-      "declaration_count": 15,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -16024,13 +16100,21 @@
             "revokeService_preserves_registryEndpointValid",
             "revokeService_preserves_registryInterfaceValid"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupEndpointServiceRegistrations_preserves_registryEndpointValid",
+          "line": 261,
+          "called": [
+            "registryEndpointValid"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Service.Registry",
       "path": "SeLe4n/Kernel/Service/Registry.lean",
-      "declaration_count": 22,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
@@ -16053,49 +16137,76 @@
         {
           "kind": "def",
           "name": "lookupServiceByCap",
-          "line": 82,
+          "line": 89,
           "called": []
         },
         {
           "kind": "def",
           "name": "revokeService",
-          "line": 99,
+          "line": 106,
           "called": []
         },
         {
           "kind": "def",
           "name": "cleanupEndpointServiceRegistrations",
-          "line": 113,
+          "line": 126,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_removeDependenciesOf_objects_eq",
+          "line": 142,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_removeDependenciesOf_scheduler_eq",
+          "line": 153,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_removeDependenciesOf_lifecycle_eq",
+          "line": 164,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_removeDependenciesOf_serviceRegistry_eq",
+          "line": 175,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cleanupEndpointServiceRegistrations_objects_eq",
-          "line": 121,
+          "line": 186,
           "called": [
-            "cleanupEndpointServiceRegistrations"
+            "cleanupEndpointServiceRegistrations",
+            "foldl_removeDependenciesOf_objects_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "cleanupEndpointServiceRegistrations_scheduler_eq",
-          "line": 127,
+          "line": 193,
           "called": [
-            "cleanupEndpointServiceRegistrations"
+            "cleanupEndpointServiceRegistrations",
+            "foldl_removeDependenciesOf_scheduler_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "cleanupEndpointServiceRegistrations_lifecycle_eq",
-          "line": 133,
+          "line": 200,
           "called": [
-            "cleanupEndpointServiceRegistrations"
+            "cleanupEndpointServiceRegistrations",
+            "foldl_removeDependenciesOf_lifecycle_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "registerInterface_error_duplicate",
-          "line": 143,
+          "line": 211,
           "called": [
             "registerInterface"
           ]
@@ -16103,7 +16214,7 @@
         {
           "kind": "theorem",
           "name": "registerInterface_success_stores",
-          "line": 151,
+          "line": 219,
           "called": [
             "registerInterface"
           ]
@@ -16111,7 +16222,7 @@
         {
           "kind": "theorem",
           "name": "registerInterface_preserves_objects",
-          "line": 164,
+          "line": 232,
           "called": [
             "registerInterface"
           ]
@@ -16119,7 +16230,7 @@
         {
           "kind": "theorem",
           "name": "registerInterface_preserves_services",
-          "line": 174,
+          "line": 242,
           "called": [
             "registerInterface"
           ]
@@ -16127,7 +16238,7 @@
         {
           "kind": "theorem",
           "name": "registerService_error_duplicate",
-          "line": 184,
+          "line": 252,
           "called": [
             "registerService"
           ]
@@ -16135,7 +16246,7 @@
         {
           "kind": "theorem",
           "name": "registerService_error_unknown_interface",
-          "line": 192,
+          "line": 260,
           "called": [
             "registerService"
           ]
@@ -16143,7 +16254,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_error_not_found",
-          "line": 201,
+          "line": 269,
           "called": [
             "revokeService"
           ]
@@ -16151,7 +16262,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_success_removes",
-          "line": 209,
+          "line": 277,
           "called": [
             "revokeService"
           ]
@@ -16159,7 +16270,7 @@
         {
           "kind": "theorem",
           "name": "registerService_error_no_write_right",
-          "line": 225,
+          "line": 293,
           "called": [
             "registerService"
           ]
@@ -16167,7 +16278,7 @@
         {
           "kind": "theorem",
           "name": "registerService_preserves_objects",
-          "line": 238,
+          "line": 306,
           "called": [
             "registerService"
           ]
@@ -16175,7 +16286,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_objects",
-          "line": 262,
+          "line": 330,
           "called": [
             "revokeService"
           ]
@@ -16183,7 +16294,7 @@
         {
           "kind": "theorem",
           "name": "registerService_preserves_scheduler",
-          "line": 273,
+          "line": 341,
           "called": [
             "registerService"
           ]
@@ -16191,7 +16302,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_scheduler",
-          "line": 297,
+          "line": 365,
           "called": [
             "revokeService"
           ]
@@ -18125,7 +18236,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 152,
+      "declaration_count": 154,
       "declarations": [
         {
           "kind": "namespace",
@@ -19395,8 +19506,25 @@
         },
         {
           "kind": "def",
+          "name": "wellFormed",
+          "line": 2201,
+          "called": [
+            "KernelObject"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:2214>",
+          "line": 2214,
+          "called": [
+            "KernelObject",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "makeObjectCap",
-          "line": 2193,
+          "line": 2228,
           "called": []
         }
       ]
@@ -19854,7 +19982,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 440,
+          "line": 447,
           "called": [
             "Capability"
           ]
@@ -19862,19 +19990,19 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 449,
+          "line": 456,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 454,
+          "line": 461,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 469,
+          "line": 476,
           "called": [
             "UntypedChild"
           ]
@@ -19882,13 +20010,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 485,
+          "line": 492,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 488,
+          "line": 495,
           "called": [
             "UntypedObject"
           ]
@@ -19896,7 +20024,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 492,
+          "line": 499,
           "called": [
             "UntypedObject"
           ]
@@ -19904,7 +20032,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 503,
+          "line": 510,
           "called": [
             "UntypedObject"
           ]
@@ -19912,7 +20040,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 515,
+          "line": 522,
           "called": [
             "UntypedObject"
           ]
@@ -19920,7 +20048,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 519,
+          "line": 526,
           "called": [
             "UntypedObject"
           ]
@@ -19928,7 +20056,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 523,
+          "line": 530,
           "called": [
             "UntypedObject"
           ]
@@ -19936,7 +20064,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 527,
+          "line": 534,
           "called": [
             "UntypedObject"
           ]
@@ -19944,7 +20072,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 532,
+          "line": 539,
           "called": [
             "UntypedObject"
           ]
@@ -19952,7 +20080,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 537,
+          "line": 544,
           "called": [
             "UntypedObject"
           ]
@@ -19960,7 +20088,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 541,
+          "line": 548,
           "called": [
             "watermarkValid"
           ]
@@ -19968,7 +20096,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 545,
+          "line": 552,
           "called": [
             "childrenWithinWatermark"
           ]
@@ -19976,7 +20104,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 550,
+          "line": 557,
           "called": [
             "childrenNonOverlap"
           ]
@@ -19984,7 +20112,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 555,
+          "line": 562,
           "called": [
             "childrenUniqueIds"
           ]
@@ -19992,7 +20120,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 560,
+          "line": 567,
           "called": [
             "empty_childrenNonOverlap",
             "empty_childrenUniqueIds",
@@ -20004,7 +20132,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 566,
+          "line": 573,
           "called": [
             "UntypedObject",
             "canAllocate"
@@ -20013,7 +20141,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 573,
+          "line": 580,
           "called": [
             "UntypedObject",
             "allocate"
@@ -20022,7 +20150,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 592,
+          "line": 599,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -20031,7 +20159,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 601,
+          "line": 608,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -20040,7 +20168,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 608,
+          "line": 615,
           "called": [
             "UntypedObject",
             "allocate_watermark_advance"
@@ -20049,7 +20177,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 615,
+          "line": 622,
           "called": [
             "UntypedObject",
             "allocate_some_iff",
@@ -20060,7 +20188,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 626,
+          "line": 633,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -20069,7 +20197,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 637,
+          "line": 644,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -20078,7 +20206,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 655,
+          "line": 662,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -20087,7 +20215,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 677,
+          "line": 684,
           "called": [
             "UntypedObject",
             "allocate_some_iff"
@@ -20096,7 +20224,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 696,
+          "line": 703,
           "called": [
             "UntypedObject",
             "reset",
@@ -20106,7 +20234,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 700,
+          "line": 707,
           "called": [
             "UntypedObject",
             "reset",
@@ -20116,19 +20244,19 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 715,
+          "line": 722,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 732,
+          "line": 739,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 736,
+          "line": 743,
           "called": [
             "SyscallId"
           ]
@@ -20136,21 +20264,21 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 753,
+          "line": 760,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 757,
+          "line": 764,
           "called": [
             "SyscallId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:774>",
-          "line": 774,
+          "name": "<anonymous:instance:781>",
+          "line": 781,
           "called": [
             "SyscallId"
           ]
@@ -20158,7 +20286,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 792,
+          "line": 799,
           "called": [
             "SyscallId"
           ]
@@ -20166,7 +20294,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 804,
+          "line": 811,
           "called": [
             "SyscallId",
             "ofNat"
@@ -20175,7 +20303,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 814,
+          "line": 821,
           "called": [
             "SyscallId",
             "ofNat_toNat"
@@ -20184,19 +20312,19 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 828,
+          "line": 835,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 834,
+          "line": 841,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLength",
-          "line": 837,
+          "line": 844,
           "called": [
             "maxMessageRegisters"
           ]
@@ -20204,7 +20332,7 @@
         {
           "kind": "def",
           "name": "maxExtraCaps'",
-          "line": 840,
+          "line": 847,
           "called": [
             "maxExtraCaps"
           ]
@@ -20212,7 +20340,7 @@
         {
           "kind": "def",
           "name": "encode",
-          "line": 848,
+          "line": 855,
           "called": [
             "MessageInfo"
           ]
@@ -20220,7 +20348,7 @@
         {
           "kind": "def",
           "name": "decode",
-          "line": 853,
+          "line": 860,
           "called": [
             "MessageInfo",
             "maxMessageRegisters"
@@ -20228,8 +20356,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:862>",
-          "line": 862,
+          "name": "<anonymous:instance:869>",
+          "line": 869,
           "called": [
             "MessageInfo"
           ]
@@ -20237,25 +20365,25 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 871,
+          "line": 878,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 896,
+          "line": 903,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 928,
+          "line": 935,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 957,
+          "line": 964,
           "called": [
             "MessageInfo",
             "and_mask_127",
@@ -20270,7 +20398,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 979,
+          "line": 986,
           "called": [
             "MessageInfo",
             "SyscallId"

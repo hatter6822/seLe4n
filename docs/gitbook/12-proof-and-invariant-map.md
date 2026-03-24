@@ -525,9 +525,10 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - Erases service entry and filters from all other entries' dependency lists
 
 - **Cross-subsystem invariant bundle** (`CrossSubsystem.lean`):
-  - `noStaleEndpointQueueReferences` — every endpoint queue head/tail has a live TCB
+  - `noStaleEndpointQueueReferences` — every endpoint queue head/tail and interior member has a live TCB (T5-I: extended from head/tail-only to full `collectQueueMembers` traversal)
+  - `noStaleNotificationWaitReferences` — every ThreadId in notification `waitingThreads` has a live TCB (T5-H)
   - `registryDependencyConsistent` — every dependency edge references a registered service
-  - `crossSubsystemInvariant` — composed bundle added to `proofLayerInvariantBundle`
+  - `crossSubsystemInvariant` — composed 4-tuple bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple)
 
 ## 9.2 S5-G/H: Page-alignment check for VSpace-bound retype (S5 complete)
 

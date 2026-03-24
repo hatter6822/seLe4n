@@ -38,19 +38,55 @@ private def removeThreadFromQueue (st : SystemState) (q : IntrusiveQueue) (tid :
   { head := if q.head = some tid then advance.1 else q.head,
     tail := if q.tail = some tid then advance.2 else q.tail }
 
-/-- R4-A.1 (M-12): Remove a ThreadId from all endpoint send/receive queues.
+/-- T5-E (M-LCS-1): Splice a mid-queue node out of the intrusive doubly-linked list.
+    When a TCB `tid` is deleted, its predecessor's `queueNext` must point to `tid`'s
+    successor, and `tid`'s successor's `queuePrev` must point to `tid`'s predecessor.
+    This patches the interior links that `removeThreadFromQueue` does not handle.
+
+    The splice reads the removed TCB's links from the **original** state (before
+    mutations) to ensure consistent predecessor/successor identification. -/
+private def spliceOutMidQueueNode (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match lookupTcb st tid with
+  | none => st
+  | some tcb =>
+    -- Compute the new objects table with predecessor/successor patches
+    let objs := st.objects
+    -- Patch predecessor's queueNext to skip over tid
+    let objs := match tcb.queuePrev with
+      | none => objs
+      | some prevTid =>
+        match st.objects[prevTid.toObjId]? with
+        | some (.tcb prevTcb) =>
+          objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+        | _ => objs
+    -- Patch successor's queuePrev to skip over tid
+    let objs := match tcb.queueNext with
+      | none => objs
+      | some nextTid =>
+        match st.objects[nextTid.toObjId]? with
+        | some (.tcb nextTcb) =>
+          objs.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+        | _ => objs
+    { st with objects := objs }
+
+/-- R4-A.1 (M-12) + T5-E (M-LCS-1): Remove a ThreadId from all endpoint send/receive
+    queues. First splices the mid-queue node out by patching predecessor/successor
+    links, then adjusts head/tail pointers in each endpoint queue.
+
     Iterates over all endpoint objects in `st.objects` and advances any
     head/tail references to `tid` in both `sendQ` and `receiveQ` to the
     TCB's queue successor/predecessor. TCB queue links are read from the
     original state (before any fold mutations) to ensure consistent reads.
     This prevents dangling queue references after a TCB is retyped. -/
 def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  st.objects.fold st fun acc oid obj =>
+  -- T5-E: First splice out mid-queue links, then adjust head/tail pointers
+  let stSpliced := spliceOutMidQueueNode st tid
+  stSpliced.objects.fold stSpliced fun acc oid obj =>
     match obj with
     | .endpoint ep =>
       let ep' : Endpoint := {
-        sendQ := removeThreadFromQueue st ep.sendQ tid,
-        receiveQ := removeThreadFromQueue st ep.receiveQ tid }
+        sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
+        receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
       { acc with objects := acc.objects.insert oid (.endpoint ep') }
     | _ => acc
 
@@ -81,14 +117,45 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 -- R4-A: Cleanup preservation theorems
 -- ============================================================================
 
-/-- R4-A.1: removeFromAllEndpointQueues preserves the scheduler. -/
+/-- T5-E: spliceOutMidQueueNode preserves the scheduler. The splice only
+    modifies `objects`, so `{ st with objects := ... }.scheduler = st.scheduler`. -/
+private theorem spliceOutMidQueueNode_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (spliceOutMidQueueNode st tid).scheduler = st.scheduler := by
+  unfold spliceOutMidQueueNode; split <;> rfl
+
+/-- T5-E: spliceOutMidQueueNode preserves lifecycle metadata. -/
+private theorem spliceOutMidQueueNode_lifecycle_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (spliceOutMidQueueNode st tid).lifecycle = st.lifecycle := by
+  unfold spliceOutMidQueueNode; split <;> rfl
+
+/-- T5-E: spliceOutMidQueueNode preserves serviceRegistry. -/
+private theorem spliceOutMidQueueNode_serviceRegistry_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (spliceOutMidQueueNode st tid).serviceRegistry = st.serviceRegistry := by
+  unfold spliceOutMidQueueNode; split <;> rfl
+
+/-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves the scheduler. -/
 private theorem removeFromAllEndpointQueues_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).scheduler = st.scheduler := by
+  have hSplice := spliceOutMidQueueNode_scheduler_eq st tid
+  have key : ∀ (s : SystemState),
+      (s.objects.fold s (fun acc oid obj =>
+        match obj with
+        | .endpoint ep =>
+          let ep' : Endpoint := {
+            sendQ := removeThreadFromQueue s ep.sendQ tid,
+            receiveQ := removeThreadFromQueue s ep.receiveQ tid }
+          { acc with objects := acc.objects.insert oid (.endpoint ep') }
+        | _ => acc)).scheduler = s.scheduler :=
+    fun s => SeLe4n.Kernel.RobinHood.RHTable.fold_preserves s.objects s _
+      (fun acc => acc.scheduler = s.scheduler) rfl
+      (fun acc _ _ hAcc => by split <;> exact hAcc)
+  show (removeFromAllEndpointQueues st tid).scheduler = st.scheduler
   unfold removeFromAllEndpointQueues
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.scheduler = st.scheduler) rfl
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+  rw [key, hSplice]
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
 private theorem removeFromAllNotificationWaitLists_scheduler_eq
@@ -99,14 +166,26 @@ private theorem removeFromAllNotificationWaitLists_scheduler_eq
     (fun acc => acc.scheduler = st.scheduler) rfl
     (fun acc _ _ hAcc => by split <;> exact hAcc)
 
-/-- R4-A.1: removeFromAllEndpointQueues preserves lifecycle metadata. -/
+/-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves lifecycle metadata. -/
 private theorem removeFromAllEndpointQueues_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle := by
+  have hSplice := spliceOutMidQueueNode_lifecycle_eq st tid
+  have key : ∀ (s : SystemState),
+      (s.objects.fold s (fun acc oid obj =>
+        match obj with
+        | .endpoint ep =>
+          let ep' : Endpoint := {
+            sendQ := removeThreadFromQueue s ep.sendQ tid,
+            receiveQ := removeThreadFromQueue s ep.receiveQ tid }
+          { acc with objects := acc.objects.insert oid (.endpoint ep') }
+        | _ => acc)).lifecycle = s.lifecycle :=
+    fun s => SeLe4n.Kernel.RobinHood.RHTable.fold_preserves s.objects s _
+      (fun acc => acc.lifecycle = s.lifecycle) rfl
+      (fun acc _ _ hAcc => by split <;> exact hAcc)
+  show (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle
   unfold removeFromAllEndpointQueues
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.lifecycle = st.lifecycle) rfl
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+  rw [key, hSplice]
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves lifecycle metadata. -/
 private theorem removeFromAllNotificationWaitLists_lifecycle_eq
@@ -117,14 +196,26 @@ private theorem removeFromAllNotificationWaitLists_lifecycle_eq
     (fun acc => acc.lifecycle = st.lifecycle) rfl
     (fun acc _ _ hAcc => by split <;> exact hAcc)
 
-/-- R4-A.1: removeFromAllEndpointQueues preserves serviceRegistry. -/
+/-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves serviceRegistry. -/
 private theorem removeFromAllEndpointQueues_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry := by
+  have hSplice := spliceOutMidQueueNode_serviceRegistry_eq st tid
+  have key : ∀ (s : SystemState),
+      (s.objects.fold s (fun acc oid obj =>
+        match obj with
+        | .endpoint ep =>
+          let ep' : Endpoint := {
+            sendQ := removeThreadFromQueue s ep.sendQ tid,
+            receiveQ := removeThreadFromQueue s ep.receiveQ tid }
+          { acc with objects := acc.objects.insert oid (.endpoint ep') }
+        | _ => acc)).serviceRegistry = s.serviceRegistry :=
+    fun s => SeLe4n.Kernel.RobinHood.RHTable.fold_preserves s.objects s _
+      (fun acc => acc.serviceRegistry = s.serviceRegistry) rfl
+      (fun acc _ _ hAcc => by split <;> exact hAcc)
+  show (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry
   unfold removeFromAllEndpointQueues
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.serviceRegistry = st.serviceRegistry) rfl
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+  rw [key, hSplice]
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves serviceRegistry. -/
 private theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
@@ -332,7 +423,15 @@ private theorem lifecyclePreRetypeCleanup_flat_subset
     exact h
   | notification _ | vspaceRoot _ | untyped _ => exact h
 
-/-- Retype an existing object id to a new typed object value.
+/-- **Internal building block — callers should use `lifecycleRetypeWithCleanup` instead.**
+
+Retype an existing object id to a new typed object value.
+This function skips `lifecyclePreRetypeCleanup` and `scrubObjectMemory`,
+which means dangling references may persist and backing memory is not zeroed
+(violating the H-05 safety guarantee and S6-C memory scrubbing guarantee).
+
+T5-A (M-NEW-4): Marked as internal. All external retype operations must go
+through `lifecycleRetypeWithCleanup` to ensure cleanup + scrubbing.
 
 Deterministic branch contract for M4-A step 2:
 1. target object must exist,
@@ -1036,19 +1135,29 @@ theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps
     iff they succeed on the original state.
 
     This wrapper is the recommended entry point for callers that need the
-    H-05 safety guarantee and S6-C memory scrubbing guarantee. -/
+    H-05 safety guarantee and S6-C memory scrubbing guarantee.
+
+    T5-D (M-NEW-5): Validates `KernelObject.wellFormed` for the new object before
+    retype. Returns `illegalState` if the new object fails well-formedness
+    (e.g., TCB with dangling cspaceRoot/vspaceRoot, CNode with out-of-range guard).
+    The API layer (register decode + typed argument construction) is designed to
+    produce well-formed objects, so this check is a defense-in-depth measure. -/
 def lifecycleRetypeWithCleanup
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    match st.objects[target]? with
-    | none => lifecycleRetypeObject authority target newObj st
-    | some currentObj =>
-        let stClean := lifecyclePreRetypeCleanup st target currentObj newObj
-        -- S6-C: Scrub backing memory before retype to prevent info leakage
-        let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
-        lifecycleRetypeObject authority target newObj stScrubbed
+    -- T5-D: Validate new object well-formedness before proceeding
+    if ¬ newObj.wellFormed st.objects then
+      .error .illegalState
+    else
+      match st.objects[target]? with
+      | none => lifecycleRetypeObject authority target newObj st
+      | some currentObj =>
+          let stClean := lifecyclePreRetypeCleanup st target currentObj newObj
+          -- S6-C: Scrub backing memory before retype to prevent info leakage
+          let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
+          lifecycleRetypeObject authority target newObj stScrubbed
 
 /-- WS-H2/H-05/S6-C: After a TCB retype via the safe wrapper, the old ThreadId is
     not in the run queue.  This is the key safety property required by H-05.
@@ -1064,18 +1173,23 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     (hStep : lifecycleRetypeWithCleanup authority target newObj st = .ok ((), st')) :
     ¬(tcb.tid ∈ st'.scheduler.runQueue) := by
   unfold lifecycleRetypeWithCleanup at hStep
-  simp only [hObj] at hStep
-  -- hStep now has lifecycleRetypeObject on the scrubbed+cleaned state
-  rcases lifecycleRetypeObject_ok_as_storeObject _ st' authority target newObj hStep with
-    ⟨_, _, _, _, _, _, hStore⟩
-  have hSchedEq : st'.scheduler =
-      (scrubObjectMemory (lifecyclePreRetypeCleanup st target (.tcb tcb) newObj)
-        target (KernelObject.tcb tcb).objectType).scheduler :=
-    lifecycle_storeObject_scheduler_eq _ st' target newObj hStore
-  rw [hSchedEq, scrubObjectMemory_scheduler_eq]
-  unfold lifecyclePreRetypeCleanup
-  simp only []
-  exact cleanupTcbReferences_removes_from_runnable st tcb.tid
+  -- T5-D: wellFormed guard — since hStep is .ok, the guard must have passed
+  simp only [] at hStep
+  split at hStep
+  · contradiction
+  · rename_i hWF
+    simp only [hObj] at hStep
+    -- hStep now has lifecycleRetypeObject on the scrubbed+cleaned state
+    rcases lifecycleRetypeObject_ok_as_storeObject _ st' authority target newObj hStep with
+      ⟨_, _, _, _, _, _, hStore⟩
+    have hSchedEq : st'.scheduler =
+        (scrubObjectMemory (lifecyclePreRetypeCleanup st target (.tcb tcb) newObj)
+          target (KernelObject.tcb tcb).objectType).scheduler :=
+      lifecycle_storeObject_scheduler_eq _ st' target newObj hStore
+    rw [hSchedEq, scrubObjectMemory_scheduler_eq]
+    unfold lifecyclePreRetypeCleanup
+    simp only []
+    exact cleanupTcbReferences_removes_from_runnable st tcb.tid
 
 -- ============================================================================
 -- WS-K-D: Lifecycle syscall dispatch helpers
@@ -1202,9 +1316,16 @@ theorem objectOfKernelType_eq_objectOfTypeTag (objType : KernelObjectType) (size
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
 -- ============================================================================
 
-/-- WS-K-D: Retype with a pre-resolved authority capability.
+/-- **Internal building block — callers should use `lifecycleRetypeWithCleanup` instead.**
+
+WS-K-D: Retype with a pre-resolved authority capability.
 Companion to `lifecycleRetypeObject` for the register-sourced dispatch
 path where the authority cap has already been resolved by `syscallInvoke`.
+
+T5-B (M-NEW-4): Marked as internal. This function takes a pre-resolved
+`Capability` and bypasses cleanup and memory scrubbing. External callers
+must use `lifecycleRetypeWithCleanup` for the H-05 and S6-C guarantees.
+Used internally by `API.lean` dispatch where cleanup is handled separately.
 
 Deterministic branch contract:
 1. Target object must exist (`objectNotFound` otherwise).

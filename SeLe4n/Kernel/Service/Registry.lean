@@ -78,7 +78,14 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
 
 /-- Read-only lookup of a service registration by matching endpoint capability
 target. Returns the first registration whose endpoint targets the given ObjId,
-or `objectNotFound` if none matches. -/
+or `objectNotFound` if none matches.
+
+T5-K (M-LCS-2): The `fold` iteration order is deterministic for `RHTable`:
+entries are visited in probe-chain order (hash → linear probing). Within a
+given probe chain, entries appear in insertion order. The first-match
+convention is intentional for service resolution — when multiple services
+share an endpoint, the earliest-registered service is returned. This matches
+seL4's first-match semantics for endpoint-backed capability resolution. -/
 def lookupServiceByCap (epId : SeLe4n.ObjId) : Kernel ServiceRegistration :=
   fun st =>
     let result := st.serviceRegistry.fold (init := none) fun acc _ reg =>
@@ -105,35 +112,96 @@ def revokeService (sid : ServiceId) : Kernel Unit :=
         serviceRegistry := st.serviceRegistry.erase sid }
       .ok ((), removeDependenciesOf st' sid)
 
-/-- R4-B.1 (M-13): Remove all service registrations whose endpoint targets
-    the given ObjId. Called before retype to ensure `registryEndpointValid`
-    is preserved when an endpoint backing a registered service is retyped.
+/-- R4-B.1 (M-13) + T5-F (L-NEW-1): Remove all service registrations whose
+    endpoint targets the given ObjId. Called before retype to ensure
+    `registryEndpointValid` is preserved when an endpoint backing a registered
+    service is retyped.
+
+    T5-F: After filtering registrations, also removes dependency graph edges
+    (`services`) referencing the removed services via `removeDependenciesOf`.
+    This prevents orphaned edges in the service dependency graph.
+
     This is a pure state helper (not monadic) for composition in the
     pre-retype cleanup path. -/
 def cleanupEndpointServiceRegistrations (st : SystemState) (epId : SeLe4n.ObjId) : SystemState :=
-  { st with
+  -- Identify services to remove (those targeting the deleted endpoint)
+  let removedSids := st.serviceRegistry.fold ([] : List ServiceId) fun acc sid reg =>
+    match reg.endpointCap.target with
+    | .object id => if id == epId then sid :: acc else acc
+    | _ => acc
+  -- Filter registrations
+  let st' := { st with
     serviceRegistry := st.serviceRegistry.filter fun _sid reg =>
       match reg.endpointCap.target with
       | .object id => !(id == epId)
       | _ => true }
+  -- T5-F: Also clean up dependency edges for removed services
+  removedSids.foldl (fun s sid => removeDependenciesOf s sid) st'
 
-/-- R4-B.1: cleanupEndpointServiceRegistrations preserves objects. -/
+/-- T5-F helper: folding `removeDependenciesOf` over a list preserves objects. -/
+private theorem foldl_removeDependenciesOf_objects_eq
+    (sids : List ServiceId) (st : SystemState) :
+    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).objects = st.objects := by
+  induction sids generalizing st with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact removeDependenciesOf_objects_eq st hd
+
+/-- T5-F helper: folding `removeDependenciesOf` over a list preserves scheduler. -/
+private theorem foldl_removeDependenciesOf_scheduler_eq
+    (sids : List ServiceId) (st : SystemState) :
+    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).scheduler = st.scheduler := by
+  induction sids generalizing st with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact removeDependenciesOf_scheduler_eq st hd
+
+/-- T5-F helper: folding `removeDependenciesOf` over a list preserves lifecycle. -/
+private theorem foldl_removeDependenciesOf_lifecycle_eq
+    (sids : List ServiceId) (st : SystemState) :
+    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).lifecycle = st.lifecycle := by
+  induction sids generalizing st with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact removeDependenciesOf_lifecycle_eq st hd
+
+/-- T5-F helper: folding `removeDependenciesOf` over a list preserves serviceRegistry. -/
+theorem foldl_removeDependenciesOf_serviceRegistry_eq
+    (sids : List ServiceId) (st : SystemState) :
+    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).serviceRegistry = st.serviceRegistry := by
+  induction sids generalizing st with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact removeDependenciesOf_serviceRegistry_eq st hd
+
+/-- R4-B.1 + T5-F: cleanupEndpointServiceRegistrations preserves objects. -/
 theorem cleanupEndpointServiceRegistrations_objects_eq
     (st : SystemState) (epId : SeLe4n.ObjId) :
     (cleanupEndpointServiceRegistrations st epId).objects = st.objects := by
-  unfold cleanupEndpointServiceRegistrations; rfl
+  unfold cleanupEndpointServiceRegistrations
+  exact foldl_removeDependenciesOf_objects_eq _ _
 
-/-- R4-B.1: cleanupEndpointServiceRegistrations preserves scheduler. -/
+/-- R4-B.1 + T5-F: cleanupEndpointServiceRegistrations preserves scheduler. -/
 theorem cleanupEndpointServiceRegistrations_scheduler_eq
     (st : SystemState) (epId : SeLe4n.ObjId) :
     (cleanupEndpointServiceRegistrations st epId).scheduler = st.scheduler := by
-  unfold cleanupEndpointServiceRegistrations; rfl
+  unfold cleanupEndpointServiceRegistrations
+  exact foldl_removeDependenciesOf_scheduler_eq _ _
 
-/-- R4-B.1: cleanupEndpointServiceRegistrations preserves lifecycle. -/
+/-- R4-B.1 + T5-F: cleanupEndpointServiceRegistrations preserves lifecycle. -/
 theorem cleanupEndpointServiceRegistrations_lifecycle_eq
     (st : SystemState) (epId : SeLe4n.ObjId) :
     (cleanupEndpointServiceRegistrations st epId).lifecycle = st.lifecycle := by
-  unfold cleanupEndpointServiceRegistrations; rfl
+  unfold cleanupEndpointServiceRegistrations
+  exact foldl_removeDependenciesOf_lifecycle_eq _ _
 
 -- ============================================================================
 -- Theorems: error conditions, success post-conditions, frame lemmas

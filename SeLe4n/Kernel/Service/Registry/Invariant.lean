@@ -247,4 +247,41 @@ theorem revokeService_preserves_registryInvariant
   ⟨revokeService_preserves_registryEndpointValid st st' sid hStep hInv.1 hSvcInv hSize,
    revokeService_preserves_registryInterfaceValid st st' sid hStep hInv.2 hSvcInv hSize⟩
 
+-- ============================================================================
+-- T5-G (L-NEW-2): cleanupEndpointServiceRegistrations preservation
+-- ============================================================================
+
+/-- T5-G (L-NEW-2): After filtering service registrations by endpoint ID,
+    remaining registrations still have valid endpoint references.
+
+    The proof uses `RHTable.filter_get_subset` to show that any registration
+    surviving the filter was present in the original state, and then
+    `cleanupEndpointServiceRegistrations_objects_eq` to show the backing
+    object still exists. -/
+theorem cleanupEndpointServiceRegistrations_preserves_registryEndpointValid
+    (st : SystemState) (epId : SeLe4n.ObjId)
+    (hInv : registryEndpointValid st)
+    (hSvcRegInv : st.serviceRegistry.invExt) :
+    registryEndpointValid (cleanupEndpointServiceRegistrations st epId) := by
+  intro sid reg hLookup
+  have hObjEq := cleanupEndpointServiceRegistrations_objects_eq st epId
+  -- Step 1: The result's serviceRegistry is the filtered original
+  -- (foldl removeDependenciesOf preserves serviceRegistry)
+  have hSvcRegResult : (cleanupEndpointServiceRegistrations st epId).serviceRegistry =
+      (st.serviceRegistry.filter fun _sid reg' =>
+        match reg'.endpointCap.target with
+        | .object id => !(id == epId)
+        | _ => true) := by
+    unfold cleanupEndpointServiceRegistrations
+    exact foldl_removeDependenciesOf_serviceRegistry_eq _ _
+  -- Step 2: Rewrite lookup using the serviceRegistry equality
+  rw [RHTable_getElem?_eq_get?] at hLookup
+  rw [hSvcRegResult] at hLookup
+  -- Step 3: Any entry in the filtered table was in the original
+  have hOrig := RHTable.filter_get_subset st.serviceRegistry _ sid reg hSvcRegInv hLookup
+  rw [← RHTable_getElem?_eq_get?] at hOrig
+  -- Step 4: Original invariant gives us a valid endpoint
+  rcases hInv sid reg hOrig with ⟨epId', hTarget, hExists⟩
+  exact ⟨epId', hTarget, hObjEq ▸ hExists⟩
+
 end SeLe4n.Kernel

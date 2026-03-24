@@ -1,3 +1,37 @@
+## [0.20.4] — WS-T Phase T5: Lifecycle, Service & Cross-Subsystem
+
+- T5-A/B (M-NEW-4): Marked `lifecycleRetypeObject` and `lifecycleRetypeDirect` as
+  internal building blocks with safety annotations. External callers must use
+  `lifecycleRetypeWithCleanup` for H-05 and S6-C guarantees.
+- T5-C (M-NEW-5): Defined `KernelObject.wellFormed` predicate parameterized by the
+  object store. TCBs require valid cspaceRoot/vspaceRoot, CNodes require guardBounded.
+  Decidable instance enables runtime validation.
+- T5-D (M-NEW-5): Added `wellFormed` validation in `lifecycleRetypeWithCleanup`.
+  Returns `illegalState` for ill-formed objects (defense-in-depth).
+- T5-E (M-LCS-1): Fixed intrusive queue cleanup for mid-queue nodes.
+  `spliceOutMidQueueNode` patches predecessor's `queueNext` and successor's
+  `queuePrev` to splice out the deleted TCB. Three preservation theorems
+  (scheduler, lifecycle, serviceRegistry) proven via field-independence lemma.
+- T5-F (L-NEW-1): `cleanupEndpointServiceRegistrations` now calls
+  `removeDependenciesOf` for each removed service, preventing orphaned
+  dependency edges in the service graph.
+- T5-G (L-NEW-2): Proved `cleanupEndpointServiceRegistrations_preserves_registryEndpointValid`
+  using `RHTable.filter_get_subset` to show surviving registrations have valid endpoints.
+- T5-H (L-NEW-3): Defined `noStaleNotificationWaitReferences` predicate: every
+  ThreadId in a notification's `waitingThreads` must reference an existing TCB.
+- T5-I (M-CS-1): Extended `noStaleEndpointQueueReferences` to check interior
+  queue members via bounded `collectQueueMembers` traversal, not just head/tail.
+- T5-J (L-NEW-3): Added `noStaleNotificationWaitReferences` to
+  `crossSubsystemInvariant` (now 4-tuple). Updated default state proof,
+  predicates list (count 3→4), folded composition, and architecture invariant.
+- T5-K (M-LCS-2): Documented `lookupServiceByCap` first-match semantics.
+- T5-L (M-MOD-6): Documented `Notification.waitingThreads` LIFO semantics.
+- T5-M (M-SCH-3): Defined `threadPriority_membership_consistent` predicate
+  formalizing the bidirectional consistency between RunQueue's `threadPriority`
+  and `membership` fields. Proved empty-state satisfaction and derivation of
+  `runQueueThreadPriorityConsistent` from the new predicate.
+- Zero sorry, zero axiom. 1,822 proved declarations (+10 from v0.20.3).
+
 ## [0.20.3] — WS-T Phase T4: IPC & Capability Proof Closure
 
 - T4-A (M-IPC-1): Proved `endpointCall_preserves_ipcStateQueueConsistent`. The call
