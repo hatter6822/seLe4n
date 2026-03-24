@@ -255,3 +255,88 @@ All crates are `#![no_std]` with `#![deny(unsafe_code)]` (single targeted
 | IP-06 | LOW | General | No IPC buffer memory model. Messages via `pendingMessage` TCB field instead of memory-mapped buffer. Acceptable for abstract model; relevant for hardware binding. |
 | IP-07 | LOW | General | No notification binding model (bound-notification signal-during-receive optimization not present). |
 
+
+---
+
+## 6. Information Flow and Service Subsystems
+
+**Files**: 16 files across `InformationFlow/*` and `Service/*`
+
+### Positive Findings
+
+- Zero sorry/axiom/native_decide.
+- Security lattice has reflexivity, transitivity, antisymmetry proofs.
+- Parameterized domain model supports arbitrary domain count.
+- Per-endpoint flow policy overrides correctly model seL4 semantics.
+- `lowEquivalent` correctly defined as projection equality with proved
+  reflexivity/symmetry/transitivity.
+- Denied-preserves-state theorems present for all 7 enforcement wrappers.
+- Enforcement sufficiency: complete disjunction (allowed OR denied, no third).
+- Declassification requires both normal denial AND explicit authorization.
+- Service dependency acyclicity: standard graph-theoretic definition with
+  fuel-conservative DFS (returns true on exhaustion — safe direction).
+- `serviceRegisterDependency_preserves_acyclicity` fully proved.
+
+### Findings
+
+| ID | Severity | Location | Finding |
+|----|----------|----------|---------|
+| IF-01 | **HIGH** | `Invariant/Operations.lean` | **Externalized `hProjection` hypotheses for 4 IPC operations.** `endpointSendDual`, `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh` in `NonInterferenceStep` carry caller-supplied projection preservation proofs. If no caller discharges these, NI for IPC is vacuously true. This is the most security-critical open obligation. |
+| IF-02 | HIGH | `Enforcement/Wrappers.lean:316-335` | 7 "capability-only" operations (reply, call, replyRecv, revokeService, lookupServiceByCap, lifecycleRetypeObject, cspaceRevoke) have no runtime flow check. NI relies entirely on proof soundness with no runtime safety net. |
+| IF-03 | HIGH | `Invariant/Composition.lean:34-253` | `NonInterferenceStep` 34-constructor completeness is manually maintained. Adding a new kernel operation without a corresponding NI constructor silently weakens the guarantee. No automated enforcement. |
+| IF-04 | MEDIUM | `Policy.lean:64-66` | Non-standard BIBA integrity direction (write-up allowed). Weaker than standard BIBA. Documented but could mislead consumers assuming standard model. |
+| IF-05 | MEDIUM | `Projection.lean:300-314` | Scheduling state (`activeDomain`, `domainTimeRemaining`) visible to ALL observers. Accepted covert timing channel. |
+| IF-06 | MEDIUM | `Projection.lean:127-140` | TCB metadata (priority, IPC state) of unobservable threads visible cross-domain. Only register contents are scrubbed. |
+| IF-07 | MEDIUM | `Invariant/Operations.lean:1546` | Service registry invisible to projection — `registerService` preserves projection unconditionally. Service-layer flows not captured by NI model. |
+| IF-08 | MEDIUM | `Composition.lean:446-455` | Trace composition inherits externalized IPC hypotheses from IF-01. |
+| SV-01 | MEDIUM | `Operations.lean:43-52` | `removeDependenciesOf` folds over erased table while inserting into accumulator. Depends on `fold` iterating over receiver's backing array (not accumulator). Should be verified. |
+| SV-02 | LOW | `Registry/Invariant.lean:178` | `revokeService` preservation requires externalized `size < capacity` hypothesis. |
+
+### Covert Channel Summary
+
+| Channel | Status |
+|---------|--------|
+| Timer/clock | Mitigated (excluded from projection) |
+| Scheduling | Accepted leak (domain schedule visible to all) |
+| TCB metadata | Accepted leak (priority/IPC state visible cross-domain) |
+| Service registry | Invisible to NI model |
+| Object existence | Partial leak via `objectIndex` |
+| Memory | Configurable via optional `MemoryDomainOwnership` |
+
+
+---
+
+## 7. Data Structures and Frozen Operations
+
+**Files**: Robin Hood (7 files, ~6,200 lines), Radix Tree (4 files, ~1,100
+lines), FrozenOps (5 files, ~1,400 lines)
+
+### Positive Findings
+
+- Robin Hood: Complete functional correctness — all 4 get-after-op theorems
+  proven (`get_after_insert_eq`, `get_after_insert_ne`, `get_after_erase_eq`,
+  `get_after_erase_ne`).
+- Robin Hood: `probeChainDominant` (PCD) replaces `robinHoodOrdered` for erase
+  correctness — correct innovation since Robin Hood ordered is not erase-stable.
+- Robin Hood: `relaxedPCD` enables PCD preservation through backshift deletion.
+- Robin Hood: `KMap` bundles `invExt + size < capacity + capacity ≥ 4`,
+  eliminating proof burden from callers.
+- Radix Tree: O(1) claim verified — `extractBits` + `Array.get/set`.
+- Radix Tree: 24 correctness proofs covering lookup, WF, size, toList, fold.
+- FrozenOps: Key immutability proven (`FrozenMap.set_indexMap_eq`).
+- FrozenOps: 14/14 syscall coverage with exhaustive compile-time check.
+- FrozenOps: Determinism trivially by `rfl`.
+- FrozenOps: 9+6 field frame lemmas for store/queue operations.
+- Zero sorry/axiom. Single `native_decide` (compile-time count check).
+
+### Findings
+
+| ID | Severity | Location | Finding |
+|----|----------|----------|---------|
+| DS-01 | HIGH | `RobinHood/Set.lean` | **`RHSet` does not bundle `invExt` or `size < capacity`.** Unlike `KMap`, every `RHSet` bridge lemma requires manual proof threading. State-persistent kernel usage demands invariant bundling. **Recommendation**: Create `KSet` analogous to `KMap`. |
+| DS-02 | MEDIUM | `RobinHood/Preservation.lean:2294` | `erase_preserves_probeChainDominant` requires `size < capacity`. If table is ever full (bypassing load factor check via direct `insertNoResize`), erase loses invariant guarantee. `KMap` bundles this; direct `RHTable` users must provide it manually. |
+| DS-03 | MEDIUM | `RobinHood/Lookup.lean:1276,2089` | Very high `maxHeartbeats` (3.2M = 16× default) in lookup correctness proofs. Toolchain upgrade risk. Recommend factoring into smaller lemmas. |
+| DS-04 | MEDIUM | `RadixTree/Invariant.lean` | `lookup_insert_ne` precondition uses radix index inequality, not key inequality. Two distinct keys with same low bits would collide silently. Mitigated by `UniqueRadixIndices` predicate in Bridge.lean, but callers must establish this. |
+| DS-05 | LOW | `RobinHood/Core.lean:42` | Hash flooding susceptibility in builder phase. Mitigated: kernel uses typed identifiers (not adversary-controlled) and frozen phase uses `CNodeRadix` (O(1) guaranteed). |
+| DS-06 | LOW | `FrozenOps/Core.lean:235` | `frozenQueuePushTail` rejection relies on correctly maintained queue links. Stale links cause liveness issue (thread stuck), not safety issue. |
+
