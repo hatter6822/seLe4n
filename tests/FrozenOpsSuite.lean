@@ -330,6 +330,60 @@ private def fo018_callEnqueuesCaller : IO Unit := do
       | _ => throw <| IO.userError "FO-018c endpoint missing"
   | .error e => throw <| IO.userError s!"FO-018 call should succeed, got: {reprStr e}"
 
+/-- FO-019: frozenSchedule — select highest-priority thread as current (T7-D) -/
+private def fo019_frozenSchedule : IO Unit := do
+  let tid1 : ThreadId := ⟨1⟩
+  let tid2 : ThreadId := ⟨2⟩
+  let tcb1 := mkTcb 1 10  -- priority 10
+  let tcb2 := mkTcb 2 50  -- priority 50 (higher)
+  let objs := [(⟨1⟩, FrozenKernelObject.tcb tcb1), (⟨2⟩, FrozenKernelObject.tcb tcb2)]
+  let objsMap := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
+  -- Set up scheduler with both threads by priority
+  let byPrio := RHTable.empty 16
+    |>.insert ⟨10⟩ [tid1]
+    |>.insert ⟨50⟩ [tid2]
+  let threadPrio := RHTable.empty 16
+    |>.insert tid1 ⟨10⟩
+    |>.insert tid2 ⟨50⟩
+  let membership := RHTable.empty 16
+    |>.insert tid1 ()
+    |>.insert tid2 ()
+  let st0 : FrozenSystemState := { emptyFrozenState with
+    objects := freezeMap objsMap
+    scheduler := { emptyFrozenState.scheduler with
+      byPriority := freezeMap byPrio
+      threadPriority := freezeMap threadPrio
+      membership := freezeMap membership
+      current := none
+    }
+  }
+  match frozenSchedule st0 with
+  | .ok (_, st1) =>
+    expect "FO-019: frozenSchedule selects highest priority" (st1.scheduler.current == some tid2)
+    IO.println "frozen-ops check passed [FO-019: frozenSchedule]"
+  | .error e => throw <| IO.userError s!"FO-019 frozenSchedule failed: {reprStr e}"
+
+/-- FO-020: frozenCspaceMint — insert cap into frozen CNode slot (T7-D) -/
+private def fo020_frozenCspaceMint : IO Unit := do
+  let cnodeId : ObjId := ⟨10⟩
+  let epId : ObjId := ⟨11⟩
+  -- Build a frozen CNode with an empty CNodeRadix (flat array)
+  let radix := CNodeRadix.empty 0 0 4
+  let frozenCNode : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
+  let objs := [(cnodeId, FrozenKernelObject.cnode frozenCNode), (epId, FrozenKernelObject.endpoint {})]
+  let objsMap := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
+  let st0 : FrozenSystemState := { emptyFrozenState with objects := freezeMap objsMap }
+  let testCap : Capability := { target := .object epId, rights := ⟨7⟩, badge := none }
+  match frozenCspaceMint cnodeId ⟨0⟩ testCap st0 with
+  | .ok ((), st1) =>
+    -- Verify slot 0 now has the cap
+    match frozenCspaceLookup st1 ⟨0⟩ cnodeId with
+    | .ok cap =>
+      expect "FO-020: frozenCspaceMint inserts cap" (cap.target == .object epId)
+      IO.println "frozen-ops check passed [FO-020: frozenCspaceMint]"
+    | .error e => throw <| IO.userError s!"FO-020 lookup after mint failed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"FO-020 frozenCspaceMint failed: {reprStr e}"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -362,4 +416,7 @@ def main : IO Unit := do
   fo016_sendEnqueuesSender
   fo017_receiveEnqueuesReceiver
   fo018_callEnqueuesCaller
-  IO.println "=== All Q7 frozen ops tests passed (18 scenarios) ==="
+  IO.println "--- T7-D: Frozen Schedule & CSpace Mint ---"
+  fo019_frozenSchedule
+  fo020_frozenCspaceMint
+  IO.println "=== All Q7 frozen ops tests passed (20 scenarios) ==="

@@ -440,6 +440,35 @@ theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
     dif_pos (show 2 < d.msgRegs.size by omega),
     dif_pos (show 3 < d.msgRegs.size by omega), hPerms]
 
+/-- VSpace map decode fails iff fewer than 4 message registers or
+    the permissions word is invalid.  Two failure modes:
+    1. `msgRegs.size < 4` → `requireMsgReg` returns error
+    2. `msgRegs.size ≥ 4` but `PagePermissions.ofNat?` returns none → policyDenied -/
+theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeVSpaceMapArgs d = .error e) ↔
+    (d.msgRegs.size < 4 ∨
+     (∃ (h : 3 < d.msgRegs.size), PagePermissions.ofNat? (d.msgRegs[3]'h).val = none)) := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 4
+    · exact .inl hlt
+    · right
+      have h3 : 3 < d.msgRegs.size := by omega
+      exact ⟨h3, by
+        simp only [decodeVSpaceMapArgs, bind, Except.bind,
+          requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+          dif_pos (show 1 < d.msgRegs.size by omega),
+          dif_pos (show 2 < d.msgRegs.size by omega),
+          dif_pos (show 3 < d.msgRegs.size by omega)] at he
+        split at he
+        · simp [pure, Except.pure] at he
+        · assumption⟩
+  · intro h
+    match h with
+    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d hLt
+    | .inr ⟨h3, hPerms⟩ =>
+      exact decodeVSpaceMapArgs_error_of_invalid_perms d (by omega) hPerms
+
 /-- VSpace unmap decode fails iff fewer than 2 message registers. -/
 theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
     (∃ e, decodeVSpaceUnmapArgs d = .error e) ↔ d.msgRegs.size < 2 := by

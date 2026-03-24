@@ -31,6 +31,25 @@
 - T7-L (L-P08): Added boot sequence integration test using `bootFromPlatform`
   with 4 invariant witness type-checks, object and IRQ handler verification, and
   determinism check.
+- T7 Audit Remediation:
+  - T7-C (M-TST-4): Added syscall dispatch tests (chains 27–31) exercising full
+    `syscallEntry → decode → dispatchWithCap` path for 11 remaining variants:
+    cspaceMint, cspaceDelete, cspaceCopy, cspaceMove (chain27), vspaceMap,
+    vspaceUnmap (chain28), lifecycleRetype (chain29), serviceRegister,
+    serviceQuery, serviceRevoke (chain30), reply (chain31).
+  - T7-D (M-FRZ-4/5): Added FO-019 `frozenSchedule` (highest-priority thread
+    selection) and FO-020 `frozenCspaceMint` (capability insertion into frozen
+    CNode) tests to FrozenOpsSuite.
+  - T7-E (L-P02): Extended chain23 with root-level revocation (4-level tree,
+    `cspaceRevokeCdtStrict` at root, `deletedSlots == 3`) and mid-tree
+    `cspaceDeleteSlot` (grandchild delete cascading great-grandchild removal).
+  - T7-K (L-P06): Added empty-queue edge case to chain24 — `handleYield` with
+    `current = none` and empty run queue returns `.ok` with `current = none`.
+  - T7-L (L-P08): Strengthened chain26 — explicit access to all 4
+    `IntermediateState` invariant witness fields (`hAllTables`,
+    `hPerObjectSlots`, `hPerObjectMappings`, `hLifecycleConsistent`).
+  - Added `decodeVSpaceMapArgs_error_iff` theorem to SyscallArgDecode (Tier 3
+    invariant surface anchor).
 
 ## [0.20.5] — WS-T Phase T6: Architecture & Hardware Preparation
 

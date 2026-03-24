@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-test-coverage-build-1n6QP",
-      "commit_sha": "8bcf0364e33414117d886ed79163b8c54b6c3ce4",
-      "tree_sha": "3495ff766bebb9ef25f3cdd555f0ca2f174fb54a",
-      "committed_at_utc": "2026-03-24T14:05:35-04:00"
+      "commit_sha": "cdeb527c1bfb62cebdf374517fff14e877a0e6e7",
+      "tree_sha": "5b5a4e510d8cb115d13cffa9e3e3e876515902ed",
+      "committed_at_utc": "2026-03-24T18:52:56+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "90c4604259ca87fea0368b86a60bdc7e5182e6d2dc44c885e6b7912079dbdffe"
+    "source_digest": "5e820fc6fc52e5a5bae164059f910b31be61939936a3fa187a7e0f4cfac4a2e7"
   },
   "summary": {
     "module_count": 111,
-    "declaration_count": 3391
+    "declaration_count": 3400
   },
   "readme_sync": {
     "version": "0.20.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 61511,
+    "production_loc": 61540,
     "test_files": 10,
-    "test_loc": 7820,
-    "proved_theorem_lemma_decls": 1845,
+    "test_loc": 8229,
+    "proved_theorem_lemma_decls": 1846,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1262,7 +1262,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
       "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
-      "declaration_count": 70,
+      "declaration_count": 71,
       "declarations": [
         {
           "kind": "namespace",
@@ -1616,8 +1616,19 @@
         },
         {
           "kind": "theorem",
+          "name": "decodeVSpaceMapArgs_error_iff",
+          "line": 447,
+          "called": [
+            "decodeVSpaceMapArgs",
+            "decodeVSpaceMapArgs_error_of_insufficient_regs",
+            "decodeVSpaceMapArgs_error_of_invalid_perms",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_error_iff",
-          "line": 444,
+          "line": 473,
           "called": [
             "decodeVSpaceUnmapArgs",
             "requireMsgReg",
@@ -1628,13 +1639,13 @@
         {
           "kind": "def",
           "name": "stubDecoded",
-          "line": 470,
+          "line": 499,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "decodeCSpaceMintArgs_roundtrip",
-          "line": 479,
+          "line": 508,
           "called": [
             "CSpaceMintArgs",
             "decodeCSpaceMintArgs",
@@ -1646,7 +1657,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceCopyArgs_roundtrip",
-          "line": 491,
+          "line": 520,
           "called": [
             "CSpaceCopyArgs",
             "decodeCSpaceCopyArgs",
@@ -1657,7 +1668,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMoveArgs_roundtrip",
-          "line": 496,
+          "line": 525,
           "called": [
             "CSpaceMoveArgs",
             "decodeCSpaceMoveArgs",
@@ -1668,7 +1679,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceDeleteArgs_roundtrip",
-          "line": 501,
+          "line": 530,
           "called": [
             "CSpaceDeleteArgs",
             "decodeCSpaceDeleteArgs",
@@ -1679,7 +1690,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_roundtrip",
-          "line": 508,
+          "line": 537,
           "called": [
             "LifecycleRetypeArgs",
             "decodeLifecycleRetypeArgs",
@@ -1691,13 +1702,13 @@
         {
           "kind": "theorem",
           "name": "pagePermissions_toNat_lt_32",
-          "line": 517,
+          "line": 546,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "pagePermissions_ofNat",
-          "line": 522,
+          "line": 551,
           "called": [
             "pagePermissions_toNat_lt_32"
           ]
@@ -1705,7 +1716,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_roundtrip",
-          "line": 526,
+          "line": 555,
           "called": [
             "VSpaceMapArgs",
             "decodeVSpaceMapArgs",
@@ -1717,7 +1728,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_roundtrip",
-          "line": 538,
+          "line": 567,
           "called": [
             "VSpaceUnmapArgs",
             "decodeVSpaceUnmapArgs",
@@ -1728,25 +1739,25 @@
         {
           "kind": "structure",
           "name": "ServiceRegisterArgs",
-          "line": 549,
+          "line": 578,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceRevokeArgs",
-          "line": 559,
+          "line": 588,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceQueryArgs",
-          "line": 566,
+          "line": 595,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeServiceRegisterArgs",
-          "line": 576,
+          "line": 605,
           "called": [
             "ServiceRegisterArgs",
             "requireMsgReg"
@@ -1755,7 +1766,7 @@
         {
           "kind": "def",
           "name": "decodeServiceRevokeArgs",
-          "line": 591,
+          "line": 620,
           "called": [
             "ServiceRevokeArgs",
             "requireMsgReg"
@@ -1764,7 +1775,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRegisterArgs",
-          "line": 602,
+          "line": 631,
           "called": [
             "ServiceRegisterArgs"
           ]
@@ -1772,7 +1783,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRevokeArgs",
-          "line": 608,
+          "line": 637,
           "called": [
             "ServiceRevokeArgs"
           ]
@@ -1780,7 +1791,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_deterministic",
-          "line": 615,
+          "line": 644,
           "called": [
             "decodeServiceRegisterArgs"
           ]
@@ -1788,7 +1799,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_deterministic",
-          "line": 618,
+          "line": 647,
           "called": [
             "decodeServiceRevokeArgs"
           ]
@@ -1796,7 +1807,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_error_iff",
-          "line": 626,
+          "line": 655,
           "called": [
             "decodeServiceRegisterArgs",
             "requireMsgReg",
@@ -1807,7 +1818,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_error_iff",
-          "line": 659,
+          "line": 688,
           "called": [
             "decodeServiceRevokeArgs",
             "requireMsgReg",
@@ -1817,7 +1828,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_roundtrip",
-          "line": 680,
+          "line": 709,
           "called": [
             "ServiceRegisterArgs",
             "decodeServiceRegisterArgs",
@@ -1829,7 +1840,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_roundtrip",
-          "line": 689,
+          "line": 718,
           "called": [
             "ServiceRevokeArgs",
             "decodeServiceRevokeArgs",
@@ -1840,7 +1851,7 @@
         {
           "kind": "theorem",
           "name": "decode_layer2_roundtrip_all",
-          "line": 697,
+          "line": 726,
           "called": [
             "decodeCSpaceCopyArgs",
             "decodeCSpaceCopyArgs_roundtrip",
@@ -1875,13 +1886,13 @@
         {
           "kind": "def",
           "name": "decodeExtraCapAddrs",
-          "line": 732,
+          "line": 761,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "decodeExtraCapAddrs_deterministic",
-          "line": 740,
+          "line": 769,
           "called": [
             "decodeExtraCapAddrs"
           ]
@@ -25859,7 +25870,7 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 24,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
@@ -26065,8 +26076,27 @@
         },
         {
           "kind": "def",
+          "name": "fo019_frozenSchedule",
+          "line": 334,
+          "called": [
+            "emptyFrozenState",
+            "expect",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fo020_frozenCspaceMint",
+          "line": 367,
+          "called": [
+            "emptyFrozenState",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 336,
+          "line": 390,
           "called": [
             "fo001_lookupExisting",
             "fo002_lookupMissing",
@@ -26085,7 +26115,9 @@
             "fo015_notificationWait",
             "fo016_sendEnqueuesSender",
             "fo017_receiveEnqueuesReceiver",
-            "fo018_callEnqueuesCaller"
+            "fo018_callEnqueuesCaller",
+            "fo019_frozenSchedule",
+            "fo020_frozenCspaceMint"
           ]
         }
       ]
@@ -26774,7 +26806,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 38,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
@@ -27076,7 +27108,7 @@
         {
           "kind": "def",
           "name": "chain24HandleYieldEmptyQueue",
-          "line": 1510,
+          "line": 1547,
           "called": [
             "assertInvariants",
             "expect",
@@ -27086,7 +27118,7 @@
         {
           "kind": "def",
           "name": "chain25IrqHandlerDispatch",
-          "line": 1536,
+          "line": 1585,
           "called": [
             "assertInvariants",
             "expect",
@@ -27096,7 +27128,55 @@
         {
           "kind": "def",
           "name": "chain26BootSequence",
-          "line": 1566,
+          "line": 1615,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "buildSyscallState",
+          "line": 1671,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "chain27SyscallCSpaceOps",
+          "line": 1717,
+          "called": [
+            "buildSyscallState",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain28SyscallVSpaceOps",
+          "line": 1783,
+          "called": [
+            "buildSyscallState",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain29SyscallLifecycleRetype",
+          "line": 1823,
+          "called": [
+            "buildSyscallState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain30SyscallServiceOps",
+          "line": 1845,
+          "called": [
+            "buildSyscallState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain31SyscallReply",
+          "line": 1900,
           "called": [
             "expect"
           ]
@@ -27104,7 +27184,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 1607,
+          "line": 1954,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -27124,7 +27204,12 @@
             "chain24HandleYieldEmptyQueue",
             "chain25IrqHandlerDispatch",
             "chain26BootSequence",
+            "chain27SyscallCSpaceOps",
+            "chain28SyscallVSpaceOps",
+            "chain29SyscallLifecycleRetype",
             "chain2SendSendReceiveFifo",
+            "chain30SyscallServiceOps",
+            "chain31SyscallReply",
             "chain3MapLookupUnmapLookup",
             "chain4ServiceRegistryDependencyGraph",
             "chain5CopyMoveDelete",
@@ -27138,7 +27223,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1639,
+          "line": 1991,
           "called": []
         }
       ]
