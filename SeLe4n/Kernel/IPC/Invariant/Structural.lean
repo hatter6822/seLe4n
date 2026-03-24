@@ -4534,7 +4534,144 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                       rwa [storeTcbQueueLinks_preserves_objects_ne stPrev stNext nextTid _ _ _ x.toObjId hxN hObjInv1 hStN] at hSN
                                     rwa [storeTcbQueueLinks_preserves_objects_ne st stPrev prevTid _ _ _ x.toObjId hxP hObjInv hLinkP] at hSP
                                   -- Link integrity for stF (directly constructed)
-                                  have hLinkStF : tcbQueueLinkIntegrity stF := by sorry
+                                  have hLinkStF : tcbQueueLinkIntegrity stF := by
+                                    constructor
+                                    · -- Forward: a.queueNext = some b ⟹ b exists ∧ b.queuePrev = some a
+                                      intro a tcbA hA b hNxt
+                                      by_cases haT : a.toObjId = tid.toObjId
+                                      · -- a = tid: cleared, queueNext = none → contradiction
+                                        rw [haT] at hA; rw [hTidStF] at hA; cases hA
+                                        simp [tcbWithQueueLinks] at hNxt
+                                      · by_cases haP : a.toObjId = prevTid.toObjId
+                                        · -- a = prevTid: queueNext = tcb.queueNext = some nextTid
+                                          rw [haP] at hA; rw [hPrevStF] at hA; cases hA
+                                          simp [tcbWithQueueLinks] at hNxt
+                                          -- hNxt : tcb.queueNext = some b
+                                          rw [hNext] at hNxt; cases hNxt
+                                          -- b = nextTid, need stF[nextTid] with queuePrev = some prevTid
+                                          refine ⟨_, hNextStF, ?_⟩
+                                          simp [tcbWithQueueLinks]
+                                          exact (threadId_toObjId_injective haP.symm)
+                                        · by_cases haN : a.toObjId = nextTid.toObjId
+                                          · -- a = nextTid: queueNext = nextTcb.queueNext (unchanged)
+                                            rw [haN] at hA; rw [hNextStF] at hA; cases hA
+                                            simp [tcbWithQueueLinks] at hNxt
+                                            -- hNxt : nextTcb.queueNext = some b
+                                            obtain ⟨tcbB, hB, hP⟩ := hLink.1 nextTid nextTcb hNextTcbSt b hNxt
+                                            by_cases hbT : b.toObjId = tid.toObjId
+                                            · -- b = tid → tcb.queuePrev = some nextTid, but = some prevTid
+                                              have hBT : st.objects[tid.toObjId]? = some (.tcb tcbB) := hbT ▸ hB
+                                              rw [hTcbObj] at hBT; cases hBT
+                                              rw [hPrevSome] at hP
+                                              exact absurd (congrArg ThreadId.toObjId (Option.some.inj hP)) hNePrevNext
+                                            · by_cases hbP : b.toObjId = prevTid.toObjId
+                                              · -- b = prevTid → return modified prevTid TCB
+                                                have hBP : st.objects[prevTid.toObjId]? = some (.tcb tcbB) := hbP ▸ hB
+                                                rw [hPrevTcbObj] at hBP
+                                                have hTcbBEq := KernelObject.tcb.inj (Option.some.inj hBP)
+                                                refine ⟨_, hbP ▸ hPrevStF, ?_⟩
+                                                simp [tcbWithQueueLinks]
+                                                rw [hTcbBEq, show a = nextTid from threadId_toObjId_injective haN]
+                                                exact hP
+                                              · by_cases hbN : b.toObjId = nextTid.toObjId
+                                                · -- b = nextTid → nextTcb.queueNext = some nextTid → self-loop
+                                                  have hBN : st.objects[nextTid.toObjId]? = some (.tcb tcbB) := hbN ▸ hB
+                                                  rw [hNextTcbSt] at hBN; cases hBN
+                                                  -- nextTcb.queueNext = some nextTid → self-loop → contradiction
+                                                  rw [show b = nextTid from threadId_toObjId_injective hbN] at hNxt
+                                                  exact absurd (.single nextTid nextTid nextTcb hNextTcbSt hNxt) (hAcyclic nextTid)
+                                                · exact ⟨tcbB, hFwdOtherD b tcbB hbT hbP hbN hB,
+                                                    hP.trans (congrArg some (threadId_toObjId_injective haN).symm)⟩
+                                          · -- a = other: back-transport to st, use original link, forward-transport
+                                            have hA' := hBackOtherD a tcbA haT haP haN hA
+                                            obtain ⟨tcbB, hB, hP⟩ := hLink.1 a tcbA hA' b hNxt
+                                            by_cases hbT : b.toObjId = tid.toObjId
+                                            · -- b = tid: tcb.queuePrev = some a, but = some prevTid, a ≠ prevTid
+                                              have hBT : st.objects[tid.toObjId]? = some (.tcb tcbB) := hbT ▸ hB
+                                              rw [hTcbObj] at hBT; cases hBT
+                                              rw [hPrevSome] at hP
+                                              exact absurd (congrArg ThreadId.toObjId (Option.some.inj hP).symm) haP
+                                            · by_cases hbP : b.toObjId = prevTid.toObjId
+                                              · -- b = prevTid: return modified prevTid TCB
+                                                have hBP : st.objects[prevTid.toObjId]? = some (.tcb tcbB) := hbP ▸ hB
+                                                rw [hPrevTcbObj] at hBP
+                                                have hTcbBEq := KernelObject.tcb.inj (Option.some.inj hBP)
+                                                refine ⟨_, hbP ▸ hPrevStF, ?_⟩
+                                                simp [tcbWithQueueLinks]; rw [hTcbBEq]; exact hP
+                                              · by_cases hbN : b.toObjId = nextTid.toObjId
+                                                · -- b = nextTid: nextTcb.queuePrev = some tid, not some a
+                                                  have hBN : st.objects[nextTid.toObjId]? = some (.tcb tcbB) := hbN ▸ hB
+                                                  rw [hNextTcbSt] at hBN; cases hBN
+                                                  rw [hNextPrev] at hP
+                                                  exact absurd (congrArg ThreadId.toObjId (Option.some.inj hP).symm) haT
+                                                · exact ⟨tcbB, hFwdOtherD b tcbB hbT hbP hbN hB, hP⟩
+                                    · -- Reverse: b.queuePrev = some a ⟹ a exists ∧ a.queueNext = some b
+                                      intro b tcbB hB a hPrv
+                                      by_cases hbT : b.toObjId = tid.toObjId
+                                      · -- b = tid: cleared, queuePrev = none → contradiction
+                                        rw [hbT] at hB; rw [hTidStF] at hB; cases hB
+                                        simp [tcbWithQueueLinks] at hPrv
+                                      · by_cases hbP : b.toObjId = prevTid.toObjId
+                                        · -- b = prevTid: queuePrev = prevTcb.queuePrev (unchanged)
+                                          rw [hbP] at hB; rw [hPrevStF] at hB; cases hB
+                                          simp [tcbWithQueueLinks] at hPrv
+                                          -- hPrv : prevTcb.queuePrev = some a
+                                          obtain ⟨tcbA, hA, hNxt⟩ := hLink.2 prevTid prevTcb hPrevTcbObj a hPrv
+                                          by_cases haT : a.toObjId = tid.toObjId
+                                          · -- a = tid: tcb.queueNext = some prevTid, but = some nextTid
+                                            have hAT : st.objects[tid.toObjId]? = some (.tcb tcbA) := haT ▸ hA
+                                            rw [hTcbObj] at hAT; cases hAT
+                                            rw [hNext] at hNxt
+                                            exact absurd (congrArg ThreadId.toObjId (Option.some.inj hNxt)) hNePrevNext.symm
+                                          · by_cases haP : a.toObjId = prevTid.toObjId
+                                            · -- a = prevTid: prevTcb.queueNext = some prevTid, but = some tid
+                                              have hAP : st.objects[prevTid.toObjId]? = some (.tcb tcbA) := haP ▸ hA
+                                              rw [hPrevTcbObj] at hAP; cases hAP
+                                              rw [hPrevNextTid] at hNxt
+                                              exact absurd (congrArg ThreadId.toObjId (Option.some.inj hNxt).symm) hNePrevTid
+                                            · by_cases haN : a.toObjId = nextTid.toObjId
+                                              · -- a = nextTid: return modified nextTid TCB
+                                                have hAN : st.objects[nextTid.toObjId]? = some (.tcb tcbA) := haN ▸ hA
+                                                rw [hNextTcbSt] at hAN; cases hAN
+                                                refine ⟨_, haN ▸ hNextStF, ?_⟩
+                                                simp [tcbWithQueueLinks]
+                                                exact hNxt.trans (congrArg some (threadId_toObjId_injective hbP).symm)
+                                              · exact ⟨tcbA, hFwdOtherD a tcbA haT haP haN hA,
+                                                  hNxt.trans (congrArg some (threadId_toObjId_injective hbP).symm)⟩
+                                        · by_cases hbN : b.toObjId = nextTid.toObjId
+                                          · -- b = nextTid: queuePrev = some prevTid, so a = prevTid
+                                            have hBN : stF.objects[nextTid.toObjId]? = some (.tcb tcbB) := hbN ▸ hB
+                                            rw [hNextStF] at hBN
+                                            have hTcbBEq := (KernelObject.tcb.inj (Option.some.inj hBN)).symm
+                                            rw [hTcbBEq] at hPrv; simp [tcbWithQueueLinks] at hPrv
+                                            -- hPrv : prevTid = a
+                                            subst hPrv
+                                            -- need stF[prevTid].queueNext = some nextTid
+                                            refine ⟨_, hPrevStF, ?_⟩
+                                            simp [tcbWithQueueLinks]
+                                            rw [hNext]; exact congrArg some (threadId_toObjId_injective hbN.symm)
+                                          · -- b = other: back-transport to st, use original link, forward-transport
+                                            have hB' := hBackOtherD b tcbB hbT hbP hbN hB
+                                            obtain ⟨tcbA, hA, hNxt⟩ := hLink.2 b tcbB hB' a hPrv
+                                            by_cases haT : a.toObjId = tid.toObjId
+                                            · -- a = tid: tcb.queueNext = some b, but = some nextTid, b ≠ nextTid
+                                              have hAT : st.objects[tid.toObjId]? = some (.tcb tcbA) := haT ▸ hA
+                                              rw [hTcbObj] at hAT; cases hAT
+                                              rw [hNext] at hNxt
+                                              exact absurd (congrArg ThreadId.toObjId (Option.some.inj hNxt).symm) hbN
+                                            · by_cases haP : a.toObjId = prevTid.toObjId
+                                              · -- a = prevTid: prevTcb.queueNext = some b, but = some tid, b ≠ tid
+                                                have hAP : st.objects[prevTid.toObjId]? = some (.tcb tcbA) := haP ▸ hA
+                                                rw [hPrevTcbObj] at hAP; cases hAP
+                                                rw [hPrevNextTid] at hNxt
+                                                exact absurd (congrArg ThreadId.toObjId (Option.some.inj hNxt).symm) hbT
+                                              · by_cases haN : a.toObjId = nextTid.toObjId
+                                                · -- a = nextTid: return modified nextTid TCB
+                                                  have hAN : st.objects[nextTid.toObjId]? = some (.tcb tcbA) := haN ▸ hA
+                                                  rw [hNextTcbSt] at hAN; cases hAN
+                                                  refine ⟨_, haN ▸ hNextStF, ?_⟩
+                                                  simp [tcbWithQueueLinks]; exact hNxt
+                                                · exact ⟨tcbA, hFwdOtherD a tcbA haT haP haN hA, hNxt⟩
                                   have hIqwfD : ∀ (qq : IntrusiveQueue), intrusiveQueueWellFormed qq st → intrusiveQueueWellFormed qq stF := by
                                     intro qq hWfQQ
                                     exact storeTcbQueueLinks_preserves_iqwf pair4.2 stF tid none none none hObjInv4 hClearD qq
@@ -4567,7 +4704,38 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                       (fun _ _ _ => rfl) (fun _ _ _ => rfl)
                                   have hEpWfD : ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
                                       stF.objects[epId']? = some (.endpoint ep') →
-                                      dualQueueEndpointWellFormed epId' stF := by sorry
+                                      dualQueueEndpointWellFormed epId' stF := by
+                                    intro epId' ep' hObj'
+                                    have hObjP4 := storeTcbQueueLinks_endpoint_backward pair4.2 stF tid none none none
+                                      epId' ep' hObjInv4 hClearD hObj'
+                                    unfold dualQueueEndpointWellFormed; rw [hObj']
+                                    by_cases hNe : epId' = endpointId
+                                    · -- Same endpoint: queue unchanged (head=q.head, tail=q.tail)
+                                      rw [hNe] at hObjP4
+                                      rw [storeObject_objects_eq stNext pair4.2 endpointId _ hObjInvSN hStoreEpD] at hObjP4
+                                      cases hObjP4
+                                      -- The stored endpoint has q' = {head=q.head, tail=q.tail} = q by η
+                                      -- The stored queue q' = {head=q.head, tail=q.tail} = q by η
+                                      -- So both sendQ and receiveQ of stored ep are original
+                                      cases hRQ : isReceiveQ
+                                      · -- isReceiveQ = false: sendQ modified (to q'), receiveQ unchanged
+                                        simp only [Bool.false_eq_true, ↓reduceIte]
+                                        refine ⟨hIqwfD _ ?_, hIqwfD ep.receiveQ hEpWf.2⟩
+                                        rw [← hQ]; simp only [hRQ, Bool.false_eq_true, ↓reduceIte]; exact hEpWf.1
+                                      · -- isReceiveQ = true: receiveQ modified (to q'), sendQ unchanged
+                                        simp only [↓reduceIte]
+                                        refine ⟨hIqwfD ep.sendQ hEpWf.1, hIqwfD _ ?_⟩
+                                        rw [← hQ]; simp only [hRQ, ↓reduceIte]; exact hEpWf.2
+                                    · -- Other endpoint: back-transport to original state
+                                      have hObjSN : stNext.objects[epId']? = some (.endpoint ep') := by
+                                        rwa [storeObject_objects_ne stNext pair4.2 endpointId epId' _ hNe hObjInvSN hStoreEpD] at hObjP4
+                                      have hObjSP : stPrev.objects[epId']? = some (.endpoint ep') :=
+                                        storeTcbQueueLinks_endpoint_backward stPrev stNext nextTid _ _ _ epId' ep' hObjInv1 hStN hObjSN
+                                      have hObjOrig : st.objects[epId']? = some (.endpoint ep') :=
+                                        storeTcbQueueLinks_endpoint_backward st stPrev prevTid _ _ _ epId' ep' hObjInv hLinkP hObjSP
+                                      have hWfPre := hEpInv epId' ep' hObjOrig
+                                      unfold dualQueueEndpointWellFormed at hWfPre; rw [hObjOrig] at hWfPre
+                                      exact ⟨hIqwfD ep'.sendQ hWfPre.1, hIqwfD ep'.receiveQ hWfPre.2⟩
                                   exact ⟨hEpWfD, hLinkStF, hAcycSF⟩
 
 end SeLe4n.Kernel
