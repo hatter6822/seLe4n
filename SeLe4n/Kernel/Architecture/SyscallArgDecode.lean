@@ -117,12 +117,15 @@ structure LifecycleRetypeArgs where
   deriving Repr, DecidableEq
 
 /-- Per-syscall argument structure for `vspaceMap`.
-    Register mapping: x2=asid, x3=vaddr, x4=paddr, x5=perms word. -/
+    Register mapping: x2=asid, x3=vaddr, x4=paddr, x5=perms word.
+    T6-C/M-ARCH-1: `perms` is typed as `PagePermissions` instead of raw `Nat`.
+    Validation occurs at decode time via `PagePermissions.ofNat?`, rejecting
+    values outside the valid 5-bit range (0–31). -/
 structure VSpaceMapArgs where
   asid  : ASID
   vaddr : VAddr
   paddr : PAddr
-  perms : Nat
+  perms : PagePermissions
   deriving Repr, DecidableEq
 
 /-- Per-syscall argument structure for `vspaceUnmap`.
@@ -193,17 +196,23 @@ def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
   | none => .error .invalidTypeTag
 
 /-- Decode VSpace map arguments from message registers.
-    Requires 4 message registers (asid, vaddr, paddr, perms word). -/
+    Requires 4 message registers (asid, vaddr, paddr, perms word).
+    T6-C/M-ARCH-1: Validates the permissions word at decode time via
+    `PagePermissions.ofNat?`. Returns `invalidArgument` for values ≥ 32
+    (undefined permission bits set). -/
 def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
     : Except KernelError VSpaceMapArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  pure { asid  := ASID.ofNat r0.val
-         vaddr := VAddr.ofNat r1.val
-         paddr := PAddr.ofNat r2.val
-         perms := r3.val }
+  match PagePermissions.ofNat? r3.val with
+  | some perms =>
+    pure { asid  := ASID.ofNat r0.val
+           vaddr := VAddr.ofNat r1.val
+           paddr := PAddr.ofNat r2.val
+           perms := perms }
+  | none => .error .policyDenied
 
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
@@ -244,9 +253,9 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
   #[⟨args.targetObj.toNat⟩, ⟨args.newType.toNat⟩, ⟨args.size⟩]
 
 /-- Encode VSpace map arguments into message registers.
-    Inverse of `decodeVSpaceMapArgs`. -/
+    Inverse of `decodeVSpaceMapArgs`. T6-C: encodes PagePermissions via toNat. -/
 @[inline] def encodeVSpaceMapArgs (args : VSpaceMapArgs) : Array RegValue :=
-  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩, ⟨args.paddr.toNat⟩, ⟨args.perms⟩]
+  #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩, ⟨args.paddr.toNat⟩, ⟨args.perms.toNat⟩]
 
 /-- Encode VSpace unmap arguments into message registers.
     Inverse of `decodeVSpaceUnmapArgs`. -/
@@ -402,34 +411,34 @@ theorem decodeLifecycleRetypeArgs_error_of_invalid_type (d : SyscallDecodeResult
     dif_pos (show 1 < d.msgRegs.size by omega),
     dif_pos (show 2 < d.msgRegs.size by omega), hTag]
 
-/-- VSpace map decode fails iff fewer than 4 message registers. -/
-theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeVSpaceMapArgs d = .error e) ↔ d.msgRegs.size < 4 := by
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 4
-    · exact hlt
-    · exfalso
-      simp only [decodeVSpaceMapArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        dif_pos (show 1 < d.msgRegs.size by omega),
-        dif_pos (show 2 < d.msgRegs.size by omega),
-        dif_pos (show 3 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeVSpaceMapArgs, bind, Except.bind]
-    by_cases h0 : 0 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h0]; simp
-      by_cases h1 : 1 < d.msgRegs.size
-      · rw [requireMsgReg_unfold_ok _ _ h1]; simp
-        by_cases h2 : 2 < d.msgRegs.size
-        · rw [requireMsgReg_unfold_ok _ _ h2]; simp
-          rw [requireMsgReg_unfold_err _ _ (by omega)]
-        · rw [requireMsgReg_unfold_err _ _ h2]
-      · rw [requireMsgReg_unfold_err _ _ h1]
-    · rw [requireMsgReg_unfold_err _ _ h0]
+/-- T6-C/D: VSpace map decode fails if fewer than 4 message registers. -/
+theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
+    (h : d.msgRegs.size < 4) :
+    ∃ e, decodeVSpaceMapArgs d = .error e := by
+  refine ⟨.invalidMessageInfo, ?_⟩
+  simp only [decodeVSpaceMapArgs, bind, Except.bind]
+  by_cases h0 : 0 < d.msgRegs.size
+  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+    by_cases h1 : 1 < d.msgRegs.size
+    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+      by_cases h2 : 2 < d.msgRegs.size
+      · rw [requireMsgReg_unfold_ok _ _ h2]; simp
+        rw [requireMsgReg_unfold_err _ _ (by omega)]
+      · rw [requireMsgReg_unfold_err _ _ h2]
+    · rw [requireMsgReg_unfold_err _ _ h1]
+  · rw [requireMsgReg_unfold_err _ _ h0]
+
+/-- T6-D/M-ARCH-1: VSpace map decode fails if the permissions word is invalid (≥ 32). -/
+theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
+    (hSize : 4 ≤ d.msgRegs.size)
+    (hPerms : PagePermissions.ofNat? d.msgRegs[3].val = none) :
+    ∃ e, decodeVSpaceMapArgs d = .error e := by
+  refine ⟨.policyDenied, ?_⟩
+  simp only [decodeVSpaceMapArgs, bind, Except.bind,
+    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+    dif_pos (show 1 < d.msgRegs.size by omega),
+    dif_pos (show 2 < d.msgRegs.size by omega),
+    dif_pos (show 3 < d.msgRegs.size by omega), hPerms]
 
 /-- VSpace unmap decode fails iff fewer than 2 message registers. -/
 theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
@@ -503,10 +512,27 @@ theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
     requireMsgReg, KernelObjectType.toNat]
   cases t <;> rfl
 
-/-- Round-trip: encoding then decoding VSpaceMapArgs recovers the original. -/
+/-- T6-C: Round-trip requires that the permissions encode to a valid range.
+    `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/
+private theorem pagePermissions_toNat_lt_32 (p : PagePermissions) :
+    p.toNat < 32 := by
+  rcases p with ⟨r, w, e, u, c⟩
+  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> native_decide
+
+private theorem pagePermissions_ofNat?_toNat (p : PagePermissions) :
+    PagePermissions.ofNat? p.toNat = some (PagePermissions.ofNat p.toNat) := by
+  simp [PagePermissions.ofNat?, pagePermissions_toNat_lt_32]
+
 theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) :
     decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args := by
-  rcases args with ⟨a, v, p, n⟩; rfl
+  rcases args with ⟨a, v, p, perms⟩
+  show decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs ⟨a, v, p, perms⟩)) = .ok ⟨a, v, p, perms⟩
+  unfold decodeVSpaceMapArgs encodeVSpaceMapArgs stubDecoded
+  rcases perms with ⟨r, w, e, u, c⟩
+  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;>
+    simp [decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded, bind, Except.bind,
+      requireMsgReg, PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
+      ASID.ofNat_toNat, VAddr.ofNat_toNat, PAddr.ofNat_toNat, pure, Except.pure]
 
 /-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original. -/
 theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) :

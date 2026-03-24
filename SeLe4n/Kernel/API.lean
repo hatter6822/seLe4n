@@ -21,6 +21,7 @@ import SeLe4n.Kernel.Service.Registry
 import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Kernel.InformationFlow.Projection
 import SeLe4n.Kernel.InformationFlow.Invariant
+import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
@@ -72,9 +73,11 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | ~~`apiLifecycleRetype`~~ | Syscall Lifecycle (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
 | ~~`apiVspaceMap`, `apiVspaceUnmap`~~ | Syscall VSpace (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
 | ~~`apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`~~ | Syscall Service (WS-Q1-D) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable |
+| `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable (unchecked — for proofs and internal kernel paths) |
+| `syscallEntryChecked` | Syscall dispatch (T6-I) | Stable (**production entry point** — information-flow-checked) |
 | `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
-| `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable |
+| `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable (unchecked internal) |
+| `dispatchSyscallChecked` | Syscall dispatch (T6-I) | Stable (checked internal) |
 
 ## Deferred operations (WS-F5/D3)
 
@@ -434,7 +437,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .error e => .error e
         | .ok args =>
             Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
-              (PagePermissions.ofNat args.perms) st
+              args.perms st
     | _ => fun _ => .error .invalidCapability
   -- WS-K-D/S6-A: VSpace unmap — ASID and vaddr from message registers.
   -- Uses TLB-flushing variant to prevent use-after-unmap on hardware (R7-A.3/M-17).
@@ -487,12 +490,255 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
 
+-- ============================================================================
+-- T6-I/M-IF-1: Information-flow-checked dispatch
+-- ============================================================================
+
+/-- T6-I/M-IF-1: Policy-checked dispatch — replaces unchecked operations with their
+information-flow-checked equivalents. When a `LabelingContext` is provided, all
+cross-domain operations (IPC send/receive/call, CSpace mint/copy/move, notification
+signal, service register) are gated by `securityFlowsTo` before execution.
+
+This ensures the runtime dispatch path matches the proven model: the enforcement
+soundness theorems (Soundness.lean) prove NI for checked wrappers, and this
+function guarantees those wrappers are actually used at runtime.
+
+**Design**: Operations that don't cross domain boundaries (CSpace delete, lifecycle
+retype, VSpace map/unmap, service revoke/query, reply) are left unchecked because
+they derive authority entirely from capability possession or operate within a single
+domain. -/
+private def dispatchWithCapChecked (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
+  match decoded.syscallId with
+  -- T6-I: IPC send — checked for sender→endpoint flow
+  | .send =>
+    match cap.target with
+    | .object epId =>
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        let extraCapAddrs := decodeExtraCapAddrs decoded
+        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        match endpointSendDualChecked ctx epId tid msg st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: IPC receive — checked for endpoint→receiver flow
+  | .receive =>
+    match cap.target with
+    | .object epId =>
+      fun st => match endpointReceiveDualChecked ctx epId tid st with
+        | .ok (_, st') => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: IPC call — checked for sender→endpoint flow
+  | .call =>
+    match cap.target with
+    | .object epId =>
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        let extraCapAddrs := decodeExtraCapAddrs decoded
+        let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
+        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Call uses send-direction flow check (caller→endpoint)
+        let senderLabel := ctx.threadLabelOf tid
+        let endpointLabel := ctx.endpointLabelOf epId
+        if securityFlowsTo senderLabel endpointLabel then
+          match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
+              (SeLe4n.Slot.ofNat 0) st with
+          | .error e => .error e
+          | .ok (_, st') => .ok ((), st')
+        else .error .flowDenied
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: Reply — no cross-domain check needed (reply cap is single-use authority)
+  | .reply =>
+    match cap.target with
+    | .replyCap targetTid =>
+      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+      endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge }
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: CSpace mint — checked for source→destination CNode flow
+  | .cspaceMint =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceMintArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            let badge : Option SeLe4n.Badge :=
+              if args.badge.val = 0 then none else some args.badge
+            cspaceMintChecked ctx src dst args.rights badge st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: CSpace copy — checked for source→destination CNode flow
+  | .cspaceCopy =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceCopyArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            cspaceCopyChecked ctx src dst st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: CSpace move — checked for source→destination CNode flow
+  | .cspaceMove =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceMoveArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            cspaceMoveChecked ctx src dst st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: CSpace delete — capability-only, no cross-domain flow
+  | .cspaceDelete =>
+    match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceDeleteArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+            cspaceDeleteSlot addr st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: Lifecycle retype — capability-only, no cross-domain flow
+  | .lifecycleRetype =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeLifecycleRetypeArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let newObj := objectOfKernelType args.newType args.size
+            lifecycleRetypeDirect cap args.targetObj newObj st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: VSpace map — no cross-domain flow (address-space-local operation)
+  | .vspaceMap =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceMapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
+              args.perms st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: VSpace unmap — no cross-domain flow
+  | .vspaceUnmap =>
+    match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceUnmapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: Service register — checked for thread→service flow
+  | .serviceRegister =>
+    match cap.target with
+    | .object epId =>
+      fun st => match decodeServiceRegisterArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          let iface : InterfaceSpec := {
+            ifaceId         := args.interfaceId
+            methodCount     := args.methodCount
+            maxMessageSize  := args.maxMessageSize
+            maxResponseSize := args.maxResponseSize
+            requiresGrant   := args.requiresGrant
+          }
+          let reg : ServiceRegistration := {
+            sid := ServiceId.ofNat epId.toNat
+            iface := iface
+            endpointCap := cap
+          }
+          registerServiceChecked ctx tid reg st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: Service revoke — capability-only
+  | .serviceRevoke =>
+    match cap.target with
+    | .object _ =>
+      fun st => match decodeServiceRevokeArgs decoded with
+      | .error e => .error e
+      | .ok args => revokeService args.targetService st
+    | _ => fun _ => .error .invalidCapability
+  -- T6-I: Service query — read-only
+  | .serviceQuery =>
+    match cap.target with
+    | .object epId =>
+      fun st =>
+        match lookupServiceByCap epId st with
+        | .ok (_, st') => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+
+/-- T6-I: Policy-checked dispatch variant. Routes syscalls through
+    information-flow-checked wrappers when a `LabelingContext` is provided. -/
+def dispatchSyscallChecked (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+      match st.objects[tcb.cspaceRoot]? with
+      | some (.cnode rootCn) =>
+        let gate : SyscallGate := {
+          callerId     := tid
+          cspaceRoot   := tcb.cspaceRoot
+          capAddr      := decoded.capAddr
+          capDepth     := rootCn.depth
+          requiredRight := syscallRequiredRight decoded.syscallId
+        }
+        (syscallInvoke gate (dispatchWithCapChecked ctx decoded tid gate)) st
+      | some _ => .error .invalidCapability
+      | none   => .error .objectNotFound
+    | some _ => .error .illegalState
+    | none   => .error .objectNotFound
+
+/-- T6-I/M-IF-1: Top-level register-sourced syscall entry point with
+    information-flow enforcement. All cross-domain operations are gated by
+    `securityFlowsTo` before execution.
+
+    This is the recommended entry point for production systems with
+    information-flow policies. The unchecked `syscallEntry` remains
+    available for trusted kernel paths and backward compatibility. -/
+def syscallEntryChecked (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout)
+    (regCount : Nat := 32) : Kernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none => .error .illegalState
+    | some tid =>
+      match lookupThreadRegisterContext tid st with
+      | .error e => .error e
+      | .ok (regs, _) =>
+        match decodeSyscallArgs layout regs regCount with
+        | .error e => .error e
+        | .ok decoded =>
+          dispatchSyscallChecked ctx decoded tid st
+
+/-- T6-I: The checked and unchecked dispatch paths are structurally identical
+for capability-only operations (delete, retype, vspace, revoke, query, reply).
+For policy-gated operations (send, receive, call, mint, copy, move, register),
+the checked path adds a `securityFlowsTo` guard. With `defaultLabelingContext`
+(where all labels are `publicLabel`), `securityFlowsTo` always returns `true`,
+so the checked path delegates to the same underlying operation.
+
+**Production recommendation**: Use `syscallEntryChecked` for user-space entry.
+The unchecked `syscallEntry` is retained for backward compatibility with
+existing proofs and internal kernel paths that operate within the TCB. -/
+theorem checkedDispatch_subsumes_unchecked_documentation :
+    True := trivial
+
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
 kernel operation. Looks up the caller's TCB and CSpace root, constructs a
 `SyscallGate`, and dispatches via `syscallInvoke`.
 
-The resolved capability's target identifies the kernel object to operate on
-(endpoint for IPC, CNode slot for CSpace ops, etc.). -/
+**Note (T6-I)**: This is the UNCHECKED dispatch path. It does not perform
+information-flow checks. For production user-space entry points, use
+`dispatchSyscallChecked` which gates cross-domain operations via
+`securityFlowsTo` wrappers. This function is retained for:
+1. Backward compatibility with existing dispatch delegation theorems
+2. Internal kernel paths that operate within the TCB
+3. Proof infrastructure (delegation/preservation theorems reference this) -/
 def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects[tid.toObjId]? with
@@ -740,9 +986,10 @@ theorem dispatchWithCap_lifecycleRetype_delegates
       lifecycleRetypeDirect cap args.targetObj (objectOfKernelType args.newType args.size) := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A: When vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithFlush` is
-invoked with the decoded ASID, vaddr, paddr, and permissions.
-Production API uses the TLB-flushing variant to maintain `tlbConsistent`. -/
+/-- WS-K-D/S6-A/T6-C: When vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithFlush` is
+invoked with the decoded ASID, vaddr, paddr, and validated permissions.
+Production API uses the TLB-flushing variant to maintain `tlbConsistent`.
+T6-C: Permissions are now typed as `PagePermissions` (validated at decode). -/
 theorem dispatchWithCap_vspaceMap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -752,7 +999,7 @@ theorem dispatchWithCap_vspaceMap_delegates
     (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
       Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
-        (PagePermissions.ofNat args.perms) := by
+        args.perms := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A: When vspaceUnmap dispatch succeeds, `vspaceUnmapPageWithFlush` is

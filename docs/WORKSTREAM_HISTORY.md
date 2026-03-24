@@ -17,15 +17,16 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-S) are complete. WS-T Phases T1–T4 complete (Benchmarking Blockers,
-Model & CDT Integrity, Rust ABI Hardening, IPC & Capability Proof Closure);
-phases T5–T8 continue the deep-dive audit remediation.
+through WS-S) are complete. WS-T Phases T1–T6 complete (Benchmarking Blockers,
+Model & CDT Integrity, Rust ABI Hardening, IPC & Capability Proof Closure,
+Lifecycle/Service/Cross-Subsystem, Architecture & Hardware Preparation);
+phases T7–T8 continue with test coverage expansion and documentation closure.
 
-### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T5 COMPLETE, T6–T8 IN PROGRESS
+### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T6 COMPLETE, T7–T8 IN PROGRESS
 
 WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
 MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
-v0.20.0–v0.20.7. See
+v0.20.0–v0.20.7. T1–T6 complete (78 sub-tasks). See
 [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
 
 - **T1 (v0.20.0) — COMPLETE**: Benchmarking Blockers. Fixed frozen IPC queue
@@ -89,6 +90,25 @@ v0.20.0–v0.20.7. See
   Documentation: `lookupServiceByCap` first-match semantics (M-LCS-2),
   `Notification.waitingThreads` LIFO semantics (M-MOD-6). Zero sorry, zero
   axiom. All 13 sub-tasks complete.
+
+- **T6 (v0.20.5) — COMPLETE**: Architecture & Hardware Preparation. Closed 5
+  MEDIUM and 1 HIGH finding. Changed `vspaceMapPage` default permissions from
+  `default` to explicit `PagePermissions.readOnly` enforcing least-privilege
+  (M-NEW-6). Changed `VSpaceMapArgs.perms` from raw `Nat` to typed
+  `PagePermissions` with decode-time validation via `PagePermissions.ofNat?`
+  rejecting values ≥ 32 (M-ARCH-1). Defined MMIO adapter operations
+  (`mmioRead`/`mmioWrite`) with device-region validation and memory barrier
+  modeling (`MemoryBarrier` inductive: DMB, DSB, ISB) for ARM64 (M-NEW-7,
+  M-NEW-8). Wired information-flow-checked dispatch (`dispatchWithCapChecked`,
+  `syscallEntryChecked`) — all 7 policy-gated operations use `securityFlowsTo`
+  wrappers at runtime (M-IF-1). Defined `RegisterWriteInvariant` predicate for
+  context-switch-aware adapter stub (H-3). Added targeted TLB flush operations
+  (`tlbFlushByASID`, `tlbFlushByPage`, `tlbFlushAll`) with state frame proofs
+  (M-ARCH-4). Implemented DTB parsing foundation with FDT header parser,
+  `readBE32`, `parseFdtHeader`, `FdtHeader.isValid` (M-ARCH-2). Extended RPi5
+  runtime contract with `mmioAccessAllowed` predicate. Documented cache
+  coherency assumptions in spec (single-core, MMIO barriers, DMA out of scope).
+  Zero sorry, zero axiom. All 13 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

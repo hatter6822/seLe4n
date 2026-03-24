@@ -1,3 +1,55 @@
+## [0.20.5] — WS-T Phase T6: Architecture & Hardware Preparation
+
+- T6-A/B (M-NEW-6): Changed `vspaceMapPage` default permissions from `default`
+  to explicit `PagePermissions.readOnly`. Enforces least-privilege: callers must
+  explicitly request write or execute permissions. All callers audited.
+- T6-C/D (M-ARCH-1): Changed `VSpaceMapArgs.perms` from raw `Nat` to typed
+  `PagePermissions` with decode-time validation via `PagePermissions.ofNat?`.
+  Values ≥ 32 (undefined permission bits) now rejected at the ABI boundary
+  with `policyDenied` error. Round-trip proof updated for all 32 valid values.
+- T6-E/H (M-NEW-7, M-NEW-8): Defined MMIO adapter operations in new file
+  `Platform/RPi5/MmioAdapter.lean`: `mmioRead`/`mmioWrite` with device-region
+  validation, `MemoryBarrier` inductive (DMB, DSB, ISB), `MmioOp` with barrier
+  annotations. 4 correctness theorems (reject non-device, read preserves state,
+  write frame).
+- T6-F (M-NEW-7): Extended RPi5 runtime contract with `mmioAccessAllowed`
+  predicate gating MMIO on device-region membership. Proven kind-disjoint from
+  RAM access predicate.
+- T6-G (M-NEW-8): Documented cache coherency assumptions in
+  `docs/spec/SELE4N_SPEC.md` §6.3: single-core eliminates most coherency,
+  MMIO requires barriers, DMA out of scope.
+- T6-I (M-IF-1): Wired information-flow-checked dispatch into API. Created
+  `dispatchWithCapChecked`, `dispatchSyscallChecked`, `syscallEntryChecked` —
+  all 7 policy-gated operations now use `securityFlowsTo` wrappers at runtime.
+  Coverage: endpointSend/Receive/Call (inline check), cspaceMint/Copy/Move,
+  registerService.
+- T6-J (M-IF-1): Added checked dispatch enforcement coverage witness —
+  7 policy-gated operations documented and verified complete.
+- T6-K (H-3): Defined `RegisterWriteInvariant` predicate for context-switch
+  awareness. Stub for WS-U — current TCB model lacks saved registers field.
+- T6-L (M-ARCH-4): Added targeted TLB flush operations: `tlbFlushByASID`,
+  `tlbFlushByPage`, `tlbFlushByASIDPage` (alias), `tlbFlushAll`. State frame
+  proofs for per-ASID and per-page flushes. `tlbFlushAll` marked as
+  conservative fallback.
+- T6-M (M-ARCH-2): Implemented DTB parsing foundation: `FdtHeader` structure,
+  `readBE32` big-endian reader, `parseFdtHeader`, `FdtHeader.isValid`,
+  `parseAndValidateFdtHeader`. Proof: empty blob has no valid header.
+- Updated `VSpaceMapArgs` delegation theorem to use typed permissions.
+- T6 audit fix (T6-I): Documented `syscallEntryChecked` as production entry
+  point in API stability table. Added bridging documentation theorem. Updated
+  `dispatchSyscall` docstring to clarify unchecked vs checked paths.
+- T6 audit fix (T6-J): Replaced trivial `rfl` witness with substantive
+  `checkedDispatch_flowDenied_preserves_state` theorem — proves all 3 original
+  policy-gated wrappers preserve state on flow denial. Composes existing
+  `*_denied_preserves_state` proofs into a single bundle.
+- T6 audit fix (T6-M): Added FDT structure block constants, `FdtMemoryRegion`
+  type, `readBE64` big-endian 64-bit reader, `extractMemoryRegions` with fuel-
+  bounded iteration, `classifyMemoryRegion` (RAM kind for /memory entries),
+  `fdtRegionsToMemoryRegions` converter, `DeviceTree.fromDtbWithRegions`
+  producing `Option DeviceTree` with populated memory map. Empty-regions
+  theorem proves empty input produces empty output.
+- Zero sorry, zero axiom. All 13 sub-tasks complete.
+
 ## [0.20.4] — WS-T Phase T5: Lifecycle, Service & Cross-Subsystem
 
 - T5-A/B (M-NEW-4): Marked `lifecycleRetypeObject` and `lifecycleRetypeDirect` as

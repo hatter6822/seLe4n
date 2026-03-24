@@ -10,6 +10,7 @@ import SeLe4n.Platform.Contract
 import SeLe4n.Platform.RPi5.RuntimeContract
 import SeLe4n.Platform.RPi5.BootContract
 import SeLe4n.Platform.RPi5.ProofHooks
+import SeLe4n.Platform.RPi5.MmioAdapter
 
 /-!
 # Raspberry Pi 5 — Platform Binding
