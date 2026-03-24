@@ -55,7 +55,7 @@ compiles to native code with no admitted proofs.
 The project utilizes a capability-based security model while introducing novel 
 architectural improvements compared to other microkernels:
 
-- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified `RHTable`/`RHSet` (Robin Hood hash table with machine-checked invariants, zero `Std.HashMap`/`Std.HashSet` in state)
+- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified `RHTable`/`RHSet`
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics
 - **Node-stable capability derivation tree** with `childMap` + `parentMap` RHTable indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
