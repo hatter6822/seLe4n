@@ -41,6 +41,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | WS-Q Kernel State Architecture — PORTFOLIO COMPLETE (v0.17.7–v0.17.14, 9 phases) | `./scripts/test_full.sh` |
 | WS-R Comprehensive Audit Remediation — PORTFOLIO COMPLETE (R1–R8, v0.18.0–v0.18.7) | [Workstream plan](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) |
 | WS-S Pre-Benchmark Strengthening — PORTFOLIO COMPLETE (S1–S7, v0.19.0–v0.19.6) | [Workstream plan](../dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md) |
+| WS-T Deep-Dive Audit Remediation — PORTFOLIO COMPLETE (T1–T8, v0.20.0–v0.20.7, 94 sub-tasks) | [Workstream plan](../audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md), [Closure report](../dev_history/audits/WS_T_CLOSURE_REPORT.md) |
 
 ## Proof claim qualification
 

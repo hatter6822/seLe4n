@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,756 theorem/lemma declarations),
+2. machine-checked invariant preservation (1,846 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.20.6` (`lakefile.toml`) |
+| **Package version** | `0.20.7` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 61,511 across 101 Lean files |
-| **Test LoC** | 7,820 across 10 Lean test suites |
-| **Proved declarations** | 1,845 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 61,538 across 101 Lean files |
+| **Test LoC** | 8,256 across 10 Lean test suites |
+| **Proved declarations** | 1,846 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| **Active workstream** | **WS-T IN PROGRESS** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). T1–T7 complete; T8 in progress. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md). Prior portfolios: WS-S (v0.19.0–v0.19.6), WS-R (v0.18.0–v0.18.7), WS-Q–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-T PORTFOLIO COMPLETE** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). All 8 phases complete. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md). Prior portfolios: WS-S (v0.19.0–v0.19.6), WS-R (v0.18.0–v0.18.7), WS-Q–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -487,6 +487,57 @@ hardware TLB consistency:
   against direct use in production paths.
 - **API dispatch**: `dispatchWithCap` routes VSpace syscalls through the
   `WithFlush` variants exclusively.
+
+### 8.8 Frozen IPC Queue Semantics (WS-T Phase T1)
+
+Frozen kernel operations now support blocking IPC paths with proper queue
+management:
+
+- **`frozenQueuePushTail`**: Appends a thread to a frozen endpoint queue with
+  dual-queue invariant precondition checks (head/tail link integrity).
+  Integrated into `frozenEndpointSend`, `frozenEndpointReceive`, and
+  `frozenEndpointCall`.
+- **7 preservation theorems** prove that enqueue operations maintain all frozen
+  state invariants via `frozenQueuePushTail_only_modifies_objects`.
+- **Commutativity**: `FrozenMap` set/get? roundtrip proofs ensure lookup
+  consistency after frozen state mutations.
+
+### 8.9 Object Well-Formedness Validation (WS-T Phase T5)
+
+Every kernel object has a decidable well-formedness predicate:
+
+- **`KernelObject.wellFormed`**: Validates structural constraints (CNode guard
+  bounds, VSpace permission compliance, TCB register consistency, endpoint queue
+  integrity).
+- **`lifecycleRetypeWithCleanup`**: Enforces well-formedness at object creation
+  via the decidable validator.
+- **Intrusive queue cleanup**: `spliceOutMidQueueNode` patches predecessor and
+  successor links when removing mid-queue nodes, maintaining doubly-linked list
+  integrity.
+
+### 8.10 Checked Dispatch and MMIO Adapter (WS-T Phase T6)
+
+- **Checked dispatch**: `dispatchWithCapChecked`, `dispatchSyscallChecked`, and
+  `syscallEntryChecked` gate all 7 policy-relevant operations through
+  `securityFlowsTo` wrappers at runtime (endpointSend/Receive/Call,
+  cspaceMint/Copy/Move, registerService). `checkedDispatch_flowDenied_preserves_state`
+  proves state preservation on flow denial.
+- **MMIO adapter**: `mmioRead`/`mmioWrite` in `Platform/RPi5/MmioAdapter.lean`
+  validate device-region membership. `MemoryBarrier` inductive (DMB, DSB, ISB)
+  models ARM64 memory ordering. `mmioAccessAllowed` runtime contract predicate
+  gates access.
+- **TLB flush operations**: `tlbFlushByASID`, `tlbFlushByPage`, `tlbFlushAll`
+  with state frame proofs for targeted invalidation.
+
+### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
+
+All test states use `BootstrapBuilder.buildChecked` instead of `build`:
+
+- **Runtime structural validation**: No duplicate ObjIds, lifecycle type-tag
+  matching, runnable threads reference existing TCBs, CNode capacity bounds,
+  current thread in runnable list.
+- **31 post-mutation invariant checks** in the trace harness covering all
+  major transition families (IPC, VSpace, lifecycle, scheduler, capability).
 
 ---
 

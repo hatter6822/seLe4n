@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.20.6` |
+| Version | `0.20.7` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 61,511 across 101 Lean files |
-| Test LoC | 7,820 across 10 suites |
-| Proved declarations | 1,845 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 61,538 across 101 Lean files |
+| Test LoC | 8,256 across 10 suites |
+| Proved declarations | 1,846 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-T IN PROGRESS** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). T1–T7 complete. Prior: **WS-S COMPLETE** (v0.19.0–v0.19.6), **WS-R COMPLETE** (v0.18.0–v0.18.7), WS-Q through WS-B — all COMPLETE. |
+| Active workstream | **WS-T PORTFOLIO COMPLETE** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). All 8 phases complete. Prior: **WS-S COMPLETE** (v0.19.0–v0.19.6), **WS-R COMPLETE** (v0.18.0–v0.18.7), WS-Q through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -76,7 +76,23 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
 **WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
 
-## Active: WS-Q Kernel State Architecture (v0.17.7+)
+## Completed: WS-T Deep-Dive Audit Remediation (v0.20.0–v0.20.7, PORTFOLIO COMPLETE)
+
+Addressed all 72 findings (4 HIGH, 52 MEDIUM, 16 selected LOW) from dual v0.19.6
+deep-dive audits. 8 phases (T1–T8), 94 sub-tasks. Key outcomes:
+
+- **T1 (v0.20.0)**: Frozen IPC queue enqueue semantics, Rust KernelError ABI alignment.
+- **T2 (v0.20.1)**: CDT access control (private constructor), AccessRightSet validity, frozen TLB, storeObject bundled preservation.
+- **T3 (v0.20.2)**: Rust ABI hardening — `MessageInfo::encode()` Result, typed PagePerms, strict bool decode.
+- **T4 (v0.20.3)**: IPC & capability proof closure — ipcStateQueueConsistent, dualQueueSystemInvariant, ipcInvariantFull preservation.
+- **T5 (v0.20.4)**: Lifecycle safety, KernelObject.wellFormed, intrusive queue mid-node fix, stale reference detection.
+- **T6 (v0.20.5)**: MMIO adapter, checked dispatch, VSpace least-privilege defaults, TLB flush ops, DTB parsing.
+- **T7 (v0.20.6)**: buildChecked migration, 31 invariant checks, frozen IPC queue tests, pre-commit hardening, CI Rust job.
+- **T8 (v0.20.7)**: Documentation synchronization, test validation, closure report.
+
+Closure report: [`WS_T_CLOSURE_REPORT.md`](../dev_history/audits/WS_T_CLOSURE_REPORT.md).
+
+## Completed: WS-Q Kernel State Architecture (v0.17.7–v0.17.14, PORTFOLIO COMPLETE)
 
 Multi-phase plan unifying two-phase state architecture, service interface
 simplification (WS-P absorbed), and Rust syscall wrappers (WS-O absorbed).

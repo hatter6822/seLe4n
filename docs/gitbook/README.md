@@ -5,10 +5,10 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.20.3 (Lean v4.28.0).
-- **Codebase metrics:** 60,116 production LoC across 100 files; 7,561 test LoC across 10 suites; 1,812 theorem/lemma declarations (zero sorry/axiom).
+- **Version:** 0.20.7 (Lean v4.28.0).
+- **Codebase metrics:** 61,538 production LoC across 101 files; 8,256 test LoC across 10 suites; 1,846 theorem/lemma declarations (zero sorry/axiom).
 - **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical).
-- **Active workstream:** WS-T Deep-Dive Audit Remediation — Phases T1–T4 COMPLETE, T5–T8 IN PROGRESS (8 phases, 94 sub-tasks, v0.20.0–v0.20.7). All prior portfolios (WS-B through WS-S) completed.
+- **Active workstream:** **WS-T PORTFOLIO COMPLETE** — Deep-Dive Audit Remediation (8 phases, 94 sub-tasks, v0.20.0–v0.20.7). All prior portfolios (WS-B through WS-S) completed.
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.

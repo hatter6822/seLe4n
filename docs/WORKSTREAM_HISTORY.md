@@ -17,17 +17,16 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-S) are complete. WS-T Phases T1–T7 complete (Benchmarking Blockers,
-Model & CDT Integrity, Rust ABI Hardening, IPC & Capability Proof Closure,
-Lifecycle/Service/Cross-Subsystem, Architecture & Hardware Preparation,
-Test Coverage & Build Infrastructure); phase T8 continues with documentation closure.
+through WS-T) are complete. WS-T addressed 72 findings (4 HIGH, 52 MEDIUM, 16
+LOW) from dual v0.19.6 audits across 8 phases (T1–T8), 94 sub-tasks, v0.20.0–v0.20.7.
 
-### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T7 COMPLETE, T8 IN PROGRESS
+### WS-T workstream (Deep-Dive Audit Remediation) — PORTFOLIO COMPLETE
 
 WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
 MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
-v0.20.0–v0.20.7. T1–T7 complete (90 sub-tasks). See
+v0.20.0–v0.20.7. All 94 sub-tasks complete. See
 [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
+Closure report: [`WS_T_CLOSURE_REPORT.md`](dev_history/audits/WS_T_CLOSURE_REPORT.md).
 
 - **T1 (v0.20.0) — COMPLETE**: Benchmarking Blockers. Fixed frozen IPC queue
   enqueue semantics (M-FRZ-1/2/3) — implemented `frozenQueuePushTail` with
@@ -126,6 +125,19 @@ v0.20.0–v0.20.7. T1–T7 complete (90 sub-tasks). See
   PID-based temp files (T7-G). Added SHA-256 verification for Lean toolchain
   downloads with architecture-aware hash selection (T7-H). Added Rust ABI test
   job to CI pipeline (T7-I). Zero sorry, zero axiom. All 12 sub-tasks complete.
+
+- **T8 (v0.20.7) — COMPLETE**: Documentation & Closure. Synchronized all
+  documentation surfaces: README.md metrics (v0.20.7, 61,538 LoC, 1,846
+  theorems), SELE4N_SPEC.md (frozen IPC queue semantics §8.8, object
+  well-formedness §8.9, checked dispatch/MMIO §8.10, buildChecked §8.11),
+  DEVELOPMENT.md (WS-T portfolio complete), CLAIM_EVIDENCE_INDEX.md (WS-T
+  T2–T7 claims), WORKSTREAM_HISTORY.md (T8 completion, closure report link),
+  CHANGELOG.md (v0.20.7 release notes), GitBook chapters (version metrics,
+  proof map, spec roadmap, project overview, usage value). Regenerated
+  codebase_map.json (101 files, 1,846 theorems). Verified: zero sorry/axiom
+  in production, 20 native_decide usages (all justified), website link manifest
+  (93 paths present), all test tiers pass. Produced WS-T closure report. All
+  14 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

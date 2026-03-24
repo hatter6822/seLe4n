@@ -1,3 +1,43 @@
+## [0.20.7] — WS-T Phase T8: Documentation & Closure (WS-T PORTFOLIO COMPLETE)
+
+- T8-A: Synchronized `README.md` metrics from `docs/codebase_map.json` —
+  version badge updated to 0.20.7, production LoC 61,538, 1,846 proved
+  declarations.
+- T8-B: Updated `docs/spec/SELE4N_SPEC.md` with all spec changes from T1–T7:
+  frozen IPC queue semantics (§8.8), object well-formedness validation (§8.9),
+  checked dispatch and MMIO adapter (§8.10), buildChecked runtime validation
+  (§8.11). Metrics updated to current values.
+- T8-C: Updated `docs/DEVELOPMENT.md` — WS-T marked PORTFOLIO COMPLETE.
+- T8-D: Updated `docs/CLAIM_EVIDENCE_INDEX.md` with WS-T Phase T2–T8 claims:
+  CDT access control, Rust ABI hardening, IPC proof closure, lifecycle safety,
+  MMIO adapter, checked dispatch, test infrastructure, documentation closure.
+- T8-E: Updated `docs/WORKSTREAM_HISTORY.md` with T8 completion summary and
+  closure report link. WS-T marked PORTFOLIO COMPLETE (94 sub-tasks, 8 phases).
+- T8-F: Verified `docs/codebase_map.json` — up to date (101 files, 1,846
+  theorems, source digest current).
+- T8-G: Updated 8 GitBook chapters to current metrics:
+  - `README.md` — version 0.20.7, 61,538 LoC, 1,846 theorems.
+  - `01-project-overview.md` — current LoC and theorem counts.
+  - `05-specification-and-roadmap.md` — WS-T COMPLETE section, updated table.
+  - `07-testing-and-ci.md` — updated stage context metrics.
+  - `12-proof-and-invariant-map.md` — T4–T7 proof additions.
+  - `17-project-usage-value.md` — current LoC and theorem counts.
+  - `31-claim-vs-evidence-index.md` — WS-T portfolio claim.
+- T8-H: Verified `scripts/website_link_manifest.txt` — all 93 protected paths
+  present. `check_website_links.sh` passes.
+- T8-I/J/K: All test tiers validated (build, smoke, trace, invariant surface).
+- T8-L: Zero `sorry`, zero `axiom` in production Lean. 20 `native_decide`
+  usages documented (finite enumeration, default state properties, platform
+  configuration validation).
+- T8-M: This changelog entry.
+- T8-N: Produced WS-T closure report
+  (`docs/dev_history/audits/WS_T_CLOSURE_REPORT.md`).
+
+**WS-T Portfolio Summary**: 8 phases (T1–T8), 94 sub-tasks, v0.20.0–v0.20.7.
+Addressed 72 findings from dual v0.19.6 deep-dive audits (4 HIGH, 52 MEDIUM,
+16 selected LOW). All findings resolved. Zero sorry, zero axiom. Next
+milestone: WS-U Raspberry Pi 5 hardware binding.
+
 ## [0.20.6] — WS-T Phase T7: Test Coverage & Build Infrastructure
 
 - T7-A (S2-F): Migrated all `BootstrapBuilder.build` calls to `buildChecked` in

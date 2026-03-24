@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-test-coverage-build-1n6QP",
-      "commit_sha": "8952cdb0ff5b501e3f64d68e479adbfbef0fba88",
-      "tree_sha": "31f1fae90d3518a95da55835804ed42592372f52",
-      "committed_at_utc": "2026-03-24T19:40:59+00:00"
+      "branch": "claude/optimize-phase-t8-docs-aRnAf",
+      "commit_sha": "527e630ffeb7e6a86b0921d98964a350bb53f093",
+      "tree_sha": "018fd71aa12962877f7041355a77404480f13ac0",
+      "committed_at_utc": "2026-03-24T15:50:22-04:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 3401
   },
   "readme_sync": {
-    "version": "0.20.6",
+    "version": "0.20.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
     "production_loc": 61538,

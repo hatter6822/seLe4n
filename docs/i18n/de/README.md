@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.20.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.20.7-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -48,9 +48,9 @@ Mikrokerneln ein:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.20.3` |
+| **Version** | `0.20.7` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 60.116 über 100 Dateien |
+| **Produktions-LoC (Lean)** | 60.116 über 101 Dateien |
 | **Test-LoC (Lean)** | 7.561 über 10 Testsuiten |
 | **Bewiesene Deklarationen** | 1.812 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
