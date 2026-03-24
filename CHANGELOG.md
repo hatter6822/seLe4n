@@ -30,7 +30,17 @@
   formalizing the bidirectional consistency between RunQueue's `threadPriority`
   and `membership` fields. Proved empty-state satisfaction and derivation of
   `runQueueThreadPriorityConsistent` from the new predicate.
-- Zero sorry, zero axiom. 1,822 proved declarations (+10 from v0.20.3).
+- T5-A/B audit fix: Added `@[deprecated]` annotations to `lifecycleRetypeObject` and
+  `lifecycleRetypeDirect`, enforcing compile-time deprecation warnings for callers
+  that bypass `lifecycleRetypeWithCleanup`.
+- T5-E audit fix: Fixed `spliceOutMidQueueNode` to read successor TCB from the
+  already-patched `objs` table instead of the original `st.objects`. This prevents
+  data corruption in circular queue scenarios (prevTid == nextTid).
+- T5-M audit fix: Added `threadPriority_membership_consistent_insert` and
+  `threadPriority_membership_consistent_remove` preservation theorems, fully
+  closing the M-SCH-3 gap. The consistency predicate is now proven preserved
+  across all RunQueue mutation operations.
+- Zero sorry, zero axiom. 1,824 proved declarations (+12 from v0.20.3).
 
 ## [0.20.3] — WS-T Phase T4: IPC & Capability Proof Closure
 

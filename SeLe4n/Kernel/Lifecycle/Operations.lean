@@ -49,21 +49,23 @@ private def spliceOutMidQueueNode (st : SystemState) (tid : SeLe4n.ThreadId) : S
   match lookupTcb st tid with
   | none => st
   | some tcb =>
-    -- Compute the new objects table with predecessor/successor patches
+    -- Compute the new objects table with predecessor/successor patches.
+    -- Each patch reads from the current `objs` (not original `st.objects`)
+    -- so that the successor sees the predecessor's patch when prevTid == nextTid.
     let objs := st.objects
     -- Patch predecessor's queueNext to skip over tid
     let objs := match tcb.queuePrev with
       | none => objs
       | some prevTid =>
-        match st.objects[prevTid.toObjId]? with
+        match objs[prevTid.toObjId]? with
         | some (.tcb prevTcb) =>
           objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
         | _ => objs
-    -- Patch successor's queuePrev to skip over tid
+    -- Patch successor's queuePrev to skip over tid (reads patched objs)
     let objs := match tcb.queueNext with
       | none => objs
       | some nextTid =>
-        match st.objects[nextTid.toObjId]? with
+        match objs[nextTid.toObjId]? with
         | some (.tcb nextTcb) =>
           objs.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
         | _ => objs
@@ -439,6 +441,7 @@ Deterministic branch contract for M4-A step 2:
 3. authority slot lookup must succeed,
 4. authority must satisfy `lifecycleRetypeAuthority` (`illegalAuthority` otherwise),
 5. object store + lifecycle object-type metadata are updated atomically on success. -/
+@[deprecated "Use lifecycleRetypeWithCleanup instead" (since := "v0.20.4")]
 def lifecycleRetypeObject
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
@@ -1333,6 +1336,7 @@ Deterministic branch contract:
 3. Authority cap must satisfy `lifecycleRetypeAuthority` — targets the
    object with `.write` right (`illegalAuthority` otherwise).
 4. Object store is updated atomically on success via `storeObject`. -/
+@[deprecated "Use lifecycleRetypeWithCleanup instead" (since := "v0.20.4")]
 def lifecycleRetypeDirect
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=

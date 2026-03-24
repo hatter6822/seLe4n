@@ -81,7 +81,11 @@ v0.20.0–v0.20.7. See
   `registryEndpointValid` preservation proof (L-NEW-2). Defined
   `noStaleNotificationWaitReferences` predicate and added to
   `crossSubsystemInvariant` 4-tuple (L-NEW-3). Proved
-  `threadPriority_membership_consistent` closing scheduler M-SCH-3 gap.
+  `threadPriority_membership_consistent` closing scheduler M-SCH-3 gap with
+  insert/remove preservation proofs. Added `@[deprecated]` annotations to
+  `lifecycleRetypeObject`/`lifecycleRetypeDirect` for compile-time enforcement.
+  Fixed `spliceOutMidQueueNode` circular-queue correctness bug (successor
+  lookup now reads patched objects table).
   Documentation: `lookupServiceByCap` first-match semantics (M-LCS-2),
   `Notification.waitingThreads` LIFO semantics (M-MOD-6). Zero sorry, zero
   axiom. All 13 sub-tasks complete.
