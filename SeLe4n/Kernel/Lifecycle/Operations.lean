@@ -441,7 +441,6 @@ Deterministic branch contract for M4-A step 2:
 3. authority slot lookup must succeed,
 4. authority must satisfy `lifecycleRetypeAuthority` (`illegalAuthority` otherwise),
 5. object store + lifecycle object-type metadata are updated atomically on success. -/
-@[deprecated "Use lifecycleRetypeWithCleanup instead" (since := "v0.20.4")]
 def lifecycleRetypeObject
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)
@@ -1336,7 +1335,6 @@ Deterministic branch contract:
 3. Authority cap must satisfy `lifecycleRetypeAuthority` — targets the
    object with `.write` right (`illegalAuthority` otherwise).
 4. Object store is updated atomically on success via `storeObject`. -/
-@[deprecated "Use lifecycleRetypeWithCleanup instead" (since := "v0.20.4")]
 def lifecycleRetypeDirect
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=

@@ -556,9 +556,9 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) :
   unfold decodeVSpaceMapArgs encodeVSpaceMapArgs stubDecoded
   rcases perms with ⟨r, w, e, u, c⟩
   cases r <;> cases w <;> cases e <;> cases u <;> cases c <;>
-    simp [decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded, bind, Except.bind,
-      requireMsgReg, PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
-      ASID.ofNat_toNat, VAddr.ofNat_toNat, PAddr.ofNat_toNat, pure, Except.pure]
+    simp [bind, Except.bind, requireMsgReg, PagePermissions.toNat,
+      PagePermissions.ofNat?, PagePermissions.ofNat, ASID.ofNat_toNat, VAddr.ofNat_toNat,
+      PAddr.ofNat_toNat, pure, Except.pure]
 
 /-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original. -/
 theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) :
