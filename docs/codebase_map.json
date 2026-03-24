@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-t4-ipc-SN33U",
-      "commit_sha": "6f831aa8d7df382c70c3a6442c1c63dd3678bbca",
-      "tree_sha": "6b316499dfa20e7f0da9364de0bc5ebc7a2bc48a",
-      "committed_at_utc": "2026-03-24T03:13:36+00:00"
+      "commit_sha": "ccdcff22c23acca76f19a2d56d798d9e0441e0d6",
+      "tree_sha": "38074e13ba29a5248a19be94e3a12c8f9848c9b0",
+      "committed_at_utc": "2026-03-24T03:35:34+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "de89256c2b2c2eeb04071b3ca420ebba481a94eacedd1ee50883710bd905668d"
+    "source_digest": "9f662bb0db810fa80fe3cc3b672cce64dd45d5f9509fe1adcf460a204a4b47d0"
   },
   "summary": {
     "module_count": 111,
-    "declaration_count": 3307
+    "declaration_count": 3311
   },
   "readme_sync": {
     "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 60106,
+    "production_loc": 60179,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1809,
+    "proved_theorem_lemma_decls": 1813,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -6087,7 +6087,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 99,
+      "declaration_count": 103,
       "declarations": [
         {
           "kind": "namespace",
@@ -6696,8 +6696,32 @@
         },
         {
           "kind": "theorem",
+          "name": "ipcInvariantFull_compositional",
+          "line": 3042,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualWithCaps_preserves_ipcInvariantFull",
+          "line": 3058,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDualWithCaps_preserves_ipcInvariantFull",
+          "line": 3077,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallWithCaps_preserves_ipcInvariantFull",
+          "line": 3095,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_tcbQueueLinkIntegrity",
-          "line": 3045,
+          "line": 3118,
           "called": [
             "endpointQueuePopHead_preserves_dualQueueSystemInvariant"
           ]
@@ -6705,7 +6729,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity",
-          "line": 3057,
+          "line": 3130,
           "called": [
             "endpointQueueEnqueue_preserves_dualQueueSystemInvariant"
           ]
@@ -6713,49 +6737,49 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
-          "line": 3087,
+          "line": 3160,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
-          "line": 3116,
+          "line": 3189,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_ipcStateQueueConsistent",
-          "line": 3146,
+          "line": 3219,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_ipcStateQueueConsistent",
-          "line": 3156,
+          "line": 3229,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
-          "line": 3170,
+          "line": 3243,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_ipcStateQueueConsistent",
-          "line": 3216,
+          "line": 3289,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "storeTcbPendingMessage_preserves_ipcStateQueueConsistent",
-          "line": 3260,
+          "line": 3333,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointSendDual_preserves_ipcStateQueueConsistent",
-          "line": 3292,
+          "line": 3365,
           "called": [
             "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
             "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
@@ -6767,7 +6791,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDual_preserves_ipcStateQueueConsistent",
-          "line": 3353,
+          "line": 3426,
           "called": [
             "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
             "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
@@ -6781,7 +6805,7 @@
         {
           "kind": "theorem",
           "name": "endpointReply_preserves_ipcStateQueueConsistent",
-          "line": 3437,
+          "line": 3510,
           "called": [
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
@@ -6790,13 +6814,13 @@
         {
           "kind": "theorem",
           "name": "storeObject_notification_preserves_ipcStateQueueConsistent",
-          "line": 3490,
+          "line": 3563,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "notificationSignal_preserves_ipcStateQueueConsistent",
-          "line": 3524,
+          "line": 3597,
           "called": [
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "storeObject_notification_preserves_ipcStateQueueConsistent",
@@ -6806,7 +6830,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_ipcStateQueueConsistent",
-          "line": 3566,
+          "line": 3639,
           "called": [
             "removeRunnable_preserves_ipcStateQueueConsistent",
             "storeObject_notification_preserves_ipcStateQueueConsistent",
@@ -6816,7 +6840,7 @@
         {
           "kind": "theorem",
           "name": "endpointCall_preserves_ipcStateQueueConsistent",
-          "line": 3640,
+          "line": 3713,
           "called": [
             "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
             "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
@@ -6829,7 +6853,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyRecv_preserves_ipcStateQueueConsistent",
-          "line": 3706,
+          "line": 3779,
           "called": [
             "endpointReceiveDual_preserves_ipcStateQueueConsistent",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
@@ -6839,13 +6863,13 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
-          "line": 3774,
+          "line": 3847,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCaps_preserves_dualQueueSystemInvariant",
-          "line": 3866,
+          "line": 3939,
           "called": [
             "endpointSendDual_preserves_dualQueueSystemInvariant",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
@@ -6854,7 +6878,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant",
-          "line": 3931,
+          "line": 4004,
           "called": [
             "endpointReceiveDual_preserves_dualQueueSystemInvariant",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
@@ -6863,7 +6887,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_preserves_dualQueueSystemInvariant",
-          "line": 4000,
+          "line": 4073,
           "called": [
             "intrusiveQueueWellFormed_empty",
             "storeObject_endpoint_preserves_intrusiveQueueWellFormed",

@@ -3036,6 +3036,79 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv hStep,
    hDualQueue', hBounded', hBadge'⟩
 
+/-- T4-K (L-P10): Convenience theorem for composing `ipcInvariantFull` from its
+four individual components. Reduces boilerplate for callers that must manually
+compose the invariant by providing all four proofs in one call. -/
+theorem ipcInvariantFull_compositional
+    (st : SystemState)
+    (hIpc : ipcInvariant st)
+    (hDual : dualQueueSystemInvariant st)
+    (hBounded : allPendingMessagesBounded st)
+    (hBadge : badgeWellFormed st) :
+    ipcInvariantFull st :=
+  ⟨hIpc, hDual, hBounded, hBadge⟩
+
+-- ============================================================================
+-- T4-E/F (M-IPC-3): WithCaps wrappers preserve ipcInvariantFull
+-- ============================================================================
+
+/-- T4-E (M-IPC-3): endpointSendDualWithCaps preserves the full IPC invariant.
+Composes the proven ipcInvariant preservation with caller-supplied proofs for
+the remaining three sub-invariants. -/
+theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
+    (hBadge' : badgeWellFormed st')
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
+     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
+   hDualQueue', hBounded', hBadge'⟩
+
+/-- T4-F (M-IPC-3): endpointReceiveDualWithCaps preserves the full IPC invariant.
+Same composition pattern as T4-E for the receive path. -/
+theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
+    (hBadge' : badgeWellFormed st')
+    (hStep : endpointReceiveDualWithCaps endpointId receiver endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver endpointRights
+     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
+   hDualQueue', hBounded', hBadge'⟩
+
+/-- T4-E (M-IPC-3): endpointCallWithCaps preserves the full IPC invariant. -/
+theorem endpointCallWithCaps_preserves_ipcInvariantFull
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hBounded' : allPendingMessagesBounded st')
+    (hBadge' : badgeWellFormed st')
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
+     endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
+   hDualQueue', hBounded', hBadge'⟩
+
 -- ============================================================================
 -- WS-L3/L3-B: Standalone tcbQueueLinkIntegrity preservation
 -- ============================================================================
