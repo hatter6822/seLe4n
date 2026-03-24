@@ -262,6 +262,74 @@ private def fo015_notificationWait : IO Unit := do
       expect "FO-015a badge consumed" (badge == some (Badge.ofNatMasked 42))
   | .error _ => throw <| IO.userError "FO-015 wait should succeed"
 
+-- ============================================================================
+-- T7-D/F: Frozen IPC Queue Enqueue Tests (M-FRZ-1/2/3 validation, L-P01)
+-- ============================================================================
+
+/-- FO-016: frozenEndpointSend — no receiver, sender is enqueued in sendQ (M-FRZ-1) -/
+private def fo016_sendEnqueuesSender : IO Unit := do
+  let senderTcb := mkTcb 3
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fst := mkFrozenState [(⟨3⟩, .tcb senderTcb), (⟨10⟩, .endpoint ep)]
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ msg fst with
+  | .ok ((), fst') =>
+      -- Verify sender TCB is now blockedOnSend
+      match frozenLookupTcb fst' ⟨3⟩ with
+      | some tcb =>
+          expect "FO-016a sender blockedOnSend" (tcb.ipcState == .blockedOnSend ⟨10⟩)
+          expect "FO-016b sender has pending message" (tcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "FO-016a sender TCB missing"
+      -- Verify endpoint sendQ has the sender enqueued
+      match fst'.objects.get? ⟨10⟩ with
+      | some (.endpoint ep') =>
+          expect "FO-016c sendQ head is sender" (ep'.sendQ.head == some ⟨3⟩)
+          expect "FO-016d sendQ tail is sender" (ep'.sendQ.tail == some ⟨3⟩)
+      | _ => throw <| IO.userError "FO-016c endpoint missing"
+  | .error e => throw <| IO.userError s!"FO-016 send should succeed, got: {reprStr e}"
+
+/-- FO-017: frozenEndpointReceive — no sender, receiver is enqueued in receiveQ (M-FRZ-2) -/
+private def fo017_receiveEnqueuesReceiver : IO Unit := do
+  let recvTcb := mkTcb 4
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fst := mkFrozenState [(⟨4⟩, .tcb recvTcb), (⟨10⟩, .endpoint ep)]
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fst with
+  | .ok (_, fst') =>
+      -- Verify receiver TCB is now blockedOnReceive
+      match frozenLookupTcb fst' ⟨4⟩ with
+      | some tcb =>
+          expect "FO-017a receiver blockedOnReceive" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
+      | none => throw <| IO.userError "FO-017a receiver TCB missing"
+      -- Verify endpoint receiveQ has the receiver enqueued
+      match fst'.objects.get? ⟨10⟩ with
+      | some (.endpoint ep') =>
+          expect "FO-017b receiveQ head is receiver" (ep'.receiveQ.head == some ⟨4⟩)
+          expect "FO-017c receiveQ tail is receiver" (ep'.receiveQ.tail == some ⟨4⟩)
+      | _ => throw <| IO.userError "FO-017b endpoint missing"
+  | .error e => throw <| IO.userError s!"FO-017 receive should succeed, got: {reprStr e}"
+
+/-- FO-018: frozenEndpointCall — no receiver, caller enqueued in sendQ with blockedOnCall (M-FRZ-3) -/
+private def fo018_callEnqueuesCaller : IO Unit := do
+  let callerTcb := mkTcb 5
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fst := mkFrozenState [(⟨5⟩, .tcb callerTcb), (⟨10⟩, .endpoint ep)]
+  let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointCall ⟨10⟩ ⟨5⟩ msg fst with
+  | .ok ((), fst') =>
+      -- Verify caller TCB is now blockedOnCall
+      match frozenLookupTcb fst' ⟨5⟩ with
+      | some tcb =>
+          expect "FO-018a caller blockedOnCall" (tcb.ipcState == .blockedOnCall ⟨10⟩)
+          expect "FO-018b caller has pending message" (tcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "FO-018a caller TCB missing"
+      -- Verify endpoint sendQ has the caller enqueued
+      match fst'.objects.get? ⟨10⟩ with
+      | some (.endpoint ep') =>
+          expect "FO-018c sendQ head is caller" (ep'.sendQ.head == some ⟨5⟩)
+          expect "FO-018d sendQ tail is caller" (ep'.sendQ.tail == some ⟨5⟩)
+      | _ => throw <| IO.userError "FO-018c endpoint missing"
+  | .error e => throw <| IO.userError s!"FO-018 call should succeed, got: {reprStr e}"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -290,4 +358,8 @@ def main : IO Unit := do
   IO.println "--- TPH-014: Notification Signal/Wait ---"
   fo014_notificationSignal
   fo015_notificationWait
-  IO.println "=== All Q7 frozen ops tests passed (15 scenarios) ==="
+  IO.println "--- T7-D/F: Frozen IPC Queue Enqueue (M-FRZ-1/2/3) ---"
+  fo016_sendEnqueuesSender
+  fo017_receiveEnqueuesReceiver
+  fo018_callEnqueuesCaller
+  IO.println "=== All Q7 frozen ops tests passed (18 scenarios) ==="

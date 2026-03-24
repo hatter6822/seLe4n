@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.20.5-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.20.6-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -70,11 +70,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.20.5` |
+| **Version** | `0.20.6` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 61,326 across 101 files |
-| **Test Lean LoC** | 7,561 across 10 test suites |
-| **Proved declarations** | 1,842 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 61,511 across 101 files |
+| **Test Lean LoC** | 7,820 across 10 test suites |
+| **Proved declarations** | 1,845 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](docs/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -268,7 +268,7 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **T1–T4 COMPLETE** (v0.20.0–v0.20.3). Phase T4 closes IPC & capability proof chains: `ipcStateQueueConsistent` preservation, `dualQueueSystemInvariant` with acyclicity, WithCaps invariant composition, CDT BFS infrastructure, RadixTree bridge equivalence, run queue maxPriority consistency. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
+- **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **T1–T7 COMPLETE** (v0.20.0–v0.20.6). Phase T7 strengthens test coverage & build infrastructure: `buildChecked` migration, post-mutation invariant checks, frozen IPC queue tests, deep CDT cascade tests, boot sequence tests, pre-commit security hardening, toolchain SHA-256 verification, Rust CI integration. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
 - **WS-S** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks) **COMPLETE** (v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Closure: [`WS_S_CLOSURE_REPORT.md`](docs/dev_history/audits/WS_S_CLOSURE_REPORT.md).
 - **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks) **COMPLETE** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
 - **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (next workstream after WS-T)

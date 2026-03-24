@@ -155,7 +155,7 @@ MEI-003 | IPC | multi-ep endpoint1 queues empty: true
 MEI-004 | IPC | multi-ep ep3 out-of-order recv registers: some [55, 66]
 MEI-005 | IPC | multi-ep ep1 FIFO second recv registers: some [77, 88]
 MEI-006 | IPC | multi-ep all 3 endpoints drained: true
-ITR-001 | Testing | inter-transition invariant checks: 24 passed
+ITR-001 | Testing | inter-transition invariant checks: 31 passed
 PTY-001 | Testing | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 PTY-001 | Testing | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 PTY-001 | Testing | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
