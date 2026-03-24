@@ -49,7 +49,7 @@ about page table updates independently from TLB effects.
 Direct use of this function in production dispatch paths will cause stale TLB
 entries on ARM64 (use-after-unmap vulnerability). -/
 def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
-    (perms : PagePermissions := default) : Kernel Unit :=
+    (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
     match resolveAsidRoot st asid with
     | none => .error .asidNotBound
@@ -66,7 +66,7 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
 **Internal proof decomposition helper.** Use `vspaceMapPageCheckedWithFlush`
 for production paths. See `vspaceMapPage` for rationale. -/
 def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
-    (perms : PagePermissions := default) : Kernel Unit :=
+    (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
     if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
     else vspaceMapPage asid vaddr paddr perms st
@@ -121,7 +121,7 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
     The core `vspaceMapPage` is retained as an internal proof decomposition
     helper — it operates on page tables only and does not touch the TLB. -/
 def vspaceMapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
-    (perms : PagePermissions := default) : Kernel Unit :=
+    (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
     match vspaceMapPage asid vaddr paddr perms st with
     | .error e => .error e
@@ -145,10 +145,62 @@ def vspaceUnmapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kerne
 /-- R7-A.3/M-17/S6-A: **Production entry point** — address-bounds-checked map with TLB flush.
 This is the recommended entry point for user-space-initiated VSpace map operations. -/
 def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
-    (paddr : SeLe4n.PAddr) (perms : PagePermissions := default) : Kernel Unit :=
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
     if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
     else vspaceMapPageWithFlush asid vaddr paddr perms st
+
+-- ============================================================================
+-- T6-L/M-ARCH-4: Targeted TLB flush operations
+-- ============================================================================
+
+/-- T6-L/M-ARCH-4: Per-ASID TLB flush — invalidates all TLB entries for a
+    specific ASID. On ARM64 this corresponds to `TLBI ASIDE1, <asid>`.
+    More efficient than full flush when only one address space is modified.
+    Delegates to `Model.adapterFlushTlbByAsid`. -/
+def tlbFlushByASID (asid : SeLe4n.ASID) : Kernel Unit :=
+  fun st => .ok ((), { st with tlb := adapterFlushTlbByAsid st.tlb asid })
+
+/-- T6-L/M-ARCH-4: Per-page TLB flush — invalidates all TLB entries for a
+    specific (ASID, VAddr) pair. On ARM64 this corresponds to
+    `TLBI VAE1, <asid, vaddr>`. Most efficient targeted flush.
+    Delegates to `Model.adapterFlushTlbByVAddr`. -/
+def tlbFlushByPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
+  fun st => .ok ((), { st with tlb := adapterFlushTlbByVAddr st.tlb asid vaddr })
+
+/-- T6-L/M-ARCH-4: Combined ASID+page flush — a convenience alias for the
+    most common targeted flush pattern (invalidate one page in one address space).
+    Equivalent to `tlbFlushByPage`. -/
+abbrev tlbFlushByASIDPage := tlbFlushByPage
+
+/-- T6-L: Full TLB flush as a kernel operation. Conservative fallback when
+    the ASID or VAddr of the affected mapping is unknown.
+    Marked as the fallback — callers should prefer targeted flushes when the
+    ASID and VAddr are available. -/
+def tlbFlushAll : Kernel Unit :=
+  fun st => .ok ((), { st with tlb := adapterFlushTlb st.tlb })
+
+/-- T6-L: Full flush removes all entries. -/
+theorem tlbFlushAll_empty (st : SystemState) :
+    (adapterFlushTlb st.tlb).entries = [] := by
+  simp [adapterFlushTlb, TlbState.empty]
+
+/-- T6-L: Per-ASID flush does not affect the non-TLB state. -/
+theorem tlbFlushByASID_state_frame (asid : SeLe4n.ASID) (st st' : SystemState)
+    (hStep : tlbFlushByASID asid st = .ok ((), st')) :
+    st'.objects = st.objects ∧ st'.scheduler = st.scheduler ∧
+    st'.machine = st.machine := by
+  unfold tlbFlushByASID at hStep
+  cases hStep; exact ⟨rfl, rfl, rfl⟩
+
+/-- T6-L: Per-page flush does not affect the non-TLB state. -/
+theorem tlbFlushByPage_state_frame (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hStep : tlbFlushByPage asid vaddr st = .ok ((), st')) :
+    st'.objects = st.objects ∧ st'.scheduler = st.scheduler ∧
+    st'.machine = st.machine := by
+  unfold tlbFlushByPage at hStep
+  cases hStep; exact ⟨rfl, rfl, rfl⟩
 
 -- ============================================================================
 -- resolveAsidRoot extraction and characterization lemmas (F-08 / TPI-001)

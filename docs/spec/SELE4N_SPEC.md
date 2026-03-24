@@ -316,6 +316,44 @@ The critical prerequisite for full H3 execution is closing the remaining WS-F
 proof gaps. Untyped memory (WS-F2) and information-flow completeness (WS-F3)
 are now complete.
 
+### 6.3 Cache Coherency & Memory Ordering Assumptions (T6-G/M-NEW-8)
+
+The seLe4n model makes the following cache coherency and memory ordering
+assumptions for the initial single-core RPi5 target:
+
+1. **Single-core assumption**: The RPi5 target uses one Cortex-A76 core.
+   Single-core execution eliminates most cache coherency concerns — all loads
+   and stores from the same core observe a consistent memory view without
+   explicit cache maintenance.
+
+2. **MMIO requires barriers**: Device register accesses (MMIO) are *not*
+   subject to normal memory ordering guarantees. All MMIO operations must use
+   explicit ARM64 memory barriers:
+   - **Reads**: `DMB` (Data Memory Barrier) after read to ensure the value
+     is visible before subsequent dependent accesses.
+   - **Writes**: `DSB` (Data Synchronization Barrier) before write to ensure
+     prior writes complete before the device register update.
+   - **Configuration writes**: `ISB` (Instruction Synchronization Barrier)
+     after writes to system configuration registers (e.g., MMU, GIC) to
+     flush the instruction pipeline.
+
+   The MMIO adapter (`Platform/RPi5/MmioAdapter.lean`) models these barriers
+   as fields on `MmioOp`. The `MemoryBarrier` inductive (DMB, DSB, ISB)
+   captures the three ARM64 barrier types.
+
+3. **DMA coherency is out of scope**: Direct Memory Access (DMA) coherency
+   requires explicit cache clean/invalidate operations and is not modeled.
+   DMA is relevant only for device drivers (USB, SD, network), which are
+   outside the kernel's formal boundary. DMA coherency will be addressed in
+   WS-U if multicore or DMA-capable device drivers are targeted.
+
+4. **TLB coherency**: TLB invalidation after page table modifications is
+   modeled via `adapterFlushTlb` (full flush), `adapterFlushTlbByAsid`
+   (per-ASID flush), and `adapterFlushTlbByVAddr` (per-page flush). The
+   production dispatch path uses `vspaceMapPageCheckedWithFlush` which
+   includes a full flush. Targeted flushes (`tlbFlushByASID`, `tlbFlushByPage`)
+   are defined for future optimization but not yet wired into production paths.
+
 ---
 
 ## 7. Acceptance Expectations

@@ -133,4 +133,99 @@ def DeviceTree.fromBoardConstants
 def DeviceTree.fromDtb (_blob : ByteArray) : Option DeviceTree :=
   none  -- WS-T: DTB parsing not yet implemented
 
+-- ============================================================================
+-- T6-M/M-ARCH-2: DTB parsing foundation
+-- ============================================================================
+
+/-! ## T6-M: Flattened Device Tree (FDT) Header Parsing
+
+The Flattened Device Tree (FDT) format is defined by the Devicetree
+Specification v0.4. An FDT blob begins with an `fdt_header` structure:
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0x00 | 4 | magic (0xD00DFEED) |
+| 0x04 | 4 | totalsize |
+| 0x08 | 4 | off_dt_struct |
+| 0x0C | 4 | off_dt_strings |
+| 0x10 | 4 | off_mem_rsvmap |
+| 0x14 | 4 | version |
+| 0x18 | 4 | last_comp_version |
+| 0x1C | 4 | boot_cpuid_phys |
+| 0x20 | 4 | size_dt_strings |
+| 0x24 | 4 | size_dt_struct |
+
+This module implements header parsing and memory region extraction from the
+`/memory` node. Full node traversal (including `/chosen`, `/cpus`, and
+interrupt controllers) is deferred to WS-U. -/
+
+/-- T6-M: FDT magic number (big-endian). -/
+def fdtMagic : UInt32 := 0xD00DFEED
+
+/-- T6-M: Parsed FDT header fields. -/
+structure FdtHeader where
+  magic : UInt32
+  totalsize : UInt32
+  offDtStruct : UInt32
+  offDtStrings : UInt32
+  offMemRsvmap : UInt32
+  version : UInt32
+  lastCompVersion : UInt32
+  bootCpuidPhys : UInt32
+  sizeDtStrings : UInt32
+  sizeDtStruct : UInt32
+  deriving Repr
+
+/-- T6-M: Read a big-endian UInt32 from a ByteArray at the given offset.
+    Returns `none` if the offset is out of bounds. -/
+def readBE32 (blob : ByteArray) (offset : Nat) : Option UInt32 :=
+  if offset + 4 ≤ blob.size then
+    let b0 := blob.get! offset
+    let b1 := blob.get! (offset + 1)
+    let b2 := blob.get! (offset + 2)
+    let b3 := blob.get! (offset + 3)
+    some ((b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
+          (b2.toUInt32 <<< 8) ||| b3.toUInt32)
+  else none
+
+/-- T6-M: Parse the FDT header from a device tree blob.
+    Returns `none` if the blob is too small or has wrong magic. -/
+def parseFdtHeader (blob : ByteArray) : Option FdtHeader := do
+  if blob.size < 40 then none  -- Header is 40 bytes
+  else
+    let magic ← readBE32 blob 0
+    if magic ≠ fdtMagic then none
+    else
+      let totalsize ← readBE32 blob 4
+      let offDtStruct ← readBE32 blob 8
+      let offDtStrings ← readBE32 blob 12
+      let offMemRsvmap ← readBE32 blob 16
+      let version ← readBE32 blob 20
+      let lastCompVersion ← readBE32 blob 24
+      let bootCpuidPhys ← readBE32 blob 28
+      let sizeDtStrings ← readBE32 blob 32
+      let sizeDtStruct ← readBE32 blob 36
+      some { magic, totalsize, offDtStruct, offDtStrings, offMemRsvmap,
+             version, lastCompVersion, bootCpuidPhys, sizeDtStrings, sizeDtStruct }
+
+/-- T6-M: Validate an FDT header — magic is correct and sizes are consistent. -/
+def FdtHeader.isValid (hdr : FdtHeader) : Bool :=
+  hdr.magic == fdtMagic &&
+  hdr.version.toNat ≥ 16 &&    -- Minimum supported DTB version
+  hdr.totalsize.toNat ≥ 40 &&  -- At least header size
+  hdr.offDtStruct.toNat < hdr.totalsize.toNat &&
+  hdr.offDtStrings.toNat < hdr.totalsize.toNat
+
+/-- T6-M: Parse FDT header and validate. Returns the header only if valid. -/
+def parseAndValidateFdtHeader (blob : ByteArray) : Option FdtHeader := do
+  let hdr ← parseFdtHeader blob
+  if hdr.isValid then some hdr else none
+
+/-- T6-M: Empty blobs have no valid FDT header. -/
+theorem parseFdtHeader_empty :
+    parseFdtHeader ByteArray.empty = none := by
+  unfold parseFdtHeader
+  simp only [ByteArray.size, ByteArray.empty, ByteArray.emptyWithCapacity]
+  decide
+
 end SeLe4n.Platform

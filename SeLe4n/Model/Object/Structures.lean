@@ -33,12 +33,22 @@ instance : Hashable PagePermissions where
   hash p := mixHash (hash p.read) (mixHash (hash p.write) (mixHash (hash p.execute)
             (mixHash (hash p.user) (hash p.cacheable))))
 
+/-- T6-A/M-NEW-6: Explicit read-only permissions — least-privilege default for VSpace map
+operations. Callers must explicitly request write or execute permissions.
+Fields: `read := true`, all others `false` except `cacheable := true`. -/
+def PagePermissions.readOnly : PagePermissions :=
+  { read := true, write := false, execute := false, user := false, cacheable := true }
+
 /-- WS-H11/H-02: W^X policy — a page permission set must not have both write and execute. -/
 def PagePermissions.wxCompliant (p : PagePermissions) : Bool :=
   !(p.write && p.execute)
 
 /-- WS-H11: Default permissions are W^X compliant (read-only, non-executable). -/
 theorem PagePermissions.default_wxCompliant : (default : PagePermissions).wxCompliant = true := by
+  rfl
+
+/-- T6-A: readOnly permissions are W^X compliant. -/
+theorem PagePermissions.readOnly_wxCompliant : PagePermissions.readOnly.wxCompliant = true := by
   rfl
 
 /-- WS-K-D: Decode a raw `Nat` permissions word to `PagePermissions` using
@@ -60,6 +70,22 @@ def PagePermissions.toNat (p : PagePermissions) : Nat :=
   (if p.execute then 4 else 0) |||
   (if p.user then 8 else 0) |||
   (if p.cacheable then 16 else 0)
+
+/-- T6-C/M-ARCH-1: Validating decode — returns `none` for permission values outside the
+5-bit valid range (bits 0–4: read, write, execute, user, cacheable). Values ≥ 32 contain
+undefined permission bits and are rejected at the ABI decode boundary. -/
+def PagePermissions.ofNat? (n : Nat) : Option PagePermissions :=
+  if n < 32 then some (PagePermissions.ofNat n) else none
+
+/-- T6-C: `ofNat?` returns `some` for all valid permission values (0–31). -/
+theorem PagePermissions.ofNat?_valid (n : Nat) (h : n < 32) :
+    PagePermissions.ofNat? n = some (PagePermissions.ofNat n) := by
+  simp [PagePermissions.ofNat?, h]
+
+/-- T6-C: `ofNat?` returns `none` for values outside the valid range. -/
+theorem PagePermissions.ofNat?_invalid (n : Nat) (h : ¬(n < 32)) :
+    PagePermissions.ofNat? n = none := by
+  simp [PagePermissions.ofNat?, h]
 
 /-- WS-K-D: `PagePermissions.ofNat` is pure. -/
 theorem PagePermissions.ofNat_deterministic (n : Nat) :
@@ -103,7 +129,7 @@ def lookupAddr (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr 
 Returns `none` if a mapping for `vaddr` already exists (conflict).
 WS-H11: Accepts permissions alongside the physical address. -/
 def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
-    (perms : PagePermissions := default) : Option VSpaceRoot :=
+    (perms : PagePermissions := PagePermissions.readOnly) : Option VSpaceRoot :=
   match root.mappings[vaddr]? with
   | some _ => none
   | none => some { root with mappings := root.mappings.insert vaddr (paddr, perms) }
@@ -191,7 +217,7 @@ theorem mapPage_asid_eq
     (root root' : VSpaceRoot)
     (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr)
-    (perms : PagePermissions := default)
+    (perms : PagePermissions := PagePermissions.readOnly)
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.asid = root.asid := by
   unfold mapPage at hMap

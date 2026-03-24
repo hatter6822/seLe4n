@@ -1583,9 +1583,8 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded with
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
   | .ok mapArgs =>
-    let readPerms := PagePermissions.ofNat mapArgs.perms
-    -- S6-A: Use WithFlush variant to match production dispatch path
-    match (SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlush mapArgs.asid mapArgs.vaddr mapArgs.paddr readPerms) stVspace with
+    -- S6-A/T6-C: perms are now typed as PagePermissions (validated at decode)
+    match (SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlush mapArgs.asid mapArgs.vaddr mapArgs.paddr mapArgs.perms) stVspace with
     | .error e => IO.println s!"[KSD-005] vspaceMap dispatch error: {reprStr e}"
     | .ok (_, stMapped) =>
       match SeLe4n.Kernel.Architecture.vspaceLookup mapArgs.asid mapArgs.vaddr stMapped with
