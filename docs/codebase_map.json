@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-test-coverage-build-1n6QP",
-      "commit_sha": "cdeb527c1bfb62cebdf374517fff14e877a0e6e7",
-      "tree_sha": "5b5a4e510d8cb115d13cffa9e3e3e876515902ed",
-      "committed_at_utc": "2026-03-24T18:52:56+00:00"
+      "commit_sha": "989d69a874c7697493efc57ecd948573dac91c25",
+      "tree_sha": "ec488d2d279f02ba2792a23f6d6f4b9188f8d2cb",
+      "committed_at_utc": "2026-03-24T19:24:31+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5e820fc6fc52e5a5bae164059f910b31be61939936a3fa187a7e0f4cfac4a2e7"
+    "source_digest": "a405ada6b4c2075a118c73960ed5d8f1aa373d87da4a30e8441d1f808b82a886"
   },
   "summary": {
     "module_count": 111,
-    "declaration_count": 3400
+    "declaration_count": 3401
   },
   "readme_sync": {
     "version": "0.20.6",
@@ -29,7 +29,7 @@
     "production_files": 101,
     "production_loc": 61540,
     "test_files": 10,
-    "test_loc": 8229,
+    "test_loc": 8256,
     "proved_theorem_lemma_decls": 1846,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -26815,7 +26815,7 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 44,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
@@ -27117,7 +27117,7 @@
         {
           "kind": "def",
           "name": "chain24HandleYieldEmptyQueue",
-          "line": 1547,
+          "line": 1554,
           "called": [
             "assertInvariants",
             "expect",
@@ -27127,7 +27127,7 @@
         {
           "kind": "def",
           "name": "chain25IrqHandlerDispatch",
-          "line": 1585,
+          "line": 1592,
           "called": [
             "assertInvariants",
             "expect",
@@ -27137,7 +27137,7 @@
         {
           "kind": "def",
           "name": "chain26BootSequence",
-          "line": 1615,
+          "line": 1622,
           "called": [
             "expect"
           ]
@@ -27145,13 +27145,13 @@
         {
           "kind": "def",
           "name": "buildSyscallState",
-          "line": 1671,
+          "line": 1678,
           "called": []
         },
         {
           "kind": "def",
           "name": "chain27SyscallCSpaceOps",
-          "line": 1717,
+          "line": 1724,
           "called": [
             "buildSyscallState",
             "expect"
@@ -27160,7 +27160,7 @@
         {
           "kind": "def",
           "name": "chain28SyscallVSpaceOps",
-          "line": 1783,
+          "line": 1790,
           "called": [
             "buildSyscallState",
             "expect"
@@ -27169,7 +27169,7 @@
         {
           "kind": "def",
           "name": "chain29SyscallLifecycleRetype",
-          "line": 1823,
+          "line": 1830,
           "called": [
             "buildSyscallState"
           ]
@@ -27177,7 +27177,7 @@
         {
           "kind": "def",
           "name": "chain30SyscallServiceOps",
-          "line": 1845,
+          "line": 1852,
           "called": [
             "buildSyscallState"
           ]
@@ -27185,15 +27185,23 @@
         {
           "kind": "def",
           "name": "chain31SyscallReply",
-          "line": 1900,
+          "line": 1907,
           "called": [
             "expect"
           ]
         },
         {
           "kind": "def",
+          "name": "chain32SyscallCall",
+          "line": 1963,
+          "called": [
+            "buildSyscallState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 1954,
+          "line": 1980,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -27219,6 +27227,7 @@
             "chain2SendSendReceiveFifo",
             "chain30SyscallServiceOps",
             "chain31SyscallReply",
+            "chain32SyscallCall",
             "chain3MapLookupUnmapLookup",
             "chain4ServiceRegistryDependencyGraph",
             "chain5CopyMoveDelete",
@@ -27232,7 +27241,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1991,
+          "line": 2018,
           "called": []
         }
       ]
