@@ -4551,12 +4551,14 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                               rw [(threadId_toObjId_injective heq)] at htl
                                               obtain ⟨_, hT, hN⟩ := hWfQQ.2.2 prevTid htl
                                               rw [hPrevTcbObj] at hT
-                                              have := KernelObject.tcb.inj (Option.some.inj hT); rw [this]; exact hN))
+                                              have := KernelObject.tcb.inj (Option.some.inj hT)
+                                              rw [← this] at hN; rw [hPrevNextTid] at hN; exact absurd hN (by simp)))
                                           (fun hd hhd heq => by
                                             rw [(threadId_toObjId_injective heq)] at hhd
                                             obtain ⟨_, hT, hP⟩ := hWfQQ.2.1 nextTid hhd
                                             rw [hNextTcbSt] at hT
-                                            have := KernelObject.tcb.inj (Option.some.inj hT); rw [this]; exact hP)
+                                            have hEq := KernelObject.tcb.inj (Option.some.inj hT)
+                                            rw [← hEq] at hP; rw [hNextPrev] at hP; exact absurd hP (by simp))
                                           (fun tl htl heq => by
                                             rw [(threadId_toObjId_injective heq)] at htl
                                             obtain ⟨_, hT, hN⟩ := hWfQQ.2.2 nextTid htl
