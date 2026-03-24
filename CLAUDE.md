@@ -174,7 +174,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~2345 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2446 lines)
 - `docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md` (~707 lines)
-- `docs/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
+- `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~2219 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~2170 lines)
 - `CHANGELOG.md` (~1659 lines)
@@ -443,7 +443,7 @@ under `docs/` and `docs/gitbook/`.
 - **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audits**: `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` and `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`
-- **WS-T PORTFOLIO COMPLETE**: Deep-Dive Audit Remediation — 8 phases (T1–T8, 94 sub-tasks), all complete (v0.20.0–v0.20.7). See `docs/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`
+- **WS-T PORTFOLIO COMPLETE**: Deep-Dive Audit Remediation — 8 phases (T1–T8, 94 sub-tasks), all complete (v0.20.0–v0.20.7). See `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`
 - **All prior workstreams completed**: WS-B through WS-T (see `docs/WORKSTREAM_HISTORY.md`)
 - **Next milestone**: Raspberry Pi 5 hardware binding (WS-U)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
