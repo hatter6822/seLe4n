@@ -49,6 +49,40 @@ in Projection.lean) is intentionally retained.
   proves `resolveSlot` always fails for unbounded guards (L-NEW-4).
 - `Builder.createObject` now maintains `objectIndex`/`objectIndexSet` (M-BLD-1).
 
+**WS-T/T4 additions (v0.20.3) — IPC & Capability Proof Closure:**
+
+- `ipcStateQueueConsistent` preservation for `endpointCall`, `endpointReplyRecv`,
+  `notificationSignal`, `notificationWait` (M-IPC-1).
+- `endpointQueueRemoveDual_preserves_dualQueueSystemInvariant` — 1023-line
+  sorry-free proof covering all 4 paths with `tcbQueueChainAcyclic` (M-IPC-2).
+- `ipcInvariantFull` preservation for WithCaps wrapper operations (M-IPC-3).
+- `descendantsOf_fuel_sufficiency` with 8 BFS lemmas (M-CAP-2).
+- `buildCNodeRadix_lookup_equiv` bidirectional equivalence (M-DS-3).
+- `insert_maxPriority_consistency` for RunQueue (M-SCH-1).
+
+**WS-T/T5 additions (v0.20.4) — Lifecycle & Cross-Subsystem:**
+
+- `KernelObject.wellFormed` decidable predicate for structural validation (M-NEW-5).
+- `spliceOutMidQueueNode` intrusive queue mid-node removal with link patching (M-LCS-1).
+- `noStaleEndpointQueueReferences` extended to interior queue members via
+  bounded `collectQueueMembers` traversal (M-CS-1).
+- `noStaleNotificationWaitReferences` added to `crossSubsystemInvariant` (L-NEW-3).
+- `threadPriority_membership_consistent` with insert/remove preservation (M-SCH-3).
+
+**WS-T/T6 additions (v0.20.5) — Architecture & Hardware:**
+
+- `checkedDispatch_flowDenied_preserves_state` — proves all 3 policy-gated
+  wrappers preserve state on flow denial (M-IF-1).
+- `mmioRead`/`mmioWrite` with 4 correctness theorems (M-NEW-7/8).
+- `tlbFlushByASID`/`tlbFlushByPage`/`tlbFlushAll` with state frame proofs (M-ARCH-4).
+- `RegisterWriteInvariant` predicate for context-switch awareness (H-3).
+
+**WS-T/T7 additions (v0.20.6) — Test & Build Infrastructure:**
+
+- `buildChecked` migration ensures runtime structural invariant validation.
+- 31 post-mutation invariant checks across all major transition families.
+- `decodeVSpaceMapArgs_error_iff` theorem (Tier 3 invariant surface anchor).
+
 ## 2. Scheduler invariants (M1)
 
 Component level:

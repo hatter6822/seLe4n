@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.20.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.20.7-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -42,11 +42,11 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核（microkernel）。
 
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.20.3` |
+| **版本** | `0.20.7` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 60,116 行，分布于 100 个文件 |
-| **测试代码行数** | 7,561 行，分布于 10 个测试套件 |
-| **已证明的声明** | 1,812 个定理（theorem）/引理（lemma）声明（零 sorry/axiom） |
+| **生产代码行数** | 61,538 行，分布于 101 个文件 |
+| **测试代码行数** | 8,256 行，分布于 10 个测试套件 |
+| **已证明的声明** | 1,846 个定理（theorem）/引理（lemma）声明（零 sorry/axiom） |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **最新审计** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) —— 完整的内核 + Rust 代码库预发布审计 |
 | **代码库映射** | [`docs/codebase_map.json`](../../codebase_map.json) —— 机器可读的声明清单 |
