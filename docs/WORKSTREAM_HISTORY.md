@@ -17,16 +17,16 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-S) are complete. WS-T Phases T1–T6 complete (Benchmarking Blockers,
+through WS-S) are complete. WS-T Phases T1–T7 complete (Benchmarking Blockers,
 Model & CDT Integrity, Rust ABI Hardening, IPC & Capability Proof Closure,
-Lifecycle/Service/Cross-Subsystem, Architecture & Hardware Preparation);
-phases T7–T8 continue with test coverage expansion and documentation closure.
+Lifecycle/Service/Cross-Subsystem, Architecture & Hardware Preparation,
+Test Coverage & Build Infrastructure); phase T8 continues with documentation closure.
 
-### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T6 COMPLETE, T7–T8 IN PROGRESS
+### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T7 COMPLETE, T8 IN PROGRESS
 
 WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
 MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
-v0.20.0–v0.20.7. T1–T6 complete (78 sub-tasks). See
+v0.20.0–v0.20.7. T1–T7 complete (90 sub-tasks). See
 [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
 
 - **T1 (v0.20.0) — COMPLETE**: Benchmarking Blockers. Fixed frozen IPC queue
@@ -109,6 +109,23 @@ v0.20.0–v0.20.7. T1–T6 complete (78 sub-tasks). See
   runtime contract with `mmioAccessAllowed` predicate. Documented cache
   coherency assumptions in spec (single-core, MMIO barriers, DMA out of scope).
   Zero sorry, zero axiom. All 13 sub-tasks complete.
+
+- **T7 (v0.20.6) — COMPLETE**: Test Coverage & Build Infrastructure. Migrated
+  all `BootstrapBuilder.build` calls to `buildChecked` in MainTraceHarness and
+  OperationChainSuite (T7-A), ensuring runtime structural invariant validation.
+  Added 7 post-mutation invariant checks to trace harness (24→31 total) covering
+  vspace-unmap, register-write, lifecycle-retype, IPC-handshake, domain-switch,
+  IPC-rendezvous, and untyped-double-retype (T7-B). Added 3 frozen IPC queue
+  enqueue tests (FO-016/017/018) validating send/receive/call blocking and
+  intrusive queue semantics (T7-D/F). Added deep CDT cascade test with 4-level
+  derivation tree and mid-chain strict revoke (T7-E). Added handleYield
+  empty-queue re-selection and IRQ handler dispatch tests (T7-K). Added boot
+  sequence integration test using `bootFromPlatform` with invariant witness
+  verification and determinism check (T7-L). Updated trace fixture for 31
+  invariant checks (T7-J). Hardened pre-commit hook with `mktemp` replacing
+  PID-based temp files (T7-G). Added SHA-256 verification for Lean toolchain
+  downloads with architecture-aware hash selection (T7-H). Added Rust ABI test
+  job to CI pipeline (T7-I). Zero sorry, zero axiom. All 12 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

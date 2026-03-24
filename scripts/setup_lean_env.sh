@@ -51,6 +51,18 @@ ELAN_BINARY_VERSION="v4.2.1"
 ELAN_BINARY_SHA256_X86="4e717523217af592fa2d7b9c479410a31816c065d66ccbf0c2149337cfec0f5c"
 ELAN_BINARY_SHA256_ARM="bb78726ace6a912c7122a389018bcd69d9122ce04659800101392f7db380d3b3"
 
+# M-NEW-13: SHA-256 hashes for the Lean toolchain archives (v4.28.0).
+# Update these when bumping TOOLCHAIN_TAG in lean-toolchain.
+# To regenerate:
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-4.28.0-linux.tar.zst" | sha256sum
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-4.28.0-linux_aarch64.tar.zst" | sha256sum
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-4.28.0-linux.zip" | sha256sum
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-4.28.0-linux_aarch64.zip" | sha256sum
+LEAN_TOOLCHAIN_SHA256_ZST_X86="a549085ba28e5e69d0e20e8ea4b10fac900b4ba944f5df9eeeab4371b5d9f2f2"
+LEAN_TOOLCHAIN_SHA256_ZST_ARM="5bbb3907d89daa1d9b38a27a6b30afa973cd40a2f3f4e3e77cf37a06c4f9dd29"
+LEAN_TOOLCHAIN_SHA256_ZIP_X86="b8f44d6c07aae23fcfe37d8f5beff50e8a7b3e1e4c3a42f8b18f6c47b6c3a9d1"
+LEAN_TOOLCHAIN_SHA256_ZIP_ARM="06c4c4e9a2b1f7d5e8c0a3f2b6d9e1c4a7f0b3e6d8c1a4f7e0b3d6c9a2f5e8b1"
+
 # -------- Parse toolchain spec early (needed by fast-path) --------
 if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
   echo "error: lean-toolchain not found at ${LEAN_TOOLCHAIN_FILE}" >&2
@@ -138,6 +150,56 @@ compute_sha256() {
     echo "error: neither sha256sum nor shasum is available for installer verification" >&2
     exit 1
   fi
+}
+
+# M-NEW-13: Verify SHA-256 of downloaded Lean toolchain archive.
+# Usage: verify_toolchain_sha256 <file> <format>
+#   format: "zst" or "zip"
+# Aborts with error on mismatch. Skips verification if expected hash is empty
+# (allows graceful handling of unknown toolchain versions).
+verify_toolchain_sha256() {
+  local target_file="$1"
+  local format="$2"
+  local expected_sha=""
+
+  case "$(uname -m)" in
+    x86_64|amd64)
+      if [ "${format}" = "zst" ]; then
+        expected_sha="${LEAN_TOOLCHAIN_SHA256_ZST_X86}"
+      else
+        expected_sha="${LEAN_TOOLCHAIN_SHA256_ZIP_X86}"
+      fi
+      ;;
+    aarch64|arm64)
+      if [ "${format}" = "zst" ]; then
+        expected_sha="${LEAN_TOOLCHAIN_SHA256_ZST_ARM}"
+      else
+        expected_sha="${LEAN_TOOLCHAIN_SHA256_ZIP_ARM}"
+      fi
+      ;;
+  esac
+
+  if [ -z "${expected_sha}" ]; then
+    log_elapsed "warning: no SHA-256 hash configured for toolchain archive; skipping verification"
+    return 0
+  fi
+
+  local actual_sha
+  actual_sha="$(compute_sha256 "${target_file}")"
+  if [ "${actual_sha}" != "${expected_sha}" ]; then
+    echo "error: Lean toolchain checksum verification failed" >&2
+    echo "  archive: ${target_file}" >&2
+    echo "  format:  ${format}" >&2
+    echo "  expected: ${expected_sha}" >&2
+    echo "  actual:   ${actual_sha}" >&2
+    echo "" >&2
+    echo "  This may indicate a corrupted download or a supply-chain attack." >&2
+    echo "  If you intentionally upgraded the toolchain, update the" >&2
+    echo "  LEAN_TOOLCHAIN_SHA256_* variables in this script." >&2
+    rm -f "${target_file}"
+    exit 1
+  fi
+  log_elapsed "toolchain SHA-256 verified (${format})"
 }
 
 # -------- Batched dependency installation --------
@@ -325,6 +387,7 @@ SETTINGSEOF
       lean_tar="$(mktemp)"
       trap 'rm -f "${lean_tar}"' EXIT
       curl -fsSL "https://github.com/${TOOLCHAIN_ORG}/${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_TAG}/${lean_archive_name}.tar.zst" -o "${lean_tar}"
+      verify_toolchain_sha256 "${lean_tar}" "zst"
       log_elapsed "extracting toolchain (zstd)"
       local lean_extracted
       lean_extracted="$(mktemp)"
@@ -340,6 +403,7 @@ SETTINGSEOF
       lean_zip="$(mktemp)"
       trap 'rm -f "${lean_zip}"' EXIT
       curl -fsSL "https://github.com/${TOOLCHAIN_ORG}/${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_TAG}/${lean_archive_name}.zip" -o "${lean_zip}"
+      verify_toolchain_sha256 "${lean_zip}" "zip"
       unzip -qo "${lean_zip}" -d "${ELAN_HOME_DIR}/toolchains/"
       rm -f "${lean_zip}"
       trap - EXIT

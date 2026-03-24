@@ -18,7 +18,7 @@ ensure_lake_available
 # Run suites through the Lean interpreter to avoid pathological C compilation
 # times for very large test modules (notably NegativeStateSuite).
 run_check "TRACE" lake env lean --run tests/NegativeStateSuite.lean
-run_check "TRACE" lake env lean --run tests/OperationChainSuite.lean
+run_check "TRACE" lake exe operation_chain_suite
 run_check "TRACE" lake env lean --run tests/InformationFlowSuite.lean
 run_check "TRACE" lake env lean --run tests/RobinHoodSuite.lean
 # R8-D (I-M04): Execute frozen/radix test suites that were compiled but never run.
