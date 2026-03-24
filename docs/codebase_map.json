@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-t5-workstream-hCNBH",
-      "commit_sha": "2632d1a3d5abfc476cf0b51b7f577e1dd0be3ec8",
-      "tree_sha": "c8da3484add23473b2a97ec5747fb2902eb4e0a8",
-      "committed_at_utc": "2026-03-24T04:57:40+00:00"
+      "branch": "claude/optimize-test-coverage-build-ZXM8m",
+      "commit_sha": "c361c5d06191e584b15ff481d0495b85bdc210bb",
+      "tree_sha": "013b1261a14f0a57b8e6a2c77a6206ec2f510a31",
+      "committed_at_utc": "2026-03-24T01:31:26-04:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bf2eee0a1699d4cba03cac516c5a3de577e589161b5d99ca1998d6eeec89a60d"
+    "source_digest": "859c6d278a6e85f82f87df073fdbccfa39e40f433d72360093e0f241fea3759f"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3324
+    "declaration_count": 3331
   },
   "readme_sync": {
-    "version": "0.20.3",
+    "version": "0.20.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 60576,
+    "production_loc": 60586,
     "test_files": 10,
-    "test_loc": 7561,
+    "test_loc": 7796,
     "proved_theorem_lemma_decls": 1824,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -24765,7 +24765,7 @@
         {
           "kind": "def",
           "name": "runServiceAndStressTrace",
-          "line": 230,
+          "line": 232,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -24780,7 +24780,7 @@
         {
           "kind": "def",
           "name": "runLifecycleAndEndpointTrace",
-          "line": 499,
+          "line": 501,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -24794,7 +24794,7 @@
         {
           "kind": "def",
           "name": "runCapabilityIpcTrace",
-          "line": 606,
+          "line": 610,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -24804,7 +24804,7 @@
         {
           "kind": "def",
           "name": "runSchedulerTimingDomainTrace",
-          "line": 658,
+          "line": 662,
           "called": [
             "checkInvariants",
             "mkRunQueue"
@@ -24813,7 +24813,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageTransferTrace",
-          "line": 729,
+          "line": 734,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -24822,7 +24822,7 @@
         {
           "kind": "def",
           "name": "runIpcMessageBoundsTrace",
-          "line": 891,
+          "line": 897,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -24831,7 +24831,7 @@
         {
           "kind": "def",
           "name": "runUntypedMemoryTrace",
-          "line": 965,
+          "line": 971,
           "called": [
             "checkInvariants",
             "demoUntyped",
@@ -24843,7 +24843,7 @@
         {
           "kind": "def",
           "name": "runDequeueOnDispatchTrace",
-          "line": 1054,
+          "line": 1061,
           "called": [
             "checkInvariants"
           ]
@@ -24851,7 +24851,7 @@
         {
           "kind": "def",
           "name": "runInlineContextSwitchTrace",
-          "line": 1112,
+          "line": 1119,
           "called": [
             "checkInvariants"
           ]
@@ -24859,7 +24859,7 @@
         {
           "kind": "def",
           "name": "runBoundedMessageExtendedTrace",
-          "line": 1156,
+          "line": 1163,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -24868,7 +24868,7 @@
         {
           "kind": "def",
           "name": "runSyscallGateTrace",
-          "line": 1205,
+          "line": 1212,
           "called": [
             "checkInvariants",
             "demoEndpoint",
@@ -24878,7 +24878,7 @@
         {
           "kind": "def",
           "name": "runRuntimeContractFixtureTrace",
-          "line": 1285,
+          "line": 1292,
           "called": [
             "checkInvariants"
           ]
@@ -24886,7 +24886,7 @@
         {
           "kind": "def",
           "name": "runRegisterDecodeTrace",
-          "line": 1328,
+          "line": 1335,
           "called": [
             "checkInvariants"
           ]
@@ -24894,7 +24894,7 @@
         {
           "kind": "def",
           "name": "runSyscallDispatchTrace",
-          "line": 1464,
+          "line": 1474,
           "called": [
             "checkInvariants"
           ]
@@ -24902,7 +24902,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1645,
+          "line": 1655,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -24911,7 +24911,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 1729,
+          "line": 1739,
           "called": [
             "checkInvariants"
           ]
@@ -24919,7 +24919,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 1827,
+          "line": 1837,
           "called": [
             "checkInvariants",
             "demoEndpoint"
@@ -24928,7 +24928,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 1907,
+          "line": 1917,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -24958,13 +24958,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 1950,
+          "line": 1960,
           "called": []
         },
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 2001,
+          "line": 2011,
           "called": [
             "buildParameterizedTopology"
           ]
@@ -24972,7 +24972,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2015,
+          "line": 2025,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -24980,13 +24980,13 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2026,
+          "line": 2036,
           "called": []
         },
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2079,
+          "line": 2089,
           "called": [
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -25409,7 +25409,7 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 21,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
@@ -25585,8 +25585,38 @@
         },
         {
           "kind": "def",
+          "name": "fo016_sendEnqueuesSender",
+          "line": 272,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fo017_receiveEnqueuesReceiver",
+          "line": 295,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fo018_callEnqueuesCaller",
+          "line": 316,
+          "called": [
+            "expect",
+            "mkFrozenState",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 268,
+          "line": 340,
           "called": [
             "fo001_lookupExisting",
             "fo002_lookupMissing",
@@ -25602,7 +25632,10 @@
             "fo012_serviceLookupMissing",
             "fo013_cspaceDelete",
             "fo014_notificationSignal",
-            "fo015_notificationWait"
+            "fo015_notificationWait",
+            "fo016_sendEnqueuesSender",
+            "fo017_receiveEnqueuesReceiver",
+            "fo018_callEnqueuesCaller"
           ]
         }
       ]
@@ -26291,54 +26324,54 @@
     {
       "module": "tests.OperationChainSuite",
       "path": "tests/OperationChainSuite.lean",
-      "declaration_count": 34,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing",
-          "line": 17,
+          "line": 18,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:19>",
-          "line": 19,
+          "name": "<anonymous:instance:20>",
+          "line": 20,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 22,
+          "line": 23,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectOkState",
-          "line": 28,
+          "line": 29,
           "called": []
         },
         {
           "kind": "def",
           "name": "runKernelState",
-          "line": 38,
+          "line": 39,
           "called": []
         },
         {
           "kind": "def",
           "name": "expectError",
-          "line": 47,
+          "line": 48,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertInvariants",
-          "line": 59,
+          "line": 60,
           "called": []
         },
         {
           "kind": "def",
           "name": "chain1RetypeMintRevoke",
-          "line": 62,
+          "line": 63,
           "called": [
             "assertInvariants",
             "expectOkState"
@@ -26347,7 +26380,7 @@
         {
           "kind": "def",
           "name": "chain2SendSendReceiveFifo",
-          "line": 92,
+          "line": 93,
           "called": [
             "assertInvariants",
             "expect",
@@ -26357,7 +26390,7 @@
         {
           "kind": "def",
           "name": "chain3MapLookupUnmapLookup",
-          "line": 113,
+          "line": 114,
           "called": [
             "assertInvariants",
             "expect",
@@ -26368,7 +26401,7 @@
         {
           "kind": "def",
           "name": "chain4ServiceRegistryDependencyGraph",
-          "line": 132,
+          "line": 133,
           "called": [
             "expect",
             "expectError"
@@ -26377,7 +26410,7 @@
         {
           "kind": "def",
           "name": "chain5CopyMoveDelete",
-          "line": 157,
+          "line": 158,
           "called": [
             "assertInvariants",
             "expectOkState"
@@ -26386,7 +26419,7 @@
         {
           "kind": "def",
           "name": "chain6NotificationBadgeAccumulation",
-          "line": 183,
+          "line": 184,
           "called": [
             "assertInvariants",
             "expect",
@@ -26396,7 +26429,7 @@
         {
           "kind": "def",
           "name": "chain7VSpaceMultiAsidSharedPage",
-          "line": 210,
+          "line": 211,
           "called": [
             "assertInvariants",
             "expect",
@@ -26407,7 +26440,7 @@
         {
           "kind": "def",
           "name": "chain8IpcInterleavedSendOrdering",
-          "line": 259,
+          "line": 260,
           "called": [
             "assertInvariants",
             "expect",
@@ -26417,7 +26450,7 @@
         {
           "kind": "def",
           "name": "chain9LifecycleCascadingRevokeAndAttenuation",
-          "line": 307,
+          "line": 308,
           "called": [
             "assertInvariants",
             "expect",
@@ -26428,13 +26461,13 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 377,
+          "line": 378,
           "called": []
         },
         {
           "kind": "def",
           "name": "scheduleNTimes",
-          "line": 410,
+          "line": 411,
           "called": [
             "assertInvariants",
             "runKernelState"
@@ -26443,7 +26476,7 @@
         {
           "kind": "def",
           "name": "schedulerStressChecks",
-          "line": 420,
+          "line": 421,
           "called": [
             "assertInvariants",
             "buildParameterizedTopology",
@@ -26456,7 +26489,7 @@
         {
           "kind": "def",
           "name": "chain10RegisterDecodeMultiSyscall",
-          "line": 509,
+          "line": 510,
           "called": [
             "assertInvariants",
             "expect"
@@ -26465,7 +26498,7 @@
         {
           "kind": "def",
           "name": "chain11RegisterDecodeIpcTransfer",
-          "line": 599,
+          "line": 600,
           "called": [
             "assertInvariants",
             "expect"
@@ -26474,7 +26507,7 @@
         {
           "kind": "def",
           "name": "chain12IpcCapTransfer",
-          "line": 667,
+          "line": 669,
           "called": [
             "assertInvariants",
             "expect",
@@ -26484,7 +26517,7 @@
         {
           "kind": "def",
           "name": "chain13IpcCapTransferNoGrant",
-          "line": 725,
+          "line": 727,
           "called": [
             "assertInvariants",
             "expect",
@@ -26494,7 +26527,7 @@
         {
           "kind": "def",
           "name": "chain14IpcBadgeAndCapTransfer",
-          "line": 779,
+          "line": 781,
           "called": [
             "assertInvariants",
             "expect",
@@ -26504,7 +26537,7 @@
         {
           "kind": "def",
           "name": "chain15StrictRevokeDeepChain",
-          "line": 860,
+          "line": 862,
           "called": [
             "assertInvariants",
             "expect",
@@ -26514,7 +26547,7 @@
         {
           "kind": "def",
           "name": "chain16StrictRevokePartialFail",
-          "line": 937,
+          "line": 939,
           "called": [
             "expect",
             "expectOkState"
@@ -26523,7 +26556,7 @@
         {
           "kind": "def",
           "name": "chain17StrictRevokeOrdering",
-          "line": 1047,
+          "line": 1049,
           "called": [
             "assertInvariants",
             "expect",
@@ -26533,7 +26566,7 @@
         {
           "kind": "def",
           "name": "chain18StreamingRevokeBFS",
-          "line": 1161,
+          "line": 1163,
           "called": [
             "assertInvariants",
             "expect",
@@ -26543,7 +26576,7 @@
         {
           "kind": "def",
           "name": "chain19StreamingRevokeEmpty",
-          "line": 1235,
+          "line": 1237,
           "called": [
             "assertInvariants",
             "expect",
@@ -26553,7 +26586,7 @@
         {
           "kind": "def",
           "name": "chain20StreamingRevokeDeepChain",
-          "line": 1264,
+          "line": 1266,
           "called": [
             "assertInvariants",
             "expect",
@@ -26563,7 +26596,7 @@
         {
           "kind": "def",
           "name": "chain21StreamingRevokeEquivalence",
-          "line": 1324,
+          "line": 1326,
           "called": [
             "assertInvariants",
             "expect",
@@ -26573,7 +26606,7 @@
         {
           "kind": "def",
           "name": "chain22NotificationBadgeDelivery",
-          "line": 1385,
+          "line": 1387,
           "called": [
             "assertInvariants",
             "expect",
@@ -26582,8 +26615,44 @@
         },
         {
           "kind": "def",
+          "name": "chain23CdtDeepCascadeWithMidDelete",
+          "line": 1431,
+          "called": [
+            "assertInvariants",
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain24HandleYieldEmptyQueue",
+          "line": 1490,
+          "called": [
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain25IrqHandlerDispatch",
+          "line": 1515,
+          "called": [
+            "expect",
+            "expectOkState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chain26BootSequence",
+          "line": 1542,
+          "called": [
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 1424,
+          "line": 1579,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -26599,6 +26668,10 @@
             "chain20StreamingRevokeDeepChain",
             "chain21StreamingRevokeEquivalence",
             "chain22NotificationBadgeDelivery",
+            "chain23CdtDeepCascadeWithMidDelete",
+            "chain24HandleYieldEmptyQueue",
+            "chain25IrqHandlerDispatch",
+            "chain26BootSequence",
             "chain2SendSendReceiveFifo",
             "chain3MapLookupUnmapLookup",
             "chain4ServiceRegistryDependencyGraph",
@@ -26613,7 +26686,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1452,
+          "line": 1611,
           "called": []
         }
       ]

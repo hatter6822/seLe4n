@@ -51,6 +51,19 @@ ELAN_BINARY_VERSION="v4.2.1"
 ELAN_BINARY_SHA256_X86="4e717523217af592fa2d7b9c479410a31816c065d66ccbf0c2149337cfec0f5c"
 ELAN_BINARY_SHA256_ARM="bb78726ace6a912c7122a389018bcd69d9122ce04659800101392f7db380d3b3"
 
+# T7-H (M-NEW-13): SHA-256 hashes for Lean toolchain archives (v4.28.0).
+# These verify the toolchain download has not been tampered with.
+# To regenerate hashes after toolchain version bump:
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-v4.28.0-linux-x86_64.tar.zst" | sha256sum
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-v4.28.0-linux-aarch64.tar.zst" | sha256sum
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-v4.28.0-linux-x86_64.zip" | sha256sum
+#   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-v4.28.0-linux-aarch64.zip" | sha256sum
+# Set to empty string to skip verification (e.g., for new/unverified toolchain versions).
+LEAN_TOOLCHAIN_SHA256_ZST_X86="a549085b4e8bc68e73e0eb78ee86e2b9aeaf52523b68cc9a0c77ca14d24e76f0"
+LEAN_TOOLCHAIN_SHA256_ZST_ARM="5bbb3907a48c1bb44bf38f3e95d9c4fc98d03cf0ea86735920b7e3a2bbb48b8e"
+LEAN_TOOLCHAIN_SHA256_ZIP_X86="b8f44d6cc6b5d2c9e2ac52e3607bb5e19c3fca4bf5ca3e3e95c2e4d74e429700"
+LEAN_TOOLCHAIN_SHA256_ZIP_ARM="06c4c4e969e2b33bd731e1b24f3927be1c4add41d2b3a879c3ca968826b96ae6"
+
 # -------- Parse toolchain spec early (needed by fast-path) --------
 if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then
   echo "error: lean-toolchain not found at ${LEAN_TOOLCHAIN_FILE}" >&2
@@ -138,6 +151,32 @@ compute_sha256() {
     echo "error: neither sha256sum nor shasum is available for installer verification" >&2
     exit 1
   fi
+}
+
+# T7-H (M-NEW-13): Verify Lean toolchain archive SHA-256.
+# Args: $1=file_path, $2=expected_sha (empty string skips verification)
+verify_toolchain_sha256() {
+  local file_path="$1"
+  local expected_sha="$2"
+  if [ -z "${expected_sha}" ]; then
+    log_elapsed "warning: no SHA-256 hash configured for toolchain archive — skipping verification"
+    log_elapsed "         update LEAN_TOOLCHAIN_SHA256_* in setup_lean_env.sh after verifying the archive"
+    return 0
+  fi
+  local actual_sha
+  actual_sha="$(compute_sha256 "${file_path}")"
+  if [ "${actual_sha}" != "${expected_sha}" ]; then
+    echo "error: Lean toolchain checksum verification failed" >&2
+    echo "  expected: ${expected_sha}" >&2
+    echo "  actual:   ${actual_sha}" >&2
+    echo "  file:     ${file_path}" >&2
+    echo "" >&2
+    echo "  This may indicate a tampered download or a toolchain version change." >&2
+    echo "  To update: re-download manually, verify, then update the hash in setup_lean_env.sh." >&2
+    rm -f "${file_path}"
+    exit 1
+  fi
+  log_elapsed "Lean toolchain SHA-256 verified"
 }
 
 # -------- Batched dependency installation --------
@@ -320,11 +359,26 @@ SETTINGSEOF
   if [ ! -d "${toolchain_dir}/bin" ]; then
     log_elapsed "downloading Lean toolchain ${TOOLCHAIN}"
 
+    # T7-H (M-NEW-13): Select expected SHA-256 hash based on architecture and format.
+    local expected_sha_zst expected_sha_zip
+    case "$(uname -m)" in
+      x86_64|amd64)
+        expected_sha_zst="${LEAN_TOOLCHAIN_SHA256_ZST_X86}"
+        expected_sha_zip="${LEAN_TOOLCHAIN_SHA256_ZIP_X86}"
+        ;;
+      aarch64|arm64)
+        expected_sha_zst="${LEAN_TOOLCHAIN_SHA256_ZST_ARM}"
+        expected_sha_zip="${LEAN_TOOLCHAIN_SHA256_ZIP_ARM}"
+        ;;
+      *) expected_sha_zst=""; expected_sha_zip="" ;;
+    esac
+
     if command -v zstd >/dev/null 2>&1; then
       local lean_tar
       lean_tar="$(mktemp)"
       trap 'rm -f "${lean_tar}"' EXIT
       curl -fsSL "https://github.com/${TOOLCHAIN_ORG}/${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_TAG}/${lean_archive_name}.tar.zst" -o "${lean_tar}"
+      verify_toolchain_sha256 "${lean_tar}" "${expected_sha_zst}"
       log_elapsed "extracting toolchain (zstd)"
       local lean_extracted
       lean_extracted="$(mktemp)"
@@ -340,6 +394,7 @@ SETTINGSEOF
       lean_zip="$(mktemp)"
       trap 'rm -f "${lean_zip}"' EXIT
       curl -fsSL "https://github.com/${TOOLCHAIN_ORG}/${TOOLCHAIN_REPO}/releases/download/${TOOLCHAIN_TAG}/${lean_archive_name}.zip" -o "${lean_zip}"
+      verify_toolchain_sha256 "${lean_zip}" "${expected_sha_zip}"
       unzip -qo "${lean_zip}" -d "${ELAN_HOME_DIR}/toolchains/"
       rm -f "${lean_zip}"
       trap - EXIT

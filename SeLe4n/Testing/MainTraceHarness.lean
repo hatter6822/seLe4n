@@ -151,7 +151,7 @@ def bootstrapState : SystemState :=
     |>.withLifecycleCapabilityRef rootSlot (.object ⟨1⟩)
     |>.withLifecycleCapabilityRef lifecycleAuthSlot (.object ⟨12⟩)
     |>.withLifecycleCapabilityRef untypedAuthSlot (.object demoUntyped)
-  ).build
+  ).buildChecked
 
 private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   match SeLe4n.Kernel.Architecture.adapterAdvanceTimer runtimeContractAcceptAll 2 st1 with
@@ -189,6 +189,7 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
               match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨4096⟩ stV3 with
               | .error err => IO.println s!"[CAT-015] vspace lookup after unmap branch: {reprStr err}"
               | .ok (resolved, _) => IO.println s!"[CAT-016] unexpected vspace lookup after unmap: {reprStr resolved}"
+              checkInvariants counter "post-vspace-unmap-mutated" stV3
   checkInvariants counter "post-vspace-map-lookup-unmap" st1
   -- WS-H11: W^X violation test — write+execute permissions must be rejected
   let wxViolation : SeLe4n.Model.PagePermissions := { write := true, execute := true }
@@ -221,6 +222,7 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
   | .error err => IO.println s!"[CAT-027] adapter register write success path error: {reprStr err}"
   | .ok (_, stReg) =>
       IO.println s!"[CAT-028] adapter register write success path value: {(SeLe4n.readReg stReg.machine.regs ⟨7⟩).val}"
+      checkInvariants counter "post-register-write-mutated" stReg
   match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractDenyAll ⟨7⟩ ⟨99⟩ st1 with
   | .error err => IO.println s!"[CAT-029] adapter register write unsupported branch: {reprStr err}"
   | .ok _ =>
@@ -527,6 +529,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
   | .ok (_, stCleaned) =>
       let tid12InQueue := stCleaned.scheduler.runQueue.flat.any (· == (SeLe4n.ThreadId.ofNat 12))
       IO.println s!"[LEP-008] lifecycle retype-with-cleanup old tid removed: {!tid12InQueue}"
+      checkInvariants counter "post-lifecycle-retype-with-cleanup-mutated" stCleaned
   checkInvariants counter "post-lifecycle-retype-cleanup" st1
   match SeLe4n.Kernel.cspaceMintChecked SeLe4n.Kernel.defaultLabelingContext rootSlot mintedSlot (AccessRightSet.ofList [.read]) none st1 with
   | .error err => IO.println s!"[LEP-009] cspace mint error: {reprStr err}"
@@ -590,8 +593,9 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
                                           | .ok (_, st12) =>
                                               match SeLe4n.Kernel.notificationWait demoNotification ⟨1⟩ st12 with
                                               | .error err => IO.println s!"[LEP-033] notification wait #2 error: {reprStr err}"
-                                              | .ok (badge2, _) =>
+                                              | .ok (badge2, stFinal) =>
                                                   IO.println s!"[LEP-034] notification wait #2 result: {reprStr badge2}"
+                                                  checkInvariants counter "post-ipc-handshake-chain-mutated" stFinal
       match SeLe4n.Kernel.cspaceLookupSlot mintedSlot st2 with
       | .error err => IO.println s!"[LEP-035] cspace lookup error: {reprStr err}"
       | .ok (cap, _) =>
@@ -719,6 +723,7 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
   | .ok ((), stSwitched) =>
       IO.println s!"[STD-011] domain switch active domain: {stSwitched.scheduler.activeDomain.toNat}"
       IO.println s!"[STD-012] domain switch time remaining: {stSwitched.scheduler.domainTimeRemaining}"
+      checkInvariants counter "post-domain-switch-mutated" stSwitched
   checkInvariants counter "post-edf-timeslice-domain" st1
 
 -- ============================================================================
@@ -785,6 +790,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
             | some m => m.registers.toList.map SeLe4n.RegValue.val
             | none => []
           IO.println s!"[IMT-009] rendezvous delivery registers: {reprStr rendRegs}"
+          checkInvariants counter "post-ipc-rendezvous-mutated" stRend
   checkInvariants counter "post-ipc-send-receive-rendezvous" st1
   -- F1-03: Call + Reply roundtrip with message payload
   let ep2 : KernelObject := .endpoint {
@@ -991,6 +997,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
           | some (.untyped ut2) =>
               IO.println s!"[UMT-007] untyped watermark after second retype: {ut2.watermark}"
           | _ => IO.println "[UMT-008] untyped object missing after second retype"
+          checkInvariants counter "post-untyped-double-retype-mutated" stRetyped2
   checkInvariants counter "post-untyped-retype-success-path" st1
   -- F2-03: Type mismatch — try retypeFromUntyped on a TCB (not an untyped)
   match SeLe4n.Kernel.retypeFromUntyped lifecycleAuthSlot ⟨12⟩ ⟨50⟩ newEp epAllocSize st1 with
@@ -1363,8 +1370,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
+      |>.withRunnable [⟨500⟩]
       |>.withCurrent (some ⟨500⟩)
-      |>.build)
+      |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRdt with
   | .ok (_, stPost) =>
       match stPost.objects[rdtEp]? with
@@ -1401,8 +1409,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
+      |>.withRunnable [⟨500⟩]
       |>.withCurrent (some ⟨500⟩)
-      |>.build)
+      |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stInvalidSyscall with
   | .error err =>
       IO.println s!"[RDT-006] syscallEntry invalid syscall decode error: {reprStr err}"
@@ -1436,8 +1445,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
+      |>.withRunnable [⟨500⟩]
       |>.withCurrent (some ⟨500⟩)
-      |>.build)
+      |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMalformedMsgInfo with
   | .error err =>
       IO.println s!"[RDT-008] syscallEntry malformed msgInfo decode error: {reprStr err}"
@@ -1479,7 +1489,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withLifecycleObjectType ksdEpId .endpoint
       |>.withLifecycleObjectType ksdCnodeId .cnode
       |>.withLifecycleCapabilityRef ksdSrcSlot (.object ksdEpId)
-      |>.build)
+      |>.buildChecked)
   -- Decode mint args from msgRegs: srcSlot=0, dstSlot=1, rights=1(read), badge=42
   let mintDecoded : SyscallDecodeResult := {
     capAddr := ⟨0⟩
@@ -1544,7 +1554,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     (BootstrapBuilder.empty
       |>.withObject ksdRetypeTargetId (.endpoint {})
       |>.withLifecycleObjectType ksdRetypeTargetId .endpoint
-      |>.build)
+      |>.buildChecked)
   let retypeDecoded : SyscallDecodeResult := {
     capAddr := ⟨0⟩
     msgInfo := { length := 3, extraCaps := 0, label := 0 }
@@ -1573,7 +1583,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     (BootstrapBuilder.empty
       |>.withObject ksdVspaceId (.vspaceRoot { asid := ksdAsid, mappings := {} })
       |>.withLifecycleObjectType ksdVspaceId .vspaceRoot
-      |>.build)
+      |>.buildChecked)
   let vspaceDecoded : SyscallDecodeResult := {
     capAddr := ⟨0⟩
     msgInfo := { length := 4, extraCaps := 0, label := 0 }
@@ -1607,7 +1617,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
         dependencies := []
         isolatedFrom := []
       }
-      |>.build)
+      |>.buildChecked)
   -- Q1: Service lifecycle removed — test registry lookup instead
   let svcPresent := (SeLe4n.Model.lookupService stSvc ksdSvcId).isSome
   IO.println s!"[KSD-006] service registry lookup present: {reprStr svcPresent}"
@@ -1763,7 +1773,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
       |>.withLifecycleObjectType ⟨12⟩ .tcb
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.withLifecycleCapabilityRef lcAuthSlot (.object lcEpId)
-    ).build
+    ).buildChecked
   -- B1: Block both senders on the endpoint's sendQ
   let msg1 : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩], caps := #[], badge := none }
   match SeLe4n.Kernel.endpointSendDual lcEpId lcSender1 msg1 stBase with
@@ -1995,7 +2005,7 @@ private def buildParameterizedTopology
   let builder := allObjects.foldl (fun b (oid, obj) => b.withObject oid obj) builder
   let builder := lifecycleTypes.foldl (fun b (oid, ty) => b.withLifecycleObjectType oid ty) builder
   let builder := serviceEntries.foldl (fun b (sid, entry) => b.withService sid entry) builder
-  builder.build
+  builder.buildChecked
 
 /-- Exercise invariant checks over a parameterized topology configuration. -/
 private def runParameterizedTopologyCheck

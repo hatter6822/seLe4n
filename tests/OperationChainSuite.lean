@@ -9,6 +9,7 @@
 import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Platform.Boot
 
 set_option maxRecDepth 1024
 
@@ -79,7 +80,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
       |>.withLifecycleObjectType targetId .notification
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleCapabilityRef authSlot (.object targetId)
-      |>.build)
+      |>.buildChecked)
 
   let (_, st1) ← expectOkState "chain1: lifecycleRetypeObject"
     (SeLe4n.Kernel.lifecycleRetypeObject authSlot targetId (.endpoint {}) st0)
@@ -101,7 +102,7 @@ private def chain2SendSendReceiveFifo : IO Unit := do
       |>.withObject tid2.toObjId (.tcb { tid := tid2, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
       |>.withObject tid3.toObjId (.tcb { tid := tid3, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
       |>.withRunnable [tid1, tid2, tid3]
-      |>.build)
+      |>.buildChecked)
   let msg1 : IpcMessage := .empty
   let msg2 : IpcMessage := .empty
   let (_, st1) ← expectOkState "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 msg1 st0)
@@ -117,7 +118,7 @@ private def chain3MapLookupUnmapLookup : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject ⟨220⟩ (.vspaceRoot { asid := asid, mappings := {} })
-      |>.build)
+      |>.buildChecked)
   let (_, st1) ← expectOkState "chain3: map page"
     (SeLe4n.Kernel.Architecture.vspaceMapPage asid vaddr paddr default st0)
   let (resolved, _) ← expectOkState "chain3: lookup after map"
@@ -144,7 +145,7 @@ private def chain4ServiceRegistryDependencyGraph : IO Unit := do
           identity := { sid := depSid, backingObject := ⟨501⟩, owner := ⟨1⟩ }
           dependencies := [baseSid]
           isolatedFrom := [] }
-      |>.build)
+      |>.buildChecked)
   -- Q1: Service lifecycle removed — test dependency graph operations
   expect "chain4: depSid depends on baseSid" ((SeLe4n.Model.lookupService st0 depSid).map ServiceGraphEntry.dependencies = some [baseSid])
   -- Register a new dependency: depSid → baseSid already exists, add baseSid → depSid to form a cycle rejection
@@ -174,7 +175,7 @@ private def chain5CopyMoveDelete : IO Unit := do
         })
       |>.withLifecycleObjectType target .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
-      |>.build)
+      |>.buildChecked)
   let (_, st1) ← expectOkState "chain5: copy cap" (SeLe4n.Kernel.cspaceCopy src copyDst st0)
   let (_, st2) ← expectOkState "chain5: move copied cap" (SeLe4n.Kernel.cspaceMove copyDst moveDst st1)
   let (_, st3) ← expectOkState "chain5: delete moved cap" (SeLe4n.Kernel.cspaceDeleteSlot moveDst st2)
@@ -196,7 +197,7 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
           ipcState := .ready
         })
       |>.withRunnable [waiter]
-      |>.build)
+      |>.buildChecked)
   let (_, st1) ← expectOkState "chain6: signal badge 0x01"
     (SeLe4n.Kernel.notificationSignal ntfnId (SeLe4n.Badge.ofNatMasked 0x01) st0)
   let (_, st2) ← expectOkState "chain6: signal badge 0x10"
@@ -219,7 +220,7 @@ private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨2700⟩ (.vspaceRoot { asid := asid1, mappings := {} })
       |>.withObject ⟨2701⟩ (.vspaceRoot { asid := asid2, mappings := {} })
-      |>.build)
+      |>.buildChecked)
 
   let (_, st1) ← expectOkState "chain7: map shared page into asid1"
     (SeLe4n.Kernel.Architecture.vspaceMapPage asid1 vaddr1 paddr default st0)
@@ -270,7 +271,7 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
       |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
       |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
       |>.withRunnable [tidA, tidB, tidC, tidD]
-      |>.build)
+      |>.buildChecked)
 
   let (_, st1) ← expectOkState "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st0)
   let (_, st2) ← expectOkState "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st1)
@@ -326,7 +327,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
         })
       |>.withObject childCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
       |>.withObject grandCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
-      |>.build)
+      |>.buildChecked)
 
   let (_, st1) ← expectOkState "chain9: mint root→child with CDT"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot childSlot (AccessRightSet.ofList [.read, .write]) none st0)
@@ -405,7 +406,7 @@ private def buildParameterizedTopology
   let builder := BootstrapBuilder.empty |>.withRunnable runnableThreads
   let builder := allObjects.foldl (fun b (oid, obj) => b.withObject oid obj) builder
   let builder := lifecycleTypes.foldl (fun b (oid, ty) => b.withLifecycleObjectType oid ty) builder
-  builder.build
+  builder.buildChecked
 
 private partial def scheduleNTimes (n : Nat) (assertEvery : Nat) (st : SystemState) : IO SystemState := do
   if n = 0 then
@@ -431,7 +432,7 @@ private def schedulerStressChecks : IO Unit := do
       |>.withObject ⟨2602⟩ (.tcb { tid := ⟨2602⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
       |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
-      |>.build)
+      |>.buildChecked)
   let (_, stFirst) ← expectOkState "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
   let baseline := stFirst.scheduler.current
   let mut consistent := true
@@ -469,7 +470,7 @@ private def schedulerStressChecks : IO Unit := do
       |>.withObject ⟨4103⟩ (.vspaceRoot { asid := ⟨7⟩, mappings := {} })
       |>.withRunnable runnableDomainThreads)
   let domainStateBase :=
-    (domainThreads.foldl (fun b (oid, obj) => b.withObject oid obj) domainStateBaseBuilder).build
+    (domainThreads.foldl (fun b (oid, obj) => b.withObject oid obj) domainStateBaseBuilder).buildChecked
   let domainState :=
     { domainStateBase with
       scheduler := { domainStateBase.scheduler with
@@ -557,9 +558,9 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨301⟩]
+      |>.withRunnable [⟨300⟩, ⟨301⟩]
       |>.withCurrent (some ⟨300⟩)
-      |>.build)
+      |>.buildChecked)
 
   -- Step 1: Sender (current) does syscallEntry (send) → queues on endpoint
   let stAfterSend ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with
@@ -629,8 +630,9 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
+      |>.withRunnable [⟨400⟩]
       |>.withCurrent (some ⟨400⟩)
-      |>.build)
+      |>.buildChecked)
 
   -- syscallEntry send: the badge from the CNode cap should be attached
   let stSend := st0
@@ -697,7 +699,7 @@ private def chain12IpcCapTransfer : IO Unit := do
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
       |>.withRunnable [sender, receiver]
-      |>.build)
+      |>.buildChecked)
 
   -- Step 1: Receiver blocks on endpoint
   let (_, st1) ← expectOkState "chain12: receiver blocks on endpoint"
@@ -749,7 +751,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
       |>.withRunnable [sender, receiver]
-      |>.build)
+      |>.buildChecked)
 
   let (_, st1) ← expectOkState "chain13: receiver blocks"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
@@ -808,7 +810,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
       |>.withRunnable [sender, receiver]
-      |>.build)
+      |>.buildChecked)
 
   -- Step 1: Receiver blocks on endpoint
   let (_, st1) ← expectOkState "chain14: receiver blocks on endpoint"
@@ -879,7 +881,7 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build 15-level chain: root → child0 → child1 → ... → child14
   let mut st := st0
@@ -956,7 +958,7 @@ private def chain16StrictRevokePartialFail : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build 5-level chain: root → c0 → c1 → c2 → c3 → c4
   let mut st := st0
@@ -1071,7 +1073,7 @@ private def chain17StrictRevokeOrdering : IO Unit := do
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build branching tree:
   -- root → A (mint)
@@ -1185,7 +1187,7 @@ private def chain18StreamingRevokeBFS : IO Unit := do
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build branching tree:
   -- root → A (mint)
@@ -1246,7 +1248,7 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Execute streaming BFS revocation (no descendants)
   let ((), stFinal) ← expectOkState "chain19: streaming BFS revoke empty tree"
@@ -1286,7 +1288,7 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build deep chain: root → A → B → C → D
   let (_, st1) ← expectOkState "chain20: mint root→A"
@@ -1344,7 +1346,7 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
           ]
         else SeLe4n.Kernel.RobinHood.RHTable.empty 16
       })
-    let st0 := builder.build
+    let st0 := builder.buildChecked
     let (_, st1) ← expectOkState "chain21: mint root→A"
       (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
     let (_, st2) ← expectOkState "chain21: mint A→B"
@@ -1399,7 +1401,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
           ipcState := .ready
         })
       |>.withRunnable [waiter]
-      |>.build)
+      |>.buildChecked)
   -- Step 1: waiter blocks on notification (no pending badge)
   let (result1, st1) ← expectOkState "chain22: wait blocks"
     (SeLe4n.Kernel.notificationWait ntfnId waiter st0)
@@ -1420,6 +1422,159 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
   -- Step 4: Verify waiter is runnable again
   expect "chain22: waiter is runnable after wake" (waiter ∈ st2.scheduler.runQueue)
   assertInvariants "chain22: signal-wake badge delivery" st2
+
+-- ============================================================================
+-- T7-E: Deep CDT cascade test (4 levels: root → child → grandchild → great-grandchild)
+-- Tests deleteObject at mid-tree and verifies sub-tree cleanup.
+-- ============================================================================
+
+private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
+  let targetId : SeLe4n.ObjId := ⟨8000⟩
+  let cnodeId : SeLe4n.ObjId := ⟨8001⟩
+  let cnodeId2 : SeLe4n.ObjId := ⟨8002⟩
+  let cnodeId3 : SeLe4n.ObjId := ⟨8003⟩
+  let cnodeId4 : SeLe4n.ObjId := ⟨8004⟩
+  -- Slots: root(8001/0) → child(8002/0) → grandchild(8003/0) → great-grandchild(8004/0)
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let childSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId2, slot := ⟨0⟩ }
+  let grandchildSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId3, slot := ⟨0⟩ }
+  let greatGrandchildSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId4, slot := ⟨0⟩ }
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject targetId (.endpoint {})
+      |>.withObject cnodeId (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ] })
+      |>.withObject cnodeId2 (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.withObject cnodeId3 (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.withObject cnodeId4 (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.buildChecked)
+  -- Build 4-level chain: root → child → grandchild → great-grandchild
+  let (_, st1) ← expectOkState "chain23: mint root→child"
+    (SeLe4n.Kernel.cspaceMintWithCdt rootSlot childSlot (AccessRightSet.ofList [.read, .write, .grant]) none st0)
+  let (_, st2) ← expectOkState "chain23: mint child→grandchild"
+    (SeLe4n.Kernel.cspaceMintWithCdt childSlot grandchildSlot (AccessRightSet.ofList [.read, .write, .grant]) none st1)
+  let (_, st3) ← expectOkState "chain23: mint grandchild→great-grandchild"
+    (SeLe4n.Kernel.cspaceMintWithCdt grandchildSlot greatGrandchildSlot (AccessRightSet.ofList [.read, .write]) none st2)
+  -- Verify 4-level chain exists
+  expect "chain23: root has cap" (SystemState.lookupSlotCap st3 rootSlot).isSome
+  expect "chain23: child has cap" (SystemState.lookupSlotCap st3 childSlot).isSome
+  expect "chain23: grandchild has cap" (SystemState.lookupSlotCap st3 grandchildSlot).isSome
+  expect "chain23: great-grandchild has cap" (SystemState.lookupSlotCap st3 greatGrandchildSlot).isSome
+  -- Delete at mid-tree (child level) via strict revoke on child slot
+  let (report, st4) ← expectOkState "chain23: strict revoke at child"
+    (SeLe4n.Kernel.cspaceRevokeCdtStrict childSlot st3)
+  -- Grandchild and great-grandchild should be removed
+  expect "chain23: grandchild slot empty" (SystemState.lookupSlotCap st4 grandchildSlot).isNone
+  expect "chain23: great-grandchild slot empty" (SystemState.lookupSlotCap st4 greatGrandchildSlot).isNone
+  -- Child cap should still exist (revoke removes descendants, not self)
+  expect "chain23: child still has cap" (SystemState.lookupSlotCap st4 childSlot).isSome
+  -- Root should be unaffected
+  expect "chain23: root still has cap" (SystemState.lookupSlotCap st4 rootSlot).isSome
+  expect "chain23: revoke deleted 2 descendants" (report.deletedSlots.length = 2)
+  assertInvariants "chain23: 4-level CDT cascade" st4
+
+-- ============================================================================
+-- T7-K: Edge-case scheduler tests
+-- ============================================================================
+
+/-- T7-K/L-P06: handleYield with empty run queue -/
+private def chain24HandleYieldEmptyQueue : IO Unit := do
+  let tid1 : SeLe4n.ThreadId := ⟨9001⟩
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject tid1.toObjId (.tcb {
+          tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
+          cspaceRoot := ⟨9010⟩, vspaceRoot := ⟨9020⟩, ipcBuffer := ⟨4096⟩,
+          ipcState := .ready })
+      |>.withObject ⟨9010⟩ (.cnode {
+          depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.withObject ⟨9020⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
+      |>.withRunnable [tid1]
+      |>.buildChecked)
+  -- Schedule first to get a current thread
+  let (_, st1) ← expectOkState "chain24: initial schedule"
+    (SeLe4n.Kernel.schedule st0)
+  expect "chain24: thread scheduled" (st1.scheduler.current == some tid1)
+  -- Now yield — single thread should be re-selected
+  let (_, st2) ← expectOkState "chain24: handleYield"
+    (SeLe4n.Kernel.handleYield st1)
+  -- With only one thread, yield re-enqueues and re-selects the same thread
+  expect "chain24: same thread re-selected after yield" (st2.scheduler.current == some tid1)
+
+/-- T7-K/L-P07: IRQ handler dispatch via notification signaling -/
+private def chain25IrqHandlerDispatch : IO Unit := do
+  let ntfnId : SeLe4n.ObjId := ⟨9100⟩
+  let irq : SeLe4n.Irq := ⟨5⟩
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withIrqHandler irq ntfnId
+      |>.buildChecked)
+  -- Look up the IRQ handler notification
+  let handlerOid := st0.irqHandlers[irq]?
+  expect "chain25: IRQ handler registered" (handlerOid == some ntfnId)
+  -- Simulate IRQ delivery by signaling the handler notification
+  let badge := SeLe4n.Badge.ofNatMasked (1 <<< irq.toNat)
+  let (_, st1) ← expectOkState "chain25: notification signal for IRQ"
+    (SeLe4n.Kernel.notificationSignal ntfnId badge st0)
+  -- Verify notification state changed to active with badge
+  match st1.objects[ntfnId]? with
+  | some (.notification ntfn) =>
+      expect "chain25: notification is active" (ntfn.state == .active)
+      expect "chain25: badge accumulated" ntfn.pendingBadge.isSome
+  | _ => throw (IO.userError "chain25: notification object missing after signal")
+
+-- ============================================================================
+-- T7-L: Boot sequence test
+-- ============================================================================
+
+/-- T7-L/L-P08: Boot from PlatformConfig and verify IntermediateState invariants -/
+private def chain26BootSequence : IO Unit := do
+  -- Construct a minimal PlatformConfig with one notification (IRQ handler)
+  -- and one endpoint. These object types have trivially satisfied proof obligations.
+  let ntfnEntry : SeLe4n.Platform.Boot.ObjectEntry := {
+    id := ⟨100⟩
+    obj := .notification { state := .idle, waitingThreads := [], pendingBadge := none }
+    hSlots := fun _ h => by cases h
+    hMappings := fun _ h => by cases h
+  }
+  let epEntry : SeLe4n.Platform.Boot.ObjectEntry := {
+    id := ⟨101⟩
+    obj := .endpoint {}
+    hSlots := fun _ h => by cases h
+    hMappings := fun _ h => by cases h
+  }
+  let irqEntry : SeLe4n.Platform.Boot.IrqEntry := { irq := ⟨3⟩, handler := ⟨100⟩ }
+  let config : SeLe4n.Platform.Boot.PlatformConfig := {
+    irqTable := [irqEntry]
+    initialObjects := [ntfnEntry, epEntry]
+  }
+  let ist := SeLe4n.Platform.Boot.bootFromPlatform config
+  -- The 4 IntermediateState invariant witnesses are guaranteed by type system.
+  -- bootFromPlatform_valid proves they hold — the existence of the proof IS the test.
+  let _valid := SeLe4n.Platform.Boot.bootFromPlatform_valid config
+  IO.println "operation-chain check passed [chain26: boot invariants verified by type system]"
+  -- Verify the booted state contains the objects
+  let ntfnId : SeLe4n.ObjId := ⟨100⟩
+  let epId : SeLe4n.ObjId := ⟨101⟩
+  let irqNum : SeLe4n.Irq := ⟨3⟩
+  expect "chain26: notification object present" (ist.state.objects[ntfnId]?).isSome
+  expect "chain26: endpoint object present" (ist.state.objects[epId]?).isSome
+  -- Verify IRQ handler is registered
+  expect "chain26: IRQ handler registered" (ist.state.irqHandlers[irqNum]? == some ntfnId)
+  -- Verify determinism — same config yields same state
+  let ist2 := SeLe4n.Platform.Boot.bootFromPlatform config
+  expect "chain26: boot is deterministic" (ist.state.objects.size == ist2.state.objects.size)
 
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
@@ -1445,7 +1600,11 @@ private def runOperationChainSuite : IO Unit := do
   chain20StreamingRevokeDeepChain
   chain21StreamingRevokeEquivalence
   chain22NotificationBadgeDelivery
-  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5/R3-A)"
+  chain23CdtDeepCascadeWithMidDelete
+  chain24HandleYieldEmptyQueue
+  chain25IrqHandlerDispatch
+  chain26BootSequence
+  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5/R3-A/T7)"
 
 end SeLe4n.Testing
 

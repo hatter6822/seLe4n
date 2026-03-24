@@ -21,7 +21,7 @@ through WS-S) are complete. WS-T Phases T1–T4 complete (Benchmarking Blockers,
 Model & CDT Integrity, Rust ABI Hardening, IPC & Capability Proof Closure);
 phases T5–T8 continue the deep-dive audit remediation.
 
-### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T5 COMPLETE, T6–T8 IN PROGRESS
+### WS-T workstream (Deep-Dive Audit Remediation) — Phases T1–T7 COMPLETE, T8 IN PROGRESS
 
 WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
 MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
@@ -89,6 +89,22 @@ v0.20.0–v0.20.7. See
   Documentation: `lookupServiceByCap` first-match semantics (M-LCS-2),
   `Notification.waitingThreads` LIFO semantics (M-MOD-6). Zero sorry, zero
   axiom. All 13 sub-tasks complete.
+
+- **T7 (v0.20.6) — COMPLETE**: Test Coverage & Build Infrastructure. Migrated
+  all test state builders from `.build` (unchecked) to `.buildChecked` with
+  8-point structural validation (M-TST-2). Added 7 post-mutation invariant
+  checks in trace harness (M-TST-3) — invariant count increased from 24 to 31.
+  Added 3 frozen IPC queue enqueue tests verifying `frozenEndpointSend`,
+  `frozenEndpointReceive`, and `frozenEndpointCall` queue behavior (M-FRZ-1/2/3
+  validation, L-P01). Added 4-level deep CDT cascade test with mid-tree
+  strict revoke (L-P02). Added `handleYield` empty-queue and IRQ handler
+  dispatch tests (L-P06/P07). Added boot sequence test exercising
+  `bootFromPlatform` with all 4 IntermediateState invariant witnesses (L-P08).
+  Fixed pre-commit hook predictable temp file race with `mktemp` (M-NEW-12).
+  Added SHA-256 verification for Lean toolchain download (M-NEW-13). Added
+  Rust test CI job (`cargo test --workspace`) to GitHub Actions (L-P03).
+  Updated trace fixture for new invariant check count. Zero sorry, zero axiom.
+  All 12 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

@@ -21,6 +21,10 @@
 
 set -euo pipefail
 
+# Secure temp file for build output (M-NEW-12: replaces predictable PID-based path)
+BUILD_LOG="$(mktemp)"
+trap 'rm -f "${BUILD_LOG}"' EXIT
+
 # Ensure elan/lean are available
 if [ -f "$HOME/.elan/env" ]; then
     # shellcheck source=/dev/null
@@ -93,18 +97,18 @@ for file in $STAGED_LEAN_FILES; do
     echo "  Building $MODULE ..."
 
     # Build with timeout (5 minutes per module)
-    if ! timeout 300 lake build "$MODULE" > /tmp/lake-precommit-$$.log 2>&1; then
+    if ! timeout 300 lake build "$MODULE" > "${BUILD_LOG}" 2>&1; then
         BUILD_ERRORS=$((BUILD_ERRORS + 1))
-        ERROR_COUNT=$(grep -c "^error:" /tmp/lake-precommit-$$.log 2>/dev/null || echo "?")
+        ERROR_COUNT=$(grep -c "^error:" "${BUILD_LOG}" 2>/dev/null || echo "?")
         echo "  FAILED: $MODULE ($ERROR_COUNT errors)"
-        grep "^error:" /tmp/lake-precommit-$$.log 2>/dev/null | head -5 | sed 's/^/    /'
+        grep "^error:" "${BUILD_LOG}" 2>/dev/null | head -5 | sed 's/^/    /'
         if [ "$ERROR_COUNT" != "?" ] && [ "$ERROR_COUNT" -gt 5 ]; then
             echo "    ... and $((ERROR_COUNT - 5)) more"
         fi
     else
         echo "  OK: $MODULE"
     fi
-    rm -f /tmp/lake-precommit-$$.log
+    rm -f "${BUILD_LOG}"
 done
 
 if [ $MODULES_CHECKED -eq 0 ]; then

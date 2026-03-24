@@ -262,6 +262,78 @@ private def fo015_notificationWait : IO Unit := do
       expect "FO-015a badge consumed" (badge == some (Badge.ofNatMasked 42))
   | .error _ => throw <| IO.userError "FO-015 wait should succeed"
 
+-- ============================================================================
+-- T7-F: Frozen IPC Queue Enqueue Tests (FO-016 to FO-018)
+-- Verify that frozenEndpointSend/Receive/Call properly enqueue threads
+-- when no matching peer is waiting (M-FRZ-1/2/3 validation).
+-- ============================================================================
+
+/-- FO-016: frozenEndpointSend with no receiver — sender enqueued in sendQ -/
+private def fo016_sendEnqueuesSender : IO Unit := do
+  let senderTcb := mkTcb 1
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨1⟩, .tcb senderTcb)]
+  let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointSend ⟨10⟩ ⟨1⟩ msg fst with
+  | .ok ((), fst') =>
+      -- Sender TCB should be blockedOnSend
+      match fst'.objects.get? ⟨1⟩ with
+      | some (.tcb tcb) =>
+          expect "FO-016a sender blockedOnSend" (tcb.ipcState == .blockedOnSend ⟨10⟩)
+          expect "FO-016b sender has pending message" (tcb.pendingMessage.isSome)
+      | _ => throw <| IO.userError "FO-016a sender TCB missing"
+      -- Endpoint sendQ should have sender as head
+      match fst'.objects.get? ⟨10⟩ with
+      | some (.endpoint ep') =>
+          expect "FO-016c sendQ head is sender" (ep'.sendQ.head == some ⟨1⟩)
+          expect "FO-016d sendQ tail is sender" (ep'.sendQ.tail == some ⟨1⟩)
+          expect "FO-016e receiveQ still empty" (ep'.receiveQ.head == none)
+      | _ => throw <| IO.userError "FO-016c endpoint missing"
+  | .error e => throw <| IO.userError s!"FO-016 send should succeed but got: {reprStr e}"
+
+/-- FO-017: frozenEndpointReceive with no sender — receiver enqueued in receiveQ -/
+private def fo017_receiveEnqueuesReceiver : IO Unit := do
+  let receiverTcb := mkTcb 2
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨2⟩, .tcb receiverTcb)]
+  match frozenEndpointReceive ⟨10⟩ ⟨2⟩ fst with
+  | .ok (_, fst') =>
+      -- Receiver TCB should be blockedOnReceive
+      match fst'.objects.get? ⟨2⟩ with
+      | some (.tcb tcb) =>
+          expect "FO-017a receiver blockedOnReceive" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
+      | _ => throw <| IO.userError "FO-017a receiver TCB missing"
+      -- Endpoint receiveQ should have receiver as head
+      match fst'.objects.get? ⟨10⟩ with
+      | some (.endpoint ep') =>
+          expect "FO-017b receiveQ head is receiver" (ep'.receiveQ.head == some ⟨2⟩)
+          expect "FO-017c receiveQ tail is receiver" (ep'.receiveQ.tail == some ⟨2⟩)
+          expect "FO-017d sendQ still empty" (ep'.sendQ.head == none)
+      | _ => throw <| IO.userError "FO-017b endpoint missing"
+  | .error e => throw <| IO.userError s!"FO-017 receive should succeed but got: {reprStr e}"
+
+/-- FO-018: frozenEndpointCall with no receiver — caller enqueued in sendQ -/
+private def fo018_callEnqueuesCaller : IO Unit := do
+  let callerTcb := mkTcb 3
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨3⟩, .tcb callerTcb)]
+  let msg : IpcMessage := { registers := #[⟨7⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointCall ⟨10⟩ ⟨3⟩ msg fst with
+  | .ok ((), fst') =>
+      -- Caller TCB should be blockedOnCall
+      match fst'.objects.get? ⟨3⟩ with
+      | some (.tcb tcb) =>
+          expect "FO-018a caller blockedOnCall" (tcb.ipcState == .blockedOnCall ⟨10⟩)
+          expect "FO-018b caller has pending message" (tcb.pendingMessage.isSome)
+      | _ => throw <| IO.userError "FO-018a caller TCB missing"
+      -- Endpoint sendQ should have caller as head
+      match fst'.objects.get? ⟨10⟩ with
+      | some (.endpoint ep') =>
+          expect "FO-018c sendQ head is caller" (ep'.sendQ.head == some ⟨3⟩)
+          expect "FO-018d sendQ tail is caller" (ep'.sendQ.tail == some ⟨3⟩)
+      | _ => throw <| IO.userError "FO-018c endpoint missing"
+  | .error e => throw <| IO.userError s!"FO-018 call should succeed but got: {reprStr e}"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -290,4 +362,8 @@ def main : IO Unit := do
   IO.println "--- TPH-014: Notification Signal/Wait ---"
   fo014_notificationSignal
   fo015_notificationWait
-  IO.println "=== All Q7 frozen ops tests passed (15 scenarios) ==="
+  IO.println "--- T7-F: Frozen IPC Queue Enqueue ---"
+  fo016_sendEnqueuesSender
+  fo017_receiveEnqueuesReceiver
+  fo018_callEnqueuesCaller
+  IO.println "=== All Q7 frozen ops tests passed (18 scenarios) ==="
