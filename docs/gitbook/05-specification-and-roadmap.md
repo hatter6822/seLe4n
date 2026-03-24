@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.20.2` |
+| Version | `0.20.3` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 57,939 across 100 Lean files |
+| Production LoC | 58,778 across 100 Lean files |
 | Test LoC | 7,561 across 10 suites |
-| Proved declarations | 1,775 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 1,800 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-T IN PROGRESS** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). T1–T3 complete. Prior: **WS-S COMPLETE** (v0.19.0–v0.19.6), **WS-R COMPLETE** (v0.18.0–v0.18.7), WS-Q through WS-B — all COMPLETE. |
+| Active workstream | **WS-T IN PROGRESS** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). T1–T4 complete. Prior: **WS-S COMPLETE** (v0.19.0–v0.19.6), **WS-R COMPLETE** (v0.18.0–v0.18.7), WS-Q through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

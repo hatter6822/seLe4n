@@ -1056,3 +1056,4 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
       | _ =>
         simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
 
+

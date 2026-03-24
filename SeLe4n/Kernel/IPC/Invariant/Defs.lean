@@ -130,6 +130,21 @@ def tcbQueueLinkIntegrity (st : SystemState) : Prop :=
     ∀ (a : SeLe4n.ThreadId), tcbB.queuePrev = some a →
       ∃ tcbA, st.objects[a.toObjId]? = some (.tcb tcbA) ∧ tcbA.queueNext = some b)
 
+/-- Transitive closure of the queueNext relation: a path a →⁺ b exists in the
+system state when there is a chain of TCBs whose queueNext fields connect a to b. -/
+inductive QueueNextPath (st : SystemState) : SeLe4n.ThreadId → SeLe4n.ThreadId → Prop
+  | single (a b : SeLe4n.ThreadId) (tcb : TCB) :
+      st.objects[a.toObjId]? = some (.tcb tcb) → tcb.queueNext = some b →
+      QueueNextPath st a b
+  | cons (a b c : SeLe4n.ThreadId) (tcb : TCB) :
+      st.objects[a.toObjId]? = some (.tcb tcb) → tcb.queueNext = some b →
+      QueueNextPath st b c → QueueNextPath st a c
+
+/-- WS-H5: TCB queue chain acyclicity — no thread can reach itself via queueNext.
+This prevents infinite loops during queue traversal. -/
+def tcbQueueChainAcyclic (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId), ¬ QueueNextPath st tid tid
+
 /-- WS-H5/C-04: Dual-queue endpoint well-formedness — both sendQ and receiveQ
 are individually well-formed. Cross-queue contamination prevention is enforced
 by the ipcState exclusivity that endpointQueueEnqueue checks (a thread must
@@ -144,12 +159,15 @@ def dualQueueEndpointWellFormed (epId : SeLe4n.ObjId) (st : SystemState) : Prop 
 /-- WS-H5: System-level dual-queue invariant — all endpoints in the system
 maintain dual-queue well-formedness AND system-wide TCB link integrity holds.
 tcbQueueLinkIntegrity is a system-level property (not per-endpoint) that
-ensures every TCB's queueNext/queuePrev links are consistent. -/
+ensures every TCB's queueNext/queuePrev links are consistent.
+tcbQueueChainAcyclic ensures no thread can reach itself via queueNext,
+preventing infinite loops during queue traversal. -/
 def dualQueueSystemInvariant (st : SystemState) : Prop :=
   (∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
     st.objects[epId]? = some (.endpoint ep) →
     dualQueueEndpointWellFormed epId st) ∧
-  tcbQueueLinkIntegrity st
+  tcbQueueLinkIntegrity st ∧
+  tcbQueueChainAcyclic st
 
 /-- WS-H12c: IPC invariant — all notifications satisfy notification queue
 well-formedness. The former `endpointInvariant` conjunct (vacuous `True`

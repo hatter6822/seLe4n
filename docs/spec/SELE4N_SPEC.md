@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.20.2` (`lakefile.toml`) |
+| **Package version** | `0.20.3` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 57,939 across 100 Lean files |
+| **Production LoC** | 58,778 across 100 Lean files |
 | **Test LoC** | 7,561 across 10 Lean test suites |
-| **Proved declarations** | 1,775 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,800 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| **Active workstream** | **WS-T IN PROGRESS** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). T1–T3 complete; T4–T8 in progress. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md). Prior portfolios: WS-S (v0.19.0–v0.19.6), WS-R (v0.18.0–v0.18.7), WS-Q–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-T IN PROGRESS** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). T1–T4 complete; T5–T8 in progress. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md). Prior portfolios: WS-S (v0.19.0–v0.19.6), WS-R (v0.18.0–v0.18.7), WS-Q–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

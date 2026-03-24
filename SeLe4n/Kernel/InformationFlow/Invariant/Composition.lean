@@ -38,6 +38,16 @@ inductive NonInterferenceStep
       (next : Option SeLe4n.ThreadId)
       (hStep : chooseThread st = .ok (next, st'))
     : NonInterferenceStep ctx observer st st'
+  /-- T4-J (M-IF-3) design note: The `hProjection` hypothesis is intentionally
+  externalized for compound IPC operations. Discharging it internally would
+  require a concrete `MemoryDomainOwnership` configuration (which maps physical
+  memory regions to security domains). The model defines `MemoryDomainOwnership`
+  as an optional field of `LabelingContext` — when a platform binding provides
+  ownership (e.g., RPi5 with partitioned RAM), `hProjection` is dischargeable
+  from the ownership invariant + the operation's memory footprint. Without
+  ownership, projection is vacuously true (all memory is high). This design
+  separates the NI proof structure (which is platform-independent) from the
+  memory ownership policy (which is platform-specific). -/
   | endpointSendDual
       (eid : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
       (hEndpointHigh : objectObservable ctx observer eid = false)

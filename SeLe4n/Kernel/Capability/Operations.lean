@@ -697,7 +697,15 @@ theorem cspaceMove_ok_implies_source_exists
 /-- WS-E4/C-02: Mutate a capability's rights in place without creating a derivation.
 
 The slot must already contain a capability, and the new rights must be a subset
-of the existing rights (attenuation only). Badge can be overridden. -/
+of the existing rights (attenuation only). Badge can be overridden.
+
+**T4-H (M-CAP-1) design note**: Badge override via `cspaceMutate` is intentionally
+*not* tracked in the CDT (CapDerivationTree). This matches seL4's `CNode_Mutate`
+semantics: the badge is part of the capability *value* (like rights), not the
+derivation *relationship*. The CDT tracks parent→child lineage for revocation;
+badge changes don't affect which capabilities should be revoked when an ancestor
+is deleted. The `cspaceMintWithCdt` operation (below) *does* track derivation
+edges because minting creates a new capability slot, not an in-place mutation. -/
 def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) : Kernel Unit :=
   fun st =>

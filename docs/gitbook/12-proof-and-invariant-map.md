@@ -21,7 +21,7 @@ have been replaced with verified `RHTable` (Robin Hood hash table), and all
 `Std.HashSet` usage (BFS visited sets in Acyclicity.lean, observable filtering
 in Projection.lean) is intentionally retained.
 
-**WS-T/T3 additions (v0.20.2) — Rust ABI Hardening:**
+**WS-T/T3 additions (v0.20.3) — Rust ABI Hardening:**
 
 - `MessageInfo::encode()` now returns `Result<u64, KernelError>` with 55-bit
   label bound check (`MAX_LABEL = 2^55 - 1`), preventing silent truncation
@@ -311,6 +311,11 @@ CDT structural invariants (WS-G8):
 - `removeNode_childMapConsistent` — `removeNode` preserves `childMapConsistent` (R3/R2-C, closing CDT consistency gap),
 - `childrenOf` — O(1) HashMap lookup replacing O(E) edge-list scan,
 - `descendantsOf` — O(N+E) total via `childrenOf`-backed BFS traversal.
+- `descendantsOf_fuel_sufficiency` — **(T4-G, M-CAP-2)** direct children of any
+  CDT node are included in the BFS result, providing the foundation for
+  revocation completeness. Supported by 8 proven lemmas: `go_cons`, `go_nil`,
+  `go_acc_subset`, `go_children_found`, `children_subset`, `go_fuel_mono`,
+  `go_head_children_found`, `fuel_bound`.
 - `cdtChildMapConsistentCheck` — runtime verification of `childMapConsistent` invariant (v0.12.15), checking both forward (childMap→edges) and backward (edges→childMap) directions.
 
 ## 4. IPC invariants (M3)
@@ -1213,6 +1218,12 @@ Builder equivalence bridge (`RadixTree/Bridge.lean`):
 - `buildCNodeRadix_guardWidth/guardValue/radixWidth` — parameter preservation
 - `buildCNodeRadix_wf` — built tree is well-formed
 - `CNodeRadix.ofCNode` — convenience conversion from CNode
+- `buildCNodeRadix_lookup_equiv` — **(T4-I, M-DS-3)** bidirectional lookup
+  equivalence: `(buildCNodeRadix rt config).lookup slot = rt.get? slot`.
+  Proved via 3 private fold lemmas (foldl_preserves_none, foldl_preserves_some,
+  foldl_establishes_some) with list induction over the hash table's slot array.
+  Preconditions: `invExt`, `UniqueRadixIndices`, and `hNoPhantom` (no radix
+  index collision between absent keys and present keys).
 
 Resolution theorems:
 
@@ -1673,6 +1684,29 @@ High-level IPC operation preservation (L3-C3):
 - `endpointSendDual_preserves_ipcStateQueueConsistent`
 - `endpointReceiveDual_preserves_ipcStateQueueConsistent`
 - `endpointReply_preserves_ipcStateQueueConsistent`
+
+**T4-A/B/C: Compound operation ipcStateQueueConsistent preservation** (`Structural.lean`):
+
+- `endpointCall_preserves_ipcStateQueueConsistent` — handshake + blocking paths
+- `endpointReplyRecv_preserves_ipcStateQueueConsistent` — reply + receive composition
+- `notificationSignal_preserves_ipcStateQueueConsistent` — wake + badge accumulation
+- `notificationWait_preserves_ipcStateQueueConsistent` — consume + blocking paths
+- `storeObject_notification_preserves_ipcStateQueueConsistent` — notification store helper
+- `ipcInvariantFull_compositional` — convenience 4-component composition
+
+**T4-D: endpointQueueRemoveDual dualQueueSystemInvariant preservation** (`Structural.lean`):
+
+- `endpointQueueRemoveDual_preserves_dualQueueSystemInvariant` — **(T4-D, M-IPC-2)**
+  complete sorry-free proof (1023 lines) covering all 4 paths: endpointHead+none
+  (Path A), endpointHead+some (Path B), tcbNext+none (Path C, tail removal),
+  tcbNext+some (Path D, mid-queue removal). Proves `dualQueueEndpointWellFormed`,
+  `tcbQueueLinkIntegrity`, and `tcbQueueChainAcyclic` preservation for each path.
+  Path D handles 3 simultaneously modified TCBs with 4-way case analysis in both
+  forward and reverse link integrity directions.
+
+**T4-L: Scheduler maxPriority consistency** (`RunQueue.lean`):
+
+- `insert_maxPriority_consistency` — after insert, maxPriority = max(old, prio)
 
 **L3-D: Tail consistency** (`DualQueue/Core.lean`):
 
