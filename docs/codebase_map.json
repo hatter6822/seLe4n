@@ -1630,6 +1630,17 @@
           "name": "decodeVSpaceUnmapArgs_error_iff",
           "line": 473,
           "called": [
+            "decodeVSpaceMapArgs",
+            "decodeVSpaceMapArgs_error_of_insufficient_regs",
+            "decodeVSpaceMapArgs_error_of_invalid_perms",
+            "requireMsgReg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeVSpaceUnmapArgs_error_iff",
+          "line": 470,
+          "called": [
             "decodeVSpaceUnmapArgs",
             "requireMsgReg",
             "requireMsgReg_unfold_err",
@@ -10608,14 +10619,13 @@
             "cleanupTcbReferences_scheduler_eq_removeRunnable",
             "detachCNodeSlots",
             "detachCNodeSlots_scheduler_eq",
-            "lifecyclePreRetypeCleanup",
-            "lifecycleRetypeWithCleanup"
+            "lifecyclePreRetypeCleanup"
           ]
         },
         {
           "kind": "def",
           "name": "lifecycleRetypeObject",
-          "line": 445,
+          "line": 444,
           "called": [
             "lifecycleRetypeAuthority"
           ]
@@ -10623,7 +10633,7 @@
         {
           "kind": "def",
           "name": "lifecycleRevokeDeleteRetype",
-          "line": 482,
+          "line": 481,
           "called": [
             "lifecycleRetypeObject"
           ]
@@ -10631,25 +10641,25 @@
         {
           "kind": "def",
           "name": "objectTypeAllocSize",
-          "line": 510,
+          "line": 509,
           "called": []
         },
         {
           "kind": "def",
           "name": "requiresPageAlignment",
-          "line": 522,
+          "line": 521,
           "called": []
         },
         {
           "kind": "def",
           "name": "allocationBasePageAligned",
-          "line": 529,
+          "line": 528,
           "called": []
         },
         {
           "kind": "def",
           "name": "scrubObjectMemory",
-          "line": 553,
+          "line": 552,
           "called": [
             "objectTypeAllocSize"
           ]
@@ -10657,7 +10667,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objects_eq",
-          "line": 560,
+          "line": 559,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10665,7 +10675,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_scheduler_eq",
-          "line": 565,
+          "line": 564,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10673,7 +10683,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_lifecycle_eq",
-          "line": 570,
+          "line": 569,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10681,7 +10691,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_tlb_eq",
-          "line": 575,
+          "line": 574,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10689,7 +10699,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_establishes_memoryZeroed",
-          "line": 581,
+          "line": 580,
           "called": [
             "objectTypeAllocSize",
             "scrubObjectMemory"
@@ -10698,7 +10708,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objectIndex_eq",
-          "line": 591,
+          "line": 590,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10706,7 +10716,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objectIndexSet_eq",
-          "line": 596,
+          "line": 595,
           "called": [
             "scrubObjectMemory"
           ]
@@ -10714,7 +10724,7 @@
         {
           "kind": "def",
           "name": "retypeFromUntyped",
-          "line": 618,
+          "line": 617,
           "called": [
             "allocationBasePageAligned",
             "lifecycleRetypeAuthority",
@@ -10725,13 +10735,13 @@
         {
           "kind": "def",
           "name": "lookupUntyped",
-          "line": 669,
+          "line": 668,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_decompose",
-          "line": 678,
+          "line": 677,
           "called": [
             "lifecycleRetypeAuthority",
             "objectTypeAllocSize",
@@ -10741,7 +10751,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_typeMismatch",
-          "line": 796,
+          "line": 795,
           "called": [
             "retypeFromUntyped"
           ]
@@ -10749,7 +10759,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_allocSizeTooSmall",
-          "line": 814,
+          "line": 813,
           "called": [
             "objectTypeAllocSize",
             "retypeFromUntyped"
@@ -10758,7 +10768,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_regionExhausted",
-          "line": 840,
+          "line": 839,
           "called": [
             "allocationBasePageAligned",
             "lifecycleRetypeAuthority",
@@ -10770,31 +10780,31 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_eq",
-          "line": 877,
+          "line": 876,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_ne",
-          "line": 886,
+          "line": 885,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_scheduler_eq",
-          "line": 896,
+          "line": 895,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_state_eq",
-          "line": 904,
+          "line": 903,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_as_storeObject",
-          "line": 923,
+          "line": 922,
           "called": [
             "cspaceLookupSlot_ok_state_eq",
             "lifecycleRetypeAuthority",
@@ -10804,7 +10814,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_lookup_preserved_ne",
-          "line": 954,
+          "line": 953,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10814,7 +10824,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_runnable_membership",
-          "line": 967,
+          "line": 966,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10824,7 +10834,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_not_runnable_membership",
-          "line": 982,
+          "line": 981,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -10834,7 +10844,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalState",
-          "line": 997,
+          "line": 996,
           "called": [
             "lifecycleRetypeObject"
           ]
@@ -10842,7 +10852,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalAuthority",
-          "line": 1008,
+          "line": 1007,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeObject"
@@ -10851,7 +10861,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_success_updates_object",
-          "line": 1023,
+          "line": 1022,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeObject",
@@ -10862,7 +10872,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias",
-          "line": 1053,
+          "line": 1052,
           "called": [
             "lifecycleRevokeDeleteRetype"
           ]
@@ -10870,7 +10880,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup",
-          "line": 1063,
+          "line": 1062,
           "called": [
             "lifecycleRevokeDeleteRetype",
             "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias"
@@ -10879,7 +10889,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_staged_steps",
-          "line": 1076,
+          "line": 1075,
           "called": [
             "lifecycleRetypeObject",
             "lifecycleRevokeDeleteRetype"
@@ -10888,7 +10898,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanup",
-          "line": 1148,
+          "line": 1147,
           "called": [
             "lifecyclePreRetypeCleanup",
             "lifecycleRetypeObject",
@@ -10898,7 +10908,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_ok_runnable_no_dangling",
-          "line": 1169,
+          "line": 1168,
           "called": [
             "cleanupTcbReferences_removes_from_runnable",
             "lifecyclePreRetypeCleanup",
@@ -10912,13 +10922,13 @@
         {
           "kind": "def",
           "name": "objectOfTypeTag",
-          "line": 1209,
+          "line": 1208,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_deterministic",
-          "line": 1241,
+          "line": 1240,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10926,7 +10936,7 @@
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_error_iff",
-          "line": 1245,
+          "line": 1244,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10934,7 +10944,7 @@
         {
           "kind": "theorem",
           "name": "objectOfTypeTag_type",
-          "line": 1259,
+          "line": 1258,
           "called": [
             "objectOfTypeTag"
           ]
@@ -10942,13 +10952,13 @@
         {
           "kind": "def",
           "name": "objectOfKernelType",
-          "line": 1279,
+          "line": 1278,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "objectOfKernelType_type",
-          "line": 1309,
+          "line": 1308,
           "called": [
             "objectOfKernelType"
           ]
@@ -10956,9 +10966,8 @@
         {
           "kind": "theorem",
           "name": "objectOfKernelType_eq_objectOfTypeTag",
-          "line": 1314,
+          "line": 1313,
           "called": [
-            "lifecycleRetypeWithCleanup",
             "objectOfKernelType",
             "objectOfTypeTag"
           ]
@@ -10966,7 +10975,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirect",
-          "line": 1340,
+          "line": 1338,
           "called": [
             "lifecycleRetypeAuthority"
           ]
@@ -10974,7 +10983,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_deterministic",
-          "line": 1356,
+          "line": 1354,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10982,7 +10991,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_eq_lifecycleRetypeObject",
-          "line": 1364,
+          "line": 1362,
           "called": [
             "lifecycleRetypeDirect",
             "lifecycleRetypeObject"
@@ -10991,7 +11000,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_objectNotFound",
-          "line": 1379,
+          "line": 1377,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -10999,7 +11008,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_illegalState",
-          "line": 1387,
+          "line": 1385,
           "called": [
             "lifecycleRetypeDirect"
           ]
@@ -11007,7 +11016,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_error_illegalAuthority",
-          "line": 1396,
+          "line": 1394,
           "called": [
             "lifecycleRetypeAuthority",
             "lifecycleRetypeDirect"

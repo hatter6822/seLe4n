@@ -130,6 +130,9 @@ jobs:
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
 
+      - name: Build (ensure oleans are up-to-date for #check anchors)
+        run: source ~/.elan/env && lake build
+
       - name: Run Tier 3 invariant surface checks
         run: ./scripts/ci_capture_timing.sh full ./scripts/test_tier3_invariant_surface.sh
 
