@@ -42,11 +42,11 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널(microkernel)입니
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.18.6` |
+| **버전** | `0.20.3` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 55,732 (98개 파일) |
-| **테스트 Lean LoC** | 7,317 (10개 테스트 스위트) |
-| **증명된 선언** | 1,692개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 60,116 (100개 파일) |
+| **테스트 Lean LoC** | 7,561 (10개 테스트 스위트) |
+| **증명된 선언** | 1,812개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **최신 감사** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — 전체 커널 + Rust 코드베이스 사전 릴리스 감사 |
 | **코드베이스 맵** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능한 선언 인벤토리 |

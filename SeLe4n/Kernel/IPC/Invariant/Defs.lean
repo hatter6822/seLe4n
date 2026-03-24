@@ -145,6 +145,34 @@ This prevents infinite loops during queue traversal. -/
 def tcbQueueChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId), ¬ QueueNextPath st tid tid
 
+/-- QueueNextPath composes: if a→⁺b and b→⁺c, then a→⁺c. -/
+theorem QueueNextPath_trans {st : SystemState} {a b c : SeLe4n.ThreadId}
+    (hab : QueueNextPath st a b) (hbc : QueueNextPath st b c) :
+    QueueNextPath st a c := by
+  induction hab with
+  | single src dst tcb hObj hNext => exact .cons src dst c tcb hObj hNext hbc
+  | cons src mid _ tcb hObj hNext _ ih => exact .cons src mid c tcb hObj hNext (ih hbc)
+
+/-- Acyclicity implies no self-loop: a thread's queueNext cannot point to itself. -/
+theorem tcbQueueChainAcyclic_no_self_loop {st : SystemState}
+    (hAcyclic : tcbQueueChainAcyclic st)
+    (a : SeLe4n.ThreadId) (tcbA : TCB)
+    (hA : st.objects[a.toObjId]? = some (.tcb tcbA)) :
+    tcbA.queueNext ≠ some a := by
+  intro h
+  exact hAcyclic a (.single a a tcbA hA h)
+
+/-- Acyclicity implies no 2-cycle: if a.next=some b, then b.next ≠ some a. -/
+theorem tcbQueueChainAcyclic_no_two_cycle {st : SystemState}
+    (hAcyclic : tcbQueueChainAcyclic st)
+    (a b : SeLe4n.ThreadId) (tcbA tcbB : TCB)
+    (hA : st.objects[a.toObjId]? = some (.tcb tcbA))
+    (hB : st.objects[b.toObjId]? = some (.tcb tcbB))
+    (hAB : tcbA.queueNext = some b) :
+    tcbB.queueNext ≠ some a := by
+  intro hBA
+  exact hAcyclic a (.cons a b a tcbA hA hAB (.single b a tcbB hB hBA))
+
 /-- WS-H5/C-04: Dual-queue endpoint well-formedness — both sendQ and receiveQ
 are individually well-formed. Cross-queue contamination prevention is enforced
 by the ipcState exclusivity that endpointQueueEnqueue checks (a thread must

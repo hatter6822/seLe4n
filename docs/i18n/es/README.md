@@ -48,11 +48,11 @@ microkernels:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.18.6` |
+| **Versión** | `0.20.3` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 55.732 en 98 archivos |
-| **LoC de pruebas en Lean** | 7.317 en 10 suites de pruebas |
-| **Declaraciones demostradas** | 1.692 declaraciones de teorema/lema (theorem/lemma) (cero sorry/axiom) |
+| **LoC de producción en Lean** | 60.116 en 100 archivos |
+| **LoC de pruebas en Lean** | 7.561 en 10 suites de pruebas |
+| **Declaraciones demostradas** | 1.812 declaraciones de teorema/lema (theorem/lemma) (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Última auditoría** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoría completa pre-lanzamiento del núcleo y código Rust |
 | **Mapa del código** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventario de declaraciones legible por máquina |
