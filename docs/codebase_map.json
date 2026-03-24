@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-test-coverage-build-1n6QP",
-      "commit_sha": "989d69a874c7697493efc57ecd948573dac91c25",
-      "tree_sha": "ec488d2d279f02ba2792a23f6d6f4b9188f8d2cb",
-      "committed_at_utc": "2026-03-24T19:24:31+00:00"
+      "commit_sha": "8952cdb0ff5b501e3f64d68e479adbfbef0fba88",
+      "tree_sha": "31f1fae90d3518a95da55835804ed42592372f52",
+      "committed_at_utc": "2026-03-24T19:40:59+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a405ada6b4c2075a118c73960ed5d8f1aa373d87da4a30e8441d1f808b82a886"
+    "source_digest": "f5487a20df7f2c81b050130f0df95c96ad153c3524bcd66abf5514e8f596f136"
   },
   "summary": {
     "module_count": 111,
@@ -27,7 +27,7 @@
     "version": "0.20.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 61540,
+    "production_loc": 61538,
     "test_files": 10,
     "test_loc": 8256,
     "proved_theorem_lemma_decls": 1846,
@@ -1629,17 +1629,6 @@
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_error_iff",
           "line": 473,
-          "called": [
-            "decodeVSpaceMapArgs",
-            "decodeVSpaceMapArgs_error_of_insufficient_regs",
-            "decodeVSpaceMapArgs_error_of_invalid_perms",
-            "requireMsgReg"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "decodeVSpaceUnmapArgs_error_iff",
-          "line": 470,
           "called": [
             "decodeVSpaceUnmapArgs",
             "requireMsgReg",
