@@ -593,29 +593,37 @@ theorem kernelTransition_preserves_ifConfigInvariant
 -- T6-J/M-IF-1: Checked dispatch NI preservation
 -- ============================================================================
 
-/-- T6-J/M-IF-1: When the information-flow-checked dispatch path is used
-(`syscallEntryChecked`), every cross-domain operation is gated by
-`securityFlowsTo`. This theorem establishes that the checked dispatch
-preserves non-interference: if two states are low-equivalent and a high
-thread dispatches via the checked path, the resulting states remain
-low-equivalent.
+/-- T6-J/M-IF-1: The checked dispatch path ensures that when a cross-domain
+operation is **denied** by `securityFlowsTo`, no state mutation occurs.
+This is the core NI property for the checked path: denied flows are
+invisible to the low observer.
 
-**Proof structure**: The checked dispatch either:
-1. Delegates to a checked wrapper (which preserves NI by the enforcement
-   soundness meta-theorem), or
-2. Returns `flowDenied` (which preserves state trivially), or
-3. Delegates to a capability-only operation (which preserves NI because
-   capability-only operations cannot leak high information to low domains).
+**Proof structure**: Each checked wrapper's `*_denied_preserves_state`
+theorem proves that a denied operation returns `.error .flowDenied` without
+modifying state. This theorem bundles the property for all 3 original
+policy-gated wrappers as a representative witness. The WS-H8 extensions
+(notificationSignal, cspaceCopy, cspaceMove, endpointReceiveDual) have
+their own denied-preserves-state proofs in Soundness.lean above.
 
-Since each case preserves low-equivalence, the composition preserves NI.
-
-**Note**: This is a compositional witness — it shows that using checked
-wrappers in the dispatch path is *sufficient* for NI. The actual NI proof
-for each individual operation is in `Invariant/Operations.lean`. -/
-theorem syscallEntryChecked_preserves_nonInterference_witness
-    (ctx : LabelingContext) :
-    ctx = ctx :=  -- structural witness — actual NI composition is in Invariant/Composition.lean
-  rfl
+The full NI composition (linking checked dispatch to low-equivalence
+preservation) is in `Invariant/Composition.lean`. -/
+theorem checkedDispatch_flowDenied_preserves_state :
+    (∀ ctx epId sender msg st,
+      securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf epId) = false →
+      ¬∃ st', endpointSendDualChecked ctx epId sender msg st = .ok ((), st')) ∧
+    (∀ ctx src dst rights badge st,
+      securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false →
+      ¬∃ st', cspaceMintChecked ctx src dst rights badge st = .ok ((), st')) ∧
+    (∀ ctx caller reg st,
+      securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = false →
+      ¬∃ st', registerServiceChecked ctx caller reg st = .ok ((), st')) :=
+  ⟨fun ctx epId sender msg st hDeny =>
+    endpointSendDualChecked_denied_preserves_state ctx epId sender msg st hDeny,
+   fun ctx src dst rights badge st hDeny =>
+    cspaceMintChecked_denied_preserves_state ctx src dst rights badge st hDeny,
+   fun ctx caller reg st hDeny => by
+    intro ⟨st', h⟩
+    simp [registerServiceChecked, hDeny] at h⟩
 
 /-- T6-J: The checked dispatch path delegates to checked wrappers for all
     7 policy-gated operations, ensuring the enforcement boundary is complete.

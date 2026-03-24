@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-t6-architecture-iMNMj",
-      "commit_sha": "c361c5d06191e584b15ff481d0495b85bdc210bb",
-      "tree_sha": "013b1261a14f0a57b8e6a2c77a6206ec2f510a31",
-      "committed_at_utc": "2026-03-24T01:31:26-04:00"
+      "commit_sha": "f0fa636c8fbb7506ee713b8d590a9339b9c4fb92",
+      "tree_sha": "922b6b832c1dce2aca72acd2e9f6710b45ce698b",
+      "committed_at_utc": "2026-03-24T17:36:44+00:00"
     }
   },
   "source_sync": {
@@ -17,44 +17,44 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3f1327b44f9b360859410ce425292a7116c4f38cec88744b5d850094ead9ab2f"
+    "source_digest": "b7ad6fc4c8f141413b4b414f89106067eb7697f63ac40ac1b0ab65c30817a08a"
   },
   "summary": {
     "module_count": 111,
-    "declaration_count": 3371
+    "declaration_count": 3384
   },
   "readme_sync": {
     "version": "0.20.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 61326,
+    "production_loc": 61456,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1842,
+    "proved_theorem_lemma_decls": 1845,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 46,
+      "declaration_count": 47,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 95,
+          "line": 97,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "apiInvariantBundle",
-          "line": 103,
+          "line": 105,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "apiInvariantBundle_default",
-          "line": 108,
+          "line": 110,
           "called": [
             "apiInvariantBundle"
           ]
@@ -62,13 +62,13 @@
         {
           "kind": "structure",
           "name": "SyscallGate",
-          "line": 145,
+          "line": 147,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallLookupCap",
-          "line": 167,
+          "line": 169,
           "called": [
             "SyscallGate"
           ]
@@ -76,7 +76,7 @@
         {
           "kind": "def",
           "name": "syscallInvoke",
-          "line": 181,
+          "line": 183,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -85,7 +85,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_implies_capability_held",
-          "line": 194,
+          "line": 196,
           "called": [
             "SyscallGate",
             "syscallLookupCap"
@@ -94,7 +94,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_state_unchanged",
-          "line": 216,
+          "line": 218,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -104,7 +104,7 @@
         {
           "kind": "theorem",
           "name": "syscallInvoke_requires_right",
-          "line": 225,
+          "line": 227,
           "called": [
             "SyscallGate",
             "syscallInvoke",
@@ -114,25 +114,25 @@
         {
           "kind": "def",
           "name": "lookupThreadRegisterContext",
-          "line": 275,
+          "line": 277,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallRequiredRight",
-          "line": 284,
+          "line": 286,
           "called": []
         },
         {
           "kind": "def",
           "name": "resolveExtraCaps",
-          "line": 307,
+          "line": 309,
           "called": []
         },
         {
           "kind": "def",
           "name": "dispatchWithCap",
-          "line": 329,
+          "line": 331,
           "called": [
             "SyscallGate",
             "resolveExtraCaps"
@@ -141,7 +141,7 @@
         {
           "kind": "def",
           "name": "dispatchWithCapChecked",
-          "line": 508,
+          "line": 510,
           "called": [
             "SyscallGate",
             "resolveExtraCaps"
@@ -150,7 +150,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscallChecked",
-          "line": 674,
+          "line": 676,
           "called": [
             "SyscallGate",
             "dispatchWithCapChecked",
@@ -161,16 +161,22 @@
         {
           "kind": "def",
           "name": "syscallEntryChecked",
-          "line": 701,
+          "line": 703,
           "called": [
             "dispatchSyscallChecked",
             "lookupThreadRegisterContext"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "checkedDispatch_subsumes_unchecked_documentation",
+          "line": 728,
+          "called": []
+        },
+        {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 722,
+          "line": 742,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -181,7 +187,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 751,
+          "line": 771,
           "called": [
             "dispatchSyscall",
             "lookupThreadRegisterContext"
@@ -190,7 +196,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 771,
+          "line": 791,
           "called": [
             "lookupThreadRegisterContext",
             "syscallEntry"
@@ -199,7 +205,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 799,
+          "line": 819,
           "called": [
             "dispatchSyscall",
             "dispatchWithCap",
@@ -210,7 +216,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 838,
+          "line": 858,
           "called": [
             "dispatchSyscall_requires_right",
             "lookupThreadRegisterContext",
@@ -221,7 +227,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 873,
+          "line": 893,
           "called": [
             "lookupThreadRegisterContext"
           ]
@@ -229,7 +235,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 883,
+          "line": 903,
           "called": [
             "syscallRequiredRight"
           ]
@@ -237,7 +243,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 893,
+          "line": 913,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -246,7 +252,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 910,
+          "line": 930,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -255,7 +261,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 925,
+          "line": 945,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -264,7 +270,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 940,
+          "line": 960,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -273,7 +279,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 958,
+          "line": 978,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -282,7 +288,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 973,
+          "line": 993,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -291,7 +297,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 988,
+          "line": 1008,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -300,7 +306,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 1005,
+          "line": 1025,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -310,7 +316,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 1024,
+          "line": 1044,
           "called": [
             "SyscallGate",
             "dispatchWithCap",
@@ -320,7 +326,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 1043,
+          "line": 1063,
           "called": [
             "SyscallGate",
             "dispatchWithCap"
@@ -329,7 +335,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 1058,
+          "line": 1078,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -339,7 +345,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 1067,
+          "line": 1087,
           "called": [
             "syscallEntry"
           ]
@@ -347,7 +353,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 1077,
+          "line": 1097,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -356,7 +362,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 1094,
+          "line": 1114,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -366,13 +372,13 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 1124,
+          "line": 1144,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 1133,
+          "line": 1153,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -381,7 +387,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 1144,
+          "line": 1164,
           "called": [
             "lookupThreadRegisterContext",
             "lookupThreadRegisterContext_state_unchanged"
@@ -390,7 +396,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 1159,
+          "line": 1179,
           "called": [
             "SyscallGate",
             "syscallLookupCap",
@@ -400,7 +406,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 1174,
+          "line": 1194,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -410,7 +416,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 1197,
+          "line": 1217,
           "called": [
             "syscallEntry"
           ]
@@ -418,7 +424,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 1212,
+          "line": 1232,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -428,13 +434,13 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1240,
+          "line": 1260,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1266,
+          "line": 1286,
           "called": [
             "dispatchSyscall",
             "syscallEntry",
@@ -7905,20 +7911,20 @@
         },
         {
           "kind": "theorem",
-          "name": "syscallEntryChecked_preserves_nonInterference_witness",
-          "line": 615,
+          "name": "checkedDispatch_flowDenied_preserves_state",
+          "line": 610,
           "called": []
         },
         {
           "kind": "def",
           "name": "checkedDispatchEnforcementCoverage",
-          "line": 623,
+          "line": 631,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "checkedDispatchEnforcementCoverage_complete",
-          "line": 634,
+          "line": 642,
           "called": []
         }
       ]
@@ -21804,7 +21810,7 @@
     {
       "module": "SeLe4n.Platform.DeviceTree",
       "path": "SeLe4n/Platform/DeviceTree.lean",
-      "declaration_count": 14,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
@@ -21911,6 +21917,95 @@
           "line": 225,
           "called": [
             "parseFdtHeader"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fdtBeginNode",
+          "line": 236,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "fdtEndNode",
+          "line": 237,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "fdtProp",
+          "line": 238,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "fdtNop",
+          "line": 239,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "fdtEnd",
+          "line": 240,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "FdtMemoryRegion",
+          "line": 246,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "readBE64",
+          "line": 254,
+          "called": [
+            "readBE32"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "extractMemoryRegions",
+          "line": 268,
+          "called": [
+            "FdtMemoryRegion",
+            "readBE64"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "classifyMemoryRegion",
+          "line": 289,
+          "called": [
+            "FdtMemoryRegion"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fdtRegionsToMemoryRegions",
+          "line": 293,
+          "called": [
+            "FdtMemoryRegion",
+            "classifyMemoryRegion"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "DeviceTree.fromDtbWithRegions",
+          "line": 305,
+          "called": [
+            "DeviceTree",
+            "extractMemoryRegions",
+            "fdtRegionsToMemoryRegions",
+            "parseAndValidateFdtHeader"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "extractMemoryRegions_empty",
+          "line": 329,
+          "called": [
+            "extractMemoryRegions"
           ]
         }
       ]

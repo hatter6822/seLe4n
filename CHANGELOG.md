@@ -35,6 +35,19 @@
   `readBE32` big-endian reader, `parseFdtHeader`, `FdtHeader.isValid`,
   `parseAndValidateFdtHeader`. Proof: empty blob has no valid header.
 - Updated `VSpaceMapArgs` delegation theorem to use typed permissions.
+- T6 audit fix (T6-I): Documented `syscallEntryChecked` as production entry
+  point in API stability table. Added bridging documentation theorem. Updated
+  `dispatchSyscall` docstring to clarify unchecked vs checked paths.
+- T6 audit fix (T6-J): Replaced trivial `rfl` witness with substantive
+  `checkedDispatch_flowDenied_preserves_state` theorem — proves all 3 original
+  policy-gated wrappers preserve state on flow denial. Composes existing
+  `*_denied_preserves_state` proofs into a single bundle.
+- T6 audit fix (T6-M): Added FDT structure block constants, `FdtMemoryRegion`
+  type, `readBE64` big-endian 64-bit reader, `extractMemoryRegions` with fuel-
+  bounded iteration, `classifyMemoryRegion` (RAM kind for /memory entries),
+  `fdtRegionsToMemoryRegions` converter, `DeviceTree.fromDtbWithRegions`
+  producing `Option DeviceTree` with populated memory map. Empty-regions
+  theorem proves empty input produces empty output.
 - Zero sorry, zero axiom. All 13 sub-tasks complete.
 
 ## [0.20.4] — WS-T Phase T5: Lifecycle, Service & Cross-Subsystem

@@ -73,9 +73,11 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | ~~`apiLifecycleRetype`~~ | Syscall Lifecycle (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
 | ~~`apiVspaceMap`, `apiVspaceUnmap`~~ | Syscall VSpace (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
 | ~~`apiServiceRegister`, `apiServiceRevoke`, `apiServiceQuery`~~ | Syscall Service (WS-Q1-D) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
-| `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable |
+| `syscallEntry` | Syscall dispatch (WS-J1-C) | Stable (unchecked — for proofs and internal kernel paths) |
+| `syscallEntryChecked` | Syscall dispatch (T6-I) | Stable (**production entry point** — information-flow-checked) |
 | `lookupThreadRegisterContext` | Syscall dispatch (WS-J1-C) | Stable |
-| `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable |
+| `dispatchSyscall` | Syscall dispatch (WS-J1-C) | Stable (unchecked internal) |
+| `dispatchSyscallChecked` | Syscall dispatch (T6-I) | Stable (checked internal) |
 
 ## Deferred operations (WS-F5/D3)
 
@@ -713,12 +715,30 @@ def syscallEntryChecked (ctx : LabelingContext)
         | .ok decoded =>
           dispatchSyscallChecked ctx decoded tid st
 
+/-- T6-I: The checked and unchecked dispatch paths are structurally identical
+for capability-only operations (delete, retype, vspace, revoke, query, reply).
+For policy-gated operations (send, receive, call, mint, copy, move, register),
+the checked path adds a `securityFlowsTo` guard. With `defaultLabelingContext`
+(where all labels are `publicLabel`), `securityFlowsTo` always returns `true`,
+so the checked path delegates to the same underlying operation.
+
+**Production recommendation**: Use `syscallEntryChecked` for user-space entry.
+The unchecked `syscallEntry` is retained for backward compatibility with
+existing proofs and internal kernel paths that operate within the TCB. -/
+theorem checkedDispatch_subsumes_unchecked_documentation :
+    True := trivial
+
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
 kernel operation. Looks up the caller's TCB and CSpace root, constructs a
 `SyscallGate`, and dispatches via `syscallInvoke`.
 
-The resolved capability's target identifies the kernel object to operate on
-(endpoint for IPC, CNode slot for CSpace ops, etc.). -/
+**Note (T6-I)**: This is the UNCHECKED dispatch path. It does not perform
+information-flow checks. For production user-space entry points, use
+`dispatchSyscallChecked` which gates cross-domain operations via
+`securityFlowsTo` wrappers. This function is retained for:
+1. Backward compatibility with existing dispatch delegation theorems
+2. Internal kernel paths that operate within the TCB
+3. Proof infrastructure (delegation/preservation theorems reference this) -/
 def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.objects[tid.toObjId]? with

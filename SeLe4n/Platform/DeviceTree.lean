@@ -228,4 +228,106 @@ theorem parseFdtHeader_empty :
   simp only [ByteArray.size, ByteArray.empty, ByteArray.emptyWithCapacity]
   decide
 
+-- ============================================================================
+-- T6-M: FDT structure block constants and memory region extraction
+-- ============================================================================
+
+/-- T6-M: FDT token constants (Devicetree Specification v0.4, §5.4.1). -/
+def fdtBeginNode : UInt32 := 0x00000001
+def fdtEndNode   : UInt32 := 0x00000002
+def fdtProp      : UInt32 := 0x00000003
+def fdtNop       : UInt32 := 0x00000004
+def fdtEnd       : UInt32 := 0x00000009
+
+/-- T6-M: A parsed memory region from the `/memory` node's `reg` property.
+    The `reg` property contains pairs of (base, size) as big-endian integers
+    whose width is determined by the `#address-cells` and `#size-cells`
+    properties of the parent node (typically both 2 for 64-bit platforms). -/
+structure FdtMemoryRegion where
+  base : Nat
+  size : Nat
+  deriving Repr
+
+/-- T6-M: Read a big-endian UInt64 from a ByteArray at the given offset.
+    Used for 64-bit address/size values in FDT `reg` properties on
+    platforms with `#address-cells = 2` and `#size-cells = 2`. -/
+def readBE64 (blob : ByteArray) (offset : Nat) : Option UInt64 :=
+  if offset + 8 ≤ blob.size then
+    match readBE32 blob offset, readBE32 blob (offset + 4) with
+    | some hi, some lo => some ((hi.toUInt64 <<< 32) ||| lo.toUInt64)
+    | _, _ => none
+  else none
+
+/-- T6-M: Extract memory regions from a raw `reg` property byte array.
+    Assumes `#address-cells = 2` and `#size-cells = 2` (standard for 64-bit
+    ARM platforms). Each region is a (base, size) pair of 64-bit big-endian
+    values, so each entry consumes 16 bytes.
+
+    **Fuel parameter**: Limits iteration to prevent infinite loops on
+    malformed inputs. Set to `regBytes.size / 16` for well-formed data. -/
+def extractMemoryRegions (regBytes : ByteArray) (fuel : Nat := regBytes.size / 16)
+    : List FdtMemoryRegion :=
+  go regBytes 0 fuel []
+where
+  go (blob : ByteArray) (offset : Nat) (fuel : Nat) (acc : List FdtMemoryRegion)
+      : List FdtMemoryRegion :=
+    match fuel with
+    | 0 => acc.reverse
+    | fuel' + 1 =>
+      if offset + 16 ≤ blob.size then
+        match readBE64 blob offset, readBE64 blob (offset + 8) with
+        | some base, some size =>
+          go blob (offset + 16) fuel'
+            ({ base := base.toNat, size := size.toNat } :: acc)
+        | _, _ => acc.reverse
+      else acc.reverse
+
+/-- T6-M: Classify an FDT memory region as a `MemoryKind`.
+    RAM regions have `kind = .ram`. Device regions are not present in the
+    `/memory` node — they come from individual device nodes (deferred to WS-U).
+    Reserved regions are identified by the memory reservation block. -/
+def classifyMemoryRegion (_region : FdtMemoryRegion) : MemoryKind :=
+  .ram  -- /memory node entries are always RAM
+
+/-- T6-M: Convert parsed FDT memory regions to `MemoryRegion` values. -/
+def fdtRegionsToMemoryRegions (regions : List FdtMemoryRegion)
+    : List MemoryRegion :=
+  regions.map fun r =>
+    { base := ⟨r.base⟩, size := r.size, kind := classifyMemoryRegion r }
+
+/-- T6-M: Attempt to construct a `DeviceTree` from a DTB blob.
+    Currently implements:
+    1. FDT header parsing and validation
+    2. Memory region extraction from raw `reg` property bytes (when provided)
+
+    Full FDT structure block traversal (node/property iteration, string table
+    lookup, `/chosen` and `/cpus` nodes) is deferred to WS-U. -/
+def DeviceTree.fromDtbWithRegions (blob : ByteArray)
+    (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do
+  let hdr ← parseAndValidateFdtHeader blob
+  let memRegions := match memoryRegBytes with
+    | some regBlob => fdtRegionsToMemoryRegions (extractMemoryRegions regBlob)
+    | none => []
+  let config : MachineConfig := {
+    registerWidth := 64
+    virtualAddressWidth := 48
+    physicalAddressWidth := 48  -- default; platform-specific
+    pageSize := 4096
+    maxASID := 65536
+    memoryMap := memRegions
+  }
+  some {
+    platformName := s!"DTB-parsed (version {hdr.version.toNat})"
+    machineConfig := config
+    peripherals := []  -- WS-U: device node traversal
+    interruptController := { distributorBase := ⟨0⟩, cpuInterfaceBase := ⟨0⟩,
+                             spiCount := 0, timerPpiId := ⟨0⟩ }  -- WS-U: /interrupt-controller
+    timerFrequencyHz := 0  -- WS-U: /timer or CNTFRQ_EL0
+  }
+
+/-- T6-M: Empty region bytes produce an empty memory map. -/
+theorem extractMemoryRegions_empty :
+    extractMemoryRegions ByteArray.empty = [] := by
+  simp [extractMemoryRegions, extractMemoryRegions.go]
+
 end SeLe4n.Platform
