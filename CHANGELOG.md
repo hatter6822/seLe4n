@@ -25,10 +25,14 @@
 - T4-H (M-CAP-1): Documented `cspaceMutate` badge override CDT tracking design.
   Badge mutation via Mutate intentionally not tracked in CDT, matching seL4
   CNode_Mutate semantics.
-- T4-D (M-IPC-2): Documented `endpointQueueRemoveDual` preservation proof
-  architecture with 6 transport lemmas proven. The endpointHead cases require
-  a `storeTcbQueueLinks_splicing_preserves_linkInteg` lemma for non-clearing
-  link splices; deferred to WS-U infrastructure.
+- T4-D (M-IPC-2): Proved `endpointQueueRemoveDual_preserves_dualQueueSystemInvariant`
+  — complete sorry-free proof (1023 lines) covering all 4 paths: endpointHead
+  queueNext=none (Path A), endpointHead queueNext=some (Path B), tcbNext
+  queueNext=none (Path C, tail removal), tcbNext queueNext=some (Path D,
+  mid-queue removal). Added `tcbQueueChainAcyclic` invariant to
+  `dualQueueSystemInvariant`. Path D handles 3 simultaneously modified TCBs
+  (tid cleared, prevTid.next→nextTid, nextTid.prev→prevTid) with full 4-way
+  case analysis in both forward and reverse link integrity directions.
 - T4-I (M-DS-3): Proved `buildCNodeRadix_lookup_equiv` — bidirectional lookup
   equivalence between RHTable and CNodeRadix after construction. The proof uses
   3 private fold lemmas (foldl_preserves_none, foldl_preserves_some,

@@ -55,18 +55,18 @@ v0.20.0–v0.20.7. See
   `#![deny(unsafe_code)]` confirmed present (WS-S S1-H). 119 Rust tests pass
   (50 unit + 32 conformance + 12 sys + 25 types). All 8 sub-tasks complete.
 
-- **T4 (v0.20.3) — COMPLETE**: IPC & Capability Proof Closure. Closed M-IPC-1:
-  `ipcStateQueueConsistent` preservation for `endpointCall`, `endpointReplyRecv`,
-  `notificationSignal`, and `notificationWait`. Closed M-IPC-3: `ipcInvariantFull`
-  preservation for WithCaps wrapper operations. M-IPC-2 (T4-D): proof architecture
-  documented with 6 transport lemmas; full `endpointQueueRemoveDual` preservation
-  composition deferred pending `storeTcbQueueLinks_splicing_preserves_linkInteg`
-  infrastructure. Proved `descendantsOf_fuel_sufficiency` with 8 BFS lemmas
-  (M-CAP-2). Proved `buildCNodeRadix_lookup_equiv` bidirectional equivalence
-  (M-DS-3). Badge override CDT tracking documentation (M-CAP-1). NI projection
-  hypothesis documentation (M-IF-3). `ipcInvariantFull_compositional` helper
-  (L-P10). `insert_maxPriority_consistency` for RunQueue (M-SCH-1). Zero sorry,
-  zero axiom. 11 of 12 sub-tasks complete; T4-D partial.
+- **T4 (v0.20.3) — COMPLETE**: IPC & Capability Proof Closure. All 12 sub-tasks
+  complete. Closed M-IPC-1: `ipcStateQueueConsistent` preservation for
+  `endpointCall`, `endpointReplyRecv`, `notificationSignal`, and `notificationWait`.
+  Closed M-IPC-2 (T4-D): proved `endpointQueueRemoveDual_preserves_dualQueueSystemInvariant`
+  — complete sorry-free proof (1023 lines) covering all 4 paths with
+  `tcbQueueChainAcyclic` acyclicity invariant. Closed M-IPC-3: `ipcInvariantFull`
+  preservation for WithCaps wrapper operations. Proved `descendantsOf_fuel_sufficiency`
+  with 8 BFS lemmas (M-CAP-2). Proved `buildCNodeRadix_lookup_equiv` bidirectional
+  equivalence (M-DS-3). Badge override CDT tracking documentation (M-CAP-1). NI
+  projection hypothesis documentation (M-IF-3). `ipcInvariantFull_compositional`
+  helper (L-P10). `insert_maxPriority_consistency` for RunQueue (M-SCH-1). Zero
+  sorry, zero axiom. 12 of 12 sub-tasks complete.
 
 ### WS-S workstream (Pre-Benchmark Strengthening) — PORTFOLIO COMPLETE
 

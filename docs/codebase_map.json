@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-t4-ipc-SN33U",
-      "commit_sha": "0ae9fed428402f3504248e2d166dde6144a17b2a",
-      "tree_sha": "7d42e0aa5ea7cc798a36581f12bf86fb0d84174f",
-      "committed_at_utc": "2026-03-24T02:13:23+00:00"
+      "commit_sha": "6f831aa8d7df382c70c3a6442c1c63dd3678bbca",
+      "tree_sha": "6b316499dfa20e7f0da9364de0bc5ebc7a2bc48a",
+      "committed_at_utc": "2026-03-24T03:13:36+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8b95ab0d18d9ed309e3bfac0a76933a333f42f7938e4dc096e3997a7977ddfa7"
+    "source_digest": "de89256c2b2c2eeb04071b3ca420ebba481a94eacedd1ee50883710bd905668d"
   },
   "summary": {
     "module_count": 111,
-    "declaration_count": 3302
+    "declaration_count": 3307
   },
   "readme_sync": {
     "version": "0.20.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 59823,
+    "production_loc": 60106,
     "test_files": 10,
     "test_loc": 7561,
-    "proved_theorem_lemma_decls": 1804,
+    "proved_theorem_lemma_decls": 1809,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -6087,7 +6087,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 94,
+      "declaration_count": 99,
       "declarations": [
         {
           "kind": "namespace",
@@ -6789,14 +6789,63 @@
         },
         {
           "kind": "theorem",
+          "name": "storeObject_notification_preserves_ipcStateQueueConsistent",
+          "line": 3490,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_ipcStateQueueConsistent",
+          "line": 3524,
+          "called": [
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "storeObject_notification_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_ipcStateQueueConsistent",
+          "line": 3566,
+          "called": [
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeObject_notification_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcState_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_ipcStateQueueConsistent",
+          "line": 3640,
+          "called": [
+            "endpointQueueEnqueue_preserves_ipcStateQueueConsistent",
+            "endpointQueuePopHead_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "removeRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcState_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_ipcStateQueueConsistent",
+          "line": 3706,
+          "called": [
+            "endpointReceiveDual_preserves_ipcStateQueueConsistent",
+            "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
-          "line": 3491,
+          "line": 3774,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCaps_preserves_dualQueueSystemInvariant",
-          "line": 3583,
+          "line": 3866,
           "called": [
             "endpointSendDual_preserves_dualQueueSystemInvariant",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
@@ -6805,7 +6854,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant",
-          "line": 3648,
+          "line": 3931,
           "called": [
             "endpointReceiveDual_preserves_dualQueueSystemInvariant",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant"
@@ -6814,7 +6863,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_preserves_dualQueueSystemInvariant",
-          "line": 3717,
+          "line": 4000,
           "called": [
             "intrusiveQueueWellFormed_empty",
             "storeObject_endpoint_preserves_intrusiveQueueWellFormed",

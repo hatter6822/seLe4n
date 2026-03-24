@@ -1694,6 +1694,16 @@ High-level IPC operation preservation (L3-C3):
 - `storeObject_notification_preserves_ipcStateQueueConsistent` — notification store helper
 - `ipcInvariantFull_compositional` — convenience 4-component composition
 
+**T4-D: endpointQueueRemoveDual dualQueueSystemInvariant preservation** (`Structural.lean`):
+
+- `endpointQueueRemoveDual_preserves_dualQueueSystemInvariant` — **(T4-D, M-IPC-2)**
+  complete sorry-free proof (1023 lines) covering all 4 paths: endpointHead+none
+  (Path A), endpointHead+some (Path B), tcbNext+none (Path C, tail removal),
+  tcbNext+some (Path D, mid-queue removal). Proves `dualQueueEndpointWellFormed`,
+  `tcbQueueLinkIntegrity`, and `tcbQueueChainAcyclic` preservation for each path.
+  Path D handles 3 simultaneously modified TCBs with 4-way case analysis in both
+  forward and reverse link integrity directions.
+
 **T4-L: Scheduler maxPriority consistency** (`RunQueue.lean`):
 
 - `insert_maxPriority_consistency` — after insert, maxPriority = max(old, prio)
