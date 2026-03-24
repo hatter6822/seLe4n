@@ -234,3 +234,165 @@ FrozenOps/Invariant.lean (12 files)
 | D-09 | Low | FrozenOps/Invariant.lean | `frozenStoreObject` preservation proofs cover all object types. Pattern is mechanical — good candidate for metaprogramming. |
 | D-10 | Info | FrozenOps/Commutativity.lean | Frame lemmas are clean and compositional. Good proof engineering. |
 
+## 8. Rust Implementation
+
+**Files audited**: rust/sele4n-abi/src/lib.rs, rust/sele4n-abi/src/types.rs,
+rust/sele4n-abi/src/registers.rs, rust/sele4n-abi/src/syscall.rs,
+rust/sele4n-abi/src/error.rs, rust/sele4n-abi/src/capability.rs,
+rust/sele4n-abi/src/ipc.rs, rust/sele4n-abi/src/decode.rs,
+rust/sele4n-abi-derive/src/lib.rs, rust/sele4n-abi-derive/src/generate.rs,
+rust/sele4n-abi-conformance/src/lib.rs (3 crates, 11 files, ~3.7K LOC)
+
+### Positive Observations
+
+- Zero external dependencies — only `core` (no `std`, no `alloc`)
+- Exactly one `unsafe` block: inline assembly for `svc #0` syscall trap
+- `#[repr(C)]`/`#[repr(u32)]` used consistently for ABI stability
+- Conformance test crate validates Lean-Rust type alignment at compile time
+- Derive macro generates `From<T> for RawSyscallArgs` and `TryFrom<RawSyscallArgs> for T`
+
+### Findings
+
+| ID | Sev | Location | Description |
+|----|-----|----------|-------------|
+| R-01 | Med | syscall.rs | `raw_syscall` uses `svc #0` with inline asm. The clobber list covers `x0-x7` but not NEON/SIMD registers. ARM64 calling convention says `q0-q7` are caller-saved, so this is correct, but document the assumption. |
+| R-02 | Med | types.rs | Typed IDs (ThreadId, ObjId, etc.) are `#[repr(transparent)]` newtypes over `u64`. No validity check on construction — `ThreadId(u64::MAX)` is representable. The Lean model uses `Nat` which is unbounded. ABI conformance tests should verify the valid range. |
+| R-03 | Med | decode.rs | Syscall argument decode uses `match` on discriminant. If Lean model adds a new syscall variant, the Rust decode will return `Err` for the new discriminant — silent incompatibility until conformance tests are regenerated. |
+| R-04 | Low | capability.rs | `CapRights` uses bitfield operations. No `const_assert!` that the rights bitmask fits in the designated field width. |
+| R-05 | Low | ipc.rs | `MessageInfo` packs label + length + extra caps into a single `u64`. Bit layout matches seL4 but is not documented with a diagram. |
+| R-06 | Low | registers.rs | `RegisterFile` is `[u64; 32]`. Index bounds checking uses `debug_assert!` which is stripped in release builds. Consider returning `Option` or using `get()`. |
+| R-07 | Low | error.rs | Error codes are `#[repr(u32)]` enum. No `#[non_exhaustive]` attribute — adding new error variants is a breaking change for downstream crates. |
+| R-08 | Info | sele4n-abi-derive | Proc macro generates boilerplate correctly. Good use of `quote!` and `syn`. |
+| R-09 | Info | conformance | Compile-time size/alignment assertions catch ABI drift. Exemplary approach. |
+
+## 9. Platform, Boot & Testing
+
+**Files audited**: Platform/Sim/* (4 files), Platform/RPi5/* (6 files),
+Platform/Contract.lean, Platform/Boot.lean, Platform/DeviceTree.lean,
+Testing/*, Main.lean, SeLe4n.lean (15 files)
+
+### Positive Observations
+
+- Clean platform abstraction via `PlatformBinding` typeclass
+- Dual contract pattern (permissive + restrictive) for simulation vs proof
+- RPi5 board definitions match BCM2712 datasheet (GIC-400, MMIO regions)
+- Boot sequence is deterministic pure function with builder-phase invariant witnesses
+
+### Findings
+
+| ID | Sev | Location | Description |
+|----|-----|----------|-------------|
+| P-01 | Med | RPi5/RuntimeContract.lean:54-57 | `registerContextStable` production contract has escape hatch: any context switch satisfies it trivially via the `∨ st'.scheduler.current ≠ st.scheduler.current` disjunct. Proofs use restrictive contract instead. Gap between proven and runtime contract. |
+| P-02 | Med | RPi5/MmioAdapter.lean:137-142 | MMIO reads modeled as normal memory reads — no device side effects. Proofs about MMIO behavior (GIC IAR, etc.) will be unsound without a separate device state model. |
+| P-03 | Med | RPi5/MmioAdapter.lean:152-158 | Only byte-level MMIO writes implemented. ARM64 requires 32-bit aligned writes for GIC registers. No `mmioWrite32`/`mmioWrite64`. |
+| P-04 | Low | Sim/BootContract.lean:26-41 | Simulation boot/interrupt contracts are trivially `True`. Any theorem proven under sim platform carries vacuous boot assumptions. |
+| P-05 | Low | Sim/RuntimeContract.lean:56-60 | `simSubstantiveMemoryMap` defined separately from `simMachineConfig.memoryMap` with no compile-time sync check. |
+| P-06 | Low | DeviceTree.lean:181-189 | `readBE32` uses `ByteArray.get!` (panics on OOB). Bounds check exists but `get!` is partial. Use proof-carrying index. |
+| P-07 | Low | DeviceTree.lean:305-326 | `fromDtbWithRegions` hardcodes `physicalAddressWidth := 48` but BCM2712 has 44-bit PA. Placeholder for WS-U. |
+| P-08 | Low | Boot.lean:56-58 | `foldIrqs` doesn't check for duplicate IRQ registrations. Last-wins semantics undocumented. |
+| P-09 | Low | Boot.lean:60-64 | `foldObjects` doesn't validate object ID uniqueness. Silent overwrite on duplicate IDs. |
+| P-10 | Low | RPi5/BootContract.lean:77-85 | IRQ support range includes SGIs (INTID 0-15) which are for IPIs, not hardware interrupts. |
+| P-11 | Info | Boot.lean:79-80 | `bootFromPlatform_deterministic` is trivial `rfl`. Consider stronger property. |
+| P-12 | Info | RPi5/Board.lean:60-81 | Memory map hardcoded for 4 GB RPi5 model only. |
+| P-13 | Info | Main.lean, SeLe4n.lean | Minimal re-export hubs, no issues. |
+
+## 10. Cross-Cutting Concerns
+
+### sorry/axiom/postulate Audit
+
+**Result: ZERO instances found across entire codebase.**
+
+Every theorem in every subsystem is machine-checked by Lean's kernel. No proof
+obligations are deferred via `sorry`, no axioms are introduced beyond Lean's
+built-in axioms (`propext`, `Quot.sound`, `Classical.choice`), and no `postulate`
+declarations exist.
+
+### native_decide Usage
+
+3 instances found, all in concrete-value decision procedures:
+
+1. `RPi5/Board.lean:133` — `mmioRegionDisjoint_holds`
+2. `RPi5/Board.lean:138` — `rpi5MachineConfig_wellFormed`
+3. `RPi5/Board.lean:199` — `rpi5DeviceTree_valid`
+
+All are appropriate uses: deciding boolean properties of hardcoded numeric constants.
+`native_decide` is in Lean's TCB but is the standard approach for this pattern.
+
+### Proof Engineering Quality
+
+- **Strongest subsystem**: IPC (~6,000 lines of proofs, complete preservation coverage)
+- **Most complex proof**: Robin Hood `probeChainDominant` preservation through erase (~400 lines)
+- **Largest proof surface**: Information Flow NI composition (~3,000 lines across 3 files)
+- **Best-factored**: Capability authority/badge routing (clean helper lemma structure)
+
+### Architecture Consistency
+
+- All subsystems follow the Operations/Invariant split consistently
+- Re-export hubs are thin import-only files throughout
+- Typed identifiers used consistently (no raw `Nat` in kernel interfaces)
+- Deterministic semantics maintained — all transitions return explicit `KernelResult`
+
+---
+
+## 11. Prioritized Remediation Plan
+
+### Priority 1 — Address Before Hardware Deployment (WS-U)
+
+| Finding | Action |
+|---------|--------|
+| A-01 (retype double-alloc) | Add watermark re-verification after object insertion, or prove single-core exclusion formally |
+| A-02 (delete without revoke) | Add compile-time enforcement or runtime guard that revocation precedes deletion |
+| D-01 (RHTable BEq) | Add `LawfulBEq` caveat documentation; audit all `BEq` uses in proofs |
+| D-02 (insertLoop silent drop) | Return `Option` from `insertLoop` to signal table-full condition |
+| D-03 (RHSet public fields) | Make `RHSet` fields `private` or use `opaque` constructor |
+| P-01 (contract gap) | Close gap between production and restrictive runtime contracts in WS-U |
+| P-02/P-03 (MMIO model) | Implement device state model with read side effects and multi-byte writes |
+
+### Priority 2 — Address Before v1.0 Release
+
+| Finding | Action |
+|---------|--------|
+| F-05 (RegisterFile BEq) | Document or add `LawfulBEq` caveat |
+| F-18 (storeObject infallible) | Audit all call sites for capacity pre-check |
+| S-01 (scheduler O(n)) | Evaluate indexed priority queue for thread selection |
+| C-01 (revokeCap O(n)) | Add CDT depth bound to invariant |
+| I-01 (message truncation) | Document truncation behavior in API specification |
+| R-02 (unbounded typed IDs) | Add validity range checks in Rust constructors |
+| R-03 (decode drift) | Add CI check that Lean syscall variants match Rust decode arms |
+
+### Priority 3 — Improvements (No Urgency)
+
+| Finding | Action |
+|---------|--------|
+| F-09/F-14/F-30 (native_decide) | Migrate to `decide` where feasible |
+| S-04 (List-based queues) | Consider Array for performance (proof impact assessment needed) |
+| IF-05 (wrapper duplication) | Evaluate pre/post-condition framework |
+| R-07 (non_exhaustive) | Add `#[non_exhaustive]` to error enum |
+| P-05 (memory map sync) | Add compile-time consistency theorem |
+
+---
+
+## Appendix: Audit Coverage Matrix
+
+| Subsystem | Files | LOC (approx) | Findings | sorry | axiom |
+|-----------|-------|-------------|----------|-------|-------|
+| Foundation | 10 | ~8,500 | 11 | 0 | 0 |
+| Scheduler | 5 | ~4,200 | 6 | 0 | 0 |
+| Capability | 4 | ~3,800 | 5 | 0 | 0 |
+| IPC | 9 | ~8,900 | 7 | 0 | 0 |
+| Info Flow + Service | 9 | ~7,100 | 8 | 0 | 0 |
+| Arch + Lifecycle + API | 9 | ~5,400 | 8 | 0 | 0 |
+| Data Structures + Frozen | 12 | ~9,500 | 10 | 0 | 0 |
+| Rust | 11 | ~3,700 | 9 | N/A | N/A |
+| Platform + Boot + Test | 15 | ~4,800 | 13 | 0 | 0 |
+| **Total** | **84** | **~55,900** | **77** | **0** | **0** |
+
+*Note: Finding count in matrix reflects unique findings per subsystem. The
+executive summary total of 126 includes cross-references and Info-level
+observations.*
+
+---
+
+*Audit conducted 2026-03-24 by automated parallel review (9 agents).
+No CVE-worthy vulnerabilities identified. All findings are design-level
+assurance gaps appropriate for the project's current pre-hardware stage.*
