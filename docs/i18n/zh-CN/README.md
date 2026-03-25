@@ -44,9 +44,9 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核（microkernel）。
 |------|------|
 | **版本** | `0.21.5` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 64,039 行，分布于 101 个文件 |
-| **测试代码行数** | 8,318 行，分布于 10 个测试套件 |
-| **已证明的声明** | 1,901 个定理（theorem）/引理（lemma）声明（零 sorry/axiom） |
+| **生产代码行数** | 64,824 行，分布于 101 个文件 |
+| **测试代码行数** | 8,322 行，分布于 10 个测试套件 |
+| **已证明的声明** | 1,922 个定理（theorem）/引理（lemma）声明（零 sorry/axiom） |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **最新审计** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) —— 完整的内核 + Rust 代码库预发布审计 |
 | **代码库映射** | [`docs/codebase_map.json`](../../codebase_map.json) —— 机器可读的声明清单 |

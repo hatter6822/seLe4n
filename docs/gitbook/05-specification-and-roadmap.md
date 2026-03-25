@@ -15,9 +15,9 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.21.5` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 64,787 across 101 Lean files |
-| Test LoC | 8,318 across 10 suites |
-| Proved declarations | 1,920 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 64,824 across 101 Lean files |
+| Test LoC | 8,322 across 10 suites |
+| Proved declarations | 1,922 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
 | Active workstream | **WS-U Phase U6 COMPLETE** — Architecture & Platform Fidelity (v0.21.5). Prior: **WS-U U5 COMPLETE** (v0.21.4), **WS-U U4 COMPLETE** (v0.21.3), **WS-U U3 COMPLETE** (v0.21.2), **WS-U U2 COMPLETE** (v0.21.1), **WS-U U1 COMPLETE** (v0.21.0), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
