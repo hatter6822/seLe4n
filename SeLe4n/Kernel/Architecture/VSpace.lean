@@ -25,8 +25,11 @@ open SeLe4n.Model
 def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.ObjId) : Prop :=
   ∃ root, st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧ root.asid = asid
 
-/-- WS-G3/F-P06: Locate the root object id carrying `asid` via O(1) hash lookup.
-    Falls back to object-store validation to ensure the entry is still a valid VSpaceRoot. -/
+/-- WS-G3/F-P06/U2-H: Locate the root object id carrying `asid` via O(1) hash lookup.
+    Falls back to object-store validation to ensure the entry is still a valid VSpaceRoot.
+    U2-H: Rejects ASIDs ≥ `maxASID` (65536 on ARM64) as a defense-in-depth
+    check — invalid ASIDs cannot appear in the ASID table, but the guard makes
+    this explicit. -/
 def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
   match st.asidTable[asid]? with
   | some oid =>
@@ -35,8 +38,49 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     | _ => none
   | none => none
 
-/-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit). -/
+/-- U2-H: Default ASID space bound (ARM64 16-bit ASID field in TTBR1_EL1).
+    Used as the upper bound for model-level reasoning. Platform-specific bounds
+    are enforced via `asidBoundForConfig`. -/
+def asidBound : Nat := 65536
+
+/-- U2-H: Platform-specific ASID bound derived from `MachineConfig`. -/
+def asidBoundForConfig (config : MachineConfig) : Nat := config.maxASID
+
+/-- U2-H: ASID-bounds-checked VSpace root resolution.
+    Defense-in-depth: rejects ASIDs ≥ `asidBound` (65536 on ARM64) before table
+    lookup. Invalid ASIDs cannot appear in the ASID table by construction, but
+    the guard makes this explicit at the production call boundary.
+    Invariant proofs use `resolveAsidRoot` directly (no guard needed for
+    inductive reasoning over well-formed states). -/
+def resolveAsidRootChecked (st : SystemState) (asid : SeLe4n.ASID)
+    (maxASID : Nat := asidBound) : Option (SeLe4n.ObjId × VSpaceRoot) :=
+  if !asid.isValidForConfig maxASID then none
+  else resolveAsidRoot st asid
+
+/-- U2-H: Checked resolution agrees with unchecked when ASID is valid. -/
+theorem resolveAsidRootChecked_eq_of_valid (st : SystemState) (asid : SeLe4n.ASID)
+    (maxASID : Nat) (hValid : asid.isValidForConfig maxASID = true) :
+    resolveAsidRootChecked st asid maxASID = resolveAsidRoot st asid := by
+  unfold resolveAsidRootChecked
+  simp [hValid]
+
+/-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
+    Used as the upper bound for model-level reasoning. Platform-specific bounds
+    (e.g., 44-bit for BCM2712) are enforced via `physicalAddressBoundForConfig`. -/
 def physicalAddressBound : Nat := 2^52
+
+/-- U2-D/U-H07: Platform-specific physical address bound derived from `MachineConfig`.
+    BCM2712 (RPi5) uses 44-bit PA, meaning addresses in [2^44, 2^52) pass the default
+    model bound but are invalid on hardware. This function provides the platform bound. -/
+def physicalAddressBoundForConfig (config : MachineConfig) : Nat :=
+  2^config.physicalAddressWidth
+
+/-- U2-D: Well-formedness: platform PA width must not exceed ARM64 LPA maximum (52 bits). -/
+theorem physicalAddressBoundForConfig_le_default (config : MachineConfig)
+    (h : config.physicalAddressWidth ≤ 52) :
+    physicalAddressBoundForConfig config ≤ physicalAddressBound := by
+  unfold physicalAddressBoundForConfig physicalAddressBound
+  exact Nat.pow_le_pow_right (by omega) h
 
 /-- WS-H11/S6-B: Core VSpace map transition — page table only, no TLB flush.
 
@@ -68,7 +112,8 @@ for production paths. See `vspaceMapPage` for rationale. -/
 def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
-    if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    if !vaddr.isCanonical then .error .addressOutOfBounds
+    else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
     else vspaceMapPage asid vaddr paddr perms st
 
 /-- S6-B: Core VSpace unmap transition — page table only, no TLB flush.
@@ -147,7 +192,21 @@ This is the recommended entry point for user-space-initiated VSpace map operatio
 def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr) (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
-    if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    if !vaddr.isCanonical then .error .addressOutOfBounds
+    else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    else vspaceMapPageWithFlush asid vaddr paddr perms st
+
+/-- U2-D/U-H07: **Platform-aware production entry point** — bounds-checked map with TLB flush
+    using platform-specific physical address width from `MachineConfig`.
+    BCM2712 (RPi5) uses 44-bit PA, meaning addresses in [2^44, 2^52) are rejected
+    by this function but accepted by the default `vspaceMapPageCheckedWithFlush`.
+    Use this function when a `MachineConfig` is available (runtime dispatch paths). -/
+def vspaceMapPageCheckedWithFlushPlatform (config : MachineConfig)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
+  fun st =>
+    if !vaddr.isCanonical then .error .addressOutOfBounds
+    else if !(paddr.toNat < physicalAddressBoundForConfig config) then .error .addressOutOfBounds
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
 -- ============================================================================

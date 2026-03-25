@@ -17,7 +17,37 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U1) are complete.
+through WS-U Phase U2) are complete.
+
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U2 COMPLETE
+
+WS-U Phase U2 hardens safety boundaries across the kernel's input validation
+and type-safety surface. 14 sub-tasks (U2-A through U2-N). Version v0.21.1.
+Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U2-A/B/C (U-H06)**: Added `VAddr.isCanonical` predicate and canonical
+  address check in `vspaceMapPageChecked`, `vspaceMapPageCheckedWithFlush`,
+  and `decodeVSpaceMapArgs`. Canonical address rejection theorem proved.
+- **U2-D/E/F (U-H07)**: Parameterized physical address width through
+  `MachineConfig.physicalAddressWidth`. Added `physicalAddressBoundForConfig`
+  and `vspaceMapPageCheckedWithFlushPlatform`. Updated `DeviceTree.fromDtbWithRegions`.
+- **U2-G/H (U-H08)**: Added `ASID.isValidForConfig` predicate and ASID
+  validation in `decodeVSpaceMapArgs` and `decodeVSpaceUnmapArgs`. Updated all
+  roundtrip and error-iff proofs with ASID preconditions.
+- **U2-I/J (U-H05)**: Documented `vspaceMapPage` and `lifecycleRetypeObject`
+  as internal proof helpers. Updated test harness references to use public API.
+- **U2-K (U-L03)**: Added `AccessRightSet.mk_checked` proof-carrying
+  constructor. Added `empty_valid` and `singleton_valid` lemmas.
+- **U2-L (U-M18)**: Audited all `storeObject` call sites. Documented three
+  categories: allocation-guarded, in-place mutation, and builder/boot.
+- **U2-M (U-M20)**: Added `allTablesInvExt_witness` compile-time completeness
+  check — mismatches between `allTablesInvExt` conjuncts and the 16-field
+  witness produce a type error.
+- **U2-N (U-M17)**: Added negative `LawfulBEq` instances for `RegisterFile`
+  and `TCB` via counterexample proofs (out-of-range GPR index 32).
+
+Zero sorry, zero axiom. All 14 sub-tasks complete.
 
 ### WS-U workstream (v0.20.7 Audit Remediation) — Phase U1 COMPLETE
 

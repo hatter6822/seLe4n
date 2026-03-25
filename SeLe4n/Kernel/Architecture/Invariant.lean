@@ -190,8 +190,8 @@ private theorem advanceTimerState_preserves_vspaceInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (advanceTimerState ticks st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid, by exact hCanonical⟩
 
 /-- WS-E3/H-07: Register writes preserve VSpace invariant bundle.
 Register-only state changes do not affect the object store or ASID table. -/
@@ -199,8 +199,8 @@ private theorem writeRegisterState_preserves_vspaceInvariantBundle
     (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
     (hInv : vspaceInvariantBundle st) :
     vspaceInvariantBundle (writeRegisterState reg value st) := by
-  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid⟩
-  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid⟩
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
+  exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid, by exact hCanonical⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proofs
@@ -348,8 +348,8 @@ theorem default_system_state_proofLayerInvariantBundle :
       default_lifecycleInvariantBundle
       default_capabilityInvariantBundle
       default_registryInvariant
-  -- 7. vspaceInvariantBundle (6-conjunct: uniqueness ∧ non-overlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation)
-  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  -- 7. vspaceInvariantBundle (7-conjunct: uniqueness ∧ nonOverlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation ∧ canonicalAddr)
+  · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj₁; exact absurd hObj₁ (by simp)
     · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
     · constructor
@@ -358,6 +358,7 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
     · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
     · intro oidA oidB rA rB hObjA; have h : (default : SystemState).objects[oidA]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObjA; exact absurd hObjA (by simp)
+    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
   -- 8. crossSubsystemInvariant (R4-E + T5-J: registry ∧ dependency ∧ queue refs ∧ notification refs)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)

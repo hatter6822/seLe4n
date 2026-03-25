@@ -78,6 +78,16 @@ def wxExclusiveInvariant (st : SystemState) : Prop :=
     root.mappings[v]? = some (p, perms) →
     perms.wxCompliant = true
 
+/-- U2-C: Canonical address invariant — all virtual addresses in VSpace mappings
+are within the canonical VA range `[0, canonicalBound)` (2^48 on ARM64).
+This ensures no non-canonical addresses enter the translation tables.
+Analogous to `boundedAddressTranslation` for physical addresses. -/
+def canonicalAddressInvariant (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot) (v : SeLe4n.VAddr) (p : SeLe4n.PAddr) (perms : PagePermissions),
+    st.objects[oid]? = some (KernelObject.vspaceRoot root) →
+    root.mappings[v]? = some (p, perms) →
+    v.isCanonical
+
 /-- WS-F6/D6/MED-07: Cross-ASID isolation — operations on one VSpaceRoot do not
 affect another VSpaceRoot's mappings because distinct VSpaceRoot objects have
 distinct ASIDs. This is the VSpace analog of non-interference: address spaces
@@ -97,14 +107,16 @@ def vspaceCrossAsidIsolation (st : SystemState) : Prop :=
 /-- WS-B1/WS-G3/WS-H11/WS-F6 architecture/VSpace invariant bundle entrypoint.
 
 WS-H11: Enriched with `wxExclusiveInvariant` and `boundedAddressTranslation`.
-WS-F6/D6: Extended from 5-tuple to 6-tuple with `vspaceCrossAsidIsolation`. -/
+WS-F6/D6: Extended from 5-tuple to 6-tuple with `vspaceCrossAsidIsolation`.
+U2-C: Extended to 7-tuple with `canonicalAddressInvariant`. -/
 def vspaceInvariantBundle (st : SystemState) (bound : Nat := 2^52) : Prop :=
   vspaceAsidRootsUnique st ∧
   vspaceRootNonOverlap st ∧
   asidTableConsistent st ∧
   wxExclusiveInvariant st ∧
   boundedAddressTranslation st bound ∧
-  vspaceCrossAsidIsolation st
+  vspaceCrossAsidIsolation st ∧
+  canonicalAddressInvariant st
 
 -- ============================================================================
 -- WS-G3: Shared asidTableConsistent preservation helper
@@ -276,6 +288,7 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
     (perms : PagePermissions)
     (hInv : vspaceInvariantBundle st)
     (hBound : paddr.toNat < 2^52)
+    (hCanonical : vaddr.isCanonical)
     (hObjInv : st.objects.invExt)
     (hAsidInv : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) →
         (st.asidTable.erase root.asid).invExt)
@@ -310,8 +323,8 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
                 | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
                 | _ => st.asidTable).invExt := by
               simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
-            rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid⟩
-            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+            rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv⟩
+            refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
             -- 1. vspaceAsidRootsUnique st'
             · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
               by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
@@ -404,6 +417,24 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
               · rw [hObjNe oidA hA] at hObjA
                 rw [hObjNe oidB hB] at hObjB
                 exact hCrossAsid oidA oidB rA rB hObjA hObjB hNeqAB
+            -- 7. canonicalAddressInvariant st'
+            · intro oid r v p pm hObjR hMap
+              have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
+              by_cases hEq : oid = rootId
+              · subst hEq; rw [hObjEq] at hObjR; cases hObjR
+                rw [hInsert] at hMap
+                by_cases hV : v = vaddr
+                · subst hV
+                  simp only [RHTable_getElem?_eq_get?] at hMap
+                  rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hMappingsInv] at hMap
+                  cases hMap; exact hCanonical
+                · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h).symm
+                  simp only [RHTable_getElem?_eq_get?] at hMap
+                  rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hBeq hMappingsInv] at hMap
+                  rw [← RHTable_getElem?_eq_get?] at hMap
+                  exact hCanonicalInv _ root v p pm hObjRoot hMap
+              · rw [hObjNe oid hEq] at hObjR
+                exact hCanonicalInv oid r v p pm hObjR hMap
       · have hWxF : perms.wxCompliant = false := by
           cases h : perms.wxCompliant <;> simp_all
         simp [hWxF] at hStep
@@ -450,8 +481,8 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
               | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
               | _ => st.asidTable).invExt := by
             simp only [hObjRoot]; exact hAsidInv rootId root hObjRoot
-          rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid⟩
-          refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+          rcases hInv with ⟨hUniq, hNoOverlap, hConsist, hWxInv, hBoundInv, hCrossAsid, hCanonicalInv⟩
+          refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
           -- 1. vspaceAsidRootsUnique st'
           · intro oid₁ oid₂ r₁ r₂ hObj₁ hObj₂ hAsidEq
             by_cases h₁ : oid₁ = rootId <;> by_cases h₂ : oid₂ = rootId
@@ -528,6 +559,16 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             · rw [hObjNe oidA hA] at hObjA
               rw [hObjNe oidB hB] at hObjB
               exact hCrossAsid oidA oidB rA rB hObjA hObjB hNeqAB
+          -- 7. canonicalAddressInvariant st' (unmap only removes entries)
+          · intro oid r v p pm hObjR hMap
+            have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
+            by_cases hEq : oid = rootId
+            · subst hEq; rw [hObjEq] at hObjR; cases hObjR
+              have hRootMap := RHTable_lookup_of_erase_lookup root.mappings vaddr v p pm
+                hMappingsInv hMappingsSize' (hErase ▸ hMap)
+              exact hCanonicalInv _ root v p pm hObjRoot hRootMap
+            · rw [hObjNe oid hEq] at hObjR
+              exact hCanonicalInv oid r v p pm hObjR hMap
 
 -- ============================================================================
 -- TPI-D05 / TPI-001: VSpace round-trip theorems
@@ -748,15 +789,22 @@ theorem vspaceMapPageChecked_success_preserves_vspaceInvariantBundle
     (hTableInv : st.asidTable.invExt)
     (hStep : vspaceMapPageChecked asid vaddr paddr perms st = .ok ((), st')) :
     vspaceInvariantBundle st' := by
-  unfold vspaceMapPageChecked at hStep
+  -- U2-A: vspaceMapPageChecked now has two guards: VAddr canonical then PAddr bounds
+  simp only [vspaceMapPageChecked] at hStep
   split at hStep
-  · simp at hStep
-  · rename_i hBoundNeg
-    have hBound : paddr.toNat < 2^52 := by
-      simp only [Bool.not_eq_true', decide_eq_false_iff_not] at hBoundNeg
-      unfold physicalAddressBound at hBoundNeg; omega
-    exact vspaceMapPage_success_preserves_vspaceInvariantBundle
-      st st' asid vaddr paddr perms hInv hBound hObjInv hAsidInv hAsidSize hMappingsWF hTableInv hStep
+  · simp at hStep  -- VAddr not canonical → contradiction
+  · split at hStep
+    · simp at hStep  -- PAddr out of bounds → contradiction
+    · -- Both guards passed — extract VA canonical and PA bound from the negated guards
+      have hCanonical : vaddr.isCanonical := by
+        simp only [Bool.not_eq_true', Bool.not_eq_false] at *
+        assumption
+      have hBound : paddr.toNat < 2^52 := by
+        simp only [Bool.not_eq_true', Bool.not_eq_false, physicalAddressBound,
+                    decide_eq_true_eq] at *
+        assumption
+      exact vspaceMapPage_success_preserves_vspaceInvariantBundle
+        st st' asid vaddr paddr perms hInv hBound hCanonical hObjInv hAsidInv hAsidSize hMappingsWF hTableInv hStep
 
 /-- WS-H11/A-05: `vspaceMapPageChecked` error on out-of-bounds preserves invariant trivially. -/
 theorem vspaceMapPageChecked_error_preserves_vspaceInvariantBundle

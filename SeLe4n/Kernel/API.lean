@@ -58,8 +58,8 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
-| `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Stable |
-| `lifecycleRetypeWithCleanup` | Lifecycle (WS-H2) | Stable |
+| `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Internal (proof helpers — use `lifecycleRetypeWithCleanup` for production) |
+| `lifecycleRetypeWithCleanup` | Lifecycle (WS-H2) | Stable (production entry point with cleanup + scrubbing) |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |

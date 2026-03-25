@@ -43,6 +43,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | WS-S Pre-Benchmark Strengthening — PORTFOLIO COMPLETE (S1–S7, v0.19.0–v0.19.6) | [Workstream plan](../dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md) |
 | WS-T Deep-Dive Audit Remediation — PORTFOLIO COMPLETE (T1–T8, v0.20.0–v0.20.7, 94 sub-tasks) | [Workstream plan](../dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md), [Closure report](../dev_history/audits/WS_T_CLOSURE_REPORT.md) |
 | WS-U Phase U1 Correctness Fixes — COMPLETE (U1-A–U1-M, v0.21.0, 13 sub-tasks) | [Workstream plan](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
+| WS-U Phase U2 Safety Boundary Hardening — COMPLETE (U2-A–U2-N, v0.21.1, 14 sub-tasks) | [Workstream plan](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
 
 ## Proof claim qualification
 

@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.21.0` |
+| Version | `0.21.1` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 61,781 across 101 Lean files |
+| Production LoC | 62,154 across 101 Lean files |
 | Test LoC | 8,327 across 10 suites |
-| Proved declarations | 1,855 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 1,867 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-U Phase U1 COMPLETE** — Correctness Fixes (13 sub-tasks, U1-A–U1-M, v0.21.0). Prior: **WS-T COMPLETE** (v0.20.0–v0.20.7), **WS-S COMPLETE** (v0.19.0–v0.19.6), WS-R through WS-B — all COMPLETE. |
+| Active workstream | **WS-U Phase U2 COMPLETE** — Safety Boundary Hardening (14 sub-tasks, U2-A–U2-N, v0.21.1). Prior: **WS-U U1 COMPLETE** (v0.21.0), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -75,6 +75,19 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-Q4 (CNode radix tree, v0.17.10) — COMPLETED.** →
 **WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
 **WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
+
+## Completed: WS-U Phase U2 Safety Boundary Hardening (v0.21.1)
+
+Hardened safety boundaries across the kernel's input validation and type safety
+surface. 14 sub-tasks (U2-A through U2-N). Key outcomes:
+
+- VAddr canonical address checks (48-bit upper bound) in VSpace and decode paths
+- Parameterized physical address width via `MachineConfig.physicalAddressWidth`
+- ASID validation in syscall argument decode with updated roundtrip proofs
+- `AccessRightSet.mk_checked` proof-carrying constructor (`bits < 2^5`)
+- `allTablesInvExt_witness` compile-time completeness check (16 RHTables)
+- Three-category `storeObject` callsite audit documentation
+- Negative `LawfulBEq` instances for `RegisterFile` and `TCB`
 
 ## Completed: WS-U Phase U1 Correctness Fixes (v0.21.0)
 

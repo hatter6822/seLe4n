@@ -1,3 +1,39 @@
+## [0.21.1] — WS-U Phase U2: Safety Boundary Hardening
+
+- U2-A/B/C (U-H06): Added `VAddr.isCanonical` / `VAddr.canonical` predicates.
+  Canonical address check in `vspaceMapPageChecked`, `vspaceMapPageCheckedWithFlush`,
+  and `decodeVSpaceMapArgs`. Canonical address rejection theorem proved.
+- U2-D/E/F (U-H07): Parameterized physical address width via
+  `MachineConfig.physicalAddressWidth`. Added `physicalAddressBoundForConfig`,
+  `vspaceMapPageCheckedWithFlushPlatform`, and PA-width-aware
+  `DeviceTree.fromDtbWithRegions`.
+- U2-G/H (U-H08): Added `ASID.isValidForConfig` / `ASID.validForConfig`
+  predicates. ASID validation in `decodeVSpaceMapArgs` and
+  `decodeVSpaceUnmapArgs`. Updated roundtrip and error-iff proofs with ASID
+  preconditions.
+- U2-I/J (U-H05): Documented `vspaceMapPage` and `lifecycleRetypeObject` as
+  internal proof helpers with "do not use directly" docstrings. Updated test
+  harness references to use public API.
+- U2-K (U-L03): Added `AccessRightSet.mk_checked` proof-carrying constructor
+  with `bits < 2^5` obligation. Added `empty_valid`, `singleton_valid`,
+  `mk_checked_valid`, `union_valid`, `inter_valid`, and `isWord5_of_valid`
+  lemmas. Closure proofs use `Nat.or_lt_two_pow` and `Nat.and_le_left`.
+- U2-L (U-M18): Audited all `storeObject` call sites. Documented three
+  categories: allocation-guarded (lifecycle retype), in-place mutation (VSpace,
+  CSpace, IPC, scheduler), and builder/boot.
+- U2-M (U-M20): Added `allTablesInvExt_witness` compile-time completeness
+  theorem. Any mismatch between `allTablesInvExt` conjuncts and the 16-field
+  witness type produces a build error.
+- U2-N (U-M17): Added `RegisterFile.not_lawfulBEq` and `TCB.not_lawfulBEq`
+  negative `LawfulBEq` instances via counterexample (out-of-range GPR index 32).
+- **Audit refinements**: Extended `vspaceInvariantBundle` from 6-conjunct to
+  7-conjunct with `canonicalAddressInvariant` (U2-C). Added
+  `resolveAsidRootChecked` layered wrapper with ASID bounds guard (U2-H).
+  Added `asidBound`/`asidBoundForConfig` constants. Preservation proofs
+  updated for map and unmap success paths, default state, and timer/register
+  helpers.
+- Version bump to 0.21.1. Metrics: 62,154 production LoC, 1,867 theorems.
+
 ## [0.21.0] — WS-U Phase U1: Correctness Fixes
 
 - U1-A/B/C (U-H01): Fixed `frozenQueuePopHead` to clear `queuePPrev` field,

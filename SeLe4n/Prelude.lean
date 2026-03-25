@@ -446,6 +446,13 @@ namespace ASID
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (asid : ASID) : Nat := asid.val
 
+/-- U2-G/U-H08: An ASID is valid for a given config if it lies within [0, maxASID).
+    ARM64 uses 16-bit ASIDs (maxASID = 65536). -/
+@[inline] def isValidForConfig (asid : ASID) (maxASID : Nat) : Bool := asid.val < maxASID
+
+/-- U2-G/U-H08: Propositional version of ASID config validation. -/
+@[inline] def validForConfig (asid : ASID) (maxASID : Nat) : Prop := asid.val < maxASID
+
 instance : ToString ASID where
   toString asid := toString asid.toNat
 
@@ -474,6 +481,17 @@ namespace VAddr
 
 /-- R7-C/L-03: Decidable validity check for runtime use. -/
 @[inline] def isValid (addr : VAddr) : Bool := isWord64Dec addr.val
+
+/-- U2-A/U-H06: ARM64 canonical address bound — 48-bit virtual address space.
+    ARMv8-A with 4-level page tables supports [0, 2^48) for user-space addresses. -/
+def canonicalBound : Nat := 2^48
+
+/-- U2-A/U-H06: A virtual address is canonical if it lies within [0, 2^48).
+    Non-canonical addresses would fault on ARM64 hardware. -/
+@[inline] def isCanonical (addr : VAddr) : Bool := addr.val < canonicalBound
+
+/-- U2-A/U-H06: Propositional version of canonical address check. -/
+@[inline] def canonical (addr : VAddr) : Prop := addr.val < canonicalBound
 
 instance : ToString VAddr where
   toString addr := toString addr.toNat

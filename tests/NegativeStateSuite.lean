@@ -415,7 +415,7 @@ private def runNegativeChecks : IO Unit := do
 
   -- F-03 fix: VSpace map test — verify mapping was actually created via subsequent lookup
   let (_, stMapped) ← expectOkState "vspace map initial"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) baseState)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asidPrimary vaddrPrimary paddrPrimary) baseState)
 
   -- Verify the mapping was actually created by looking it up
   match SeLe4n.Kernel.Architecture.vspaceLookup asidPrimary vaddrPrimary stMapped with
@@ -428,7 +428,7 @@ private def runNegativeChecks : IO Unit := do
       throw <| IO.userError s!"vspace lookup after map failed: {toString err} — mapping was not created"
 
   expectError "vspace duplicate map conflict"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPage asidPrimary vaddrPrimary paddrPrimary) stMapped)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asidPrimary vaddrPrimary paddrPrimary) stMapped)
     .mappingConflict
 
   let (_, _stAwait) ← expectOkState "dual-queue receive enqueue seed"
@@ -1304,7 +1304,7 @@ def runWSH11Checks : IO Unit := do
   -- H-02: W^X violation must be rejected
   let wxPerms : PagePermissions := { write := true, execute := true }
   expectError "WS-H11 W^X violation rejected"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩ wxPerms) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩ wxPerms) st)
     .policyDenied
   IO.println "negative check passed [WS-H11 W^X violation correctly rejected]"
 
@@ -1330,9 +1330,9 @@ def runWSH11Checks : IO Unit := do
 
   -- Mapping conflict: duplicate vaddr should fail
   let (_, stMapped) ← expectOkState "WS-H11 map initial"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st)
   expectError "WS-H11 duplicate mapping conflict"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨16384⟩) stMapped)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨16384⟩) stMapped)
     .mappingConflict
   IO.println "negative check passed [WS-H11 duplicate mapping correctly rejected]"
 
@@ -1356,19 +1356,19 @@ def runWSH11Checks : IO Unit := do
 
   -- Read-only permissions (write=false, execute=false) should be W^X compliant
   let roPerms : PagePermissions := { read := true, write := false, execute := false }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨8192⟩ ⟨16384⟩ roPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨8192⟩ ⟨16384⟩ roPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 read-only permissions accepted]"
   | .error err => throw <| IO.userError s!"WS-H11 read-only rejected: {toString err}"
 
   -- Write-only (no execute) should be W^X compliant
   let woPerms : PagePermissions := { read := false, write := true, execute := false }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨12288⟩ ⟨20480⟩ woPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨12288⟩ ⟨20480⟩ woPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 write-only permissions accepted]"
   | .error err => throw <| IO.userError s!"WS-H11 write-only rejected: {toString err}"
 
   -- Execute-only (no write) should be W^X compliant
   let xoPerms : PagePermissions := { read := false, write := false, execute := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨16384⟩ ⟨24576⟩ xoPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨16384⟩ ⟨24576⟩ xoPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 execute-only permissions accepted]"
   | .error err => throw <| IO.userError s!"WS-H11 execute-only rejected: {toString err}"
 
@@ -1409,7 +1409,7 @@ def runWSH11Checks : IO Unit := do
 
   -- vspaceLookupFull returns permissions
   let permsCheck : PagePermissions := { read := true, write := false, execute := false, user := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨20480⟩ ⟨32768⟩ permsCheck) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨20480⟩ ⟨32768⟩ permsCheck) st with
   | .error err => throw <| IO.userError s!"WS-H11 lookupFull map error: {toString err}"
   | .ok (_, stPerm) =>
       match SeLe4n.Kernel.Architecture.vspaceLookupFull asid ⟨20480⟩ stPerm with
@@ -1429,7 +1429,7 @@ def runWSH11Checks : IO Unit := do
     |>.withLifecycleObjectType vspaceOid .vspaceRoot
     |>.withObject vspaceOid2 (.vspaceRoot { asid := asid2, mappings := {} })
     |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).build
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩) st2Asid with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st2Asid with
   | .error err => throw <| IO.userError s!"WS-H11 cross-ASID map failed: {toString err}"
   | .ok (_, stCross) =>
       expectError "WS-H11 cross-ASID isolation"
@@ -1438,13 +1438,13 @@ def runWSH11Checks : IO Unit := do
   IO.println "negative check passed [WS-H11 cross-ASID isolation enforced]"
 
   -- Multiple concurrent mappings: map 3 different vaddrs, verify all retrievable
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st with
   | .error err => throw <| IO.userError s!"WS-H11 multi-map step 1 failed: {toString err}"
   | .ok (_, stM1) =>
-      match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨8192⟩ ⟨16384⟩) stM1 with
+      match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨8192⟩ ⟨16384⟩) stM1 with
       | .error err => throw <| IO.userError s!"WS-H11 multi-map step 2 failed: {toString err}"
       | .ok (_, stM2) =>
-          match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨12288⟩ ⟨24576⟩) stM2 with
+          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨12288⟩ ⟨24576⟩) stM2 with
           | .error err => throw <| IO.userError s!"WS-H11 multi-map step 3 failed: {toString err}"
           | .ok (_, stM3) =>
               match SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨4096⟩ stM3,
@@ -1458,13 +1458,13 @@ def runWSH11Checks : IO Unit := do
               | _, _, _ => throw <| IO.userError "WS-H11 multi-map: lookup failed"
 
   -- Sequential map-unmap-map cycle: verify remapping works after unmap
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨8192⟩) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st with
   | .error err => throw <| IO.userError s!"WS-H11 cycle map1 failed: {toString err}"
   | .ok (_, stC1) =>
       match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid ⟨4096⟩) stC1 with
       | .error err => throw <| IO.userError s!"WS-H11 cycle unmap failed: {toString err}"
       | .ok (_, stC2) =>
-          match (SeLe4n.Kernel.Architecture.vspaceMapPage asid ⟨4096⟩ ⟨16384⟩) stC2 with
+          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨16384⟩) stC2 with
           | .error err => throw <| IO.userError s!"WS-H11 cycle remap failed: {toString err}"
           | .ok (_, stC3) =>
               match SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨4096⟩ stC3 with
