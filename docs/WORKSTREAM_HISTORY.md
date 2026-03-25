@@ -25,7 +25,7 @@ LOW) from dual v0.19.6 audits across 8 phases (T1–T8), 94 sub-tasks, v0.20.0�
 WS-T addresses all findings from dual v0.19.6 deep-dive audits (4 HIGH, 52
 MEDIUM, 16 selected LOW). 8 phases (T1–T8), 94 sub-tasks. Version range
 v0.20.0–v0.20.7. All 94 sub-tasks complete. See
-[`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
 Closure report: [`WS_T_CLOSURE_REPORT.md`](dev_history/audits/WS_T_CLOSURE_REPORT.md).
 
 - **T1 (v0.20.0) — COMPLETE**: Benchmarking Blockers. Fixed frozen IPC queue
