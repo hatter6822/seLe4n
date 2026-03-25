@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.21.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.21.4-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -42,7 +42,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널(microkernel)입니
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.21.3` |
+| **버전** | `0.21.4` |
 | **Lean 툴체인** | `v4.28.0` |
 | **프로덕션 Lean LoC** | 64,039 (101개 파일) |
 | **테스트 Lean LoC** | 8,318 (10개 테스트 스위트) |
