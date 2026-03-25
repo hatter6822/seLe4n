@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-api-dispatch-WZDiC",
-      "commit_sha": "9bc552ade3e6ebf0ec1dedc4a011e5537c94fea7",
-      "tree_sha": "fd2628bd667f746e5cdb98a2f1666f6d2f7c770b",
-      "committed_at_utc": "2026-03-25T13:35:28+00:00"
+      "branch": "claude/optimize-phase-u6-architecture-yBJEm",
+      "commit_sha": "2851f6fe7b37e6c33f1ddf16514641e0ae67ea8a",
+      "tree_sha": "94b75ecb12c4824911e4d58aefb5c80d8298fbe5",
+      "committed_at_utc": "2026-03-25T10:01:45-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a0a75670ae73710ae5f101268a2880d718c5d378f9abe3c46b9cf363107fde6d"
+    "source_digest": "696a9f800b13bfbc43accf46652ba655cb0655d6a11f15e46fc44dd7ddec38ad"
   },
   "summary": {
     "module_count": 111,
-    "declaration_count": 3481
+    "declaration_count": 3517
   },
   "readme_sync": {
-    "version": "0.21.4",
+    "version": "0.21.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 64279,
+    "production_loc": 64787,
     "test_files": 10,
     "test_loc": 8322,
-    "proved_theorem_lemma_decls": 1907,
+    "proved_theorem_lemma_decls": 1920,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -7774,7 +7774,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemInvariant",
-          "line": 96,
+          "line": 117,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -7787,7 +7787,7 @@
         {
           "kind": "theorem",
           "name": "default_crossSubsystemInvariant",
-          "line": 104,
+          "line": 125,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -7802,7 +7802,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemPredicates",
-          "line": 136,
+          "line": 157,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -7815,7 +7815,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemInvariantFolded",
-          "line": 142,
+          "line": 163,
           "called": [
             "SystemState",
             "crossSubsystemPredicates"
@@ -7824,7 +7824,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_iff_folded",
-          "line": 147,
+          "line": 168,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -7835,7 +7835,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemPredicates_count",
-          "line": 169,
+          "line": 190,
           "called": [
             "Kernel"
           ]
@@ -19085,7 +19085,7 @@
         {
           "kind": "def",
           "name": "integrityFlowsTo",
-          "line": 50,
+          "line": 75,
           "called": [
             "Integrity"
           ]
@@ -19093,7 +19093,7 @@
         {
           "kind": "def",
           "name": "securityFlowsTo",
-          "line": 64,
+          "line": 91,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -19103,7 +19103,7 @@
         {
           "kind": "structure",
           "name": "MemoryDomainOwnership",
-          "line": 69,
+          "line": 96,
           "called": [
             "DomainId",
             "PAddr",
@@ -19113,7 +19113,7 @@
         {
           "kind": "structure",
           "name": "LabelingContext",
-          "line": 74,
+          "line": 101,
           "called": [
             "MemoryDomainOwnership",
             "ObjId",
@@ -19126,7 +19126,7 @@
         {
           "kind": "def",
           "name": "defaultLabelingContext",
-          "line": 82,
+          "line": 109,
           "called": [
             "LabelingContext",
             "publicLabel"
@@ -19135,7 +19135,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_refl",
-          "line": 90,
+          "line": 117,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -19144,7 +19144,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_refl",
-          "line": 94,
+          "line": 121,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -19153,7 +19153,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_refl",
-          "line": 98,
+          "line": 125,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_refl",
@@ -19164,7 +19164,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_trans",
-          "line": 104,
+          "line": 131,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -19173,7 +19173,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_trans",
-          "line": 111,
+          "line": 138,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -19182,7 +19182,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_trans",
-          "line": 118,
+          "line": 145,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_trans",
@@ -19193,7 +19193,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_antisymm",
-          "line": 140,
+          "line": 167,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -19202,7 +19202,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_antisymm",
-          "line": 147,
+          "line": 174,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -19211,7 +19211,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_antisymm",
-          "line": 155,
+          "line": 182,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_antisymm",
@@ -19221,8 +19221,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:173>",
-          "line": 173,
+          "name": "<anonymous:instance:200>",
+          "line": 200,
           "called": [
             "securityFlowsTo"
           ]
@@ -19230,7 +19230,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_lattice_verified",
-          "line": 178,
+          "line": 205,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -19240,13 +19240,13 @@
         {
           "kind": "structure",
           "name": "SecurityDomain",
-          "line": 212,
+          "line": 239,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:217>",
-          "line": 217,
+          "name": "<anonymous:instance:244>",
+          "line": 244,
           "called": [
             "SecurityDomain"
           ]
@@ -19254,13 +19254,13 @@
         {
           "kind": "namespace",
           "name": "SecurityDomain",
-          "line": 220,
+          "line": 247,
           "called": []
         },
         {
           "kind": "def",
           "name": "lowest",
-          "line": 223,
+          "line": 250,
           "called": [
             "SecurityDomain"
           ]
@@ -19268,7 +19268,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 226,
+          "line": 253,
           "called": [
             "SecurityDomain"
           ]
@@ -19276,15 +19276,15 @@
         {
           "kind": "def",
           "name": "toNat",
-          "line": 229,
+          "line": 256,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:231>",
-          "line": 231,
+          "name": "<anonymous:instance:258>",
+          "line": 258,
           "called": [
             "SecurityDomain"
           ]
@@ -19292,7 +19292,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 235,
+          "line": 262,
           "called": [
             "ofNat",
             "toNat"
@@ -19301,7 +19301,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 237,
+          "line": 264,
           "called": [
             "SecurityDomain",
             "ofNat",
@@ -19311,7 +19311,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_injective",
-          "line": 239,
+          "line": 266,
           "called": [
             "ofNat"
           ]
@@ -19319,31 +19319,31 @@
         {
           "kind": "theorem",
           "name": "ext",
-          "line": 242,
+          "line": 269,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:248>",
-          "line": 248,
+          "name": "<anonymous:instance:275>",
+          "line": 275,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:250>",
-          "line": 250,
+          "name": "<anonymous:instance:277>",
+          "line": 277,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:254>",
-          "line": 254,
+          "name": "<anonymous:instance:281>",
+          "line": 281,
           "called": [
             "SecurityDomain"
           ]
@@ -19351,7 +19351,7 @@
         {
           "kind": "structure",
           "name": "DomainFlowPolicy",
-          "line": 262,
+          "line": 289,
           "called": [
             "SecurityDomain"
           ]
@@ -19359,13 +19359,13 @@
         {
           "kind": "namespace",
           "name": "DomainFlowPolicy",
-          "line": 265,
+          "line": 292,
           "called": []
         },
         {
           "kind": "def",
           "name": "isReflexive",
-          "line": 268,
+          "line": 295,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -19374,7 +19374,7 @@
         {
           "kind": "def",
           "name": "isTransitive",
-          "line": 272,
+          "line": 299,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -19383,7 +19383,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 277,
+          "line": 304,
           "called": [
             "DomainFlowPolicy",
             "isReflexive",
@@ -19393,7 +19393,7 @@
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 281,
+          "line": 308,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -19401,7 +19401,7 @@
         {
           "kind": "def",
           "name": "linearOrder",
-          "line": 286,
+          "line": 313,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -19409,7 +19409,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_reflexive",
-          "line": 295,
+          "line": 322,
           "called": [
             "isReflexive"
           ]
@@ -19417,7 +19417,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_transitive",
-          "line": 299,
+          "line": 326,
           "called": [
             "isTransitive"
           ]
@@ -19425,7 +19425,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_wellFormed",
-          "line": 303,
+          "line": 330,
           "called": [
             "allowAll_reflexive",
             "allowAll_transitive",
@@ -19435,7 +19435,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_reflexive",
-          "line": 307,
+          "line": 334,
           "called": [
             "isReflexive",
             "linearOrder"
@@ -19444,7 +19444,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_transitive",
-          "line": 311,
+          "line": 338,
           "called": [
             "isTransitive",
             "linearOrder"
@@ -19453,7 +19453,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_wellFormed",
-          "line": 317,
+          "line": 344,
           "called": [
             "linearOrder_reflexive",
             "linearOrder_transitive",
@@ -19463,7 +19463,7 @@
         {
           "kind": "def",
           "name": "domainFlowsTo",
-          "line": 325,
+          "line": 352,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -19472,7 +19472,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_refl",
-          "line": 328,
+          "line": 355,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -19483,7 +19483,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_trans",
-          "line": 334,
+          "line": 361,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -19494,7 +19494,7 @@
         {
           "kind": "structure",
           "name": "GenericLabelingContext",
-          "line": 348,
+          "line": 375,
           "called": [
             "DomainFlowPolicy",
             "ObjId",
@@ -19506,7 +19506,7 @@
         {
           "kind": "def",
           "name": "defaultGenericLabelingContext",
-          "line": 357,
+          "line": 384,
           "called": [
             "GenericLabelingContext",
             "allowAll",
@@ -19516,7 +19516,7 @@
         {
           "kind": "def",
           "name": "genericFlowCheck",
-          "line": 368,
+          "line": 395,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -19526,7 +19526,7 @@
         {
           "kind": "structure",
           "name": "EndpointFlowPolicy",
-          "line": 381,
+          "line": 408,
           "called": [
             "DomainFlowPolicy",
             "ObjId"
@@ -19535,7 +19535,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheck",
-          "line": 386,
+          "line": 413,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -19550,7 +19550,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_fallback",
-          "line": 396,
+          "line": 423,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -19565,7 +19565,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_override",
-          "line": 407,
+          "line": 434,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -19580,7 +19580,7 @@
         {
           "kind": "def",
           "name": "embedLegacyLabel",
-          "line": 432,
+          "line": 459,
           "called": [
             "SecurityDomain",
             "SecurityLabel"
@@ -19589,7 +19589,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_public",
-          "line": 440,
+          "line": 467,
           "called": [
             "embedLegacyLabel",
             "publicLabel"
@@ -19598,7 +19598,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_kernelTrusted",
-          "line": 444,
+          "line": 471,
           "called": [
             "embedLegacyLabel",
             "kernelTrusted"
@@ -19607,7 +19607,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_preserves_flow",
-          "line": 449,
+          "line": 476,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -19620,7 +19620,7 @@
         {
           "kind": "def",
           "name": "liftLegacyContext",
-          "line": 463,
+          "line": 490,
           "called": [
             "GenericLabelingContext",
             "LabelingContext",
@@ -19631,7 +19631,7 @@
         {
           "kind": "def",
           "name": "threeDomainExample",
-          "line": 480,
+          "line": 507,
           "called": [
             "DomainFlowPolicy",
             "linearOrder"
@@ -19640,7 +19640,7 @@
         {
           "kind": "theorem",
           "name": "threeDomainExample_wellFormed",
-          "line": 483,
+          "line": 510,
           "called": [
             "DomainFlowPolicy.linearOrder_wellFormed",
             "wellFormed"
@@ -19649,7 +19649,7 @@
         {
           "kind": "theorem",
           "name": "threeDomain_userland_to_driver",
-          "line": 488,
+          "line": 515,
           "called": [
             "domainFlowsTo",
             "linearOrder",
@@ -19659,7 +19659,7 @@
         {
           "kind": "theorem",
           "name": "threeDomain_driver_to_kernel",
-          "line": 493,
+          "line": 520,
           "called": [
             "domainFlowsTo",
             "linearOrder",
@@ -19669,7 +19669,7 @@
         {
           "kind": "theorem",
           "name": "threeDomain_kernel_not_to_userland",
-          "line": 498,
+          "line": 525,
           "called": [
             "domainFlowsTo",
             "linearOrder",
@@ -19679,7 +19679,7 @@
         {
           "kind": "def",
           "name": "bibaIntegrityFlowsTo",
-          "line": 535,
+          "line": 562,
           "called": [
             "Integrity"
           ]
@@ -19687,7 +19687,7 @@
         {
           "kind": "def",
           "name": "bibaSecurityFlowsTo",
-          "line": 544,
+          "line": 571,
           "called": [
             "SecurityLabel",
             "bibaIntegrityFlowsTo",
@@ -19697,7 +19697,7 @@
         {
           "kind": "theorem",
           "name": "bibaIntegrityFlowsTo_refl",
-          "line": 548,
+          "line": 575,
           "called": [
             "Integrity",
             "bibaIntegrityFlowsTo"
@@ -19706,7 +19706,7 @@
         {
           "kind": "theorem",
           "name": "bibaSecurityFlowsTo_refl",
-          "line": 552,
+          "line": 579,
           "called": [
             "SecurityLabel",
             "bibaIntegrityFlowsTo_refl",
@@ -19717,7 +19717,7 @@
         {
           "kind": "theorem",
           "name": "bibaIntegrityFlowsTo_trans",
-          "line": 558,
+          "line": 585,
           "called": [
             "Integrity",
             "bibaIntegrityFlowsTo"
@@ -19726,7 +19726,7 @@
         {
           "kind": "theorem",
           "name": "bibaSecurityFlowsTo_trans",
-          "line": 565,
+          "line": 592,
           "called": [
             "SecurityLabel",
             "bibaIntegrityFlowsTo_trans",
@@ -19737,7 +19737,7 @@
         {
           "kind": "def",
           "name": "bibaPolicy",
-          "line": 585,
+          "line": 612,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -19745,7 +19745,7 @@
         {
           "kind": "theorem",
           "name": "bibaPolicy_reflexive",
-          "line": 588,
+          "line": 615,
           "called": [
             "bibaPolicy",
             "isReflexive"
@@ -19754,7 +19754,7 @@
         {
           "kind": "theorem",
           "name": "bibaPolicy_transitive",
-          "line": 591,
+          "line": 618,
           "called": [
             "bibaPolicy",
             "isTransitive"
@@ -19763,7 +19763,7 @@
         {
           "kind": "theorem",
           "name": "bibaPolicy_wellFormed",
-          "line": 596,
+          "line": 623,
           "called": [
             "bibaPolicy_reflexive",
             "bibaPolicy_transitive",
@@ -19773,7 +19773,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_reflexive",
-          "line": 601,
+          "line": 628,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -19783,7 +19783,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_transitive",
-          "line": 604,
+          "line": 631,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -19793,7 +19793,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationPolicy",
-          "line": 638,
+          "line": 665,
           "called": [
             "SecurityDomain"
           ]
@@ -19801,13 +19801,13 @@
         {
           "kind": "namespace",
           "name": "DeclassificationPolicy",
-          "line": 641,
+          "line": 668,
           "called": []
         },
         {
           "kind": "def",
           "name": "none",
-          "line": 644,
+          "line": 671,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -19815,7 +19815,7 @@
         {
           "kind": "def",
           "name": "isDeclassificationAuthorized",
-          "line": 650,
+          "line": 677,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -19825,7 +19825,7 @@
         {
           "kind": "theorem",
           "name": "isDeclassificationAuthorized_not_reflexive",
-          "line": 658,
+          "line": 685,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -19837,7 +19837,7 @@
         {
           "kind": "def",
           "name": "endpointFlowPolicyWellFormed",
-          "line": 683,
+          "line": 710,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -19847,7 +19847,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowPolicyWellFormed_no_overrides",
-          "line": 691,
+          "line": 718,
           "called": [
             "DomainFlowPolicy",
             "endpointFlowPolicyWellFormed",
@@ -19858,7 +19858,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_reflexive",
-          "line": 702,
+          "line": 729,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -19875,7 +19875,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_transitive",
-          "line": 718,
+          "line": 745,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -19953,7 +19953,7 @@
         {
           "kind": "def",
           "name": "serviceObservable",
-          "line": 95,
+          "line": 114,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -19964,7 +19964,7 @@
         {
           "kind": "def",
           "name": "projectServicePresence",
-          "line": 100,
+          "line": 119,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -19977,7 +19977,7 @@
         {
           "kind": "def",
           "name": "capTargetObservable",
-          "line": 116,
+          "line": 135,
           "called": [
             "CapTarget",
             "IfObserver",
@@ -19989,7 +19989,7 @@
         {
           "kind": "def",
           "name": "projectKernelObject",
-          "line": 127,
+          "line": 146,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -20001,7 +20001,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_idempotent",
-          "line": 150,
+          "line": 169,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -20016,7 +20016,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_objectType",
-          "line": 165,
+          "line": 184,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -20028,7 +20028,7 @@
         {
           "kind": "def",
           "name": "projectObjects",
-          "line": 174,
+          "line": 193,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -20043,7 +20043,7 @@
         {
           "kind": "def",
           "name": "projectRunnable",
-          "line": 183,
+          "line": 202,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20056,7 +20056,7 @@
         {
           "kind": "def",
           "name": "projectCurrent",
-          "line": 188,
+          "line": 207,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20069,7 +20069,7 @@
         {
           "kind": "def",
           "name": "projectActiveDomain",
-          "line": 195,
+          "line": 214,
           "called": [
             "DomainId",
             "IfObserver",
@@ -20080,7 +20080,7 @@
         {
           "kind": "def",
           "name": "projectIrqHandlers",
-          "line": 201,
+          "line": 220,
           "called": [
             "IfObserver",
             "Irq",
@@ -20094,7 +20094,7 @@
         {
           "kind": "def",
           "name": "projectObjectIndex",
-          "line": 209,
+          "line": 228,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20107,7 +20107,7 @@
         {
           "kind": "def",
           "name": "projectDomainTimeRemaining",
-          "line": 214,
+          "line": 233,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20117,7 +20117,7 @@
         {
           "kind": "def",
           "name": "projectDomainSchedule",
-          "line": 219,
+          "line": 238,
           "called": [
             "DomainScheduleEntry",
             "IfObserver",
@@ -20128,7 +20128,7 @@
         {
           "kind": "def",
           "name": "projectDomainScheduleIndex",
-          "line": 224,
+          "line": 243,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20138,7 +20138,7 @@
         {
           "kind": "def",
           "name": "projectMachineRegs",
-          "line": 238,
+          "line": 257,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20151,7 +20151,7 @@
         {
           "kind": "def",
           "name": "memoryAddressObservable",
-          "line": 245,
+          "line": 264,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20163,7 +20163,7 @@
         {
           "kind": "def",
           "name": "projectMemory",
-          "line": 264,
+          "line": 283,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20176,7 +20176,7 @@
         {
           "kind": "theorem",
           "name": "projectMemory_no_ownership",
-          "line": 270,
+          "line": 289,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20189,7 +20189,7 @@
         {
           "kind": "theorem",
           "name": "projectMemory_eq_of_memory_eq",
-          "line": 279,
+          "line": 298,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20200,7 +20200,7 @@
         {
           "kind": "def",
           "name": "projectState",
-          "line": 300,
+          "line": 353,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20224,7 +20224,7 @@
         {
           "kind": "def",
           "name": "computeObservableSet",
-          "line": 327,
+          "line": 380,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20237,7 +20237,7 @@
         {
           "kind": "theorem",
           "name": "foldl_observable_set_mem",
-          "line": 335,
+          "line": 388,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20253,7 +20253,7 @@
         {
           "kind": "theorem",
           "name": "computeObservableSet_mem",
-          "line": 374,
+          "line": 427,
           "called": [
             "HashSet_contains_empty",
             "IfObserver",
@@ -20269,7 +20269,7 @@
         {
           "kind": "theorem",
           "name": "computeObservableSet_not_mem",
-          "line": 385,
+          "line": 438,
           "called": [
             "HashSet_contains_empty",
             "IfObserver",
@@ -20285,7 +20285,7 @@
         {
           "kind": "def",
           "name": "projectObjectsFast",
-          "line": 397,
+          "line": 450,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -20300,7 +20300,7 @@
         {
           "kind": "def",
           "name": "projectIrqHandlersFast",
-          "line": 407,
+          "line": 460,
           "called": [
             "Irq",
             "ObjId",
@@ -20312,7 +20312,7 @@
         {
           "kind": "def",
           "name": "projectObjectIndexFast",
-          "line": 415,
+          "line": 468,
           "called": [
             "ObjId",
             "SystemState",
@@ -20323,7 +20323,7 @@
         {
           "kind": "def",
           "name": "projectStateFast",
-          "line": 436,
+          "line": 489,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20348,7 +20348,7 @@
         {
           "kind": "theorem",
           "name": "projectObjectsFast_eq",
-          "line": 455,
+          "line": 508,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20364,7 +20364,7 @@
         {
           "kind": "theorem",
           "name": "projectIrqHandlersFast_eq",
-          "line": 473,
+          "line": 526,
           "called": [
             "IfObserver",
             "Irq",
@@ -20383,7 +20383,7 @@
         {
           "kind": "theorem",
           "name": "projectObjectIndexFast_eq",
-          "line": 489,
+          "line": 542,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20397,7 +20397,7 @@
         {
           "kind": "theorem",
           "name": "projectStateFast_eq",
-          "line": 504,
+          "line": 557,
           "called": [
             "IfObserver",
             "Irq",
@@ -20415,7 +20415,7 @@
         {
           "kind": "def",
           "name": "lowEquivalent",
-          "line": 516,
+          "line": 569,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20426,7 +20426,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_refl",
-          "line": 519,
+          "line": 572,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20437,7 +20437,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_symm",
-          "line": 526,
+          "line": 579,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -20448,7 +20448,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_trans",
-          "line": 534,
+          "line": 587,
           "called": [
             "IfObserver",
             "Kernel",
@@ -37663,18 +37663,18 @@
     {
       "module": "SeLe4n.Platform.Boot",
       "path": "SeLe4n/Platform/Boot.lean",
-      "declaration_count": 14,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Boot",
-          "line": 24,
+          "line": 26,
           "called": []
         },
         {
           "kind": "structure",
           "name": "IrqEntry",
-          "line": 32,
+          "line": 34,
           "called": [
             "Irq",
             "ObjId"
@@ -37683,7 +37683,7 @@
         {
           "kind": "structure",
           "name": "ObjectEntry",
-          "line": 40,
+          "line": 42,
           "called": [
             "KernelObject",
             "ObjId",
@@ -37694,7 +37694,7 @@
         {
           "kind": "structure",
           "name": "PlatformConfig",
-          "line": 51,
+          "line": 53,
           "called": [
             "IrqEntry",
             "ObjectEntry"
@@ -37702,8 +37702,42 @@
         },
         {
           "kind": "def",
+          "name": "irqKeysNoDup",
+          "line": 61,
+          "called": [
+            "Irq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "irqsUnique",
+          "line": 65,
+          "called": [
+            "IrqEntry",
+            "irqKeysNoDup"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objIdKeysNoDup",
+          "line": 72,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objectIdsUnique",
+          "line": 76,
+          "called": [
+            "ObjectEntry",
+            "objIdKeysNoDup"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "foldIrqs",
-          "line": 56,
+          "line": 86,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -37713,7 +37747,7 @@
         {
           "kind": "def",
           "name": "foldObjects",
-          "line": 61,
+          "line": 97,
           "called": [
             "IntermediateState",
             "ObjectEntry",
@@ -37723,7 +37757,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatform",
-          "line": 73,
+          "line": 109,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -37736,7 +37770,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_deterministic",
-          "line": 79,
+          "line": 115,
           "called": [
             "PlatformConfig",
             "bootFromPlatform",
@@ -37746,7 +37780,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_empty",
-          "line": 83,
+          "line": 119,
           "called": [
             "bootFromPlatform",
             "mkEmptyIntermediateState"
@@ -37755,7 +37789,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_allTablesInvExt",
-          "line": 88,
+          "line": 124,
           "called": [
             "PlatformConfig",
             "allTablesInvExt",
@@ -37766,7 +37800,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perObjectSlots",
-          "line": 93,
+          "line": 129,
           "called": [
             "PlatformConfig",
             "bootFromPlatform",
@@ -37777,7 +37811,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_perObjectMappings",
-          "line": 98,
+          "line": 134,
           "called": [
             "PlatformConfig",
             "bootFromPlatform",
@@ -37788,7 +37822,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_lifecycleConsistent",
-          "line": 103,
+          "line": 139,
           "called": [
             "PlatformConfig",
             "bootFromPlatform",
@@ -37799,7 +37833,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_valid",
-          "line": 108,
+          "line": 144,
           "called": [
             "PlatformConfig",
             "allTablesInvExt",
@@ -37812,6 +37846,86 @@
             "lifecycleMetadataConsistent",
             "perObjectMappingsInvariant",
             "perObjectSlotsInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "irqsUnique_empty",
+          "line": 156,
+          "called": [
+            "irqsUnique"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objectIdsUnique_empty",
+          "line": 160,
+          "called": [
+            "objectIdsUnique"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "PlatformConfig.wellFormed",
+          "line": 166,
+          "called": [
+            "PlatformConfig",
+            "config",
+            "irqsUnique",
+            "objectIdsUnique"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "PlatformConfig.wellFormed_empty",
+          "line": 170,
+          "called": [
+            "PlatformConfig.wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_empty_state",
+          "line": 203,
+          "called": [
+            "SystemState",
+            "bootFromPlatform"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "emptyBoot_proofLayerInvariantBundle",
+          "line": 209,
+          "called": [
+            "apiInvariantBundle_default",
+            "bootFromPlatform",
+            "bootFromPlatform_empty_state",
+            "proofLayerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "emptyBoot_freeze_preserves",
+          "line": 217,
+          "called": [
+            "apiInvariantBundle_frozen",
+            "bootFromPlatform",
+            "emptyBoot_proofLayerInvariantBundle",
+            "freeze",
+            "freeze_preserves_invariants"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootToRuntime_invariantBridge_empty",
+          "line": 234,
+          "called": [
+            "apiInvariantBundle_frozen",
+            "bootFromPlatform",
+            "emptyBoot_freeze_preserves",
+            "emptyBoot_proofLayerInvariantBundle",
+            "freeze",
+            "proofLayerInvariantBundle"
           ]
         }
       ]
@@ -38383,7 +38497,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.MmioAdapter",
       "path": "SeLe4n/Platform/RPi5/MmioAdapter.lean",
-      "declaration_count": 14,
+      "declaration_count": 35,
       "declarations": [
         {
           "kind": "namespace",
@@ -38399,14 +38513,125 @@
         },
         {
           "kind": "inductive",
+          "name": "MmioReadKind",
+          "line": 83,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "MmioWriteKind",
+          "line": 97,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "MmioRegionDesc",
+          "line": 110,
+          "called": [
+            "MmioReadKind",
+            "MmioWriteKind",
+            "PAddr",
+            "size"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "MmioRegionDesc",
+          "line": 121,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "endAddr",
+          "line": 124,
+          "called": [
+            "MmioRegionDesc",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "contains",
+          "line": 127,
+          "called": [
+            "MmioRegionDesc",
+            "PAddr",
+            "endAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "wellFormed",
+          "line": 131,
+          "called": [
+            "MmioRegionDesc",
+            "endAddr",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:134>",
+          "line": 134,
+          "called": [
+            "MmioRegionDesc"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "inMmioRegion",
+          "line": 140,
+          "called": [
+            "MmioRegionDesc",
+            "PAddr",
+            "contains"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "findMmioRegion",
+          "line": 144,
+          "called": [
+            "MmioRegionDesc",
+            "PAddr",
+            "contains"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rpi5MmioRegionDescs",
+          "line": 149,
+          "called": [
+            "MmioRegionDesc",
+            "gicCpuInterfaceBase",
+            "gicDistributorBase",
+            "size",
+            "uart0Base"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "MmioSafe",
+          "line": 172,
+          "called": [
+            "MmioRegionDesc",
+            "PAddr",
+            "inMmioRegion"
+          ]
+        },
+        {
+          "kind": "inductive",
           "name": "MmioOpKind",
-          "line": 84,
+          "line": 194,
           "called": []
         },
         {
           "kind": "structure",
           "name": "MmioOp",
-          "line": 92,
+          "line": 202,
           "called": [
             "MemoryBarrier",
             "MmioOpKind",
@@ -38417,7 +38642,7 @@
         {
           "kind": "def",
           "name": "isDeviceAddress",
-          "line": 112,
+          "line": 222,
           "called": [
             "PAddr",
             "contains"
@@ -38426,7 +38651,7 @@
         {
           "kind": "def",
           "name": "isMmioPeripheralAddress",
-          "line": 119,
+          "line": 229,
           "called": [
             "PAddr",
             "contains"
@@ -38435,7 +38660,7 @@
         {
           "kind": "def",
           "name": "mmioRead",
-          "line": 137,
+          "line": 251,
           "called": [
             "Kernel",
             "PAddr",
@@ -38445,7 +38670,7 @@
         {
           "kind": "def",
           "name": "mmioWrite",
-          "line": 152,
+          "line": 268,
           "called": [
             "Kernel",
             "PAddr",
@@ -38454,8 +38679,34 @@
         },
         {
           "kind": "def",
+          "name": "mmioWrite32",
+          "line": 288,
+          "called": [
+            "Kernel",
+            "PAddr",
+            "isDeviceAddress",
+            "mem",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mmioWrite64",
+          "line": 315,
+          "called": [
+            "Kernel",
+            "PAddr",
+            "isDeviceAddress",
+            "mem",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "MmioOp.isValid",
-          "line": 166,
+          "line": 348,
           "called": [
             "MmioOp",
             "isDeviceAddress"
@@ -38464,7 +38715,7 @@
         {
           "kind": "def",
           "name": "MmioOp.hasAppropriateBarriers",
-          "line": 173,
+          "line": 355,
           "called": [
             "MmioOp"
           ]
@@ -38472,7 +38723,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_rejects_non_device",
-          "line": 183,
+          "line": 365,
           "called": [
             "PAddr",
             "SystemState",
@@ -38483,7 +38734,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_rejects_non_device",
-          "line": 189,
+          "line": 371,
           "called": [
             "PAddr",
             "SystemState",
@@ -38494,7 +38745,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_preserves_state",
-          "line": 195,
+          "line": 377,
           "called": [
             "PAddr",
             "SystemState",
@@ -38504,11 +38755,89 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_frame",
-          "line": 204,
+          "line": 386,
           "called": [
             "PAddr",
             "SystemState",
             "mmioWrite"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioWrite32_rejects_non_device",
+          "line": 400,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "isDeviceAddress",
+            "mmioWrite32"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioWrite64_rejects_non_device",
+          "line": 406,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "isDeviceAddress",
+            "mmioWrite64"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioWrite32_frame",
+          "line": 412,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "mmioWrite32",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioWrite64_frame",
+          "line": 426,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "mmioWrite64",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "notInMmioRegion",
+          "line": 450,
+          "called": [
+            "PAddr",
+            "inMmioRegion",
+            "rpi5MmioRegionDescs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioRead_nonMmio_safe",
+          "line": 455,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "isDeviceAddress",
+            "mmioRead",
+            "notInMmioRegion"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "memoryRead_idempotent_nonMmio",
+          "line": 465,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "notInMmioRegion"
           ]
         }
       ]
@@ -38521,13 +38850,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5",
-          "line": 44,
+          "line": 46,
           "called": []
         },
         {
           "kind": "def",
           "name": "rpi5RestrictiveAdapterProofHooks",
-          "line": 52,
+          "line": 54,
           "called": [
             "AdapterProofHooks",
             "advanceTimerState_preserves_proofLayerInvariantBundle",
@@ -38537,7 +38866,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Restrictive_adapterAdvanceTimer_preserves",
-          "line": 65,
+          "line": 67,
           "called": [
             "SystemState",
             "adapterAdvanceTimer",
@@ -38550,7 +38879,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Restrictive_adapterWriteRegister_preserves",
-          "line": 77,
+          "line": 79,
           "called": [
             "RegName",
             "RegValue",
@@ -38565,7 +38894,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Restrictive_adapterReadMemory_preserves",
-          "line": 89,
+          "line": 91,
           "called": [
             "PAddr",
             "SystemState",
@@ -38581,7 +38910,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.RuntimeContract",
       "path": "SeLe4n/Platform/RPi5/RuntimeContract.lean",
-      "declaration_count": 8,
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "namespace",
@@ -38591,11 +38920,41 @@
         },
         {
           "kind": "def",
+          "name": "registerContextStableCheck",
+          "line": 64,
+          "called": [
+            "SystemState",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "registerContextStablePred",
+          "line": 73,
+          "called": [
+            "SystemState",
+            "registerContextStableCheck"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "registerContextStablePred_decidable",
+          "line": 77,
+          "called": [
+            "SystemState",
+            "registerContextStablePred"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "rpi5RuntimeContract",
-          "line": 51,
+          "line": 81,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
+            "registerContextStablePred",
+            "registerContextStablePred_decidable",
             "rpi5MachineConfig",
             "rpi5MemoryMap"
           ]
@@ -38603,7 +38962,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContractRestrictive",
-          "line": 87,
+          "line": 114,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -38614,7 +38973,7 @@
         {
           "kind": "def",
           "name": "RegisterWriteInvariant",
-          "line": 124,
+          "line": 151,
           "called": [
             "SystemState",
             "none",
@@ -38624,7 +38983,7 @@
         {
           "kind": "theorem",
           "name": "registerWriteInvariant_default",
-          "line": 133,
+          "line": 160,
           "called": [
             "RegisterWriteInvariant",
             "SystemState"
@@ -38633,7 +38992,7 @@
         {
           "kind": "def",
           "name": "mmioAccessAllowed",
-          "line": 149,
+          "line": 176,
           "called": [
             "PAddr",
             "SystemState",
@@ -38643,7 +39002,7 @@
         {
           "kind": "instance",
           "name": "mmioAccessAllowed_decidable",
-          "line": 154,
+          "line": 181,
           "called": [
             "PAddr",
             "SystemState",
@@ -38655,7 +39014,7 @@
         {
           "kind": "theorem",
           "name": "mmioAccess_ram_kind_disjoint",
-          "line": 163,
+          "line": 190,
           "called": [
             "MemoryRegion"
           ]

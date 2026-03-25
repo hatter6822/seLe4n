@@ -92,7 +92,28 @@ def registryDependencyConsistent (st : SystemState) : Prop :=
 /-- R4-E.1 + T5-J + U4-G: Cross-subsystem invariant composing registry endpoint
     validity, dependency consistency, stale queue reference exclusion,
     notification wait-list reference validity, and service graph acyclicity.
-    Checked at every kernel entry/exit point via `proofLayerInvariantBundle`. -/
+    Checked at every kernel entry/exit point via `proofLayerInvariantBundle`.
+
+    U6-L (U-M14): **Cross-subsystem invariant composition gap**. This
+    invariant is the conjunction of 5 subsystem predicates. The conjunction
+    may not be the strongest composite invariant — there may exist cross-
+    subsystem interference properties that are not captured by the individual
+    predicates. For example:
+
+    - An IPC operation that modifies an endpoint queue may affect service
+      registry consistency if the endpoint is a service's bound endpoint.
+    - A capability revocation that removes a CNode slot may invalidate a
+      service's registered endpoint capability.
+
+    Currently, each subsystem's preservation proofs discharge their own
+    invariant independently. Cross-subsystem interference is handled by
+    ensuring that operations in one subsystem do not modify fields read by
+    another subsystem's invariant predicates (field-disjointness argument).
+
+    Future work (WS-V): Formally verify that the conjunction is tight —
+    either prove that no cross-subsystem interference exists beyond what
+    the individual predicates capture, or strengthen the conjunction with
+    additional cross-cutting properties. -/
 def crossSubsystemInvariant (st : SystemState) : Prop :=
   registryEndpointValid st ∧
   registryDependencyConsistent st ∧

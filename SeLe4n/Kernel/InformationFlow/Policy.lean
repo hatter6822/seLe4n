@@ -46,7 +46,32 @@ def confidentialityFlowsTo : Confidentiality → Confidentiality → Bool
   | .high, .high => true
   | .high, .low => false
 
-/-- Integrity order (`≥`) for trusted-data flow checks. -/
+/-- Integrity order (`≥`) for trusted-data flow checks.
+
+    U6-I (U-M22): **Deliberate non-standard BIBA direction**. Standard BIBA
+    integrity denies write-up: an untrusted subject cannot write to a trusted
+    object. seLe4n deliberately reverses this to implement a "both dimensions
+    flow upward" lattice. The rationale:
+
+    1. **seL4 compatibility**: seL4's information flow model (Murray et al.,
+       CCS 2013) uses a single-dimensional confidentiality lattice. seLe4n's
+       2D lattice (confidentiality × integrity) extends this, but the integrity
+       dimension tracks *authority flow* rather than *data purity*.
+
+    2. **Capability authority flow**: In a capability system, authority flows
+       from high-privilege domains to low-privilege domains (delegation). The
+       integrity dimension tracks this: trusted code may delegate authority to
+       untrusted code (write-down = trusted→untrusted), but untrusted code
+       cannot escalate authority to trusted code (write-up = untrusted→trusted
+       is denied).
+
+    3. **Practical effect**: `integrityFlowsTo dst.integrity src.integrity`
+       checks `dst ≤ src`, meaning the destination must not be more trusted
+       than the source. This prevents privilege escalation while allowing
+       delegation.
+
+    A standard BIBA alternative is provided as `bibaIntegrityFlowsTo` below
+    for comparison and potential future use. -/
 def integrityFlowsTo : Integrity → Integrity → Bool
   | .trusted, .trusted => true
   | .trusted, .untrusted => true
@@ -55,12 +80,14 @@ def integrityFlowsTo : Integrity → Integrity → Bool
 
 /-- Combined policy relation: confidentiality must not flow down; integrity
     must not flow up (source must be at least as trusted as destination).
-    Note: this implements a "both dimensions flow upward" lattice — low
-    confidentiality flows to high, and untrusted integrity flows to trusted
-    destinations.  This is **not** standard BLP+BIBA (where BIBA would deny
-    untrusted→trusted).  The reversed argument order on `integrityFlowsTo`
-    checks `dst.integrity ≤ src.integrity`, i.e., the destination must not
-    be more trusted than the source.  See audit finding M-13. -/
+
+    U6-I (U-M22): This implements a "both dimensions flow upward" lattice —
+    low confidentiality flows to high, and trusted integrity flows to untrusted.
+    This is **not** standard BLP+BIBA (where BIBA would deny untrusted→trusted
+    writes). The reversed argument order on `integrityFlowsTo` checks
+    `dst.integrity ≤ src.integrity`, i.e., the destination must not be more
+    trusted than the source. See the `integrityFlowsTo` docstring above for
+    the full design rationale. -/
 def securityFlowsTo (src dst : SecurityLabel) : Bool :=
   confidentialityFlowsTo src.confidentiality dst.confidentiality &&
     integrityFlowsTo dst.integrity src.integrity

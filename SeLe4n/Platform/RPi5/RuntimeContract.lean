@@ -35,31 +35,58 @@ namespace SeLe4n.Platform.RPi5
 open SeLe4n.Kernel.Architecture
 open SeLe4n.Model
 
-/-- WS-H15b/A-41: RPi5 runtime contract with substantive predicates.
+/-! ## WS-H15b/A-41, U6-C (U-M09): RPi5 runtime contract with substantive predicates.
 
 Timer monotonicity: ARM Generic Timer (CNTPCT_EL0) is monotonically
 non-decreasing. Counter rollover is outside the operational lifetime.
 
-Register context stability: Validates that either the stack pointer is
-preserved across a state transition (callee-save guarantee) OR a context
-switch is in progress (scheduler transitions may update SP as part of
-thread dispatch). This replaces the previous `True` placeholder with a
-non-trivial hardware-aligned predicate.
+Register context stability (U6-C strengthened): When a thread is scheduled
+in the post-state, the machine register file must match that thread's saved
+`registerContext` in the TCB. This replaces the previous permissive disjunct
+(`sp preserved ∨ context switch in progress`) which was trivially satisfied
+and did not actually constrain hardware behavior.
+
+The strengthened predicate requires:
+- If `st'.scheduler.current = some tid`, then `st'.machine.regs` must be
+  consistent with the TCB's `registerContext` for `tid`.
+- If no thread is scheduled, the register file is unconstrained.
+
+On ARMv8-A, `saveOutgoingContext` stores registers into the outgoing TCB,
+then `restoreIncomingContext` loads the incoming thread's saved registers —
+so the strengthened predicate holds by construction during context switch.
 
 Memory access: Restricted to declared RAM regions in the BCM2712 memory map.
-Device and reserved regions require explicit MMIO adapter calls. -/
+Device and reserved regions require explicit MMIO adapter calls.
+-/
+
+/-- U6-C: Computable check for register context stability. Returns `true`
+    if the machine register file matches the scheduled thread's saved context. -/
+def registerContextStableCheck (_st st' : SystemState) : Bool :=
+  match st'.scheduler.current with
+  | none => true
+  | some tid =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb) => st'.machine.regs == tcb.registerContext
+    | _ => true
+
+/-- U6-C: Prop-level register context stability predicate. -/
+def registerContextStablePred (st st' : SystemState) : Prop :=
+  registerContextStableCheck st st' = true
+
+/-- U6-C: Decidability of the strengthened register context stability predicate. -/
+instance registerContextStablePred_decidable (st st' : SystemState) :
+    Decidable (registerContextStablePred st st') :=
+  inferInstanceAs (Decidable (_ = true))
+
 def rpi5RuntimeContract : RuntimeBoundaryContract :=
   {
     timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer
-    registerContextStable := fun st st' =>
-      -- ARMv8 context-switch guarantee: SP preserved OR context switch in progress
-      st.machine.regs.sp = st'.machine.regs.sp ∨
-      st'.scheduler.current ≠ st.scheduler.current
+    registerContextStable := registerContextStablePred
     memoryAccessAllowed := fun _ addr =>
       rpi5MachineConfig.memoryMap.any fun region =>
         region.kind == .ram && region.contains addr
     timerMonotonicDecidable := by intro st st'; infer_instance
-    registerContextStableDecidable := by intro st st'; infer_instance
+    registerContextStableDecidable := by intro st st'; exact registerContextStablePred_decidable st st'
     memoryAccessAllowedDecidable := by
       intro _ addr
       simp only [rpi5MachineConfig, rpi5MemoryMap]
