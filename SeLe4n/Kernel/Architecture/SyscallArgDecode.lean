@@ -617,7 +617,7 @@ theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
 private theorem pagePermissions_toNat_lt_32 (p : PagePermissions) :
     p.toNat < 32 := by
   rcases p with ⟨r, w, e, u, c⟩
-  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> native_decide
+  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> decide
 
 private theorem pagePermissions_ofNat?_toNat (p : PagePermissions) :
     PagePermissions.ofNat? p.toNat = some (PagePermissions.ofNat p.toNat) := by

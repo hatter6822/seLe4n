@@ -64,24 +64,24 @@ namespace RunQueue
   threadPrio_invExt := RHTable.empty_invExt' 16 (by omega)
   mem_sizeOk := by
     show (RHSet.empty : RHSet ThreadId).table.size < (RHSet.empty : RHSet ThreadId).table.capacity
-    native_decide
+    decide
   byPrio_sizeOk := by
     show (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).size <
          (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
-    native_decide
+    decide
   threadPrio_sizeOk := by
     show (EmptyCollection.emptyCollection : RHTable ThreadId Priority).size <
          (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
-    native_decide
+    decide
   mem_capGe4 := by
     show 4 ≤ (RHSet.empty : RHSet ThreadId).table.capacity
-    native_decide
+    decide
   byPrio_capGe4 := by
     show 4 ≤ (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
-    native_decide
+    decide
   threadPrio_capGe4 := by
     show 4 ≤ (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
-    native_decide
+    decide
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat

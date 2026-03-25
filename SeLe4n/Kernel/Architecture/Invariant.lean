@@ -309,7 +309,7 @@ private theorem default_schedulerInvariantBundleFull :
    by
     unfold timeSlicePositive
     intro tid hMem
-    have : (default : SystemState).scheduler.runnable = [] := by native_decide
+    have : (default : SystemState).scheduler.runnable = [] := by decide
     rw [this] at hMem; simp at hMem,
    by unfold currentTimeSlicePositive; simp,
    by unfold edfCurrentHasEarliestDeadline; simp,
@@ -317,7 +317,7 @@ private theorem default_schedulerInvariantBundleFull :
    default_runnableThreadsAreTCBs,
    by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
     intro tid hMem
-    have hFlat : (default : SystemState).scheduler.runQueue.flat = [] := by native_decide
+    have hFlat : (default : SystemState).scheduler.runQueue.flat = [] := by decide
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
     simp [RunQueue.toList, hFlat] at hInFlat⟩
 

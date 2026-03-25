@@ -591,7 +591,7 @@ theorem frozenOpCoverage_count :
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery].filter
          frozenOpCoverage).length = 9) := by
-  native_decide
+  decide
 
 /-- S3-L: All 14 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :

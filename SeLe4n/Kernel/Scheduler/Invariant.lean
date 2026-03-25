@@ -226,7 +226,7 @@ def runnableThreadsAreTCBs (st : SystemState) : Prop :=
 theorem default_runnableThreadsAreTCBs :
     runnableThreadsAreTCBs (default : SystemState) := by
   intro tid hMem
-  have : (default : SystemState).scheduler.runnable = [] := by native_decide
+  have : (default : SystemState).scheduler.runnable = [] := by decide
   rw [this] at hMem; simp at hMem
 
 /-- WS-F6/D3: runnableThreadsAreTCBs is preserved when objects are unchanged. -/

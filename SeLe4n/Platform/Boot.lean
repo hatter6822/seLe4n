@@ -150,11 +150,11 @@ theorem bootFromPlatform_valid (config : PlatformConfig) :
 
 /-- U6-E: Empty IRQ list has no duplicates. -/
 theorem irqsUnique_empty : irqsUnique [] = true := by
-  native_decide
+  decide
 
 /-- U6-F: Empty object list has no duplicates. -/
 theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
-  native_decide
+  decide
 
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs and unique object IDs. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
@@ -163,7 +163,7 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
 /-- U6-E/F: Empty config is well-formed. -/
 theorem PlatformConfig.wellFormed_empty :
     PlatformConfig.wellFormed { irqTable := [], initialObjects := [] } = true := by
-  native_decide
+  decide
 
 /-- U6-E/F: Checked boot — rejects configs with duplicate IRQs or object IDs.
 
