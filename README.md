@@ -76,7 +76,7 @@ architectural improvements compared to other microkernels:
 | **Test Lean LoC** | 8,316 across 10 test suites |
 | **Proved declarations** | 1,878 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) — comprehensive audit remediation (14 HIGH, 39 MEDIUM, 28 LOW) |
+| **Latest audit** | [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) — comprehensive audit remediation (14 HIGH, 39 MEDIUM, 28 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`
@@ -268,8 +268,8 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-U Phase U2** — Safety Boundary Hardening (14 sub-tasks, U2-A through U2-N) **COMPLETE** (v0.21.1). VAddr canonical address checks, parameterized PA width, ASID validation in decode layer, AccessRightSet `mk_checked` constructor, `allTablesInvExt` completeness witness, `storeObject` callsite audit, negative `LawfulBEq` instances for RegisterFile/TCB. Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
-- **WS-U Phase U1** — Correctness Fixes (13 sub-tasks, U1-A through U1-M) **COMPLETE** (v0.21.0). Addresses 7 audit findings (U-H01 through U-H04, U-H13, U-H14, U-M39): frozen queue link safety, retype page-alignment, lifecycle dispatch cleanup, authority right alignment, IPC CSpace root fallback, CDT deletion guard, domain switch context save. Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+- **WS-U Phase U2** — Safety Boundary Hardening (14 sub-tasks, U2-A through U2-N) **COMPLETE** (v0.21.1). VAddr canonical address checks, parameterized PA width, ASID validation in decode layer, AccessRightSet `mk_checked` constructor, `allTablesInvExt` completeness witness, `storeObject` callsite audit, negative `LawfulBEq` instances for RegisterFile/TCB. Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+- **WS-U Phase U1** — Correctness Fixes (13 sub-tasks, U1-A through U1-M) **COMPLETE** (v0.21.0). Addresses 7 audit findings (U-H01 through U-H04, U-H13, U-H14, U-M39): frozen queue link safety, retype page-alignment, lifecycle dispatch cleanup, authority right alignment, IPC CSpace root fallback, CDT deletion guard, domain switch context save. Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 - **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **COMPLETE** (v0.20.0–v0.20.7). Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
 - **WS-S** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks) **COMPLETE** (v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Closure: [`WS_S_CLOSURE_REPORT.md`](docs/dev_history/audits/WS_S_CLOSURE_REPORT.md).
 - **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks) **COMPLETE** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).

@@ -3,10 +3,10 @@
 **Created**: 2026-03-24
 **Baseline version**: 0.20.7
 **Baseline audits**:
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.20.7_FULL_CODEBASE.md` (5 HIGH, 26 MEDIUM, 33 LOW)
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.20.7_KERNEL_IMPLEMENTATION.md` (2 HIGH, 22 MEDIUM, 60+ LOW)
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.20.7_PRE_RELEASE.md` (13 HIGH, 37 MEDIUM, 43 LOW)
-- `docs/audits/audit_findings_provided_by_me.md` (user-reported findings)
+- `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.20.7_FULL_CODEBASE.md` (5 HIGH, 26 MEDIUM, 33 LOW)
+- `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.20.7_KERNEL_IMPLEMENTATION.md` (2 HIGH, 22 MEDIUM, 60+ LOW)
+- `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.20.7_PRE_RELEASE.md` (13 HIGH, 37 MEDIUM, 43 LOW)
+- `docs/dev_history/audits/audit_findings_provided_by_me.md` (user-reported findings)
 **Prior portfolios**: WS-B through WS-T (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 
