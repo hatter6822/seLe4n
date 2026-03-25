@@ -29,16 +29,18 @@ which any conclusion follows via `absurd`.
 Read operations are state-preserving — the pre-state is returned unchanged.
 The proof is `fun _ st hInv _ => hInv`.
 
-## Design note: production contract limitations
+## Design note: production contract (U6-C/D strengthened)
 
-The production `rpi5RuntimeContract` admits all register writes (because
-`writeReg` modifies `gpr` only, never `sp`, making the SP-preservation
-check trivially `True`). Since `contextMatchesCurrent` requires full
-register-file equality with the current thread's TCB, the production
-contract cannot prove that arbitrary register writes preserve the invariant
-bundle. A future context-switch-aware adapter (WS-H3) will combine
-register-file load with `scheduler.current` update atomically, enabling
-proof hooks for the production contract.
+The production `rpi5RuntimeContract` was strengthened in U6-C to require
+that when a thread is scheduled, the machine register file matches the
+TCB's `registerContext` field. This replaces the previous permissive
+disjunct (`sp preserved ∨ context switch in progress`).
+
+The restrictive contract still denies all register writes
+(`registerContextStable := False`), so proof hooks remain vacuously correct
+for the write path. A future context-switch-aware adapter (WS-V) will
+combine register-file load with `scheduler.current` update atomically,
+enabling proof hooks for the production contract.
 -/
 
 namespace SeLe4n.Platform.RPi5

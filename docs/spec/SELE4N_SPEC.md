@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,901 theorem/lemma declarations),
+2. machine-checked invariant preservation (1,922 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.21.4` (`lakefile.toml`) |
+| **Package version** | `0.21.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 64,271 across 101 Lean files |
+| **Production LoC** | 64,824 across 101 Lean files |
 | **Test LoC** | 8,322 across 10 Lean test suites |
-| **Proved declarations** | 1,907 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,922 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| **Active workstream** | **WS-U Phase U5 COMPLETE** — API & Dispatch Integrity (v0.21.4). Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md). Prior: WS-U U4 (v0.21.3), WS-U U3 (v0.21.2), WS-U U2 (v0.21.1), WS-U U1 (v0.21.0), WS-T (v0.20.0–v0.20.7), WS-S–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-U Phase U6 COMPLETE** — Architecture & Platform Fidelity (v0.21.5). Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md). Prior: WS-U U5 (v0.21.4), WS-U U4 (v0.21.3), WS-U U3 (v0.21.2), WS-U U2 (v0.21.1), WS-U U1 (v0.21.0), WS-T (v0.20.0–v0.20.7), WS-S–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

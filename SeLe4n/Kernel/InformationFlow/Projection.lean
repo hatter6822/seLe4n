@@ -91,7 +91,26 @@ def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe
 def threadObservable (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe4n.ThreadId) : Bool :=
   securityFlowsTo (ctx.threadLabelOf tid) observer.clearance
 
-/-- Service projection gate: a service is observable iff its label flows to the observer. -/
+/-- Service projection gate: a service is observable iff its label flows to the observer.
+
+    U6-J (U-M24): **NI projection coverage gap**. The service registry is
+    visible to the NI projection model only through `projectServicePresence`
+    (see below), which projects a boolean presence/absence indicator per
+    service ID. However, the service orchestration layer's internal state
+    (dependency graphs, lifecycle transitions, restart policies) is *not*
+    captured by the projection model. This means:
+
+    1. Service-layer information flows (e.g., one service observing another's
+       restart behavior) are not covered by non-interference proofs.
+    2. The NI theorems in `Invariant/Composition.lean` apply only to kernel
+       primitives (IPC, scheduling, capability operations), not to service
+       orchestration.
+    3. Service-layer information flows must be analyzed separately — either
+       by extending the projection model to include service graph state, or
+       by treating the service layer as a trusted component outside the NI
+       boundary.
+
+    This is a known limitation documented here for auditor awareness. -/
 def serviceObservable (ctx : LabelingContext) (observer : IfObserver) (sid : ServiceId) : Bool :=
   securityFlowsTo (ctx.serviceLabelOf sid) observer.clearance
 
@@ -282,6 +301,40 @@ theorem projectMemory_eq_of_memory_eq
     projectMemory ctx observer s₁ = projectMemory ctx observer s₂ := by
   funext paddr
   simp only [projectMemory, hMem]
+
+/-! ### U6-K (U-M23): Accepted Covert Channels
+
+The following covert channels are known and accepted in the seLe4n NI model:
+
+1. **Scheduling state (domain schedule)**: `activeDomain`, `domainSchedule`,
+   `domainScheduleIndex`, and `domainTimeRemaining` are visible to all
+   observers under the scheduling transparency assumption. This means any
+   observer can infer the global scheduling state, including which domain is
+   active and how much time remains. This is a deliberate design choice
+   matching seL4's domain scheduler visibility.
+
+2. **TCB metadata (priority, IPC state)**: Thread priority and IPC state
+   are visible to any observer that can observe the thread (via
+   `threadObservable`). This means an observer in one domain can infer
+   another domain's thread priorities if those threads are observable to it.
+   In seL4, thread priority is not considered confidential — it is visible
+   through capability lookup and scheduling behavior.
+
+3. **Machine timer (excluded)**: The machine timer (`st.machine.timer`) is
+   deliberately excluded from `ObservableState` to prevent a timing covert
+   channel. If projected, observers could infer other domains' execution
+   duration by watching timer increments.
+
+4. **Object store metadata**: Object IDs and types are visible through
+   `objectIndex` projection. An observer can determine which objects exist
+   (filtered by label), which reveals the system's object population
+   indirectly.
+
+These covert channels are consistent with seL4's information flow model
+(Murray et al., CCS 2013) and are documented for auditor awareness.
+Mitigation requires hardware-level isolation (e.g., partitioned caches,
+separate timer domains) beyond the kernel model's scope.
+-/
 
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 

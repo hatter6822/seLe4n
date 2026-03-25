@@ -17,7 +17,31 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U5) are complete.
+through WS-U Phase U6) are complete.
+
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U6 COMPLETE
+
+WS-U Phase U6 improves model-hardware fidelity for the RPi5 platform. 12
+sub-tasks (U6-A through U6-L). Version v0.21.5. Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U6-A (U-M08)**: Added formal MMIO abstraction boundary with `MmioReadKind`,
+  `MmioWriteKind`, `MmioRegionDesc`, and `MmioSafe` hypothesis type.
+- **U6-B (U-M08)**: Added `notInMmioRegion` predicate for VSpace proof guidance.
+- **U6-C (U-M09)**: Strengthened `registerContextStable` to require TCB register
+  match instead of permissive SP-preservation disjunct.
+- **U6-D (U-M09)**: Updated RPi5 proof hooks documentation.
+- **U6-E (U-M12)**: Added `irqsUnique` duplicate IRQ detection in boot config.
+- **U6-F (U-M13)**: Added `objectIdsUnique` and `PlatformConfig.wellFormed`.
+- **U6-G (U-M15)**: Proved `bootToRuntime_invariantBridge_empty` composing boot
+  validity through freeze to runtime invariant bundle.
+- **U6-H (U-M10)**: Added `mmioWrite32`/`mmioWrite64` for GIC register access.
+- **U6-I (U-M22)**: Documented non-standard BIBA integrity direction.
+- **U6-J (U-M24)**: Documented service registry NI projection gap.
+- **U6-K (U-M23)**: Documented accepted covert channels.
+- **U6-L (U-M14)**: Documented cross-subsystem invariant composition gap.
+
+Zero sorry, zero axiom.
 
 ### WS-U workstream (v0.20.7 Audit Remediation) — Phase U5 COMPLETE
 

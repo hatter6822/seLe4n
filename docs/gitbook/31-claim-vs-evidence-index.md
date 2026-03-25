@@ -47,6 +47,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | WS-U Phase U3 Rust ABI Hardening — COMPLETE (U3-A–U3-J, v0.21.2, 10 sub-tasks) | [Workstream plan](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
 | WS-U Phase U4 Proof Chain & Invariant Composition — COMPLETE (U4-A/B/C/D, U4-K, U4-N, v0.21.3) | [Workstream plan](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
 | WS-U Phase U5 API & Dispatch Integrity — COMPLETE (U5-A–U5-N, v0.21.4, 14 sub-tasks) | [Workstream plan](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
+| WS-U Phase U6 Architecture & Platform Fidelity — COMPLETE (v0.21.5) | [Workstream plan](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
 
 ## Proof claim qualification
 

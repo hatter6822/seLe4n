@@ -1,3 +1,41 @@
+## [0.21.5] — WS-U Phase U6: Architecture & Platform Fidelity
+
+- U6-A (U-M08): Added formal MMIO abstraction boundary with `MmioReadKind`
+  (ram/volatile/writeOneClear/fifo), `MmioWriteKind` (normal/writeOneClear/
+  setOnly), and `MmioRegionDesc` structure. Prevents unsound proofs about
+  device register reads by classifying MMIO read/write semantics per region.
+  Added `MmioSafe` hypothesis type requiring platform-specific justification.
+- U6-B (U-M08): Added `notInMmioRegion` predicate and proof guidance for
+  VSpace page-table walk proofs to exclude MMIO-mapped addresses from
+  idempotency assumptions.
+- U6-C (U-M09): Strengthened `registerContextStable` in RPi5 runtime contract
+  from permissive `sp preserved OR context switch` to require machine register
+  file matches scheduled thread's TCB `registerContext` field. TCB lookup
+  failure (missing object or non-TCB type) is a contract violation (`false`),
+  preventing malformed scheduler states from being silently accepted.
+- U6-D (U-M09): Updated RPi5 proof hooks documentation for strengthened
+  contract. Restrictive contract unchanged (still vacuously correct).
+- U6-E (U-M12): Added `irqsUnique` duplicate IRQ detection for boot config
+  validation. Documented last-wins semantics of `foldIrqs`.
+- U6-F (U-M13): Added `objectIdsUnique` duplicate object ID detection for
+  boot config validation. Added `PlatformConfig.wellFormed` predicate and
+  `bootFromPlatformChecked` enforcement variant that rejects configs with
+  duplicate IRQs or object IDs.
+- U6-G (U-M15): Proved boot-to-runtime invariant bridge for empty config:
+  `bootToRuntime_invariantBridge_empty` composes boot validity through freeze
+  to establish both `proofLayerInvariantBundle` and `apiInvariantBundle_frozen`.
+  General config bridge deferred to WS-V (requires builder operation extension).
+- U6-H (U-M10): Added `mmioWrite32` and `mmioWrite64` operations for ARM64
+  GIC register access with little-endian byte ordering and frame theorems.
+- U6-I (U-M22): Documented non-standard BIBA integrity direction as deliberate
+  design choice in Policy.lean with full rationale (capability authority flow).
+- U6-J (U-M24): Documented service registry NI projection gap in Projection.lean
+  — service orchestration state not captured by non-interference proofs.
+- U6-K (U-M23): Documented accepted covert channels (scheduling state, TCB
+  metadata, machine timer exclusion, object store metadata) in Projection.lean.
+- U6-L (U-M14): Documented cross-subsystem invariant composition gap in
+  CrossSubsystem.lean — conjunction may not be the strongest composite.
+
 ## [0.21.4] — WS-U Phase U5: API & Dispatch Integrity
 
 - U5-A (U-M02): Verified structural equivalence of checked/unchecked dispatch
