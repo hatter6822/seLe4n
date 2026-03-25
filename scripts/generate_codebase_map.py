@@ -6,6 +6,7 @@ Outputs JSON with:
 - source-derived sync metadata (stable across branches/merge commits)
 - every Lean module under SeLe4n/ plus Main/tests
 - declaration inventory (def/theorem/lemma/abbrev/instance/structure/inductive/class)
+- cross-file "called" resolution for declaration dependencies
 
 This lets consumers invalidate stale local caches whenever Lean declaration
 surface changes, while avoiding branch/merge-only churn.
@@ -74,7 +75,7 @@ DECL_MODIFIERS = [
 ]
 
 DECL_HEAD_RE = re.compile(
-    r"^\s*(?:@[\w\[\]\.\s]+\s+)?"
+    r"^\s*(?:@\[[^\]]*\]\s*)*"
     r"(?:(?:" + "|".join(DECL_MODIFIERS) + r")\s+)*"
     r"(?P<kind>" + "|".join(DECL_KINDS) + r")\b\s*(?P<rest>.*)$"
 )
@@ -119,52 +120,152 @@ def _declaration_ranges(decls: list[tuple[str, str, int]], line_count: int) -> l
     return ranges
 
 
-def _tokenize_decl_ranges(
-    lines: list[str],
-    ranges: list[tuple[int, int]],
-    reference_candidates: set[str],
-) -> list[set[str]]:
-    per_decl: list[set[str]] = []
-    block_depth = 0
-    for start_idx, end_idx in ranges:
-        refs: set[str] = set()
-        for raw in lines[start_idx:end_idx]:
-            clean, block_depth = _strip_lean_comments(raw, block_depth)
-            if not clean:
-                continue
-            refs.update(token for token in NAME_TOKEN_RE.findall(clean) if token in reference_candidates)
-        per_decl.append(refs)
-    return per_decl
+def _strip_lean_comments(line: str, block_depth: int, *, strip_strings: bool = False) -> tuple[str, int]:
+    """Strip line comments, nested block comments, and optionally string contents.
 
+    When *strip_strings* is ``True``, plain string contents are removed so that
+    tokens inside string literals are not falsely matched as declaration
+    references.  Interpolated strings (``s!"..."``, ``m!"..."``, etc.) retain
+    their content because ``{expr}`` sections contain real code with legitimate
+    references.
 
-def _strip_lean_comments(line: str, block_depth: int) -> tuple[str, int]:
-    """Strip line + block comments while tracking nested block depth."""
+    When *strip_strings* is ``False`` (the default), strings are left intact.
+    This mode is used during declaration header parsing so that quoted names
+    (e.g. ``syntax "visible"``) are preserved.
+
+    Block comment depth is tracked across calls so that multi-line ``/- ... -/``
+    blocks are handled correctly.
+    """
     out: list[str] = []
     i = 0
-    while i < len(line):
+    n = len(line)
+    while i < n:
         if block_depth > 0:
-            if line.startswith("/-", i):
+            if i + 1 < n and line[i] == '/' and line[i + 1] == '-':
                 block_depth += 1
                 i += 2
-                continue
-            if line.startswith("-/", i):
+            elif i + 1 < n and line[i] == '-' and line[i + 1] == '/':
                 block_depth -= 1
                 i += 2
-                continue
-            i += 1
+            else:
+                i += 1
             continue
 
-        if line.startswith("--", i):
+        # Line comment — discard rest of line
+        if i + 1 < n and line[i] == '-' and line[i + 1] == '-':
             break
-        if line.startswith("/-", i):
+
+        # Block comment start
+        if i + 1 < n and line[i] == '/' and line[i + 1] == '-':
             block_depth += 1
             i += 2
             continue
+
+        # String literal handling (only when strip_strings is enabled)
+        if strip_strings and line[i] == '"':
+            # Interpolated strings (s!"...", m!"...", f!"...") contain real
+            # code inside {expr} — keep their content so references are found.
+            is_interpolated = i >= 2 and line[i - 1] == '!' and line[i - 2].isalpha()
+            i += 1
+            if is_interpolated:
+                # Keep all content — {expr} blocks have real references, and
+                # the minor false positives from plain-text portions are
+                # acceptable compared to losing real cross-file references.
+                while i < n:
+                    if line[i] == '\\' and i + 1 < n:
+                        out.append(line[i])
+                        out.append(line[i + 1])
+                        i += 2
+                    elif line[i] == '"':
+                        i += 1
+                        break
+                    else:
+                        out.append(line[i])
+                        i += 1
+            else:
+                # Regular string — strip all content
+                while i < n:
+                    if line[i] == '\\' and i + 1 < n:
+                        i += 2  # skip escaped character
+                    elif line[i] == '"':
+                        i += 1
+                        break
+                    else:
+                        i += 1
+            continue
+
+        # Character literal — skip contents (only when stripping strings)
+        if strip_strings and line[i] == '\'' and i + 2 < n and line[i + 1] != '\'' and line[i + 1] != ' ':
+            # Only skip single-char literals like 'a' or '\n', not prime (')
+            j = i + 1
+            if j < n and line[j] == '\\':
+                j += 2  # escape sequence
+            else:
+                j += 1
+            if j < n and line[j] == '\'':
+                i = j + 1
+                continue
 
         out.append(line[i])
         i += 1
 
     return "".join(out), block_depth
+
+
+def _compute_block_depth(lines: list[str], up_to: int, *, strip_strings: bool = False) -> int:
+    """Compute the block comment nesting depth for lines[0:up_to]."""
+    depth = 0
+    for raw in lines[:up_to]:
+        _, depth = _strip_lean_comments(raw, depth, strip_strings=strip_strings)
+    return depth
+
+
+def _tokenize_decl_ranges(
+    lines: list[str],
+    ranges: list[tuple[int, int]],
+    reference_candidates: set[str],
+) -> list[set[str]]:
+    """Find references to known declarations within each declaration body.
+
+    Improvements over the naive approach:
+    - Block comment depth is correctly initialised from lines preceding the first
+      declaration, so comments that opened in the import/preamble section do not
+      cause false positives inside the first declaration.
+    - String literal contents are stripped (by ``_strip_lean_comments``) to
+      prevent tokens inside strings from being falsely counted.
+    - Qualified name suffix matching: for a token like ``Foo.Bar.baz``, the
+      suffixes ``Bar.baz`` and ``baz`` are also checked against the candidate
+      set, catching qualified references to known declarations.
+    """
+    per_decl: list[set[str]] = []
+    if not ranges:
+        return per_decl
+
+    # Correctly initialise block_depth from lines before the first declaration
+    first_start = ranges[0][0]
+    block_depth = _compute_block_depth(lines, first_start, strip_strings=True)
+
+    for start_idx, end_idx in ranges:
+        refs: set[str] = set()
+        for raw in lines[start_idx:end_idx]:
+            clean, block_depth = _strip_lean_comments(raw, block_depth, strip_strings=True)
+            if not clean:
+                continue
+            for token in NAME_TOKEN_RE.findall(clean):
+                # Direct match
+                if token in reference_candidates:
+                    refs.add(token)
+                    continue
+                # Qualified name suffix matching
+                if '.' in token:
+                    parts = token.split('.')
+                    for j in range(1, len(parts)):
+                        suffix = '.'.join(parts[j:])
+                        if suffix in reference_candidates:
+                            refs.add(suffix)
+                            break
+        per_decl.append(refs)
+    return per_decl
 
 
 def _split_head_segment(rest: str) -> str:
@@ -264,10 +365,14 @@ def module_name(path: Path) -> str:
     return ".".join(rel.parts)
 
 
-def parse_declarations(path: Path) -> list[Decl]:
+def _parse_declaration_headers(lines: list[str]) -> list[tuple[str, str, int]]:
+    """Extract declaration headers (kind, name, line_number) from file lines.
+
+    Correctly tracks nested block comment depth so that declarations appearing
+    inside ``/- ... -/`` blocks are not enumerated.
+    """
     decls: list[tuple[str, str, int]] = []
     block_depth = 0
-    lines = path.read_text(encoding="utf-8").splitlines()
     for i, line in enumerate(lines, start=1):
         clean, block_depth = _strip_lean_comments(line, block_depth)
         if block_depth > 0 and not clean.strip():
@@ -277,26 +382,59 @@ def parse_declarations(path: Path) -> list[Decl]:
             kind = m.group("kind")
             for name in _extract_names(kind, m.group("rest"), i):
                 decls.append((kind, name, i))
+    return decls
 
-    referencable_names = {
-        name
-        for kind, name, _ in decls
-        if kind not in NON_REFERENCABLE_DECL_KINDS and not name.startswith("<anonymous:")
-    }
+
+def _resolve_calls(
+    lines: list[str],
+    decls: list[tuple[str, str, int]],
+    global_names: set[str],
+) -> list[Decl]:
+    """Build Decl objects with cross-file 'called' resolution.
+
+    Each declaration's body is scanned for tokens that match any known
+    declaration name from the entire project (not just the current file).
+    Self-references are excluded.
+    """
+    if not decls:
+        return []
+
     ranges = _declaration_ranges(decls, len(lines))
-    calls_per_decl = _tokenize_decl_ranges(lines, ranges, referencable_names)
+    calls_per_decl = _tokenize_decl_ranges(lines, ranges, global_names)
 
     result: list[Decl] = []
     for (kind, name, line), called_names in zip(decls, calls_per_decl):
+        # Build self-name set: exclude own name and all its dot-suffixes
+        self_names: set[str] = {name}
+        if '.' in name:
+            parts = name.split('.')
+            for j in range(1, len(parts)):
+                self_names.add('.'.join(parts[j:]))
+
         result.append(
             Decl(
                 kind=kind,
                 name=name,
                 line=line,
-                called=sorted(n for n in called_names if n != name),
+                called=sorted(n for n in called_names if n not in self_names),
             )
         )
     return result
+
+
+def parse_declarations(path: Path) -> list[Decl]:
+    """Public API: parse declarations from a single file with file-local 'called'.
+
+    For backward compatibility with tests and external callers.  The internal
+    ``build_map`` path uses the two-pass cross-file architecture instead.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    headers = _parse_declaration_headers(lines)
+    local_names: set[str] = set()
+    for kind, name, _ in headers:
+        if kind not in NON_REFERENCABLE_DECL_KINDS and not name.startswith("<anonymous:"):
+            local_names.add(name)
+    return _resolve_calls(lines, headers, local_names)
 
 
 def lean_files() -> list[Path]:
@@ -306,14 +444,33 @@ def lean_files() -> list[Path]:
     return prod + extras + test_files
 
 
-def source_fingerprint(paths: list[Path]) -> str:
-    """Compute a deterministic digest tied to Lean declaration sources only."""
+def source_fingerprint(paths_or_cache, paths: list[Path] | None = None) -> str:
+    """Compute a deterministic digest tied to Lean declaration sources only.
+
+    Accepts either:
+    - ``source_fingerprint(file_bytes_dict, paths)``  (internal fast path)
+    - ``source_fingerprint(paths_list)``               (public backward-compat API)
+    """
+    if paths is None:
+        # Backward-compatible: paths_or_cache is list[Path]
+        path_list: list[Path] = paths_or_cache  # type: ignore[assignment]
+        digest = hashlib.sha256()
+        for path in path_list:
+            rel = path.relative_to(ROOT).as_posix()
+            digest.update(rel.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+        return digest.hexdigest()
+
+    # Fast path: file_bytes cache provided
+    file_bytes: dict[Path, bytes] = paths_or_cache  # type: ignore[assignment]
     digest = hashlib.sha256()
     for path in paths:
         rel = path.relative_to(ROOT).as_posix()
         digest.update(rel.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(file_bytes[path])
         digest.update(b"\0")
     return digest.hexdigest()
 
@@ -335,8 +492,8 @@ def git_head_metadata() -> dict[str, str]:
 def normalized_for_check(payload: dict) -> dict:
     """Return the subset that must remain stable for docs-sync checks.
 
-    `repository.head` is intentionally excluded because branch/commit metadata is
-    expected to change across PR branch updates and merge commits.
+    ``repository.head`` is intentionally excluded because branch/commit metadata
+    is expected to change across PR branch updates and merge commits.
     """
     repository = payload.get("repository", {})
     normalized_repository = {
@@ -353,55 +510,74 @@ def normalized_for_check(payload: dict) -> dict:
     }
 
 
-def _count_loc(paths: list[Path]) -> int:
-    """Count total lines of code across paths."""
-    total = 0
-    for path in paths:
-        with path.open("r", encoding="utf-8") as f:
-            total += sum(1 for _ in f)
-    return total
-
-
-def _count_theorem_like(paths: list[Path]) -> int:
-    """Count theorem/lemma declarations (matches report_current_state.py logic)."""
-    pattern = re.compile(r"^\s*(?:@[\w\[\]\.\s]+\s+)?(?:private\s+)?(?:theorem|lemma)\s+")
-    total = 0
-    for path in paths:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if pattern.match(line):
-                total += 1
-    return total
-
-
-def _read_version() -> str:
-    """Read project version from lakefile.toml."""
-    for line in (ROOT / "lakefile.toml").read_text(encoding="utf-8").splitlines():
-        if line.strip().startswith("version"):
-            return line.split("=", 1)[1].strip().strip('"')
-    return "unknown"
-
-
-def _read_lean_toolchain() -> str:
-    """Read Lean toolchain version from lean-toolchain file."""
-    return (ROOT / "lean-toolchain").read_text(encoding="utf-8").splitlines()[0].strip().split(":")[-1]
-
-
 def build_map() -> dict:
     paths = lean_files()
-    source_digest = source_fingerprint(paths)
 
+    # ---- Single-pass file I/O: read every file exactly once ----
+    file_bytes: dict[Path, bytes] = {}
+    file_lines: dict[Path, list[str]] = {}
+    for path in paths:
+        raw = path.read_bytes()
+        file_bytes[path] = raw
+        file_lines[path] = raw.decode("utf-8").splitlines()
+
+    source_digest = source_fingerprint(file_bytes, paths)
+
+    # ---- Pass 1: extract declaration headers from every file ----
+    all_headers: dict[Path, list[tuple[str, str, int]]] = {}
+    for path in paths:
+        all_headers[path] = _parse_declaration_headers(file_lines[path])
+
+    # ---- Build global set of referencable declaration names ----
+    global_names: set[str] = set()
+    for headers in all_headers.values():
+        for kind, name, _ in headers:
+            if kind not in NON_REFERENCABLE_DECL_KINDS and not name.startswith("<anonymous:"):
+                global_names.add(name)
+                # For qualified names like "Foo.bar", also register the
+                # unqualified leaf so that code using `open Foo` and then
+                # referencing plain `bar` is correctly resolved.
+                if '.' in name:
+                    parts = name.split('.')
+                    for j in range(1, len(parts)):
+                        global_names.add('.'.join(parts[j:]))
+
+    # ---- Pass 2: resolve cross-file "called" for each module ----
     modules: list[ModuleEntry] = []
     for path in paths:
+        decls = _resolve_calls(file_lines[path], all_headers[path], global_names)
         modules.append(
             ModuleEntry(
                 module=module_name(path),
                 path=str(path.relative_to(ROOT)),
-                declarations=parse_declarations(path),
+                declarations=decls,
             )
         )
 
+    # ---- Summary metrics (computed from cached data, no re-reads) ----
     prod_paths = [p for p in paths if not str(p.relative_to(ROOT)).startswith("tests/")]
     test_paths = [p for p in paths if str(p.relative_to(ROOT)).startswith("tests/")]
+
+    prod_loc = sum(len(file_lines[p]) for p in prod_paths)
+    test_loc = sum(len(file_lines[p]) for p in test_paths)
+
+    theorem_pattern = re.compile(r"^\s*(?:@[\w\[\]\.\s]+\s+)?(?:private\s+)?(?:theorem|lemma)\s+")
+    proved_count = sum(
+        1
+        for p in prod_paths
+        for line in file_lines[p]
+        if theorem_pattern.match(line)
+    )
+
+    version = "unknown"
+    lakefile = ROOT / "lakefile.toml"
+    if lakefile.exists():
+        for line in lakefile.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("version"):
+                version = line.split("=", 1)[1].strip().strip('"')
+                break
+
+    lean_toolchain = (ROOT / "lean-toolchain").read_text(encoding="utf-8").splitlines()[0].strip().split(":")[-1]
 
     decl_total = sum(len(m.declarations) for m in modules)
     return {
@@ -421,13 +597,13 @@ def build_map() -> dict:
             "declaration_count": decl_total,
         },
         "readme_sync": {
-            "version": _read_version(),
-            "lean_toolchain": _read_lean_toolchain(),
+            "version": version,
+            "lean_toolchain": lean_toolchain,
             "production_files": len(prod_paths),
-            "production_loc": _count_loc(prod_paths),
+            "production_loc": prod_loc,
             "test_files": len(test_paths),
-            "test_loc": _count_loc(test_paths),
-            "proved_theorem_lemma_decls": _count_theorem_like(prod_paths),
+            "test_loc": test_loc,
+            "proved_theorem_lemma_decls": proved_count,
             "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)",
         },
         "modules": [
