@@ -118,8 +118,34 @@ impl AccessRights {
     }
 }
 
-impl From<u8> for AccessRights { #[inline] fn from(v: u8) -> Self { Self(v) } }
+/// U3-D / U-M33: `TryFrom<u8>` replaces the former blanket `From<u8>`.
+///
+/// Only values 0..=0x1F (bits 0–4) are valid access rights bitmasks.
+/// Values with bits 5–7 set are rejected with `InvalidAccessRights`.
+///
+/// For infallible construction from known-valid constants, use the
+/// `AccessRights` associated constants (`READ`, `WRITE`, `ALL`, etc.)
+/// or `AccessRights::singleton()`.
+impl TryFrom<u8> for AccessRights {
+    type Error = AccessRightsError;
+
+    #[inline]
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        if v > 0x1F {
+            Err(AccessRightsError(v))
+        } else {
+            Ok(Self(v))
+        }
+    }
+}
+
 impl From<AccessRights> for u8 { #[inline] fn from(r: AccessRights) -> u8 { r.0 } }
+
+/// Error returned when constructing `AccessRights` from an invalid byte.
+///
+/// U3-D / U-M33: Values with bits 5–7 set are not valid access rights.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AccessRightsError(pub u8);
 
 impl core::ops::BitOr for AccessRights {
     type Output = Self;
@@ -183,5 +209,27 @@ mod tests {
         for r in AccessRight::ALL {
             assert!(all.contains(r));
         }
+    }
+
+    // U3-D: TryFrom<u8> validation tests
+    #[test]
+    fn try_from_valid_range() {
+        for v in 0..=0x1Fu8 {
+            assert!(AccessRights::try_from(v).is_ok());
+            assert_eq!(AccessRights::try_from(v).unwrap().raw(), v);
+        }
+    }
+
+    #[test]
+    fn try_from_invalid_rejected() {
+        for v in 0x20..=0xFFu8 {
+            assert!(AccessRights::try_from(v).is_err());
+        }
+    }
+
+    #[test]
+    fn try_from_error_contains_value() {
+        let err = AccessRights::try_from(0x80u8).unwrap_err();
+        assert_eq!(err, AccessRightsError(0x80));
     }
 }

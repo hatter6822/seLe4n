@@ -25,7 +25,7 @@ pub fn cspace_mint(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo { length: 4, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
         msg_regs: encoded,
         syscall_id: SyscallId::CSpaceMint,
     })
@@ -44,7 +44,7 @@ pub fn cspace_copy(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::CSpaceCopy,
     })
@@ -63,7 +63,7 @@ pub fn cspace_move(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::CSpaceMove,
     })
@@ -81,7 +81,7 @@ pub fn cspace_delete(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: cnode_cap,
-        msg_info: MessageInfo { length: 1, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::CSpaceDelete,
     })

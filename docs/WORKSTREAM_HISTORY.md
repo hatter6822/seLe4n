@@ -17,7 +17,35 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U2) are complete.
+through WS-U Phase U3) are complete.
+
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U3 COMPLETE
+
+WS-U Phase U3 hardens the Rust userspace ABI layer. 10 sub-tasks (U3-A through
+U3-J). Version v0.21.2. Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U3-A (U-H11)**: Added `clobber_abi("C")` to `svc #0` inline assembly.
+  Compiler now knows all AArch64 caller-saved registers may be clobbered by
+  the kernel, preventing silent register corruption.
+- **U3-B/C (U-M32)**: Made `MessageInfo` fields private. Added `length()`,
+  `extra_caps()`, `label()` accessors. Updated all call sites across
+  `sele4n-abi` and `sele4n-sys` to use `MessageInfo::new()`.
+- **U3-D/E (U-M33)**: Replaced `From<u8>` with `TryFrom<u8>` for
+  `AccessRights`. Values > 0x1F (bits 5–7 set) rejected with
+  `AccessRightsError`. Full roundtrip conformance tests for 0–255.
+- **U3-F (U-L08)**: Added `#[non_exhaustive]` to `KernelError` for
+  forward-compatible error variant additions.
+- **U3-G (U-L09)**: Added `RegisterFile` with safe `get()`/`set()` returning
+  `Option` instead of panicking on out-of-bounds.
+- **U3-H (U-L10)**: Added bit-layout ASCII diagrams for `MessageInfo`
+  encode/decode doc-comments.
+- **U3-I (U-M34)**: Added compile-time `const` layout assertions for
+  `IpcBuffer` `#[repr(C)]` (960 bytes, 8-byte alignment).
+- **U3-J (U-L13)**: Added `scripts/test_rust_conformance.sh` — dedicated
+  conformance runner with unsafe containment check and test vector dump.
+
+All 135 Rust tests pass. Zero sorry, zero axiom.
 
 ### WS-U workstream (v0.20.7 Audit Remediation) — Phase U2 COMPLETE
 

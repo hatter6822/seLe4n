@@ -1,3 +1,38 @@
+## [0.21.2] — WS-U Phase U3: Rust ABI Hardening
+
+- U3-A (U-H11): Added `clobber_abi("C")` to `svc #0` inline assembly in
+  `trap.rs`. The compiler now knows all caller-saved registers (x8–x18, x29,
+  x30, NZCV, SIMD/FP) may be modified by the kernel during the exception,
+  preventing silent register corruption.
+- U3-B (U-M32): Made `MessageInfo` fields private. All construction must go
+  through `new()` or `decode()`, both of which validate bounds. Added
+  `length()`, `extra_caps()`, and `label()` accessor methods.
+- U3-C (U-M32): Updated all `MessageInfo` call sites across `sele4n-abi`,
+  `sele4n-sys`, and conformance tests to use `MessageInfo::new()` instead of
+  struct literal construction.
+- U3-D (U-M33): Replaced `From<u8> for AccessRights` with `TryFrom<u8>`.
+  Values with bits 5–7 set (> 0x1F) are now rejected with `AccessRightsError`.
+  Updated all call sites including CSpace argument decode.
+- U3-E (U-M33): Added AccessRights roundtrip conformance tests covering all
+  valid values (0–31), all invalid values (32–255), and bitmask operation
+  validity preservation.
+- U3-F (U-L08): Added `#[non_exhaustive]` to `KernelError` enum, ensuring
+  future error variant additions are non-breaking for downstream crates.
+- U3-G (U-L09): Added `RegisterFile` type with safe bounds-checked `get()`/
+  `set()` methods returning `Option`. Out-of-bounds access returns `None`
+  instead of panicking.
+- U3-H (U-L10): Added bit-layout ASCII diagrams as doc-comments for
+  `MessageInfo::encode` and `MessageInfo::decode` showing the 64-bit packing
+  (bits 0–6 = length, 7–8 = extra_caps, 9–63 = label).
+- U3-I (U-M34): Added compile-time `const` layout assertions for `IpcBuffer`
+  `#[repr(C)]` verifying size (960 bytes) and alignment (8 bytes). Documented
+  Lean-side correspondence.
+- U3-J (U-L13): Added `scripts/test_rust_conformance.sh` — dedicated Rust ABI
+  conformance test runner with unsafe containment verification and optional
+  test vector fixture dump for Lean cross-validation.
+- Rust workspace version bump to 0.21.2. All 135 Rust tests pass.
+- Version bump to 0.21.2.
+
 ## [0.21.1] — WS-U Phase U2: Safety Boundary Hardening
 
 - U2-A/B/C (U-H06): Added `VAddr.isCanonical` / `VAddr.canonical` predicates.

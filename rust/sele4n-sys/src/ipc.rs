@@ -55,11 +55,8 @@ impl IpcMessage {
 /// Lean: `apiEndpointSend` (API.lean) — requires `.write` right.
 #[inline]
 pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo {
-        length: msg.length,
-        extra_caps: 0,
-        label: msg.label,
-    };
+    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+        .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
         cap_addr: dest,
         msg_info,
@@ -75,7 +72,8 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 /// Returns the received badge and response registers.
 #[inline]
 pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
-    let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
+    // U3-C: MessageInfo::new(0, 0, 0) is infallible for valid constants.
+    let msg_info = MessageInfo::new(0, 0, 0).unwrap();
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: src,
         msg_info,
@@ -90,11 +88,8 @@ pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
 /// Lean: `apiEndpointCall` (API.lean) — requires `.write` right.
 #[inline]
 pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo {
-        length: msg.length,
-        extra_caps: 0,
-        label: msg.label,
-    };
+    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+        .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
         cap_addr: dest,
         msg_info,
@@ -108,11 +103,8 @@ pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 /// Lean: `apiEndpointReply` (API.lean) — requires `.write` right.
 #[inline]
 pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo {
-        length: msg.length,
-        extra_caps: 0,
-        label: msg.label,
-    };
+    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+        .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
         cap_addr: reply_cap,
         msg_info,
@@ -133,7 +125,7 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
 /// seL4 equivalent: `seL4_Signal(dest)`.
 #[inline]
 pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
+    let msg_info = MessageInfo::new(0, 0, 0).unwrap();
     invoke_syscall(SyscallRequest {
         cap_addr: ntfn,
         msg_info,
@@ -147,7 +139,7 @@ pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
 /// Returns the accumulated badge value.
 #[inline]
 pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
-    let msg_info = MessageInfo { length: 0, extra_caps: 0, label: 0 };
+    let msg_info = MessageInfo::new(0, 0, 0).unwrap();
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: ntfn,
         msg_info,

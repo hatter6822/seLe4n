@@ -28,6 +28,7 @@ pub mod decode;
 pub mod trap;
 pub mod args;
 pub mod ipc_buffer;
+pub mod registers;
 
 pub use message_info::MessageInfo;
 pub use encode::{SyscallRequest, encode_syscall};
@@ -35,5 +36,6 @@ pub use decode::{SyscallResponse, decode_response};
 pub use trap::invoke_syscall;
 pub use args::*;
 pub use ipc_buffer::IpcBuffer;
+pub use registers::RegisterFile;
 
 pub use sele4n_types;

@@ -6,7 +6,12 @@
 ///
 /// The discriminant values are sequential (implicit `#[repr(u32)]`) for ABI
 /// stability. The ordering matches the Lean source declaration order.
+///
+/// U3-F / U-L08: `#[non_exhaustive]` ensures that adding new error variants
+/// in future kernel versions is a non-breaking change for downstream crates.
+/// External `match` statements must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 #[repr(u32)]
 pub enum KernelError {
     InvalidCapability = 0,

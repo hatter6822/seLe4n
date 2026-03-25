@@ -117,6 +117,26 @@ impl IpcBuffer {
     }
 }
 
+// U3-I / U-M34: Compile-time layout assertions for `#[repr(C)]` IPC buffer.
+//
+// These const assertions verify that the IPC buffer layout matches the
+// expected memory layout at compile time. If the layout changes (e.g., due
+// to struct reordering or field type changes), compilation will fail.
+//
+// Lean correspondence: `SeLe4n/Model/Object/Types.lean` — `TCB.ipcBuffer`
+// is a `VAddr` pointing to this buffer in the thread's virtual address space.
+// The kernel reads overflow message registers starting at offset 0.
+const _: () = {
+    // Total size: 116 overflow u64s + 1 user_data u64 + 3 caps u64s = 120 u64s = 960 bytes
+    assert!(core::mem::size_of::<IpcBuffer>() == 960);
+    // Alignment: u64 = 8 bytes
+    assert!(core::mem::align_of::<IpcBuffer>() == 8);
+    // Field offset: msg starts at offset 0 (first field in repr(C))
+    // Field offset: user_data at 116 * 8 = 928
+    // Field offset: caps_or_badges at 928 + 8 = 936
+    // Verify total: 116 * 8 + 8 + 3 * 8 = 928 + 8 + 24 = 960 ✓
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

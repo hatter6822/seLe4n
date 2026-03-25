@@ -34,7 +34,8 @@ impl CSpaceMintArgs {
         Ok(Self {
             src_slot: Slot::from(regs[0]),
             dst_slot: Slot::from(regs[1]),
-            rights: AccessRights::from(regs[2] as u8),
+            rights: AccessRights::try_from(regs[2] as u8)
+                .map_err(|_| KernelError::InvalidMessageInfo)?,
             badge: Badge::from(regs[3]),
         })
     }
@@ -110,7 +111,7 @@ mod tests {
     fn mint_roundtrip() {
         let args = CSpaceMintArgs {
             src_slot: Slot::from(1u64), dst_slot: Slot::from(2u64),
-            rights: AccessRights::from(0x07u8), badge: Badge::from(42u64),
+            rights: AccessRights::try_from(0x07u8).unwrap(), badge: Badge::from(42u64),
         };
         let encoded = args.encode();
         let decoded = CSpaceMintArgs::decode(&encoded).unwrap();
@@ -150,14 +151,14 @@ mod tests {
         // 0x1F = all 5 rights bits set — maximum valid value
         let regs = [1, 2, 0x1F, 42];
         let args = CSpaceMintArgs::decode(&regs).unwrap();
-        assert_eq!(args.rights, AccessRights::from(0x1Fu8));
+        assert_eq!(args.rights, AccessRights::try_from(0x1Fu8).unwrap());
     }
 
     #[test]
     fn mint_rights_zero() {
         let regs = [1, 2, 0, 42];
         let args = CSpaceMintArgs::decode(&regs).unwrap();
-        assert_eq!(args.rights, AccessRights::from(0u8));
+        assert_eq!(args.rights, AccessRights::try_from(0u8).unwrap());
     }
 
     #[test]
