@@ -148,7 +148,7 @@ v0.20.7 audit. 13 sub-tasks (U1-A through U1-M). Key outcomes:
 - CDT deletion guard (`cspaceDeleteSlotCore` extraction + `hasCdtChildren` check)
 - Domain switch saves outgoing context before clearing `current`
 
-Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-T Deep-Dive Audit Remediation (v0.20.0–v0.20.7, PORTFOLIO COMPLETE)
 

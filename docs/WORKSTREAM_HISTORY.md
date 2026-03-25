@@ -27,7 +27,7 @@ compile-time consistency theorem, documents IRQ/INTID range limitations,
 notification word overflow, scheduler starvation design, hash collision
 assumptions, synchronizes all documentation to v0.21.7, runs comprehensive
 validation, and writes the WS-U closure report. Version v0.21.7. Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U8-A (U-L16)**: Eliminated `simSubstantiveMemoryMap` duplication — made
   `simMachineConfig.memoryMap` reference the shared definition directly,
@@ -56,7 +56,7 @@ WS-U Phase U7 removes dead code, superseded invariant bundles, trivial
 tautology theorems, fixes BEq symmetry, migrates native_decide to decide,
 and adds builder/frozen commutativity proofs. 12 sub-tasks (U7-A through
 U7-L). Version v0.21.6. Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U7-A**: Deleted dead `KMap.lean` module (219 lines, never imported).
 - **U7-B**: Removed dead types from Assumptions, MmioAdapter, Policy.
@@ -73,7 +73,7 @@ U7-L). Version v0.21.6. Plan:
 
 WS-U Phase U6 improves model-hardware fidelity for the RPi5 platform. 12
 sub-tasks (U6-A through U6-L). Version v0.21.5. Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U6-A (U-M08)**: Added formal MMIO abstraction boundary with `MmioReadKind`,
   `MmioWriteKind`, `MmioRegionDesc`, and `MmioSafe` hypothesis type.
@@ -97,7 +97,7 @@ Zero sorry, zero axiom.
 
 WS-U Phase U5 refactors API dispatch integrity. 14 sub-tasks (U5-A through
 U5-N). Version v0.21.4. Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U5-A (U-M02)**: Verified structural equivalence of checked/unchecked
   dispatch for all 6 capability-only syscalls with machine-checked proofs.
@@ -121,7 +121,7 @@ Zero sorry, zero axiom.
 
 WS-U Phase U4 optimizes proof chains and invariant composition. 3 sub-task
 groups completed (U4-A/B/C/D, U4-K, U4-N). Version v0.21.3. Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U4-A/B/C/D**: Discharged `hProjection` preconditions for all four IPC
   endpoint operations, making scheduler preservation theorems self-contained.
@@ -138,7 +138,7 @@ Zero sorry, zero axiom.
 
 WS-U Phase U3 hardens the Rust userspace ABI layer. 10 sub-tasks (U3-A through
 U3-J). Version v0.21.2. Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U3-A (U-H11)**: Added `clobber_abi("C")` to `svc #0` inline assembly.
   Compiler now knows all AArch64 caller-saved registers may be clobbered by
@@ -167,7 +167,7 @@ All 135 Rust tests pass. Zero sorry, zero axiom.
 WS-U Phase U2 hardens safety boundaries across the kernel's input validation
 and type-safety surface. 14 sub-tasks (U2-A through U2-N). Version v0.21.1.
 Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U2-A/B/C (U-H06)**: Added `VAddr.isCanonical` predicate and canonical
   address check in `vspaceMapPageChecked`, `vspaceMapPageCheckedWithFlush`,
@@ -196,7 +196,7 @@ Zero sorry, zero axiom. All 14 sub-tasks complete.
 
 WS-U Phase U1 addresses 7 correctness findings from the v0.20.7 audit. 13
 sub-tasks (U1-A through U1-M). Version v0.21.0. Plan:
-[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 - **U1-A/B/C (U-H01)**: Fixed `frozenQueuePopHead` to clear `queuePPrev`,
   enabling multi-round IPC re-enqueue. Regression test FO-021 added.
