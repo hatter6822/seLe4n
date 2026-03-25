@@ -50,9 +50,9 @@ security model), при этом вводя ряд архитектурных н
 |---------|----------|
 | **Версия** | `0.21.7` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовый код (Lean LoC)** | 64 039 строк в 101 файлах |
-| **Тестовый код (Lean LoC)** | 8 318 строк в 10 тест-сьютах (test suites) |
-| **Доказанные декларации** | 1 901 деклараций theorem/lemma (ноль sorry/axiom) |
+| **Продуктовый код (Lean LoC)** | 64 229 строк в 100 файлах |
+| **Тестовый код (Lean LoC)** | 8 316 строк в 10 тест-сьютах (test suites) |
+| **Доказанные декларации** | 1 878 деклараций theorem/lemma (ноль sorry/axiom) |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Последний аудит** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — полный аудит ядра и Rust-кодовой базы перед релизом |
 | **Карта кодовой базы** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — машиночитаемая опись деклараций |

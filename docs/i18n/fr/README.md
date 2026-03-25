@@ -54,9 +54,9 @@ aux autres micro-noyaux :
 |----------|--------|
 | **Version** | `0.21.7` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 64 039 réparties sur 101 fichiers |
-| **LoC Lean de test** | 8 318 réparties sur 10 suites de tests |
-| **Déclarations prouvées** | 1 901 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 64 229 réparties sur 100 fichiers |
+| **LoC Lean de test** | 8 316 réparties sur 10 suites de tests |
+| **Déclarations prouvées** | 1 878 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Audit complet pré-publication du noyau et de la base Rust |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |

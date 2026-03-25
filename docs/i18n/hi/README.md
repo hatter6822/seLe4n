@@ -61,9 +61,9 @@ seLe4n एक सूक्ष्म नाभिक (microkernel) है जो 
 |----------|------|
 | **संस्करण (Version)** | `0.21.7` |
 | **Lean टूलचेन (Toolchain)** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 101 फ़ाइलों में 64,824 |
-| **परीक्षण Lean LoC** | 10 परीक्षण सुइट्स में 8,322 |
-| **प्रमाणित घोषणाएँ (Proved declarations)** | 1,922 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **उत्पादन Lean LoC** | 100 फ़ाइलों में 64,229 |
+| **परीक्षण Lean LoC** | 10 परीक्षण सुइट्स में 8,316 |
+| **प्रमाणित घोषणाएँ (Proved declarations)** | 1,878 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **लक्ष्य हार्डवेयर (Target hardware)** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **नवीनतम लेखापरीक्षा (Latest audit)** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — पूर्ण कर्नेल + Rust कोडबेस प्री-रिलीज़ लेखापरीक्षा |
 | **कोडबेस मानचित्र (Codebase map)** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय घोषणा सूची |

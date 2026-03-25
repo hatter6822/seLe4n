@@ -33,12 +33,12 @@ across the entire production proof surface.
 | U1 | v0.21.0 | Correctness Fixes | 13 | COMPLETE |
 | U2 | v0.21.1 | Safety Boundary Hardening | 14 | COMPLETE |
 | U3 | v0.21.2 | Rust ABI Hardening | 10 | COMPLETE |
-| U4 | v0.21.3 | Proof Chain & Invariant Composition | 3 groups | COMPLETE |
+| U4 | v0.21.3 | Proof Chain & Invariant Composition | 14 | COMPLETE |
 | U5 | v0.21.4 | API & Dispatch Integrity | 14 | COMPLETE |
 | U6 | v0.21.5 | Architecture & Platform Fidelity | 12 | COMPLETE |
 | U7 | v0.21.6 | Dead Code & Proof Hygiene | 12 | COMPLETE |
 | U8 | v0.21.7 | Documentation & Closure | 8 | COMPLETE |
-| **Total** | | | **~97** | |
+| **Total** | | | **97** | |
 
 ---
 
@@ -73,7 +73,7 @@ Key erroneous findings:
 | U-H07 | Architecture | Platform-specific PA width validation | U2 |
 | U-H08 | Architecture | ASID bounds-checked against `maxASID` | U2 |
 | U-H09 | InfoFlow | `hProjection` hypotheses discharged for 4 IPC ops | U4 |
-| U-H10 | InfoFlow | `NonInterferenceStep` completeness enforcement | U2 |
+| U-H10 | InfoFlow | `NonInterferenceStep` completeness enforcement | U4 |
 | U-H11 | Rust | Clobber registers declared in inline asm | U3 |
 | U-H12 | RobinHood | `BEq RHTable` made symmetric with reverse fold | U7 |
 | U-H13 | IPC | Sender CSpace root fallback returns error | U1 |
