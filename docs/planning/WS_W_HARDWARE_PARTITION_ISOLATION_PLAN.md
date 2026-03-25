@@ -49,21 +49,21 @@ correct partition assignment.
 ┌───────────────────────────────────────────────────────────┐
 │ Security Domain A                                         │
 │ SecurityLabel { .high, .trusted }                         │
-│ PartitionId 1 ──→ MPAM PARTID 1 ──→ Cache Ways {0..3}   │
-│                                  ──→ BW Group 1 (40%)    │
-│ RealmId 1 ──→ CCA Realm Descriptor ──→ GPA isolation     │
+│ PartitionId 1 ──→ MPAM PARTID 1 ──→ Cache Ways {0..3}     │
+│                                  ──→ BW Group 1 (40%)     │
+│ RealmId 1 ──→ CCA Realm Descriptor ──→ GPA isolation      │
 ├───────────────────────────────────────────────────────────┤
 │ Security Domain B                                         │
 │ SecurityLabel { .low, .untrusted }                        │
-│ PartitionId 2 ──→ MPAM PARTID 2 ──→ Cache Ways {4..7}   │
-│                                  ──→ BW Group 2 (30%)    │
-│ RealmId 2 ──→ CCA Realm Descriptor ──→ GPA isolation     │
+│ PartitionId 2 ──→ MPAM PARTID 2 ──→ Cache Ways {4..7}     │
+│                                  ──→ BW Group 2 (30%)     │
+│ RealmId 2 ──→ CCA Realm Descriptor ──→ GPA isolation      │
 ├───────────────────────────────────────────────────────────┤
-│ seLe4n Kernel (EL1 / Realm EL1)                          │
+│ seLe4n Kernel (EL1 / Realm EL1)                           │
 │  PartitionBoundaryContract:                               │
 │  - partitionAssignment : DomainId → PartitionId           │
 │  - partitionSeparation : ¬flowsTo ⟹ distinct partitions  │
-│  - cacheWayDisjoint : distinct partitions ⟹ disjoint ways │
+│  - cacheWayDisjoint : distinct partitions ⟹ disjoint ways│
 │  - cacheFlushOnSwitch : DomainId → DomainId → FlushSpec   │
 ├───────────────────────────────────────────────────────────┤
 │ Hardware (ARMv9-A + MPAM + RME)                           │
