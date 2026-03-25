@@ -103,10 +103,11 @@ inductive MmioWriteKind where
 /-- U6-A: Formal MMIO region descriptor. Declares a range of physical
     addresses that map to device registers rather than normal memory.
 
-    For non-RAM regions, `mmioRead` is defined as `opaque` — proofs
-    cannot unfold device register reads as memory lookups. This prevents
-    unsound reasoning about device interaction (e.g., assuming idempotency
-    of a volatile register read). -/
+    For non-RAM regions, `mmioRead` returns the current abstract memory
+    content but proofs MUST NOT assume idempotency or determinism for
+    volatile addresses. The `MmioSafe` hypothesis type enforces this at
+    the proof level. A future WS-V refinement will make the read result
+    opaque (via a device state model) to prevent unsound unfolding. -/
 structure MmioRegionDesc where
   /-- Base physical address of the MMIO region. -/
   base : PAddr

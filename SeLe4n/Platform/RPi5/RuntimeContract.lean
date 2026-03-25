@@ -60,14 +60,21 @@ Device and reserved regions require explicit MMIO adapter calls.
 -/
 
 /-- U6-C: Computable check for register context stability. Returns `true`
-    if the machine register file matches the scheduled thread's saved context. -/
+    if the machine register file matches the scheduled thread's saved context.
+
+    When `scheduler.current = some tid`:
+    - If the object is a TCB: checks `st'.machine.regs == tcb.registerContext`.
+    - If the object is missing or not a TCB: returns `false` (contract violation).
+      A scheduled thread that has no corresponding TCB or maps to a non-TCB
+      object represents a malformed scheduler state. The contract must reject
+      this to prevent unsound reasoning about register-file consistency. -/
 def registerContextStableCheck (_st st' : SystemState) : Bool :=
   match st'.scheduler.current with
   | none => true
   | some tid =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) => st'.machine.regs == tcb.registerContext
-    | _ => true
+    | _ => false
 
 /-- U6-C: Prop-level register context stability predicate. -/
 def registerContextStablePred (st st' : SystemState) : Prop :=

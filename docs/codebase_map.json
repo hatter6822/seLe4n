@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-u6-architecture-yBJEm",
-      "commit_sha": "2851f6fe7b37e6c33f1ddf16514641e0ae67ea8a",
-      "tree_sha": "94b75ecb12c4824911e4d58aefb5c80d8298fbe5",
-      "committed_at_utc": "2026-03-25T10:01:45-04:00"
+      "commit_sha": "5093d39be86d12466dfb1317e89fbed03f52f037",
+      "tree_sha": "019a006d0e515fc65ce32d68d073dcd1883f9138",
+      "committed_at_utc": "2026-03-25T15:34:59+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "696a9f800b13bfbc43accf46652ba655cb0655d6a11f15e46fc44dd7ddec38ad"
+    "source_digest": "f4edb2c9195a3b7cca73fc8b7c5c2a4eb0387a6882febb5d0f89773213a7a3c5"
   },
   "summary": {
     "module_count": 111,
-    "declaration_count": 3517
+    "declaration_count": 3520
   },
   "readme_sync": {
     "version": "0.21.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 64787,
+    "production_loc": 64824,
     "test_files": 10,
     "test_loc": 8322,
-    "proved_theorem_lemma_decls": 1920,
+    "proved_theorem_lemma_decls": 1922,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -37663,7 +37663,7 @@
     {
       "module": "SeLe4n.Platform.Boot",
       "path": "SeLe4n/Platform/Boot.lean",
-      "declaration_count": 26,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "namespace",
@@ -37867,7 +37867,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.wellFormed",
-          "line": 166,
+          "line": 164,
           "called": [
             "PlatformConfig",
             "config",
@@ -37878,15 +37878,51 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.wellFormed_empty",
-          "line": 170,
+          "line": 168,
           "called": [
             "PlatformConfig.wellFormed"
           ]
         },
         {
+          "kind": "def",
+          "name": "bootFromPlatformChecked",
+          "line": 181,
+          "called": [
+            "IntermediateState",
+            "PlatformConfig",
+            "bootFromPlatform",
+            "config",
+            "irqsUnique",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformChecked_eq_bootFromPlatform",
+          "line": 191,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatform",
+            "bootFromPlatformChecked",
+            "config",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformChecked_rejects_invalid",
+          "line": 197,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatformChecked",
+            "config",
+            "wellFormed"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "bootFromPlatform_empty_state",
-          "line": 203,
+          "line": 232,
           "called": [
             "SystemState",
             "bootFromPlatform"
@@ -37895,7 +37931,7 @@
         {
           "kind": "theorem",
           "name": "emptyBoot_proofLayerInvariantBundle",
-          "line": 209,
+          "line": 238,
           "called": [
             "apiInvariantBundle_default",
             "bootFromPlatform",
@@ -37906,7 +37942,7 @@
         {
           "kind": "theorem",
           "name": "emptyBoot_freeze_preserves",
-          "line": 217,
+          "line": 246,
           "called": [
             "apiInvariantBundle_frozen",
             "bootFromPlatform",
@@ -37918,7 +37954,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_empty",
-          "line": 234,
+          "line": 263,
           "called": [
             "apiInvariantBundle_frozen",
             "bootFromPlatform",
@@ -38526,7 +38562,7 @@
         {
           "kind": "structure",
           "name": "MmioRegionDesc",
-          "line": 110,
+          "line": 111,
           "called": [
             "MmioReadKind",
             "MmioWriteKind",
@@ -38537,13 +38573,13 @@
         {
           "kind": "namespace",
           "name": "MmioRegionDesc",
-          "line": 121,
+          "line": 122,
           "called": []
         },
         {
           "kind": "def",
           "name": "endAddr",
-          "line": 124,
+          "line": 125,
           "called": [
             "MmioRegionDesc",
             "size",
@@ -38553,7 +38589,7 @@
         {
           "kind": "def",
           "name": "contains",
-          "line": 127,
+          "line": 128,
           "called": [
             "MmioRegionDesc",
             "PAddr",
@@ -38564,7 +38600,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 131,
+          "line": 132,
           "called": [
             "MmioRegionDesc",
             "endAddr",
@@ -38574,8 +38610,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:134>",
-          "line": 134,
+          "name": "<anonymous:instance:135>",
+          "line": 135,
           "called": [
             "MmioRegionDesc"
           ]
@@ -38583,7 +38619,7 @@
         {
           "kind": "def",
           "name": "inMmioRegion",
-          "line": 140,
+          "line": 141,
           "called": [
             "MmioRegionDesc",
             "PAddr",
@@ -38593,7 +38629,7 @@
         {
           "kind": "def",
           "name": "findMmioRegion",
-          "line": 144,
+          "line": 145,
           "called": [
             "MmioRegionDesc",
             "PAddr",
@@ -38603,7 +38639,7 @@
         {
           "kind": "def",
           "name": "rpi5MmioRegionDescs",
-          "line": 149,
+          "line": 150,
           "called": [
             "MmioRegionDesc",
             "gicCpuInterfaceBase",
@@ -38615,7 +38651,7 @@
         {
           "kind": "structure",
           "name": "MmioSafe",
-          "line": 172,
+          "line": 173,
           "called": [
             "MmioRegionDesc",
             "PAddr",
@@ -38625,13 +38661,13 @@
         {
           "kind": "inductive",
           "name": "MmioOpKind",
-          "line": 194,
+          "line": 195,
           "called": []
         },
         {
           "kind": "structure",
           "name": "MmioOp",
-          "line": 202,
+          "line": 203,
           "called": [
             "MemoryBarrier",
             "MmioOpKind",
@@ -38642,7 +38678,7 @@
         {
           "kind": "def",
           "name": "isDeviceAddress",
-          "line": 222,
+          "line": 223,
           "called": [
             "PAddr",
             "contains"
@@ -38651,7 +38687,7 @@
         {
           "kind": "def",
           "name": "isMmioPeripheralAddress",
-          "line": 229,
+          "line": 230,
           "called": [
             "PAddr",
             "contains"
@@ -38660,7 +38696,7 @@
         {
           "kind": "def",
           "name": "mmioRead",
-          "line": 251,
+          "line": 252,
           "called": [
             "Kernel",
             "PAddr",
@@ -38670,7 +38706,7 @@
         {
           "kind": "def",
           "name": "mmioWrite",
-          "line": 268,
+          "line": 269,
           "called": [
             "Kernel",
             "PAddr",
@@ -38680,7 +38716,7 @@
         {
           "kind": "def",
           "name": "mmioWrite32",
-          "line": 288,
+          "line": 289,
           "called": [
             "Kernel",
             "PAddr",
@@ -38693,7 +38729,7 @@
         {
           "kind": "def",
           "name": "mmioWrite64",
-          "line": 315,
+          "line": 316,
           "called": [
             "Kernel",
             "PAddr",
@@ -38706,7 +38742,7 @@
         {
           "kind": "def",
           "name": "MmioOp.isValid",
-          "line": 348,
+          "line": 349,
           "called": [
             "MmioOp",
             "isDeviceAddress"
@@ -38715,7 +38751,7 @@
         {
           "kind": "def",
           "name": "MmioOp.hasAppropriateBarriers",
-          "line": 355,
+          "line": 356,
           "called": [
             "MmioOp"
           ]
@@ -38723,7 +38759,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_rejects_non_device",
-          "line": 365,
+          "line": 366,
           "called": [
             "PAddr",
             "SystemState",
@@ -38734,7 +38770,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_rejects_non_device",
-          "line": 371,
+          "line": 372,
           "called": [
             "PAddr",
             "SystemState",
@@ -38745,7 +38781,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_preserves_state",
-          "line": 377,
+          "line": 378,
           "called": [
             "PAddr",
             "SystemState",
@@ -38755,7 +38791,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_frame",
-          "line": 386,
+          "line": 387,
           "called": [
             "PAddr",
             "SystemState",
@@ -38765,7 +38801,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_non_device",
-          "line": 400,
+          "line": 401,
           "called": [
             "PAddr",
             "SystemState",
@@ -38776,7 +38812,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_rejects_non_device",
-          "line": 406,
+          "line": 407,
           "called": [
             "PAddr",
             "SystemState",
@@ -38787,7 +38823,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_frame",
-          "line": 412,
+          "line": 413,
           "called": [
             "PAddr",
             "SystemState",
@@ -38799,7 +38835,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_frame",
-          "line": 426,
+          "line": 427,
           "called": [
             "PAddr",
             "SystemState",
@@ -38811,7 +38847,7 @@
         {
           "kind": "def",
           "name": "notInMmioRegion",
-          "line": 450,
+          "line": 451,
           "called": [
             "PAddr",
             "inMmioRegion",
@@ -38821,7 +38857,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_nonMmio_safe",
-          "line": 455,
+          "line": 456,
           "called": [
             "PAddr",
             "SystemState",
@@ -38833,7 +38869,7 @@
         {
           "kind": "theorem",
           "name": "memoryRead_idempotent_nonMmio",
-          "line": 465,
+          "line": 466,
           "called": [
             "PAddr",
             "SystemState",
@@ -38921,7 +38957,7 @@
         {
           "kind": "def",
           "name": "registerContextStableCheck",
-          "line": 64,
+          "line": 71,
           "called": [
             "SystemState",
             "none",
@@ -38931,7 +38967,7 @@
         {
           "kind": "def",
           "name": "registerContextStablePred",
-          "line": 73,
+          "line": 80,
           "called": [
             "SystemState",
             "registerContextStableCheck"
@@ -38940,7 +38976,7 @@
         {
           "kind": "instance",
           "name": "registerContextStablePred_decidable",
-          "line": 77,
+          "line": 84,
           "called": [
             "SystemState",
             "registerContextStablePred"
@@ -38949,7 +38985,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContract",
-          "line": 81,
+          "line": 88,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -38962,7 +38998,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContractRestrictive",
-          "line": 114,
+          "line": 121,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -38973,7 +39009,7 @@
         {
           "kind": "def",
           "name": "RegisterWriteInvariant",
-          "line": 151,
+          "line": 158,
           "called": [
             "SystemState",
             "none",
@@ -38983,7 +39019,7 @@
         {
           "kind": "theorem",
           "name": "registerWriteInvariant_default",
-          "line": 160,
+          "line": 167,
           "called": [
             "RegisterWriteInvariant",
             "SystemState"
@@ -38992,7 +39028,7 @@
         {
           "kind": "def",
           "name": "mmioAccessAllowed",
-          "line": 176,
+          "line": 183,
           "called": [
             "PAddr",
             "SystemState",
@@ -39002,7 +39038,7 @@
         {
           "kind": "instance",
           "name": "mmioAccessAllowed_decidable",
-          "line": 181,
+          "line": 188,
           "called": [
             "PAddr",
             "SystemState",
@@ -39014,7 +39050,7 @@
         {
           "kind": "theorem",
           "name": "mmioAccess_ram_kind_disjoint",
-          "line": 190,
+          "line": 197,
           "called": [
             "MemoryRegion"
           ]

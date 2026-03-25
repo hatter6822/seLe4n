@@ -10,13 +10,17 @@
   idempotency assumptions.
 - U6-C (U-M09): Strengthened `registerContextStable` in RPi5 runtime contract
   from permissive `sp preserved OR context switch` to require machine register
-  file matches scheduled thread's TCB `registerContext` field.
+  file matches scheduled thread's TCB `registerContext` field. TCB lookup
+  failure (missing object or non-TCB type) is a contract violation (`false`),
+  preventing malformed scheduler states from being silently accepted.
 - U6-D (U-M09): Updated RPi5 proof hooks documentation for strengthened
   contract. Restrictive contract unchanged (still vacuously correct).
 - U6-E (U-M12): Added `irqsUnique` duplicate IRQ detection for boot config
   validation. Documented last-wins semantics of `foldIrqs`.
 - U6-F (U-M13): Added `objectIdsUnique` duplicate object ID detection for
-  boot config validation. Added `PlatformConfig.wellFormed` predicate.
+  boot config validation. Added `PlatformConfig.wellFormed` predicate and
+  `bootFromPlatformChecked` enforcement variant that rejects configs with
+  duplicate IRQs or object IDs.
 - U6-G (U-M15): Proved boot-to-runtime invariant bridge for empty config:
   `bootToRuntime_invariantBridge_empty` composes boot validity through freeze
   to establish both `proofLayerInvariantBundle` and `apiInvariantBundle_frozen`.

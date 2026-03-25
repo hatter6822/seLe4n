@@ -160,9 +160,7 @@ theorem irqsUnique_empty : irqsUnique [] = true := by
 theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
   native_decide
 
-/-- U6-E/F: A well-formed PlatformConfig has unique IRQs and unique object IDs.
-    This is a validation predicate, not enforced by `bootFromPlatform` — callers
-    should check this before passing configs to `bootFromPlatform`. -/
+/-- U6-E/F: A well-formed PlatformConfig has unique IRQs and unique object IDs. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects
 
@@ -170,6 +168,37 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
 theorem PlatformConfig.wellFormed_empty :
     PlatformConfig.wellFormed { irqTable := [], initialObjects := [] } = true := by
   native_decide
+
+/-- U6-E/F: Checked boot — rejects configs with duplicate IRQs or object IDs.
+
+    This is the enforcement variant of `bootFromPlatform`. It validates
+    `PlatformConfig.wellFormed` before proceeding, returning an error if
+    duplicate IRQ registrations or object IDs are detected. This prevents
+    silent last-wins overwrites that could lose kernel objects or IRQ handlers.
+
+    Use `bootFromPlatform` directly only when the config is known-valid
+    (e.g., constructed programmatically with uniqueness guarantees). -/
+def bootFromPlatformChecked (config : PlatformConfig) :
+    Except String IntermediateState :=
+  if config.wellFormed then
+    .ok (bootFromPlatform config)
+  else if ¬ irqsUnique config.irqTable then
+    .error "boot: duplicate IRQ registration detected in platform config"
+  else
+    .error "boot: duplicate object ID detected in platform config"
+
+/-- U6-E/F: Checked boot agrees with unchecked boot on well-formed configs. -/
+theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
+    (hWf : config.wellFormed = true) :
+    bootFromPlatformChecked config = .ok (bootFromPlatform config) := by
+  simp [bootFromPlatformChecked, hWf]
+
+/-- U6-E/F: Checked boot rejects configs that are not well-formed. -/
+theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
+    (hNotWf : config.wellFormed = false) :
+    (bootFromPlatformChecked config).isOk = false := by
+  simp [bootFromPlatformChecked, hNotWf]
+  split <;> rfl
 
 -- ============================================================================
 -- U6-G (U-M15): Boot-to-Runtime Invariant Bridge
