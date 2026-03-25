@@ -52,6 +52,20 @@ impl MessageInfo {
         }
     }
 
+    /// V1-D (M-RS-2): Infallible constructor for compile-time-known-valid
+    /// arguments. Panics at compile time (const eval) if bounds are violated,
+    /// but this can never happen for valid constant arguments.
+    ///
+    /// This replaces 13 `MessageInfo::new(...).unwrap()` calls in `sele4n-sys`
+    /// where all arguments are known-valid constants (e.g., length ≤ 5,
+    /// extra_caps = 0, label = 0).
+    pub const fn new_const(length: u8, extra_caps: u8, label: u64) -> Self {
+        assert!(length as u64 <= MAX_MSG_LENGTH, "length exceeds MAX_MSG_LENGTH");
+        assert!(extra_caps as u64 <= MAX_EXTRA_CAPS, "extra_caps exceeds MAX_EXTRA_CAPS");
+        assert!(label <= MAX_LABEL, "label exceeds MAX_LABEL");
+        Self { length, extra_caps, label }
+    }
+
     /// Number of message registers (0..=120).
     ///
     /// U3-B: Read-only accessor replacing the former `pub` field.

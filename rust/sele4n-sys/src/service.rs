@@ -40,7 +40,7 @@ pub fn service_register(
     buf.set_mr(4, encoded[4])?;
     invoke_syscall(SyscallRequest {
         cap_addr: endpoint_cap,
-        msg_info: MessageInfo::new(5, 0, 0).unwrap(),
+        msg_info: MessageInfo::new_const(5, 0, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::ServiceRegister,
     })
@@ -58,7 +58,7 @@ pub fn service_revoke(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: service_cap,
-        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
+        msg_info: MessageInfo::new_const(1, 0, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::ServiceRevoke,
     })
@@ -75,7 +75,7 @@ pub fn service_query(
 ) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {
         cap_addr: endpoint_cap,
-        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
     })

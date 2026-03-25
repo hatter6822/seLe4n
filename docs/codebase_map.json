@@ -24,7 +24,7 @@
     "declaration_count": 3421
   },
   "readme_sync": {
-    "version": "0.21.7",
+    "version": "0.22.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
     "production_loc": 64229,

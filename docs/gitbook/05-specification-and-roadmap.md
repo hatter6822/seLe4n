@@ -19,7 +19,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Test LoC | 8,316 across 10 suites |
 | Proved declarations | 1,878 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-U Phase U8 COMPLETE** (v0.21.7). Prior: **WS-U U7 COMPLETE** (v0.21.6), **WS-U U6 COMPLETE** (v0.21.5), **WS-U U5 COMPLETE** (v0.21.4), **WS-U U4 COMPLETE** (v0.21.3), **WS-U U3 COMPLETE** (v0.21.2), **WS-U U2 COMPLETE** (v0.21.1), **WS-U U1 COMPLETE** (v0.21.0), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
+| Active workstream | **WS-V Phase V1 COMPLETE** (v0.22.0). Prior: **WS-U PORTFOLIO COMPLETE** (v0.21.0–v0.21.7), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -76,9 +76,20 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
 **WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
 
+## Completed: WS-V Phase V1 Rust ABI Hardening (v0.22.0)
+
+12 sub-tasks hardening the Rust ABI boundary: u64→u32 truncation guard in
+`decode_response` (H-RS-1), `LifecycleRetypeArgs.new_type` changed to validated
+`TypeTag` (M-RS-1), 13 `unwrap()` calls replaced with compile-time validated
+`new_const()` (M-RS-2), error variants corrected for `IpcBuffer::get_mr` and
+`CSpaceMintArgs::decode` (M-RS-3/M-RS-4), W^X `checked_bitor` for `PagePerms`
+(M-RS-5), validation methods for `Slot`/`DomainId`/`Priority` (M-RS-7),
+`ServiceRegisterArgs` bounds validation (L-RS-2), 10 new conformance tests.
+157 Rust tests pass, zero warnings.
+
 ## Completed: WS-U Phase U8 (v0.21.7)
 
-(Details pending.)
+Documentation & Closure — 8 sub-tasks (U8-A through U8-H). WS-U PORTFOLIO COMPLETE.
 
 ## Completed: WS-U Phase U7 Dead Code & Proof Hygiene (v0.21.6)
 

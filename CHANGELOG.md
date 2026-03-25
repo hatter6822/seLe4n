@@ -1,3 +1,38 @@
+## [0.22.0] — WS-V Phase V1: Rust ABI Hardening
+
+- V1-A (H-RS-1): Added u64 range guard in `decode_response` — values exceeding
+  `u32::MAX` now return `InvalidSyscallNumber` instead of silently truncating
+  (e.g., `0x1_0000_0000` no longer yields false success).
+- V1-B (L-RS-1): Fixed stale comment in decode.rs — error codes "0–37" updated
+  to "0–39" reflecting the actual 40-variant `KernelError` enum.
+- V1-C (M-RS-1): Changed `LifecycleRetypeArgs.new_type` from raw `u64` to
+  validated `TypeTag` enum. Decode now rejects invalid type tag values > 5
+  with `InvalidTypeTag`.
+- V1-D (M-RS-2): Replaced all 13 `MessageInfo::new(...).unwrap()` calls in
+  `sele4n-sys` with `MessageInfo::new_const()` — a compile-time validated
+  infallible constructor that eliminates runtime panic risk for known-valid
+  constant arguments.
+- V1-E (M-RS-3): Fixed `IpcBuffer::get_mr()` to return `InvalidArgument`
+  (not `InvalidMessageInfo`) for inline register indices 0–3. The message
+  structure is valid; the argument is semantically wrong.
+- V1-F (M-RS-4): Fixed `CSpaceMintArgs::decode()` to return `InvalidArgument`
+  (not `InvalidMessageInfo`) for invalid rights bitmask values > 0x1F.
+- V1-G (M-RS-5): Added `PagePerms::checked_bitor()` that validates W^X at
+  combine time, returning `PolicyDenied` if write + execute are both set.
+  Standard `BitOr` still available for data composition (W^X enforced at
+  point of use in `vspace_map()`).
+- V1-H (M-RS-7): Added `is_reserved()`, `is_valid()`, and `MAX_VALID`
+  constants to `Slot` (max 2^32), `DomainId` (max 255), and `Priority`
+  (max 255) identifier types.
+- V1-I (L-RS-2): Added bounds validation to `ServiceRegisterArgs::decode()`:
+  `method_count` capped at 1024, `max_message_size`/`max_response_size`
+  capped at 960 bytes (120 registers × 8 bytes).
+- V1-J (L-RS-3): Aligned `IpcBuffer::get_mr()` error variant with V1-E fix.
+- V1-K (M-TST-7): Added 10 new conformance tests covering all V1 changes:
+  u64 overflow, TypeTag validation, error variant correctness, W^X
+  checked_bitor, identifier validation, bounds enforcement.
+- V1-L: Full Rust test suite: 157 tests pass, 0 failures, 0 warnings.
+
 ## [0.21.7] — WS-U Phase U8: Documentation & Closure (WS-U PORTFOLIO COMPLETE)
 
 - U8-A (U-L16): Eliminated `simSubstantiveMemoryMap` duplication — made
