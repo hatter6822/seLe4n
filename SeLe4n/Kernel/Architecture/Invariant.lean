@@ -490,6 +490,39 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
       | .single _ _ tcb hObj hN => .single _ _ tcb (hObjs ▸ hObj) hN
       | .cons _ _ _ tcb hObj hN tail => .cons _ _ _ tcb (hObjs ▸ hObj) hN (transportPath hObjs tail)
 
+/-- U4-G/U4-H: serviceEdge transfer — if two states have the same `services` field,
+    a serviceEdge in one is a serviceEdge in the other. -/
+private theorem serviceEdge_of_services_eq {st st' : SystemState}
+    (hSvc : st'.services = st.services) {a b : ServiceId}
+    (h : serviceEdge st' a b) : serviceEdge st a b := by
+  obtain ⟨svc, hL, hM⟩ := h
+  exact ⟨svc, by rw [lookupService, ← hSvc, ← lookupService]; exact hL, hM⟩
+
+/-- U4-G/U4-H: serviceNontrivialPath transfer — same-services states have identical paths. -/
+private theorem serviceNontrivialPath_of_services_eq {st st' : SystemState}
+    (hSvc : st'.services = st.services) {a b : ServiceId}
+    (h : serviceNontrivialPath st' a b) : serviceNontrivialPath st a b := by
+  induction h with
+  | single hedge => exact .single (serviceEdge_of_services_eq hSvc hedge)
+  | cons hedge _ ih => exact .cons (serviceEdge_of_services_eq hSvc hedge) ih
+
+/-- U4-G/U4-H: advanceTimerState preserves serviceGraphInvariant.
+    advanceTimerState only modifies machine.timer; services and objects are unchanged. -/
+private theorem advanceTimerState_preserves_serviceGraphInvariant
+    (ticks : Nat) (st : SystemState)
+    (h : serviceGraphInvariant st) :
+    serviceGraphInvariant (advanceTimerState ticks st) := by
+  obtain ⟨hAcyc, hBound⟩ := h
+  have hSvcEq : (advanceTimerState ticks st).services = st.services := rfl
+  constructor
+  · -- serviceDependencyAcyclic
+    intro a hPath
+    exact hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath)
+  · -- serviceCountBounded: depends on services + objectIndex, both unchanged
+    -- Since advanceTimerState only touches machine.timer, the serviceCountBounded
+    -- proposition is definitionally equal between the two states
+    exact hBound
+
 theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
@@ -516,9 +549,9 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
            by exact hR⟩
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
-  -- crossSubsystemInvariant (T5-J: 4 conjuncts, all only depend on objects/services/serviceRegistry)
-  · obtain ⟨h1, h2, h3, h4⟩ := hCross
-    exact ⟨h1, h2, h3, h4⟩
+  -- crossSubsystemInvariant (T5-J + U4-G: 5 conjuncts, all only depend on objects/services/serviceRegistry)
+  · obtain ⟨h1, h2, h3, h4, h5⟩ := hCross
+    exact ⟨h1, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5⟩
 
 -- ============================================================================
 -- WS-J1-D: Register decode consistency predicate

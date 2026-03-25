@@ -284,4 +284,45 @@ theorem cleanupEndpointServiceRegistrations_preserves_registryEndpointValid
   rcases hInv sid reg hOrig with ⟨epId', hTarget, hExists⟩
   exact ⟨epId', hTarget, hObjEq ▸ hExists⟩
 
+/-- U4-I (U-M06): After filtering service registrations by endpoint ID,
+    remaining registrations still reference known interface specifications.
+
+    The proof follows the same structure as `_preserves_registryEndpointValid`:
+    any registration surviving the filter was in the original state, and the
+    `interfaceRegistry` is unchanged by `cleanupEndpointServiceRegistrations`,
+    so the original invariant applies directly. -/
+theorem cleanupEndpointServiceRegistrations_preserves_registryInterfaceValid
+    (st : SystemState) (epId : SeLe4n.ObjId)
+    (hInv : registryInterfaceValid st)
+    (hSvcRegInv : st.serviceRegistry.invExt) :
+    registryInterfaceValid (cleanupEndpointServiceRegistrations st epId) := by
+  intro sid reg hLookup
+  have hIfaceEq := cleanupEndpointServiceRegistrations_interfaceRegistry_eq st epId
+  -- Step 1: The result's serviceRegistry is the filtered original
+  have hSvcRegResult : (cleanupEndpointServiceRegistrations st epId).serviceRegistry =
+      (st.serviceRegistry.filter fun _sid reg' =>
+        match reg'.endpointCap.target with
+        | .object id => !(id == epId)
+        | _ => true) := by
+    unfold cleanupEndpointServiceRegistrations
+    exact foldl_removeDependenciesOf_serviceRegistry_eq _ _
+  -- Step 2: Rewrite lookup using the serviceRegistry equality
+  rw [RHTable_getElem?_eq_get?] at hLookup
+  rw [hSvcRegResult] at hLookup
+  -- Step 3: Any entry in the filtered table was in the original
+  have hOrig := RHTable.filter_get_subset st.serviceRegistry _ sid reg hSvcRegInv hLookup
+  rw [← RHTable_getElem?_eq_get?] at hOrig
+  -- Step 4: Original invariant gives us a valid interface
+  rcases hInv sid reg hOrig with ⟨spec, hSpec⟩
+  exact ⟨spec, hIfaceEq ▸ hSpec⟩
+
+/-- U4-I (U-M06): cleanupEndpointServiceRegistrations preserves the full registryInvariant. -/
+theorem cleanupEndpointServiceRegistrations_preserves_registryInvariant
+    (st : SystemState) (epId : SeLe4n.ObjId)
+    (hInv : registryInvariant st)
+    (hSvcRegInv : st.serviceRegistry.invExt) :
+    registryInvariant (cleanupEndpointServiceRegistrations st epId) :=
+  ⟨cleanupEndpointServiceRegistrations_preserves_registryEndpointValid st epId hInv.1 hSvcRegInv,
+   cleanupEndpointServiceRegistrations_preserves_registryInterfaceValid st epId hInv.2 hSvcRegInv⟩
+
 end SeLe4n.Kernel

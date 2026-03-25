@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.Service.Registry.Invariant
+import SeLe4n.Kernel.Service.Invariant.Acyclicity
 
 /-!
 # R4-E: Cross-Subsystem Invariant Definitions
@@ -23,6 +24,7 @@ modified.
 | `noStaleEndpointQueueReferences` | Every ThreadId in an endpoint queue (head/tail + interior) has a live TCB |
 | `noStaleNotificationWaitReferences` | Every ThreadId in a notification wait list has a live TCB (T5-H) |
 | `registryDependencyConsistent` | Every dependency graph edge references a registered service |
+| `serviceGraphInvariant` | Service dependency acyclicity + count bound (U4-G) |
 | `crossSubsystemInvariant` | Composed bundle of all cross-subsystem predicates |
 -/
 
@@ -87,20 +89,21 @@ def registryDependencyConsistent (st : SystemState) : Prop :=
     ∀ dep, dep ∈ entry.dependencies →
       st.services[dep]? ≠ none
 
-/-- R4-E.1 + T5-J: Cross-subsystem invariant composing registry endpoint validity,
-    dependency consistency, stale queue reference exclusion, and notification
-    wait-list reference validity.
+/-- R4-E.1 + T5-J + U4-G: Cross-subsystem invariant composing registry endpoint
+    validity, dependency consistency, stale queue reference exclusion,
+    notification wait-list reference validity, and service graph acyclicity.
     Checked at every kernel entry/exit point via `proofLayerInvariantBundle`. -/
 def crossSubsystemInvariant (st : SystemState) : Prop :=
   registryEndpointValid st ∧
   registryDependencyConsistent st ∧
   noStaleEndpointQueueReferences st ∧
-  noStaleNotificationWaitReferences st
+  noStaleNotificationWaitReferences st ∧
+  serviceGraphInvariant st
 
-/-- R4-E.1 + T5-J: The default state satisfies crossSubsystemInvariant. -/
+/-- R4-E.1 + T5-J + U4-G: The default state satisfies crossSubsystemInvariant. -/
 theorem default_crossSubsystemInvariant :
     crossSubsystemInvariant (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · exact (default_registryInvariant).1
   · intro sid entry h
     simp only [RHTable_getElem?_eq_get?] at h
@@ -118,6 +121,8 @@ theorem default_crossSubsystemInvariant :
     have : (default : SystemState).objects.get? oid = none :=
       SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
     simp [this] at h
+  · -- U4-G: serviceGraphInvariant — default state has empty services
+    exact default_serviceGraphInvariant
 
 -- ============================================================================
 -- S3-J/U-M26: Parameterized cross-subsystem invariant composition
@@ -130,7 +135,7 @@ theorem default_crossSubsystemInvariant :
     parameterized composition used by extensibility checks. -/
 def crossSubsystemPredicates : List (SystemState → Prop) :=
   [registryEndpointValid, registryDependencyConsistent, noStaleEndpointQueueReferences,
-   noStaleNotificationWaitReferences]
+   noStaleNotificationWaitReferences, serviceGraphInvariant]
 
 /-- S3-J: Folded composition — the cross-subsystem invariant is equivalent to
     every predicate in the list holding on the state. -/
@@ -142,24 +147,26 @@ def crossSubsystemInvariantFolded (st : SystemState) : Prop :=
 theorem crossSubsystemInvariant_iff_folded (st : SystemState) :
     crossSubsystemInvariant st ↔ crossSubsystemInvariantFolded st := by
   constructor
-  · intro ⟨h₁, h₂, h₃, h₄⟩ p hMem
+  · intro ⟨h₁, h₂, h₃, h₄, h₅⟩ p hMem
     simp [crossSubsystemPredicates] at hMem
-    rcases hMem with rfl | rfl | rfl | rfl
+    rcases hMem with rfl | rfl | rfl | rfl | rfl
     · exact h₁
     · exact h₂
     · exact h₃
     · exact h₄
+    · exact h₅
   · intro hAll
     exact ⟨hAll _ (by simp [crossSubsystemPredicates]),
            hAll _ (by simp [crossSubsystemPredicates]),
            hAll _ (by simp [crossSubsystemPredicates]),
+           hAll _ (by simp [crossSubsystemPredicates]),
            hAll _ (by simp [crossSubsystemPredicates])⟩
 
-/-- S3-J + T5-J: Predicate count witness — compile-time assertion that the predicate
-    list has exactly 4 entries (extended from 3 by T5-H noStaleNotificationWaitReferences).
+/-- S3-J + T5-J + U4-G: Predicate count witness — compile-time assertion that the
+    predicate list has exactly 5 entries (extended from 4 by U4-G serviceGraphInvariant).
     If a new subsystem invariant is added to the list but not to
     `crossSubsystemInvariant`, the count check will fail. -/
 theorem crossSubsystemPredicates_count :
-    crossSubsystemPredicates.length = 4 := by rfl
+    crossSubsystemPredicates.length = 5 := by rfl
 
 end SeLe4n.Kernel

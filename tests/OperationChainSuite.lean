@@ -1869,13 +1869,8 @@ private def chain30SyscallServiceOps : IO Unit := do
       IO.println "operation-chain check passed [chain30: serviceRegister dispatch modified state]"
     else
       IO.println "operation-chain check passed [chain30: serviceRegister dispatch reached]"
-    -- === serviceQuery (syscallId=13): cap targets the endpoint
-    let stQuery := buildSyscallState 13 0 epId
-      (AccessRightSet.ofList [.read])
-      [(epId, .endpoint {})]
-      []  -- no message registers needed
-      [(epId, .endpoint)]
-    -- serviceQuery on the registered state
+    -- === serviceQuery (syscallId=13): dispatch on registered state
+    -- (Uses stAfter from serviceRegister, not a fresh state)
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
         { stAfter with scheduler := { stAfter.scheduler with
             current := some ⟨500⟩ } } with
@@ -1884,12 +1879,8 @@ private def chain30SyscallServiceOps : IO Unit := do
     | .error _ =>
       -- Query may fail if state not perfectly set up — dispatch path still exercised
       IO.println "operation-chain check passed [chain30: serviceQuery dispatch reached]"
-    -- === serviceRevoke (syscallId=12): x2=serviceId (the epId's Nat)
-    let stRevoke := buildSyscallState 12 0 epId
-      (AccessRightSet.ofList [.read, .write])
-      [(epId, .endpoint {})]
-      [(2, epId.toNat)]
-      [(epId, .endpoint)]
+    -- === serviceRevoke (syscallId=12): dispatch on registered state
+    -- (Uses stAfter from serviceRegister, not a fresh state)
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
         { stAfter with scheduler := { stAfter.scheduler with
             current := some ⟨500⟩ } } with

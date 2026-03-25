@@ -1,3 +1,19 @@
+## [0.21.3] — WS-U Phase U4: Proof Chain & Invariant Composition
+
+- U4-A/B/C/D: Discharged `hProjection` preconditions for all four IPC endpoint
+  operations (`endpointSendDual`, `endpointReceiveDual`, `endpointCall`,
+  `endpointReplyRecv`), making scheduler preservation self-contained.
+- U4-K: Made `endpointSendDual/ReceiveDual/Call/ReplyRecv_preserves_ipcInvariantFull`
+  self-contained by deriving `allPendingMessagesBounded` and `badgeWellFormed`
+  internally. Added 3 primitive `badgeWellFormed` preservation helpers
+  (`storeTcbQueueLinks`, `storeTcbPendingMessage`, `storeObject_endpoint`) and
+  8 composed endpoint-level preservation theorems.
+- U4-N: Proved BFS positional queue lemma (`descendantsOf_go_queue_pos_children_found`)
+  and queue membership variant (`descendantsOf_go_mem_children_found`) for CDT
+  `descendantsOf`. These establish that if a node is anywhere in the BFS queue
+  with sufficient fuel, all its children appear in the result — key infrastructure
+  for transitive closure fuel sufficiency.
+
 ## [0.21.2] — WS-U Phase U3: Rust ABI Hardening
 
 - U3-A (U-H11): Added `clobber_abi("C")` to `svc #0` inline assembly in

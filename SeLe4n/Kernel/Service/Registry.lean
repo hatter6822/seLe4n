@@ -203,6 +203,30 @@ theorem cleanupEndpointServiceRegistrations_lifecycle_eq
   unfold cleanupEndpointServiceRegistrations
   exact foldl_removeDependenciesOf_lifecycle_eq _ _
 
+/-- U4-I: removeDependenciesOf preserves interfaceRegistry. -/
+theorem removeDependenciesOf_interfaceRegistry_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).interfaceRegistry = st.interfaceRegistry := by
+  unfold removeDependenciesOf; rfl
+
+/-- U4-I: folding removeDependenciesOf preserves interfaceRegistry. -/
+private theorem foldl_removeDependenciesOf_interfaceRegistry_eq
+    (sids : List ServiceId) (st : SystemState) :
+    (sids.foldl (fun s sid => removeDependenciesOf s sid) st).interfaceRegistry = st.interfaceRegistry := by
+  induction sids generalizing st with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [ih]
+    exact removeDependenciesOf_interfaceRegistry_eq st hd
+
+/-- U4-I: cleanupEndpointServiceRegistrations preserves interfaceRegistry. -/
+theorem cleanupEndpointServiceRegistrations_interfaceRegistry_eq
+    (st : SystemState) (epId : SeLe4n.ObjId) :
+    (cleanupEndpointServiceRegistrations st epId).interfaceRegistry = st.interfaceRegistry := by
+  unfold cleanupEndpointServiceRegistrations
+  exact foldl_removeDependenciesOf_interfaceRegistry_eq _ _
+
 -- ============================================================================
 -- Theorems: error conditions, success post-conditions, frame lemmas
 -- ============================================================================
