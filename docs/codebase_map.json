@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-api-dispatch-WZDiC",
-      "commit_sha": "2364fc2be8d056916d5430efafd1bfb13fe7b172",
-      "tree_sha": "275946415e48bef903c6199469c9d19a35f569af",
-      "committed_at_utc": "2026-03-25T04:30:59-04:00"
+      "commit_sha": "78c09bc881527131545ac79e647ed892294e13fb",
+      "tree_sha": "ab39be941ba54424174598bf83108c034961756b",
+      "committed_at_utc": "2026-03-25T09:09:06+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a29a93466ac672ec7e2bd04c9fdd5e93cbe1ce6ac7a56af0ce92154eb8a44112"
+    "source_digest": "da9884b582e7727382830b6504acd5c7bedd24152fa29795d00e0be1d2d44ef0"
   },
   "summary": {
     "module_count": 111,
@@ -27,9 +27,9 @@
     "version": "0.21.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 64259,
+    "production_loc": 64271,
     "test_files": 10,
-    "test_loc": 8318,
+    "test_loc": 8322,
     "proved_theorem_lemma_decls": 1907,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -284,7 +284,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscallChecked",
-          "line": 689,
+          "line": 691,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -301,7 +301,7 @@
         {
           "kind": "def",
           "name": "syscallEntryChecked",
-          "line": 716,
+          "line": 718,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -315,7 +315,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_cspaceDelete_eq_unchecked",
-          "line": 743,
+          "line": 745,
           "called": [
             "Capability",
             "LabelingContext",
@@ -329,7 +329,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_lifecycleRetype_eq_unchecked",
-          "line": 752,
+          "line": 754,
           "called": [
             "Capability",
             "LabelingContext",
@@ -343,7 +343,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceMap_eq_unchecked",
-          "line": 761,
+          "line": 763,
           "called": [
             "Capability",
             "LabelingContext",
@@ -357,7 +357,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceUnmap_eq_unchecked",
-          "line": 770,
+          "line": 772,
           "called": [
             "Capability",
             "LabelingContext",
@@ -371,7 +371,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceRevoke_eq_unchecked",
-          "line": 779,
+          "line": 781,
           "called": [
             "Capability",
             "LabelingContext",
@@ -385,7 +385,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceQuery_eq_unchecked",
-          "line": 788,
+          "line": 790,
           "called": [
             "Capability",
             "LabelingContext",
@@ -399,7 +399,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_capabilityOnly_eq_unchecked",
-          "line": 805,
+          "line": 807,
           "called": [
             "Capability",
             "LabelingContext",
@@ -413,7 +413,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 830,
+          "line": 832,
           "called": [
             "Kernel",
             "SyscallDecodeResult",
@@ -429,7 +429,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 859,
+          "line": 861,
           "called": [
             "Kernel",
             "SyscallRegisterLayout",
@@ -442,7 +442,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 879,
+          "line": 881,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -454,7 +454,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 907,
+          "line": 909,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -472,7 +472,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 946,
+          "line": 948,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -490,7 +490,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 981,
+          "line": 983,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -501,7 +501,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 991,
+          "line": 993,
           "called": [
             "SyscallId",
             "syscallRequiredRight"
@@ -510,7 +510,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 1001,
+          "line": 1003,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -530,7 +530,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 1018,
+          "line": 1020,
           "called": [
             "CSpaceAddr",
             "CSpaceCopyArgs",
@@ -548,7 +548,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 1033,
+          "line": 1035,
           "called": [
             "CSpaceAddr",
             "CSpaceMoveArgs",
@@ -566,7 +566,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 1048,
+          "line": 1050,
           "called": [
             "CSpaceAddr",
             "CSpaceDeleteArgs",
@@ -584,7 +584,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 1067,
+          "line": 1069,
           "called": [
             "Capability",
             "LifecycleRetypeArgs",
@@ -602,7 +602,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 1082,
+          "line": 1084,
           "called": [
             "Capability",
             "ObjId",
@@ -618,7 +618,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 1097,
+          "line": 1099,
           "called": [
             "Capability",
             "ObjId",
@@ -634,7 +634,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 1114,
+          "line": 1116,
           "called": [
             "Capability",
             "IpcMessage",
@@ -653,7 +653,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 1133,
+          "line": 1135,
           "called": [
             "Capability",
             "IpcMessage",
@@ -672,7 +672,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 1152,
+          "line": 1154,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -686,7 +686,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 1167,
+          "line": 1169,
           "called": [
             "Capability",
             "SyscallGate",
@@ -698,7 +698,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 1176,
+          "line": 1178,
           "called": [
             "KernelError",
             "SyscallRegisterLayout",
@@ -710,7 +710,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 1186,
+          "line": 1188,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -723,7 +723,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 1203,
+          "line": 1205,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -736,7 +736,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 1233,
+          "line": 1235,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -747,7 +747,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 1242,
+          "line": 1244,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -762,7 +762,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 1253,
+          "line": 1255,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -777,7 +777,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 1268,
+          "line": 1270,
           "called": [
             "Capability",
             "IfObserver",
@@ -792,7 +792,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 1283,
+          "line": 1285,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -807,7 +807,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 1306,
+          "line": 1308,
           "called": [
             "IfObserver",
             "KernelError",
@@ -821,7 +821,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 1321,
+          "line": 1323,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -838,7 +838,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1349,
+          "line": 1351,
           "called": [
             "SyscallDecodeResult",
             "decodeCSpaceCopyArgs",
@@ -854,7 +854,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1375,
+          "line": 1377,
           "called": [
             "Kernel",
             "dispatchSyscall",
@@ -16481,7 +16481,7 @@
         {
           "kind": "inductive",
           "name": "EnforcementClass",
-          "line": 172,
+          "line": 171,
           "called": [
             "readOnly"
           ]
@@ -16489,7 +16489,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundary",
-          "line": 179,
+          "line": 182,
           "called": [
             "EnforcementClass",
             "readOnly"
@@ -16498,7 +16498,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_denied_preserves_state",
-          "line": 206,
+          "line": 216,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -16516,7 +16516,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_denied_preserves_state",
-          "line": 222,
+          "line": 232,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -16530,7 +16530,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_endpointSendDual",
-          "line": 239,
+          "line": 249,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -16549,7 +16549,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_cspaceMint",
-          "line": 260,
+          "line": 270,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -16564,7 +16564,7 @@
         {
           "kind": "def",
           "name": "notificationSignalChecked",
-          "line": 296,
+          "line": 306,
           "called": [
             "Badge",
             "Kernel",
@@ -16579,7 +16579,7 @@
         {
           "kind": "def",
           "name": "cspaceCopyChecked",
-          "line": 317,
+          "line": 327,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -16591,7 +16591,7 @@
         {
           "kind": "def",
           "name": "cspaceMoveChecked",
-          "line": 333,
+          "line": 343,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -16603,7 +16603,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDualChecked",
-          "line": 352,
+          "line": 362,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -16617,7 +16617,7 @@
         {
           "kind": "def",
           "name": "registerServiceChecked",
-          "line": 377,
+          "line": 387,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -16630,7 +16630,7 @@
         {
           "kind": "def",
           "name": "endpointCallChecked",
-          "line": 402,
+          "line": 412,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -16648,7 +16648,7 @@
         {
           "kind": "def",
           "name": "endpointReplyChecked",
-          "line": 434,
+          "line": 444,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -16661,7 +16661,7 @@
         {
           "kind": "def",
           "name": "capabilityOnlyOperations",
-          "line": 469,
+          "line": 479,
           "called": []
         }
       ]
@@ -44044,7 +44044,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 846,
+          "line": 850,
           "called": [
             "runInformationFlowChecks"
           ]

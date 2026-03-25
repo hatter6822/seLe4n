@@ -146,17 +146,16 @@ theorem cspaceMintChecked_flowDenied
 /-! ## M-07 — Enforcement Boundary Specification
 
 This section formally classifies all kernel operations into enforcement categories
-and proves that the three policy-checked wrappers are sufficient for the
-enforcement boundary.
+and proves that the policy-checked wrappers are sufficient for the enforcement
+boundary.
 
-**Canonical classification (17 operations):**
+**Canonical classification (20 operations — U5-B/C updated):**
 
 | Category | Operations |
 |---|---|
-| **Policy-gated** (3) | `endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked` |
-| **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `cspaceCopy`, `cspaceMove`, `notificationSignal` |
+| **Policy-gated** (9) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked` |
+| **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
 | **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
-| **Internal/lifecycle** (3) | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
 
 Policy-gated operations cross domain boundaries and carry explicit information-flow
 risk. Capability-only operations derive authority entirely from capability
@@ -175,22 +174,33 @@ inductive EnforcementClass where
   | readOnly (name : String)
   deriving Repr
 
-/-- WS-E5/M-07/Q1-D: Canonical enforcement boundary classification table (17 entries). -/
+/-- WS-E5/M-07/Q1-D/U5-B/U5-C: Canonical enforcement boundary classification
+table (20 entries). U5-B/C added `endpointCallChecked` and `endpointReplyChecked`.
+Operations with both policy-gated and capability-only variants are classified under
+their policy-gated variant here (the checked dispatch path uses the policy-gated
+variant; the unchecked dispatch path uses the capability-only variant). -/
 def enforcementBoundary : List EnforcementClass :=
-  [ .policyGated "endpointSendDualChecked"
+  [ -- Policy-gated: cross-domain operations checked via securityFlowsTo
+    .policyGated "endpointSendDualChecked"
+  , .policyGated "endpointReceiveDualChecked"
+  , .policyGated "endpointCallChecked"       -- U5-B: previously inline check
+  , .policyGated "endpointReplyChecked"      -- U5-C: defense-in-depth
   , .policyGated "cspaceMintChecked"
+  , .policyGated "cspaceCopyChecked"
+  , .policyGated "cspaceMoveChecked"
+  , .policyGated "notificationSignalChecked"
   , .policyGated "registerServiceChecked"
+  -- Capability-only: authority derived from capability possession
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
   , .capabilityOnly "cspaceDeleteSlot"
   , .capabilityOnly "cspaceRevoke"
-  , .capabilityOnly "cspaceCopy"
-  , .capabilityOnly "cspaceMove"
-  , .capabilityOnly "notificationSignal"
+  -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
   , .readOnly "lookupService"
   , .readOnly "cspaceResolvePath"
+  -- Internal/lifecycle: building blocks used under capability-guarded contexts
   , .capabilityOnly "lifecycleRetypeObject"
   , .capabilityOnly "lifecycleRevokeDeleteRetype"
   , .capabilityOnly "storeObject"

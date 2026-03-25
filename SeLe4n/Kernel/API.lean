@@ -571,6 +571,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
+  -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
+  -- semantics where badge 0 indicates an unbadged capability.
   | .cspaceMint =>
     match cap.target with
     | .object cnodeId =>

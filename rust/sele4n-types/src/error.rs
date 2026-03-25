@@ -56,6 +56,10 @@ pub enum KernelError {
     ObjectStoreCapacityExceeded = 36,
     /// T1-F/H-4: Allocation base not page-aligned for VSpace-bound objects
     AllocationMisaligned = 37,
+    /// U-H03: Delete attempted on slot with CDT children (must revoke first)
+    RevocationRequired = 38,
+    /// U5-E/U-M07: Syscall argument decode failed (e.g., invalid permission bits)
+    InvalidArgument = 39,
 }
 
 impl KernelError {
@@ -100,6 +104,8 @@ impl KernelError {
             35 => Some(Self::InvalidCapPtr),
             36 => Some(Self::ObjectStoreCapacityExceeded),
             37 => Some(Self::AllocationMisaligned),
+            38 => Some(Self::RevocationRequired),
+            39 => Some(Self::InvalidArgument),
             _ => None,
         }
     }
@@ -147,6 +153,8 @@ impl std::fmt::Display for KernelError {
             Self::InvalidCapPtr => write!(f, "invalid capability pointer"),
             Self::ObjectStoreCapacityExceeded => write!(f, "object store capacity exceeded"),
             Self::AllocationMisaligned => write!(f, "allocation misaligned"),
+            Self::RevocationRequired => write!(f, "revocation required"),
+            Self::InvalidArgument => write!(f, "invalid argument"),
         }
     }
 }
@@ -160,8 +168,8 @@ mod tests {
 
     #[test]
     fn from_u32_roundtrip() {
-        // T1-H: All 38 variants (0-37) must roundtrip
-        for i in 0..=37u32 {
+        // T1-H: All 40 variants (0-39) must roundtrip
+        for i in 0..=39u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -169,8 +177,8 @@ mod tests {
 
     #[test]
     fn from_u32_out_of_range() {
-        // T1-G: Discriminants >= 38 must return None (unknown error)
-        assert!(KernelError::from_u32(38).is_none());
+        // T1-G: Discriminants >= 40 must return None (unknown error)
+        assert!(KernelError::from_u32(40).is_none());
         assert!(KernelError::from_u32(255).is_none());
         assert!(KernelError::from_u32(u32::MAX).is_none());
     }
@@ -182,6 +190,8 @@ mod tests {
         assert_eq!(KernelError::InvalidCapPtr as u32, 35);
         assert_eq!(KernelError::ObjectStoreCapacityExceeded as u32, 36);
         assert_eq!(KernelError::AllocationMisaligned as u32, 37);
+        assert_eq!(KernelError::RevocationRequired as u32, 38);
+        assert_eq!(KernelError::InvalidArgument as u32, 39);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
@@ -192,8 +202,8 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // Verify total variant count matches Lean (38 variants, 0-37)
-        let max_valid = 37u32;
+        // Verify total variant count matches Lean (40 variants, 0-39)
+        let max_valid = 39u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
@@ -201,11 +211,11 @@ mod tests {
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — all 38 variants are sequential from 0
+    /// T1-H: Discriminant ordering — all 40 variants are sequential from 0
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=37u32 {
+        for i in 0..=39u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
