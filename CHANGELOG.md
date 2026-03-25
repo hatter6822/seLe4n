@@ -1,3 +1,33 @@
+## [0.21.7] — WS-U Phase U8: Documentation & Closure (WS-U PORTFOLIO COMPLETE)
+
+- U8-A (U-L16): Eliminated `simSubstantiveMemoryMap` duplication — made
+  `simMachineConfig.memoryMap` reference the shared definition directly from
+  `RuntimeContract.lean`. Added compile-time consistency theorem
+  `simSubstantiveMemoryMap_eq_machineConfig` in `Contract.lean`.
+- U8-B (U-L18, U-L19): Documented IRQ/INTID range limitations in
+  `RPi5/BootContract.lean` (SGIs are IPI-only, not hardware interrupts) and
+  `RPi5/Board.lean` (GIC-400 SPI cap at INTID 223, BCM2712 extended
+  peripherals beyond 223 not covered).
+- U8-C (U-L24): Documented notification word overflow in
+  `IPC/Operations/Endpoint.lean` — model uses unbounded Lean Nat for
+  notification badge merge, WS-V hardware binding must enforce 64-bit
+  word width at platform boundary.
+- U8-D (U-L26): Documented scheduler design decisions in `RunQueue.lean`
+  (`recomputeMaxPriority` O(p) complexity for ≤256 priorities) and
+  `Operations/Core.lean` (starvation freedom not guaranteed — matches seL4
+  fixed-priority preemptive design).
+- U8-E (U-M35): Documented hash collision assumption in
+  `RobinHood/Invariant/Lookup.lean` — proofs assume `LawfulBEq` and
+  deterministic `Hashable`, collision resistance not formally modeled
+  (kernel uses typed system-assigned IDs, not adversary-controlled keys).
+- U8-F: Synchronized all documentation to v0.21.7 — README badges and
+  metrics, SELE4N_SPEC, DEVELOPMENT, WORKSTREAM_HISTORY, CLAIM_EVIDENCE_INDEX,
+  GitBook chapters, i18n READMEs, CLAUDE.md, codebase_map.json, CHANGELOG.
+- U8-G: Comprehensive validation — `test_full.sh` and `test_nightly.sh` pass.
+- U8-H: WS-U closure report documenting all 97 sub-tasks across 8 phases
+  (U1–U8), 12 erroneous findings identified, and items deferred to WS-V.
+- **WS-U PORTFOLIO COMPLETE**: All 8 phases (U1–U8), 97+ sub-tasks delivered.
+
 ## [0.21.6] — WS-U Phase U7: Dead Code & Proof Hygiene
 
 - U7-A: Deleted dead `KMap.lean` module (219 lines, never imported).

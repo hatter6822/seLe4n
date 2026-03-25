@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.21.6` |
+| Version | `0.21.7` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 64,824 across 101 Lean files |
-| Test LoC | 8,322 across 10 suites |
-| Proved declarations | 1,922 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 64,229 across 100 Lean files |
+| Test LoC | 8,316 across 10 suites |
+| Proved declarations | 1,878 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-U Phase U7 COMPLETE** — Dead Code & Proof Hygiene (v0.21.6). Prior: **WS-U U6 COMPLETE** (v0.21.5), **WS-U U5 COMPLETE** (v0.21.4), **WS-U U4 COMPLETE** (v0.21.3), **WS-U U3 COMPLETE** (v0.21.2), **WS-U U2 COMPLETE** (v0.21.1), **WS-U U1 COMPLETE** (v0.21.0), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
+| Active workstream | **WS-U Phase U8 COMPLETE** (v0.21.7). Prior: **WS-U U7 COMPLETE** (v0.21.6), **WS-U U6 COMPLETE** (v0.21.5), **WS-U U5 COMPLETE** (v0.21.4), **WS-U U4 COMPLETE** (v0.21.3), **WS-U U3 COMPLETE** (v0.21.2), **WS-U U2 COMPLETE** (v0.21.1), **WS-U U1 COMPLETE** (v0.21.0), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -75,6 +75,10 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-Q4 (CNode radix tree, v0.17.10) — COMPLETED.** →
 **WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
 **WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
+
+## Completed: WS-U Phase U8 (v0.21.7)
+
+(Details pending.)
 
 ## Completed: WS-U Phase U7 Dead Code & Proof Hygiene (v0.21.6)
 

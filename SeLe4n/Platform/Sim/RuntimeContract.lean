@@ -51,10 +51,15 @@ def simRuntimeContractRestrictive : RuntimeBoundaryContract :=
   }
 
 /-- S5-D: Simulation memory map — single 256 MiB RAM region at physical address 0.
-    Defined locally so the substantive runtime contract can reference it using the
-    same `memoryMap.any` pattern as RPi5. Must be kept in sync with
-    `simMachineConfig.memoryMap` in `Platform/Sim/Contract.lean`. -/
-private def simSubstantiveMemoryMap : List SeLe4n.MemoryRegion :=
+    Used by the substantive runtime contract (below) and referenced by
+    `simMachineConfig.memoryMap` in `Platform/Sim/Contract.lean` via
+    the compile-time consistency theorem `simSubstantiveMemoryMap_eq_machineConfig`.
+
+    U8-A/U-L16: This definition is the single source of truth for the
+    simulation memory map. `simMachineConfig` in `Contract.lean` must use
+    this exact value. The consistency theorem in `Contract.lean` enforces
+    this at compile time. -/
+def simSubstantiveMemoryMap : List SeLe4n.MemoryRegion :=
   [ { base := SeLe4n.PAddr.ofNat 0
       size := 256 * 1024 * 1024  -- 256 MiB
       kind := .ram } ]

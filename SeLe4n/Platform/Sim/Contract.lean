@@ -37,7 +37,9 @@ namespace SeLe4n.Platform.Sim
 structure SimPlatform where
   deriving Repr
 
-/-- Simulation machine configuration: idealized 64-bit ARM64 parameters. -/
+/-- Simulation machine configuration: idealized 64-bit ARM64 parameters.
+    U8-A/U-L16: Memory map uses the shared `simSubstantiveMemoryMap` definition
+    from `RuntimeContract.lean` to eliminate duplication. -/
 def simMachineConfig : SeLe4n.MachineConfig :=
   {
     registerWidth := 64
@@ -45,11 +47,7 @@ def simMachineConfig : SeLe4n.MachineConfig :=
     physicalAddressWidth := 52
     pageSize := 4096
     maxASID := 65536
-    memoryMap := [
-      { base := SeLe4n.PAddr.ofNat 0
-        size := 256 * 1024 * 1024  -- 256 MiB
-        kind := .ram }
-    ]
+    memoryMap := simSubstantiveMemoryMap
   }
 
 /-- The simulation platform binding instance. -/
@@ -81,5 +79,13 @@ instance simRestrictivePlatformBinding :
   runtimeContract := simRuntimeContractSubstantive
   bootContract := simBootContract
   interruptContract := simInterruptContract
+
+/-- U8-A/U-L16: Compile-time consistency theorem proving that the
+    `simSubstantiveMemoryMap` used in `RuntimeContract.lean` is identical to
+    `simMachineConfig.memoryMap`. This eliminates the risk of the two memory
+    map definitions drifting out of sync — any change to either side will
+    cause this proof to fail at build time. -/
+theorem simSubstantiveMemoryMap_eq_machineConfig :
+    simSubstantiveMemoryMap = simMachineConfig.memoryMap := by rfl
 
 end SeLe4n.Platform.Sim

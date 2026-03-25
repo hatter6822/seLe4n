@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.21.6.
+Lean 4.28.0 toolchain, Lake build system, version 0.21.7.
 
 ## Build and run
 
@@ -443,6 +443,7 @@ under `docs/` and `docs/gitbook/`.
 - **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audits**: `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` and `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`
+- **WS-U Phase U8 COMPLETE**: Documentation & Closure — 8 sub-tasks (U8-A through U8-H), all complete (v0.21.7). **WS-U PORTFOLIO COMPLETE.** See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U7 COMPLETE**: Dead Code & Proof Hygiene — 12 sub-tasks (U7-A through U7-L), all complete (v0.21.6). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U6 COMPLETE**: Architecture & Platform Fidelity — 12 sub-tasks (U6-A through U6-L), all complete (v0.21.5). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U5 COMPLETE**: API & Dispatch Integrity — 14 sub-tasks (U5-A through U5-N), all complete (v0.21.4). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
@@ -451,7 +452,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-U Phase U2 COMPLETE**: Safety Boundary Hardening — 14 sub-tasks (U2-A through U2-N), all complete (v0.21.1). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U1 COMPLETE**: Correctness Fixes — 13 sub-tasks (U1-A through U1-M), all complete (v0.21.0). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-T PORTFOLIO COMPLETE**: Deep-Dive Audit Remediation — 8 phases (T1–T8, 94 sub-tasks), all complete (v0.20.0–v0.20.7). See `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`
-- **All prior workstreams completed**: WS-B through WS-U Phase U6 (see `docs/WORKSTREAM_HISTORY.md`)
+- **All prior workstreams completed**: WS-B through WS-U Phase U7 (see `docs/WORKSTREAM_HISTORY.md`)
 - **Next milestone**: Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 

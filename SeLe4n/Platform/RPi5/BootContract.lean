@@ -69,6 +69,16 @@ theorem rpi5BootContract_capabilityRef_holds : rpi5BootContract.capabilityRefMet
     SGIs (software-generated interrupts) are included because the GIC-400
     distributes them like any other interrupt.
 
+    **U8-B/U-L18: IRQ range limitations:**
+    - SGIs (INTIDs 0–15) are software-generated inter-processor interrupts
+      used for IPI signalling. They are NOT wired to hardware peripherals.
+      The kernel should not register device drivers for SGI INTIDs.
+    - The GIC-400 on BCM2712 supports up to 192 SPIs (INTIDs 32–223).
+      BCM2712 extended peripherals routed through INTIDs ≥ 224 (if any
+      exist on future board revisions) are NOT covered by this contract.
+      WS-V (hardware binding) must extend `gicSpiCount` if BCM2712
+      documentation reveals SPIs beyond INTID 223.
+
     **Handler mapping:** For supported IRQ lines, the handler must be
     registered in the kernel's IRQ handler table (`st.irqHandlers`).
     Unsupported IRQ lines (INTID ≥ 224) have no mapping requirement.

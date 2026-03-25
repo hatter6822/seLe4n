@@ -17,9 +17,40 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U7) are complete.
+through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
-### WS-U workstream (v0.20.7 Audit Remediation) — Phase U7 COMPLETE
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U8 COMPLETE (PORTFOLIO COMPLETE)
+
+WS-U Phase U8 is the final documentation and closure phase. 8 sub-tasks
+(U8-A through U8-H): eliminates `simSubstantiveMemoryMap` duplication with
+compile-time consistency theorem, documents IRQ/INTID range limitations,
+notification word overflow, scheduler starvation design, hash collision
+assumptions, synchronizes all documentation to v0.21.7, runs comprehensive
+validation, and writes the WS-U closure report. Version v0.21.7. Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U8-A (U-L16)**: Eliminated `simSubstantiveMemoryMap` duplication — made
+  `simMachineConfig.memoryMap` reference the shared definition directly,
+  added compile-time consistency theorem in `Contract.lean`.
+- **U8-B (U-L18, U-L19)**: Documented IRQ/INTID range limitations (SGI IPI
+  usage, GIC-400 SPI cap at 223) in `RPi5/BootContract.lean` and `RPi5/Board.lean`.
+- **U8-C (U-L24)**: Documented notification word overflow — model uses
+  unbounded Nat, WS-V must enforce 64-bit width at platform boundary.
+- **U8-D (U-L26)**: Documented scheduler design decisions — `recomputeMaxPriority`
+  O(p) complexity acceptable for ≤256 priorities, starvation freedom not
+  guaranteed (matches seL4 fixed-priority design).
+- **U8-E (U-M35)**: Documented hash collision assumption — Robin Hood proofs
+  assume `LawfulBEq` and deterministic `Hashable`, collision resistance not
+  modeled (kernel uses typed system-assigned IDs, not adversary-controlled keys).
+- **U8-F**: Synchronized all documentation: README, SELE4N_SPEC, DEVELOPMENT,
+  WORKSTREAM_HISTORY, CLAIM_EVIDENCE_INDEX, GitBook chapters, codebase_map.json.
+  Updated version badge to v0.21.7.
+- **U8-G**: Comprehensive validation — `test_full.sh` and `test_nightly.sh` pass.
+- **U8-H**: WS-U closure report written.
+
+Zero sorry, zero axiom.
+
+#### WS-U Phase U7 — COMPLETE (v0.21.6)
 
 WS-U Phase U7 removes dead code, superseded invariant bundles, trivial
 tautology theorems, fixes BEq symmetry, migrates native_decide to decide,

@@ -99,7 +99,15 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
 -- GIC-400 IRQ constants
 -- ============================================================================
 
-/-- Number of shared peripheral interrupts (SPIs) on BCM2712 GIC-400. -/
+/-- Number of shared peripheral interrupts (SPIs) on BCM2712 GIC-400.
+
+    U8-B/U-L19: The GIC-400 specification supports up to 480 SPIs
+    (INTIDs 32–511), but the BCM2712 SoC only wires 192 SPIs
+    (INTIDs 32–223). If future BCM2712 errata or board revisions expose
+    additional SPIs, this constant and the interrupt contract's
+    `irqLineSupported` predicate must be updated together. The current
+    cap of 192 matches publicly available BCM2712 documentation and
+    Raspberry Pi Ltd kernel device trees. -/
 def gicSpiCount : Nat := 192
 
 /-- ARM Generic Timer PPI (Private Peripheral Interrupt) ID.

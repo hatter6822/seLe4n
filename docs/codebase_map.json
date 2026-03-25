@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-u7-workstream-DJDVD",
-      "commit_sha": "312ec9512be54da138d33bfcd520acdb1508e287",
-      "tree_sha": "2a4654d8c94a9b2ebd952ae6b25658fd254c605d",
-      "committed_at_utc": "2026-03-25T17:20:54+00:00"
+      "branch": "claude/optimize-phase-u8-docs-ZN3EK",
+      "commit_sha": "ad9c3b51c4646ee11c969aa1d2c8b0d362490536",
+      "tree_sha": "7deceb6f44bac537f54d559aa48ef0af6c95c2a1",
+      "committed_at_utc": "2026-03-25T13:49:28-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5fdaf8b317daf39aa1960cf6ed6b25bcc0ccc5ace4a5fe9c75e74b6d5b4a0a09"
+    "source_digest": "3f5b1ebfc3133222e5c6eed6a03da3bb23c2142927be89a143861bd3a35f7b7e"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3420
+    "declaration_count": 3421
   },
   "readme_sync": {
-    "version": "0.21.6",
+    "version": "0.21.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 64157,
+    "production_loc": 64229,
     "test_files": 10,
     "test_loc": 8316,
-    "proved_theorem_lemma_decls": 1877,
+    "proved_theorem_lemma_decls": 1878,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14642,7 +14642,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 215,
+          "line": 223,
           "called": [
             "Badge",
             "Kernel",
@@ -14661,7 +14661,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 259,
+          "line": 267,
           "called": [
             "ObjId",
             "SystemState",
@@ -14679,7 +14679,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 284,
+          "line": 292,
           "called": [
             "Notification",
             "ObjId",
@@ -14697,7 +14697,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 304,
+          "line": 312,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14707,7 +14707,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 311,
+          "line": 319,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14717,7 +14717,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 321,
+          "line": 329,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14733,7 +14733,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 342,
+          "line": 350,
           "called": [
             "Endpoint",
             "ObjId",
@@ -14751,7 +14751,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 362,
+          "line": 370,
           "called": [
             "CNode",
             "ObjId",
@@ -14770,7 +14770,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 382,
+          "line": 390,
           "called": [
             "ObjId",
             "SystemState",
@@ -14788,7 +14788,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 403,
+          "line": 411,
           "called": [
             "CNode",
             "ObjId",
@@ -14808,7 +14808,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 430,
+          "line": 438,
           "called": [
             "Endpoint",
             "ObjId",
@@ -14828,7 +14828,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 457,
+          "line": 465,
           "called": [
             "Notification",
             "ObjId",
@@ -14848,7 +14848,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 486,
+          "line": 494,
           "called": [
             "Notification",
             "ObjId",
@@ -14863,7 +14863,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 502,
+          "line": 510,
           "called": [
             "Badge",
             "Notification",
@@ -14886,7 +14886,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 572,
+          "line": 580,
           "called": [
             "Notification",
             "ObjId",
@@ -23742,7 +23742,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_eq",
-          "line": 856,
+          "line": 868,
           "called": [
             "RHTable",
             "RHTable.get",
@@ -23760,7 +23760,7 @@
         {
           "kind": "theorem",
           "name": "insertLoop_absent_ne_key",
-          "line": 889,
+          "line": 901,
           "called": [
             "RHEntry",
             "capacity",
@@ -23774,7 +23774,7 @@
         {
           "kind": "theorem",
           "name": "getLoop_some_implies_entry",
-          "line": 952,
+          "line": 964,
           "called": [
             "RHEntry",
             "capacity",
@@ -23785,7 +23785,7 @@
         {
           "kind": "theorem",
           "name": "resize_preserves_key_absence",
-          "line": 979,
+          "line": 991,
           "called": [
             "RHEntry",
             "RHTable",
@@ -23803,7 +23803,7 @@
         {
           "kind": "theorem",
           "name": "insertLoop_output_source",
-          "line": 1011,
+          "line": 1023,
           "called": [
             "RHEntry",
             "capacity",
@@ -23817,7 +23817,7 @@
         {
           "kind": "theorem",
           "name": "get_none_implies_absent",
-          "line": 1071,
+          "line": 1083,
           "called": [
             "RHEntry",
             "RHTable",
@@ -23834,7 +23834,7 @@
         {
           "kind": "theorem",
           "name": "insertNoResize_absent_ne_key",
-          "line": 1097,
+          "line": 1109,
           "called": [
             "RHEntry",
             "RHTable",
@@ -23848,7 +23848,7 @@
         {
           "kind": "theorem",
           "name": "insert_absent_ne_key",
-          "line": 1110,
+          "line": 1122,
           "called": [
             "RHEntry",
             "RHTable",
@@ -23863,7 +23863,7 @@
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_ne_entry_new",
-          "line": 1126,
+          "line": 1138,
           "called": [
             "RHEntry",
             "capacity",
@@ -23887,7 +23887,7 @@
         {
           "kind": "theorem",
           "name": "resize_preserves_entry",
-          "line": 1446,
+          "line": 1458,
           "called": [
             "RHEntry",
             "RHTable",
@@ -23916,7 +23916,7 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_ne_entry",
-          "line": 1537,
+          "line": 1549,
           "called": [
             "RHEntry",
             "RHTable",
@@ -23943,7 +23943,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.get_after_insert_ne",
-          "line": 1651,
+          "line": 1663,
           "called": [
             "RHTable",
             "RHTable.get",
@@ -23966,7 +23966,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.get_after_erase_eq",
-          "line": 1696,
+          "line": 1708,
           "called": [
             "RHTable",
             "RHTable.get",
@@ -23981,7 +23981,7 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_output_has_input_key_value",
-          "line": 1706,
+          "line": 1718,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -23995,7 +23995,7 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_entry_presence",
-          "line": 1761,
+          "line": 1773,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -24010,7 +24010,7 @@
         {
           "kind": "theorem",
           "name": "erase_preserves_ne_entry",
-          "line": 1877,
+          "line": 1889,
           "called": [
             "RHEntry",
             "RHTable",
@@ -24032,7 +24032,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.get_after_erase_ne",
-          "line": 1939,
+          "line": 1951,
           "called": [
             "RHEntry",
             "RHTable",
@@ -24060,7 +24060,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.get_none_no_matching_entry",
-          "line": 2024,
+          "line": 2036,
           "called": [
             "RHEntry",
             "RHTable",
@@ -24074,7 +24074,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.get_some_slot_entry",
-          "line": 2031,
+          "line": 2043,
           "called": [
             "RHEntry",
             "RHTable",
@@ -24088,7 +24088,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_get_eq",
-          "line": 2040,
+          "line": 2052,
           "called": [
             "RHEntry",
             "RHTable",
@@ -24112,7 +24112,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_get_ne",
-          "line": 2086,
+          "line": 2098,
           "called": [
             "RHEntry",
             "RHTable",
@@ -25755,7 +25755,7 @@
         {
           "kind": "def",
           "name": "schedule",
-          "line": 258,
+          "line": 265,
           "called": [
             "Kernel",
             "chooseThread",
@@ -25770,7 +25770,7 @@
         {
           "kind": "def",
           "name": "handleYield",
-          "line": 294,
+          "line": 301,
           "called": [
             "Kernel",
             "insert",
@@ -25783,13 +25783,13 @@
         {
           "kind": "def",
           "name": "defaultTimeSlice",
-          "line": 314,
+          "line": 321,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerTick",
-          "line": 332,
+          "line": 339,
           "called": [
             "Kernel",
             "defaultTimeSlice",
@@ -25803,7 +25803,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 363,
+          "line": 370,
           "called": [
             "Kernel",
             "ThreadId",
@@ -25813,7 +25813,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 380,
+          "line": 387,
           "called": [
             "Kernel",
             "insert",
@@ -25826,7 +25826,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 412,
+          "line": 419,
           "called": [
             "SystemState",
             "invExt",
@@ -25837,7 +25837,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 428,
+          "line": 435,
           "called": [
             "Kernel",
             "schedule",
@@ -27492,7 +27492,7 @@
         {
           "kind": "def",
           "name": "recomputeMaxPriority",
-          "line": 95,
+          "line": 111,
           "called": [
             "Priority",
             "RHTable",
@@ -27505,7 +27505,7 @@
         {
           "kind": "def",
           "name": "insert",
-          "line": 103,
+          "line": 119,
           "called": [
             "Priority",
             "RHSet.contains_insert_ne",
@@ -27529,7 +27529,7 @@
         {
           "kind": "def",
           "name": "remove",
-          "line": 176,
+          "line": 192,
           "called": [
             "RHSet.contains_erase_ne",
             "RHSet.contains_erase_self",
@@ -27560,7 +27560,7 @@
         {
           "kind": "def",
           "name": "rotateToBack",
-          "line": 294,
+          "line": 310,
           "called": [
             "RHTable.insert",
             "RHTable.insertNoResize_capacity",
@@ -27578,7 +27578,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 325,
+          "line": 341,
           "called": [
             "RunQueue",
             "ThreadId"
@@ -27587,7 +27587,7 @@
         {
           "kind": "def",
           "name": "atPriority",
-          "line": 326,
+          "line": 342,
           "called": [
             "Priority",
             "RunQueue",
@@ -27597,7 +27597,7 @@
         {
           "kind": "def",
           "name": "maxPriorityBucket",
-          "line": 330,
+          "line": 346,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27608,7 +27608,7 @@
         {
           "kind": "def",
           "name": "ofList",
-          "line": 335,
+          "line": 351,
           "called": [
             "Priority",
             "RunQueue",
@@ -27620,7 +27620,7 @@
         {
           "kind": "theorem",
           "name": "mem_iff_contains",
-          "line": 340,
+          "line": 356,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27630,7 +27630,7 @@
         {
           "kind": "theorem",
           "name": "contains_false_of_not_mem",
-          "line": 343,
+          "line": 359,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27640,7 +27640,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_empty",
-          "line": 347,
+          "line": 363,
           "called": [
             "RHSet",
             "RHSet.contains_empty",
@@ -27655,7 +27655,7 @@
         {
           "kind": "theorem",
           "name": "mem_insert",
-          "line": 356,
+          "line": 372,
           "called": [
             "Priority",
             "RHSet.contains_insert_ne",
@@ -27669,7 +27669,7 @@
         {
           "kind": "theorem",
           "name": "mem_remove",
-          "line": 380,
+          "line": 396,
           "called": [
             "RHSet.contains_erase_ne",
             "RHSet.contains_erase_self",
@@ -27682,7 +27682,7 @@
         {
           "kind": "theorem",
           "name": "mem_rotateToBack",
-          "line": 400,
+          "line": 416,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27693,7 +27693,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_self",
-          "line": 408,
+          "line": 424,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27704,7 +27704,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_toList_of_not_mem",
-          "line": 414,
+          "line": 430,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27715,7 +27715,7 @@
         {
           "kind": "theorem",
           "name": "membership_implies_flat",
-          "line": 422,
+          "line": 438,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27726,7 +27726,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_iff_mem",
-          "line": 428,
+          "line": 444,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27738,7 +27738,7 @@
         {
           "kind": "theorem",
           "name": "toList_empty",
-          "line": 436,
+          "line": 452,
           "called": [
             "RunQueue",
             "empty",
@@ -27748,7 +27748,7 @@
         {
           "kind": "theorem",
           "name": "toList_insert_not_mem",
-          "line": 438,
+          "line": 454,
           "called": [
             "Priority",
             "RunQueue",
@@ -27762,7 +27762,7 @@
         {
           "kind": "theorem",
           "name": "filter_filter_ne_of_false",
-          "line": 449,
+          "line": 465,
           "called": [
             "filter"
           ]
@@ -27770,7 +27770,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg",
-          "line": 462,
+          "line": 478,
           "called": [
             "Priority",
             "RunQueue",
@@ -27783,7 +27783,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg'",
-          "line": 471,
+          "line": 487,
           "called": [
             "Priority",
             "RunQueue",
@@ -27798,7 +27798,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_congr",
-          "line": 484,
+          "line": 500,
           "called": [
             "Priority",
             "RunQueue",
@@ -27815,7 +27815,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_remove_neg",
-          "line": 514,
+          "line": 530,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27828,7 +27828,7 @@
         {
           "kind": "theorem",
           "name": "toList_nodup_of_flat_nodup",
-          "line": 522,
+          "line": 538,
           "called": [
             "RunQueue"
           ]
@@ -27836,7 +27836,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_toList",
-          "line": 526,
+          "line": 542,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27847,7 +27847,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_rotateToBack_self",
-          "line": 535,
+          "line": 551,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27860,7 +27860,7 @@
         {
           "kind": "theorem",
           "name": "toList_rotateToBack_nodup",
-          "line": 543,
+          "line": 559,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27874,7 +27874,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_rotateToBack_ne",
-          "line": 561,
+          "line": 577,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27885,7 +27885,7 @@
         {
           "kind": "theorem",
           "name": "filter_erase_of_false",
-          "line": 577,
+          "line": 593,
           "called": [
             "erase",
             "filter"
@@ -27894,7 +27894,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_rotateToBack_neg",
-          "line": 592,
+          "line": 608,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27907,7 +27907,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 618,
+          "line": 634,
           "called": [
             "RunQueue",
             "contains"
@@ -27916,7 +27916,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_subset",
-          "line": 627,
+          "line": 643,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27929,7 +27929,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_threadPriority",
-          "line": 639,
+          "line": 655,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27941,7 +27941,7 @@
         {
           "kind": "theorem",
           "name": "mem_maxPriorityBucket_of_threadPriority",
-          "line": 651,
+          "line": 667,
           "called": [
             "Priority",
             "RunQueue",
@@ -27955,7 +27955,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_membership",
-          "line": 669,
+          "line": 685,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27965,7 +27965,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_threadPriority",
-          "line": 675,
+          "line": 691,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27975,7 +27975,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_maxPriority",
-          "line": 681,
+          "line": 697,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27985,7 +27985,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_contains",
-          "line": 687,
+          "line": 703,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -27997,7 +27997,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_mem_iff",
-          "line": 692,
+          "line": 708,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -28009,7 +28009,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_flat_subset",
-          "line": 697,
+          "line": 713,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -28019,7 +28019,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_flat_superset",
-          "line": 709,
+          "line": 725,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -28029,7 +28029,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_preserves_wellFormed",
-          "line": 721,
+          "line": 737,
           "called": [
             "Priority",
             "RHTable",
@@ -28045,7 +28045,7 @@
         {
           "kind": "theorem",
           "name": "insert_threadPriority",
-          "line": 787,
+          "line": 803,
           "called": [
             "Priority",
             "RunQueue",
@@ -28057,7 +28057,7 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_wellFormed",
-          "line": 797,
+          "line": 813,
           "called": [
             "Priority",
             "RHSet.contains_insert_ne",
@@ -28075,7 +28075,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_to_orig",
-          "line": 888,
+          "line": 904,
           "called": [
             "Priority",
             "RHTable_get",
@@ -28089,7 +28089,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_from_orig",
-          "line": 909,
+          "line": 925,
           "called": [
             "Priority",
             "RHTable_get",
@@ -28104,7 +28104,7 @@
         {
           "kind": "theorem",
           "name": "remove_tid_not_in_bucket",
-          "line": 943,
+          "line": 959,
           "called": [
             "Priority",
             "RHTable_get",
@@ -28119,7 +28119,7 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_wellFormed",
-          "line": 977,
+          "line": 993,
           "called": [
             "RHSet.contains_erase_ne",
             "RHSet.contains_erase_self",
@@ -28140,7 +28140,7 @@
         {
           "kind": "theorem",
           "name": "insert_maxPriority_consistency",
-          "line": 1028,
+          "line": 1044,
           "called": [
             "Kernel",
             "Priority",
@@ -37482,13 +37482,13 @@
         {
           "kind": "def",
           "name": "gicSpiCount",
-          "line": 103,
+          "line": 111,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerPpiId",
-          "line": 107,
+          "line": 115,
           "called": [
             "Irq"
           ]
@@ -37496,7 +37496,7 @@
         {
           "kind": "def",
           "name": "virtualTimerPpiId",
-          "line": 110,
+          "line": 118,
           "called": [
             "Irq"
           ]
@@ -37504,7 +37504,7 @@
         {
           "kind": "def",
           "name": "mmioRegions",
-          "line": 118,
+          "line": 126,
           "called": [
             "MemoryRegion",
             "gicCpuInterfaceBase",
@@ -37516,7 +37516,7 @@
         {
           "kind": "def",
           "name": "mmioRegionDisjointCheck",
-          "line": 127,
+          "line": 135,
           "called": [
             "all",
             "overlaps"
@@ -37525,7 +37525,7 @@
         {
           "kind": "theorem",
           "name": "mmioRegionDisjoint_holds",
-          "line": 133,
+          "line": 141,
           "called": [
             "mmioRegionDisjointCheck"
           ]
@@ -37533,7 +37533,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfig_wellFormed",
-          "line": 138,
+          "line": 146,
           "called": [
             "wellFormed"
           ]
@@ -37541,7 +37541,7 @@
         {
           "kind": "def",
           "name": "rpi5DeviceTree",
-          "line": 183,
+          "line": 191,
           "called": [
             "DeviceTree",
             "DeviceTree.fromBoardConstants",
@@ -37558,7 +37558,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeviceTree_valid",
-          "line": 199,
+          "line": 207,
           "called": [
             "validate"
           ]
@@ -37615,7 +37615,7 @@
         {
           "kind": "def",
           "name": "rpi5InterruptContract",
-          "line": 77,
+          "line": 87,
           "called": [
             "InterruptBoundaryContract",
             "gicSpiCount",
@@ -38169,7 +38169,7 @@
     {
       "module": "SeLe4n.Platform.Sim.Contract",
       "path": "SeLe4n/Platform/Sim/Contract.lean",
-      "declaration_count": 6,
+      "declaration_count": 7,
       "declarations": [
         {
           "kind": "namespace",
@@ -38186,17 +38186,16 @@
         {
           "kind": "def",
           "name": "simMachineConfig",
-          "line": 41,
+          "line": 43,
           "called": [
             "MachineConfig",
-            "ofNat",
-            "size"
+            "simSubstantiveMemoryMap"
           ]
         },
         {
           "kind": "instance",
           "name": "simPlatformBinding",
-          "line": 56,
+          "line": 54,
           "called": [
             "PlatformBinding",
             "SimPlatform",
@@ -38209,13 +38208,13 @@
         {
           "kind": "structure",
           "name": "SimRestrictivePlatform",
-          "line": 64,
+          "line": 62,
           "called": []
         },
         {
           "kind": "instance",
           "name": "simRestrictivePlatformBinding",
-          "line": 77,
+          "line": 75,
           "called": [
             "PlatformBinding",
             "SimRestrictivePlatform",
@@ -38223,6 +38222,14 @@
             "simInterruptContract",
             "simMachineConfig",
             "simRuntimeContractSubstantive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "simSubstantiveMemoryMap_eq_machineConfig",
+          "line": 88,
+          "called": [
+            "simSubstantiveMemoryMap"
           ]
         }
       ]
@@ -38373,7 +38380,7 @@
         {
           "kind": "def",
           "name": "simSubstantiveMemoryMap",
-          "line": 57,
+          "line": 62,
           "called": [
             "MemoryRegion",
             "ofNat",
@@ -38383,7 +38390,7 @@
         {
           "kind": "def",
           "name": "simRuntimeContractSubstantive",
-          "line": 77,
+          "line": 82,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
