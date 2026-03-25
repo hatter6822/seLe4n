@@ -149,11 +149,11 @@ This section formally classifies all kernel operations into enforcement categori
 and proves that the policy-checked wrappers are sufficient for the enforcement
 boundary.
 
-**Canonical classification (20 operations — U5-B/C updated):**
+**Canonical classification (22 operations — V2-B/C updated):**
 
 | Category | Operations |
 |---|---|
-| **Policy-gated** (9) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked` |
+| **Policy-gated** (11) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`, `notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C) |
 | **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
 | **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
 
@@ -174,11 +174,12 @@ inductive EnforcementClass where
   | readOnly (name : String)
   deriving Repr
 
-/-- WS-E5/M-07/Q1-D/U5-B/U5-C: Canonical enforcement boundary classification
-table (20 entries). U5-B/C added `endpointCallChecked` and `endpointReplyChecked`.
-Operations with both policy-gated and capability-only variants are classified under
-their policy-gated variant here (the checked dispatch path uses the policy-gated
-variant; the unchecked dispatch path uses the capability-only variant). -/
+/-- WS-E5/M-07/Q1-D/U5-B/U5-C/V2-B/C: Canonical enforcement boundary
+classification table (22 entries). V2-B/C added `notificationWaitChecked` and
+`endpointReplyRecvChecked`. Operations with both policy-gated and capability-only
+variants are classified under their policy-gated variant here (the checked dispatch
+path uses the policy-gated variant; the unchecked dispatch path uses the
+capability-only variant). -/
 def enforcementBoundary : List EnforcementClass :=
   [ -- Policy-gated: cross-domain operations checked via securityFlowsTo
     .policyGated "endpointSendDualChecked"
@@ -190,6 +191,8 @@ def enforcementBoundary : List EnforcementClass :=
   , .policyGated "cspaceMoveChecked"
   , .policyGated "notificationSignalChecked"
   , .policyGated "registerServiceChecked"
+  , .policyGated "notificationWaitChecked"        -- V2-A: notification wait IF check
+  , .policyGated "endpointReplyRecvChecked"       -- V2-C: compound reply+recv IF check
   -- Capability-only: authority derived from capability possession
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
@@ -491,7 +494,7 @@ def endpointReplyRecvChecked
   fun st =>
     let receiverLabel := ctx.threadLabelOf receiver
     let targetLabel := ctx.threadLabelOf replyTarget
-    let endpointLabel := ctx.objectLabelOf endpointId
+    let endpointLabel := ctx.endpointLabelOf endpointId
     -- Reply leg: receiver → replyTarget
     if securityFlowsTo receiverLabel targetLabel then
       -- Receive leg: endpoint → receiver

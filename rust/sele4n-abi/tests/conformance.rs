@@ -336,7 +336,7 @@ fn xval_015_notification_signal() {
         cap_addr: CPtr::from(500u64),
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
-        syscall_id: SyscallId::Send,
+        syscall_id: SyscallId::NotificationSignal,
     };
     let regs = encode_syscall(&req).unwrap();
     // Verify no payload: all msg_regs must be zero
@@ -346,7 +346,7 @@ fn xval_015_notification_signal() {
     assert_eq!(regs[3], 0, "x3=msg_regs[1] must be zero");
     assert_eq!(regs[4], 0, "x4=msg_regs[2] must be zero");
     assert_eq!(regs[5], 0, "x5=msg_regs[3] must be zero");
-    assert_eq!(regs[6], SyscallId::Send.to_u64(), "x7=SyscallId::Send");
+    assert_eq!(regs[6], SyscallId::NotificationSignal.to_u64(), "x7=SyscallId::NotificationSignal");
 }
 
 /// RUST-XVAL-016: Notification wait register layout.
@@ -360,11 +360,11 @@ fn xval_016_notification_wait() {
         cap_addr: CPtr::from(600u64),
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
-        syscall_id: SyscallId::Receive,
+        syscall_id: SyscallId::NotificationWait,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[0], 600, "x0=CPtr(notification)");
-    assert_eq!(regs[6], SyscallId::Receive.to_u64(), "x7=SyscallId::Receive");
+    assert_eq!(regs[6], SyscallId::NotificationWait.to_u64(), "x7=SyscallId::NotificationWait");
 
     // Simulate kernel response: badge=0xBEEF in x1
     let response_regs: [u64; 7] = [0, 0xBEEF, 0, 0, 0, 0, 0];
