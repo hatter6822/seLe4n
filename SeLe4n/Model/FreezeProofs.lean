@@ -959,10 +959,6 @@ theorem lookup_freeze_cnode_slots_none (cn : CNode) (slot : SeLe4n.Slot)
 Five structural properties establishing that the freeze operation preserves
 key structural invariants beyond just lookup semantics. -/
 
-/-- Q6-C1: `freeze` is deterministic — same input yields same output. -/
-theorem freeze_deterministic' (ist : IntermediateState) :
-    freeze ist = freeze ist := rfl
-
 /-- Q6-C2: `freezeMap` preserves entry count. The number of data entries
 in the frozen map equals the length of the source table's `toList`. -/
 theorem freezeMap_preserves_size [BEq κ] [Hashable κ]
@@ -1130,5 +1126,247 @@ theorem frozenDirect_preserved_by_set
   obtain ⟨sst, hSstInv, hSstLookup⟩ := hInv
   obtain ⟨sst', hSst'Inv, hSst'Lookup⟩ := hCompat sst hSstInv hSstLookup
   exact ⟨sst', hSst'Inv, hSst'Lookup⟩
+
+-- ============================================================================
+-- Builder–Frozen Commutativity Proofs
+-- ============================================================================
+
+/-! ### Builder–Frozen Operation Commutativity
+
+These theorems establish that builder-phase (RHTable) operations commute with
+`freeze`/`freezeMap` at the lookup level. The commutativity diagram is:
+
+```
+RHTable ──insert k v──> RHTable'
+   │                        │
+ freezeMap               freezeMap
+   ↓                        ↓
+FrozenMap ──set k v───> FrozenMap'
+```
+
+For value-only mutations (updating an existing key), the two paths yield
+lookup-equivalent frozen maps. Key-addition operations (lifecycle retype)
+are builder-only — they have no frozen counterpart.
+
+**Sub-tasks:**
+1. Store commutativity: builder insert then freeze ≡ freeze then frozen set
+2. Lookup commutativity: `(freezeMap t).get? k = t.get? k`
+3. Thread store/lookup commutativity: instantiation for objects table
+4. CDT update commutativity: instantiation for cdtChildMap/cdtParentMap
+5. Composition: sequential value updates commute with freeze
+-/
+
+-- ============================================================================
+-- Sub-task 2: Lookup Commutativity
+-- ============================================================================
+
+/-- Lookup commutativity: reading a key from a frozen map yields the same
+result as reading from the source RHTable. Direct alias of `freezeMap_get?_eq`
+with the conventional left-to-right direction for commutativity. -/
+theorem freezeMap_lookup_commutes [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k : κ) (hExt : rt.invExt) :
+    (freezeMap rt).get? k = rt.get? k :=
+  (freezeMap_get?_eq rt k hExt).symm
+
+-- ============================================================================
+-- Sub-task 1: Store Commutativity
+-- ============================================================================
+
+/-- Store commutativity at the target key: for an existing key `k` in `rt`,
+freezing after a builder insert returns `some v` at `k`, and so does a
+frozen set after freezing. Both paths agree at the updated key. -/
+theorem freezeMap_store_commutes_at_key [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k : κ) (v : ν) (hExt : rt.invExt)
+    (_hExists : rt.get? k ≠ none) :
+    (freezeMap (rt.insert k v)).get? k = some v := by
+  rw [← freezeMap_get?_eq (rt.insert k v) k (rt.insert_preserves_invExt k v hExt)]
+  exact RHTable.getElem?_insert_self rt k v hExt
+
+/-- Store commutativity for the frozen path at the target key: if `k` exists
+in the source table, then `FrozenMap.set k v` succeeds and the result maps
+`k` to `v`. -/
+theorem freezeMap_frozenSet_at_key [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k : κ) (v : ν) (hExt : rt.invExt)
+    (hExists : rt.get? k ≠ none) :
+    ∃ fm', (freezeMap rt).set k v = some fm' ∧ fm'.get? k = some v := by
+  obtain ⟨val, hVal⟩ := Option.ne_none_iff_exists'.mp hExists
+  have ⟨idx, hIdx, hBound⟩ := freezeMap_total_coverage rt k val hExt hVal
+  have hSetDef : (freezeMap rt).set k v = some
+      { data := (freezeMap rt).data.set idx v, indexMap := (freezeMap rt).indexMap } := by
+    unfold FrozenMap.set; rw [hIdx]; simp [hBound]
+  refine ⟨{ data := (freezeMap rt).data.set idx v, indexMap := (freezeMap rt).indexMap },
+          hSetDef, ?_⟩
+  show FrozenMap.get? _ k = some v
+  unfold FrozenMap.get?
+  simp only [hIdx]
+  have hBound' : idx < ((freezeMap rt).data.set idx v).size := by
+    rw [Array.size_set]; exact hBound
+  rw [dif_pos hBound']
+  congr 1
+  exact Array.getElem_set_self ..
+
+/-- Store commutativity at non-target keys: for `q ≠ k`, inserting `k`
+in the builder phase does not affect `q`'s lookup after freezing. -/
+theorem freezeMap_store_commutes_other_key [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k q : κ) (v : ν) (hExt : rt.invExt)
+    (hNe : ¬(k == q) = true) :
+    (freezeMap (rt.insert k v)).get? q = (freezeMap rt).get? q := by
+  rw [← freezeMap_get?_eq (rt.insert k v) q (rt.insert_preserves_invExt k v hExt),
+      RHTable.getElem?_insert_ne rt k q v hNe hExt,
+      freezeMap_get?_eq rt q hExt]
+
+/-- Store commutativity (combined): for an existing key `k`, both the builder
+path (insert then freeze) and the frozen path (freeze then set) agree on all
+lookups. At key `k` both return `some v`; at other keys both return the
+original frozen value. -/
+theorem freezeMap_store_commutes_all [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k q : κ) (v : ν) (hExt : rt.invExt)
+    (hExists : rt.get? k ≠ none) :
+    (freezeMap (rt.insert k v)).get? q =
+    if (q == k) = true then some v else (freezeMap rt).get? q := by
+  by_cases hQK : (q == k) = true
+  · have hQeq : q = k := eq_of_beq hQK
+    subst hQeq
+    simp
+    exact freezeMap_store_commutes_at_key rt q v hExt hExists
+  · simp [hQK]
+    exact freezeMap_store_commutes_other_key rt k q v hExt
+      (fun h => hQK (by rw [BEq.comm]; exact h))
+
+-- ============================================================================
+-- Sub-task 3: Thread Store/Lookup Commutativity
+-- ============================================================================
+
+/-- Thread lookup commutativity: looking up a thread (as an object) in the
+frozen system state yields the same result as looking up in the builder
+state and applying `freezeObject`. Instantiation of `lookup_freeze_objects`
+for thread-typed objects. -/
+theorem thread_lookup_commutes (ist : IntermediateState)
+    (tid : SeLe4n.ThreadId) :
+    (ist.state.objects.get? tid.toObjId).map freezeObject =
+    (freeze ist).objects.get? tid.toObjId :=
+  lookup_freeze_objects ist tid.toObjId
+
+/-- Thread store commutativity at target key: after a builder-phase insert
+of a TCB object at `tid`, freezing yields `some (freezeObject tcbObj)` at
+that thread's key. -/
+theorem thread_store_commutes_at_key (ist : IntermediateState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (_hExists : ist.state.objects.get? tid.toObjId ≠ none) :
+    (freezeMapWith ist.state.objects freezeObject |>.get? tid.toObjId) ≠ none →
+    (freezeMapWith (ist.state.objects.insert tid.toObjId (KernelObject.tcb tcb))
+      freezeObject).get? tid.toObjId =
+    some (FrozenKernelObject.tcb tcb) := by
+  intro _
+  rw [← freezeMapWith_get?_eq
+    (ist.state.objects.insert tid.toObjId (KernelObject.tcb tcb))
+    freezeObject tid.toObjId
+    (ist.state.objects.insert_preserves_invExt tid.toObjId _ ist.hAllTables.1)]
+  rw [RHTable.getElem?_insert_self ist.state.objects tid.toObjId _ ist.hAllTables.1]
+  simp [freezeObject]
+
+/-- Thread store preserves non-object fields: modifying the objects table
+(via `RHTable.insert`) does not affect the frozen irqHandlers, because
+`freeze` constructs irqHandlers solely from `st.irqHandlers`. If the
+pre- and post-update states share the same `irqHandlers`, the frozen
+lookups agree. -/
+theorem thread_store_preserves_irqHandlers_freeze
+    (ist₁ ist₂ : IntermediateState)
+    (hIrq : ist₁.state.irqHandlers = ist₂.state.irqHandlers)
+    (k : SeLe4n.Irq) :
+    (freeze ist₁).irqHandlers.get? k = (freeze ist₂).irqHandlers.get? k := by
+  show (freezeMap ist₁.state.irqHandlers).get? k =
+       (freezeMap ist₂.state.irqHandlers).get? k
+  rw [hIrq]
+
+-- ============================================================================
+-- Sub-task 4: CDT Update Commutativity
+-- ============================================================================
+
+/-- CDT childMap lookup commutativity: looking up a CDT node in the frozen
+childMap yields the same result as looking up in the builder-phase childMap.
+Direct instantiation of `freezeMap_get?_eq`. -/
+theorem cdt_childMap_lookup_commutes (ist : IntermediateState)
+    (nodeId : CdtNodeId) :
+    ist.state.cdt.childMap.get? nodeId =
+    (freeze ist).cdtChildMap.get? nodeId :=
+  lookup_freeze_cdtChildMap ist nodeId
+
+/-- CDT parentMap lookup commutativity: looking up a CDT node in the frozen
+parentMap yields the same result as looking up in the builder-phase parentMap.
+Direct instantiation of `freezeMap_get?_eq`. -/
+theorem cdt_parentMap_lookup_commutes (ist : IntermediateState)
+    (nodeId : CdtNodeId) :
+    ist.state.cdt.parentMap.get? nodeId =
+    (freeze ist).cdtParentMap.get? nodeId :=
+  lookup_freeze_cdtParentMap ist nodeId
+
+/-- CDT childMap store commutativity: inserting a children list at an existing
+node, then freezing, produces the same lookup at that node as `some children`.
+Uses the generic `freezeMap_store_commutes_at_key` machinery. -/
+theorem cdt_childMap_store_commutes_at_key
+    (childMap : RHTable CdtNodeId (List CdtNodeId))
+    (nodeId : CdtNodeId) (children : List CdtNodeId)
+    (hExt : childMap.invExt)
+    (hExists : childMap.get? nodeId ≠ none) :
+    (freezeMap (childMap.insert nodeId children)).get? nodeId =
+    some children :=
+  freezeMap_store_commutes_at_key childMap nodeId children hExt hExists
+
+/-- CDT parentMap store commutativity: inserting a parent at an existing node,
+then freezing, produces the same lookup at that node as `some parent`. -/
+theorem cdt_parentMap_store_commutes_at_key
+    (parentMap : RHTable CdtNodeId CdtNodeId)
+    (child parent : CdtNodeId)
+    (hExt : parentMap.invExt)
+    (hExists : parentMap.get? child ≠ none) :
+    (freezeMap (parentMap.insert child parent)).get? child =
+    some parent :=
+  freezeMap_store_commutes_at_key parentMap child parent hExt hExists
+
+-- ============================================================================
+-- Sub-task 5: Composition Theorem
+-- ============================================================================
+
+/-- Sequential value update composition: applying two builder-phase inserts
+at existing keys and then freezing yields the same lookups as freezing and
+applying two frozen sets. Stated at the lookup level for arbitrary query key.
+
+The proof reduces to two applications of `freezeMap_store_commutes_all`,
+using `insert_preserves_invExt` to thread the invariant through. -/
+theorem freezeMap_sequential_stores_commute [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k₁ k₂ : κ) (v₁ v₂ : ν) (q : κ)
+    (hExt : rt.invExt)
+    (hExists₁ : rt.get? k₁ ≠ none)
+    (hExists₂ : (rt.insert k₁ v₁).get? k₂ ≠ none) :
+    (freezeMap ((rt.insert k₁ v₁).insert k₂ v₂)).get? q =
+    if (q == k₂) = true then some v₂
+    else if (q == k₁) = true then some v₁
+    else (freezeMap rt).get? q := by
+  have hExt₁ := rt.insert_preserves_invExt k₁ v₁ hExt
+  rw [freezeMap_store_commutes_all (rt.insert k₁ v₁) k₂ q v₂ hExt₁ hExists₂]
+  split
+  · -- q == k₂: both sides are some v₂
+    rfl
+  · -- q ≠ k₂: reduce to single-insert commutativity
+    rw [freezeMap_store_commutes_all rt k₁ q v₁ hExt hExists₁]
+
+/-- General composition: any single builder-phase insert at an existing key
+commutes with freeze, and the `invExt` invariant is preserved. This enables
+inductive reasoning about arbitrary-length sequences of value updates:
+each step preserves `invExt` and commutes individually, so the composition
+commutes by transitivity via `freezeMap_store_commutes_all`.
+
+This theorem packages the key invariant threading: after an insert at an
+existing key, the resulting table still has `invExt`, enabling the next
+insert-then-freeze step. -/
+theorem freezeMap_insert_step [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k : κ) (v : ν) (hExt : rt.invExt)
+    (hExists : rt.get? k ≠ none) :
+    (rt.insert k v).invExt ∧
+    ∀ q, (freezeMap (rt.insert k v)).get? q =
+      if (q == k) = true then some v else (freezeMap rt).get? q :=
+  ⟨rt.insert_preserves_invExt k v hExt,
+   fun q => freezeMap_store_commutes_all rt k q v hExt hExists⟩
 
 end SeLe4n.Model

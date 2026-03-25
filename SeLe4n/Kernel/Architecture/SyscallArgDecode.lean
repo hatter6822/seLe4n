@@ -49,10 +49,6 @@ open SeLe4n.Model
   if h : idx < regs.size then .ok regs[idx]
   else .error .invalidMessageInfo
 
-/-- Determinism: `requireMsgReg` is pure. -/
-theorem requireMsgReg_deterministic (regs : Array RegValue) (idx : Nat) :
-    requireMsgReg regs idx = requireMsgReg regs idx := rfl
-
 /-- Error exclusivity: `requireMsgReg` fails iff the index is out of bounds. -/
 theorem requireMsgReg_error_iff (regs : Array RegValue) (idx : Nat) :
     requireMsgReg regs idx = .error .invalidMessageInfo ↔ ¬(idx < regs.size) := by
@@ -277,31 +273,6 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
     Inverse of `decodeVSpaceUnmapArgs`. -/
 @[inline] def encodeVSpaceUnmapArgs (args : VSpaceUnmapArgs) : Array RegValue :=
   #[⟨args.asid.toNat⟩, ⟨args.vaddr.toNat⟩]
-
--- ============================================================================
--- Determinism theorems
--- ============================================================================
-
-theorem decodeCSpaceMintArgs_deterministic (d : SyscallDecodeResult) :
-    decodeCSpaceMintArgs d = decodeCSpaceMintArgs d := rfl
-
-theorem decodeCSpaceCopyArgs_deterministic (d : SyscallDecodeResult) :
-    decodeCSpaceCopyArgs d = decodeCSpaceCopyArgs d := rfl
-
-theorem decodeCSpaceMoveArgs_deterministic (d : SyscallDecodeResult) :
-    decodeCSpaceMoveArgs d = decodeCSpaceMoveArgs d := rfl
-
-theorem decodeCSpaceDeleteArgs_deterministic (d : SyscallDecodeResult) :
-    decodeCSpaceDeleteArgs d = decodeCSpaceDeleteArgs d := rfl
-
-theorem decodeLifecycleRetypeArgs_deterministic (d : SyscallDecodeResult) :
-    decodeLifecycleRetypeArgs d = decodeLifecycleRetypeArgs d := rfl
-
-theorem decodeVSpaceMapArgs_deterministic (d : SyscallDecodeResult) :
-    decodeVSpaceMapArgs d = decodeVSpaceMapArgs d := rfl
-
-theorem decodeVSpaceUnmapArgs_deterministic (d : SyscallDecodeResult) :
-    decodeVSpaceUnmapArgs d = decodeVSpaceUnmapArgs d := rfl
 
 -- ============================================================================
 -- Error-exclusivity theorems
@@ -646,7 +617,7 @@ theorem decodeLifecycleRetypeArgs_roundtrip (args : LifecycleRetypeArgs) :
 private theorem pagePermissions_toNat_lt_32 (p : PagePermissions) :
     p.toNat < 32 := by
   rcases p with ⟨r, w, e, u, c⟩
-  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> native_decide
+  cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> decide
 
 private theorem pagePermissions_ofNat?_toNat (p : PagePermissions) :
     PagePermissions.ofNat? p.toNat = some (PagePermissions.ofNat p.toNat) := by
@@ -758,16 +729,6 @@ def decodeServiceRevokeArgs (decoded : SyscallDecodeResult)
     Inverse of `decodeServiceRevokeArgs`. -/
 @[inline] def encodeServiceRevokeArgs (args : ServiceRevokeArgs) : Array RegValue :=
   #[⟨args.targetService.toNat⟩]
-
--- ============================================================================
--- WS-Q1-D: Service determinism theorems
--- ============================================================================
-
-theorem decodeServiceRegisterArgs_deterministic (d : SyscallDecodeResult) :
-    decodeServiceRegisterArgs d = decodeServiceRegisterArgs d := rfl
-
-theorem decodeServiceRevokeArgs_deterministic (d : SyscallDecodeResult) :
-    decodeServiceRevokeArgs d = decodeServiceRevokeArgs d := rfl
 
 -- ============================================================================
 -- WS-Q1-D: Service error-exclusivity theorems
@@ -888,9 +849,5 @@ def decodeExtraCapAddrs (decoded : SyscallDecodeResult) :
   let count := min decoded.msgInfo.extraCaps maxExtraCaps
   (Array.range count).filterMap fun i =>
     decoded.msgRegs[startIdx + i]?.map fun rv => ⟨rv.val⟩
-
-/-- Determinism: `decodeExtraCapAddrs` is pure. -/
-theorem decodeExtraCapAddrs_deterministic (decoded : SyscallDecodeResult) :
-    decodeExtraCapAddrs decoded = decodeExtraCapAddrs decoded := rfl
 
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

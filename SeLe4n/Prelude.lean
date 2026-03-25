@@ -200,12 +200,6 @@ namespace Deadline
 instance : ToString Deadline where
   toString d := toString d.toNat
 
-/-- The default deadline (no deadline set). -/
-@[inline] def none : Deadline := ⟨0⟩
-
-/-- An immediate deadline (most urgent). -/
-@[inline] def immediate : Deadline := ⟨1⟩
-
 end Deadline
 
 /-- Interrupt request line identifier. -/
@@ -774,7 +768,7 @@ instance : LawfulBEq PAddr where
 
 -- ============================================================================
 -- WS-G2: HashSet bridge lemmas for algorithm-local proof ergonomics
--- (HashMap lemmas removed in Q2 — all state maps now use RHTable/KMap)
+-- (HashMap lemmas removed in Q2 — all state maps now use RHTable)
 -- ============================================================================
 
 /-- WS-G2: Bridge lemma for `HashSet.contains` on empty. -/

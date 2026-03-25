@@ -130,21 +130,6 @@ theorem frozenLookupObject_read_only
   frozenLookupObject_state_unchanged id st obj st' hOk
 
 -- ============================================================================
--- Q7-E: Frozen Operation Determinism
--- ============================================================================
-
-/-- Q7-E: `frozenLookupObject` is deterministic. -/
-theorem frozenLookupObject_deterministic
-    (id : SeLe4n.ObjId) (st : FrozenSystemState) :
-    frozenLookupObject id st = frozenLookupObject id st := rfl
-
-/-- Q7-E: `frozenStoreObject` is deterministic. -/
-theorem frozenStoreObject_deterministic
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st : FrozenSystemState) :
-    frozenStoreObject id obj st = frozenStoreObject id obj st := rfl
-
--- ============================================================================
 -- R1-E: Context Save/Restore Preservation Theorems
 -- ============================================================================
 

@@ -379,17 +379,6 @@ structure GenericLabelingContext where
   endpointDomainOf : SeLe4n.ObjId → SecurityDomain
   serviceDomainOf : ServiceId → SecurityDomain
 
-/-- WS-E5/H-04: Default generic labeling: everything in domain 0 (public),
-all flows allowed. -/
-def defaultGenericLabelingContext : GenericLabelingContext :=
-  {
-    policy := .allowAll
-    objectDomainOf := fun _ => SecurityDomain.lowest
-    threadDomainOf := fun _ => SecurityDomain.lowest
-    endpointDomainOf := fun _ => SecurityDomain.lowest
-    serviceDomainOf := fun _ => SecurityDomain.lowest
-  }
-
 /-- WS-E5/H-04: Check whether information may flow from a source entity's
 domain to a destination entity's domain under a generic labeling context. -/
 def genericFlowCheck (ctx : GenericLabelingContext)
@@ -497,36 +486,6 @@ def liftLegacyContext (ctx : LabelingContext) : GenericLabelingContext :=
   }
 
 -- ============================================================================
--- WS-E5/H-04: Example 3-domain configuration
--- ============================================================================
-
-/-- WS-E5/H-04: Example 3-domain lattice demonstrating ≥3 domain support.
-
-Domains: 0 = userland, 1 = driver, 2 = kernel.
-Flow: userland → driver → kernel (linear order). -/
-def threeDomainExample : DomainFlowPolicy := .linearOrder
-
-/-- The 3-domain example is well-formed (inherited from linearOrder). -/
-theorem threeDomainExample_wellFormed :
-    threeDomainExample.wellFormed :=
-  DomainFlowPolicy.linearOrder_wellFormed
-
-/-- Domain 0 (userland) can flow to domain 1 (driver). -/
-theorem threeDomain_userland_to_driver :
-    domainFlowsTo threeDomainExample ⟨0⟩ ⟨1⟩ = true := by
-  simp [domainFlowsTo, threeDomainExample, DomainFlowPolicy.linearOrder]
-
-/-- Domain 1 (driver) can flow to domain 2 (kernel). -/
-theorem threeDomain_driver_to_kernel :
-    domainFlowsTo threeDomainExample ⟨1⟩ ⟨2⟩ = true := by
-  simp [domainFlowsTo, threeDomainExample, DomainFlowPolicy.linearOrder]
-
-/-- Domain 2 (kernel) cannot flow to domain 0 (userland). -/
-theorem threeDomain_kernel_not_to_userland :
-    domainFlowsTo threeDomainExample ⟨2⟩ ⟨0⟩ = false := by
-  simp [domainFlowsTo, threeDomainExample, DomainFlowPolicy.linearOrder]
-
--- ============================================================================
 -- WS-H10/A-34: Security lattice resolution — integrity model documentation
 -- ============================================================================
 
@@ -548,80 +507,8 @@ system's access control without security benefit in the seLe4n threat model.
 
 The generic `DomainFlowPolicy` model (introduced in WS-E5/H-04) subsumes this
 design choice: configuring a `DomainFlowPolicy` with BIBA-standard integrity
-is straightforward (use `bibaPolicy` below). Production deployments should
-select the appropriate policy for their threat model.
-
-**Standard BIBA alternative:** `bibaIntegrityFlowsTo` and `bibaPolicy` below
-provide a standard BIBA integrity model for deployments requiring no-write-up. -/
-
-/-- WS-H10/A-34: Standard BIBA integrity flow — high-integrity data may flow
-to low-integrity destinations (read-down), but low-integrity data may NOT
-flow to high-integrity destinations (no write-up).
-
-Contrast with `integrityFlowsTo` which allows write-up. -/
-def bibaIntegrityFlowsTo : Integrity → Integrity → Bool
-  | .trusted, .trusted => true
-  | .trusted, .untrusted => true
-  | .untrusted, .untrusted => true
-  | .untrusted, .trusted => false
-
-/-- WS-H10/A-34: BLP+BIBA combined security flow check.
-Confidentiality: no read-up (standard BLP).
-Integrity: no write-up (standard BIBA). -/
-def bibaSecurityFlowsTo (src dst : SecurityLabel) : Bool :=
-  confidentialityFlowsTo src.confidentiality dst.confidentiality &&
-    bibaIntegrityFlowsTo src.integrity dst.integrity
-
-theorem bibaIntegrityFlowsTo_refl (i : Integrity) :
-    bibaIntegrityFlowsTo i i = true := by
-  cases i <;> rfl
-
-theorem bibaSecurityFlowsTo_refl (l : SecurityLabel) :
-    bibaSecurityFlowsTo l l = true := by
-  cases l with
-  | mk c i =>
-      simp [bibaSecurityFlowsTo, confidentialityFlowsTo_refl, bibaIntegrityFlowsTo_refl]
-
-theorem bibaIntegrityFlowsTo_trans
-    (a b c : Integrity)
-    (h₁ : bibaIntegrityFlowsTo a b = true)
-    (h₂ : bibaIntegrityFlowsTo b c = true) :
-    bibaIntegrityFlowsTo a c = true := by
-  cases a <;> cases b <;> cases c <;> simp [bibaIntegrityFlowsTo] at h₁ h₂ ⊢
-
-theorem bibaSecurityFlowsTo_trans
-    (a b c : SecurityLabel)
-    (h₁ : bibaSecurityFlowsTo a b = true)
-    (h₂ : bibaSecurityFlowsTo b c = true) :
-    bibaSecurityFlowsTo a c = true := by
-  cases a with
-  | mk ac ai =>
-      cases b with
-      | mk bc bi =>
-          cases c with
-          | mk cc ci =>
-              simp [bibaSecurityFlowsTo] at h₁ h₂ ⊢
-              exact And.intro
-                (confidentialityFlowsTo_trans ac bc cc h₁.left h₂.left)
-                (bibaIntegrityFlowsTo_trans ai bi ci h₁.right h₂.right)
-
-/-- WS-H10/A-34: BIBA-standard DomainFlowPolicy for the generic domain model.
-Uses a linear order where domain 0 is lowest-integrity/confidentiality and
-higher domains have strictly higher security. Unlike the legacy lattice,
-this policy enforces standard BIBA: no write-up for integrity. -/
-def bibaPolicy : DomainFlowPolicy :=
-  { canFlow := fun src dst => decide (src.id ≤ dst.id) }
-
-theorem bibaPolicy_reflexive : bibaPolicy.isReflexive := by
-  intro d; simp [bibaPolicy]
-
-theorem bibaPolicy_transitive : bibaPolicy.isTransitive := by
-  intro a b c h₁ h₂
-  simp [bibaPolicy] at h₁ h₂ ⊢
-  exact Nat.le_trans h₁ h₂
-
-theorem bibaPolicy_wellFormed : bibaPolicy.wellFormed :=
-  ⟨bibaPolicy_reflexive, bibaPolicy_transitive⟩
+is straightforward via a `linearOrder` policy. Production deployments should
+select the appropriate policy for their threat model. -/
 
 /-- WS-H10/A-34: The legacy lattice is a valid (non-standard) security lattice.
 Reflexivity and transitivity hold, making it a valid pre-order. -/

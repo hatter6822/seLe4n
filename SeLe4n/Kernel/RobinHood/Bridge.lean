@@ -37,15 +37,40 @@ instance [BEq α] [Hashable α] : Inhabited (RHTable α β) where
 -- N3-A4: BEq instance (entry-wise comparison via fold)
 -- ============================================================================
 
-/-- Two RHTables are equal if they have the same size and every entry in `a`
-    exists with the same value in `b`. -/
+/-- Two RHTables are equal if they have the same size and every entry in each
+    table exists with the same value in the other. The reverse fold ensures
+    symmetry: `(a == b) = (b == a)` for well-formed tables with unique keys. -/
 instance [BEq α] [Hashable α] [BEq β] : BEq (RHTable α β) where
   beq a b :=
     a.size == b.size &&
-    a.fold (init := true) fun acc k v =>
+    a.fold (init := true) (fun acc k v =>
       acc && match b.get? k with
         | some v' => v == v'
-        | none => false
+        | none => false) &&
+    b.fold (init := true) (fun acc k v =>
+      acc && match a.get? k with
+        | some v' => v == v'
+        | none => false)
+
+/-- U7-H: The updated symmetric `BEq` instance satisfies `(a == b) = (b == a)`.
+
+The proof follows from the structure of the instance: both directions fold over
+their respective tables checking the other. Swapping `a` and `b` swaps the two
+fold conjuncts, which commute under `Bool.and_comm`. The size check `a.size ==
+b.size` is symmetric by BEq on Nat. -/
+theorem RHTable.beq_symmetric [BEq α] [Hashable α] [BEq β]
+    (a b : RHTable α β) : (a == b) = (b == a) := by
+  show (a.size == b.size &&
+    a.fold true (fun acc k v => acc && match b.get? k with | some v' => v == v' | none => false) &&
+    b.fold true (fun acc k v => acc && match a.get? k with | some v' => v == v' | none => false)) =
+   (b.size == a.size &&
+    b.fold true (fun acc k v => acc && match a.get? k with | some v' => v == v' | none => false) &&
+    a.fold true (fun acc k v => acc && match b.get? k with | some v' => v == v' | none => false))
+  have hSizeComm : (a.size == b.size) = (b.size == a.size) := by
+    cases ha : (a.size == b.size) <;> cases hb : (b.size == a.size) <;>
+      simp_all [beq_iff_eq]
+  rw [hSizeComm]
+  cases (b.size == a.size) <;> simp [Bool.and_comm]
 
 -- ============================================================================
 -- N3-B5: getElem?_empty

@@ -64,24 +64,24 @@ namespace RunQueue
   threadPrio_invExt := RHTable.empty_invExt' 16 (by omega)
   mem_sizeOk := by
     show (RHSet.empty : RHSet ThreadId).table.size < (RHSet.empty : RHSet ThreadId).table.capacity
-    native_decide
+    decide
   byPrio_sizeOk := by
     show (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).size <
          (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
-    native_decide
+    decide
   threadPrio_sizeOk := by
     show (EmptyCollection.emptyCollection : RHTable ThreadId Priority).size <
          (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
-    native_decide
+    decide
   mem_capGe4 := by
     show 4 ≤ (RHSet.empty : RHSet ThreadId).table.capacity
-    native_decide
+    decide
   byPrio_capGe4 := by
     show 4 ≤ (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
-    native_decide
+    decide
   threadPrio_capGe4 := by
     show 4 ≤ (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
-    native_decide
+    decide
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat
@@ -288,47 +288,6 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
       rw [this]; exact rq.threadPrio_capGe4 }
 
 /-- S5-J: Complexity is O(k + n) where k = priority bucket size and n = flat
-    list length. The bucket rotation is O(k) (`tl ++ [tid]`), and the flat-list
-    erase + append is O(n). Acceptable for the same reasons as `remove`: k is
-    typically 1-3 and n < 256 in production real-time systems. -/
-def rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
-  if hc : rq.contains tid then
-    match rq.byPriority[prio]? with
-    | none => rq
-    | some bucket =>
-        match bucket with
-        | [] => rq
-        | hd :: tl =>
-            if hd == tid then
-              { rq with
-                  byPriority := rq.byPriority.insert prio (tl ++ [tid])
-                  flat := rq.flat.erase tid ++ [tid]
-                  flat_wf := by
-                    intro x hx
-                    simp only [List.mem_append, List.mem_singleton] at hx
-                    rcases hx with h | rfl
-                    · exact rq.flat_wf x (List.mem_of_mem_erase h)
-                    · exact hc
-                  flat_wf_rev := by
-                    intro x hx
-                    have hFlat : x ∈ rq.flat := rq.flat_wf_rev x hx
-                    by_cases hEq : x = tid
-                    · subst hEq
-                      exact List.mem_append.mpr (Or.inr (by simp))
-                    · exact List.mem_append.mpr (Or.inl ((List.mem_erase_of_ne hEq).2 hFlat))
-                  byPrio_invExt := rq.byPriority.insert_preserves_invExt prio
-                      (tl ++ [tid]) rq.byPrio_invExt
-                  byPrio_sizeOk := rq.byPriority.insert_size_lt_capacity prio
-                      (tl ++ [tid]) rq.byPrio_invExt rq.byPrio_sizeOk rq.byPrio_capGe4
-                  byPrio_capGe4 := by
-                    unfold RHTable.insert; split
-                    · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
-                      have := rq.byPrio_capGe4; omega
-                    · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4 }
-            else rq
-  else rq
-
-/-- S5-J: Complexity is O(k + n) where k = priority bucket size and n = flat
     list length. Filters the thread from the bucket O(k), appends to end O(1),
     then erases from flat list O(n) and appends. Same bounds as `remove` and
     `rotateHead` — acceptable for systems with < 256 threads. -/
@@ -364,7 +323,6 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   else rq
 
 @[inline] def toList (rq : RunQueue) : List ThreadId := rq.flat
-def filterToList (rq : RunQueue) (p : ThreadId → Bool) : List ThreadId := rq.flat.filter p
 def atPriority (rq : RunQueue) (prio : Priority) : List ThreadId := (rq.byPriority[prio]?).getD []
 
 /-- WS-G4/F-P07: Return the max-priority bucket contents, or `[]` if the queue is empty.
@@ -374,9 +332,6 @@ def atPriority (rq : RunQueue) (prio : Priority) : List ThreadId := (rq.byPriori
   | none => []
   | some prio => rq.atPriority prio
 
-/-- WS-G4/F-P07: Return the max-priority value, or 0 as a fallback. -/
-@[inline] def maxPriorityValue (rq : RunQueue) : Priority :=
-  rq.maxPriority.getD ⟨0⟩
 def ofList (entries : List (ThreadId × Priority)) : RunQueue :=
   entries.foldl (fun rq (tid, prio) => rq.insert tid prio) empty
 
@@ -441,18 +396,6 @@ theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
     have hne' : ¬(tid == x) = true := by simp [beq_iff_eq]; exact fun h => hne h.symm
     rw [RHSet.contains_erase_ne rq.membership tid x hne' rq.mem_invExt rq.mem_sizeOk]
     exact hx
-
-theorem mem_rotateHead (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
-    x ∈ rq.rotateHead tid prio ↔ x ∈ rq := by
-  show (rq.rotateHead tid prio).contains x = true ↔ rq.contains x = true
-  suffices h : (rq.rotateHead tid prio).membership = rq.membership by
-    simp only [contains]; rw [h]
-  unfold rotateHead
-  split
-  · split <;> try rfl
-    split <;> try rfl
-    split <;> rfl
-  · rfl
 
 theorem mem_rotateToBack (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
     x ∈ rq.rotateToBack tid ↔ x ∈ rq := by

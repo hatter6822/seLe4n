@@ -104,15 +104,6 @@ theorem buildCNodeRadix_wf (rt : RHTable SeLe4n.Slot Capability)
   exact (buildCNodeRadix rt config).wf_of_mk
 
 -- ============================================================================
--- Q4-D5: buildCNodeRadix deterministic
--- ============================================================================
-
-/-- `buildCNodeRadix` is a pure function — same inputs yield same output. -/
-theorem buildCNodeRadix_deterministic (rt : RHTable SeLe4n.Slot Capability)
-    (config : CNodeConfig) :
-    buildCNodeRadix rt config = buildCNodeRadix rt config := rfl
-
--- ============================================================================
 -- Q4-D6: CNode extraction helper
 -- ============================================================================
 

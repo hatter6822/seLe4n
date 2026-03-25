@@ -383,16 +383,6 @@ def pageAligned (addr : PAddr) : Prop :=
 instance (addr : PAddr) : Decidable (pageAligned addr) :=
   inferInstanceAs (Decidable (_ = _))
 
-/-- S4-E: Aligned read predicate — asserts the address satisfies word alignment
-    before a register-width memory read. The abstract model's `readMem` is
-    total and accepts any address; this predicate is an advisory constraint
-    for hardware binding. -/
-def alignedRead (addr : PAddr) : Prop := wordAligned addr
-
-/-- S4-E: Aligned write predicate — asserts the address satisfies word alignment
-    before a register-width memory write. -/
-def alignedWrite (addr : PAddr) : Prop := wordAligned addr
-
 /-- S4-E: Page-aligned addresses are also word-aligned. -/
 theorem pageAligned_implies_wordAligned (addr : PAddr)
     (h : pageAligned addr) : wordAligned addr := by

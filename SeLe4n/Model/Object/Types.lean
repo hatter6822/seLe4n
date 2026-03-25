@@ -434,9 +434,9 @@ theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
   let t₂ : TCB := {
     tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
     cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₂ }
-  have hBeq : (t₁ == t₂) = true := by native_decide
+  have hBeq : (t₁ == t₂) = true := by decide
   have hPropEq : t₁ = t₂ := hEq hBeq
-  have hNeq : t₁.registerContext.gpr ⟨32⟩ ≠ t₂.registerContext.gpr ⟨32⟩ := by native_decide
+  have hNeq : t₁.registerContext.gpr ⟨32⟩ ≠ t₂.registerContext.gpr ⟨32⟩ := by decide
   exact hNeq (by rw [hPropEq])
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
@@ -960,7 +960,7 @@ private theorem and_mask_127 (a b c : Nat) (ha : a < 128) :
     simp only [h7, h9, decide_false, Bool.false_and, Bool.or_false]
     have hmask : (127 : Nat).testBit i = true := by
       have : i = 0 ∨ i = 1 ∨ i = 2 ∨ i = 3 ∨ i = 4 ∨ i = 5 ∨ i = 6 := by omega
-      rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> native_decide
+      rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
     rw [hmask, Bool.and_true]
   · have hmask : (127 : Nat).testBit i = false := by
       apply Nat.testBit_lt_two_pow
@@ -993,7 +993,7 @@ private theorem shift7_and_mask_3 (a b c : Nat) (ha : a < 128) (hb : b < 4) :
     rw [this]
     have hmask : (3 : Nat).testBit i = true := by
       have : i = 0 ∨ i = 1 := by omega
-      rcases this with rfl | rfl <;> native_decide
+      rcases this with rfl | rfl <;> decide
     rw [hmask, Bool.and_true]
   · have hmask : (3 : Nat).testBit i = false := by
       apply Nat.testBit_lt_two_pow

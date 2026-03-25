@@ -17,9 +17,28 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U6) are complete.
+through WS-U Phase U7) are complete.
 
-### WS-U workstream (v0.20.7 Audit Remediation) — Phase U6 COMPLETE
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U7 COMPLETE
+
+WS-U Phase U7 removes dead code, superseded invariant bundles, trivial
+tautology theorems, fixes BEq symmetry, migrates native_decide to decide,
+and adds builder/frozen commutativity proofs. 12 sub-tasks (U7-A through
+U7-L). Version v0.21.6. Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U7-A**: Deleted dead `KMap.lean` module (219 lines, never imported).
+- **U7-B**: Removed dead types from Assumptions, MmioAdapter, Policy.
+- **U7-C**: Removed dead functions from Prelude, Machine, FrozenState,
+  RunQueue, VSpaceBackend.
+- **U7-D**: Removed trivial `_deterministic` tautology theorems.
+- **U7-E**: Removed superseded invariant bundles (scheduler, capability).
+- **U7-G/H**: Fixed `BEq RHTable` symmetry + `beq_symmetric` lemma.
+- **U7-I**: Migrated 5 `native_decide` to `decide` (TCB reduction).
+- **U7-J**: Refactored high-heartbeat Robin Hood proofs (all ≤800K removed).
+- **U7-L**: Added builder/frozen commutativity proofs in FreezeProofs.lean.
+
+#### WS-U Phase U6 — COMPLETE (v0.21.5)
 
 WS-U Phase U6 improves model-hardware fidelity for the RPi5 platform. 12
 sub-tasks (U6-A through U6-L). Version v0.21.5. Plan:

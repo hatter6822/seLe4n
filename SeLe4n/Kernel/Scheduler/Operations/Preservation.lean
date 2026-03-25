@@ -466,41 +466,6 @@ private theorem handleYield_preserves_currentThreadInActiveDomain
         exact hObjInv
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
 
-theorem chooseThread_preserves_kernelInvariant
-    (st st' : SystemState)
-    (next : Option SeLe4n.ThreadId)
-    (hInv : kernelInvariant st)
-    (hStep : chooseThread st = .ok (next, st')) :
-    kernelInvariant st' := by
-  exact ⟨
-    chooseThread_preserves_queueCurrentConsistent st st' next hInv.1 hStep,
-    chooseThread_preserves_runQueueUnique st st' next hInv.2.1 hStep,
-    chooseThread_preserves_currentThreadValid st st' next hInv.2.2.1 hStep,
-    chooseThread_preserves_currentThreadInActiveDomain st st' next hInv.2.2.2 hStep
-  ⟩
-
-theorem schedule_preserves_kernelInvariant
-    (st st' : SystemState)
-    (hInv : kernelInvariant st)
-    (hObjInv : st.objects.invExt)
-    (hStep : schedule st = .ok ((), st')) :
-    kernelInvariant st' := by
-  exact ⟨schedule_preserves_queueCurrentConsistent st st' hStep,
-    schedule_preserves_runQueueUnique st st' hInv.2.1 hStep,
-    schedule_preserves_currentThreadValid st st' hObjInv hStep,
-    schedule_preserves_currentThreadInActiveDomain st st' hObjInv hStep⟩
-
-theorem handleYield_preserves_kernelInvariant
-    (st st' : SystemState)
-    (hInv : kernelInvariant st)
-    (hObjInv : st.objects.invExt)
-    (hStep : handleYield st = .ok ((), st')) :
-    kernelInvariant st' := by
-  exact ⟨handleYield_preserves_queueCurrentConsistent st st' hStep,
-    handleYield_preserves_runQueueUnique st st' hInv.2.1 hInv.1 hStep,
-    handleYield_preserves_currentThreadValid st st' hObjInv hStep,
-    handleYield_preserves_currentThreadInActiveDomain st st' hObjInv hStep⟩
-
 theorem chooseThread_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
@@ -697,47 +662,6 @@ theorem timerTick_preserves_schedulerInvariantBundle
           simp only [RHTable_getElem?_eq_get?]
           rw [RHTable_getElem?_insert st.objects tid.toObjId _ hObjInv]
           simp
-
-/-- WS-F4/F-03: `timerTick` preserves `kernelInvariant`. -/
-theorem timerTick_preserves_kernelInvariant
-    (st st' : SystemState)
-    (hInv : kernelInvariant st)
-    (hObjInv : st.objects.invExt)
-    (hStep : timerTick st = .ok ((), st')) :
-    kernelInvariant st' := by
-  rcases hInv with ⟨hQCC, hRQU, hCTV, hDom⟩
-  have hBundle := timerTick_preserves_schedulerInvariantBundle st st'
-    ⟨hQCC, hRQU, hCTV⟩ hObjInv hStep
-  rcases hBundle with ⟨hQCC', hRQU', hCTV'⟩
-  refine ⟨hQCC', hRQU', hCTV', ?_⟩
-  unfold timerTick at hStep
-  cases hCur : st.scheduler.current with
-  | none =>
-    simp [hCur] at hStep; cases hStep
-    exact hDom
-  | some tid =>
-    simp only [hCur] at hStep
-    cases hObj : st.objects[tid.toObjId]? with
-    | none => simp [hObj] at hStep
-    | some obj =>
-      cases obj with
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
-      | tcb tcb =>
-        simp only [hObj] at hStep
-        by_cases hExpire : tcb.timeSlice ≤ 1
-        · rw [if_pos hExpire] at hStep
-          have hObjInv' : (st.objects.insert tid.toObjId (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice })).invExt :=
-            RHTable_insert_preserves_invExt st.objects tid.toObjId _ hObjInv
-          exact schedule_preserves_currentThreadInActiveDomain _ st' hObjInv' hStep
-        · rw [if_neg hExpire] at hStep
-          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨_, rfl⟩ := hStep
-          simp only [currentThreadInActiveDomain, hCur]
-          have hDomOrig : tcb.domain = st.scheduler.activeDomain := by
-            simp [currentThreadInActiveDomain, hCur, hObj] at hDom; exact hDom
-          simp only [RHTable_getElem?_eq_get?]
-          rw [RHTable_getElem?_insert st.objects tid.toObjId _ hObjInv]
-          simp [hDomOrig]
 
 -- ============================================================================
 -- WS-H6: Bucket-first scheduling helpers

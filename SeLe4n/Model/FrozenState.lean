@@ -52,7 +52,6 @@ runtime execution (frozen phase):
 - **Q5-A**: `FrozenMap`, `FrozenSet` types and operations
 - **Q5-B**: `FrozenKernelObject`, `FrozenSchedulerState`, `FrozenSystemState`
 - **Q5-C**: `freezeMap`, `freezeObject`, `freeze` functions
-- **Q5-D**: `objectCapacity` pre-allocation strategy
 -/
 
 namespace SeLe4n.Model
@@ -109,7 +108,8 @@ def FrozenMap.set [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (k : κ) (v : ν
 @[inline] def FrozenMap.contains [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (k : κ) : Bool :=
   (fm.indexMap.get? k).isSome
 
-/-- Q5-A: Fold over all key-value pairs in a frozen map. -/
+/-- Q5-A: Fold over all key-value pairs in a frozen map. Uses the index map
+to iterate keys and resolves each to its data array slot. -/
 def FrozenMap.fold [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (init : γ)
     (f : γ → κ → ν → γ) : γ :=
   fm.indexMap.fold init (fun acc k idx =>
@@ -119,10 +119,6 @@ def FrozenMap.fold [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (init : γ)
 /-- Q5-A: A frozen set: membership-only via FrozenMap's index.
 Defined as a unit-valued FrozenMap. -/
 def FrozenSet (κ : Type) [BEq κ] [Hashable κ] := FrozenMap κ Unit
-
-/-- Q5-A: Check membership in a frozen set. -/
-@[inline] def FrozenSet.mem [BEq κ] [Hashable κ] (fs : FrozenSet κ) (k : κ) : Bool :=
-  FrozenMap.contains fs k
 
 -- ============================================================================
 -- Q5-A Proofs
@@ -142,11 +138,6 @@ theorem FrozenMap.set_none [BEq κ] [Hashable κ]
     (fm : FrozenMap κ ν) (k : κ) (v : ν) (h : fm.indexMap.get? k = none) :
     fm.set k v = none := by
   unfold FrozenMap.set; simp [h]
-
-/-- Q5-A: `FrozenMap.get?` is a pure function (deterministic). -/
-theorem FrozenMap.get?_deterministic [BEq κ] [Hashable κ]
-    (fm : FrozenMap κ ν) (k : κ) :
-    fm.get? k = fm.get? k := rfl
 
 -- ============================================================================
 -- Q5-B: FrozenKernelObject — Per-Object Frozen Representations
@@ -378,10 +369,6 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
 -- Q5-C Proofs
 -- ============================================================================
 
-/-- Q5-C: `freeze` is a pure function (deterministic). -/
-theorem freeze_deterministic (ist : IntermediateState) :
-    freeze ist = freeze ist := rfl
-
 /-- Q5-C: `freeze` preserves the object index. -/
 theorem freeze_preserves_objectIndex (ist : IntermediateState) :
     (freeze ist).objectIndex = ist.state.objectIndex := rfl
@@ -500,43 +487,5 @@ theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ]
 /-- Q5-C: `freeze` preserves the objectIndexSet (frozen version). -/
 theorem freeze_preserves_objectIndexSet (ist : IntermediateState) :
     (freeze ist).objectIndexSet = freezeMap ist.state.objectIndexSet.table := rfl
-
--- ============================================================================
--- Q5-D: Capacity Planning
--- ============================================================================
-
-/-- Q5-D: Minimum object size in bytes for capacity estimation.
-Matches seL4's minimum kernel object size (16 bytes, a CNode with
-radixWidth=0 and one guard). -/
-def minObjectSize : Nat := 16
-
-/-- Q5-D: Estimate the maximum number of objects that can exist at runtime.
-Counts current objects plus potential future objects carved from untyped
-memory regions.
-
-This determines the pre-allocation headroom for `FrozenMap ObjId ...` fields.
-For maps that don't grow at runtime (irqHandlers, asidTable), the frozen
-array is sized exactly to current population. For maps that may grow
-(objects, serviceRegistry), the frozen array includes pre-allocated slots
-for potential future entries. -/
-def objectCapacity (ist : IntermediateState) : Nat :=
-  let st := ist.state
-  -- Count available untyped memory slots as potential future objects
-  let untypedSlots := st.objects.fold 0 (fun acc _ obj =>
-    match obj with
-    | .untyped u => acc + (u.freeSpace / minObjectSize)
-    | _ => acc)
-  st.objects.size + untypedSlots
-
-/-- Q5-D: `objectCapacity` is at least as large as the current object count. -/
-theorem objectCapacity_ge_size (ist : IntermediateState) :
-    ist.state.objects.size ≤ objectCapacity ist := by
-  unfold objectCapacity
-  simp only []
-  exact Nat.le_add_right _ _
-
-/-- Q5-D: `objectCapacity` is a pure function (deterministic). -/
-theorem objectCapacity_deterministic (ist : IntermediateState) :
-    objectCapacity ist = objectCapacity ist := rfl
 
 end SeLe4n.Model

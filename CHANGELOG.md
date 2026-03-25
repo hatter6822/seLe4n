@@ -1,3 +1,38 @@
+## [0.21.6] — WS-U Phase U7: Dead Code & Proof Hygiene
+
+- U7-A: Deleted dead `KMap.lean` module (219 lines, never imported).
+- U7-B: Removed dead types from `Assumptions.lean` (`TransitionSurface`,
+  `InvariantSurface`, `ContractRef`, `ExceptionLevel`, `ExtendedBootBoundaryContract`
+  and 6 associated functions/theorems), `MmioAdapter.lean` (`MemoryBarrier`,
+  `MmioOpKind`, `MmioOp` and associated functions), `Policy.lean`
+  (`defaultGenericLabelingContext`, `threeDomainExample`, `bibaPolicy` and
+  9 associated theorems/definitions).
+- U7-C: Removed dead functions across `Prelude.lean` (`Deadline.none/immediate`),
+  `Machine.lean` (`alignedRead/Write`), `FrozenState.lean` (`FrozenSet.mem`,
+  `minObjectSize`, `objectCapacity` and proofs), `RunQueue.lean`
+  (`rotateHead`, `filterToList`, `maxPriorityValue`, `mem_rotateHead`),
+  `VSpaceBackend.lean` (`hashMapVSpaceBackend` instance).
+- U7-D: Removed trivial `_deterministic` tautology theorems across all
+  subsystems (adapter, register decode, syscall arg decode, lifecycle,
+  object type, page permissions, message register extraction).
+- U7-E: Removed superseded invariant bundles: `kernelInvariant` (4-tuple),
+  `canonicalSchedulerInvariantBundle`, 4 `kernelInvariant` preservation
+  theorems from scheduler, `capabilityInvariantBundleWithMintCompleteness`,
+  `capabilityInvariantBundleWithCdtMaps`, `capabilityInvariantBundleFull`
+  and associated extraction theorems from capability.
+- U7-G/H: Fixed `BEq RHTable` symmetry — added reverse fold to ensure
+  `(a == b) = (b == a)`. Added `RHTable.beq_symmetric` theorem.
+- U7-I: Migrated 5 `native_decide` to `decide` in `Object/Types.lean` and
+  `Object/Structures.lean`, reducing TCB surface for small-domain proofs.
+- U7-J: Refactored high-heartbeat Robin Hood proofs in `Lookup.lean` —
+  removed all `maxHeartbeats` overrides (previously 800K–3.2M).
+- U7-L: Added builder/frozen commutativity proofs in `FreezeProofs.lean`:
+  `freezeMap_store_commutes_at_key`, `freezeMap_store_commutes_other_key`,
+  `freezeMap_store_commutes_all`, thread/CDT store commutativity,
+  `freezeMap_sequential_stores_commute`, `freezeMap_insert_step`.
+- Updated tier 3 invariant surface anchors for all removed definitions.
+- Updated `FrozenStateSuite.lean` test suite (14 tests, down from 15).
+
 ## [0.21.5] — WS-U Phase U6: Architecture & Platform Fidelity
 
 - U6-A (U-M08): Added formal MMIO abstraction boundary with `MmioReadKind`

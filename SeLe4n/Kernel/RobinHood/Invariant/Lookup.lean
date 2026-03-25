@@ -1123,7 +1123,6 @@ private theorem insert_absent_ne_key [BEq α] [Hashable α] [LawfulBEq α]
     exact insertNoResize_absent_ne_key t k v k' hNe hAbsent
 
 
-set_option maxHeartbeats 3200000 in
 private theorem insertLoop_preserves_ne_entry_new [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (kIns : α) (vIns : β) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
@@ -1444,7 +1443,6 @@ private theorem insertLoop_preserves_ne_entry_new [BEq α] [Hashable α] [Lawful
             hNeIns hSlotP'
 
 
-set_option maxHeartbeats 1600000 in
 private theorem resize_preserves_entry [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k' : α) (v' : β)
     (p : Nat) (hp : p < t.capacity) (e : RHEntry α β)
@@ -2039,7 +2037,6 @@ theorem RHTable.get_some_slot_entry [BEq α] [Hashable α]
     (idealIndex k t.capacity t.hCapPos) k 0
     t.slots t.capacity t.hSlotsLen t.hCapPos v hGet
 
-set_option maxHeartbeats 800000 in
 theorem RHTable.insertNoResize_get_eq [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β)
     (hExt : t.invExt) (hSizeLt : t.size < t.capacity) :
@@ -2086,7 +2083,6 @@ theorem RHTable.insertNoResize_get_eq [BEq α] [Hashable α] [LawfulBEq α]
       omega)
     (by omega)
 
-set_option maxHeartbeats 3200000 in
 theorem RHTable.insertNoResize_get_ne [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k k' : α) (v : β) (hNe : ¬(k' == k) = true)
     (hExt : t.invExt) (hSizeLt : t.size < t.capacity) :
