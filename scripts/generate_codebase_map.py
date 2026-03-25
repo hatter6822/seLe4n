@@ -84,6 +84,11 @@ NAME_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
 FIRST_NAME_RE = re.compile(r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_'.]*)")
 QUOTED_TOKEN_RE = re.compile(r"\"[^\"\n]*\"")
 
+# Lines whose tokens are namespace qualifiers, not code references.
+# ``open Foo.Bar`` and ``open Foo.Bar in`` introduce names into scope but
+# the qualified path itself is not a semantic reference to a declaration.
+OPEN_LINE_RE = re.compile(r"^\s*open\s+")
+
 NON_REFERENCABLE_DECL_KINDS = {
     "declare_syntax_cat",
     "syntax_cat",
@@ -250,6 +255,10 @@ def _tokenize_decl_ranges(
         for raw in lines[start_idx:end_idx]:
             clean, block_depth = _strip_lean_comments(raw, block_depth, strip_strings=True)
             if not clean:
+                continue
+            # Skip `open` lines — their qualified names are namespace paths,
+            # not semantic references to declarations.
+            if OPEN_LINE_RE.match(clean):
                 continue
             for token in NAME_TOKEN_RE.findall(clean):
                 # Direct match
