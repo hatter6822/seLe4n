@@ -17,7 +17,31 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U4) are complete.
+through WS-U Phase U5) are complete.
+
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U5 COMPLETE
+
+WS-U Phase U5 refactors API dispatch integrity. 14 sub-tasks (U5-A through
+U5-N). Version v0.21.4. Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U5-A (U-M02)**: Verified structural equivalence of checked/unchecked
+  dispatch for all 6 capability-only syscalls with machine-checked proofs.
+- **U5-B (U-M01)**: Routed `.call` through `endpointCallChecked` enforcement
+  wrapper, replacing inline `securityFlowsTo` guard.
+- **U5-C (U-M04)**: Routed `.reply` through `endpointReplyChecked` wrapper
+  for defense-in-depth.
+- **U5-D (U-L20)**: Replaced trivial `True` placeholder with 7 structural
+  equivalence theorems for capability-only dispatch arms.
+- **U5-E (U-M07)**: Fixed `decodeVSpaceMapArgs` error code from `.policyDenied`
+  to `.invalidArgument`. Added `invalidArgument` to `KernelError`.
+- **U5-F/G (U-M21)**: Added `capabilityOnlyOperations` definition with
+  security rationale documentation.
+- **U5-H through U5-N**: Documentation of design-intentional behaviors
+  (badge-0, message handling, notification overwrite, slot 0, GrantReply,
+  CDT tracking, deferred notificationSignal).
+
+Zero sorry, zero axiom.
 
 ### WS-U workstream (v0.20.7 Audit Remediation) — Phase U4 COMPLETE
 

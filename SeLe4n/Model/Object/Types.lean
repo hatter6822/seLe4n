@@ -34,6 +34,13 @@ inductive AccessRight where
   | read
   | write
   | grant
+  -- U5-L/U-L05: `grantReply` (bit 3) is defined for spec fidelity with seL4's
+  -- `seL4_CapRights_t` but has no operational effect in the current IPC model.
+  -- The `.grant` right (bit 2) governs ALL grant operations including reply cap
+  -- grant. In real seL4, `grantReply` permits granting reply capabilities
+  -- without granting full `grant` authority. seLe4n does not yet implement this
+  -- distinction because reply cap grant is implicitly allowed by the reply
+  -- mechanism itself (single-use authority).
   | grantReply
   | retype        -- WS-H15c/A-42: lifecycle retype operations
   deriving Repr, DecidableEq

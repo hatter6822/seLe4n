@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.21.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.21.4-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -48,7 +48,7 @@ microkernels:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.21.3` |
+| **Versión** | `0.21.4` |
 | **Toolchain de Lean** | `v4.28.0` |
 | **LoC de producción en Lean** | 64.039 en 101 archivos |
 | **LoC de pruebas en Lean** | 8.318 en 10 suites de pruebas |

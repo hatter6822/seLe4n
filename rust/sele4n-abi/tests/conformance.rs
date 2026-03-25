@@ -457,14 +457,14 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(14).is_none());
 }
 
-/// Verify KernelError roundtrip for all 38 variants (T1-F/H-4: 4 new at 34-37).
+/// Verify KernelError roundtrip for all 40 variants (U5-E: 2 new at 38-39).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=37u32 {
+    for i in 0..=39u32 {
         let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(38).is_none());
+    assert!(KernelError::from_u32(40).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 6 variants.
@@ -720,13 +720,13 @@ fn u3de_access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn u3f_kernel_error_non_exhaustive() {
-    // All 38 variants (0–37) roundtrip
-    for i in 0..=37u32 {
+    // All 40 variants (0–39) roundtrip (U5-E: +RevocationRequired, +InvalidArgument)
+    for i in 0..=39u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(38).is_none());
+    assert!(KernelError::from_u32(40).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }

@@ -146,17 +146,16 @@ theorem cspaceMintChecked_flowDenied
 /-! ## M-07 — Enforcement Boundary Specification
 
 This section formally classifies all kernel operations into enforcement categories
-and proves that the three policy-checked wrappers are sufficient for the
-enforcement boundary.
+and proves that the policy-checked wrappers are sufficient for the enforcement
+boundary.
 
-**Canonical classification (17 operations):**
+**Canonical classification (20 operations — U5-B/C updated):**
 
 | Category | Operations |
 |---|---|
-| **Policy-gated** (3) | `endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked` |
-| **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `cspaceCopy`, `cspaceMove`, `notificationSignal` |
+| **Policy-gated** (9) | `endpointSendDualChecked`, `endpointReceiveDualChecked`, `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C), `cspaceMintChecked`, `cspaceCopyChecked`, `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked` |
+| **Capability-only** (7) | `cspaceLookupSlot`, `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`, `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
 | **Read-only** (4) | `chooseThread`, `lookupObject`, `lookupService`, `cspaceResolvePath` |
-| **Internal/lifecycle** (3) | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype`, `storeObject` |
 
 Policy-gated operations cross domain boundaries and carry explicit information-flow
 risk. Capability-only operations derive authority entirely from capability
@@ -175,22 +174,33 @@ inductive EnforcementClass where
   | readOnly (name : String)
   deriving Repr
 
-/-- WS-E5/M-07/Q1-D: Canonical enforcement boundary classification table (17 entries). -/
+/-- WS-E5/M-07/Q1-D/U5-B/U5-C: Canonical enforcement boundary classification
+table (20 entries). U5-B/C added `endpointCallChecked` and `endpointReplyChecked`.
+Operations with both policy-gated and capability-only variants are classified under
+their policy-gated variant here (the checked dispatch path uses the policy-gated
+variant; the unchecked dispatch path uses the capability-only variant). -/
 def enforcementBoundary : List EnforcementClass :=
-  [ .policyGated "endpointSendDualChecked"
+  [ -- Policy-gated: cross-domain operations checked via securityFlowsTo
+    .policyGated "endpointSendDualChecked"
+  , .policyGated "endpointReceiveDualChecked"
+  , .policyGated "endpointCallChecked"       -- U5-B: previously inline check
+  , .policyGated "endpointReplyChecked"      -- U5-C: defense-in-depth
   , .policyGated "cspaceMintChecked"
+  , .policyGated "cspaceCopyChecked"
+  , .policyGated "cspaceMoveChecked"
+  , .policyGated "notificationSignalChecked"
   , .policyGated "registerServiceChecked"
+  -- Capability-only: authority derived from capability possession
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
   , .capabilityOnly "cspaceDeleteSlot"
   , .capabilityOnly "cspaceRevoke"
-  , .capabilityOnly "cspaceCopy"
-  , .capabilityOnly "cspaceMove"
-  , .capabilityOnly "notificationSignal"
+  -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
   , .readOnly "lookupService"
   , .readOnly "cspaceResolvePath"
+  -- Internal/lifecycle: building blocks used under capability-guarded contexts
   , .capabilityOnly "lifecycleRetypeObject"
   , .capabilityOnly "lifecycleRevokeDeleteRetype"
   , .capabilityOnly "storeObject"
@@ -385,4 +395,98 @@ def registerServiceChecked
       registerService reg st
     else
       .error .flowDenied
+
+-- ============================================================================
+-- U5-B/U-M01: endpointCall enforcement wrapper
+-- ============================================================================
+
+/-- U5-B/U-M01: Policy-checked endpoint call using the WithCaps path.
+Verifies that information may flow from the caller's security domain to the
+endpoint's security domain, then delegates to `endpointCallWithCaps`.
+
+Previously, `dispatchWithCapChecked` performed this check inline with a
+raw `securityFlowsTo` guard. This wrapper centralizes the enforcement in
+the same layer as all other policy-gated operations.
+
+Returns `flowDenied` when `securityFlowsTo callerLabel endpointLabel = false`. -/
+def endpointCallChecked
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
+  fun st =>
+    let callerLabel := ctx.threadLabelOf caller
+    let endpointLabel := ctx.endpointLabelOf endpointId
+    if securityFlowsTo callerLabel endpointLabel then
+      endpointCallWithCaps endpointId caller msg endpointRights
+        callerCspaceRoot receiverSlotBase st
+    else
+      .error .flowDenied
+
+-- ============================================================================
+-- U5-C/U-M04: Reply enforcement wrapper
+-- ============================================================================
+
+/-- U5-C/U-M04: Policy-checked endpoint reply.
+Verifies that information may flow from the replier's security domain to the
+target thread's security domain before delegating to `endpointReply`.
+
+**Design rationale**: In seL4, the reply capability is single-use authority
+that is consumed upon use. The flow check here is a defense-in-depth measure:
+reply caps inherently limit the scope of information flow to the original
+call chain. However, routing through the enforcement layer ensures the
+reply path is auditable and consistent with all other cross-domain operations.
+
+Returns `flowDenied` when `securityFlowsTo replierLabel targetLabel = false`. -/
+def endpointReplyChecked
+    (ctx : LabelingContext)
+    (replier : SeLe4n.ThreadId)
+    (target : SeLe4n.ThreadId)
+    (msg : IpcMessage) : Kernel Unit :=
+  fun st =>
+    let replierLabel := ctx.threadLabelOf replier
+    let targetLabel := ctx.threadLabelOf target
+    if securityFlowsTo replierLabel targetLabel then
+      endpointReply replier target msg st
+    else
+      .error .flowDenied
+
+-- ============================================================================
+-- U5-F/U-M21: Capability-only operation classification
+-- ============================================================================
+
+/-- U5-F/U-M21: Operations whose **base (unchecked) form** derives authority
+entirely from capability possession and has no runtime information-flow check.
+
+Non-interference for these operations relies on proof soundness: the NI
+proofs in `InformationFlow/Invariant/Operations.lean` demonstrate that
+capability-bounded operations cannot leak information across security
+domains because capability authority already restricts the observable
+effects to the holder's domain.
+
+**Important distinction**: Some of these operations also have policy-gated
+`*Checked` variants (listed in `enforcementBoundary`). The checked dispatch
+path uses the `*Checked` variant; the unchecked dispatch path uses the base
+capability-only form listed here. Both forms are correct — the checked variant
+adds a defense-in-depth `securityFlowsTo` gate that is redundant with
+capability authority but provides auditability.
+
+**Security rationale**: These operations are bounded by the capability system.
+A thread can only invoke these operations through a resolved capability with
+the required access right. The capability itself encodes the authority boundary:
+- CSpace operations modify only the CNode targeted by the capability
+- Lifecycle operations modify only the object targeted by the capability
+- Notification signals only reach the notification object in the capability -/
+def capabilityOnlyOperations : List String :=
+  [ "cspaceLookupSlot"      -- No checked variant (read-like)
+  , "cspaceInsertSlot"      -- No checked variant (single-CNode)
+  , "cspaceDeleteSlot"      -- No checked variant (single-CNode)
+  , "cspaceRevoke"          -- No checked variant (single-CNode)
+  , "cspaceCopy"            -- Also has cspaceCopyChecked for cross-CNode flow
+  , "cspaceMove"            -- Also has cspaceMoveChecked for cross-CNode flow
+  , "notificationSignal"    -- Also has notificationSignalChecked for cross-domain
+  ]
 
