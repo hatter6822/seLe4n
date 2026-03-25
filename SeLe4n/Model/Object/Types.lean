@@ -93,11 +93,32 @@ theorem ofNat_idempotent (s : AccessRightSet) (h : s.valid) :
   simp [ofNat, maxBits, valid] at *
   exact congrArg AccessRightSet.mk (Nat.mod_eq_of_lt h)
 
+/-- U2-K: Proof-carrying constructor — the caller must supply evidence that
+    `bits < 2^5`. Prefer `ofNat` (auto-masked) or `ofList`/`singleton` for
+    convenience; use `mk_checked` only when a raw literal needs an explicit
+    validity witness. -/
+@[inline] def mk_checked (bits : Nat) (_h : bits < 2 ^ 5 := by decide) : AccessRightSet := ⟨bits⟩
+
+/-- U2-K: Every `AccessRightSet` created through the public API fits in
+    5 bits. This holds by construction for `mk_checked`, `ofNat`, `singleton`,
+    `empty`, and `ofList`. For `union`/`inter`/`diff` the caller should derive
+    validity from the inputs; this theorem serves as documentation of intent. -/
+theorem mk_checked_valid (bits : Nat) (h : bits < 2 ^ 5) :
+    (mk_checked bits h).valid := by
+  simp [mk_checked, valid, maxBits]; exact h
+
 /-- The empty rights set (no permissions). -/
 @[inline] def empty : AccessRightSet := ⟨0⟩
 
+/-- U2-K: `empty` is valid. -/
+theorem empty_valid : empty.valid := by decide
+
 /-- Construct a rights set from a single right. -/
 @[inline] def singleton (r : AccessRight) : AccessRightSet := ⟨1 <<< r.toBit⟩
+
+/-- U2-K: `singleton` is valid for all access rights. -/
+theorem singleton_valid (r : AccessRight) : (singleton r).valid := by
+  cases r <;> decide
 
 /-- WS-F5/D2a: Construct a rights set from a list of rights. Order-independent:
     `ofList [.read, .write] = ofList [.write, .read]`. -/
@@ -364,6 +385,32 @@ instance : BEq TCB where
     a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
     a.registerContext == b.registerContext &&
     a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification
+
+/-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
+    `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.
+    Since `RegisterFile.BEq` is not lawful (see `RegisterFile.not_lawfulBEq`),
+    `TCB.BEq` inherits the same limitation. This prevents accidental use of
+    `TCB` in proofs that assume `LawfulBEq`. -/
+theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
+  intro h
+  have hEq := @LawfulBEq.eq_of_beq _ _ h
+  -- Construct two TCBs whose registerContext differs only on out-of-range GPR index 32
+  let f₁ : SeLe4n.RegName → SeLe4n.RegValue := fun _ => ⟨0⟩
+  let f₂ : SeLe4n.RegName → SeLe4n.RegValue := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩
+  let r₁ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
+  let r₂ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
+  let oid : SeLe4n.ObjId := ⟨0⟩
+  let va : SeLe4n.VAddr := ⟨0⟩
+  let t₁ : TCB := {
+    tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+    cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₁ }
+  let t₂ : TCB := {
+    tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+    cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₂ }
+  have hBeq : (t₁ == t₂) = true := by native_decide
+  have hPropEq : t₁ = t₂ := hEq hBeq
+  have hNeq : t₁.registerContext.gpr ⟨32⟩ ≠ t₂.registerContext.gpr ⟨32⟩ := by native_decide
+  exact hNeq (by rw [hPropEq])
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

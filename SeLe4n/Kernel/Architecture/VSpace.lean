@@ -35,8 +35,23 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     | _ => none
   | none => none
 
-/-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit). -/
+/-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
+    Used as the upper bound for model-level reasoning. Platform-specific bounds
+    (e.g., 44-bit for BCM2712) are enforced via `physicalAddressBoundForConfig`. -/
 def physicalAddressBound : Nat := 2^52
+
+/-- U2-D/U-H07: Platform-specific physical address bound derived from `MachineConfig`.
+    BCM2712 (RPi5) uses 44-bit PA, meaning addresses in [2^44, 2^52) pass the default
+    model bound but are invalid on hardware. This function provides the platform bound. -/
+def physicalAddressBoundForConfig (config : MachineConfig) : Nat :=
+  2^config.physicalAddressWidth
+
+/-- U2-D: Well-formedness: platform PA width must not exceed ARM64 LPA maximum (52 bits). -/
+theorem physicalAddressBoundForConfig_le_default (config : MachineConfig)
+    (h : config.physicalAddressWidth ≤ 52) :
+    physicalAddressBoundForConfig config ≤ physicalAddressBound := by
+  unfold physicalAddressBoundForConfig physicalAddressBound
+  exact Nat.pow_le_pow_right (by omega) h
 
 /-- WS-H11/S6-B: Core VSpace map transition — page table only, no TLB flush.
 
@@ -68,7 +83,8 @@ for production paths. See `vspaceMapPage` for rationale. -/
 def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
-    if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    if !vaddr.isCanonical then .error .addressOutOfBounds
+    else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
     else vspaceMapPage asid vaddr paddr perms st
 
 /-- S6-B: Core VSpace unmap transition — page table only, no TLB flush.
@@ -147,7 +163,21 @@ This is the recommended entry point for user-space-initiated VSpace map operatio
 def vspaceMapPageCheckedWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr) (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
-    if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    if !vaddr.isCanonical then .error .addressOutOfBounds
+    else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
+    else vspaceMapPageWithFlush asid vaddr paddr perms st
+
+/-- U2-D/U-H07: **Platform-aware production entry point** — bounds-checked map with TLB flush
+    using platform-specific physical address width from `MachineConfig`.
+    BCM2712 (RPi5) uses 44-bit PA, meaning addresses in [2^44, 2^52) are rejected
+    by this function but accepted by the default `vspaceMapPageCheckedWithFlush`.
+    Use this function when a `MachineConfig` is available (runtime dispatch paths). -/
+def vspaceMapPageCheckedWithFlushPlatform (config : MachineConfig)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
+  fun st =>
+    if !vaddr.isCanonical then .error .addressOutOfBounds
+    else if !(paddr.toNat < physicalAddressBoundForConfig config) then .error .addressOutOfBounds
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
 -- ============================================================================

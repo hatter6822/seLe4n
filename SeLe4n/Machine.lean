@@ -204,6 +204,24 @@ instance : BEq RegisterFile where
   beq a b := a.pc == b.pc && a.sp == b.sp &&
     (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
 
+/-- U2-N/U-M17: Negative `LawfulBEq` witness for `RegisterFile`.
+    `BEq RegisterFile` checks equality at 32 GPR indices but cannot prove
+    `a == b = true → a = b` because `gpr` is a function — two extensionally
+    different functions may agree on indices 0..31. This instance prevents
+    accidental use of `RegisterFile` in proofs that assume `LawfulBEq`. -/
+theorem RegisterFile.not_lawfulBEq : ¬ LawfulBEq RegisterFile := by
+  intro h
+  -- Construct two register files with different gpr functions that agree on 0..31
+  -- but differ on an out-of-range index (index 32).
+  let f₁ : RegName → RegValue := fun _ => ⟨0⟩
+  let f₂ : RegName → RegValue := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩
+  let r₁ : RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
+  let r₂ : RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
+  have hBeq : (r₁ == r₂) = true := by native_decide
+  have hPropEq : r₁ = r₂ := @LawfulBEq.eq_of_beq _ _ h r₁ r₂ hBeq
+  have hEval : r₁.gpr ⟨32⟩ ≠ r₂.gpr ⟨32⟩ := by native_decide
+  exact hEval (by rw [hPropEq])
+
 /-- S1-J: Extensionality lemma for `RegisterFile`. Two register files are equal
     when their `pc`, `sp`, and `gpr` functions agree. -/
 theorem RegisterFile.ext {a b : RegisterFile}

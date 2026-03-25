@@ -58,10 +58,10 @@ ELAN_BINARY_SHA256_ARM="bb78726ace6a912c7122a389018bcd69d9122ce04659800101392f7d
 #   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-4.28.0-linux_aarch64.tar.zst" | sha256sum
 #   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-4.28.0-linux.zip" | sha256sum
 #   curl -fsSL "https://github.com/leanprover/lean4/releases/download/v4.28.0/lean-4.28.0-linux_aarch64.zip" | sha256sum
-LEAN_TOOLCHAIN_SHA256_ZST_X86="a549085ba28e5e69d0e20e8ea4b10fac900b4ba944f5df9eeeab4371b5d9f2f2"
-LEAN_TOOLCHAIN_SHA256_ZST_ARM="5bbb3907d89daa1d9b38a27a6b30afa973cd40a2f3f4e3e77cf37a06c4f9dd29"
-LEAN_TOOLCHAIN_SHA256_ZIP_X86="b8f44d6c07aae23fcfe37d8f5beff50e8a7b3e1e4c3a42f8b18f6c47b6c3a9d1"
-LEAN_TOOLCHAIN_SHA256_ZIP_ARM="06c4c4e9a2b1f7d5e8c0a3f2b6d9e1c4a7f0b3e6d8c1a4f7e0b3d6c9a2f5e8b1"
+LEAN_TOOLCHAIN_SHA256_ZST_X86="ceb3a3f844f7aebf63245e2b51c28d5b0ed38942c19f93cf3febd520302160bd"
+LEAN_TOOLCHAIN_SHA256_ZST_ARM="c865801261c747d4f15d08beca9abc20aca907904abbb284de25a37f4b4558bc"
+LEAN_TOOLCHAIN_SHA256_ZIP_X86="b02b74bb23e93e5b05f03f51ad06274814337d107718a02b6f89dc4db1387416"
+LEAN_TOOLCHAIN_SHA256_ZIP_ARM="c608141afb645c7faa3845cc5dc503890ae329a82359f9bf37358d1fab499f81"
 
 # -------- Parse toolchain spec early (needed by fast-path) --------
 if [ ! -f "${LEAN_TOOLCHAIN_FILE}" ]; then

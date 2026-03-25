@@ -748,15 +748,21 @@ theorem vspaceMapPageChecked_success_preserves_vspaceInvariantBundle
     (hTableInv : st.asidTable.invExt)
     (hStep : vspaceMapPageChecked asid vaddr paddr perms st = .ok ((), st')) :
     vspaceInvariantBundle st' := by
-  unfold vspaceMapPageChecked at hStep
+  -- U2-A: vspaceMapPageChecked now has two guards: VAddr canonical then PAddr bounds
+  simp only [vspaceMapPageChecked] at hStep
   split at hStep
-  · simp at hStep
-  · rename_i hBoundNeg
-    have hBound : paddr.toNat < 2^52 := by
-      simp only [Bool.not_eq_true', decide_eq_false_iff_not] at hBoundNeg
-      unfold physicalAddressBound at hBoundNeg; omega
-    exact vspaceMapPage_success_preserves_vspaceInvariantBundle
-      st st' asid vaddr paddr perms hInv hBound hObjInv hAsidInv hAsidSize hMappingsWF hTableInv hStep
+  · simp at hStep  -- VAddr not canonical → contradiction
+  · split at hStep
+    · simp at hStep  -- PAddr out of bounds → contradiction
+    · -- Both guards passed — extract PA bound from the negated guard
+      have hBound : paddr.toNat < 2^52 := by
+        -- After two nested splits, the PA guard hypothesis is the second-to-last
+        -- ¬(!(paddr.toNat < physicalAddressBound) = true) means the bound holds
+        simp only [Bool.not_eq_true', Bool.not_eq_false, physicalAddressBound,
+                    decide_eq_true_eq] at *
+        assumption
+      exact vspaceMapPage_success_preserves_vspaceInvariantBundle
+        st st' asid vaddr paddr perms hInv hBound hObjInv hAsidInv hAsidSize hMappingsWF hTableInv hStep
 
 /-- WS-H11/A-05: `vspaceMapPageChecked` error on out-of-bounds preserves invariant trivially. -/
 theorem vspaceMapPageChecked_error_preserves_vspaceInvariantBundle

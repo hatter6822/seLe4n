@@ -120,7 +120,7 @@ private def chain3MapLookupUnmapLookup : IO Unit := do
       |>.withObject ⟨220⟩ (.vspaceRoot { asid := asid, mappings := {} })
       |>.buildChecked)
   let (_, st1) ← expectOkState "chain3: map page"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asid vaddr paddr default st0)
+    (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid vaddr paddr default st0)
   let (resolved, _) ← expectOkState "chain3: lookup after map"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid vaddr st1)
   expect "chain3: map/lookup roundtrip" (resolved = paddr)
@@ -223,9 +223,9 @@ private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
       |>.buildChecked)
 
   let (_, st1) ← expectOkState "chain7: map shared page into asid1"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asid1 vaddr1 paddr default st0)
+    (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid1 vaddr1 paddr default st0)
   let (_, st2) ← expectOkState "chain7: map shared page into asid2"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asid2 vaddr2 paddr default st1)
+    (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid2 vaddr2 paddr default st1)
   let (asid1Resolved, st3) ← expectOkState "chain7: lookup asid1 shared page"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid1 vaddr1 st2)
   let (asid2Resolved, st4) ← expectOkState "chain7: lookup asid2 shared page"
@@ -242,11 +242,11 @@ private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
   expect "chain7: asid2 retains shared mapping" (asid2StillMapped = paddr)
 
   let (_, st7) ← expectOkState "chain7: remap asid1 as read-only"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asid1 vaddr1 paddr roPerms st6)
+    (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid1 vaddr1 paddr roPerms st6)
   let (_, st8) ← expectOkState "chain7: remap asid2 as read-write"
     (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid2 vaddr2 st7)
   let (_, st9) ← expectOkState "chain7: map asid2 read-write permissions"
-    (SeLe4n.Kernel.Architecture.vspaceMapPage asid2 vaddr2 paddr rwPerms st8)
+    (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid2 vaddr2 paddr rwPerms st8)
   let ((_, asid1Perms), st10) ← expectOkState "chain7: lookupFull asid1 perms"
     (SeLe4n.Kernel.Architecture.vspaceLookupFull asid1 vaddr1 st9)
   let ((_, asid2Perms), st11) ← expectOkState "chain7: lookupFull asid2 perms"

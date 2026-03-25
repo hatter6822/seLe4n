@@ -303,15 +303,19 @@ def fdtRegionsToMemoryRegions (regions : List FdtMemoryRegion)
     Full FDT structure block traversal (node/property iteration, string table
     lookup, `/chosen` and `/cpus` nodes) is deferred to WS-U. -/
 def DeviceTree.fromDtbWithRegions (blob : ByteArray)
-    (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do
+    (memoryRegBytes : Option ByteArray := none)
+    (physicalAddressWidth : Nat := 48) : Option DeviceTree := do
   let hdr ← parseAndValidateFdtHeader blob
   let memRegions := match memoryRegBytes with
     | some regBlob => fdtRegionsToMemoryRegions (extractMemoryRegions regBlob)
     | none => []
+  -- U2-E/U-H07: physicalAddressWidth is now parameterized (default 48).
+  -- BCM2712 (RPi5) should pass 44. Callers should derive this from the DTB
+  -- or board-specific constants rather than relying on the default.
   let config : MachineConfig := {
     registerWidth := 64
     virtualAddressWidth := 48
-    physicalAddressWidth := 48  -- default; platform-specific
+    physicalAddressWidth := physicalAddressWidth
     pageSize := 4096
     maxASID := 65536
     memoryMap := memRegions

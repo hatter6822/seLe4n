@@ -318,6 +318,28 @@ theorem default_allTablesInvExt : (default : SystemState).allTablesInvExt := by
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExt
   exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExt
 
+/-- U2-M: Compile-time completeness witness for `allTablesInvExt`.
+    This theorem destructures `allTablesInvExt` into exactly 16 named conjuncts.
+    If a new RHTable field is added to `SystemState` and included in
+    `allTablesInvExt` without updating this witness, the proof fails. -/
+theorem allTablesInvExt_witness (st : SystemState) (h : st.allTablesInvExt) :
+    st.objects.invExt ∧
+    st.irqHandlers.invExt ∧
+    st.asidTable.invExt ∧
+    st.cdtSlotNode.invExt ∧
+    st.cdtNodeSlot.invExt ∧
+    st.lifecycle.objectTypes.invExt ∧
+    st.lifecycle.capabilityRefs.invExt ∧
+    st.cdt.childMap.invExt ∧
+    st.cdt.parentMap.invExt ∧
+    st.services.invExt ∧
+    st.interfaceRegistry.invExt ∧
+    st.serviceRegistry.invExt ∧
+    st.scheduler.runQueue.byPriority.invExt ∧
+    st.scheduler.runQueue.threadPriority.invExt ∧
+    st.objectIndexSet.table.invExt ∧
+    st.scheduler.runQueue.membership.table.invExt := h
+
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
 def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
@@ -370,12 +392,26 @@ of O(n) list membership scan.
 WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
 VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
 
-S4-B: Capacity enforcement is performed at the allocation boundary
+S4-B/U2-L: Capacity enforcement is performed at the allocation boundary
 (`retypeFromUntyped` in Lifecycle/Operations.lean), not here. The
 `objectCount_le_maxObjects` invariant (alias for `objectIndexBounded`,
 defined above) is preserved by allocation-time checking, and `storeObject`
 remains infallible for internal use by IPC, scheduler, and capability
-operations. -/
+operations.
+
+**U2-L callsite audit** (v0.21.1):
+- **Allocation-guarded** (capacity checked by `retypeFromUntyped`):
+  `lifecycleRetypeObject`, `lifecycleRetypeWithCleanup`, `lifecycleRetypeDirect`,
+  `lifecycleRetypeDirectWithCleanup` — all go through retype authority + untyped
+  capacity validation before reaching `storeObject`.
+- **In-place mutation** (no new ObjId, just updating an existing object):
+  `vspaceMapPage`/`vspaceUnmapPage` (VSpaceRoot update), `cspaceInsertSlot`/
+  `cspaceDeleteSlot`/`cspaceRevokeSlot` (CNode update), `endpointSend`/
+  `endpointReceive`/`notificationSignal`/`notificationWait` (Endpoint/Notification
+  update), `schedulerSetPriority`/`schedulerSetDomain` (TCB update).
+  These all overwrite an existing ObjId — `objectIndex` growth is zero.
+- **Builder/boot** (`IntermediateState.addThread`, `IntermediateState.addObject`):
+  Boot-time population — capacity bounded by `maxObjects` in `PlatformConfig`. -/
 def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     .ok ((), {

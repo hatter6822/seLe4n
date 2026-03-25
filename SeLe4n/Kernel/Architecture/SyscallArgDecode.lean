@@ -198,21 +198,31 @@ def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
 /-- Decode VSpace map arguments from message registers.
     Requires 4 message registers (asid, vaddr, paddr, perms word).
     T6-C/M-ARCH-1: Validates the permissions word at decode time via
-    `PagePermissions.ofNat?`. Returns `invalidArgument` for values ≥ 32
-    (undefined permission bits set). -/
+    `PagePermissions.ofNat?`. Returns `policyDenied` for values ≥ 32
+    (undefined permission bits set).
+    U2-B/U-H06: Validates VAddr lies within ARM64 48-bit canonical range.
+    Returns `addressOutOfBounds` for VAddr ≥ 2^48. -/
 def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
     : Except KernelError VSpaceMapArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  match PagePermissions.ofNat? r3.val with
-  | some perms =>
-    pure { asid  := ASID.ofNat r0.val
-           vaddr := VAddr.ofNat r1.val
-           paddr := PAddr.ofNat r2.val
-           perms := perms }
-  | none => .error .policyDenied
+  -- U2-G/U-H08: Validate ASID within 16-bit range (ARM64 standard: maxASID = 65536)
+  let asid := ASID.ofNat r0.val
+  if !asid.isValidForConfig 65536 then .error .asidNotBound
+  else
+  -- U2-B/U-H06: Validate VAddr lies within ARM64 48-bit canonical address range
+  let vaddr := VAddr.ofNat r1.val
+  if !vaddr.isCanonical then .error .addressOutOfBounds
+  else
+    match PagePermissions.ofNat? r3.val with
+    | some perms =>
+      pure { asid  := asid
+             vaddr := vaddr
+             paddr := PAddr.ofNat r2.val
+             perms := perms }
+    | none => .error .policyDenied
 
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
@@ -220,7 +230,11 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
     : Except KernelError VSpaceUnmapArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
-  pure { asid  := ASID.ofNat r0.val
+  -- U2-G/U-H08: Validate ASID within 16-bit range
+  let asid := ASID.ofNat r0.val
+  if !asid.isValidForConfig 65536 then .error .asidNotBound
+  else
+  pure { asid  := asid
          vaddr := VAddr.ofNat r1.val }
 
 -- ============================================================================
@@ -428,67 +442,151 @@ theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
     · rw [requireMsgReg_unfold_err _ _ h1]
   · rw [requireMsgReg_unfold_err _ _ h0]
 
+/-- U2-B: VSpace map decode fails if VAddr is non-canonical (≥ 2^48). -/
+theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult)
+    (hSize : 4 ≤ d.msgRegs.size)
+    (hVAddr : (VAddr.ofNat d.msgRegs[1].val).isCanonical = false) :
+    ∃ e, decodeVSpaceMapArgs d = .error e := by
+  simp only [decodeVSpaceMapArgs, bind, Except.bind,
+    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+    dif_pos (show 1 < d.msgRegs.size by omega),
+    dif_pos (show 2 < d.msgRegs.size by omega),
+    dif_pos (show 3 < d.msgRegs.size by omega)]
+  split
+  · -- ASID invalid → error (asidNotBound)
+    exact ⟨.asidNotBound, rfl⟩
+  · -- ASID valid → VAddr check fails
+    exact ⟨.addressOutOfBounds, by simp [hVAddr]⟩
+
 /-- T6-D/M-ARCH-1: VSpace map decode fails if the permissions word is invalid (≥ 32). -/
 theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
     (hSize : 4 ≤ d.msgRegs.size)
     (hPerms : PagePermissions.ofNat? d.msgRegs[3].val = none) :
     ∃ e, decodeVSpaceMapArgs d = .error e := by
-  refine ⟨.policyDenied, ?_⟩
   simp only [decodeVSpaceMapArgs, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
     dif_pos (show 2 < d.msgRegs.size by omega),
-    dif_pos (show 3 < d.msgRegs.size by omega), hPerms]
+    dif_pos (show 3 < d.msgRegs.size by omega)]
+  split
+  · -- ASID invalid → error
+    exact ⟨.asidNotBound, rfl⟩
+  · -- ASID valid → check VAddr
+    split
+    · -- VAddr not canonical → error
+      exact ⟨.addressOutOfBounds, rfl⟩
+    · -- VAddr canonical → perms check fails
+      exact ⟨.policyDenied, by simp [hPerms]⟩
 
-/-- VSpace map decode fails iff fewer than 4 message registers or
-    the permissions word is invalid.  Two failure modes:
+/-- VSpace map decode fails iff fewer than 4 message registers,
+    ASID is invalid, VAddr is non-canonical, or the permissions word is invalid.
+    Four failure modes:
     1. `msgRegs.size < 4` → `requireMsgReg` returns error
-    2. `msgRegs.size ≥ 4` but `PagePermissions.ofNat?` returns none → policyDenied -/
+    2. ASID (msgRegs[0]) ≥ 65536 → asidNotBound
+    3. VAddr (msgRegs[1]) ≥ 2^48 → addressOutOfBounds
+    4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → policyDenied -/
 theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
     (∃ e, decodeVSpaceMapArgs d = .error e) ↔
     (d.msgRegs.size < 4 ∨
+     (∃ (h : 3 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = false) ∨
+     (∃ (h : 3 < d.msgRegs.size), (VAddr.ofNat (d.msgRegs[1]'(by omega)).val).isCanonical = false) ∨
      (∃ (h : 3 < d.msgRegs.size), PagePermissions.ofNat? (d.msgRegs[3]'h).val = none)) := by
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 4
     · exact .inl hlt
-    · right
-      have h3 : 3 < d.msgRegs.size := by omega
-      exact ⟨h3, by
+    · have h3 : 3 < d.msgRegs.size := by omega
+      simp only [decodeVSpaceMapArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        dif_pos (show 1 < d.msgRegs.size by omega),
+        dif_pos (show 2 < d.msgRegs.size by omega),
+        dif_pos (show 3 < d.msgRegs.size by omega)] at he
+      split at he
+      · -- ASID invalid
+        rename_i hAsidInvalid
+        right; left
+        exact ⟨h3, by
+          simp only [Bool.not_eq_true'] at hAsidInvalid
+          cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536
+          · rfl
+          · rw [hc] at hAsidInvalid; simp at hAsidInvalid⟩
+      · -- ASID valid → check VAddr
+        split at he
+        · -- VAddr not canonical
+          rename_i hNotCanon
+          right; right; left
+          exact ⟨h3, by
+            simp only [Bool.not_eq_true'] at hNotCanon
+            cases hc : (VAddr.ofNat d.msgRegs[1].val).isCanonical
+            · rfl
+            · rw [hc] at hNotCanon; simp at hNotCanon⟩
+        · -- VAddr canonical → check perms
+          right; right; right
+          exact ⟨h3, by
+            split at he
+            · -- some perms case: decode succeeded → contradicts error assumption
+              nomatch he
+            · -- none case: perms invalid
+              assumption⟩
+  · intro h
+    match h with
+    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d hLt
+    | .inr (.inl ⟨h3, hAsid⟩) =>
+      exact ⟨.asidNotBound, by
         simp only [decodeVSpaceMapArgs, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega),
           dif_pos (show 2 < d.msgRegs.size by omega),
-          dif_pos (show 3 < d.msgRegs.size by omega)] at he
-        split at he
-        · simp [pure, Except.pure] at he
-        · assumption⟩
-  · intro h
-    match h with
-    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d hLt
-    | .inr ⟨h3, hPerms⟩ =>
+          dif_pos (show 3 < d.msgRegs.size by omega)]
+        have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = true := by
+          rw [hAsid]; rfl
+        simp [this]⟩
+    | .inr (.inr (.inl ⟨h3, hVAddr⟩)) =>
+      exact decodeVSpaceMapArgs_error_of_noncanonical_vaddr d (by omega) hVAddr
+    | .inr (.inr (.inr ⟨h3, hPerms⟩)) =>
       exact decodeVSpaceMapArgs_error_of_invalid_perms d (by omega) hPerms
 
-/-- VSpace unmap decode fails iff fewer than 2 message registers. -/
+/-- VSpace unmap decode fails iff fewer than 2 message registers or ASID invalid. -/
 theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeVSpaceUnmapArgs d = .error e) ↔ d.msgRegs.size < 2 := by
+    (∃ e, decodeVSpaceUnmapArgs d = .error e) ↔
+    (d.msgRegs.size < 2 ∨
+     (∃ (h : 1 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = false)) := by
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 2
-    · exact hlt
-    · exfalso
+    · exact .inl hlt
+    · have h1 : 1 < d.msgRegs.size := by omega
       simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        dif_pos (show 1 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
+        dif_pos (show 1 < d.msgRegs.size by omega)] at he
+      split at he
+      · -- ASID invalid
+        rename_i hAsidInvalid
+        right
+        exact ⟨h1, by
+          simp only [Bool.not_eq_true'] at hAsidInvalid
+          cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536
+          · rfl
+          · rw [hc] at hAsidInvalid; simp at hAsidInvalid⟩
+      · -- ASID valid → pure succeeds → contradiction
+        nomatch he
   · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeVSpaceUnmapArgs, bind, Except.bind]
-    by_cases h0 : 0 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h0]; simp
-      rw [requireMsgReg_unfold_err _ _ (by omega)]
-    · rw [requireMsgReg_unfold_err _ _ h0]
+    match h with
+    | .inl hLt =>
+      refine ⟨.invalidMessageInfo, ?_⟩
+      simp only [decodeVSpaceUnmapArgs, bind, Except.bind]
+      by_cases h0 : 0 < d.msgRegs.size
+      · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+        rw [requireMsgReg_unfold_err _ _ (by omega)]
+      · rw [requireMsgReg_unfold_err _ _ h0]
+    | .inr ⟨h1, hAsid⟩ =>
+      exact ⟨.asidNotBound, by
+        simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
+          requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+          dif_pos (show 1 < d.msgRegs.size by omega)]
+        have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = true := by
+          rw [hAsid]; rfl
+        simp [this]⟩
 
 -- ============================================================================
 -- Round-trip proofs: encode then decode recovers the original
@@ -552,21 +650,43 @@ private theorem pagePermissions_ofNat?_toNat (p : PagePermissions) :
     PagePermissions.ofNat? p.toNat = some (PagePermissions.ofNat p.toNat) := by
   simp [PagePermissions.ofNat?, pagePermissions_toNat_lt_32]
 
-theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) :
+/-- U2-B/U2-G: Round-trip requires VAddr is canonical (within 48-bit range)
+    and ASID is valid for config 65536. Non-canonical addresses and invalid
+    ASIDs are rejected at decode time. -/
+theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs)
+    (hAsid : args.asid.isValidForConfig 65536 = true)
+    (hVAddr : args.vaddr.isCanonical = true) :
     decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args := by
   rcases args with ⟨a, v, p, perms⟩
   show decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs ⟨a, v, p, perms⟩)) = .ok ⟨a, v, p, perms⟩
-  unfold decodeVSpaceMapArgs encodeVSpaceMapArgs stubDecoded
+  -- U2-G: The ASID validity check needs to pass; derive that from hAsid
+  have hAsidValid : (ASID.ofNat a.toNat).isValidForConfig 65536 = true := by
+    simp only [ASID.ofNat, ASID.toNat]; exact hAsid
+  have hAsidNotFalse : (!(ASID.ofNat a.toNat).isValidForConfig 65536) = false := by
+    rw [hAsidValid]; rfl
+  -- U2-B: The VAddr canonical check needs to pass; derive that from hVAddr
+  have hCanon : (VAddr.ofNat v.toNat).isCanonical = true := by
+    simp only [VAddr.ofNat, VAddr.toNat]; exact hVAddr
+  have hNotCanonFalse : (!(VAddr.ofNat v.toNat).isCanonical) = false := by
+    rw [hCanon]; rfl
   rcases perms with ⟨r, w, e, u, c⟩
+  have hA : a.isValidForConfig 65536 = true := hAsid
+  have hV : v.isCanonical = true := hVAddr
   cases r <;> cases w <;> cases e <;> cases u <;> cases c <;>
-    simp [bind, Except.bind, requireMsgReg, PagePermissions.toNat,
-      PagePermissions.ofNat?, PagePermissions.ofNat, ASID.ofNat_toNat, VAddr.ofNat_toNat,
-      PAddr.ofNat_toNat, pure, Except.pure]
+    simp [decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
+      bind, Except.bind, requireMsgReg, hA, hV,
+      PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
+      ASID.ofNat_toNat, VAddr.ofNat_toNat, PAddr.ofNat_toNat, pure, Except.pure]
 
-/-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original. -/
-theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) :
+/-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original.
+    U2-G: Requires ASID is valid for config 65536. -/
+theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs)
+    (hAsid : args.asid.isValidForConfig 65536 = true) :
     decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args := by
-  rcases args with ⟨a, v⟩; rfl
+  rcases args with ⟨a, v⟩
+  simp [decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
+    bind, Except.bind, requireMsgReg, ASID.ofNat_toNat, VAddr.ofNat_toNat,
+    pure, Except.pure, hAsid]
 
 -- ============================================================================
 -- WS-Q1-D: Service argument structures
@@ -730,8 +850,10 @@ theorem decode_layer2_roundtrip_all :
     (∀ args, decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
     (∀ args, decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args) ∧
-    (∀ args, decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args) ∧
-    (∀ args, decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
+    (∀ args, args.asid.isValidForConfig 65536 = true → args.vaddr.isCanonical = true →
+      decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args) ∧
+    (∀ args, args.asid.isValidForConfig 65536 = true →
+      decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) :=
   ⟨fun args h => decodeCSpaceMintArgs_roundtrip args h,
@@ -739,8 +861,8 @@ theorem decode_layer2_roundtrip_all :
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
    decodeLifecycleRetypeArgs_roundtrip,
-   decodeVSpaceMapArgs_roundtrip,
-   decodeVSpaceUnmapArgs_roundtrip,
+   fun args hA hV => decodeVSpaceMapArgs_roundtrip args hA hV,
+   fun args hA => decodeVSpaceUnmapArgs_roundtrip args hA,
    decodeServiceRegisterArgs_roundtrip,
    decodeServiceRevokeArgs_roundtrip⟩
 
