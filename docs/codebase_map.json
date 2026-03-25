@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-u4-proofs-ZMhvQ",
-      "commit_sha": "18cc93acc605e8435160478f732821e75194e817",
-      "tree_sha": "b66d8a59a037a18925568fda0bce7b0551523d2e",
-      "committed_at_utc": "2026-03-25T01:41:16-04:00"
+      "commit_sha": "b01782a6eba645a68b7875fee9792993388d7be0",
+      "tree_sha": "0f2c642d8a0df7fcceb0731a62c601619f163ae9",
+      "committed_at_utc": "2026-03-25T08:02:29+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "aa5b5be2d45aa70a5d85a80f45f7f50b04f14fb64ec650a8febe3ee2f3bc09bd"
+    "source_digest": "324e7da42ec97cbb9ced8ea2295f5342bd7c9ea839c368698296d7d39bfd5efc"
   },
   "summary": {
     "module_count": 111,
@@ -29,7 +29,7 @@
     "production_files": 101,
     "production_loc": 64039,
     "test_files": 10,
-    "test_loc": 8327,
+    "test_loc": 8318,
     "proved_theorem_lemma_decls": 1901,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -45590,14 +45590,13 @@
             "arm64DefaultLayout",
             "buildSyscallState",
             "ofList",
-            "syscallEntry",
-            "toNat"
+            "syscallEntry"
           ]
         },
         {
           "kind": "def",
           "name": "chain31SyscallReply",
-          "line": 1907,
+          "line": 1898,
           "called": [
             "ObjId",
             "RHTable.ofList",
@@ -45622,7 +45621,7 @@
         {
           "kind": "def",
           "name": "chain32SyscallCall",
-          "line": 1963,
+          "line": 1954,
           "called": [
             "ObjId",
             "arm64DefaultLayout",
@@ -45634,7 +45633,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 1980,
+          "line": 1971,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -45674,7 +45673,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2018,
+          "line": 2009,
           "called": [
             "runOperationChainSuite"
           ]

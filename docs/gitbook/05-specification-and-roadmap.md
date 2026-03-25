@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.21.1` |
+| Version | `0.21.3` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 62,154 across 101 Lean files |
-| Test LoC | 8,327 across 10 suites |
-| Proved declarations | 1,867 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 64,039 across 101 Lean files |
+| Test LoC | 8,318 across 10 suites |
+| Proved declarations | 1,901 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-U Phase U2 COMPLETE** — Safety Boundary Hardening (14 sub-tasks, U2-A–U2-N, v0.21.1). Prior: **WS-U U1 COMPLETE** (v0.21.0), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
+| Active workstream | **WS-U Phase U4 COMPLETE** — Proof Chain & Invariant Composition (v0.21.3). Prior: **WS-U U3 COMPLETE** (v0.21.2), **WS-U U2 COMPLETE** (v0.21.1), **WS-U U1 COMPLETE** (v0.21.0), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -75,6 +75,28 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-Q4 (CNode radix tree, v0.17.10) — COMPLETED.** →
 **WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
 **WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
+
+## Completed: WS-U Phase U4 Proof Chain & Invariant Composition (v0.21.3)
+
+Internalized non-interference projection proofs and composed cross-subsystem
+invariants. 3 sub-task groups (U4-A/B/C/D, U4-K, U4-N). Key outcomes:
+
+- U4-A/B/C/D: Replaced externalized `hProjection` hypotheses with semantic queue domain isolation hypotheses in 4 IPC NonInterferenceStep constructors
+- U4-K: Composed `ipcInvariantFull` (IPC + badge + bounded), integrated `serviceGraphInvariant` into `crossSubsystemInvariant`, added `canonicalAddressInvariant` to VSpace bundle
+- U4-N: BFS positional queue lemma (`descendantsOf_go_queue_pos_children_found`) and queue membership variant for CDT transitive closure
+
+## Completed: WS-U Phase U3 Rust ABI Hardening (v0.21.2)
+
+Hardened the Rust userspace ABI layer with construction-time validation and
+safety improvements. 10 sub-tasks (U3-A through U3-J). Key outcomes:
+
+- `clobber_abi("C")` on `svc #0` inline assembly for ARM64 ABI compliance
+- `MessageInfo` field privacy with validated constructors
+- `AccessRights` `TryFrom` validation rejecting invalid bitmasks
+- `KernelError` `#[non_exhaustive]` for forward compatibility
+- `RegisterFile` safe bounds-checked access eliminating index panics
+- `IpcBuffer` compile-time layout assertions
+- Conformance test runner (`test_rust_conformance.sh`)
 
 ## Completed: WS-U Phase U2 Safety Boundary Hardening (v0.21.1)
 
