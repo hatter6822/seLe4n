@@ -151,7 +151,16 @@ theorem lookupTcb_preserved_by_storeObject_notification
   rw [hPreserved]
   exact hLookup
 
-/-- Signal a notification: wake one waiter or mark one pending badge. -/
+/-- Signal a notification: wake one waiter or mark one pending badge.
+
+**U5-J/U-M29: Wake-path pendingMessage overwrite**: When a waiter is present,
+the wake path creates a badge-only `IpcMessage` and stores it in the waiter's
+`pendingMessage` field via `storeTcbIpcStateAndMessage`. This unconditionally
+overwrites any previous `pendingMessage` value. This is safe because the
+`ipcStateQueueConsistent` invariant guarantees that threads in the
+notification wait queue have `ipcState = .waitingOnNotification` and
+`pendingMessage = none` — a waiting thread cannot have a stale pending
+message from a previous IPC operation. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
   fun st =>
     match st.objects[notificationId]? with

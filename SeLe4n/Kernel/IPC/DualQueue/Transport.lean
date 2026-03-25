@@ -1513,7 +1513,16 @@ Otherwise, enqueue sender in intrusive sendQ, store `msg` in sender's
 TCB for later retrieval, and block.
 
 Badge propagation: if `msg.badge` is set, it is carried through to the
-receiver, modeling seL4 badge delivery through endpoint capabilities. -/
+receiver, modeling seL4 badge delivery through endpoint capabilities.
+
+**U5-I/U-M28: Message truncation semantics**: Messages exceeding receiver
+buffer bounds are rejected at the send boundary with explicit errors
+(`ipcMessageTooLarge` / `ipcMessageTooManyCaps`). This is stricter than
+seL4's silent truncation behavior — seLe4n treats oversized messages as
+errors rather than silently truncating to buffer size. This design choice
+provides deterministic behavior: the sender always knows whether the full
+message was delivered. The `maxMessageRegisters` (120) and `maxExtraCaps`
+(3) bounds match seL4's `seL4_MsgMaxLength` and `seL4_MsgMaxExtraCaps`. -/
 def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>

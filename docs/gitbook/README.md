@@ -6,9 +6,9 @@ This GitBook is the long-form guide for seLe4n — a production-oriented microke
 
 ## Current project state
 - **Version:** 0.21.3 (Lean v4.28.0).
-- **Codebase metrics:** 64,039 production LoC across 101 files; 8,318 test LoC across 10 suites; 1,901 theorem/lemma declarations (zero sorry/axiom).
+- **Codebase metrics:** 64,259 production LoC across 101 files; 8,318 test LoC across 10 suites; 1,907 theorem/lemma declarations (zero sorry/axiom).
 - **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical).
-- **Active workstream:** **WS-U Phase U4 COMPLETE** — Proof Chain & Invariant Composition (v0.21.3). All prior portfolios (WS-B through WS-U U3) completed.
+- **Active workstream:** **WS-U Phase U5 COMPLETE** — API & Dispatch Integrity (v0.21.4). All prior portfolios (WS-B through WS-U U4) completed.
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.

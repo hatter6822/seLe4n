@@ -375,6 +375,10 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
+  -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
+  -- semantics where badge 0 indicates an unbadged capability. This means callers
+  -- cannot explicitly set badge 0 — a deliberate simplification that matches
+  -- seL4's treatment of zero-valued badges as "no badge specified".
   | .cspaceMint =>
     match cap.target with
     | .object cnodeId =>
@@ -496,19 +500,25 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
 -- T6-I/M-IF-1: Information-flow-checked dispatch
 -- ============================================================================
 
-/-- T6-I/M-IF-1: Policy-checked dispatch — replaces unchecked operations with their
-information-flow-checked equivalents. When a `LabelingContext` is provided, all
-cross-domain operations (IPC send/receive/call, CSpace mint/copy/move, notification
-signal, service register) are gated by `securityFlowsTo` before execution.
+/-- T6-I/M-IF-1/U5-A: Policy-checked dispatch — replaces unchecked operations
+with their information-flow-checked equivalents. All cross-domain operations
+(IPC send/receive/call/reply, CSpace mint/copy/move, service register) are
+gated by `securityFlowsTo` before execution via enforcement wrappers.
 
-This ensures the runtime dispatch path matches the proven model: the enforcement
-soundness theorems (Soundness.lean) prove NI for checked wrappers, and this
-function guarantees those wrappers are actually used at runtime.
+U5-B/U-M01: `.call` now routes through `endpointCallChecked` wrapper instead
+of an inline `securityFlowsTo` guard, ensuring consistent enforcement layer.
 
-**Design**: Operations that don't cross domain boundaries (CSpace delete, lifecycle
-retype, VSpace map/unmap, service revoke/query, reply) are left unchecked because
-they derive authority entirely from capability possession or operate within a single
-domain. -/
+U5-C/U-M04: `.reply` now routes through `endpointReplyChecked` wrapper for
+defense-in-depth, even though reply caps are single-use authority.
+
+**Design**: Operations that don't cross domain boundaries (CSpace delete,
+lifecycle retype, VSpace map/unmap, service revoke/query) are left unchecked
+because they derive authority entirely from capability possession.
+
+**U5-N/U-L27**: `notificationSignalChecked` is defined in `Enforcement/Wrappers.lean`
+but is NOT wired into syscall dispatch because `notificationSignal` is not in
+the `SyscallId` enum. This is intentional — notification signaling is deferred
+to WS-V (hardware binding) when the interrupt/notification model is finalized. -/
 private def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
@@ -534,7 +544,9 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         | .ok (_, st') => .ok ((), st')
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
-  -- T6-I: IPC call — checked for sender→endpoint flow
+  -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
+  -- This ensures `.call` uses the same enforcement layer as all other policy-gated
+  -- operations, rather than an ad-hoc inline `securityFlowsTo` guard.
   | .call =>
     match cap.target with
     | .object epId =>
@@ -543,22 +555,20 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
-        -- Call uses send-direction flow check (caller→endpoint)
-        let senderLabel := ctx.threadLabelOf tid
-        let endpointLabel := ctx.endpointLabelOf epId
-        if securityFlowsTo senderLabel endpointLabel then
-          match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
-              (SeLe4n.Slot.ofNat 0) st with
-          | .error e => .error e
-          | .ok (_, st') => .ok ((), st')
-        else .error .flowDenied
+        match endpointCallChecked ctx epId tid msg cap.rights gate.cspaceRoot
+            (SeLe4n.Slot.ofNat 0) st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
-  -- T6-I: Reply — no cross-domain check needed (reply cap is single-use authority)
+  -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
+  -- In seL4, the reply capability is single-use authority consumed upon use.
+  -- The flow check here is a defense-in-depth measure ensuring the reply path
+  -- is auditable and consistent with all other cross-domain operations.
   | .reply =>
     match cap.target with
     | .replyCap targetTid =>
       let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge }
+      endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   | .cspaceMint =>
@@ -718,18 +728,93 @@ def syscallEntryChecked (ctx : LabelingContext)
         | .ok decoded =>
           dispatchSyscallChecked ctx decoded tid st
 
-/-- T6-I: The checked and unchecked dispatch paths are structurally identical
-for capability-only operations (delete, retype, vspace, revoke, query, reply).
-For policy-gated operations (send, receive, call, mint, copy, move, register),
-the checked path adds a `securityFlowsTo` guard. With `defaultLabelingContext`
-(where all labels are `publicLabel`), `securityFlowsTo` always returns `true`,
-so the checked path delegates to the same underlying operation.
+-- ============================================================================
+-- U5-A/U5-D: Dispatch structural equivalence theorems
+-- ============================================================================
+
+/-- U5-A/U-M02: The 6 capability-only syscalls are handled identically by
+both checked and unchecked dispatch paths. These arms derive authority
+entirely from capability possession and do not cross security domains.
+
+The shared arms are: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
+`.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`.
+
+This theorem proves structural equivalence for `.cspaceDelete`. -/
+theorem checkedDispatch_cspaceDelete_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .cspaceDelete) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+
+/-- U5-A: Structural equivalence for `.lifecycleRetype`. -/
+theorem checkedDispatch_lifecycleRetype_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .lifecycleRetype) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+
+/-- U5-A: Structural equivalence for `.vspaceMap`. -/
+theorem checkedDispatch_vspaceMap_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .vspaceMap) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+
+/-- U5-A: Structural equivalence for `.vspaceUnmap`. -/
+theorem checkedDispatch_vspaceUnmap_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .vspaceUnmap) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+
+/-- U5-A: Structural equivalence for `.serviceRevoke`. -/
+theorem checkedDispatch_serviceRevoke_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .serviceRevoke) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+
+/-- U5-A: Structural equivalence for `.serviceQuery`. -/
+theorem checkedDispatch_serviceQuery_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .serviceQuery) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+
+/-- U5-D/U-L20: Complete dispatch equivalence — for ALL capability-only
+syscalls, the checked and unchecked dispatch paths produce identical results.
+
+This replaces the former trivial `True` placeholder theorem with a
+machine-checked proof that the 6 shared arms are structurally identical.
 
 **Production recommendation**: Use `syscallEntryChecked` for user-space entry.
 The unchecked `syscallEntry` is retained for backward compatibility with
 existing proofs and internal kernel paths that operate within the TCB. -/
-theorem checkedDispatch_subsumes_unchecked_documentation :
-    True := trivial
+theorem checkedDispatch_capabilityOnly_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hCapOnly : decoded.syscallId = .cspaceDelete ∨
+                decoded.syscallId = .lifecycleRetype ∨
+                decoded.syscallId = .vspaceMap ∨
+                decoded.syscallId = .vspaceUnmap ∨
+                decoded.syscallId = .serviceRevoke ∨
+                decoded.syscallId = .serviceQuery) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  rcases hCapOnly with h | h | h | h | h | h <;>
+    simp [dispatchWithCapChecked, dispatchWithCap, h]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
 kernel operation. Looks up the caller's TCB and CSpace root, constructs a

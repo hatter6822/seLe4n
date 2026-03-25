@@ -198,8 +198,8 @@ def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
 /-- Decode VSpace map arguments from message registers.
     Requires 4 message registers (asid, vaddr, paddr, perms word).
     T6-C/M-ARCH-1: Validates the permissions word at decode time via
-    `PagePermissions.ofNat?`. Returns `policyDenied` for values ≥ 32
-    (undefined permission bits set).
+    `PagePermissions.ofNat?`. Returns `invalidArgument` for values ≥ 32
+    (undefined permission bits set — U5-E/U-M07: decode error, not policy).
     U2-B/U-H06: Validates VAddr lies within ARM64 48-bit canonical range.
     Returns `addressOutOfBounds` for VAddr ≥ 2^48. -/
 def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
@@ -222,7 +222,9 @@ def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
              vaddr := vaddr
              paddr := PAddr.ofNat r2.val
              perms := perms }
-    | none => .error .policyDenied
+    -- U5-E/U-M07: Invalid permission bits are a decode error, not a policy violation.
+    -- Prior to U5-E this incorrectly returned `.policyDenied`.
+    | none => .error .invalidArgument
 
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
@@ -476,7 +478,7 @@ theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
     · -- VAddr not canonical → error
       exact ⟨.addressOutOfBounds, rfl⟩
     · -- VAddr canonical → perms check fails
-      exact ⟨.policyDenied, by simp [hPerms]⟩
+      exact ⟨.invalidArgument, by simp [hPerms]⟩
 
 /-- VSpace map decode fails iff fewer than 4 message registers,
     ASID is invalid, VAddr is non-canonical, or the permissions word is invalid.
@@ -484,7 +486,7 @@ theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
     1. `msgRegs.size < 4` → `requireMsgReg` returns error
     2. ASID (msgRegs[0]) ≥ 65536 → asidNotBound
     3. VAddr (msgRegs[1]) ≥ 2^48 → addressOutOfBounds
-    4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → policyDenied -/
+    4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → invalidArgument (U5-E) -/
 theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
     (∃ e, decodeVSpaceMapArgs d = .error e) ↔
     (d.msgRegs.size < 4 ∨

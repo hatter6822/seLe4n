@@ -1,3 +1,41 @@
+## [0.21.4] — WS-U Phase U5: API & Dispatch Integrity
+
+- U5-A (U-M02): Verified structural equivalence of checked/unchecked dispatch
+  for all 6 capability-only syscalls (cspaceDelete, lifecycleRetype, vspaceMap,
+  vspaceUnmap, serviceRevoke, serviceQuery) with machine-checked proofs. Added
+  `checkedDispatch_capabilityOnly_eq_unchecked` theorem covering all shared arms.
+- U5-B (U-M01): Routed `.call` syscall through `endpointCallChecked` enforcement
+  wrapper instead of an inline `securityFlowsTo` guard. This ensures `.call`
+  uses the same enforcement layer as all other policy-gated operations.
+- U5-C (U-M04): Routed `.reply` syscall through `endpointReplyChecked` enforcement
+  wrapper for defense-in-depth. Reply caps are single-use authority, but the
+  wrapper ensures auditability and consistency with the enforcement layer.
+- U5-D (U-L20): Replaced trivial `checkedDispatch_subsumes_unchecked_documentation
+  : True := trivial` with 7 machine-checked structural equivalence theorems proving
+  the checked and unchecked paths are identical for capability-only operations.
+- U5-E (U-M07): Changed `decodeVSpaceMapArgs` error from `.policyDenied` to
+  `.invalidArgument` for invalid permission bits. Added `invalidArgument`
+  variant to `KernelError` enum. This correctly classifies the error as a
+  decode failure rather than a policy violation.
+- U5-F/G (U-M21): Added `capabilityOnlyOperations` definition and comprehensive
+  documentation in `Enforcement/Wrappers.lean` explaining why 7 operations have
+  no runtime flow check (NI relies on proof soundness + capability authority).
+- U5-H (U-M03): Documented badge-0 semantics in API dispatch — badge value 0
+  is treated as "no badge" by design, matching seL4 semantics.
+- U5-I (U-M28): Documented IPC message handling semantics in `endpointSendDual` —
+  seLe4n rejects oversized messages with explicit errors rather than seL4's
+  silent truncation.
+- U5-J (U-M29): Documented `notificationSignal` wake-path overwrite — safe
+  because `ipcStateQueueConsistent` invariant guarantees waiters have no
+  pending message.
+- U5-K/M (U-M30/U-L06): Documented CSpace root slot 0 simplification and
+  cap transfer CDT tracking in `WithCaps.lean` — imprecise but safe,
+  over-revokes rather than under-revokes.
+- U5-L (U-L05): Documented `AccessRight.grantReply` (bit 3) as spec fidelity —
+  no operational effect in current model, `.grant` governs all grant operations.
+- U5-N (U-L27): Added note that `notificationSignalChecked` is defined but
+  not wired into syscall dispatch (deferred to WS-V hardware binding).
+
 ## [0.21.3] — WS-U Phase U4: Proof Chain & Invariant Composition
 
 - U4-A/B/C/D: Discharged `hProjection` preconditions for all four IPC endpoint
