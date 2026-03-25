@@ -34,7 +34,7 @@ fn verify_regs(req: &SyscallRequest, expected: &[(usize, u64, &str)]) {
 fn xval_001_endpoint_send() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(100u64),
-        msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0x10 },
+        msg_info: MessageInfo::new(2, 0, 0x10).unwrap(),
         msg_regs: [0xAAAA, 0xBBBB, 0, 0],
         syscall_id: SyscallId::Send,
     };
@@ -52,7 +52,7 @@ fn xval_001_endpoint_send() {
 fn xval_002_endpoint_receive() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
-        msg_info: MessageInfo { length: 0, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::Receive,
     };
@@ -68,7 +68,7 @@ fn xval_002_endpoint_receive() {
 fn xval_003_endpoint_call() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(300u64),
-        msg_info: MessageInfo { length: 1, extra_caps: 0, label: 42 },
+        msg_info: MessageInfo::new(1, 0, 42).unwrap(),
         msg_regs: [0xDEAD, 0, 0, 0],
         syscall_id: SyscallId::Call,
     };
@@ -85,7 +85,7 @@ fn xval_003_endpoint_call() {
 fn xval_004_endpoint_reply() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(400u64),
-        msg_info: MessageInfo { length: 0, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::Reply,
     };
@@ -105,13 +105,13 @@ fn xval_005_cspace_mint() {
     let args = cspace::CSpaceMintArgs {
         src_slot: Slot::from(10u64),
         dst_slot: Slot::from(20u64),
-        rights: AccessRights::from(0x07u8), // read|write|grant
+        rights: AccessRights::try_from(0x07u8).unwrap(), // read|write|grant
         badge: Badge::from(999u64),
     };
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(500u64),
-        msg_info: MessageInfo { length: 4, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
         msg_regs: encoded,
         syscall_id: SyscallId::CSpaceMint,
     };
@@ -132,7 +132,7 @@ fn xval_006_cspace_copy() {
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(600u64),
-        msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::CSpaceCopy,
     };
@@ -150,7 +150,7 @@ fn xval_007_cspace_move() {
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(700u64),
-        msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::CSpaceMove,
     };
@@ -168,7 +168,7 @@ fn xval_008_cspace_delete() {
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(800u64),
-        msg_info: MessageInfo { length: 1, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::CSpaceDelete,
     };
@@ -193,7 +193,7 @@ fn xval_009_lifecycle_retype() {
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(900u64),
-        msg_info: MessageInfo { length: 3, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(3, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::LifecycleRetype,
     };
@@ -221,7 +221,7 @@ fn xval_010_vspace_map() {
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(1000u64),
-        msg_info: MessageInfo { length: 4, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
         msg_regs: encoded,
         syscall_id: SyscallId::VSpaceMap,
     };
@@ -241,7 +241,7 @@ fn xval_011_vspace_unmap() {
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(1100u64),
-        msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::VSpaceUnmap,
     };
@@ -272,7 +272,7 @@ fn xval_012_service_register() {
     buf.set_mr(4, encoded[4]).unwrap();
     let req = SyscallRequest {
         cap_addr: CPtr::from(1200u64),
-        msg_info: MessageInfo { length: 5, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(5, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::ServiceRegister,
     };
@@ -294,7 +294,7 @@ fn xval_013_service_revoke() {
     let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(1300u64),
-        msg_info: MessageInfo { length: 1, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::ServiceRevoke,
     };
@@ -309,7 +309,7 @@ fn xval_013_service_revoke() {
 fn xval_014_service_query() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(1400u64),
-        msg_info: MessageInfo { length: 0, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
     };
@@ -334,7 +334,7 @@ fn xval_014_service_query() {
 fn xval_015_notification_signal() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(500u64),
-        msg_info: MessageInfo { length: 0, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::Send,
     };
@@ -358,7 +358,7 @@ fn xval_015_notification_signal() {
 fn xval_016_notification_wait() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(600u64),
-        msg_info: MessageInfo { length: 0, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
         msg_regs: [0; 4],
         syscall_id: SyscallId::Receive,
     };
@@ -439,7 +439,7 @@ fn message_info_exhaustive_bounds() {
     for len in [0u8, 1, 60, 119, 120] {
         for caps in [0u8, 1, 2, 3] {
             for label in [0u64, 1, 0xFFFF, 0x7FFFFF] {
-                let mi = MessageInfo { length: len, extra_caps: caps, label };
+                let mi = MessageInfo::new(len, caps, label).unwrap();
                 let decoded = MessageInfo::decode(mi.encode().unwrap()).unwrap();
                 assert_eq!(decoded, mi, "Roundtrip failed for len={}, caps={}, label={}", len, caps, label);
             }
@@ -482,7 +482,7 @@ fn type_tag_exhaustive_roundtrip() {
 fn cspace_args_roundtrip_all() {
     let mint = cspace::CSpaceMintArgs {
         src_slot: Slot::from(1u64), dst_slot: Slot::from(2u64),
-        rights: AccessRights::from(0x1Fu8), badge: Badge::from(0xDEADu64),
+        rights: AccessRights::try_from(0x1Fu8).unwrap(), badge: Badge::from(0xDEADu64),
     };
     assert_eq!(cspace::CSpaceMintArgs::decode(&mint.encode()).unwrap(), mint);
 
@@ -524,34 +524,28 @@ fn t3b_message_info_label_boundary_roundtrip() {
     use sele4n_abi::message_info::MAX_LABEL;
 
     // Boundary value: label = 0 (minimum)
-    let mi_zero = MessageInfo { length: 0, extra_caps: 0, label: 0 };
+    let mi_zero = MessageInfo::new(0, 0, 0).unwrap();
     let encoded = mi_zero.encode().unwrap();
     assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_zero);
 
     // Boundary value: label = 2^55 - 1 (maximum valid)
-    let mi_max = MessageInfo { length: 0, extra_caps: 0, label: MAX_LABEL };
+    let mi_max = MessageInfo::new(0, 0, MAX_LABEL).unwrap();
     let encoded = mi_max.encode().unwrap();
     assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_max);
 
-    // Boundary value: label = 2^55 (first invalid — encode must fail)
-    let mi_overflow = MessageInfo { length: 0, extra_caps: 0, label: 1u64 << 55 };
-    assert_eq!(mi_overflow.encode(), Err(KernelError::InvalidMessageInfo));
+    // Boundary value: label = 2^55 (first invalid — new() must reject)
+    assert_eq!(MessageInfo::new(0, 0, 1u64 << 55), Err(KernelError::InvalidMessageInfo));
 
-    // Extreme: label = u64::MAX (encode must fail)
-    let mi_max_u64 = MessageInfo { length: 0, extra_caps: 0, label: u64::MAX };
-    assert_eq!(mi_max_u64.encode(), Err(KernelError::InvalidMessageInfo));
+    // Extreme: label = u64::MAX (new() must reject)
+    assert_eq!(MessageInfo::new(0, 0, u64::MAX), Err(KernelError::InvalidMessageInfo));
 }
 
-/// T3-B: encode_syscall rejects oversized labels.
+/// T3-B: MessageInfo::new rejects oversized labels (U3-B: struct literals no longer possible).
 #[test]
 fn t3b_encode_syscall_rejects_oversized_label() {
-    let req = SyscallRequest {
-        cap_addr: CPtr::from(0u64),
-        msg_info: MessageInfo { length: 0, extra_caps: 0, label: 1u64 << 55 },
-        msg_regs: [0; 4],
-        syscall_id: SyscallId::Send,
-    };
-    assert_eq!(encode_syscall(&req), Err(KernelError::InvalidMessageInfo));
+    // U3-B: With private fields, invalid MessageInfo can no longer be constructed.
+    // We verify the rejection happens at new() instead.
+    assert_eq!(MessageInfo::new(0, 0, 1u64 << 55), Err(KernelError::InvalidMessageInfo));
 }
 
 /// T3-B: MessageInfo::new rejects oversized labels.
@@ -658,4 +652,107 @@ fn t3f_service_register_roundtrip_strict() {
         requires_grant: false,
     };
     assert_eq!(service::ServiceRegisterArgs::decode(&args_false.encode()).unwrap(), args_false);
+}
+
+// ============================================================================
+// U3 — Rust ABI Hardening conformance tests
+// ============================================================================
+
+/// U3-B: Verify MessageInfo private fields enforce validated construction.
+///
+/// After U3-B, the only way to create MessageInfo is through `new()` or
+/// `decode()`, both of which validate bounds. This test verifies the
+/// accessor methods return the values passed to `new()`.
+#[test]
+fn u3b_message_info_private_fields_accessors() {
+    let mi = MessageInfo::new(42, 2, 0x1234).unwrap();
+    assert_eq!(mi.length(), 42);
+    assert_eq!(mi.extra_caps(), 2);
+    assert_eq!(mi.label(), 0x1234);
+
+    // Decoded values also accessible via accessors
+    let decoded = MessageInfo::decode(mi.encode().unwrap()).unwrap();
+    assert_eq!(decoded.length(), 42);
+    assert_eq!(decoded.extra_caps(), 2);
+    assert_eq!(decoded.label(), 0x1234);
+}
+
+/// U3-D/E: AccessRights TryFrom<u8> roundtrip conformance.
+///
+/// Valid values (0–31) succeed, invalid values (32–255) are rejected.
+#[test]
+fn u3de_access_rights_try_from_valid() {
+    for v in 0..=0x1Fu8 {
+        let rights = AccessRights::try_from(v).unwrap();
+        assert_eq!(rights.raw(), v);
+        // Roundtrip through u8
+        let back: u8 = rights.into();
+        assert_eq!(back, v);
+    }
+}
+
+#[test]
+fn u3de_access_rights_try_from_invalid() {
+    for v in 0x20..=0xFFu8 {
+        assert!(
+            AccessRights::try_from(v).is_err(),
+            "AccessRights::try_from({:#04x}) should fail (bits 5-7 set)", v
+        );
+    }
+}
+
+/// U3-D/E: AccessRights bitmask operations preserve validity.
+#[test]
+fn u3de_access_rights_ops_preserve_validity() {
+    // Union of valid rights stays valid
+    let rw = AccessRights::READ | AccessRights::WRITE;
+    assert!(rw.raw() <= 0x1F);
+    // Intersection stays valid
+    let r = rw & AccessRights::READ;
+    assert!(r.raw() <= 0x1F);
+    assert!(r.contains(AccessRight::Read));
+    assert!(!r.contains(AccessRight::Write));
+}
+
+/// U3-F: KernelError has #[non_exhaustive] — external matches require wildcard.
+///
+/// This test validates that `from_u32` still works for all known variants
+/// and that unknown discriminants return None (forward-compatible).
+#[test]
+fn u3f_kernel_error_non_exhaustive() {
+    // All 38 variants (0–37) roundtrip
+    for i in 0..=37u32 {
+        let e = KernelError::from_u32(i).unwrap();
+        assert_eq!(e as u32, i);
+    }
+    // Future discriminants return None
+    assert!(KernelError::from_u32(38).is_none());
+    assert!(KernelError::from_u32(100).is_none());
+    assert!(KernelError::from_u32(u32::MAX).is_none());
+}
+
+/// U3-G: RegisterFile safe bounds checking.
+#[test]
+fn u3g_register_file_bounds() {
+    use sele4n_abi::RegisterFile;
+
+    let mut rf = RegisterFile::new();
+    // Valid indices (0-6) succeed
+    for i in 0..7 {
+        assert!(rf.set(i, i as u64 * 10).is_some());
+    }
+    for i in 0..7 {
+        assert_eq!(rf.get(i), Some(i as u64 * 10));
+    }
+    // Out of bounds returns None (not panic)
+    assert_eq!(rf.get(7), None);
+    assert_eq!(rf.get(usize::MAX), None);
+    assert_eq!(rf.set(7, 42), None);
+}
+
+/// U3-I: IpcBuffer layout matches expected size and alignment.
+#[test]
+fn u3i_ipc_buffer_layout() {
+    assert_eq!(core::mem::size_of::<IpcBuffer>(), 960);
+    assert_eq!(core::mem::align_of::<IpcBuffer>(), 8);
 }

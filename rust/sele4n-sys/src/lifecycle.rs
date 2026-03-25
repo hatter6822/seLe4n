@@ -28,7 +28,7 @@ pub fn lifecycle_retype(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: untyped_cap,
-        msg_info: MessageInfo { length: 3, extra_caps: 0, label: 0 },
+        msg_info: MessageInfo::new(3, 0, 0).unwrap(),
         msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::LifecycleRetype,
     })

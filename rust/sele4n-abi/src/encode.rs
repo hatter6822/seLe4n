@@ -61,7 +61,7 @@ mod tests {
     fn encode_basic() {
         let req = SyscallRequest {
             cap_addr: CPtr::from(100u64),
-            msg_info: MessageInfo { length: 2, extra_caps: 0, label: 0 },
+            msg_info: MessageInfo::new(2, 0, 0).unwrap(),
             msg_regs: [10, 20, 0, 0],
             syscall_id: SyscallId::Send,
         };
@@ -77,7 +77,7 @@ mod tests {
     fn encode_cspace_mint() {
         let req = SyscallRequest {
             cap_addr: CPtr::from(42u64),
-            msg_info: MessageInfo { length: 4, extra_caps: 0, label: 0 },
+            msg_info: MessageInfo::new(4, 0, 0).unwrap(),
             msg_regs: [1, 2, 3, 4], // srcSlot, dstSlot, rights, badge
             syscall_id: SyscallId::CSpaceMint,
         };
@@ -87,12 +87,8 @@ mod tests {
 
     #[test]
     fn encode_rejects_oversized_label() {
-        let req = SyscallRequest {
-            cap_addr: CPtr::from(0u64),
-            msg_info: MessageInfo { length: 0, extra_caps: 0, label: 1u64 << 55 },
-            msg_regs: [0; 4],
-            syscall_id: SyscallId::Send,
-        };
-        assert_eq!(encode_syscall(&req), Err(KernelError::InvalidMessageInfo));
+        // U3-B: Construction of invalid MessageInfo must go through new(),
+        // which rejects labels >= 2^55. We verify the error path via new().
+        assert_eq!(MessageInfo::new(0, 0, 1u64 << 55), Err(KernelError::InvalidMessageInfo));
     }
 }

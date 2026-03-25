@@ -16,12 +16,27 @@ use crate::{SyscallRequest, SyscallResponse, encode_syscall, decode_response};
 ///
 /// On non-AArch64 targets, this returns an `InvalidSyscallNumber` error
 /// response (use `invoke_syscall` with the `std` feature for testing).
+///
+/// # Register clobbers (U3-A / U-H11)
+///
+/// The `svc #0` instruction triggers an exception into EL1, where the kernel
+/// is free to modify any caller-saved register. We use `clobber_abi("C")` to
+/// inform the compiler that all AArch64 caller-saved registers (x8–x18,
+/// x29/x30, NZCV, SIMD/FP) may be clobbered by the kernel. Without this,
+/// the compiler may assume those registers are preserved across the `svc`,
+/// leading to silent register corruption.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 #[allow(unsafe_code)]
 pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     // ARM64 ABI: x0=cap_addr, x1=msg_info, x2-x5=msg_regs, x7=syscall_num
     // The kernel writes results back into x0-x5.
+    //
+    // U3-A: `clobber_abi("C")` tells the compiler that all caller-saved
+    // registers per the AAPCS64 calling convention may be modified by the
+    // kernel during the exception. This includes x8-x18, x29, x30, NZCV,
+    // and all SIMD/FP registers. The explicit `inout`/`in`/`lateout`
+    // operands for x0-x7 take precedence over the clobber set.
     core::arch::asm!(
         "svc #0",
         inout("x0") regs[0],
@@ -32,6 +47,7 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
         inout("x5") regs[5],
         in("x7") regs[6],
         lateout("x6") _,
+        clobber_abi("C"),
         options(nostack),
     );
 }
@@ -90,7 +106,7 @@ mod tests {
     fn mock_syscall_returns_error() {
         let req = SyscallRequest {
             cap_addr: CPtr::from(0u64),
-            msg_info: MessageInfo { length: 0, extra_caps: 0, label: 0 },
+            msg_info: MessageInfo::new(0, 0, 0).unwrap(),
             msg_regs: [0; 4],
             syscall_id: SyscallId::Send,
         };

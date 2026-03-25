@@ -23,23 +23,32 @@ Core type definitions with zero `unsafe` and zero external dependencies:
   `Priority`, `Deadline`, `Irq`, `ServiceId`, `InterfaceId`, `Badge`, `Asid`,
   `VAddr`, `PAddr`, `RegValue` — inner fields are `pub(crate)` with `.raw()`
   accessors (R8-E/L-11 encapsulation)
-- **`KernelError`**: 34-variant enum (1:1 with Lean `KernelError`)
-- **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations)
+- **`KernelError`**: 38-variant `#[non_exhaustive]` enum (1:1 with Lean
+  `KernelError`; U3-F)
+- **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
+  `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
+- **`AccessRightsError`**: Error type for invalid `AccessRights` construction
 - **`SyscallId`**: 14-variant enum (0–13)
 
 ### sele4n-abi
 
 ARM64 register ABI layer with exactly one `unsafe` block:
 
-- **`MessageInfo`**: Bitfield encode/decode (7-bit length, 2-bit extraCaps)
+- **`MessageInfo`**: Bitfield encode/decode (7-bit length, 2-bit extraCaps,
+  55-bit label). Fields are private (U3-B); construct via `new()` or `decode()`,
+  access via `length()`, `extra_caps()`, `label()` accessors
 - **`SyscallRequest` / `SyscallResponse`**: Register structures
-- **`raw_syscall`**: Inline `svc #0` — the single `unsafe` function
+- **`raw_syscall`**: Inline `svc #0` — the single `unsafe` function. Uses
+  `clobber_abi("C")` to declare all caller-saved registers clobbered (U3-A)
+- **`RegisterFile`**: Safe bounds-checked wrapper for the 7-element register
+  array; `get()`/`set()` return `Option` (U3-G)
 - **Per-syscall argument structures**: CSpace (4), Lifecycle (1), VSpace (2),
   Service (3)
 - **`TypeTag`**: 6 retype variants (TCB=0, Endpoint=1, ..., Untyped=5)
 - **`PagePerms`**: Permission bitmask with W^X enforcement
 - **`IpcBuffer`**: Overflow message registers (4–119) for messages exceeding
-  the 4 inline ARM64 registers
+  the 4 inline ARM64 registers. Compile-time layout assertions verify 960-byte
+  `#[repr(C)]` size and 8-byte alignment (U3-I)
 
 ### sele4n-sys
 
