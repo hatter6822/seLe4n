@@ -185,86 +185,94 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
     unfold cspaceDeleteSlot at hStep
-    cases hPre : st.objects[addr.cnode]? with
-    | none => simp [hPre] at hStep
-    | some preObj =>
-      cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
-      | cnode preCn =>
-        simp [hPre] at hStep
-        cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
-        | error e => simp [hStore] at hStep
-        | ok pair =>
-          obtain ⟨_, stMid⟩ := pair
-          cases hRef : storeCapabilityRef addr none stMid with
-          | error e => simp [hStore, hRef] at hStep
-          | ok pairRef =>
-            obtain ⟨_, stRef⟩ := pairRef
-            simp [hStore, hRef] at hStep
-            cases hStep
-            have hObjRef : stRef.objects = stMid.objects :=
-              storeCapabilityRef_preserves_objects stMid stRef addr none hRef
-            have hObjDetach : (SystemState.detachSlotFromCdt stRef addr).objects = stRef.objects :=
-              SystemState.detachSlotFromCdt_objects_eq stRef addr
-            by_cases hEq : cnodeId = addr.cnode
-            · rw [hEq] at hObj
-              have hObjMid := storeObject_objects_eq st stMid addr.cnode
-                (.cnode (preCn.remove addr.slot)) hObjInv hStore
-              have : (SystemState.detachSlotFromCdt stRef addr).objects[addr.cnode]? =
-                  some (.cnode (preCn.remove addr.slot)) := by
-                rw [hObjDetach, hObjRef, ← hObjMid]
-              rw [this] at hObj; cases hObj
-              exact CNode.remove_slotsUnique preCn addr.slot (hUnique addr.cnode preCn hPre)
-            · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
-                (.cnode (preCn.remove addr.slot)) hEq hObjInv hStore
-              have : (SystemState.detachSlotFromCdt stRef addr).objects[cnodeId]? = st.objects[cnodeId]? := by
-                rw [hObjDetach, hObjRef, ← hObjMid]
-              rw [this] at hObj
-              exact hUnique cnodeId cn hObj
+    -- U-H03: Discharge CDT children guard
+    split at hStep
+    · simp at hStep
+    · rename_i _
+      cases hPre : st.objects[addr.cnode]? with
+      | none => simp [hPre] at hStep
+      | some preObj =>
+        cases preObj with
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+        | cnode preCn =>
+          simp [hPre] at hStep
+          cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+            obtain ⟨_, stMid⟩ := pair
+            cases hRef : storeCapabilityRef addr none stMid with
+            | error e => simp [hStore, hRef] at hStep
+            | ok pairRef =>
+              obtain ⟨_, stRef⟩ := pairRef
+              simp [hStore, hRef] at hStep
+              cases hStep
+              have hObjRef : stRef.objects = stMid.objects :=
+                storeCapabilityRef_preserves_objects stMid stRef addr none hRef
+              have hObjDetach : (SystemState.detachSlotFromCdt stRef addr).objects = stRef.objects :=
+                SystemState.detachSlotFromCdt_objects_eq stRef addr
+              by_cases hEq : cnodeId = addr.cnode
+              · rw [hEq] at hObj
+                have hObjMid := storeObject_objects_eq st stMid addr.cnode
+                  (.cnode (preCn.remove addr.slot)) hObjInv hStore
+                have : (SystemState.detachSlotFromCdt stRef addr).objects[addr.cnode]? =
+                    some (.cnode (preCn.remove addr.slot)) := by
+                  rw [hObjDetach, hObjRef, ← hObjMid]
+                rw [this] at hObj; cases hObj
+                exact CNode.remove_slotsUnique preCn addr.slot (hUnique addr.cnode preCn hPre)
+              · have hObjMid := storeObject_objects_ne st stMid addr.cnode cnodeId
+                  (.cnode (preCn.remove addr.slot)) hEq hObjInv hStore
+                have : (SystemState.detachSlotFromCdt stRef addr).objects[cnodeId]? = st.objects[cnodeId]? := by
+                  rw [hObjDetach, hObjRef, ← hObjMid]
+                rw [this] at hObj
+                exact hUnique cnodeId cn hObj
   -- WS-H4: Prove new components through storeObject → storeCapabilityRef → detachSlotFromCdt
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
     unfold cspaceDeleteSlot at hStep
-    cases hPre : st.objects[addr.cnode]? with
-    | none => simp [hPre] at hStep
-    | some preObj =>
-      cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
-      | cnode preCn =>
-        simp [hPre] at hStep
-        cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
-        | error e => simp [hStore] at hStep
-        | ok pair =>
-          obtain ⟨_, stMid⟩ := pair
-          cases hRef : storeCapabilityRef addr none stMid with
-          | error e => simp [hStore, hRef] at hStep
-          | ok pairRef =>
-            obtain ⟨_, stRef⟩ := pairRef
-            simp [hStore, hRef] at hStep; cases hStep
-            have ⟨hRefCdt, hRefNS, _, hRefObj⟩ := storeCapabilityRef_cdt_eq stMid stRef addr none hRef
-            have hBndMid := cspaceSlotCountBounded_of_storeObject_cnode st stMid addr.cnode
-              (preCn.remove addr.slot) hBounded hObjInv hStore (CNode.remove_slotCountBounded preCn addr.slot (hBounded addr.cnode preCn hPre))
-            have hCompMid := cdtCompleteness_of_storeObject st stMid addr.cnode _ hComp hObjInv hStore
-              (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
-            have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
-              (storeObject_cdt_eq st stMid addr.cnode _ hStore)
-            have hDepthMid := cspaceDepthConsistent_of_storeObject_sameCNode
-              st stMid addr.cnode preCn (preCn.remove addr.slot) hDepthPre hObjInv hPre hStore rfl rfl rfl rfl
-            have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
-            have hBndRef := cspaceSlotCountBounded_of_objects_eq stMid stRef hBndMid hRefObj
-            have hCompRef := cdtCompleteness_of_objects_nodeSlot_eq stMid stRef hCompMid hRefObj hRefNS
-            have hAcyclicRef := cdtAcyclicity_of_cdt_eq stMid stRef hAcyclicMid hRefCdt
-            have hDepthRef := cspaceDepthConsistent_of_objects_eq stMid stRef hDepthMid hRefObj
-            have hObjInvRef : stRef.objects.invExt := hRefObj ▸ hObjInvMid
-            have hNSMid := (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
-            have hNodeSlotInvRef : stRef.cdtNodeSlot.invExt := hRefNS ▸ hNSMid ▸ hNodeSlotInv
-            have hNodeSlotSizeRef : stRef.cdtNodeSlot.size < stRef.cdtNodeSlot.capacity := by
-              rw [hRefNS, hNSMid]; exact hNodeSlotSize
-            exact ⟨cspaceSlotCountBounded_of_detachSlotFromCdt stRef addr hBndRef,
-              cdtCompleteness_of_detachSlotFromCdt stRef addr hCompRef hNodeSlotInvRef hNodeSlotSizeRef,
-              cdtAcyclicity_of_detachSlotFromCdt stRef addr hAcyclicRef,
-              cspaceDepthConsistent_of_detachSlotFromCdt stRef addr hDepthRef,
-              (SystemState.detachSlotFromCdt_objects_eq stRef addr) ▸ hObjInvRef⟩
+    -- U-H03: Discharge CDT children guard
+    split at hStep
+    · simp at hStep
+    · rename_i _
+      cases hPre : st.objects[addr.cnode]? with
+      | none => simp [hPre] at hStep
+      | some preObj =>
+        cases preObj with
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+        | cnode preCn =>
+          simp [hPre] at hStep
+          cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
+          | error e => simp [hStore] at hStep
+          | ok pair =>
+            obtain ⟨_, stMid⟩ := pair
+            cases hRef : storeCapabilityRef addr none stMid with
+            | error e => simp [hStore, hRef] at hStep
+            | ok pairRef =>
+              obtain ⟨_, stRef⟩ := pairRef
+              simp [hStore, hRef] at hStep; cases hStep
+              have ⟨hRefCdt, hRefNS, _, hRefObj⟩ := storeCapabilityRef_cdt_eq stMid stRef addr none hRef
+              have hBndMid := cspaceSlotCountBounded_of_storeObject_cnode st stMid addr.cnode
+                (preCn.remove addr.slot) hBounded hObjInv hStore (CNode.remove_slotCountBounded preCn addr.slot (hBounded addr.cnode preCn hPre))
+              have hCompMid := cdtCompleteness_of_storeObject st stMid addr.cnode _ hComp hObjInv hStore
+                (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
+              have hAcyclicMid := cdtAcyclicity_of_cdt_eq st stMid hAcyclic
+                (storeObject_cdt_eq st stMid addr.cnode _ hStore)
+              have hDepthMid := cspaceDepthConsistent_of_storeObject_sameCNode
+                st stMid addr.cnode preCn (preCn.remove addr.slot) hDepthPre hObjInv hPre hStore rfl rfl rfl rfl
+              have hObjInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
+              have hBndRef := cspaceSlotCountBounded_of_objects_eq stMid stRef hBndMid hRefObj
+              have hCompRef := cdtCompleteness_of_objects_nodeSlot_eq stMid stRef hCompMid hRefObj hRefNS
+              have hAcyclicRef := cdtAcyclicity_of_cdt_eq stMid stRef hAcyclicMid hRefCdt
+              have hDepthRef := cspaceDepthConsistent_of_objects_eq stMid stRef hDepthMid hRefObj
+              have hObjInvRef : stRef.objects.invExt := hRefObj ▸ hObjInvMid
+              have hNSMid := (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
+              have hNodeSlotInvRef : stRef.cdtNodeSlot.invExt := hRefNS ▸ hNSMid ▸ hNodeSlotInv
+              have hNodeSlotSizeRef : stRef.cdtNodeSlot.size < stRef.cdtNodeSlot.capacity := by
+                rw [hRefNS, hNSMid]; exact hNodeSlotSize
+              exact ⟨cspaceSlotCountBounded_of_detachSlotFromCdt stRef addr hBndRef,
+                cdtCompleteness_of_detachSlotFromCdt stRef addr hCompRef hNodeSlotInvRef hNodeSlotSizeRef,
+                cdtAcyclicity_of_detachSlotFromCdt stRef addr hAcyclicRef,
+                cspaceDepthConsistent_of_detachSlotFromCdt stRef addr hDepthRef,
+                (SystemState.detachSlotFromCdt_objects_eq stRef addr) ▸ hObjInvRef⟩
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
@@ -279,38 +287,42 @@ private theorem cspaceDeleteSlot_preserves_cdtNodeSlot
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     st'.cdtNodeSlot.invExt ∧ st'.cdtNodeSlot.size < st'.cdtNodeSlot.capacity := by
   unfold cspaceDeleteSlot at hStep
-  cases hPre : st.objects[addr.cnode]? with
-  | none => simp [hPre] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
-    | cnode preCn =>
-      simp [hPre] at hStep
-      cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        obtain ⟨_, stMid⟩ := pair
-        cases hRef : storeCapabilityRef addr none stMid with
-        | error e => simp [hStore, hRef] at hStep
-        | ok pairRef =>
-          obtain ⟨_, stRef⟩ := pairRef
-          simp [hStore, hRef] at hStep; cases hStep
-          have hNSMid := (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
-          have ⟨_, hNSRef, _, _⟩ := storeCapabilityRef_cdt_eq stMid stRef addr none hRef
-          have hRefEqSt : stRef.cdtNodeSlot = st.cdtNodeSlot := by rw [hNSRef, hNSMid]
-          -- detachSlotFromCdt either leaves cdtNodeSlot unchanged or erases one key
-          unfold SystemState.detachSlotFromCdt
-          cases hLookup : stRef.cdtSlotNode[addr]? with
-          | none =>
-            simp only []
-            exact ⟨hRefEqSt ▸ hNodeSlotInv, by rw [hRefEqSt]; exact hNodeSlotSize⟩
-          | some origNode =>
-            simp only []
-            have hInvRef : stRef.cdtNodeSlot.invExt := hRefEqSt ▸ hNodeSlotInv
-            have hSzRef : stRef.cdtNodeSlot.size < stRef.cdtNodeSlot.capacity := by
-              rw [hRefEqSt]; exact hNodeSlotSize
-            exact ⟨stRef.cdtNodeSlot.erase_preserves_invExt origNode hInvRef hSzRef,
-                   SeLe4n.Kernel.RobinHood.RHTable.erase_size_lt_capacity stRef.cdtNodeSlot origNode hSzRef⟩
+  -- U-H03: Discharge CDT children guard
+  split at hStep
+  · simp at hStep
+  · rename_i _
+    cases hPre : st.objects[addr.cnode]? with
+    | none => simp [hPre] at hStep
+    | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+      | cnode preCn =>
+        simp [hPre] at hStep
+        cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
+        | error e => simp [hStore] at hStep
+        | ok pair =>
+          obtain ⟨_, stMid⟩ := pair
+          cases hRef : storeCapabilityRef addr none stMid with
+          | error e => simp [hStore, hRef] at hStep
+          | ok pairRef =>
+            obtain ⟨_, stRef⟩ := pairRef
+            simp [hStore, hRef] at hStep; cases hStep
+            have hNSMid := (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
+            have ⟨_, hNSRef, _, _⟩ := storeCapabilityRef_cdt_eq stMid stRef addr none hRef
+            have hRefEqSt : stRef.cdtNodeSlot = st.cdtNodeSlot := by rw [hNSRef, hNSMid]
+            -- detachSlotFromCdt either leaves cdtNodeSlot unchanged or erases one key
+            unfold SystemState.detachSlotFromCdt
+            cases hLookup : stRef.cdtSlotNode[addr]? with
+            | none =>
+              simp only []
+              exact ⟨hRefEqSt ▸ hNodeSlotInv, by rw [hRefEqSt]; exact hNodeSlotSize⟩
+            | some origNode =>
+              simp only []
+              have hInvRef : stRef.cdtNodeSlot.invExt := hRefEqSt ▸ hNodeSlotInv
+              have hSzRef : stRef.cdtNodeSlot.size < stRef.cdtNodeSlot.capacity := by
+                rw [hRefEqSt]; exact hNodeSlotSize
+              exact ⟨stRef.cdtNodeSlot.erase_preserves_invExt origNode hInvRef hSzRef,
+                     SeLe4n.Kernel.RobinHood.RHTable.erase_size_lt_capacity stRef.cdtNodeSlot origNode hSzRef⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceRevoke`.
 Uses pre-state `cspaceSlotUnique` + `CNode.revokeTargetLocal_slotsUnique` to derive
@@ -1996,27 +2008,31 @@ theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
     cdtMapsConsistent st' := by
   -- cspaceDeleteSlot directly matches on objects[addr.cnode]? (no lookup step)
   unfold cspaceDeleteSlot at hStep
-  cases hPre : st.objects[addr.cnode]? with
-  | none => simp [hPre] at hStep
-  | some obj =>
-    cases obj with
-    | cnode cn =>
-      simp only [hPre] at hStep
-      cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
-      | error e => simp [hStore] at hStep
-      | ok pair =>
-        rcases pair with ⟨_, stMid⟩
-        have h1 := storeObject_cdt_eq st stMid addr.cnode _ hStore
-        simp only [hStore] at hStep
-        -- storeCapabilityRef preserves CDT
-        unfold storeCapabilityRef at hStep
-        simp at hStep; rcases hStep with ⟨_, rfl⟩
-        -- detachSlotFromCdt doesn't modify cdt
-        unfold SystemState.detachSlotFromCdt
-        split
-        · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
-        · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
-    | _ => simp [hPre] at hStep
+  -- U-H03: Discharge CDT children guard
+  split at hStep
+  · simp at hStep
+  · rename_i _
+    cases hPre : st.objects[addr.cnode]? with
+    | none => simp [hPre] at hStep
+    | some obj =>
+      cases obj with
+      | cnode cn =>
+        simp only [hPre] at hStep
+        cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
+        | error e => simp [hStore] at hStep
+        | ok pair =>
+          rcases pair with ⟨_, stMid⟩
+          have h1 := storeObject_cdt_eq st stMid addr.cnode _ hStore
+          simp only [hStore] at hStep
+          -- storeCapabilityRef preserves CDT
+          unfold storeCapabilityRef at hStep
+          simp at hStep; rcases hStep with ⟨_, rfl⟩
+          -- detachSlotFromCdt doesn't modify cdt
+          unfold SystemState.detachSlotFromCdt
+          split
+          · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
+          · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
+      | _ => simp [hPre] at hStep
 
 /-- S3-D: `cspaceCopy` preserves `cdtMapsConsistent`. Copy calls `addEdge`
     on the CDT, so the postcondition is taken as a hypothesis, matching

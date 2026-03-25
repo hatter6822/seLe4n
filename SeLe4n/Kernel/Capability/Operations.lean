@@ -551,9 +551,25 @@ def cspaceMint
         | .error e => .error e
         | .ok child => cspaceInsertSlot dst child st'
 
-/-- Delete the capability currently stored in `addr`. -/
+/-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
+Returns `true` if the slot's CDT node has any children, indicating that
+`cspaceRevoke` must be called before deletion. -/
+def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
+  match st.lookupCdtNodeOfSlot addr with
+  | none => false  -- no CDT node → no children
+  | some node => !(st.cdt.childrenOf node).isEmpty
+
+/-- Delete the capability currently stored in `addr`.
+
+U-H03: Before deleting, checks that no CDT children exist for the slot.
+Returns `.revocationRequired` if children are found, enforcing the
+`revokeBeforeDelete` proof obligation as a runtime check. -/
 def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
+    -- U-H03: Guard — reject delete if CDT children exist (must revoke first)
+    if hasCdtChildren st addr then
+      .error .revocationRequired
+    else
     match st.objects[addr.cnode]? with
     | some (.cnode cn) =>
         let cn' := cn.remove addr.slot

@@ -1623,17 +1623,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
             -- Case split on lookupCspaceRoot to determine senderRoot value
             cases hLookup : lookupCspaceRoot stMid sid with
             | none =>
-              -- senderRoot = sid.toObjId
-              simp only [hLookup] at hStep
-              cases hUnwrap : ipcUnwrapCaps msg sid.toObjId receiverCspaceRoot
-                  receiverSlotBase (endpointRights.mem .grant) stMid with
-              | error e => simp [hUnwrap] at hStep
-              | ok pair =>
-                rcases pair with ⟨s, stFinal⟩
-                simp [hUnwrap] at hStep
-                obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-                exact ipcUnwrapCaps_preserves_ipcInvariant msg sid.toObjId receiverCspaceRoot
-                  receiverSlotBase _ stMid stFinal s hInvMid hObjInvMid hUnwrap
+              -- U-H13: Missing CSpace root now returns error, contradicting .ok
+              simp only [hLookup] at hStep; contradiction
             | some senderRoot =>
               -- senderRoot = senderRoot
               simp only [hLookup] at hStep

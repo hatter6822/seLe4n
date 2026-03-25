@@ -16,9 +16,12 @@ open SeLe4n.Model
 
 /-- Lifecycle authority required to retype an object identity in this slice.
 
-The authority capability must target the object directly and include `write` rights. -/
+U-H14: The authority capability must target the object directly and include
+`retype` rights. This matches the API dispatch mapping (`.lifecycleRetype => .retype`
+in `requiredRight`). Previously checked `.write`, creating a mismatch where
+callers with `.retype` but not `.write` were incorrectly rejected. -/
 def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :=
-  decide (cap.target = .object target) && Capability.hasRight cap .write
+  decide (cap.target = .object target) && Capability.hasRight cap .retype
 
 
 -- ============================================================================
@@ -612,7 +615,11 @@ Deterministic branch contract:
    (`illegalAuthority` otherwise).
 6. The requested allocation size must fit within the remaining region space
    (`untypedRegionExhausted` otherwise).
-7. On success: watermark is advanced, new child is recorded, and the new typed
+7. U-H02: Post-allocation alignment re-verification — after advancing the watermark,
+   the new base must still be page-aligned for VSpace-bound objects
+   (`allocationMisaligned` otherwise). This prevents non-page-aligned allocations
+   from shifting subsequent allocations to unaligned bases.
+8. On success: watermark is advanced, new child is recorded, and the new typed
    object is stored at `childId` via `storeObject`. -/
 def retypeFromUntyped
     (authority : CSpaceAddr)
@@ -655,6 +662,14 @@ def retypeFromUntyped
                 match ut.allocate childId allocSize with
                 | none => .error .untypedRegionExhausted
                 | some (ut', _offset) =>
+                    -- U-H02: Post-allocation alignment re-verification.
+                    -- After advancing the watermark by `allocSize`, the new base
+                    -- (`regionBase + watermark'`) must remain page-aligned if the
+                    -- object type requires it. Non-page-aligned allocations would
+                    -- shift subsequent allocations to unaligned bases, violating S5-G.
+                    if requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut' then
+                      .error .allocationMisaligned
+                    else
                     -- Atomic dual-store: untyped watermark advance + child creation
                     match storeObject untypedId (.untyped ut') st' with
                     | .error e => .error e
@@ -747,12 +762,15 @@ theorem retypeFromUntyped_ok_decompose
                       | some result =>
                           rcases result with ⟨ut', offset⟩
                           simp [hAlloc] at hStep
-                          cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
-                          | error e => simp [hStoreUt] at hStep
-                          | ok pair2 =>
-                              rcases pair2 with ⟨_, stUt⟩
-                              simp [hStoreUt] at hStep
-                              exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
+                          -- U-H02: split on post-allocation alignment check
+                          split at hStep
+                          · simp at hStep
+                          · cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
+                            | error e => simp [hStoreUt] at hStep
+                            | ok pair2 =>
+                                rcases pair2 with ⟨_, stUt⟩
+                                simp [hStoreUt] at hStep
+                                exact ⟨ut, ut', cap, stLookup, stUt, offset, rfl, Or.inl hDevBool, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
                     · simp [hAuth] at hStep
           · -- ut.isDevice = true: need objectType check
             by_cases hObjType : newObj.objectType = KernelObjectType.untyped
@@ -778,13 +796,16 @@ theorem retypeFromUntyped_ok_decompose
                         | some result =>
                             rcases result with ⟨ut', offset⟩
                             simp [hAlloc] at hStep
-                            cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
-                            | error e => simp [hStoreUt] at hStep
-                            | ok pair2 =>
-                                rcases pair2 with ⟨_, stUt⟩
-                                simp [hStoreUt] at hStep
-                                exact ⟨ut, ut', cap, stLookup, stUt, offset,
-                                  rfl, Or.inr hObjType, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
+                            -- U-H02: split on post-allocation alignment check
+                            split at hStep
+                            · simp at hStep
+                            · cases hStoreUt : storeObject untypedId (.untyped ut') stLookup with
+                              | error e => simp [hStoreUt] at hStep
+                              | ok pair2 =>
+                                  rcases pair2 with ⟨_, stUt⟩
+                                  simp [hStoreUt] at hStep
+                                  exact ⟨ut, ut', cap, stLookup, stUt, offset,
+                                    rfl, Or.inr hObjType, hAllocSz, rfl, hAuth, hAlloc, hStoreUt, hStep⟩
                       · simp [hAuth] at hStep
             · -- objectType != untyped: device restriction fires -> contradiction
               have hBne : (newObj.objectType != KernelObjectType.untyped) = true := by
@@ -1318,7 +1339,7 @@ theorem objectOfKernelType_eq_objectOfTypeTag (objType : KernelObjectType) (size
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
 -- ============================================================================
 
-/-- **Internal building block — callers should use `lifecycleRetypeWithCleanup` instead.**
+/-- **Internal building block — callers should use `lifecycleRetypeDirectWithCleanup` instead.**
 
 WS-K-D: Retype with a pre-resolved authority capability.
 Companion to `lifecycleRetypeObject` for the register-sourced dispatch
@@ -1326,8 +1347,9 @@ path where the authority cap has already been resolved by `syscallInvoke`.
 
 T5-B (M-NEW-4): Marked as internal. This function takes a pre-resolved
 `Capability` and bypasses cleanup and memory scrubbing. External callers
-must use `lifecycleRetypeWithCleanup` for the H-05 and S6-C guarantees.
-Used internally by `API.lean` dispatch where cleanup is handled separately.
+must use `lifecycleRetypeDirectWithCleanup` (for pre-resolved caps) or
+`lifecycleRetypeWithCleanup` (for CSpaceAddr) for the H-05 and S6-C
+guarantees. U-H04: API dispatch now routes through the safe wrapper.
 
 Deterministic branch contract:
 1. Target object must exist (`objectNotFound` otherwise).
@@ -1399,5 +1421,36 @@ theorem lifecycleRetypeDirect_error_illegalAuthority
     (hNoAuth : lifecycleRetypeAuthority cap target = false) :
     lifecycleRetypeDirect cap target newObj st = .error .illegalAuthority := by
   unfold lifecycleRetypeDirect; simp [hSome, hMeta, hNoAuth]
+
+-- ============================================================================
+-- U-H04: lifecycleRetypeDirectWithCleanup — pre-resolved authority + safe path
+-- ============================================================================
+
+/-- U-H04: Safe lifecycle retype with pre-resolved authority capability.
+
+Combines `lifecycleRetypeDirect`'s pre-resolved cap dispatch with the
+cleanup and memory scrubbing guarantees of `lifecycleRetypeWithCleanup`.
+This is the correct entry point for API dispatch, which resolves the
+authority cap before entering the retype arm.
+
+Phases:
+1. Well-formedness validation (T5-D defense-in-depth)
+2. `lifecyclePreRetypeCleanup` — TCB scheduler dequeue + CNode CDT detach
+3. `scrubObjectMemory` — zero backing memory (S6-C security guarantee)
+4. `lifecycleRetypeDirect` — replace object in store with authority check -/
+def lifecycleRetypeDirectWithCleanup
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Kernel Unit :=
+  fun st =>
+    -- T5-D: Validate new object well-formedness before proceeding
+    if ¬ newObj.wellFormed st.objects then
+      .error .illegalState
+    else
+      match st.objects[target]? with
+      | none => lifecycleRetypeDirect authCap target newObj st
+      | some currentObj =>
+          let stClean := lifecyclePreRetypeCleanup st target currentObj newObj
+          let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
+          lifecycleRetypeDirect authCap target newObj stScrubbed
 
 end SeLe4n.Kernel

@@ -4053,20 +4053,23 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
           by_cases hEmpty : msg.caps.isEmpty
           · simp [hEmpty] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
           · simp [hEmpty] at hStep
-            -- ipcUnwrapCaps path with let-bound senderRoot and grantRight
-            -- After simp, hStep should contain the ipcUnwrapCaps match result
-            -- The ipcUnwrapCaps call uses computed senderRoot and grantRight
-            -- Use the fact that all paths either error (contradiction) or ok (compose)
-            -- Extract the final state through the match on ipcUnwrapCaps
-            split at hStep
-            · -- ipcUnwrapCaps errored — contradiction with hStep : ... = .ok
-              exact absurd hStep (by simp)
-            · -- ipcUnwrapCaps succeeded
-              rename_i hUnwrapResult
-              obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep
-              obtain ⟨cn, hCn⟩ := hCnodeRoot stMid hRecv
-              exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg _ receiverCspaceRoot
-                receiverSlotBase _ stMid _ _ cn hCn hInvMid hObjInvMid hUnwrapResult
+            -- U-H13: match on lookupCspaceRoot — none returns error, some proceeds
+            cases hLookup : lookupCspaceRoot stMid sid with
+            | none =>
+              -- Missing CSpace root returns error, contradicting .ok
+              simp only [hLookup] at hStep; contradiction
+            | some senderRoot =>
+              simp only [hLookup] at hStep
+              -- ipcUnwrapCaps path
+              split at hStep
+              · -- ipcUnwrapCaps errored — contradiction with hStep : ... = .ok
+                exact absurd hStep (by simp)
+              · -- ipcUnwrapCaps succeeded
+                rename_i hUnwrapResult
+                obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep
+                obtain ⟨cn, hCn⟩ := hCnodeRoot stMid hRecv
+                exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg _ receiverCspaceRoot
+                  receiverSlotBase _ stMid _ _ cn hCn hInvMid hObjInvMid hUnwrapResult
       | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ =>
         obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
 

@@ -352,7 +352,12 @@ wraps the index modularly through the schedule table, and updates the
 active domain and time remaining.
 
 Under dequeue-on-dispatch, the outgoing thread must return to the
-runnable pool for its next domain slot. -/
+runnable pool for its next domain slot.
+
+**U-M39 precondition**: callers MUST ensure `saveOutgoingContext` has been
+applied before invoking `switchDomain`. The function sets `current := none`,
+after which `saveOutgoingContext` becomes a no-op. `scheduleDomain` satisfies
+this by saving context before the `switchDomain` call. -/
 def switchDomain : Kernel Unit :=
   fun st =>
     let schedule := st.scheduler.domainSchedule
@@ -384,7 +389,11 @@ if expired, switches to the next domain and reschedules. -/
 def scheduleDomain : Kernel Unit :=
   fun st =>
     if st.scheduler.domainTimeRemaining ≤ 1 then
-      match switchDomain st with
+      -- U-M39: Save outgoing thread context before domain switch.
+      -- switchDomain sets current := none, after which saveOutgoingContext
+      -- becomes a no-op. Context must be saved here while current is set.
+      let stSaved := saveOutgoingContext st
+      match switchDomain stSaved with
       | .error e => .error e
       | .ok ((), st') => schedule st'
     else
