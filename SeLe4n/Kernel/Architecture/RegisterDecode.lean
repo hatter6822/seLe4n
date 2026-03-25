@@ -155,10 +155,11 @@ theorem decodeSyscallId_roundtrip (s : SyscallId) :
     Completes the round-trip proof surface for all three decode components. -/
 theorem decodeMsgInfo_roundtrip (mi : MessageInfo)
     (hLen : mi.length ≤ maxMessageRegisters)
-    (hCaps : mi.extraCaps ≤ maxExtraCaps) :
+    (hCaps : mi.extraCaps ≤ maxExtraCaps)
+    (hLabel : mi.label ≤ MessageInfo.maxLabel := by omega) :
     decodeMsgInfo (encodeMsgInfo mi) = .ok mi := by
   simp only [decodeMsgInfo, encodeMsgInfo]
-  have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps
+  have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps hLabel
   simp only [h]
 
 /-- Round-trip: encoding then decoding message register values is identity. -/
@@ -173,13 +174,14 @@ theorem decodeMsgRegs_roundtrip (vals : Array RegValue) :
 theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
     (hLen : decoded.msgInfo.length ≤ maxMessageRegisters)
     (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps)
+    (hLabel : decoded.msgInfo.label ≤ MessageInfo.maxLabel := by omega)
     (hCapBound : isWord64 decoded.capAddr.toNat) :
     decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
     decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
     decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId ∧
     encodeMsgRegs decoded.msgRegs = decoded.msgRegs :=
   ⟨decodeCapPtr_roundtrip decoded.capAddr hCapBound,
-   decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps,
+   decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps hLabel,
    decodeSyscallId_roundtrip decoded.syscallId,
    decodeMsgRegs_roundtrip decoded.msgRegs⟩
 

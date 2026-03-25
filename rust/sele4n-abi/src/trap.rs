@@ -82,8 +82,8 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 /// decodes the response. This is the primary entry point for all
 /// high-level wrappers in `sele4n-sys`.
 ///
-/// T3-A: Returns `InvalidMessageInfo` if the MessageInfo label exceeds
-/// the 55-bit encoding limit (detected during encode).
+/// V2-H: Returns `InvalidMessageInfo` if the MessageInfo label exceeds
+/// the 20-bit encoding limit (detected during encode).
 #[inline]
 #[allow(unsafe_code)]
 pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {

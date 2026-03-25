@@ -295,9 +295,12 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .lifecycleRetype => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
-  | .serviceRegister => .write
-  | .serviceRevoke   => .write
-  | .serviceQuery    => .read
+  | .serviceRegister    => .write
+  | .serviceRevoke      => .write
+  | .serviceQuery       => .read
+  | .notificationSignal => .write
+  | .notificationWait   => .read
+  | .replyRecv          => .read
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -341,7 +344,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
-            (SeLe4n.Slot.ofNat 0) st with
+            decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
@@ -362,7 +365,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
-            (SeLe4n.Slot.ofNat 0) st with
+            decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
@@ -495,6 +498,43 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .ok (_, st') => .ok ((), st')
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- V2-A: Notification signal — badge merge or wake a waiter.
+  -- The notification object comes from the capability target, badge from MR[0].
+  | .notificationSignal =>
+    match cap.target with
+    | .object notifId =>
+      fun st => match decodeNotificationSignalArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          match notificationSignal notifId args.badge st with
+          | .error e => .error e
+          | .ok ((), st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
+  -- V2-A: Notification wait — consume pending badge or block.
+  -- The notification object comes from the capability target, waiter is current thread.
+  | .notificationWait =>
+    match cap.target with
+    | .object notifId =>
+      fun st =>
+        match notificationWait notifId tid st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
+  -- V2-C: ReplyRecv — compound reply + receive in one transition.
+  -- Cap targets the endpoint for the receive leg. Reply target from MR[0].
+  -- Message body for the reply leg comes from the standard message registers.
+  | .replyRecv =>
+    match cap.target with
+    | .object epId =>
+      fun st => match decodeReplyRecvArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+          let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
+          match endpointReplyRecv epId tid args.replyTarget msg st with
+          | .error e => .error e
+          | .ok ((), st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
 
 -- ============================================================================
 -- T6-I/M-IF-1: Information-flow-checked dispatch
@@ -515,10 +555,10 @@ defense-in-depth, even though reply caps are single-use authority.
 lifecycle retype, VSpace map/unmap, service revoke/query) are left unchecked
 because they derive authority entirely from capability possession.
 
-**U5-N/U-L27**: `notificationSignalChecked` is defined in `Enforcement/Wrappers.lean`
-but is NOT wired into syscall dispatch because `notificationSignal` is not in
-the `SyscallId` enum. This is intentional — notification signaling is deferred
-to WS-V (hardware binding) when the interrupt/notification model is finalized. -/
+V2-A/V2-C: `notificationSignal`, `notificationWait`, and `replyRecv` are now
+in the `SyscallId` enum and wired into both dispatch paths. The checked variants
+`notificationSignalChecked`, `notificationWaitChecked`, and
+`endpointReplyRecvChecked` gate cross-domain flows. -/
 private def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
@@ -556,7 +596,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         match endpointCallChecked ctx epId tid msg cap.rights gate.cspaceRoot
-            (SeLe4n.Slot.ofNat 0) st with
+            decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
@@ -684,6 +724,39 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         match lookupServiceByCap epId st with
         | .ok (_, st') => .ok ((), st')
         | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- V2-A/T6-I: Notification signal — checked for signaler→notification flow
+  | .notificationSignal =>
+    match cap.target with
+    | .object notifId =>
+      fun st => match decodeNotificationSignalArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          match notificationSignalChecked ctx notifId tid args.badge st with
+          | .error e => .error e
+          | .ok ((), st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
+  -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
+  | .notificationWait =>
+    match cap.target with
+    | .object notifId =>
+      fun st =>
+        match notificationWaitChecked ctx notifId tid st with
+        | .error e => .error e
+        | .ok (_, st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
+  -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
+  | .replyRecv =>
+    match cap.target with
+    | .object epId =>
+      fun st => match decodeReplyRecvArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+          let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
+          match endpointReplyRecvChecked ctx epId tid args.replyTarget msg st with
+          | .error e => .error e
+          | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
 
 /-- T6-I: Policy-checked dispatch variant. Routes syscalls through
@@ -1125,7 +1198,7 @@ theorem dispatchWithCap_send_uses_withCaps
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
-            (SeLe4n.Slot.ofNat 0) st with
+            decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st') := by
   simp [dispatchWithCap, hSyscall, hTarget]
@@ -1144,7 +1217,7 @@ theorem dispatchWithCap_call_uses_withCaps
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
-            (SeLe4n.Slot.ofNat 0) st with
+            decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st') := by
   simp [dispatchWithCap, hSyscall, hTarget]

@@ -160,6 +160,6 @@
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 [PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
 [XVAL-001] MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
-[XVAL-002] SyscallId roundtrip ok: all 14 variants
+[XVAL-002] SyscallId roundtrip ok: all 17 variants
 [XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]
 [XVAL-004] MessageInfo bit layout ok: len=42 caps=384 label=2560

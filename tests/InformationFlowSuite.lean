@@ -376,12 +376,11 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-E5/M-07: Enforcement boundary classification checks
   -- =========================================================================
 
-  -- U5-B/C: Updated from 3 to 9 policy-gated (added endpointCallChecked,
-  -- endpointReplyChecked, endpointReceiveDualChecked, cspaceCopyChecked,
-  -- cspaceMoveChecked, notificationSignalChecked)
-  expect "M-07/Q1/U5: enforcement boundary: 9 policy-gated operations defined"
+  -- V2-B/C: Updated from 9 to 11 policy-gated (added notificationWaitChecked,
+  -- endpointReplyRecvChecked)
+  expect "M-07/Q1/U5/V2: enforcement boundary: 11 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 9)
+      match c with | .policyGated _ => true | _ => false)).length == 11)
 
   expect "M-07 enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -391,9 +390,9 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- U5-B/C: Updated from 17 to 20 total classified operations
-  expect "M-07/U5: enforcement boundary: total 20 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 20)
+  -- V2-B/C: Updated from 20 to 22 total classified operations
+  expect "M-07/U5/V2: enforcement boundary: total 22 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 22)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState

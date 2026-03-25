@@ -23,9 +23,10 @@ in Projection.lean) is intentionally retained.
 
 **WS-T/T3 additions (v0.20.3) — Rust ABI Hardening:**
 
-- `MessageInfo::encode()` now returns `Result<u64, KernelError>` with 55-bit
-  label bound check (`MAX_LABEL = 2^55 - 1`), preventing silent truncation
-  (M-NEW-9). Propagated through `encode_syscall()` and `invoke_syscall()`.
+- `MessageInfo::encode()` now returns `Result<u64, KernelError>` with 20-bit
+  label bound check (`MAX_LABEL = 2^20 - 1`, seL4 convention; V2-E/H tightened
+  from 55-bit), preventing silent truncation (M-NEW-9). Propagated through
+  `encode_syscall()` and `invoke_syscall()`.
 - `VSpaceMapArgs.perms` changed from raw `u64` to typed `PagePerms` with
   decode-time validation via `PagePerms::try_from()` (M-NEW-10).
 - `ServiceRegisterArgs.requires_grant` decode changed from permissive `!= 0`

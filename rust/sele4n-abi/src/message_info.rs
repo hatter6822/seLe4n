@@ -5,7 +5,7 @@
 //! Bit layout (seL4 convention):
 //! - bits 0–6:  length (7 bits, max 120)
 //! - bits 7–8:  extraCaps (2 bits, max 3)
-//! - bits 9–63: label (55 bits, user-defined)
+//! - bits 9–28: label (20 bits, user-defined; seL4 convention)
 
 use sele4n_types::KernelError;
 
@@ -15,11 +15,12 @@ pub const MAX_MSG_LENGTH: u64 = 120;
 /// Maximum extra capabilities per message (seL4_MsgMaxExtraCaps).
 pub const MAX_EXTRA_CAPS: u64 = 3;
 
-/// Maximum label value: 2^55 - 1 (55 bits available in bits 9–63).
+/// V2-H (M-API-3): Maximum label value: 2^20 - 1 (20 bits), matching seL4's
+/// `seL4_MessageInfo_t` label field width.
 ///
-/// T3-A/M-NEW-9: Labels at or above 2^55 cannot be encoded without
-/// silent truncation. The encode method now rejects them explicitly.
-pub const MAX_LABEL: u64 = (1u64 << 55) - 1;
+/// Previously 2^55 - 1 (55 bits), which diverged from seL4's 20-bit limit.
+/// The encode and decode methods now enforce this stricter bound.
+pub const MAX_LABEL: u64 = (1u64 << 20) - 1;
 
 /// Decoded message-info word, matching `seL4_MessageInfo_t`.
 ///
@@ -35,7 +36,7 @@ pub struct MessageInfo {
     length: u8,
     /// Number of extra capability addresses (0..=3).
     extra_caps: u8,
-    /// User-defined label (must fit in 55 bits: 0..=2^55-1).
+    /// User-defined label (must fit in 20 bits: 0..=2^20-1; seL4 convention).
     label: u64,
 }
 
@@ -43,7 +44,7 @@ impl MessageInfo {
     /// Create a new MessageInfo with bounds checking.
     ///
     /// Returns `InvalidMessageInfo` if length > 120, extraCaps > 3,
-    /// or label >= 2^55.
+    /// or label >= 2^20.
     pub const fn new(length: u8, extra_caps: u8, label: u64) -> Result<Self, KernelError> {
         if length as u64 > MAX_MSG_LENGTH || extra_caps as u64 > MAX_EXTRA_CAPS || label > MAX_LABEL {
             Err(KernelError::InvalidMessageInfo)
@@ -78,7 +79,7 @@ impl MessageInfo {
     #[inline]
     pub const fn extra_caps(&self) -> u8 { self.extra_caps }
 
-    /// User-defined label (0..=2^55-1).
+    /// User-defined label (0..=2^20-1; seL4 20-bit convention).
     ///
     /// U3-B: Read-only accessor replacing the former `pub` field.
     #[inline]
@@ -89,16 +90,16 @@ impl MessageInfo {
     /// ## Bit layout (U3-H / U-L10)
     ///
     /// ```text
-    /// 63                            9  8  7  6                  0
-    /// ┌────────────────────────────────┬────┬────────────────────┐
-    /// │         label (55 bits)        │ ec │  length (7 bits)   │
-    /// └────────────────────────────────┴────┴────────────────────┘
-    ///   bits 9–63: label               7–8   bits 0–6: length
-    ///              (user-defined)       extra_caps (2 bits)
+    /// 63         29 28                  9  8  7  6                  0
+    /// ┌──────────┬────────────────────────┬────┬────────────────────┐
+    /// │ reserved │    label (20 bits)     │ ec │  length (7 bits)   │
+    /// └──────────┴────────────────────────┴────┴────────────────────┘
+    ///              bits 9–28: label        7–8   bits 0–6: length
+    ///              (user-defined)          extra_caps (2 bits)
     /// ```
     ///
-    /// T3-A/M-NEW-9: Returns `InvalidMessageInfo` if `self.label >= 2^55`,
-    /// preventing silent truncation of the upper bits.
+    /// V2-H/M-API-3: Returns `InvalidMessageInfo` if `self.label >= 2^20`,
+    /// matching seL4's 20-bit label field.
     ///
     /// Lean: `MessageInfo.encode` (Types.lean:737)
     #[inline]
@@ -113,20 +114,17 @@ impl MessageInfo {
 
     /// Decode a raw 64-bit word into MessageInfo.
     ///
-    /// ## Bit layout (U3-H / U-L10)
+    /// ## Bit layout (V2-H / M-API-3)
     ///
     /// ```text
-    /// 63                            9  8  7  6                  0
-    /// ┌────────────────────────────────┬────┬────────────────────┐
-    /// │         label (55 bits)        │ ec │  length (7 bits)   │
-    /// └────────────────────────────────┴────┴────────────────────┘
+    /// 63         29 28                  9  8  7  6                  0
+    /// ┌──────────┬────────────────────────┬────┬────────────────────┐
+    /// │ reserved │    label (20 bits)     │ ec │  length (7 bits)   │
+    /// └──────────┴────────────────────────┴────┴────────────────────┘
     /// ```
     ///
-    /// Returns `InvalidMessageInfo` if length > 120 or extraCaps > 3.
-    ///
-    /// Note: decode cannot produce an out-of-range label because the label
-    /// field occupies exactly bits 9–63 of a u64, which is 55 bits — the
-    /// maximum representable value is 2^55-1 = MAX_LABEL.
+    /// Returns `InvalidMessageInfo` if length > 120, extraCaps > 3, or
+    /// label >= 2^20 (V2-H: enforces seL4's 20-bit label field).
     ///
     /// Lean: `MessageInfo.decode` (Types.lean:742)
     #[inline]
@@ -134,7 +132,7 @@ impl MessageInfo {
         let length = (raw & 0x7F) as u8;
         let extra_caps = ((raw >> 7) & 0x3) as u8;
         let label = raw >> 9;
-        if length as u64 <= MAX_MSG_LENGTH && extra_caps as u64 <= MAX_EXTRA_CAPS {
+        if length as u64 <= MAX_MSG_LENGTH && extra_caps as u64 <= MAX_EXTRA_CAPS && label <= MAX_LABEL {
             Ok(Self { length, extra_caps, label })
         } else {
             Err(KernelError::InvalidMessageInfo)
@@ -198,11 +196,12 @@ mod tests {
         assert!(MessageInfo::new(0, 4, 0).is_err());
     }
 
-    // T3-A: Label bound enforcement tests
+    // V2-H/M-API-3: Label bound enforcement tests (20-bit limit)
     #[test]
     fn new_rejects_oversized_label() {
         assert!(MessageInfo::new(0, 0, MAX_LABEL).is_ok());
         assert!(MessageInfo::new(0, 0, MAX_LABEL + 1).is_err());
+        assert!(MessageInfo::new(0, 0, 1u64 << 20).is_err());
         assert!(MessageInfo::new(0, 0, u64::MAX).is_err());
     }
 
@@ -210,6 +209,14 @@ mod tests {
     fn encode_max_label_succeeds() {
         let mi = MessageInfo::new(0, 0, MAX_LABEL).unwrap();
         assert!(mi.encode().is_ok());
+    }
+
+    // V2-H: Decode also rejects oversized labels
+    #[test]
+    fn decode_rejects_oversized_label() {
+        // Encode a raw word with label = 2^20 (just over the limit)
+        let raw: u64 = (1u64 << 20) << 9; // label field starts at bit 9
+        assert_eq!(MessageInfo::decode(raw), Err(KernelError::InvalidMessageInfo));
     }
 
     // U3-B: Accessor method tests

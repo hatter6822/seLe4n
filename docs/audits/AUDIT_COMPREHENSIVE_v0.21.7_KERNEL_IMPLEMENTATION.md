@@ -452,10 +452,10 @@ pure functions over immutable index structures.
 
 All type correspondences verified:
 - `KernelError`: 40 variants (0-39), matching
-- `SyscallId`: 14 variants (0-13), matching
+- `SyscallId`: 17 variants (0-16), matching (V2-A/D: added notificationSignal, notificationWait, replyRecv)
 - `AccessRight`: 5 variants (bits 0-4), matching
 - `TypeTag`: 6 variants (0-5), matching
-- `MessageInfo` bit layout: 7-bit length, 2-bit extraCaps, 55-bit label, matching
+- `MessageInfo` bit layout: 7-bit length, 2-bit extraCaps, 20-bit label (V2-E/H: seL4 convention), matching
 - Register layout: x0=CPtr, x1=MsgInfo, x2-x5=msg_regs, x7=syscall, matching
 - All identifier types: `#[repr(transparent)]` over `u64`, matching Lean `Nat` wrappers
 
