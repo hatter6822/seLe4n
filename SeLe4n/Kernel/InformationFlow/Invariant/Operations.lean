@@ -503,6 +503,8 @@ theorem switchDomain_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t → threadObservable ctx observer t = false)
     (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : switchDomain s₁ = .ok ((), s₁'))
     (hStep₂ : switchDomain s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -556,6 +558,9 @@ theorem switchDomain_preserves_lowEquivalent
             next tcb _ => exact RunQueue.toList_filter_insert_neg' _ _ _ _ hH
           · -- objects = not tcb (catch-all)
             rfl
+      -- U-M39: Rewrite past saveOutgoingContext using projection preservation
+      rw [saveOutgoingContext_with_sched_preserves_projection ctx observer s₁ _ hObjInv₁,
+          saveOutgoingContext_with_sched_preserves_projection ctx observer s₂ _ hObjInv₂]
       simp only [projectState]; congr 1
       · exact congrArg ObservableState.objects hLow
       · -- WS-H12b: runnable field uses rq_filter_reduce
@@ -758,15 +763,15 @@ theorem storeCapabilityRef_preserves_projection
   have hEq := hStep.2.symm; subst hEq
   simp only [projectState]; congr 1
 
-/-- WS-H9: cspaceDeleteSlot at a non-observable CNode preserves projection. -/
-theorem cspaceDeleteSlot_preserves_projection
+/-- Core: cspaceDeleteSlotCore at a non-observable CNode preserves projection. -/
+theorem cspaceDeleteSlotCore_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (addr : CSpaceAddr) (st st' : SystemState)
     (hAddrHigh : objectObservable ctx observer addr.cnode = false)
     (hObjInv : st.objects.invExt)
-    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold cspaceDeleteSlot at hStep
+  unfold cspaceDeleteSlotCore at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -792,6 +797,19 @@ theorem cspaceDeleteSlot_preserves_projection
           rw [hDetach,
               storeCapabilityRef_preserves_projection ctx observer pair₁.2 pair₂.2 addr none hRef,
               storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore]
+
+/-- WS-H9: cspaceDeleteSlot at a non-observable CNode preserves projection (guarded wrapper). -/
+theorem cspaceDeleteSlot_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (addr : CSpaceAddr) (st st' : SystemState)
+    (hAddrHigh : objectObservable ctx observer addr.cnode = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold cspaceDeleteSlot at hStep
+  split at hStep
+  · simp at hStep
+  · exact cspaceDeleteSlotCore_preserves_projection ctx observer addr st st' hAddrHigh hObjInv hStep
 
 /-- WS-H9: cspaceDeleteSlot preserves low-equivalence. -/
 private theorem cspaceDeleteSlot_preserves_lowEquivalent
@@ -999,7 +1017,7 @@ theorem cspaceMove_preserves_projection
     | ok pair₂ =>
       rcases pair₂ with ⟨_, stIns⟩
       simp only [hInsert] at hStep
-      cases hDelete : cspaceDeleteSlot src stIns with
+      cases hDelete : cspaceDeleteSlotCore src stIns with
       | error e => simp [hDelete] at hStep
       | ok pair₃ =>
         rcases pair₃ with ⟨_, stDel⟩
@@ -1010,7 +1028,7 @@ theorem cspaceMove_preserves_projection
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           rw [← hStep.2]
           have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
-          rw [cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
+          rw [cspaceDeleteSlotCore_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
               cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
         · -- some srcNode: attachSlotToCdtNode only modifies CDT
           next srcNode =>
@@ -1021,7 +1039,7 @@ theorem cspaceMove_preserves_projection
             intro stx _; simp only [projectState, SystemState.attachSlotToCdtNode]; congr 1
           have hObjInvIns := cspaceInsertSlot_preserves_objects_invExt st stIns dst cap hObjInv hInsert
           rw [hAttach,
-              cspaceDeleteSlot_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
+              cspaceDeleteSlotCore_preserves_projection ctx observer src stIns stDel hSrcHigh hObjInvIns hDelete,
               cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceMove preserves low-equivalence. -/
@@ -1485,27 +1503,31 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
   -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + storeCapabilityRef + detachSlotFromCdt
   have hObjInvDeleted : stDeleted.objects.invExt := by
     unfold cspaceDeleteSlot at hDelete
-    cases hObj : stRevoked.objects[cleanup.cnode]? with
-    | none => simp [hObj] at hDelete
-    | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hDelete
-      | cnode cn =>
-        simp only [hObj] at hDelete
-        cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
-        | error e => simp [hSt] at hDelete
-        | ok pair₁ =>
-          simp only [hSt] at hDelete
-          have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
-          cases hRef : storeCapabilityRef cleanup none pair₁.2 with
-          | error e => simp [hRef] at hDelete
-          | ok pair₂ =>
-            simp only [hRef] at hDelete; cases hDelete
-            -- detachSlotFromCdt only modifies CDT, storeCapabilityRef preserves objects
-            have hRefObjs := storeCapabilityRef_preserves_objects pair₁.2 pair₂.2 cleanup none hRef
-            simp only [SystemState.detachSlotFromCdt]; split
-            · exact hRefObjs ▸ hInvPair
-            · exact hRefObjs ▸ hInvPair
+    -- U-H03: Discharge CDT children guard
+    split at hDelete
+    · simp at hDelete
+    · unfold cspaceDeleteSlotCore at hDelete
+      cases hObj : stRevoked.objects[cleanup.cnode]? with
+      | none => simp [hObj] at hDelete
+      | some obj =>
+        cases obj with
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hDelete
+        | cnode cn =>
+          simp only [hObj] at hDelete
+          cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with
+          | error e => simp [hSt] at hDelete
+          | ok pair₁ =>
+            simp only [hSt] at hDelete
+            have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
+            cases hRef : storeCapabilityRef cleanup none pair₁.2 with
+            | error e => simp [hRef] at hDelete
+            | ok pair₂ =>
+              simp only [hRef] at hDelete; cases hDelete
+              -- detachSlotFromCdt only modifies CDT, storeCapabilityRef preserves objects
+              have hRefObjs := storeCapabilityRef_preserves_objects pair₁.2 pair₂.2 cleanup none hRef
+              simp only [SystemState.detachSlotFromCdt]; split
+              · exact hRefObjs ▸ hInvPair
+              · exact hRefObjs ▸ hInvPair
   rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hObjInvDeleted hStore,
       cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hObjInvRevoked hDelete,
       cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hObjInv hRevoke]

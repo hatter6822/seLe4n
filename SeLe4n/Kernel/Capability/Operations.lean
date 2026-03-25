@@ -551,8 +551,19 @@ def cspaceMint
         | .error e => .error e
         | .ok child => cspaceInsertSlot dst child st'
 
-/-- Delete the capability currently stored in `addr`. -/
-def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
+/-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
+Returns `true` if the slot's CDT node has any children, indicating that
+`cspaceRevoke` must be called before deletion. -/
+def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
+  match st.lookupCdtNodeOfSlot addr with
+  | none => false  -- no CDT node → no children
+  | some node => !(st.cdt.childrenOf node).isEmpty
+
+/-- Core capability slot deletion without CDT children guard.
+Used by `cspaceDeleteSlot` (which adds the guard) and by internal kernel
+operations (`processRevokeNode`, `cspaceRevokeCdtStrict`, `cspaceMove`) that
+manage CDT children themselves. -/
+def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     match st.objects[addr.cnode]? with
     | some (.cnode cn) =>
@@ -566,6 +577,18 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
                 let stDetached := SystemState.detachSlotFromCdt st'' addr
                 .ok ((), stDetached)
     | _ => .error .objectNotFound
+
+/-- Delete the capability currently stored in `addr`.
+
+U-H03: Before deleting, checks that no CDT children exist for the slot.
+Returns `.revocationRequired` if children are found, enforcing the
+`revokeBeforeDelete` proof obligation as a runtime check. -/
+def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    if hasCdtChildren st addr then
+      .error .revocationRequired
+    else
+      cspaceDeleteSlotCore addr st
 
 /-- Revoke capabilities with the same target as the source in the containing CNode.
 
@@ -640,7 +663,9 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
         | .error e => .error e
         | .ok ((), st'') =>
             let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
-            match cspaceDeleteSlot src st'' with
+            -- Use unchecked delete: move preserves CDT edges via
+            -- attachSlotToCdtNode, so children follow the capability.
+            match cspaceDeleteSlotCore src st'' with
             | .error e => .error e
             | .ok ((), st''') =>
                 -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
@@ -761,7 +786,7 @@ def processRevokeNode (st : SystemState) (node : CdtNodeId)
   match SystemState.lookupCdtSlotOfNode st node with
   | none => .ok { st with cdt := st.cdt.removeNode node }
   | some descAddr =>
-      match cspaceDeleteSlot descAddr st with
+      match cspaceDeleteSlotCore descAddr st with
       | .error e => .error e
       | .ok ((), stDel) =>
           let stDetached := SystemState.detachSlotFromCdt stDel descAddr
@@ -791,7 +816,7 @@ def processRevokeNode_lenient (st : SystemState) (node : CdtNodeId) : SystemStat
   match SystemState.lookupCdtSlotOfNode st node with
   | none => { st with cdt := st.cdt.removeNode node }
   | some descAddr =>
-      match cspaceDeleteSlot descAddr st with
+      match cspaceDeleteSlotCore descAddr st with
       | .error _ => { st with cdt := st.cdt.removeNode node }
       | .ok ((), stDel) =>
           let stDetached := SystemState.detachSlotFromCdt stDel descAddr
@@ -940,7 +965,7 @@ def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
                       let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
                       (report, stRemoved)
                   | some descAddr =>
-                      match cspaceDeleteSlot descAddr stAcc with
+                      match cspaceDeleteSlotCore descAddr stAcc with
                       | .error err =>
                           let failure : RevokeCdtStrictFailure := {
                             offendingNode := node

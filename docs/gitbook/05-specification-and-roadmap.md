@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.20.7` |
+| Version | `0.21.0` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 61,538 across 101 Lean files |
-| Test LoC | 8,256 across 10 suites |
-| Proved declarations | 1,846 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 61,781 across 101 Lean files |
+| Test LoC | 8,327 across 10 suites |
+| Proved declarations | 1,855 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-T PORTFOLIO COMPLETE** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks, v0.20.0–v0.20.7). All 8 phases complete. Prior: **WS-S COMPLETE** (v0.19.0–v0.19.6), **WS-R COMPLETE** (v0.18.0–v0.18.7), WS-Q through WS-B — all COMPLETE. |
+| Active workstream | **WS-U Phase U1 COMPLETE** — Correctness Fixes (13 sub-tasks, U1-A–U1-M, v0.21.0). Prior: **WS-T COMPLETE** (v0.20.0–v0.20.7), **WS-S COMPLETE** (v0.19.0–v0.19.6), WS-R through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -75,6 +75,21 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-Q4 (CNode radix tree, v0.17.10) — COMPLETED.** →
 **WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
 **WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
+
+## Completed: WS-U Phase U1 Correctness Fixes (v0.21.0)
+
+Addressed 7 correctness findings (U-H01–U-H04, U-H13, U-H14, U-M39) from the
+v0.20.7 audit. 13 sub-tasks (U1-A through U1-M). Key outcomes:
+
+- Frozen queue link safety (`queuePPrev` cleared on pop, enabling multi-round IPC)
+- Retype page-alignment re-verification after watermark advance
+- API dispatch routes through `lifecycleRetypeWithCleanup`
+- Authority right aligned (`.write` to `.retype`) matching `requiredRight` mapping
+- IPC CSpace root fallback returns explicit error instead of silent fallback
+- CDT deletion guard (`cspaceDeleteSlotCore` extraction + `hasCdtChildren` check)
+- Domain switch saves outgoing context before clearing `current`
+
+Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-T Deep-Dive Audit Remediation (v0.20.0–v0.20.7, PORTFOLIO COMPLETE)
 

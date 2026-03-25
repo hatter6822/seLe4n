@@ -175,6 +175,25 @@ theorem saveOutgoingContext_preserves_timeSlicePositive
           | vspaceRoot _ => exact hOrig
           | untyped _ => exact hOrig
 
+/-- `saveOutgoingContext` preserves `objects.invExt`. The context save
+inserts a TCB at an existing key, which preserves the Robin Hood invariant. -/
+theorem saveOutgoingContext_preserves_objects_invExt
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    (saveOutgoingContext st).objects.invExt := by
+  unfold saveOutgoingContext
+  cases hCur : st.scheduler.current with
+  | none => exact hObjInv
+  | some outTid =>
+      dsimp only
+      cases hObj : st.objects[outTid.toObjId]? with
+      | none => simp; exact hObjInv
+      | some obj =>
+          cases obj with
+          | tcb outTcb =>
+              dsimp only
+              exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
+          | _ => simp; exact hObjInv
+
 /-- `restoreIncomingContext` preserves `timeSlicePositive`. The context restore
 only changes `machine.regs` — objects and scheduler state are unchanged. -/
 private theorem restoreIncomingContext_preserves_timeSlicePositive
@@ -347,9 +366,14 @@ def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
 /-- WS-H12b/H-04: Advance the domain schedule to the next entry.
 
 If the domain schedule is empty (single-domain mode), this is a no-op.
-Otherwise, re-enqueues the current thread (if any) into the run queue,
-wraps the index modularly through the schedule table, and updates the
-active domain and time remaining.
+Otherwise, saves the outgoing thread's register context (U-M39), re-enqueues
+the current thread (if any) into the run queue, wraps the index modularly
+through the schedule table, and updates the active domain and time remaining.
+
+This function is self-contained: it embeds `saveOutgoingContext` internally
+so callers do not need to save context before calling. The save occurs before
+`current` is set to `none`, ensuring registers are captured while the outgoing
+thread identity is still known.
 
 Under dequeue-on-dispatch, the outgoing thread must return to the
 runnable pool for its next domain slot. -/
@@ -363,7 +387,10 @@ def switchDomain : Kernel Unit :=
         match schedule[nextIdx]? with
         | none => .ok ((), st)  -- safety: should not happen with valid modular index
         | some entry =>
+            -- U-M39: Save outgoing context before clearing current
+            let stSaved := saveOutgoingContext st
             -- WS-H12b: re-enqueue current thread before domain switch
+            -- All reads use st (not stSaved) to keep scheduler computation identical
             let rq' := match st.scheduler.current with
               | none => st.scheduler.runQueue
               | some tid =>
@@ -377,7 +404,24 @@ def switchDomain : Kernel Unit :=
               domainTimeRemaining := DomainScheduleEntry.length entry
               domainScheduleIndex := nextIdx
             }
-            .ok ((), { st with scheduler := sched' })
+            .ok ((), { stSaved with scheduler := sched' })
+
+/-- `switchDomain` preserves `objects.invExt`. In no-op branches the state is
+unchanged; in the active branch the objects come from `saveOutgoingContext`,
+which preserves the Robin Hood invariant. -/
+theorem switchDomain_preserves_objects_invExt
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : switchDomain st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil => simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+  | cons entry rest =>
+      simp [hSched] at hStep
+      split at hStep
+      · obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+      · simp at hStep; obtain ⟨_, rfl⟩ := hStep; dsimp
+        exact saveOutgoingContext_preserves_objects_invExt st hObjInv
 
 /-- M-05/WS-E6: Handle a domain tick. Decrements the domain time remaining;
 if expired, switches to the next domain and reschedules. -/

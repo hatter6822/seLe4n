@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.20.7.
+Lean 4.28.0 toolchain, Lake build system, version 0.21.0.
 
 ## Build and run
 
@@ -443,9 +443,10 @@ under `docs/` and `docs/gitbook/`.
 - **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audits**: `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` and `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`
+- **WS-U Phase U1 COMPLETE**: Correctness Fixes — 13 sub-tasks (U1-A through U1-M), all complete (v0.21.0). See `docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-T PORTFOLIO COMPLETE**: Deep-Dive Audit Remediation — 8 phases (T1–T8, 94 sub-tasks), all complete (v0.20.0–v0.20.7). See `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`
-- **All prior workstreams completed**: WS-B through WS-T (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: Raspberry Pi 5 hardware binding (WS-U)
+- **All prior workstreams completed**: WS-B through WS-U Phase U1 (see `docs/WORKSTREAM_HISTORY.md`)
+- **Next milestone**: Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

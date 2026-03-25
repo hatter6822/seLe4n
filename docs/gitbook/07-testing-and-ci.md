@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **All prior workstreams completed through WS-T (v0.20.0–v0.20.7, PORTFOLIO COMPLETE). Testing tiers enforce regression protection and evidence continuity across 61,538 production LoC, 8,256 test LoC, and 1,846 proved declarations.**
+Current stage context: **All prior workstreams completed through WS-U Phase U1 (v0.21.0). Testing tiers enforce regression protection and evidence continuity across 61,781 production LoC, 8,327 test LoC, and 1,855 proved declarations.**
 
 ## Tier model
 

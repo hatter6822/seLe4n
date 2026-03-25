@@ -1,165 +1,165 @@
-# WS-I1/R-03: Scenario ID traceability fixture
-# Format: SCENARIO_ID | SUBSYSTEM | expected_trace_fragment
-# Generated from trace output — update only with rationale.
-
-ENT-000 | Entry | scheduled thread: some 1
-ENT-001 | Entry | source cap rights before mint: { bits := 7 }
-ENT-002 | Entry | source path lookup rights: { bits := 7 }
-ENT-003 | Entry | source path alias lookup rights: { bits := 7 }
-CAT-002 | Architecture | adapter timer success path value: 2
-CAT-003 | Architecture | adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
-CAT-005 | Architecture | adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
-CAT-007 | Architecture | adapter read denied branch: SeLe4n.Model.KernelError.notImplemented
-CAT-010 | Architecture | adapter read success path byte: 0
-CAT-013 | Architecture | vspace lookup mapped paddr: 8192
-CAT-015 | Architecture | vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault
-CAT-017 | Architecture | vspace map W^X violation correctly rejected: SeLe4n.Model.KernelError.policyDenied
-CAT-021 | Architecture | vspace lookupFull paddr: 8192, read=true, write=false, exec=false
-CAT-022 | Architecture | vspace mapChecked address out of bounds: SeLe4n.Model.KernelError.addressOutOfBounds
-CAT-025 | Architecture | vspace mapChecked valid address accepted
-CAT-026 | Architecture | TLB flush entry count: 0
-CAT-028 | Architecture | adapter register write success path value: 99
-CAT-029 | Architecture | adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
-SST-001 | Service | service lookup svcApi: some { sid := { val := 101 }, backingObject := { val := 1 }, owner := { val := 10 } }
-SST-003 | Service | service lookup absent ⟨9998⟩: none
-SST-006 | Service | store service entry lookup: some { sid := { val := 200 }, backingObject := { val := 12 }, owner := { val := 10 } }
-SST-008 | Service | register dependency result: some [{ val := 100 }]
-SST-009 | Service | register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency
-SST-011 | Service | service path svcApi→svcDb: true
-SST-013 | Service | service isolation api↔denied: true
-SST-014 | Service | service isolation api↔db: false
-SRG-001 | ServiceRegistry | register service success: true
-SRG-002 | ServiceRegistry | duplicate register: SeLe4n.Model.KernelError.illegalState
-SRG-005 | ServiceRegistry | revoke service success: true
-SRG-007 | ServiceRegistry | lookup by cap found sid: 501
-SRG-008 | ServiceRegistry | lookup non-matching: SeLe4n.Model.KernelError.objectNotFound
-SRG-003 | ServiceRegistry | unknown interface: SeLe4n.Model.KernelError.objectNotFound
-SRG-004 | ServiceRegistry | invalid endpoint: SeLe4n.Model.KernelError.invalidCapability
-SRG-006 | ServiceRegistry | revoke non-existent: SeLe4n.Model.KernelError.objectNotFound
-SRG-009 | ServiceRegistry | chain success: iface=true svc=true
-SRG-010 | ServiceRegistry | cycle detection: SeLe4n.Model.KernelError.cyclicDependency
-SST-021 | Service | deep cnode radix fixture: some 12
-SST-023 | Service | deep cnode path lookup rights: { bits := 3 }
-SST-024 | Service | deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
-SST-026 | Service | deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
-SST-028 | Service | large runnable queue length: 2
-SST-030 | Service | large queue scheduled current: some 1
-SST-032 | Service | context switch regs match incoming: true
-SST-037 | Service | multi-endpoint receive senders: 1, 12
-SST-038 | Service | service dependency chain path chainTop→chainRoot: true
-SST-041 | Service | boundary memory low-address byte: 0
-SST-043 | Service | boundary memory high-address byte: 0
-LEP-001 | Lifecycle | lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-LEP-003 | Lifecycle | lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
-LEP-006 | Lifecycle | lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-LEP-008 | Lifecycle | lifecycle retype-with-cleanup old tid removed: true
-LEP-011 | Lifecycle | created sibling cap with the same target
-LEP-012 | Lifecycle | composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
-LEP-014 | Lifecycle | composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-LEP-017 | Lifecycle | composed revoke/delete/retype success
-LEP-018 | Lifecycle | post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
-LEP-020 | Lifecycle | post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
-LEP-024 | Lifecycle | handshake send matched waiting receiver
-LEP-026 | Lifecycle | queued sender on endpoint
-LEP-028 | Lifecycle | endpoint receive #1 sender: 1
-LEP-030 | Lifecycle | notification wait #1 result: none
-LEP-034 | Lifecycle | notification wait #2 result: some { val := 123 }
-LEP-036 | Lifecycle | minted cap rights: { bits := 1 }
-CIC-001 | Capability | H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
-CIC-005 | Capability | cspaceCopy target matches: true
-CIC-007 | Capability | dual-queue sender blocked on sendQ non-empty: true
-CIC-010 | Capability | endpointReply unblocked target: true
-IMT-002 | IPC | message sender has pending: true
-IMT-004 | IPC | message transfer registers: [42, 7]
-IMT-005 | IPC | message transfer badge: some { val := 123 }
-IMT-006 | IPC | message sender cleared after transfer: true
-IMT-009 | IPC | rendezvous delivery registers: [99]
-IMT-012 | IPC | call/reply caller blocked: true
-IMT-014 | IPC | call/reply response registers: [100, 200]
-IMT-016 | IPC | H1 caller blockedOnCall: true
-IMT-018 | IPC | H1 caller blockedOnReply after dequeue: true
-IMT-019 | IPC | H1 caller not ready after dequeue: true
-IMT-021 | IPC | H1 caller ready after reply: true
-IMT-024 | IPC | H1 unauthorized reply rejected: true
-IMB-001 | IPC | H12d oversized registers rejected: true
-IMB-004 | IPC | H12d oversized caps rejected: true
-IMB-008 | IPC | H12d boundary message accepted: true
-IMB-009 | IPC | H12d call oversized rejected: true
-IMB-012 | IPC | H12d reply oversized rejected: true
-DDT-002 | Scheduler | H12f dequeue-on-dispatch current: some 1
-DDT-003 | Scheduler | H12f dispatched thread absent from runQueue: true
-DDT-004 | Scheduler | H12f non-dispatched thread in runQueue: true
-DDT-006 | Scheduler | H12f preempted thread back in runQueue: true
-DDT-007 | Scheduler | H12f preemption new current: some 1
-ICS-002 | Scheduler | H12f context switch regs match incoming: true
-ICS-003 | Scheduler | H12f outgoing context saved: true
-ICS-004 | Scheduler | H12f context switch new current: some 12
-BME-002 | IPC | H12f empty message accepted: true
-BME-004 | IPC | H12f sub-boundary message accepted: true
-BME-006 | IPC | H12f max caps message accepted: true
-STD-002 | Scheduler | EDF tie-break chosen thread: some 12
-STD-004 | Scheduler | timer tick remaining slice: 1
-STD-007 | Scheduler | timer tick expiry rescheduled current: some 1
-STD-008 | Scheduler | timer tick expiry reset slice: 5
-STD-011 | Scheduler | domain switch active domain: 1
-STD-012 | Scheduler | domain switch time remaining: 5
-UMT-002 | Lifecycle | retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-UMT-003 | Lifecycle | untyped watermark after retype: 64
-UMT-004 | Lifecycle | untyped children count: 1
-UMT-007 | Lifecycle | untyped watermark after second retype: 1088
-UMT-009 | Lifecycle | retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
-UMT-011 | Lifecycle | retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
-UMT-013 | Lifecycle | retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
-UMT-015 | Lifecycle | retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
-UMT-017 | Lifecycle | retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
-UMT-019 | Lifecycle | retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
-UMT-021 | Lifecycle | retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
-UMT-023 | Lifecycle | retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
-SGT-001 | Capability | H15e syscall gate send (correct): ok
-SGT-004 | Capability | H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
-SGT-006 | Capability | H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.illegalAuthority
-SGT-008 | Capability | H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability
-SGT-010 | Capability | H15e syscall gate retype: SeLe4n.Model.KernelError.objectNotFound
-RCF-001 | Platform | F7 timerOnly timer success: 3
-RCF-003 | Platform | F7 timerOnly register denied: SeLe4n.Model.KernelError.notImplemented
-RCF-005 | Platform | F7 timerOnly memory denied: SeLe4n.Model.KernelError.notImplemented
-RCF-007 | Platform | F7 readOnlyMemory memory success: 0
-RCF-009 | Platform | F7 readOnlyMemory timer denied: SeLe4n.Model.KernelError.notImplemented
-RCF-011 | Platform | F7 readOnlyMemory register denied: SeLe4n.Model.KernelError.notImplemented
-RDT-002 | Architecture | register decode success: syscall=SeLe4n.Model.SyscallId.send, capAddr=0, msgRegs=4
-RDT-003 | Architecture | syscallEntry send success, endpoint has sender: true
-RDT-006 | Architecture | syscallEntry invalid syscall decode error: SeLe4n.Model.KernelError.invalidSyscallNumber
-RDT-008 | Architecture | syscallEntry malformed msgInfo decode error: SeLe4n.Model.KernelError.invalidMessageInfo
-RDT-010 | Architecture | syscallEntry out-of-bounds layout error: SeLe4n.Model.KernelError.invalidRegister
-KSD-001 | Architecture | cspaceMint via decoded regs destination populated: true
-KSD-002 | Architecture | cspaceCopy via decoded regs target matches: true
-KSD-003 | Architecture | cspaceDelete via decoded regs slot cleared: true
-KSD-004 | Lifecycle | lifecycle retype via decoded regs new type: some (SeLe4n.Model.KernelObjectType.notification)
-KSD-005 | Architecture | vspaceMap via decoded regs paddr: 8192
-KSD-006 | Service | service registry lookup present: true
-KSD-007 | IPC | IPC message body from registers: #[111, 222, 333, 444]
-KSD-008 | Architecture | round-trip decode msgRegs.size=4 first=10
-RRC-001 | IPC | replyRecv caller state after receive: blockedOnReply
-RRC-002 | IPC | replyRecv callerB state after rendezvous: blockedOnReply
-RRC-003 | IPC | replyRecv caller unblocked: true
-RRC-004 | IPC | replyRecv caller reply registers: some [100, 200, 300]
-RRC-005 | IPC | replyRecv server ready after rendezvous: true
-RRC-006 | IPC | replyRecv server received callerB registers: some [70, 80, 90]
-ELC-001 | IPC | lifecycle senders blocked: true
-ELC-002 | IPC | lifecycle retype-delete succeeded: true
-ELC-003 | IPC | lifecycle senders retain stale blocked state: true
-ELC-004 | IPC | lifecycle stale endpoint send rejected (invalidCapability): true
-MEI-001 | IPC | multi-ep recv1 registers: some [11, 22]
-MEI-002 | IPC | multi-ep recv2 registers: some [33, 44]
-MEI-003 | IPC | multi-ep endpoint1 queues empty: true
-MEI-004 | IPC | multi-ep ep3 out-of-order recv registers: some [55, 66]
-MEI-005 | IPC | multi-ep ep1 FIFO second recv registers: some [77, 88]
-MEI-006 | IPC | multi-ep all 3 endpoints drained: true
-ITR-001 | Testing | inter-transition invariant checks: 31 passed
-PTY-001 | Testing | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
-PTY-001 | Testing | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
-PTY-001 | Testing | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
-XVAL-001 | ABI | MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
-XVAL-002 | ABI | SyscallId roundtrip ok: all 14 variants
-XVAL-003 | ABI | CSpaceMintArgs roundtrip ok
-XVAL-004 | ABI | MessageInfo bit layout ok: len=42 caps=384 label=2560
+[ENT-000] scheduled thread: some 1
+[ENT-001] source cap rights before mint: { bits := 7 }
+[ENT-002] source path lookup rights: { bits := 7 }
+[ENT-003] source path alias lookup rights: { bits := 7 }
+[CAT-002] adapter timer success path value: 2
+[CAT-003] adapter timer invalid-context branch: SeLe4n.Model.KernelError.illegalState
+[CAT-005] adapter timer unsupported branch: SeLe4n.Model.KernelError.notImplemented
+[CAT-007] adapter read denied branch: SeLe4n.Model.KernelError.notImplemented
+[CAT-010] adapter read success path byte: 0
+[CAT-013] vspace lookup mapped paddr: 8192
+[CAT-015] vspace lookup after unmap branch: SeLe4n.Model.KernelError.translationFault
+[CAT-017] vspace map W^X violation correctly rejected: SeLe4n.Model.KernelError.policyDenied
+[CAT-021] vspace lookupFull paddr: 8192, read=true, write=false, exec=false
+[CAT-022] vspace mapChecked address out of bounds: SeLe4n.Model.KernelError.addressOutOfBounds
+[CAT-025] vspace mapChecked valid address accepted
+[CAT-026] TLB flush entry count: 0
+[CAT-028] adapter register write success path value: 99
+[CAT-029] adapter register write unsupported branch: SeLe4n.Model.KernelError.notImplemented
+[SST-001] service lookup svcApi: some { sid := { val := 101 }, backingObject := { val := 1 }, owner := { val := 10 } }
+[SST-003] service lookup absent ⟨9998⟩: none
+[SST-006] store service entry lookup: some { sid := { val := 200 }, backingObject := { val := 12 }, owner := { val := 10 } }
+[SST-008] register dependency result: some [{ val := 100 }]
+[SST-009] register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency
+[SST-011] service path svcApi→svcDb: true
+[SST-012] service path svcApi→svcDenied: false
+[SST-013] service isolation api↔denied: true
+[SST-014] service isolation api↔db: false
+[SST-019] service lookup missing-backing: some { sid := { val := 106 }, backingObject := { val := 9999 }, owner := { val := 10 } }
+[SST-020] service lookup svcBroken deps: some [{ val := 999 }]
+[SRG-001] register service success: true
+[SRG-002] duplicate register: SeLe4n.Model.KernelError.illegalState
+[SRG-005] revoke service success: true
+[SRG-007] lookup by cap found sid: 501
+[SRG-008] lookup non-matching: SeLe4n.Model.KernelError.objectNotFound
+[SRG-003] unknown interface: SeLe4n.Model.KernelError.objectNotFound
+[SRG-004] invalid endpoint: SeLe4n.Model.KernelError.invalidCapability
+[SRG-006] revoke non-existent: SeLe4n.Model.KernelError.objectNotFound
+[SRG-009] chain success: iface=true svc=true
+[SRG-010] cycle detection: SeLe4n.Model.KernelError.cyclicDependency
+[SST-021] deep cnode radix fixture: some 12
+[SST-023] deep cnode path lookup rights: { bits := 3 }
+[SST-024] deep cnode path bad-depth branch: SeLe4n.Model.KernelError.illegalState
+[SST-026] deep cnode path guard-mismatch branch: SeLe4n.Model.KernelError.invalidCapability
+[SST-028] large runnable queue length: 2
+[SST-030] large queue scheduled current: some 1
+[SST-032] context switch regs match incoming: true
+[SST-037] multi-endpoint receive senders: 1, 12
+[SST-038] service dependency chain path chainTop→chainRoot: true
+[SST-039] service dependency chain lookup chainTop: some [{ val := 201 }]
+[SST-041] boundary memory low-address byte: 0
+[SST-043] boundary memory high-address byte: 0
+[LEP-001] lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
+[LEP-003] lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
+[LEP-006] lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
+[LEP-008] lifecycle retype-with-cleanup old tid removed: true
+[LEP-011] created sibling cap with the same target
+[LEP-012] composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
+[LEP-014] composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
+[LEP-017] composed revoke/delete/retype success
+[LEP-018] post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
+[LEP-020] post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
+[LEP-024] handshake send matched waiting receiver
+[LEP-026] queued sender on endpoint
+[LEP-028] endpoint receive #1 sender: 1
+[LEP-030] notification wait #1 result: none
+[LEP-034] notification wait #2 result: some { val := 123 }
+[LEP-036] minted cap rights: { bits := 1 }
+[CIC-001] H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
+[CIC-005] cspaceCopy target matches: true
+[CIC-007] dual-queue sender blocked on sendQ non-empty: true
+[CIC-010] endpointReply unblocked target: true
+[IMT-002] message sender has pending: true
+[IMT-004] message transfer registers: [42, 7]
+[IMT-005] message transfer badge: some { val := 123 }
+[IMT-006] message sender cleared after transfer: true
+[IMT-009] rendezvous delivery registers: [99]
+[IMT-012] call/reply caller blocked: true
+[IMT-014] call/reply response registers: [100, 200]
+[IMT-016] H1 caller blockedOnCall: true
+[IMT-018] H1 caller blockedOnReply after dequeue: true
+[IMT-019] H1 caller not ready after dequeue: true
+[IMT-021] H1 caller ready after reply: true
+[IMT-024] H1 unauthorized reply rejected: true
+[IMB-001] H12d oversized registers rejected: true
+[IMB-004] H12d oversized caps rejected: true
+[IMB-008] H12d boundary message accepted: true
+[IMB-009] H12d call oversized rejected: true
+[IMB-012] H12d reply oversized rejected: true
+[DDT-002] H12f dequeue-on-dispatch current: some 1
+[DDT-003] H12f dispatched thread absent from runQueue: true
+[DDT-004] H12f non-dispatched thread in runQueue: true
+[DDT-006] H12f preempted thread back in runQueue: true
+[DDT-007] H12f preemption new current: some 1
+[ICS-002] H12f context switch regs match incoming: true
+[ICS-003] H12f outgoing context saved: true
+[ICS-004] H12f context switch new current: some 12
+[BME-002] H12f empty message accepted: true
+[BME-004] H12f sub-boundary message accepted: true
+[BME-006] H12f max caps message accepted: true
+[STD-002] EDF tie-break chosen thread: some 12
+[STD-004] timer tick remaining slice: 1
+[STD-007] timer tick expiry rescheduled current: some 1
+[STD-008] timer tick expiry reset slice: 5
+[STD-011] domain switch active domain: 1
+[STD-012] domain switch time remaining: 5
+[UMT-002] retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
+[UMT-003] untyped watermark after retype: 64
+[UMT-004] untyped children count: 1
+[UMT-007] untyped watermark after second retype: 1088
+[UMT-009] retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
+[UMT-011] retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
+[UMT-013] retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
+[UMT-015] retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
+[UMT-017] retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
+[UMT-019] retype-from-untyped alloc-size-too-small branch: SeLe4n.Model.KernelError.untypedAllocSizeTooSmall
+[UMT-021] retype-from-untyped childId self-overwrite guard: SeLe4n.Model.KernelError.childIdSelfOverwrite
+[UMT-023] retype-from-untyped childId collision guard: SeLe4n.Model.KernelError.childIdCollision
+[SGT-001] H15e syscall gate send (correct): ok
+[SGT-004] H15e syscall gate send (bad root): SeLe4n.Model.KernelError.objectNotFound
+[SGT-006] H15e syscall gate send (insufficient rights): SeLe4n.Model.KernelError.illegalAuthority
+[SGT-008] H15e syscall gate send (missing cap): SeLe4n.Model.KernelError.invalidCapability
+[SGT-010] H15e syscall gate retype: SeLe4n.Model.KernelError.objectNotFound
+[RCF-001] F7 timerOnly timer success: 3
+[RCF-003] F7 timerOnly register denied: SeLe4n.Model.KernelError.notImplemented
+[RCF-005] F7 timerOnly memory denied: SeLe4n.Model.KernelError.notImplemented
+[RCF-007] F7 readOnlyMemory memory success: 0
+[RCF-009] F7 readOnlyMemory timer denied: SeLe4n.Model.KernelError.notImplemented
+[RCF-011] F7 readOnlyMemory register denied: SeLe4n.Model.KernelError.notImplemented
+[RDT-002] register decode success: syscall=SeLe4n.Model.SyscallId.send, capAddr=0, msgRegs=4
+[RDT-003] syscallEntry send success, endpoint has sender: true
+[RDT-006] syscallEntry invalid syscall decode error: SeLe4n.Model.KernelError.invalidSyscallNumber
+[RDT-008] syscallEntry malformed msgInfo decode error: SeLe4n.Model.KernelError.invalidMessageInfo
+[RDT-010] syscallEntry out-of-bounds layout error: SeLe4n.Model.KernelError.invalidRegister
+[KSD-001] cspaceMint via decoded regs destination populated: true
+[KSD-002] cspaceCopy via decoded regs target matches: true
+[KSD-003] cspaceDelete via decoded regs slot cleared: true
+[KSD-004] lifecycle retype via decoded regs new type: some (SeLe4n.Model.KernelObjectType.notification)
+[KSD-005] vspaceMap via decoded regs paddr: 8192
+[KSD-006] service registry lookup present: true
+[KSD-007] IPC message body from registers: #[111, 222, 333, 444]
+[KSD-008] round-trip decode msgRegs.size=4 first=10
+[RRC-001] replyRecv caller state after receive: blockedOnReply
+[RRC-003] replyRecv caller unblocked: true
+[RRC-004] replyRecv caller reply registers: some [100, 200, 300]
+[RRC-002] replyRecv callerB state after rendezvous: blockedOnReply
+[RRC-005] replyRecv server ready after rendezvous: true
+[RRC-006] replyRecv server received callerB registers: some [70, 80, 90]
+[ELC-001] lifecycle senders blocked: true
+[ELC-002] lifecycle retype-delete succeeded: true
+[ELC-003] lifecycle senders retain stale blocked state: true
+[ELC-004] lifecycle stale endpoint send rejected (invalidCapability): true
+[MEI-001] multi-ep recv1 registers: some [11, 22]
+[MEI-002] multi-ep recv2 registers: some [33, 44]
+[MEI-003] multi-ep endpoint1 queues empty: true
+[MEI-004] multi-ep ep3 out-of-order recv registers: some [55, 66]
+[MEI-005] multi-ep ep1 FIFO second recv registers: some [77, 88]
+[MEI-006] multi-ep all 3 endpoints drained: true
+[ITR-001] inter-transition invariant checks: 31 passed
+[PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
+[PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
+[PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
+[XVAL-001] MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
+[XVAL-002] SyscallId roundtrip ok: all 14 variants
+[XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]
+[XVAL-004] MessageInfo bit layout ok: len=42 caps=384 label=2560

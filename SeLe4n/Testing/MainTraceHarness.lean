@@ -75,12 +75,12 @@ def bootstrapState : SystemState :=
           }),
           (⟨5⟩, {
             target := .object ⟨12⟩
-            rights := AccessRightSet.ofList [.read, .write]
+            rights := AccessRightSet.ofList [.read, .write, .retype]
             badge := none
           }),
           (⟨6⟩, {
             target := .object demoUntyped
-            rights := AccessRightSet.ofList [.read, .write]
+            rights := AccessRightSet.ofList [.read, .write, .retype]
             badge := none
           }) ]
     })
@@ -1066,9 +1066,9 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             (⟨0⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
-            (⟨5⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none }),
-            (⟨6⟩, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write], badge := none }),
-            (⟨7⟩, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }) }
+            (⟨5⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
+            (⟨6⟩, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
+            (⟨7⟩, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }) ] }) }
   let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨7⟩ }
   let devTcb : KernelObject := .tcb {
     tid := ⟨53⟩, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -1610,7 +1610,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       let newObj := SeLe4n.Kernel.objectOfKernelType retypeArgs.newType retypeArgs.size
       let retypeCap : SeLe4n.Model.Capability := {
         target := .object (ObjId.ofNat retypeArgs.targetObj.toNat)
-        rights := AccessRightSet.ofList [.read, .write]
+        rights := AccessRightSet.ofList [.read, .write, .retype]
         badge := none
       }
       match SeLe4n.Kernel.lifecycleRetypeDirect retypeCap ksdRetypeTargetId newObj stRetype with
@@ -1791,7 +1791,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, { target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (⟨0⟩, { target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none })
     ]
   }
   -- Build state with lifecycle metadata

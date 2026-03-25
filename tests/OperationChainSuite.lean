@@ -74,7 +74,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
           guardValue := 0
           radixWidth := 1
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant, .retype], badge := none })
           ]
         })
       |>.withLifecycleObjectType targetId .notification

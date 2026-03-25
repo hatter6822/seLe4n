@@ -12,7 +12,35 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Delete transition authority reduction clause. -/
+/-- Core delete authority reduction (no CDT guard). -/
+private theorem cspaceDeleteSlotCore_authority_reduction
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hSlotUniq : cspaceSlotUnique st)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    SystemState.lookupSlotCap st' addr = none := by
+  rcases addr with ⟨cnodeId, slot⟩
+  simp only [cspaceDeleteSlotCore] at hStep
+  cases hObj : st.objects[cnodeId]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | endpoint ep => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
+      | untyped _ => simp [hObj] at hStep
+      | cnode cn =>
+          have hUniq := hSlotUniq cnodeId cn hObj
+          simp [hObj] at hStep
+          cases hStep
+          simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
+            RHTable_getElem?_eq_get?, SystemState.detachSlotFromCdt_objects_eq]
+          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+
+/-- Delete transition authority reduction clause (guarded wrapper). -/
 private theorem cspaceDeleteSlot_authority_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -20,24 +48,10 @@ private theorem cspaceDeleteSlot_authority_reduction
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
-  rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects[cnodeId]? with
-  | none => simp [cspaceDeleteSlot, hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
-      | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
-      | notification ntfn => simp [cspaceDeleteSlot, hObj] at hStep
-      | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
-      | untyped _ => simp [cspaceDeleteSlot, hObj] at hStep
-      | cnode cn =>
-          have hUniq := hSlotUniq cnodeId cn hObj
-          simp [cspaceDeleteSlot, hObj] at hStep
-          cases hStep
-          simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
-            RHTable_getElem?_eq_get?, SystemState.detachSlotFromCdt_objects_eq]
-          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+  simp only [cspaceDeleteSlot] at hStep
+  split at hStep
+  · simp at hStep
+  · exact cspaceDeleteSlotCore_authority_reduction st st' addr hSlotUniq hObjInv hStep
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
 the revoked target. -/
@@ -178,6 +192,33 @@ theorem cspaceInsertSlot_establishes_ownsSlot
     cspaceInsertSlot_lookup_eq st st' addr cap hSlotUniq hObjInv hStep
   exact cspaceLookupSlot_ok_implies_ownsSlot st' addr cap hLookup
 
+theorem cspaceDeleteSlotCore_lookup_eq_none
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hSlotUniq : cspaceSlotUnique st)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    cspaceLookupSlot addr st' = .error .invalidCapability := by
+  rcases addr with ⟨cnodeId, slot⟩
+  simp only [cspaceDeleteSlotCore] at hStep
+  cases hObj : st.objects[cnodeId]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+      cases obj with
+      | tcb tcb => simp [hObj] at hStep
+      | endpoint ep => simp [hObj] at hStep
+      | notification ntfn => simp [hObj] at hStep
+      | vspaceRoot root => simp [hObj] at hStep
+      | untyped _ => simp [hObj] at hStep
+      | cnode cn =>
+          have hUniq := hSlotUniq cnodeId cn hObj
+          simp [hObj] at hStep
+          cases hStep
+          simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
+            RHTable_getElem?_eq_get?, SystemState.detachSlotFromCdt_objects_eq]
+          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+
 theorem cspaceDeleteSlot_lookup_eq_none
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -185,24 +226,10 @@ theorem cspaceDeleteSlot_lookup_eq_none
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
-  rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects[cnodeId]? with
-  | none => simp [cspaceDeleteSlot, hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [cspaceDeleteSlot, hObj] at hStep
-      | endpoint ep => simp [cspaceDeleteSlot, hObj] at hStep
-      | notification ntfn => simp [cspaceDeleteSlot, hObj] at hStep
-      | vspaceRoot root => simp [cspaceDeleteSlot, hObj] at hStep
-      | untyped _ => simp [cspaceDeleteSlot, hObj] at hStep
-      | cnode cn =>
-          have hUniq := hSlotUniq cnodeId cn hObj
-          simp [cspaceDeleteSlot, hObj] at hStep
-          cases hStep
-          simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            RHTable_getElem?_eq_get?, SystemState.detachSlotFromCdt_objects_eq]
-          rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-          simp [CNode.lookup_remove_eq_none cn slot hUniq]
+  simp only [cspaceDeleteSlot] at hStep
+  split at hStep
+  · simp at hStep
+  · exact cspaceDeleteSlotCore_lookup_eq_none st st' addr hSlotUniq hObjInv hStep
 
 theorem cspaceRevoke_preserves_source
     (st st' : SystemState)

@@ -123,6 +123,11 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service path svcApi→svcDb: true"
+  SST-012:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service path svcApi→svcDenied: false"
   SST-013:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -133,6 +138,16 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service isolation api↔db: false"
+  SST-019:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service lookup missing-backing: some { sid := { val := 106 }, backingObject := { val := 9999 }, owner := { val := 10 } }"
+  SST-020:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service lookup svcBroken deps: some [{ val := 999 }]"
   SRG-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -228,6 +243,11 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service dependency chain path chainTop→chainRoot: true"
+  SST-039:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service dependency chain lookup chainTop: some [{ val := 201 }]"
   SST-041:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -252,7 +272,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
     subsystem: Lifecycle
-    description: "lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoi"
+    description: "lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)"
   LEP-008:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
@@ -291,27 +311,27 @@ scenarios:
   LEP-024:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
+    subsystem: IPC
     description: "handshake send matched waiting receiver"
   LEP-026:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
+    subsystem: IPC
     description: "queued sender on endpoint"
   LEP-028:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
+    subsystem: IPC
     description: "endpoint receive #1 sender: 1"
   LEP-030:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
+    subsystem: IPC
     description: "notification wait #1 result: none"
   LEP-034:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
+    subsystem: IPC
     description: "notification wait #2 result: some { val := 123 }"
   LEP-036:
     source: SeLe4n/Testing/MainTraceHarness.lean
@@ -512,7 +532,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runUntypedMemoryTrace
     subsystem: Lifecycle
-    description: "retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.end"
+    description: "retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)"
   UMT-003:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runUntypedMemoryTrace

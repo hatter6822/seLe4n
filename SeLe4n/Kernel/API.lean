@@ -416,8 +416,10 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlot addr st
     | _ => fun _ => .error .invalidCapability
-  -- WS-K-D: Lifecycle retype — cap targets the authority object, message
+  -- U-H04: Lifecycle retype — cap targets the authority object, message
   -- registers carry target ObjId, type tag, and size hint.
+  -- Routes through safe wrapper that performs pre-retype cleanup (H-05)
+  -- and memory scrubbing (S6-C) before the actual retype.
   | .lifecycleRetype =>
     match cap.target with
     | .object _ =>
@@ -425,7 +427,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .error e => .error e
         | .ok args =>
             let newObj := objectOfKernelType args.newType args.size
-            lifecycleRetypeDirect cap args.targetObj newObj st
+            lifecycleRetypeDirectWithCleanup cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
   -- WS-K-D/S6-A: VSpace map — ASID, vaddr, paddr, perms from message registers.
   -- Uses bounds-checked + TLB-flushing variant for user-space entry.
@@ -603,7 +605,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlot addr st
     | _ => fun _ => .error .invalidCapability
-  -- T6-I: Lifecycle retype — capability-only, no cross-domain flow
+  -- U-H04/T6-I: Lifecycle retype — capability-only, no cross-domain flow.
+  -- Routes through safe wrapper with cleanup (H-05) and scrubbing (S6-C).
   | .lifecycleRetype =>
     match cap.target with
     | .object _ =>
@@ -611,7 +614,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok args =>
             let newObj := objectOfKernelType args.newType args.size
-            lifecycleRetypeDirect cap args.targetObj newObj st
+            lifecycleRetypeDirectWithCleanup cap args.targetObj newObj st
     | _ => fun _ => .error .invalidCapability
   -- T6-I: VSpace map — no cross-domain flow (address-space-local operation)
   | .vspaceMap =>
@@ -973,8 +976,9 @@ theorem dispatchWithCap_cspaceDelete_delegates
 -- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
 -- ============================================================================
 
-/-- WS-K-D: When lifecycleRetype dispatch succeeds, `lifecycleRetypeDirect`
-is invoked with the resolved cap, decoded target, and constructed object. -/
+/-- U-H04: When lifecycleRetype dispatch succeeds, `lifecycleRetypeDirectWithCleanup`
+is invoked with the resolved cap, decoded target, and constructed object.
+The safe wrapper performs pre-retype cleanup (H-05) and memory scrubbing (S6-C). -/
 theorem dispatchWithCap_lifecycleRetype_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -983,7 +987,7 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeLifecycleRetypeArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      lifecycleRetypeDirect cap args.targetObj (objectOfKernelType args.newType args.size) := by
+      lifecycleRetypeDirectWithCleanup cap args.targetObj (objectOfKernelType args.newType args.size) := by
   simp [dispatchWithCap, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A/T6-C: When vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithFlush` is

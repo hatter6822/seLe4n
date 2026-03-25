@@ -384,6 +384,48 @@ private def fo020_frozenCspaceMint : IO Unit := do
     | .error e => throw <| IO.userError s!"FO-020 lookup after mint failed: {reprStr e}"
   | .error e => throw <| IO.userError s!"FO-020 frozenCspaceMint failed: {reprStr e}"
 
+/-- FO-021: U-H01 regression — popped thread can be re-enqueued (multi-round IPC).
+After frozenQueuePopHead, queuePPrev must be cleared so frozenQueuePushTail
+does not reject the thread with `.illegalState`. This test exercises:
+send (enqueue sender in sendQ) → receive (pop sender, deliver) → send again. -/
+private def fo021_popThenPushRegression : IO Unit := do
+  let senderTcb := mkTcb 3
+  let receiverTcb := mkTcb 4
+  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let fst := mkFrozenState [
+    (⟨3⟩, .tcb senderTcb),
+    (⟨4⟩, .tcb receiverTcb),
+    (⟨10⟩, .endpoint ep)
+  ]
+  let msg1 : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- Round 1: sender sends (no receiver waiting → enqueued in sendQ)
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ msg1 fst with
+  | .error e => throw <| IO.userError s!"FO-021 round1 send failed: {reprStr e}"
+  | .ok ((), fst1) =>
+  -- Round 1: receiver receives (pops sender from sendQ, delivers message)
+  match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fst1 with
+  | .error e => throw <| IO.userError s!"FO-021 round1 receive failed: {reprStr e}"
+  | .ok (_, fst2) =>
+  -- Verify sender was popped and queue links cleared (including queuePPrev)
+  match frozenLookupTcb fst2 ⟨3⟩ with
+  | none => throw <| IO.userError "FO-021 sender TCB missing after receive"
+  | some tcb =>
+      expect "FO-021a sender queuePrev cleared" (tcb.queuePrev == none)
+      expect "FO-021b sender queueNext cleared" (tcb.queueNext == none)
+      expect "FO-021c sender queuePPrev cleared" (tcb.queuePPrev == none)
+  -- Round 2: sender sends again (re-enqueue — must not fail with illegalState)
+  let msg2 : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ msg2 fst2 with
+  | .error e => throw <| IO.userError s!"FO-021 round2 re-send failed (U-H01 regression): {reprStr e}"
+  | .ok ((), fst3) =>
+  -- Verify sender is enqueued again
+  match frozenLookupTcb fst3 ⟨3⟩ with
+  | none => throw <| IO.userError "FO-021 sender TCB missing after re-send"
+  | some tcb =>
+      expect "FO-021d sender re-enqueued (blockedOnSend)" (tcb.ipcState == .blockedOnSend ⟨10⟩)
+      expect "FO-021e sender has queuePPrev after re-enqueue" (tcb.queuePPrev.isSome)
+  IO.println "frozen-ops check passed [FO-021: U-H01 pop-then-push regression]"
+
 end SeLe4n.Testing.FrozenOpsSuite
 
 open SeLe4n.Testing.FrozenOpsSuite in
@@ -419,4 +461,6 @@ def main : IO Unit := do
   IO.println "--- T7-D: Frozen Schedule & CSpace Mint ---"
   fo019_frozenSchedule
   fo020_frozenCspaceMint
-  IO.println "=== All Q7 frozen ops tests passed (20 scenarios) ==="
+  IO.println "--- U-H01: Multi-round IPC Regression ---"
+  fo021_popThenPushRegression
+  IO.println "=== All Q7 frozen ops tests passed (21 scenarios) ==="

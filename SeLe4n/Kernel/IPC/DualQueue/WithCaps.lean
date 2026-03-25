@@ -110,15 +110,17 @@ def endpointReceiveDualWithCaps
                 if msg.caps.isEmpty then
                   .ok ((senderId, { results := #[] }), st')
                 else
-                  -- Sender was dequeued — get sender's cspaceRoot for CDT tracking
-                  let senderRoot := match lookupCspaceRoot st' senderId with
-                    | some root => root
-                    | none => senderId.toObjId  -- fallback
-                  let grantRight := endpointRights.mem .grant
-                  match ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                      receiverSlotBase grantRight st' with
-                  | .error e => .error e
-                  | .ok (summary, st'') => .ok ((senderId, summary), st'')
+                  -- Sender was dequeued — get sender's cspaceRoot for CDT tracking.
+                  -- U-H13: Missing CSpace root returns explicit error instead of
+                  -- silently falling back to senderId.toObjId, which could mask bugs.
+                  match lookupCspaceRoot st' senderId with
+                  | none => .error .invalidCapability
+                  | some senderRoot =>
+                    let grantRight := endpointRights.mem .grant
+                    match ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                        receiverSlotBase grantRight st' with
+                    | .error e => .error e
+                    | .ok (summary, st'') => .ok ((senderId, summary), st'')
             | none =>
                 -- Receiver was enqueued (no sender available)
                 .ok ((senderId, { results := #[] }), st')

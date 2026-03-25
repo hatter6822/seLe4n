@@ -289,8 +289,10 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               let ep' := if isReceiveQ
                 then { ep with receiveQ := queue' }
                 else { ep with sendQ := queue' }
-              -- Clear queue links on dequeued TCB
-              let headTcb' := { headTcb with queuePrev := none, queueNext := none }
+              -- Clear queue links on dequeued TCB (U-H01: must also clear queuePPrev
+              -- to allow re-enqueue via frozenQueuePushTail, which rejects
+              -- threads with queuePPrev.isSome)
+              let headTcb' := { headTcb with queuePrev := none, queueNext := none, queuePPrev := none }
               match st.objects.set endpointId (.endpoint ep') with
               | some objects1 =>
                   let st1 := { st with objects := objects1 }

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.20.7-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.21.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -70,11 +70,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.20.7` |
+| **Version** | `0.21.0` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 61,538 across 101 files |
-| **Test Lean LoC** | 8,256 across 10 test suites |
-| **Proved declarations** | 1,846 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 61,781 across 101 files |
+| **Test Lean LoC** | 8,327 across 10 test suites |
+| **Proved declarations** | 1,855 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -268,10 +268,11 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **T1–T7 COMPLETE** (v0.20.0–v0.20.6). Phase T7 strengthens test coverage & build infrastructure: `buildChecked` migration, post-mutation invariant checks, frozen IPC queue tests, deep CDT cascade tests, boot sequence tests, pre-commit security hardening, toolchain SHA-256 verification, Rust CI integration. Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
+- **WS-U Phase U1** — Correctness Fixes (13 sub-tasks, U1-A through U1-M) **COMPLETE** (v0.21.0). Addresses 7 audit findings (U-H01 through U-H04, U-H13, U-H14, U-M39): frozen queue link safety, retype page-alignment, lifecycle dispatch cleanup, authority right alignment, IPC CSpace root fallback, CDT deletion guard, domain switch context save. Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+- **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **COMPLETE** (v0.20.0–v0.20.7). Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
 - **WS-S** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks) **COMPLETE** (v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Closure: [`WS_S_CLOSURE_REPORT.md`](docs/dev_history/audits/WS_S_CLOSURE_REPORT.md).
 - **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks) **COMPLETE** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
-- **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (next workstream after WS-T)
+- **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (next workstream after WS-U)
 
 Prior portfolios (WS-B through WS-R) are all complete. Prior audits (v0.8.0–v0.9.32),
 milestone closeouts, and legacy GitBook chapters are archived in

@@ -170,21 +170,21 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
             (fun cn hObj => hDstCapacity cn child hObj)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hInsert
 
-/-- WS-E2 / H-01: Compositional preservation of `cspaceDeleteSlot`.
-Uses pre-state `cspaceSlotUnique` + `CNode.remove_slotsUnique` to derive post-state
-uniqueness. -/
-theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
+/-- Core preservation theorem for `cspaceDeleteSlotCore` (no CDT guard).
+Used directly by internal callers (processRevokeNode, cspaceMove, cspaceRevokeCdtStrict)
+and indirectly by the `cspaceDeleteSlot` wrapper. -/
+theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (hInv : capabilityInvariantBundle st)
     (hNodeSlotInv : st.cdtNodeSlot.invExt)
     (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity)
-    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
   have hUnique' : cspaceSlotUnique st' := by
     intro cnodeId cn hObj
-    unfold cspaceDeleteSlot at hStep
+    unfold cspaceDeleteSlotCore at hStep
     cases hPre : st.objects[addr.cnode]? with
     | none => simp [hPre] at hStep
     | some preObj =>
@@ -224,7 +224,7 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
   -- WS-H4: Prove new components through storeObject → storeCapabilityRef → detachSlotFromCdt
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
-    unfold cspaceDeleteSlot at hStep
+    unfold cspaceDeleteSlotCore at hStep
     cases hPre : st.objects[addr.cnode]? with
     | none => simp [hPre] at hStep
     | some preObj =>
@@ -268,17 +268,31 @@ theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
-/-- `cspaceDeleteSlot` preserves `cdtNodeSlot.invExt` and the size bound.
-Internally, `cspaceDeleteSlot` does `storeObject + storeCapabilityRef + detachSlotFromCdt`.
-The first two preserve `cdtNodeSlot` exactly, and `detachSlotFromCdt` erases at most one key
-(preserving `invExt` by `erase_preserves_invExt` and not increasing size). -/
-private theorem cspaceDeleteSlot_preserves_cdtNodeSlot
-    (st st' : SystemState) (addr : CSpaceAddr)
+/-- WS-E2 / H-01: Compositional preservation of `cspaceDeleteSlot` (guarded wrapper).
+Delegates to `cspaceDeleteSlotCore_preserves_capabilityInvariantBundle` after discharging
+the U-H03 CDT children guard. -/
+theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle
+    (st st' : SystemState)
+    (addr : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
     (hNodeSlotInv : st.cdtNodeSlot.invExt)
     (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
-    st'.cdtNodeSlot.invExt ∧ st'.cdtNodeSlot.size < st'.cdtNodeSlot.capacity := by
+    capabilityInvariantBundle st' := by
   unfold cspaceDeleteSlot at hStep
+  split at hStep
+  · simp at hStep
+  · exact cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
+      st st' addr hInv hNodeSlotInv hNodeSlotSize hStep
+
+/-- Core: `cspaceDeleteSlotCore` preserves `cdtNodeSlot.invExt` and the size bound. -/
+private theorem cspaceDeleteSlotCore_preserves_cdtNodeSlot
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hNodeSlotInv : st.cdtNodeSlot.invExt)
+    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity)
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
+    st'.cdtNodeSlot.invExt ∧ st'.cdtNodeSlot.size < st'.cdtNodeSlot.capacity := by
+  unfold cspaceDeleteSlotCore at hStep
   cases hPre : st.objects[addr.cnode]? with
   | none => simp [hPre] at hStep
   | some obj =>
@@ -311,6 +325,18 @@ private theorem cspaceDeleteSlot_preserves_cdtNodeSlot
               rw [hRefEqSt]; exact hNodeSlotSize
             exact ⟨stRef.cdtNodeSlot.erase_preserves_invExt origNode hInvRef hSzRef,
                    SeLe4n.Kernel.RobinHood.RHTable.erase_size_lt_capacity stRef.cdtNodeSlot origNode hSzRef⟩
+
+/-- `cspaceDeleteSlot` preserves `cdtNodeSlot.invExt` and the size bound (guarded wrapper). -/
+private theorem cspaceDeleteSlot_preserves_cdtNodeSlot
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hNodeSlotInv : st.cdtNodeSlot.invExt)
+    (hNodeSlotSize : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    st'.cdtNodeSlot.invExt ∧ st'.cdtNodeSlot.size < st'.cdtNodeSlot.capacity := by
+  unfold cspaceDeleteSlot at hStep
+  split at hStep
+  · simp at hStep
+  · exact cspaceDeleteSlotCore_preserves_cdtNodeSlot st st' addr hNodeSlotInv hNodeSlotSize hStep
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceRevoke`.
 Uses pre-state `cspaceSlotUnique` + `CNode.revokeTargetLocal_slotsUnique` to derive
@@ -483,7 +509,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
       | error e => simp [hSrc, hInsert] at hStep
       | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
-          cases hDelete : cspaceDeleteSlot src st2 with
+          cases hDelete : cspaceDeleteSlotCore src st2 with
           | error e => simp [hSrc, hInsert, hDelete] at hStep
           | ok pair3 =>
               rcases pair3 with ⟨_, st3⟩
@@ -511,7 +537,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                         have ⟨_, hNS2, _, _⟩ := storeCapabilityRef_cdt_eq stM st2 dst (some cap.target) hInsert
                         rw [hNS2, hNS1]
                   | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hInsert
-              have hBundleSt3 := cspaceDeleteSlot_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2
+              have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2
                 (hNSSt2 ▸ hNodeSlotInv) (by rw [hNSSt2]; exact hNodeSlotSize) hDelete
               rcases hBundleSt3 with ⟨hU3, _, hBnd3, _, _, hDepth3, hObjInv3⟩
               cases hNode : SystemState.lookupCdtNodeOfSlot st2 src with
@@ -720,12 +746,12 @@ private theorem processRevokeNode_preserves_cdtNodeSlot
   | none => simp [hSlot] at hStep; cases hStep; exact ⟨hNodeSlotInv, hNodeSlotSize⟩
   | some descAddr =>
     simp [hSlot] at hStep
-    cases hDel : cspaceDeleteSlot descAddr st with
+    cases hDel : cspaceDeleteSlotCore descAddr st with
     | error _ => simp [hDel] at hStep
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
       simp [hDel] at hStep; cases hStep
-      have ⟨hInvDel, hSzDel⟩ := cspaceDeleteSlot_preserves_cdtNodeSlot st stDel descAddr
+      have ⟨hInvDel, hSzDel⟩ := cspaceDeleteSlotCore_preserves_cdtNodeSlot st stDel descAddr
         hNodeSlotInv hNodeSlotSize hDel
       have hDetachNS : (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.invExt ∧
           (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.size <
@@ -768,15 +794,15 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
       (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
   | some descAddr =>
     simp [hSlot] at hStep
-    cases hDel : cspaceDeleteSlot descAddr st with
+    cases hDel : cspaceDeleteSlotCore descAddr st with
     | error _ => simp [hDel] at hStep
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
       simp [hDel] at hStep; cases hStep
-      have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle st stDel descAddr hInv
+      have hDelInv := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st stDel descAddr hInv
         hNodeSlotInv hNodeSlotSize hDel
       have ⟨hNodeSlotInvDel, hNodeSlotSizeDel⟩ :=
-        cspaceDeleteSlot_preserves_cdtNodeSlot st stDel descAddr hNodeSlotInv hNodeSlotSize hDel
+        cspaceDeleteSlotCore_preserves_cdtNodeSlot st stDel descAddr hNodeSlotInv hNodeSlotSize hDel
       have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
       rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del, hObjInv2⟩
       have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
@@ -910,16 +936,16 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
           (.ok ((), stLocal)) = .ok ((), st') at hStep
       exact revokeCdtFold_preserves _ stLocal st' hLocalInv hLocalNSInv hLocalNSSz hStep
 
-/-- R2-F: Error propagation consistency theorem. When `cspaceDeleteSlot` fails
+/-- R2-F: Error propagation consistency theorem. When `cspaceDeleteSlotCore` fails
 for a CDT descendant, `processRevokeNode` (and therefore `revokeCdtFoldBody`)
 now propagates the error. This theorem proves that the error propagation is
-correct: the fold body returns the same error that `cspaceDeleteSlot` produced.
+correct: the fold body returns the same error that `cspaceDeleteSlotCore` produced.
 This replaces the former `cspaceRevokeCdt_swallowed_error_consistent` theorem. -/
 theorem cspaceRevokeCdt_error_propagation_consistent
     (stAcc : SystemState) (node : CdtNodeId)
     (descAddr : CSpaceAddr) (err : KernelError)
     (hSlot : SystemState.lookupCdtSlotOfNode stAcc node = some descAddr)
-    (hDelErr : cspaceDeleteSlot descAddr stAcc = .error err) :
+    (hDelErr : cspaceDeleteSlotCore descAddr stAcc = .error err) :
     revokeCdtFoldBody (.ok ((), stAcc)) node = .error err := by
   unfold revokeCdtFoldBody
   simp only []
@@ -997,7 +1023,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
                 match SystemState.lookupCdtSlotOfNode stCur node with
                 | none => (report, { stCur with cdt := stCur.cdt.removeNode node })
                 | some descAddr =>
-                    match cspaceDeleteSlot descAddr stCur with
+                    match cspaceDeleteSlotCore descAddr stCur with
                     | .error err =>
                         ({ report with firstFailure := some {
                             offendingNode := node, offendingSlot := some descAddr, error := err } },
@@ -1030,7 +1056,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
               hNSI hNSSz
           | some descAddr =>
             simp
-            cases hDel : cspaceDeleteSlot descAddr stAcc with
+            cases hDel : cspaceDeleteSlotCore descAddr stAcc with
             | error err =>
               simp
               exact ih _ { stAcc with cdt := stAcc.cdt.removeNode node }
@@ -1040,9 +1066,9 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
             | ok pair =>
               obtain ⟨_, stDel⟩ := pair
               simp
-              have hDelInv := cspaceDeleteSlot_preserves_capabilityInvariantBundle stAcc stDel
+              have hDelInv := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle stAcc stDel
                 descAddr hI hNSI hNSSz hDel
-              have ⟨hNSInvDel, hNSSzDel⟩ := cspaceDeleteSlot_preserves_cdtNodeSlot stAcc stDel
+              have ⟨hNSInvDel, hNSSzDel⟩ := cspaceDeleteSlotCore_preserves_cdtNodeSlot stAcc stDel
                 descAddr hNSI hNSSz hDel
               have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
               rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del, hObjInv2⟩
@@ -1986,16 +2012,13 @@ theorem cspaceMint_preserves_cdtMapsConsistent
           -- cspaceInsertSlot only calls storeObject + storeCapabilityRef (CDT unchanged)
           exact cspaceInsertSlot_preserves_cdtMapsConsistent st st' dst child hCon hInsert
 
-/-- S3-D: `cspaceDeleteSlot` preserves `cdtMapsConsistent`. Delete modifies
-    `cdtNodeSlot`/`cdtSlotNode` via `detachSlotFromCdt` but not the CDT itself.
-    Proved by showing the CDT field is unchanged through all three steps. -/
-theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
+/-- S3-D: Core `cspaceDeleteSlotCore` preserves `cdtMapsConsistent`. -/
+theorem cspaceDeleteSlotCore_preserves_cdtMapsConsistent
     (st st' : SystemState) (addr : CSpaceAddr)
     (hCon : cdtMapsConsistent st)
-    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     cdtMapsConsistent st' := by
-  -- cspaceDeleteSlot directly matches on objects[addr.cnode]? (no lookup step)
-  unfold cspaceDeleteSlot at hStep
+  unfold cspaceDeleteSlotCore at hStep
   cases hPre : st.objects[addr.cnode]? with
   | none => simp [hPre] at hStep
   | some obj =>
@@ -2017,6 +2040,17 @@ theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
         · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
         · exact cdtMapsConsistent_of_cdt_eq st _ hCon h1
     | _ => simp [hPre] at hStep
+
+/-- S3-D: `cspaceDeleteSlot` preserves `cdtMapsConsistent` (guarded wrapper). -/
+theorem cspaceDeleteSlot_preserves_cdtMapsConsistent
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hCon : cdtMapsConsistent st)
+    (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
+    cdtMapsConsistent st' := by
+  unfold cspaceDeleteSlot at hStep
+  split at hStep
+  · simp at hStep
+  · exact cspaceDeleteSlotCore_preserves_cdtMapsConsistent st st' addr hCon hStep
 
 /-- S3-D: `cspaceCopy` preserves `cdtMapsConsistent`. Copy calls `addEdge`
     on the CDT, so the postcondition is taken as a hypothesis, matching

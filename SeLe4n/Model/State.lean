@@ -55,6 +55,7 @@ inductive KernelError where
   | invalidCapPtr           -- S4-K: capability pointer exceeds word64 bounds
   | objectStoreCapacityExceeded  -- S4-B: object count exceeds maxObjects capacity
   | allocationMisaligned  -- S5-G: allocation base not page-aligned for VSpace-bound objects
+  | revocationRequired    -- U-H03: delete attempted on slot with CDT children (must revoke first)
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
