@@ -576,24 +576,26 @@ fn t3d_vspace_map_args_perms_roundtrip() {
 }
 
 /// T3-D: Invalid permission values are rejected at decode.
+/// V1-F consistency: returns InvalidArgument (not InvalidMessageInfo)
+/// because the message structure is correct — the argument value is invalid.
 #[test]
 fn t3d_vspace_map_args_invalid_perms_rejected() {
     // 0x20 — first value outside 5-bit range
     assert_eq!(
         vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
-        Err(KernelError::InvalidMessageInfo)
+        Err(KernelError::InvalidArgument)
     );
 
     // 0xFF — common garbage value
     assert_eq!(
         vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
-        Err(KernelError::InvalidMessageInfo)
+        Err(KernelError::InvalidArgument)
     );
 
     // u64::MAX — extreme case
     assert_eq!(
         vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
-        Err(KernelError::InvalidMessageInfo)
+        Err(KernelError::InvalidArgument)
     );
 }
 

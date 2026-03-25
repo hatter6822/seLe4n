@@ -49,9 +49,11 @@ impl TryFrom<u64> for PagePerms {
     type Error = KernelError;
     /// R-M02 fix: validates that the permissions value fits in 5 bits (0–0x1F).
     /// Values > 0x1F are rejected to prevent silent truncation.
+    /// V1-F consistency: returns `InvalidArgument` (not `InvalidMessageInfo`)
+    /// because the message structure is correct — the argument value is invalid.
     #[inline]
     fn try_from(v: u64) -> Result<Self, Self::Error> {
-        if v > 0x1F { return Err(KernelError::InvalidMessageInfo); }
+        if v > 0x1F { return Err(KernelError::InvalidArgument); }
         Ok(Self(v as u8))
     }
 }
@@ -129,9 +131,10 @@ mod tests {
 
     #[test]
     fn try_from_truncation_rejected() {
-        assert_eq!(PagePerms::try_from(0x20u64), Err(KernelError::InvalidMessageInfo));
-        assert_eq!(PagePerms::try_from(0xFFu64), Err(KernelError::InvalidMessageInfo));
-        assert_eq!(PagePerms::try_from(0x100u64), Err(KernelError::InvalidMessageInfo));
-        assert_eq!(PagePerms::try_from(u64::MAX), Err(KernelError::InvalidMessageInfo));
+        // V1-F consistency: invalid perms return InvalidArgument
+        assert_eq!(PagePerms::try_from(0x20u64), Err(KernelError::InvalidArgument));
+        assert_eq!(PagePerms::try_from(0xFFu64), Err(KernelError::InvalidArgument));
+        assert_eq!(PagePerms::try_from(0x100u64), Err(KernelError::InvalidArgument));
+        assert_eq!(PagePerms::try_from(u64::MAX), Err(KernelError::InvalidArgument));
     }
 }

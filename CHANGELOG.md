@@ -15,8 +15,9 @@
 - V1-E (M-RS-3): Fixed `IpcBuffer::get_mr()` to return `InvalidArgument`
   (not `InvalidMessageInfo`) for inline register indices 0–3. The message
   structure is valid; the argument is semantically wrong.
-- V1-F (M-RS-4): Fixed `CSpaceMintArgs::decode()` to return `InvalidArgument`
-  (not `InvalidMessageInfo`) for invalid rights bitmask values > 0x1F.
+- V1-F (M-RS-4): Fixed `CSpaceMintArgs::decode()` and `PagePerms::TryFrom<u64>`
+  to return `InvalidArgument` (not `InvalidMessageInfo`) for invalid argument
+  values. The message structure is correct; the argument value is invalid.
 - V1-G (M-RS-5): Added `PagePerms::checked_bitor()` that validates W^X at
   combine time, returning `PolicyDenied` if write + execute are both set.
   Standard `BitOr` still available for data composition (W^X enforced at
