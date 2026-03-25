@@ -1355,7 +1355,7 @@ Deterministic branch contract:
 1. Target object must exist (`objectNotFound` otherwise).
 2. Lifecycle metadata must agree with object-store type (`illegalState`).
 3. Authority cap must satisfy `lifecycleRetypeAuthority` — targets the
-   object with `.write` right (`illegalAuthority` otherwise).
+   object with `.retype` right (`illegalAuthority` otherwise).
 4. Object store is updated atomically on success via `storeObject`. -/
 def lifecycleRetypeDirect
     (authCap : Capability) (target : SeLe4n.ObjId)
