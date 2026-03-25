@@ -302,10 +302,20 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "cspaceMove unexpectedly rewrote node-level CDT edges"
 
+  -- Test cspaceDeleteSlot CDT cleanup on a leaf node (no children → guard passes).
+  -- Use a fresh state where moveDst has a CDT node but no children.
+  let leafNode : CdtNodeId := ⟨20⟩
+  let leafDeleteSeed : SystemState :=
+    { baseState with
+      cdt := CapDerivationTree.empty  -- no edges → no children
+      cdtSlotNode := baseState.cdtSlotNode.insert moveDst leafNode
+      cdtNodeSlot := baseState.cdtNodeSlot.insert leafNode moveDst
+      cdtNextNode := ⟨21⟩
+    }
   let (_, deletedMoveDst) ← expectOkState "cspaceDeleteSlot clears stale CDT slot mapping"
-    (SeLe4n.Kernel.cspaceDeleteSlot moveDst moveState)
+    (SeLe4n.Kernel.cspaceDeleteSlot moveDst leafDeleteSeed)
   if SystemState.lookupCdtNodeOfSlot deletedMoveDst moveDst = none ∧
-      SystemState.lookupCdtSlotOfNode deletedMoveDst moveSrcNode = none then
+      SystemState.lookupCdtSlotOfNode deletedMoveDst leafNode = none then
     IO.println "positive check passed [cspaceDeleteSlot detaches slot-node/backpointer mapping]"
   else
     throw <| IO.userError "cspaceDeleteSlot must clear stale CDT slot/node mapping"
