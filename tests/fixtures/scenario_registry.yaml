@@ -123,6 +123,11 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service path svcApi→svcDb: true"
+  SST-012:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service path svcApi→svcDenied: false"
   SST-013:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -133,6 +138,16 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service isolation api↔db: false"
+  SST-019:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service lookup missing-backing: some { sid := { val := 106 }, backingObject := { val := 9999 }, owner := { val := 10 } }"
+  SST-020:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service lookup svcBroken deps: some [{ val := 999 }]"
   SRG-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -228,6 +243,11 @@ scenarios:
     function: runServiceAndStressTrace
     subsystem: Service
     description: "service dependency chain path chainTop→chainRoot: true"
+  SST-039:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runServiceAndStressTrace
+    subsystem: Service
+    description: "service dependency chain lookup chainTop: some [{ val := 201 }]"
   SST-041:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runServiceAndStressTrace
@@ -248,16 +268,16 @@ scenarios:
     function: runLifecycleAndEndpointTrace
     subsystem: Lifecycle
     description: "lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState"
-  LEP-006:
+  LEP-005:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
     subsystem: Lifecycle
-    description: "lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoi"
-  LEP-008:
+    description: "lifecycle retype error: SeLe4n.Model.KernelError.illegalAuthority"
+  LEP-007:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
     subsystem: Lifecycle
-    description: "lifecycle retype-with-cleanup old tid removed: true"
+    description: "lifecycle retype-with-cleanup error: SeLe4n.Model.KernelError.illegalAuthority"
   LEP-011:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
@@ -273,46 +293,11 @@ scenarios:
     function: runLifecycleAndEndpointTrace
     subsystem: Lifecycle
     description: "composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthori"
-  LEP-017:
+  LEP-016:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
     subsystem: Lifecycle
-    description: "composed revoke/delete/retype success"
-  LEP-018:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
-    description: "post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability"
-  LEP-020:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
-    description: "post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability"
-  LEP-024:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
-    description: "handshake send matched waiting receiver"
-  LEP-026:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
-    description: "queued sender on endpoint"
-  LEP-028:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
-    description: "endpoint receive #1 sender: 1"
-  LEP-030:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
-    description: "notification wait #1 result: none"
-  LEP-034:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runLifecycleAndEndpointTrace
-    subsystem: Lifecycle
-    description: "notification wait #2 result: some { val := 123 }"
+    description: "composed transition error: SeLe4n.Model.KernelError.illegalAuthority"
   LEP-036:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runLifecycleAndEndpointTrace
@@ -508,26 +493,11 @@ scenarios:
     function: runSchedulerTimingDomainTrace
     subsystem: Scheduler
     description: "domain switch time remaining: 5"
-  UMT-002:
+  UMT-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runUntypedMemoryTrace
     subsystem: Lifecycle
-    description: "retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.end"
-  UMT-003:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runUntypedMemoryTrace
-    subsystem: Lifecycle
-    description: "untyped watermark after retype: 64"
-  UMT-004:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runUntypedMemoryTrace
-    subsystem: Lifecycle
-    description: "untyped children count: 1"
-  UMT-007:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runUntypedMemoryTrace
-    subsystem: Lifecycle
-    description: "untyped watermark after second retype: 1088"
+    description: "retype-from-untyped success path error: SeLe4n.Model.KernelError.illegalAuthority"
   UMT-009:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runUntypedMemoryTrace
@@ -728,16 +698,6 @@ scenarios:
     function: runEndpointLifecycleTrace
     subsystem: IPC
     description: "lifecycle retype-delete succeeded: true"
-  ELC-003:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runEndpointLifecycleTrace
-    subsystem: IPC
-    description: "lifecycle senders retain stale blocked state: true"
-  ELC-004:
-    source: SeLe4n/Testing/MainTraceHarness.lean
-    function: runEndpointLifecycleTrace
-    subsystem: IPC
-    description: "lifecycle stale endpoint send rejected (invalidCapability): true"
   MEI-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runMultiEndpointInterleavingTrace

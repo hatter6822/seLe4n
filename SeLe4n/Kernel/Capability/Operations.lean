@@ -583,6 +583,26 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
                 .ok ((), stDetached)
     | _ => .error .objectNotFound
 
+/-- Internal: delete slot without the CDT children guard.
+
+Used by revocation internals (`processRevokeNode`, `cspaceRevokeCdtStrict`)
+where the caller guarantees that children will be handled by the revocation
+traversal itself. Not exported — callers must use `cspaceDeleteSlot`. -/
+private def cspaceDeleteSlotUnchecked (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match st.objects[addr.cnode]? with
+    | some (.cnode cn) =>
+        let cn' := cn.remove addr.slot
+        match storeObject addr.cnode (.cnode cn') st with
+        | .error e => .error e
+        | .ok (_, st') =>
+            match storeCapabilityRef addr none st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                let stDetached := SystemState.detachSlotFromCdt st'' addr
+                .ok ((), stDetached)
+    | _ => .error .objectNotFound
+
 /-- Revoke capabilities with the same target as the source in the containing CNode.
 
 This is the local (single-CNode) revocation variant. For cross-CNode revocation
@@ -656,7 +676,9 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
         | .error e => .error e
         | .ok ((), st'') =>
             let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
-            match cspaceDeleteSlot src st'' with
+            -- Use unchecked delete: move preserves CDT edges via
+            -- attachSlotToCdtNode, so children follow the capability.
+            match cspaceDeleteSlotUnchecked src st'' with
             | .error e => .error e
             | .ok ((), st''') =>
                 -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
@@ -777,7 +799,7 @@ def processRevokeNode (st : SystemState) (node : CdtNodeId)
   match SystemState.lookupCdtSlotOfNode st node with
   | none => .ok { st with cdt := st.cdt.removeNode node }
   | some descAddr =>
-      match cspaceDeleteSlot descAddr st with
+      match cspaceDeleteSlotUnchecked descAddr st with
       | .error e => .error e
       | .ok ((), stDel) =>
           let stDetached := SystemState.detachSlotFromCdt stDel descAddr
@@ -807,7 +829,7 @@ def processRevokeNode_lenient (st : SystemState) (node : CdtNodeId) : SystemStat
   match SystemState.lookupCdtSlotOfNode st node with
   | none => { st with cdt := st.cdt.removeNode node }
   | some descAddr =>
-      match cspaceDeleteSlot descAddr st with
+      match cspaceDeleteSlotUnchecked descAddr st with
       | .error _ => { st with cdt := st.cdt.removeNode node }
       | .ok ((), stDel) =>
           let stDetached := SystemState.detachSlotFromCdt stDel descAddr
@@ -956,7 +978,7 @@ def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
                       let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
                       (report, stRemoved)
                   | some descAddr =>
-                      match cspaceDeleteSlot descAddr stAcc with
+                      match cspaceDeleteSlotUnchecked descAddr stAcc with
                       | .error err =>
                           let failure : RevokeCdtStrictFailure := {
                             offendingNode := node

@@ -217,7 +217,7 @@ private def f2UntypedState : SystemState :=
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
         (⟨0⟩, {
           target := .object f2UntypedObjId
-          rights := AccessRightSet.ofList [.read, .write, .grant]
+          rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
           badge := none
         })
       ]
@@ -246,7 +246,7 @@ private def f2DeviceState : SystemState :=
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
         (⟨0⟩, {
           target := .object f2DeviceUntypedId
-          rights := AccessRightSet.ofList [.read, .write, .grant]
+          rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
           badge := none
         })
       ]
@@ -309,6 +309,23 @@ private def runNegativeChecks : IO Unit := do
     IO.println "positive check passed [cspaceDeleteSlot detaches slot-node/backpointer mapping]"
   else
     throw <| IO.userError "cspaceDeleteSlot must clear stale CDT slot/node mapping"
+
+  -- U-H03: cspaceDeleteSlot rejects deletion when CDT children exist.
+  let childBearingNode : CdtNodeId := ⟨10⟩
+  let childOfBearing : CdtNodeId := ⟨11⟩
+  let childBearingSeed : SystemState :=
+    { baseState with
+      cdt := CapDerivationTree.empty
+        |>.addEdge childBearingNode childOfBearing .mint
+      cdtSlotNode := baseState.cdtSlotNode.insert slot0 childBearingNode
+      cdtNodeSlot := ((baseState.cdtNodeSlot
+        |>.insert childBearingNode slot0)
+        |>.insert childOfBearing { cnode := cnodeId, slot := ⟨9⟩ })
+      cdtNextNode := ⟨12⟩
+    }
+  expectError "cspaceDeleteSlot rejects delete with CDT children"
+    (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
+    .revocationRequired
 
   -- WS-E4/C-04 strict variant: surface first descendant deletion failure with context.
   let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨5⟩ }
@@ -1106,7 +1123,7 @@ private def runH2NegativeChecks : IO Unit := do
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object f2UntypedObjId
-            rights := AccessRightSet.ofList [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
         ]
@@ -1755,7 +1772,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object h16ExhaustedUntypedId
-            rights := AccessRightSet.ofList [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
         ]
@@ -1799,7 +1816,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object h16DeviceUntypedId
-            rights := AccessRightSet.ofList [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
         ]
@@ -3099,7 +3116,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, {
             target := .object exhaustedUntypedId
-            rights := AccessRightSet.ofList [.read, .write, .grant]
+            rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
           })
         ]

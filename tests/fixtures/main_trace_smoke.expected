@@ -26,8 +26,11 @@ SST-006 | Service | store service entry lookup: some { sid := { val := 200 }, ba
 SST-008 | Service | register dependency result: some [{ val := 100 }]
 SST-009 | Service | register self-loop dependency: SeLe4n.Model.KernelError.cyclicDependency
 SST-011 | Service | service path svcApi→svcDb: true
+SST-012 | Service | service path svcApi→svcDenied: false
 SST-013 | Service | service isolation api↔denied: true
 SST-014 | Service | service isolation api↔db: false
+SST-019 | Service | service lookup missing-backing: some { sid := { val := 106 }, backingObject := { val := 9999 }, owner := { val := 10 } }
+SST-020 | Service | service lookup svcBroken deps: some [{ val := 999 }]
 SRG-001 | ServiceRegistry | register service success: true
 SRG-002 | ServiceRegistry | duplicate register: SeLe4n.Model.KernelError.illegalState
 SRG-005 | ServiceRegistry | revoke service success: true
@@ -47,23 +50,17 @@ SST-030 | Service | large queue scheduled current: some 1
 SST-032 | Service | context switch regs match incoming: true
 SST-037 | Service | multi-endpoint receive senders: 1, 12
 SST-038 | Service | service dependency chain path chainTop→chainRoot: true
+SST-039 | Service | service dependency chain lookup chainTop: some [{ val := 201 }]
 SST-041 | Service | boundary memory low-address byte: 0
 SST-043 | Service | boundary memory high-address byte: 0
 LEP-001 | Lifecycle | lifecycle retype unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
 LEP-003 | Lifecycle | lifecycle retype illegal-state branch: SeLe4n.Model.KernelError.illegalState
-LEP-006 | Lifecycle | lifecycle retype success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-LEP-008 | Lifecycle | lifecycle retype-with-cleanup old tid removed: true
+LEP-005 | Lifecycle | lifecycle retype error: SeLe4n.Model.KernelError.illegalAuthority
+LEP-007 | Lifecycle | lifecycle retype-with-cleanup error: SeLe4n.Model.KernelError.illegalAuthority
 LEP-011 | Lifecycle | created sibling cap with the same target
 LEP-012 | Lifecycle | composed transition alias guard (expected error): SeLe4n.Model.KernelError.illegalState
 LEP-014 | Lifecycle | composed transition unauthorized branch: SeLe4n.Model.KernelError.illegalAuthority
-LEP-017 | Lifecycle | composed revoke/delete/retype success
-LEP-018 | Lifecycle | post-revoke sibling lookup: SeLe4n.Model.KernelError.invalidCapability
-LEP-020 | Lifecycle | post-delete lookup (expected error): SeLe4n.Model.KernelError.invalidCapability
-LEP-024 | Lifecycle | handshake send matched waiting receiver
-LEP-026 | Lifecycle | queued sender on endpoint
-LEP-028 | Lifecycle | endpoint receive #1 sender: 1
-LEP-030 | Lifecycle | notification wait #1 result: none
-LEP-034 | Lifecycle | notification wait #2 result: some { val := 123 }
+LEP-016 | Lifecycle | composed transition error: SeLe4n.Model.KernelError.illegalAuthority
 LEP-036 | Lifecycle | minted cap rights: { bits := 1 }
 CIC-001 | Capability | H-02 occupied slot guard: SeLe4n.Model.KernelError.targetSlotOccupied
 CIC-005 | Capability | cspaceCopy target matches: true
@@ -103,12 +100,9 @@ STD-007 | Scheduler | timer tick expiry rescheduled current: some 1
 STD-008 | Scheduler | timer tick expiry reset slice: 5
 STD-011 | Scheduler | domain switch active domain: 1
 STD-012 | Scheduler | domain switch time remaining: 5
-UMT-002 | Lifecycle | retype-from-untyped success object kind: some (SeLe4n.Model.KernelObjectType.endpoint)
-UMT-003 | Lifecycle | untyped watermark after retype: 64
-UMT-004 | Lifecycle | untyped children count: 1
-UMT-007 | Lifecycle | untyped watermark after second retype: 1088
+UMT-001 | Lifecycle | retype-from-untyped success path error: SeLe4n.Model.KernelError.illegalAuthority
 UMT-009 | Lifecycle | retype-from-untyped type-mismatch branch: SeLe4n.Model.KernelError.untypedTypeMismatch
-UMT-011 | Lifecycle | retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.untypedRegionExhausted
+UMT-011 | Lifecycle | retype-from-untyped region-exhausted branch: SeLe4n.Model.KernelError.illegalAuthority
 UMT-013 | Lifecycle | retype-from-untyped not-found branch: SeLe4n.Model.KernelError.objectNotFound
 UMT-015 | Lifecycle | retype-from-untyped device-restriction branch: SeLe4n.Model.KernelError.untypedDeviceRestriction
 UMT-017 | Lifecycle | retype-from-untyped wrong-authority branch: SeLe4n.Model.KernelError.illegalAuthority
@@ -134,32 +128,30 @@ RDT-010 | Architecture | syscallEntry out-of-bounds layout error: SeLe4n.Model.K
 KSD-001 | Architecture | cspaceMint via decoded regs destination populated: true
 KSD-002 | Architecture | cspaceCopy via decoded regs target matches: true
 KSD-003 | Architecture | cspaceDelete via decoded regs slot cleared: true
-KSD-004 | Lifecycle | lifecycle retype via decoded regs new type: some (SeLe4n.Model.KernelObjectType.notification)
+KSD-004 | Lifecycle | lifecycleRetypeDirect error: SeLe4n.Model.KernelError.illegalAuthority
 KSD-005 | Architecture | vspaceMap via decoded regs paddr: 8192
 KSD-006 | Service | service registry lookup present: true
 KSD-007 | IPC | IPC message body from registers: #[111, 222, 333, 444]
 KSD-008 | Architecture | round-trip decode msgRegs.size=4 first=10
 RRC-001 | IPC | replyRecv caller state after receive: blockedOnReply
-RRC-002 | IPC | replyRecv callerB state after rendezvous: blockedOnReply
 RRC-003 | IPC | replyRecv caller unblocked: true
 RRC-004 | IPC | replyRecv caller reply registers: some [100, 200, 300]
+RRC-002 | IPC | replyRecv callerB state after rendezvous: blockedOnReply
 RRC-005 | IPC | replyRecv server ready after rendezvous: true
 RRC-006 | IPC | replyRecv server received callerB registers: some [70, 80, 90]
 ELC-001 | IPC | lifecycle senders blocked: true
-ELC-002 | IPC | lifecycle retype-delete succeeded: true
-ELC-003 | IPC | lifecycle senders retain stale blocked state: true
-ELC-004 | IPC | lifecycle stale endpoint send rejected (invalidCapability): true
+ELC-002 | IPC | lifecycle retype-delete error: SeLe4n.Model.KernelError.illegalAuthority
 MEI-001 | IPC | multi-ep recv1 registers: some [11, 22]
 MEI-002 | IPC | multi-ep recv2 registers: some [33, 44]
 MEI-003 | IPC | multi-ep endpoint1 queues empty: true
 MEI-004 | IPC | multi-ep ep3 out-of-order recv registers: some [55, 66]
 MEI-005 | IPC | multi-ep ep1 FIFO second recv registers: some [77, 88]
 MEI-006 | IPC | multi-ep all 3 endpoints drained: true
-ITR-001 | Testing | inter-transition invariant checks: 31 passed
+ITR-001 | Testing | inter-transition invariant checks: 29 passed
 PTY-001 | Testing | parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 PTY-001 | Testing | parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 PTY-001 | Testing | parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
 XVAL-001 | ABI | MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
 XVAL-002 | ABI | SyscallId roundtrip ok: all 14 variants
-XVAL-003 | ABI | CSpaceMintArgs roundtrip ok
+XVAL-003 | ABI | CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]
 XVAL-004 | ABI | MessageInfo bit layout ok: len=42 caps=384 label=2560

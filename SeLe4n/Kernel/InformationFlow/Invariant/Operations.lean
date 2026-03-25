@@ -503,6 +503,8 @@ theorem switchDomain_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t → threadObservable ctx observer t = false)
     (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : switchDomain s₁ = .ok ((), s₁'))
     (hStep₂ : switchDomain s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
@@ -556,6 +558,9 @@ theorem switchDomain_preserves_lowEquivalent
             next tcb _ => exact RunQueue.toList_filter_insert_neg' _ _ _ _ hH
           · -- objects = not tcb (catch-all)
             rfl
+      -- U-M39: Rewrite past saveOutgoingContext using projection preservation
+      rw [saveOutgoingContext_with_sched_preserves_projection ctx observer s₁ _ hObjInv₁,
+          saveOutgoingContext_with_sched_preserves_projection ctx observer s₂ _ hObjInv₂]
       simp only [projectState]; congr 1
       · exact congrArg ObservableState.objects hLow
       · -- WS-H12b: runnable field uses rq_filter_reduce
