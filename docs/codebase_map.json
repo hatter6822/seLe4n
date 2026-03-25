@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-correctness-fixes-4Fcn1",
-      "commit_sha": "1d2984d7a6fe627506496f95682552cfb4ca3754",
-      "tree_sha": "e03d3140c87537624692fb4a88ae3c1b2f4876ee",
-      "committed_at_utc": "2026-03-25T02:23:47+00:00"
+      "commit_sha": "590f79a74ec03f67acd0ec6e2dc0e9b9ac7803e5",
+      "tree_sha": "268aa6d3d3820262cf5db3f6dd97c5783ce08728",
+      "committed_at_utc": "2026-03-25T02:35:47+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ac7e78e9e7a301347acac7588f762930a58920662ea58b63bcea964827f441f0"
+    "source_digest": "9138839a20ddf881882aada43a0cef8dd349711a19e055aff43f55c2834dfe26"
   },
   "summary": {
     "module_count": 111,
     "declaration_count": 3414
   },
   "readme_sync": {
-    "version": "0.20.7",
+    "version": "0.21.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
     "production_loc": 61781,

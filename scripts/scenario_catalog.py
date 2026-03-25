@@ -103,8 +103,12 @@ def validate_registry(fixture_path: Path, registry_path: Path,
         errors.append(f"fixture not found: {fixture_path}")
         return errors
 
-    # Parse scenario IDs from all fixture files (pipe-delimited lines)
+    # Parse scenario IDs from all fixture files.
+    # Supports two formats:
+    #   Pipe-delimited: ID | SUBSYSTEM | description
+    #   Bracket:        [ID] description
     fixture_ids: set[str] = set()
+    bracket_re = re.compile(r"^\[([A-Z]+-\d+)\]")
     all_fixture_paths = [fixture_path] + (extra_fixture_paths or [])
     for fp in all_fixture_paths:
         if not fp.exists():
@@ -117,6 +121,10 @@ def validate_registry(fixture_path: Path, registry_path: Path,
             parts = line.split("|")
             if len(parts) >= 3:
                 fixture_ids.add(parts[0].strip())
+            else:
+                m = bracket_re.match(line)
+                if m:
+                    fixture_ids.add(m.group(1))
 
     # Parse scenario IDs from registry (YAML-like: "  ID:" lines)
     registry_ids: set[str] = set()

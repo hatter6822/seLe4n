@@ -1,3 +1,30 @@
+## [0.21.0] — WS-U Phase U1: Correctness Fixes
+
+- U1-A/B/C (U-H01): Fixed `frozenQueuePopHead` to clear `queuePPrev` field,
+  enabling multi-round IPC re-enqueue. Regression test FO-021 validates
+  three-phase IPC cycle.
+- U1-D/E (U-H02): Added post-allocation page-alignment re-verification in
+  `retypeFromUntyped`. Updated `retypeFromUntyped_ok_decompose` theorem.
+- U1-F/G (U-H04): Replaced `lifecycleRetypeDirect` with
+  `lifecycleRetypeWithCleanup` in API dispatch. Updated doc comments.
+- U1-H/I (U-H14): Aligned `lifecycleRetypeAuthority` from `.write` to
+  `.retype`, matching `requiredRight` mapping. Updated authority preservation
+  and scheduler preservation theorems.
+- U1-J/K (U-H13): Changed `endpointReceiveDual` CSpace root fallback from
+  silent `senderId.toObjId` to explicit `.invalidCapability` error. Updated
+  IPC preservation theorems.
+- U1-L (U-H03): Extracted `cspaceDeleteSlotCore` (non-private core) with
+  `cspaceDeleteSlot` as thin guard wrapper (`hasCdtChildren` check). Migrated
+  6 preservation theorems to core+wrapper pattern across 3 proof files.
+  Internal callers (`processRevokeNode`, `cspaceMove`, `cspaceRevokeCdtStrict`)
+  use core directly.
+- U1-M (U-M39): Added defensive `saveOutgoingContext` in `switchDomain`
+  before clearing `current`. Updated scheduler preservation theorems.
+- Fixed scenario registry format parser to handle bracket-format fixtures.
+- Updated scenario registry and catalog for new trace lines (LEP-006/008/017/
+  018/020/024/026/028/030/034, UMT-002/003/004/007, ELC-003/004).
+- Version bump to 0.21.0. All documentation and GitBook synchronized.
+
 ## [0.20.7] — WS-T Phase T8: Documentation & Closure (WS-T PORTFOLIO COMPLETE)
 
 - T8-A: Synchronized `README.md` metrics from `docs/codebase_map.json` —

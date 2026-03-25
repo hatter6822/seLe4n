@@ -176,7 +176,7 @@
         "correctness"
       ],
       "replay_tier": "smoke",
-      "expected_trace_fragment": "lifecycle retype-with-cleanup error: SeLe4n.Model.KernelError.illegalAuthority"
+      "expected_trace_fragment": "lifecycle retype-with-cleanup old tid removed: true"
     }
   ]
 }

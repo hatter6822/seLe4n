@@ -17,8 +17,32 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-T) are complete. WS-T addressed 72 findings (4 HIGH, 52 MEDIUM, 16
-LOW) from dual v0.19.6 audits across 8 phases (T1–T8), 94 sub-tasks, v0.20.0–v0.20.7.
+through WS-U Phase U1) are complete.
+
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U1 COMPLETE
+
+WS-U Phase U1 addresses 7 correctness findings from the v0.20.7 audit. 13
+sub-tasks (U1-A through U1-M). Version v0.21.0. Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U1-A/B/C (U-H01)**: Fixed `frozenQueuePopHead` to clear `queuePPrev`,
+  enabling multi-round IPC re-enqueue. Regression test FO-021 added.
+- **U1-D/E (U-H02)**: Added post-allocation page-alignment re-verification in
+  `retypeFromUntyped`. Updated decomposition theorem.
+- **U1-F/G (U-H04)**: Replaced `lifecycleRetypeDirect` with
+  `lifecycleRetypeWithCleanup` in API dispatch. Updated doc comments.
+- **U1-H/I (U-H14)**: Aligned `lifecycleRetypeAuthority` from `.write` to
+  `.retype`, matching `requiredRight` mapping. Updated authority theorems.
+- **U1-J/K (U-H13)**: Changed `endpointReceiveDual` CSpace root fallback from
+  silent `senderId.toObjId` to explicit `.invalidCapability` error. Updated IPC
+  preservation theorems.
+- **U1-L (U-H03)**: Extracted `cspaceDeleteSlotCore` (non-private core) with
+  `cspaceDeleteSlot` as thin guard wrapper (`hasCdtChildren` check). Migrated
+  6 preservation theorems to core+wrapper pattern across 3 proof files.
+- **U1-M (U-M39)**: Added defensive `saveOutgoingContext` in `switchDomain`
+  before clearing `current`. Updated scheduler preservation theorems.
+
+Zero sorry, zero axiom. All 13 sub-tasks complete.
 
 ### WS-T workstream (Deep-Dive Audit Remediation) — PORTFOLIO COMPLETE
 

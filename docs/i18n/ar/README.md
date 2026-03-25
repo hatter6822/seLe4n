@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.20.7-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.21.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -61,7 +61,7 @@ seLe4n هو نواة مصغرة (microkernel) بُنيت من الصفر بلغ�
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.20.7` |
+| **الإصدار** | `0.21.0` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
 | **أسطر Lean الإنتاجية** | 61,538 عبر 101 ملفًا |
 | **أسطر Lean الاختبارية** | 8,256 عبر 10 حزم اختبار |
