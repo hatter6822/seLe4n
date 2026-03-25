@@ -259,26 +259,36 @@ do not affect Lean proof surface.
 
 ---
 
-### Phase V2: API Surface Completion (9 sub-tasks)
+### Phase V2: API Surface Completion (9 sub-tasks) — COMPLETE (v0.22.1)
 
 **Priority**: Pre-benchmark (required for hardware exercising)
 **Gate**: `lake build SeLe4n.Kernel.API`; all new syscalls have dispatch + delegation theorems; `test_smoke.sh` green
+**Status**: All gate conditions met. `lake build SeLe4n.Kernel.API` passes; all 9 sub-tasks delivered; `test_smoke.sh` green.
 **Estimated scope**: ~400 lines Lean
 **Depends on**: V1 (Rust ABI must match new Lean syscalls)
 
-| ID | Finding | Task | Files | Scope |
-|----|---------|------|-------|-------|
-| V2-A | M-API-1 | Add `notificationSignal` and `notificationWait` to `SyscallId` enum. Update Lean `SyscallId` definition with discriminants 14, 15. | `SeLe4n/Kernel/Architecture/RegisterDecode.lean`, `SeLe4n/Model/Object/Types.lean` | M |
-| V2-B | M-API-1 | Wire `notificationSignal`/`notificationWait` into `dispatchWithCap` and `dispatchWithCapChecked` dispatch arms. Add delegation theorems. | `SeLe4n/Kernel/API.lean` | M |
-| V2-C | M-API-2 | Add `replyRecv` to `SyscallId` enum (discriminant 16). Wire into dispatch with compound operation semantics (reply + receive in one transition). | `SeLe4n/Kernel/API.lean`, `RegisterDecode.lean` | M |
-| V2-D | M-API-1 | Add Rust `SyscallId` variants 14-16 to match Lean. Update encode/decode. | `rust/sele4n-types/src/syscall.rs`, `rust/sele4n-abi/src/encode.rs` | S |
-| V2-E | M-API-3 | Add 20-bit label bound check in `MessageInfo.decode`. Values exceeding `2^20 - 1` return `.invalidMessageInfo`. | `SeLe4n/Model/Object/Types.lean` | S |
-| V2-F | M-API-5 | Make cap transfer slot base configurable via `SyscallArgs` rather than hardcoded `Slot.ofNat 0`. Update `dispatchWithCap` callers. | `SeLe4n/Kernel/API.lean`, `IPC/DualQueue/WithCaps.lean` | M |
-| V2-G | L-IPC-2 | Align IPC cap transfer slot base with V2-F changes. Update `endpointSendDualWithCaps` to accept slot base parameter. | `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` | S |
-| V2-H | M-API-3 | Update Rust `MessageInfo::new()` to enforce 20-bit label bound (reject labels ≥ 2^20). | `rust/sele4n-abi/src/message_info.rs` | S |
-| V2-I | — | Update `SyscallArgDecode.lean` with decode structs for notification and replyRecv syscalls. Add round-trip proofs. | `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` | M |
+| ID | Finding | Task | Files | Scope | Status |
+|----|---------|------|-------|-------|--------|
+| V2-A | M-API-1 | Add `notificationSignal` and `notificationWait` to `SyscallId` enum. Update Lean `SyscallId` definition with discriminants 14, 15. | `SeLe4n/Kernel/Architecture/RegisterDecode.lean`, `SeLe4n/Model/Object/Types.lean` | M | DONE |
+| V2-B | M-API-1 | Wire `notificationSignal`/`notificationWait` into `dispatchWithCap` and `dispatchWithCapChecked` dispatch arms. Add delegation theorems. | `SeLe4n/Kernel/API.lean` | M | DONE |
+| V2-C | M-API-2 | Add `replyRecv` to `SyscallId` enum (discriminant 16). Wire into dispatch with compound operation semantics (reply + receive in one transition). | `SeLe4n/Kernel/API.lean`, `RegisterDecode.lean` | M | DONE |
+| V2-D | M-API-1 | Add Rust `SyscallId` variants 14-16 to match Lean. Update encode/decode. | `rust/sele4n-types/src/syscall.rs`, `rust/sele4n-abi/src/encode.rs` | S | DONE |
+| V2-E | M-API-3 | Add 20-bit label bound check in `MessageInfo.decode`. Values exceeding `2^20 - 1` return `.invalidMessageInfo`. | `SeLe4n/Model/Object/Types.lean` | S | DONE |
+| V2-F | M-API-5 | Make cap transfer slot base configurable via `SyscallArgs` rather than hardcoded `Slot.ofNat 0`. Update `dispatchWithCap` callers. | `SeLe4n/Kernel/API.lean`, `IPC/DualQueue/WithCaps.lean` | M | DONE |
+| V2-G | L-IPC-2 | Align IPC cap transfer slot base with V2-F changes. Update `endpointSendDualWithCaps` to accept slot base parameter. | `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` | S | DONE |
+| V2-H | M-API-3 | Update Rust `MessageInfo::new()` to enforce 20-bit label bound (reject labels ≥ 2^20). | `rust/sele4n-abi/src/message_info.rs` | S | DONE |
+| V2-I | — | Update `SyscallArgDecode.lean` with decode structs for notification and replyRecv syscalls. Add round-trip proofs. | `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` | M | DONE |
 
 **Dependencies**: V1 (Rust enum alignment), V2-A before V2-B/V2-C, V2-E before V2-H.
+
+**V2 Summary**: `SyscallId` count grew from 14 to 17 (added `notificationSignal`=14,
+`notificationWait`=15, `replyRecv`=16). Both unchecked (`dispatchWithCap`) and checked
+(`dispatchWithCapChecked`) dispatch paths updated with enforcement wrappers. Rust
+`SyscallId` variants 14–16 added with matching encode/decode and `required_right`.
+`MessageInfo` label field bounded to 20 bits (seL4 convention) in both Lean and Rust.
+Cap transfer slot base made configurable via `capRecvSlot` field rather than hardcoded
+`Slot.ofNat 0`. `SyscallArgDecode.lean` updated with notification/replyRecv decode
+structs and round-trip theorems. Zero sorry/axiom.
 
 ---
 

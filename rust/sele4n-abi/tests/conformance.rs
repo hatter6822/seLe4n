@@ -434,11 +434,12 @@ fn xval_019_service_register_ipc_buffer() {
 // ============================================================================
 
 /// Verify MessageInfo encode/decode roundtrip for all valid bound combinations.
+/// V2-H: Label values updated to fit 20-bit limit (max 0xFFFFF).
 #[test]
 fn message_info_exhaustive_bounds() {
     for len in [0u8, 1, 60, 119, 120] {
         for caps in [0u8, 1, 2, 3] {
-            for label in [0u64, 1, 0xFFFF, 0x7FFFFF] {
+            for label in [0u64, 1, 0xFFFF, 0xFFFFF] {
                 let mi = MessageInfo::new(len, caps, label).unwrap();
                 let decoded = MessageInfo::decode(mi.encode().unwrap()).unwrap();
                 assert_eq!(decoded, mi, "Roundtrip failed for len={}, caps={}, label={}", len, caps, label);
@@ -447,14 +448,14 @@ fn message_info_exhaustive_bounds() {
     }
 }
 
-/// Verify SyscallId roundtrip for all 14 variants.
+/// Verify SyscallId roundtrip for all 17 variants (V2-A/V2-C).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
-    for i in 0..14u64 {
+    for i in 0..17u64 {
         let sid = SyscallId::from_u64(i).expect("valid syscall id");
         assert_eq!(sid.to_u64(), i);
     }
-    assert!(SyscallId::from_u64(14).is_none());
+    assert!(SyscallId::from_u64(17).is_none());
 }
 
 /// Verify KernelError roundtrip for all 40 variants (U5-E: 2 new at 38-39).
@@ -515,10 +516,10 @@ fn page_perms_wx_enforcement() {
 // T3 — Rust ABI Hardening conformance tests
 // ============================================================================
 
-/// T3-B/M-NEW-9: MessageInfo label 55-bit bound enforcement.
+/// V2-H/M-API-3: MessageInfo label 20-bit bound enforcement.
 ///
 /// Verify that encode(decode(x)) == x for boundary values and that
-/// encode returns error for labels >= 2^55.
+/// encode returns error for labels >= 2^20.
 #[test]
 fn t3b_message_info_label_boundary_roundtrip() {
     use sele4n_abi::message_info::MAX_LABEL;
@@ -528,24 +529,24 @@ fn t3b_message_info_label_boundary_roundtrip() {
     let encoded = mi_zero.encode().unwrap();
     assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_zero);
 
-    // Boundary value: label = 2^55 - 1 (maximum valid)
+    // Boundary value: label = 2^20 - 1 (maximum valid)
     let mi_max = MessageInfo::new(0, 0, MAX_LABEL).unwrap();
     let encoded = mi_max.encode().unwrap();
     assert_eq!(MessageInfo::decode(encoded).unwrap(), mi_max);
 
-    // Boundary value: label = 2^55 (first invalid — new() must reject)
-    assert_eq!(MessageInfo::new(0, 0, 1u64 << 55), Err(KernelError::InvalidMessageInfo));
+    // Boundary value: label = 2^20 (first invalid — new() must reject)
+    assert_eq!(MessageInfo::new(0, 0, 1u64 << 20), Err(KernelError::InvalidMessageInfo));
 
     // Extreme: label = u64::MAX (new() must reject)
     assert_eq!(MessageInfo::new(0, 0, u64::MAX), Err(KernelError::InvalidMessageInfo));
 }
 
-/// T3-B: MessageInfo::new rejects oversized labels (U3-B: struct literals no longer possible).
+/// V2-H: MessageInfo::new rejects oversized labels (U3-B: struct literals no longer possible).
 #[test]
 fn t3b_encode_syscall_rejects_oversized_label() {
     // U3-B: With private fields, invalid MessageInfo can no longer be constructed.
     // We verify the rejection happens at new() instead.
-    assert_eq!(MessageInfo::new(0, 0, 1u64 << 55), Err(KernelError::InvalidMessageInfo));
+    assert_eq!(MessageInfo::new(0, 0, 1u64 << 20), Err(KernelError::InvalidMessageInfo));
 }
 
 /// T3-B: MessageInfo::new rejects oversized labels.

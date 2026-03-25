@@ -28,14 +28,14 @@ Core type definitions with zero `unsafe` and zero external dependencies:
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
-- **`SyscallId`**: 14-variant enum (0–13)
+- **`SyscallId`**: 17-variant enum (0–16), including notificationSignal, notificationWait, replyRecv (V2-A/D)
 
 ### sele4n-abi
 
 ARM64 register ABI layer with exactly one `unsafe` block:
 
 - **`MessageInfo`**: Bitfield encode/decode (7-bit length, 2-bit extraCaps,
-  55-bit label). Fields are private (U3-B); construct via `new()` or `decode()`,
+  20-bit label, seL4 convention). Fields are private (U3-B); construct via `new()` or `decode()`,
   access via `length()`, `extra_caps()`, `label()` accessors
 - **`SyscallRequest` / `SyscallResponse`**: Register structures
 - **`raw_syscall`**: Inline `svc #0` — the single `unsafe` function. Uses
@@ -52,7 +52,7 @@ ARM64 register ABI layer with exactly one `unsafe` block:
 
 ### sele4n-sys
 
-Safe high-level wrappers for all 14 syscalls:
+Safe high-level wrappers for all 17 syscalls:
 
 | Subsystem | Operations |
 |-----------|-----------|

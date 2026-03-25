@@ -38,8 +38,8 @@ pub const REG_SYSCALL_NUM: usize = 6; // x7 (mapped to array index 6)
 /// The syscall number is placed at index 6, corresponding to x7 in the
 /// ARM64 convention (seLe4n uses x7, not x8).
 ///
-/// T3-A: Returns `InvalidMessageInfo` if the MessageInfo label exceeds
-/// the 55-bit encoding limit.
+/// V2-H: Returns `InvalidMessageInfo` if the MessageInfo label exceeds
+/// the 20-bit encoding limit.
 #[inline]
 pub fn encode_syscall(req: &SyscallRequest) -> Result<[u64; 7], KernelError> {
     Ok([
@@ -87,8 +87,8 @@ mod tests {
 
     #[test]
     fn encode_rejects_oversized_label() {
-        // U3-B: Construction of invalid MessageInfo must go through new(),
-        // which rejects labels >= 2^55. We verify the error path via new().
-        assert_eq!(MessageInfo::new(0, 0, 1u64 << 55), Err(KernelError::InvalidMessageInfo));
+        // V2-H: Construction of invalid MessageInfo must go through new(),
+        // which rejects labels >= 2^20. We verify the error path via new().
+        assert_eq!(MessageInfo::new(0, 0, 1u64 << 20), Err(KernelError::InvalidMessageInfo));
     }
 }

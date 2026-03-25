@@ -582,18 +582,22 @@ def frozenOpCoverage : SyscallId → Bool
   | .serviceRegister => false -- builder-only (adds service)
   | .serviceRevoke => false   -- builder-only (removes service)
   | .serviceQuery => true     -- frozenLookupServiceByCap
+  | .notificationSignal => true  -- V2-A: notification signal (frozen-phase badge merge)
+  | .notificationWait => true    -- V2-A: notification wait (frozen-phase consume/block)
+  | .replyRecv => true           -- V2-C: compound reply + receive
 
-/-- S3-L: Exactly 9 SyscallId arms have frozen operation coverage.
+/-- S3-L: Exactly 12 SyscallId arms have frozen operation coverage.
     The 5 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
     lifecycleRetype, serviceRegister, serviceRevoke). -/
 theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
-       .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery].filter
-         frozenOpCoverage).length = 9) := by
+       .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
+       .notificationSignal, .notificationWait, .replyRecv].filter
+         frozenOpCoverage).length = 12) := by
   decide
 
-/-- S3-L: All 14 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L: All 17 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

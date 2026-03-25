@@ -802,9 +802,85 @@ theorem decodeServiceRevokeArgs_roundtrip (args : ServiceRevokeArgs) :
     decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args := by
   rcases args with ⟨s⟩; rfl
 
-/-- Composed round-trip: all 9 argument structures satisfy the encode-decode
-    round-trip property. R6-B: CSpaceMintArgs requires badge validity for
-    lossless roundtrip through `ofNatMasked`. Parallel to
+-- ============================================================================
+-- V2-I: Notification and ReplyRecv argument structures
+-- ============================================================================
+
+/-- V2-A/V2-I: Per-syscall argument structure for `notificationSignal`.
+    Register mapping: x2=badge value.
+    The notification object is resolved from the capability target (no MR decode). -/
+structure NotificationSignalArgs where
+  badge : Badge
+  deriving Repr, DecidableEq
+
+/-- V2-A/V2-I: Per-syscall argument structure for `notificationWait`.
+    No message registers needed — the notification object is resolved from the
+    capability target. The waiter thread ID comes from the current thread. -/
+structure NotificationWaitArgs where
+  deriving Repr, DecidableEq
+
+/-- V2-C/V2-I: Per-syscall argument structure for `replyRecv`.
+    Register mapping: x2=replyTarget thread ID.
+    The endpoint is resolved from the capability target. Message body comes
+    from the standard message registers (same as send). -/
+structure ReplyRecvArgs where
+  replyTarget : ThreadId
+  deriving Repr, DecidableEq
+
+/-- V2-I: Decode notification signal arguments from message registers.
+    Requires 1 message register (badge). -/
+def decodeNotificationSignalArgs (decoded : SyscallDecodeResult)
+    : Except KernelError NotificationSignalArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { badge := Badge.ofNatMasked r0.val }
+
+/-- V2-I: Decode notification wait arguments. No message registers needed. -/
+def decodeNotificationWaitArgs (_decoded : SyscallDecodeResult)
+    : Except KernelError NotificationWaitArgs :=
+  pure {}
+
+/-- V2-I: Decode replyRecv arguments from message registers.
+    Requires 1 message register (reply target thread ID). -/
+def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
+    : Except KernelError ReplyRecvArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { replyTarget := ThreadId.ofNat r0.val }
+
+/-- V2-I: Encode notification signal arguments into message registers. -/
+@[inline] def encodeNotificationSignalArgs (args : NotificationSignalArgs) : Array RegValue :=
+  #[⟨args.badge.val⟩]
+
+/-- V2-I: Encode notification wait arguments (empty — no message registers). -/
+@[inline] def encodeNotificationWaitArgs (_args : NotificationWaitArgs) : Array RegValue :=
+  #[]
+
+/-- V2-I: Encode replyRecv arguments into message registers. -/
+@[inline] def encodeReplyRecvArgs (args : ReplyRecvArgs) : Array RegValue :=
+  #[⟨args.replyTarget.toNat⟩]
+
+/-- V2-I: NotificationSignalArgs decode round-trip.
+    Requires badge validity for lossless round-trip through `ofNatMasked`. -/
+theorem decodeNotificationSignalArgs_roundtrip (args : NotificationSignalArgs)
+    (hBadge : args.badge.valid) :
+    decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args := by
+  rcases args with ⟨b⟩
+  simp [decodeNotificationSignalArgs, encodeNotificationSignalArgs, stubDecoded,
+        requireMsgReg, bind, Except.bind, pure, Except.pure]
+  exact Badge.ofNatMasked_toNat b hBadge
+
+/-- V2-I: NotificationWaitArgs decode round-trip (trivial — no MR decode). -/
+theorem decodeNotificationWaitArgs_roundtrip (args : NotificationWaitArgs) :
+    decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args := by
+  rcases args; rfl
+
+/-- V2-I: ReplyRecvArgs decode round-trip. -/
+theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
+    decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args := by
+  rcases args with ⟨t⟩; rfl
+
+/-- Composed round-trip: all 12 argument structures satisfy the encode-decode
+    round-trip property. R6-B: CSpaceMintArgs and NotificationSignalArgs require
+    badge validity for lossless roundtrip through `ofNatMasked`. Parallel to
     `decode_components_roundtrip` in `RegisterDecode.lean`. -/
 theorem decode_layer2_roundtrip_all :
     (∀ args, args.badge.valid →
@@ -818,7 +894,11 @@ theorem decode_layer2_roundtrip_all :
     (∀ args, args.asid.isValidForConfig 65536 = true →
       decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
-    (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) :=
+    (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) ∧
+    (∀ args, args.badge.valid →
+      decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
+    (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
+    (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) :=
   ⟨fun args h => decodeCSpaceMintArgs_roundtrip args h,
    decodeCSpaceCopyArgs_roundtrip,
    decodeCSpaceMoveArgs_roundtrip,
@@ -827,7 +907,44 @@ theorem decode_layer2_roundtrip_all :
    fun args hA hV => decodeVSpaceMapArgs_roundtrip args hA hV,
    fun args hA => decodeVSpaceUnmapArgs_roundtrip args hA,
    decodeServiceRegisterArgs_roundtrip,
-   decodeServiceRevokeArgs_roundtrip⟩
+   decodeServiceRevokeArgs_roundtrip,
+   fun args h => decodeNotificationSignalArgs_roundtrip args h,
+   decodeNotificationWaitArgs_roundtrip,
+   decodeReplyRecvArgs_roundtrip⟩
+
+/-- V2-I: NotificationSignalArgs error exclusivity. -/
+theorem decodeNotificationSignalArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeNotificationSignalArgs d = .error e) ↔ d.msgRegs.size < 1 := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 1
+    · exact hlt
+    · exfalso
+      simp only [decodeNotificationSignalArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        pure, Except.pure] at he
+      nomatch he
+  · intro h
+    refine ⟨.invalidMessageInfo, ?_⟩
+    simp only [decodeNotificationSignalArgs, bind, Except.bind]
+    rw [requireMsgReg_unfold_err _ _ (by omega)]
+
+/-- V2-I: ReplyRecvArgs error exclusivity. -/
+theorem decodeReplyRecvArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeReplyRecvArgs d = .error e) ↔ d.msgRegs.size < 1 := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 1
+    · exact hlt
+    · exfalso
+      simp only [decodeReplyRecvArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        pure, Except.pure] at he
+      nomatch he
+  · intro h
+    refine ⟨.invalidMessageInfo, ?_⟩
+    simp only [decodeReplyRecvArgs, bind, Except.bind]
+    rw [requireMsgReg_unfold_err _ _ (by omega)]
 
 -- ============================================================================
 -- IPC extra capability address decode (M-D01)

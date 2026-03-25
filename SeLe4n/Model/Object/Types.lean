@@ -805,9 +805,12 @@ inductive SyscallId where
   | lifecycleRetype
   | vspaceMap
   | vspaceUnmap
-  | serviceRegister   -- WS-Q1-D: capability-mediated service registration
-  | serviceRevoke     -- WS-Q1-D: service revocation
-  | serviceQuery      -- WS-Q1-D: service lookup by capability
+  | serviceRegister      -- WS-Q1-D: capability-mediated service registration
+  | serviceRevoke        -- WS-Q1-D: service revocation
+  | serviceQuery         -- WS-Q1-D: service lookup by capability
+  | notificationSignal   -- V2-A: notification signal (badge merge / wake waiter)
+  | notificationWait     -- V2-A: notification wait (consume badge / block)
+  | replyRecv            -- V2-C: compound reply + receive in one transition
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -826,12 +829,15 @@ namespace SyscallId
   | .lifecycleRetype => 8
   | .vspaceMap       => 9
   | .vspaceUnmap     => 10
-  | .serviceRegister => 11
-  | .serviceRevoke   => 12
-  | .serviceQuery    => 13
+  | .serviceRegister    => 11
+  | .serviceRevoke      => 12
+  | .serviceQuery       => 13
+  | .notificationSignal => 14
+  | .notificationWait   => 15
+  | .replyRecv          => 16
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 14
+def count : Nat := 17
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -850,6 +856,9 @@ def count : Nat := 14
   | 11 => some .serviceRegister
   | 12 => some .serviceRevoke
   | 13 => some .serviceQuery
+  | 14 => some .notificationSignal
+  | 15 => some .notificationWait
+  | 16 => some .replyRecv
   | _  => none
 
 instance : ToString SyscallId where
@@ -865,9 +874,12 @@ instance : ToString SyscallId where
     | .lifecycleRetype => "lifecycleRetype"
     | .vspaceMap       => "vspaceMap"
     | .vspaceUnmap     => "vspaceUnmap"
-    | .serviceRegister => "serviceRegister"
-    | .serviceRevoke   => "serviceRevoke"
-    | .serviceQuery    => "serviceQuery"
+    | .serviceRegister    => "serviceRegister"
+    | .serviceRevoke      => "serviceRevoke"
+    | .serviceQuery       => "serviceQuery"
+    | .notificationSignal => "notificationSignal"
+    | .notificationWait   => "notificationWait"
+    | .replyRecv          => "replyRecv"
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
@@ -876,7 +888,7 @@ theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
 /-- Round-trip: decoding then encoding preserves the numeric value.
 
 S4-I: This proof uses a uniform `match`/`simp`/`subst` pattern for each of
-the 14 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
+the 17 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
 used for `ofNat_toNat` is not applicable here because the hypothesis is on `n`
 (a `Nat`) rather than on a finite inductive type. A `decide`-based approach
 would require `BEq`/`DecidableEq` on the `Option SyscallId × Nat` pair and
@@ -887,9 +899,10 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   revert s
   match n with
   | 0  | 1  | 2  | 3  | 4  | 5  | 6
-  | 7  | 8  | 9  | 10 | 11 | 12 | 13 =>
+  | 7  | 8  | 9  | 10 | 11 | 12 | 13
+  | 14 | 15 | 16 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 14 => intro s h; simp [ofNat?] at h
+  | n + 17 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
@@ -920,22 +933,28 @@ def maxLength : Nat := maxMessageRegisters
 /-- Maximum extra capabilities per message (matches seL4 seL4_MsgMaxExtraCaps). -/
 def maxExtraCaps' : Nat := maxExtraCaps
 
+/-- V2-E (M-API-3): Maximum label value — 2^20 - 1 (20 bits), matching seL4's
+    `seL4_MessageInfo_t` label field width. The previous model allowed unbounded
+    labels (55 bits), which diverged from seL4's 20-bit limit. -/
+def maxLabel : Nat := (1 <<< 20) - 1
+
 /-- Encode a MessageInfo into a single register word.
     Bit layout (seL4 convention):
     - bits  0..6  : length (7 bits, max 120)
     - bits  7..8  : extraCaps (2 bits, max 3)
-    - bits  9..31 : label (23 bits)
-    This is a simplified model; real seL4 uses different bit widths. -/
+    - bits  9..28 : label (20 bits, max 2^20 - 1)
+    This matches seL4's `seL4_MessageInfo_t` layout. -/
 @[inline] def encode (mi : MessageInfo) : Nat :=
   mi.length ||| (mi.extraCaps <<< 7) ||| (mi.label <<< 9)
 
 /-- Decode a raw word into MessageInfo fields by extracting bit fields.
-    Returns `none` if the length or extraCaps fields exceed their bounds. -/
+    Returns `none` if the length or extraCaps fields exceed their bounds,
+    or if the label exceeds the 20-bit maximum (V2-E/M-API-3). -/
 @[inline] def decode (w : Nat) : Option MessageInfo :=
   let length    := w &&& 0x7F          -- bits 0..6
   let extraCaps := (w >>> 7) &&& 0x3   -- bits 7..8
   let label     := w >>> 9             -- bits 9+
-  if length ≤ maxMessageRegisters && extraCaps ≤ Model.maxExtraCaps then
+  if length ≤ maxMessageRegisters && extraCaps ≤ Model.maxExtraCaps && label ≤ maxLabel then
     some { length, extraCaps, label }
   else
     none
@@ -1037,7 +1056,8 @@ private theorem shift9_extracts_label (a b c : Nat) (ha : a < 128) (hb : b < 4) 
     components (CPtr, SyscallId, and MessageInfo). -/
 theorem encode_decode_roundtrip (mi : MessageInfo)
     (hLen : mi.length ≤ maxMessageRegisters)
-    (hCaps : mi.extraCaps ≤ maxExtraCaps) :
+    (hCaps : mi.extraCaps ≤ maxExtraCaps)
+    (hLabel : mi.label ≤ maxLabel := by omega) :
     MessageInfo.decode (MessageInfo.encode mi) = some mi := by
   unfold encode decode
   have hLen128 : mi.length < 128 := by unfold maxMessageRegisters at hLen; omega
@@ -1045,9 +1065,11 @@ theorem encode_decode_roundtrip (mi : MessageInfo)
   rw [and_mask_127 mi.length mi.extraCaps mi.label hLen128]
   rw [shift7_and_mask_3 mi.length mi.extraCaps mi.label hLen128 hCaps4]
   rw [shift9_extracts_label mi.length mi.extraCaps mi.label hLen128 hCaps4]
-  simp only [maxMessageRegisters, maxExtraCaps]
-  have : mi.length ≤ 120 ∧ mi.extraCaps ≤ 3 := ⟨hLen, hCaps⟩
-  simp [this.1, this.2]
+  have hCond : (decide (mi.length ≤ maxMessageRegisters) && decide (mi.extraCaps ≤ maxExtraCaps)
+      && decide (mi.label ≤ maxLabel)) = true := by
+    simp only [Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨⟨hLen, hCaps⟩, hLabel⟩
+  rw [if_pos hCond]
 
 end MessageInfo
 
@@ -1058,8 +1080,13 @@ end MessageInfo
     existing construction sites. Per-syscall argument decode (WS-K-B) extracts
     typed arguments from this array. -/
 structure SyscallDecodeResult where
-  capAddr   : SeLe4n.CPtr
-  msgInfo   : MessageInfo
-  syscallId : SyscallId
-  msgRegs   : Array SeLe4n.RegValue := #[]
+  capAddr      : SeLe4n.CPtr
+  msgInfo      : MessageInfo
+  syscallId    : SyscallId
+  msgRegs      : Array SeLe4n.RegValue := #[]
+  /-- V2-F (M-API-5): Cap receive slot base for IPC cap transfer.
+      In seL4, this is specified by the receiver. Default `Slot.ofNat 0`
+      preserves backward compatibility. Production deployments should
+      extract this from the receiver's IPC buffer or syscall arguments. -/
+  capRecvSlot  : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
   deriving Repr, DecidableEq

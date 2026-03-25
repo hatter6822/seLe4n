@@ -18,13 +18,24 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phase V1 (Rust ABI Hardening) is complete. Phases V2–V8 remain.
+WS-V Phases V1 and V2 are complete. Phases V3–V8 remain.
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phase V1 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V2 COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
 [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md).
+
+- **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).
+  `SyscallId` count grew from 14 to 17: added `notificationSignal` (discriminant 14),
+  `notificationWait` (discriminant 15), `replyRecv` (discriminant 16). Both unchecked
+  (`dispatchWithCap`) and checked (`dispatchWithCapChecked`) dispatch paths wired with
+  enforcement wrappers and delegation theorems. Rust `SyscallId` variants 14–16 added
+  with matching encode/decode and `required_right`. `MessageInfo` label field bounded to
+  20 bits (seL4 convention) in both Lean and Rust (was unbounded/55-bit). Cap transfer
+  slot base made configurable via `capRecvSlot` field (was hardcoded `Slot.ofNat 0`).
+  `SyscallArgDecode.lean` updated with notification/replyRecv decode structs, round-trip
+  theorems, and error exclusivity proofs. Zero sorry/axiom.
 
 - **V1 (Rust ABI Hardening) COMPLETE** (v0.22.0): 12 sub-tasks (V1-A through V1-L).
   Hardened the Rust ABI boundary: u64→u32 truncation guard in `decode_response`
