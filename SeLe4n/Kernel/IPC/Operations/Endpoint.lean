@@ -156,11 +156,15 @@ theorem lookupTcb_preserved_by_storeObject_notification
 **U5-J/U-M29: Wake-path pendingMessage overwrite**: When a waiter is present,
 the wake path creates a badge-only `IpcMessage` and stores it in the waiter's
 `pendingMessage` field via `storeTcbIpcStateAndMessage`. This unconditionally
-overwrites any previous `pendingMessage` value. This is safe because the
-`ipcStateQueueConsistent` invariant guarantees that threads in the
-notification wait queue have `ipcState = .waitingOnNotification` and
-`pendingMessage = none` — a waiting thread cannot have a stale pending
-message from a previous IPC operation. -/
+overwrites any previous `pendingMessage` value. This is safe because:
+1. `notificationWaiterConsistent` guarantees threads in the wait queue have
+   `ipcState = .blockedOnNotification oid` — they entered via `notificationWait`
+   which transitions from `.ready` without modifying `pendingMessage`.
+2. The `storeTcbIpcStateAndMessage` call atomically sets both `ipcState := .ready`
+   AND `pendingMessage := some badgeMsg`, so the overwrite is the intended
+   delivery mechanism, not a loss of prior state.
+No formal `pendingMessage = none` invariant is currently proven for waiting
+threads — the safety argument is structural (entry path analysis). -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
   fun st =>
     match st.objects[notificationId]? with

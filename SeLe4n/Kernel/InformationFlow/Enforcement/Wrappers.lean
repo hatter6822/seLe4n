@@ -458,8 +458,8 @@ def endpointReplyChecked
 -- U5-F/U-M21: Capability-only operation classification
 -- ============================================================================
 
-/-- U5-F/U-M21: The 7 capability-only operations that derive authority entirely
-from capability possession and have no runtime information-flow check.
+/-- U5-F/U-M21: Operations whose **base (unchecked) form** derives authority
+entirely from capability possession and has no runtime information-flow check.
 
 Non-interference for these operations relies on proof soundness: the NI
 proofs in `InformationFlow/Invariant/Operations.lean` demonstrate that
@@ -467,22 +467,26 @@ capability-bounded operations cannot leak information across security
 domains because capability authority already restricts the observable
 effects to the holder's domain.
 
+**Important distinction**: Some of these operations also have policy-gated
+`*Checked` variants (listed in `enforcementBoundary`). The checked dispatch
+path uses the `*Checked` variant; the unchecked dispatch path uses the base
+capability-only form listed here. Both forms are correct — the checked variant
+adds a defense-in-depth `securityFlowsTo` gate that is redundant with
+capability authority but provides auditability.
+
 **Security rationale**: These operations are bounded by the capability system.
 A thread can only invoke these operations through a resolved capability with
 the required access right. The capability itself encodes the authority boundary:
 - CSpace operations modify only the CNode targeted by the capability
 - Lifecycle operations modify only the object targeted by the capability
-- Notification signals only reach the notification object in the capability
-
-Adding a `securityFlowsTo` check would be redundant with the capability authority
-and would not strengthen the security guarantee. -/
+- Notification signals only reach the notification object in the capability -/
 def capabilityOnlyOperations : List String :=
-  [ "cspaceLookupSlot"
-  , "cspaceInsertSlot"
-  , "cspaceDeleteSlot"
-  , "cspaceRevoke"
-  , "cspaceCopy"       -- Note: also has policy-gated checked variant for cross-CNode flow
-  , "cspaceMove"       -- Note: also has policy-gated checked variant for cross-CNode flow
-  , "notificationSignal"  -- Note: also has policy-gated checked variant
+  [ "cspaceLookupSlot"      -- No checked variant (read-like)
+  , "cspaceInsertSlot"      -- No checked variant (single-CNode)
+  , "cspaceDeleteSlot"      -- No checked variant (single-CNode)
+  , "cspaceRevoke"          -- No checked variant (single-CNode)
+  , "cspaceCopy"            -- Also has cspaceCopyChecked for cross-CNode flow
+  , "cspaceMove"            -- Also has cspaceMoveChecked for cross-CNode flow
+  , "notificationSignal"    -- Also has notificationSignalChecked for cross-domain
   ]
 

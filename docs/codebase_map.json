@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-api-dispatch-WZDiC",
-      "commit_sha": "d9d1a1d24a7940bb837ace86875fef64ddc7c9b8",
-      "tree_sha": "8567a02a1918714e1bfea37d67483505d5b57623",
-      "committed_at_utc": "2026-03-25T13:17:05+00:00"
+      "commit_sha": "9bc552ade3e6ebf0ec1dedc4a011e5537c94fea7",
+      "tree_sha": "fd2628bd667f746e5cdb98a2f1666f6d2f7c770b",
+      "committed_at_utc": "2026-03-25T13:35:28+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "da9884b582e7727382830b6504acd5c7bedd24152fa29795d00e0be1d2d44ef0"
+    "source_digest": "a0a75670ae73710ae5f101268a2880d718c5d378f9abe3c46b9cf363107fde6d"
   },
   "summary": {
     "module_count": 111,
@@ -27,7 +27,7 @@
     "version": "0.21.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 101,
-    "production_loc": 64271,
+    "production_loc": 64279,
     "test_files": 10,
     "test_loc": 8322,
     "proved_theorem_lemma_decls": 1907,
@@ -14985,7 +14985,7 @@
         {
           "kind": "def",
           "name": "notificationSignal",
-          "line": 164,
+          "line": 168,
           "called": [
             "Badge",
             "IpcMessage",
@@ -15007,7 +15007,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 211,
+          "line": 215,
           "called": [
             "Badge",
             "Kernel",
@@ -15026,7 +15026,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 255,
+          "line": 259,
           "called": [
             "ObjId",
             "SystemState",
@@ -15044,7 +15044,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 280,
+          "line": 284,
           "called": [
             "Notification",
             "ObjId",
@@ -15062,7 +15062,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 300,
+          "line": 304,
           "called": [
             "SystemState",
             "ThreadId",
@@ -15072,7 +15072,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 307,
+          "line": 311,
           "called": [
             "SystemState",
             "ThreadId",
@@ -15082,7 +15082,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 317,
+          "line": 321,
           "called": [
             "SystemState",
             "ThreadId",
@@ -15098,7 +15098,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 338,
+          "line": 342,
           "called": [
             "Endpoint",
             "ObjId",
@@ -15116,7 +15116,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 358,
+          "line": 362,
           "called": [
             "CNode",
             "ObjId",
@@ -15135,7 +15135,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 378,
+          "line": 382,
           "called": [
             "ObjId",
             "SystemState",
@@ -15153,7 +15153,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 399,
+          "line": 403,
           "called": [
             "CNode",
             "ObjId",
@@ -15173,7 +15173,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 426,
+          "line": 430,
           "called": [
             "Endpoint",
             "ObjId",
@@ -15193,7 +15193,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 453,
+          "line": 457,
           "called": [
             "Notification",
             "ObjId",
@@ -15213,7 +15213,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 482,
+          "line": 486,
           "called": [
             "Notification",
             "ObjId",
@@ -15228,7 +15228,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 498,
+          "line": 502,
           "called": [
             "Badge",
             "Notification",
@@ -15251,7 +15251,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 568,
+          "line": 572,
           "called": [
             "Notification",
             "ObjId",
@@ -16661,7 +16661,7 @@
         {
           "kind": "def",
           "name": "capabilityOnlyOperations",
-          "line": 479,
+          "line": 483,
           "called": []
         }
       ]
