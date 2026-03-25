@@ -52,8 +52,9 @@ The **61 deduplicated MEDIUM findings** cluster around eight themes:
    validation
 
 This workstream plan organizes all actionable findings into **8 phases** (V1–V8)
-with **94 atomic sub-tasks**, explicit dependencies, gate conditions, and scope
-estimates. The plan addresses all 5 HIGH findings, all 61 MEDIUM findings, and
+with **147 atomic sub-tasks** (95 primary tasks expanded into 147 via sub-task
+decomposition of all L/XL complexity items), explicit dependencies, gate
+conditions, and scope estimates. The plan addresses all 5 HIGH findings, all 61 MEDIUM findings, and
 selects 29 LOW findings for inclusion based on security relevance, proof chain
 completeness, and hardware readiness. The remaining LOW/Info findings are
 documented as accepted design decisions or deferred to post-release hardening.
@@ -280,58 +281,155 @@ do not affect Lean proof surface.
 
 ---
 
-### Phase V3: Proof Chain Hardening (13 sub-tasks)
+### Phase V3: Proof Chain Hardening (26 sub-tasks)
 
 **Priority**: Pre-release (proof completeness for first major release)
 **Gate**: `lake build` succeeds; zero `sorry`; `test_full.sh` green
-**Estimated scope**: ~600 lines Lean (proofs)
+**Estimated scope**: ~900 lines Lean (proofs)
 **Depends on**: V2 (new syscalls must be covered by invariant preservation)
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|
-| V3-A | H-RH-1 | Add lemma `invExt_implies_size_lt_capacity` proving `invExt t → t.size < t.capacity` via `loadFactorBounded`. If `loadFactorBounded` is not in `invExt`, add it or add a separate `invExtFull` bundle. | `SeLe4n/Kernel/RobinHood/Invariant/Defs.lean` | M |
-| V3-B | H-RH-1 | Refactor `erase_preserves_invExt` to derive `hSize` from `invExt` via V3-A lemma. Update all call sites to remove redundant hypothesis. | `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` | M |
-| V3-C | H-RAD-1 | Add documentation theorem `uniqueRadixIndices_sufficient` proving that `UniqueRadixIndices` at build time guarantees safe radix tree operations. Verify all `buildCNodeRadix` call sites supply this precondition. | `SeLe4n/Kernel/RadixTree/Bridge.lean` | S |
-| V3-D | M-PRF-1 | Verify CDT acyclicity hypothesis discharge at cross-subsystem layer. If not discharged, add `addEdge_preserves_acyclicity` theorem for `cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`. | `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`, `CrossSubsystem.lean` | L |
-| V3-E | M-PRF-2 | Complete `ipcUnwrapCaps` Grant=true loop composition proof. Expose `ipcUnwrapCapsLoop` sufficiently for inductive proof, or add wrapper lemma. | `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`, `Capability/Invariant/Preservation.lean` | L |
-| V3-F | M-PRF-3 | Add composition-level theorem: all callers of `resolveCapAddress` must perform post-resolution rights checks. Prove via exhaustive dispatch analysis. | `SeLe4n/Kernel/Capability/Operations.lean`, `API.lean` | M |
-| V3-G | M-PRF-5 | Add formal invariant `waitingThreadsPendingMessageNone`: for all threads in `blockedOnReceive`/`blockedOnNotification` state, `tcb.pendingMessage = none`. Prove preservation for all IPC operations. | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `EndpointPreservation.lean`, `NotificationPreservation.lean` | L |
-| V3-H | M-DS-4 | Add documentation or assertion that `buildCNodeRadix` callers supply `hNoPhantom`. If not auto-dischargeable, add `buildCNodeRadix_safe` variant that checks at runtime. | `SeLe4n/Kernel/RadixTree/Bridge.lean` | S |
-| V3-I | L-IPC-1 | Add lemma `notificationWake_pendingMessage_was_none` proving that `pendingMessage` was `none` before wake sets it. | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | S |
-| V3-J | L-IPC-3 | Strengthen `ipcStateQueueConsistent` to check queue membership (not just endpoint existence). Add thread-in-queue predicate. | `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` | M |
-| V3-K | L-LIFE-1 | Add `endpointQueueNoDup` invariant: no thread appears twice in any endpoint queue. Prove preservation for enqueue/dequeue operations. | `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `Structural.lean` | M |
-| V3-L | — | Verify all V3 proofs compile: `lake build SeLe4n.Kernel.RobinHood.Invariant.Preservation`, `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`, `lake build SeLe4n.Kernel.IPC.Invariant.Structural`. | All modified modules | XS |
-| V3-M | — | Run `test_full.sh` to verify invariant surface anchors and full proof chain. | Scripts | XS |
+| V3-A | H-RH-1 | Add lemma `invExt_implies_size_lt_capacity` proving `invExt t → t.size < t.capacity` via `loadFactorBounded`. If `loadFactorBounded` is not in `invExt`, add it or add a separate `invExtFull` bundle. | `RobinHood/Invariant/Defs.lean` | M |
+| V3-B | H-RH-1 | Refactor `erase_preserves_invExt` to derive `hSize` from `invExt` via V3-A lemma. Update all call sites to remove redundant hypothesis. | `RobinHood/Invariant/Preservation.lean` | M |
+| V3-C | H-RAD-1 | Add documentation theorem `uniqueRadixIndices_sufficient` proving that `UniqueRadixIndices` at build time guarantees safe radix tree operations. Verify all `buildCNodeRadix` call sites supply this precondition. | `RadixTree/Bridge.lean` | S |
 
-**Dependencies**: V3-A before V3-B; V3-G before V3-K; V3-D depends on reading `CrossSubsystem.lean`.
+**V3-D expanded: CDT acyclicity hypothesis discharge** (M-PRF-1)
 
----
-
-### Phase V4: Platform & Hardware Fidelity (14 sub-tasks)
-
-**Priority**: Pre-hardware-binding (RPi5 deployment blocker)
-**Gate**: `lake build SeLe4n.Platform.RPi5.Contract`; `lake build SeLe4n.Platform.Boot`; `test_smoke.sh` green
-**Estimated scope**: ~500 lines Lean
-**Depends on**: V1 (Rust ABI stable), V2 (API surface finalized)
+CDT `completeness` and `acyclicity` are externalized as post-state hypotheses
+on 5 CDT-modifying operations. The discharge site is
+`proofLayerInvariantBundle` in `Architecture/Invariant.lean`. This breakdown
+verifies and strengthens that discharge.
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|
-| V4-A | H-BOOT-1 | Extend boot-to-runtime invariant bridge beyond empty config. Prove each builder operation (`registerIrq`, `createObject`) preserves all 9 components of `proofLayerInvariantBundle`. | `SeLe4n/Platform/Boot.lean`, `Model/Builder.lean` | XL |
-| V4-B | M-HW-1 | Add 4-byte alignment check to `mmioRead32`/`mmioWrite32` and 8-byte alignment check to `mmioRead64`/`mmioWrite64`. Return `MmioError.unaligned` on violation. | `SeLe4n/Platform/RPi5/MmioAdapter.lean` | M |
-| V4-C | M-HW-2 | Model write-one-clear (W1C) semantics for GIC registers. Add `MmioWriteKind.writeOneClear` case to `mmioWrite32` that computes `old_val & ~write_val`. | `SeLe4n/Platform/RPi5/MmioAdapter.lean` | M |
-| V4-D | M-HW-3 | Parameterize RPi5 RAM region from `PlatformConfig` rather than hardcoding 4GB. Add `ramSize` field to `BCM2712Config`. | `SeLe4n/Platform/RPi5/Board.lean` | M |
-| V4-E | M-HW-4 | Make non-flush `vspaceMapPage`/`vspaceUnmapPage` variants `private`. Only flush-inclusive versions remain in public API. | `SeLe4n/Kernel/Architecture/VSpace.lean` | S |
-| V4-F | M-HW-5 | Add `MemoryKind` cross-check in `VSpaceMapArgs` decode: device regions cannot receive execute permission. | `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` | S |
-| V4-G | M-HW-6 | Add substantive boot precondition checks to simulation `BootContract`. At minimum: non-empty object store validation, IRQ range check. | `SeLe4n/Platform/Sim/BootContract.lean` | S |
-| V4-H | M-HW-8 | Add validation for truncated DTB `reg` entries: reject entries with fewer than `address-cells + size-cells` bytes. | `SeLe4n/Platform/DeviceTree.lean` | S |
-| V4-I | M-HW-9 | Fix `registerContextStableCheck` to actually use pre-state parameter in comparison, or document why it's intentionally ignored. | `SeLe4n/Platform/RPi5/RuntimeContract.lean` | S |
-| V4-J | M-DEF-8 | Document that internal `vspaceMapPage` default permissions are overridden by all production entry points. Add assertion or comment. | `SeLe4n/Kernel/Architecture/VSpace.lean` | XS |
-| V4-K | L-FND-2 | Add W^X rejection in `PagePermissions.ofNat`: if both write and execute are set, return `readOnly` or error. | `SeLe4n/Model/Object/Structures.lean` | S |
-| V4-L | L-FND-4 | Document `machineWordBounded` invariant scope. Add `isWord64` predicates to `Badge`, `CPtr`, `Slot` flowing to hardware decode. | `SeLe4n/Prelude.lean`, `Architecture/RegisterDecode.lean` | M |
-| V4-M | L-PLAT-1 | Implement basic DTB parsing in `fromDtb` (at minimum: magic number check, version check, structure block traversal for `/memory` node). | `SeLe4n/Platform/DeviceTree.lean` | L |
-| V4-N | L-PLAT-3 | Generalize `extractMemoryRegions` to handle both 1-cell (32-bit) and 2-cell (64-bit) address formats. | `SeLe4n/Platform/DeviceTree.lean` | M |
+| V3-D1 | M-PRF-1 | Audit the discharge path: read `Architecture/Invariant.lean` and trace how `capabilityInvariantBundle` (which includes CDT acyclicity) flows from the composed bundle into each capability operation's preservation proof. Document the chain. | `Architecture/Invariant.lean`, `Capability/Invariant/Preservation.lean` | S |
+| V3-D2 | M-PRF-1 | For `cspaceCopy`: verify the post-state `cdtAcyclicity` hypothesis is fully discharged by the composition layer. If gap found, prove `cspaceCopy_addEdge_preserves_acyclicity` (adding a parent→child edge to an acyclic CDT remains acyclic when the child has no descendants). | `Capability/Invariant/Preservation.lean` | M |
+| V3-D3 | M-PRF-1 | For `cspaceMove`: verify discharge. Move transfers an edge (remove old + add new), so acyclicity should follow from the original acyclicity + edge replacement. Prove `cspaceMove_preserves_cdtAcyclicity` if needed. | `Capability/Invariant/Preservation.lean` | M |
+| V3-D4 | M-PRF-1 | For `cspaceDeleteSlot` and `cspaceRevoke`: verify discharge. Deletion only removes CDT edges/nodes, which trivially preserves acyclicity. Add lemma `removeNode_preserves_acyclicity` if not already present. | `Capability/Invariant/Preservation.lean` | S |
+| V3-D5 | M-PRF-1 | For `ipcTransferSingleCap`: verify the `hCdtPost` hypothesis is discharged at the API dispatch layer when Grant=true cap transfer invokes CDT insertion. | `Capability/Invariant/Preservation.lean`, `API.lean` | S |
 
-**Dependencies**: V4-A is the largest task (XL) and can be parallelized with V4-B through V4-N. V4-E before V4-J.
+**V3-E expanded: ipcUnwrapCaps Grant=true loop composition** (M-PRF-2)
+
+The per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
+is fully proved. The gap is composing it across the private `ipcUnwrapCapsLoop`
+recursive helper, which requires fuel-indexed induction threading `hSlotCapacity`
+and `hCdtPost` through each iteration.
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V3-E1 | M-PRF-2 | Expose `ipcUnwrapCapsLoop` for external reasoning: either remove `private`, add a public wrapper with the same signature, or add a `@[simp]` unfolding lemma that exposes the recursion structure. | `IPC/Operations/CapTransfer.lean` | S |
+| V3-E2 | M-PRF-2 | State the loop invariant formally: define `ipcUnwrapCapsLoop_invariant` as a predicate over `(fuel, idx, nextBase, accResults, st)` asserting `capabilityInvariantBundle st ∧ slotCapacity st receiverRoot nextBase`. | `Capability/Invariant/Preservation.lean` | S |
+| V3-E3 | M-PRF-2 | Prove base case: when `fuel = 0` or `idx ≥ caps.size`, the loop returns unchanged state, trivially preserving the invariant. | `Capability/Invariant/Preservation.lean` | S |
+| V3-E4 | M-PRF-2 | Prove inductive step: given loop invariant holds at step `i`, and `ipcTransferSingleCap` preserves `capabilityInvariantBundle` (the existing per-step theorem), show the invariant holds at step `i+1`. Thread `hCdtPost` through each step. | `Capability/Invariant/Preservation.lean` | M |
+| V3-E5 | M-PRF-2 | Compose: prove `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` by applying the induction lemma from V3-E3/E4 to the full loop. | `Capability/Invariant/Preservation.lean` | M |
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V3-F | M-PRF-3 | Add composition-level theorem: all callers of `resolveCapAddress` perform post-resolution rights checks. Prove via exhaustive dispatch analysis over all 14+ `SyscallId` arms. | `Capability/Operations.lean`, `API.lean` | M |
+
+**V3-G expanded: pendingMessage = none invariant for waiting threads** (M-PRF-5)
+
+The `pendingMessage` field is modified by `storeTcbPendingMessage` and
+`storeTcbIpcStateAndMessage`. The invariant must scope to threads with
+`ipcState ∈ {blockedOnReceive, blockedOnNotification}` — for these threads,
+`pendingMessage` must be `none` (message not yet delivered).
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V3-G1 | M-PRF-5 | Define `waitingThreadsPendingMessageNone` predicate in IPC invariant defs: `∀ tid tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState ∈ {.blockedOnReceive _, .blockedOnNotification _} → tcb.pendingMessage = none`. | `IPC/Invariant/Defs.lean` | S |
+| V3-G2 | M-PRF-5 | Prove preservation for `notificationWait`: trivial — `notificationWait` sets `ipcState := .blockedOnNotification` but does NOT modify `pendingMessage`, so existing `none` is preserved. | `IPC/Invariant/NotificationPreservation.lean` | S |
+| V3-G3 | M-PRF-5 | Prove preservation for `notificationSignal` (wake path): signal sets `pendingMessage := some msg` AND transitions `ipcState := .ready`, so the thread exits the invariant's scope — no violation. | `IPC/Invariant/NotificationPreservation.lean` | S |
+| V3-G4 | M-PRF-5 | Prove preservation for `endpointSend`/`endpointReceive`: verify that blocking transitions set `ipcState` without touching `pendingMessage`, and wake transitions clear `ipcState` to `.ready` simultaneously with message delivery. | `IPC/Invariant/EndpointPreservation.lean` | M |
+| V3-G5 | M-PRF-5 | Prove preservation for `endpointCall`/`endpointReplyRecv`: compound operations must maintain the invariant through both the send and receive legs. | `IPC/Invariant/CallReplyRecv.lean` | M |
+| V3-G6 | M-PRF-5 | Integrate `waitingThreadsPendingMessageNone` into `coreIpcInvariantBundle`. Update all bundle-level preservation theorems to include the new component. | `IPC/Invariant/Defs.lean`, `Structural.lean` | S |
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V3-H | M-DS-4 | Add documentation or assertion that `buildCNodeRadix` callers supply `hNoPhantom`. If not auto-dischargeable, add `buildCNodeRadix_safe` variant that checks at runtime. | `RadixTree/Bridge.lean` | S |
+| V3-I | L-IPC-1 | Add lemma `notificationWake_pendingMessage_was_none` proving that `pendingMessage` was `none` before wake sets it. | `IPC/Operations/Endpoint.lean` | S |
+| V3-J | L-IPC-3 | Strengthen `ipcStateQueueConsistent` to check queue membership (not just endpoint existence). Add thread-in-queue predicate. | `IPC/DualQueue/Transport.lean` | M |
+| V3-K | L-LIFE-1 | Add `endpointQueueNoDup` invariant: no thread appears twice in any endpoint queue. Prove preservation for enqueue/dequeue operations. | `IPC/Invariant/Defs.lean`, `Structural.lean` | M |
+| V3-L | — | Verify all V3 proofs compile: `lake build` each modified module individually. | All modified modules | XS |
+| V3-M | — | Run `test_full.sh` to verify invariant surface anchors and full proof chain. | Scripts | XS |
+
+**Dependencies**: V3-A → V3-B; V3-D1 → V3-D2/D3/D4/D5; V3-E1 → V3-E2 → V3-E3 → V3-E4 → V3-E5; V3-G1 → V3-G2/G3/G4/G5 → V3-G6; V3-G6 → V3-K.
+
+---
+
+### Phase V4: Platform & Hardware Fidelity (26 sub-tasks)
+
+**Priority**: Pre-hardware-binding (RPi5 deployment blocker)
+**Gate**: `lake build SeLe4n.Platform.RPi5.Contract`; `lake build SeLe4n.Platform.Boot`; `test_smoke.sh` green
+**Estimated scope**: ~800 lines Lean
+**Depends on**: V1 (Rust ABI stable), V2 (API surface finalized)
+
+**V4-A expanded: Boot-to-runtime invariant bridge for non-empty configs** (H-BOOT-1)
+
+The existing bridge is proven for empty `PlatformConfig` only. The 9-component
+`proofLayerInvariantBundle` comprises: (1) schedulerInvariantBundleFull,
+(2) capabilityInvariantBundle, (3) coreIpcInvariantBundle,
+(4) ipcSchedulerCouplingInvariantBundle, (5) lifecycleInvariantBundle,
+(6) serviceLifecycleCapabilityInvariantBundle, (7) vspaceInvariantBundle,
+(8) crossSubsystemInvariant, (9) tlbConsistent. Builder operations currently
+preserve only 4 structural invariants (allTablesInvExt, perObjectSlots,
+perObjectMappings, lifecycleMetadata). The 7 builder operations are:
+`registerIrq`, `registerService`, `addServiceGraph`, `createObject`,
+`deleteObject`, `insertCap`, `mapPage`.
+
+Many of the 5 remaining invariant components will be **vacuously preserved**
+by most builder operations (e.g., `registerIrq` does not touch scheduler or
+IPC state, so scheduler/IPC invariants are trivially preserved). The strategy
+is to prove non-interaction (frame) lemmas first, then handle the few
+substantive cases.
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V4-A1 | H-BOOT-1 | Enumerate which builder operations touch which state fields. Create a 7×9 interaction matrix (builder op × invariant component). Mark each cell as "vacuous" (op doesn't touch relevant fields) or "substantive" (proof needed). | `Boot.lean`, `Builder.lean` | S |
+| V4-A2 | H-BOOT-1 | Prove frame lemma: `registerIrq` only modifies `st.irqHandlers` — all 9 invariant components that don't read `irqHandlers` are trivially preserved. Expected: 7-8 vacuous, 1-2 substantive (crossSubsystem: `registryEndpointValid` may read IRQ table). | `Boot.lean` | M |
+| V4-A3 | H-BOOT-1 | Prove frame lemma: `registerService` only modifies `st.services` — scheduler, capability, IPC, VSpace invariants are vacuously preserved. Prove `serviceGraphInvariant` preservation (substantive: new registration must not create cycles). | `Boot.lean`, `Service/Invariant/Acyclicity.lean` | M |
+| V4-A4 | H-BOOT-1 | Prove frame lemma: `createObject` modifies `st.objects` + lifecycle metadata. Most scheduler/IPC invariants are vacuous for a fresh object with no queue membership. Prove `allTablesInvExt` for the new object's slots (already in 4 structural). Extend to capabilityInvariantBundle (empty CNode has trivial CDT). | `Boot.lean`, `Builder.lean` | M |
+| V4-A5 | H-BOOT-1 | Prove frame lemma: `insertCap` modifies a CNode's slot table. Prove `capabilityInvariantBundle` preservation (substantive: slot uniqueness, CDT consistency for new derivation). | `Boot.lean`, `Capability/Invariant/Preservation.lean` | M |
+| V4-A6 | H-BOOT-1 | Prove frame lemma: `mapPage` modifies a VSpaceRoot's mappings. Prove `vspaceInvariantBundle` preservation (substantive: non-overlap, ASID consistency). | `Boot.lean`, `Architecture/VSpaceInvariant.lean` | M |
+| V4-A7 | H-BOOT-1 | Prove `tlbConsistent` preservation: all builder operations operate on the abstract state only; TLB is untouched during boot. Single frame lemma for all 7 operations. | `Boot.lean` | S |
+| V4-A8 | H-BOOT-1 | Compose all per-operation proofs into `bootFromPlatform_proofLayerInvariantBundle_general`: for any well-formed `PlatformConfig`, the post-boot state satisfies all 9 components. Chain the per-operation frame lemmas through the boot sequence fold. | `Boot.lean` | M |
+| V4-A9 | H-BOOT-1 | Extend `bootToRuntime_invariantBridge` to accept general configs: compose V4-A8 with the existing freeze-preserves-invariants proof. | `Boot.lean` | S |
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V4-B | M-HW-1 | Add 4-byte alignment check to `mmioRead32`/`mmioWrite32` and 8-byte alignment check to `mmioRead64`/`mmioWrite64`. Return `MmioError.unaligned` on violation. | `RPi5/MmioAdapter.lean` | M |
+| V4-C | M-HW-2 | Model write-one-clear (W1C) semantics for GIC registers. Add `MmioWriteKind.writeOneClear` case to `mmioWrite32` that computes `old_val & ~write_val`. | `RPi5/MmioAdapter.lean` | M |
+| V4-D | M-HW-3 | Parameterize RPi5 RAM region from `PlatformConfig` rather than hardcoding 4GB. Add `ramSize` field to `BCM2712Config`. | `RPi5/Board.lean` | M |
+| V4-E | M-HW-4 | Make non-flush `vspaceMapPage`/`vspaceUnmapPage` variants `private`. Only flush-inclusive versions remain in public API. | `Architecture/VSpace.lean` | S |
+| V4-F | M-HW-5 | Add `MemoryKind` cross-check in `VSpaceMapArgs` decode: device regions cannot receive execute permission. | `Architecture/SyscallArgDecode.lean` | S |
+| V4-G | M-HW-6 | Add substantive boot precondition checks to simulation `BootContract`. At minimum: non-empty object store validation, IRQ range check. | `Sim/BootContract.lean` | S |
+| V4-H | M-HW-8 | Add validation for truncated DTB `reg` entries: reject entries with fewer than `address-cells + size-cells` bytes. | `DeviceTree.lean` | S |
+| V4-I | M-HW-9 | Fix `registerContextStableCheck` to actually use pre-state parameter in comparison, or document why it's intentionally ignored. | `RPi5/RuntimeContract.lean` | S |
+| V4-J | M-DEF-8 | Document that internal `vspaceMapPage` default permissions are overridden by all production entry points. Add assertion or comment. | `Architecture/VSpace.lean` | XS |
+| V4-K | L-FND-2 | Add W^X rejection in `PagePermissions.ofNat`: if both write and execute are set, return `readOnly` or error. | `Object/Structures.lean` | S |
+| V4-L | L-FND-4 | Document `machineWordBounded` invariant scope. Add `isWord64` predicates to `Badge`, `CPtr`, `Slot` flowing to hardware decode. | `Prelude.lean`, `RegisterDecode.lean` | M |
+
+**V4-M expanded: DTB parsing implementation** (L-PLAT-1)
+
+The file already contains substantial infrastructure: `parseFdtHeader`,
+`readBE32`/`readBE64`, `extractMemoryRegions`, FDT token constants, and
+`fromDtbWithRegions` (a partial parser that accepts pre-extracted memory
+regions). The missing piece is FDT structure block traversal to find the
+`/memory` node and extract its `reg` property automatically.
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V4-M1 | L-PLAT-1 | Implement `readCString`: read a null-terminated string from a `ByteArray` at a given offset, returning the string and the 4-byte-aligned offset past it. | `DeviceTree.lean` | S |
+| V4-M2 | L-PLAT-1 | Implement `lookupFdtString`: given string table offset `offDtStrings` and a property's `nameoff`, read the property name from the DTB string table using `readCString`. | `DeviceTree.lean` | S |
+| V4-M3 | L-PLAT-1 | Implement `findMemoryRegProperty`: fuel-bounded traversal of the FDT structure block. Iterate tokens (`FDT_BEGIN_NODE`, `FDT_PROP`, `FDT_END_NODE`, `FDT_NOP`, `FDT_END`), track node depth, detect the `/memory` node by name, and return the `reg` property's raw bytes when found. | `DeviceTree.lean` | M |
+| V4-M4 | L-PLAT-1 | Wire `findMemoryRegProperty` into `fromDtb`: call `parseAndValidateFdtHeader`, then `findMemoryRegProperty`, then `extractMemoryRegions`, then `fromDtbWithRegions`. Replace the `none` stub with the full pipeline. | `DeviceTree.lean` | S |
+| V4-M5 | L-PLAT-1 | Add correctness theorem `parseFdtHeader_fromDtb_some`: if a blob has valid magic and version, `fromDtb` returns `some dt` (not `none`). Add `fromDtb_memoryRegions_nonempty` if `/memory` node is present. | `DeviceTree.lean` | S |
+
+| ID | Finding | Task | Files | Scope |
+|----|---------|------|-------|-------|
+| V4-N | L-PLAT-3 | Generalize `extractMemoryRegions` to handle both 1-cell (32-bit) and 2-cell (64-bit) address formats. Accept `addressCells`/`sizeCells` parameters. | `DeviceTree.lean` | M |
+
+**Dependencies**: V4-A1 first (produces interaction matrix guiding all V4-A2–A9). V4-A2–A7 can parallelize. V4-A8 requires all of V4-A2–A7. V4-M1 → V4-M2 → V4-M3 → V4-M4 → V4-M5. V4-E before V4-J.
 
 ---
 
@@ -365,16 +463,21 @@ do not affect Lean proof surface.
 
 ---
 
-### Phase V6: Information Flow & Cross-Subsystem (12 sub-tasks)
+### Phase V6: Information Flow & Cross-Subsystem (20 sub-tasks)
 
 **Priority**: Pre-release (security property completeness)
 **Gate**: `lake build SeLe4n.Kernel.InformationFlow.Invariant.Composition`; `lake build SeLe4n.Kernel.CrossSubsystem`; `test_full.sh` green
-**Estimated scope**: ~500 lines Lean
+**Estimated scope**: ~800 lines Lean (expanded from ~500 with sub-task decomposition)
 **Depends on**: V3 (proof chain), V5 (defensive patterns)
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|
-| V6-A | M-PRF-4 | Formalize cross-subsystem field-disjointness. Add theorem `subsystemFieldDisjoint` proving each subsystem's invariant reads disjoint state fields. | `SeLe4n/Kernel/CrossSubsystem.lean` | L |
+| V6-A | M-PRF-4 | **Formalize cross-subsystem field-disjointness** (5 sub-tasks below). | `SeLe4n/Kernel/CrossSubsystem.lean` | L |
+| V6-A1 | | Define `SubsystemFieldSet` structure mapping each of the 5 `crossSubsystemInvariant` predicates (`schedulerCapabilityCoherence`, `ipcSchedulerCoherence`, `serviceLifecycleCapabilityCoherence`, `vspaceConsistency`, `lifecycleIpcConsistency`) to its read-set of `KernelState` fields. Express as `Finset (String)` or accessor-level predicate. | `CrossSubsystem.lean` | S |
+| V6-A2 | | Prove `schedulerCapabilityCoherence_fields_disjoint`: the field set read by scheduler-capability coherence is disjoint from IPC-scheduler coherence. This is the first of 10 pairwise disjointness proofs (C(5,2)=10 pairs). | `CrossSubsystem.lean` | M |
+| V6-A3 | | Prove remaining 9 pairwise disjointness theorems: `ipcScheduler_vs_serviceLifecycle`, `ipcScheduler_vs_vspace`, `ipcScheduler_vs_lifecycleIpc`, `schedulerCap_vs_serviceLifecycle`, `schedulerCap_vs_vspace`, `schedulerCap_vs_lifecycleIpc`, `serviceLifecycle_vs_vspace`, `serviceLifecycle_vs_lifecycleIpc`, `vspace_vs_lifecycleIpc`. Many will be trivially disjoint (different object types); batch those with shared proof strategy. | `CrossSubsystem.lean` | M |
+| V6-A4 | | Replace informal comment block (lines 108-111) with `subsystemFieldDisjoint` composition theorem: if all 10 pairwise disjointness theorems hold, then `crossSubsystemInvariant` predicates are independently preservable. | `CrossSubsystem.lean` | S |
+| V6-A5 | | Add `crossSubsystem_frame_lemma`: for any operation `op` that only modifies fields in subsystem S's field set, all predicates for subsystems ≠ S are preserved. This enables per-subsystem proof obligations in V3/V4. | `CrossSubsystem.lean` | M |
 | V6-B | M-PRF-6 | Prove `serviceCountBounded` preservation across lifecycle retype and IPC endpoint operations. | `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean`, `CrossSubsystem.lean` | M |
 | V6-C | M-IF-1 | Add comprehensive documentation for non-standard integrity flow direction. Add theorem `integrityFlowsTo_is_not_biba` as explicit documentation anchor. | `SeLe4n/Kernel/InformationFlow/Policy.lean` | S |
 | V6-D | M-IF-2 | Document NI deployment requirements: domain-separation hypotheses must be discharged by system integrator's labeling context. Add `LabelingContextValid` predicate. | `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` | M |
@@ -382,26 +485,42 @@ do not affect Lean proof surface.
 | V6-F | M-IF-4 | Promote enforcement boundary from `List` to type-level guarantee. Add `EnforcementBoundaryComplete` theorem proving all `KernelOperation` constructors are covered. | `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` | M |
 | V6-G | M-IF-5 | Add `endpointPolicyRestricted` well-formedness requirement: per-endpoint policy must be a subset of global policy. Add theorem. | `SeLe4n/Kernel/InformationFlow/Policy.lean` | M |
 | V6-H | M-IF-6 | Add declassification audit trail: `DeclassificationEvent` structure recording source, target, authorization, timestamp. Thread through enforcement wrappers. | `SeLe4n/Kernel/InformationFlow/Policy.lean`, `Enforcement/Wrappers.lean` | M |
-| V6-I | M-IF-7 | Strengthen `niStepCoverage`: replace `syscallDecodeError` universal witness with per-operation specific NI step constructors. Prove operational correspondence. | `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` | L |
+| V6-I | M-IF-7 | **Strengthen `niStepCoverage`** (5 sub-tasks below). The current proof uses `syscallDecodeError` as a universal witness for all 32 `NonInterferenceStep` constructors. Replace with per-operation specific witnesses. | `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` | L |
+| V6-I1 | | **Batch 1 — Scheduler operations** (6 constructors): `niSchedule`, `niYield`, `niTimerTick`, `niDomainSwitch`, `niIdleSchedule`, `niPreempt`. These are information-flow simple (no cross-domain data transfer). Prove each has a specific NI step witness without `syscallDecodeError`. | `Composition.lean` | M |
+| V6-I2 | | **Batch 2 — IPC operations** (8 constructors): `niSend`, `niRecv`, `niCall`, `niReplyRecv`, `niNotifSignal`, `niNotifWait`, `niReply`, `niNBRecv`. These require label-check witnesses showing data flows respect policy. | `Composition.lean` | M |
+| V6-I3 | | **Batch 3 — Capability/lifecycle operations** (10 constructors): `niCSpaceInsert`, `niCSpaceDelete`, `niCSpaceMove`, `niCSpaceCopy`, `niRetype`, `niRevoke`, `niCNodeMint`, `niCNodeMutate`, `niObjectDelete`, `niUntyped`. Prove authority-bounded NI steps. | `Composition.lean` | M |
+| V6-I4 | | **Batch 4 — Remaining operations** (8 constructors): `niVSpaceMap`, `niVSpaceUnmap`, `niServiceRegister`, `niServiceLookup`, `niIRQHandler`, `niIRQControl`, `niDebug`, `niFault`. Prove operation-specific witnesses. | `Composition.lean` | M |
+| V6-I5 | | **Composition**: Prove `niStepCoverage_operational` theorem stating every `KernelOperation` constructor maps to at least one specific (non-`syscallDecodeError`) `NonInterferenceStep` constructor. Remove or deprecate the `syscallDecodeError` universal fallback path. | `Composition.lean` | S |
 | V6-J | L-IF-1 | Document scheduling covert channel as accepted. Add `acceptedCovertChannel_scheduling` theorem establishing explicit bound. | `SeLe4n/Kernel/InformationFlow/Projection.lean` | S |
 | V6-K | L-IF-2 | Add `defaultLabelingContext_insecure` warning theorem. Document that production deployments must override with domain-specific labeling. | `SeLe4n/Kernel/InformationFlow/Policy.lean` | S |
 | V6-L | L-IF-3 | Update `enforcementBoundaryExtended` to include all 20 current entries (was 18). Add completeness assertion. | `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` | S |
 
-**Dependencies**: V6-A is the critical path (largest, enables V6-B). V6-E may affect V6-I.
+**Dependencies**: V6-A1→A2→A3→A4→A5 is the critical sub-chain (enables V6-B frame proofs). V6-I1→I2→I3→I4→I5 is ordered by increasing complexity. V6-E may affect V6-I (projection changes).
 
 ---
 
-### Phase V7: Performance & Data Structure Optimization (10 sub-tasks)
+### Phase V7: Performance & Data Structure Optimization (19 sub-tasks)
 
 **Priority**: Pre-hardware (performance-sensitive for RPi5 benchmarking)
 **Gate**: `lake build` succeeds; zero `sorry`; `test_full.sh` green; heartbeat budgets reduced
-**Estimated scope**: ~400 lines Lean
+**Estimated scope**: ~600 lines Lean (expanded from ~400 with intermediate lemma extraction)
 **Depends on**: V3 (RobinHood proof changes)
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|
-| V7-A | M-DS-1 | Refactor `filter_fold_present` proof in Bridge.lean to reduce heartbeat budget from 3.2M. Split into intermediate lemmas; target ≤ 800K heartbeats. | `SeLe4n/Kernel/RobinHood/Bridge.lean` | L |
-| V7-B | M-DS-2 | Refactor high-heartbeat proofs in Preservation.lean. Split large omega/simp blocks into named intermediate steps. Target ≤ 400K heartbeats per theorem. | `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` | L |
+| V7-A | M-DS-1 | **Refactor `filter_fold_present` proof** (5 sub-tasks below). Current budget: 3.2M heartbeats at line 585 of Bridge.lean. Target: ≤ 800K. | `SeLe4n/Kernel/RobinHood/Bridge.lean` | L |
+| V7-A1 | | Extract `filter_fold_present_key_match` lemma: for any entry `(k, v)` in `table.filter p`, if `p (k, v) = true` then `table.get? k = some v`. This isolates the key-match reasoning from the fold accumulation. | `Bridge.lean` | S |
+| V7-A2 | | Extract `accumulation_invariant` lemma: the fold accumulator maintains a well-formedness property at each step — specifically that accumulated entries are a subset of filtered entries and preserve insertion order. | `Bridge.lean` | M |
+| V7-A3 | | Extract `insertNoResize_size_chain` lemma: chaining multiple `insertNoResize` calls preserves table size bounds when the keys are already present (replacement path) or fresh (growth path). | `Bridge.lean` | S |
+| V7-A4 | | Extract `position_predicate` lemma: after `filter`, the surviving entries maintain valid probe-chain positions within the original table's capacity. | `Bridge.lean` | M |
+| V7-A5 | | Rewrite `filter_fold_present` using V7-A1 through V7-A4 as named intermediate steps. Remove the monolithic `simp`/`omega` block. Verify heartbeat budget ≤ 800K with `set_option maxHeartbeats 800000`. | `Bridge.lean` | S |
+| V7-B | M-DS-2 | **Refactor high-heartbeat Preservation.lean proofs** (6 sub-tasks below). Two proofs at 800K heartbeats each: `insertLoop_preserves_noDupKeys` and `insertLoop_preserves_pcd` (probeChainDominant). | `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` | L |
+| V7-B1 | | Split `insertLoop_preserves_noDupKeys` base case: extract the proof for the non-recursive termination branch (when `dist ≤ existingDist`) into a named lemma `insertLoop_noDupKeys_base`. | `Preservation.lean` | S |
+| V7-B2 | | Split `insertLoop_preserves_noDupKeys` recursive case: extract the swap-and-continue branch into `insertLoop_noDupKeys_recurse`, using `noDupKeys_base` as a dependency. | `Preservation.lean` | M |
+| V7-B3 | | Extract `distance_arithmetic_noDup` lemma: the probe distance calculation during Robin Hood insertion preserves key uniqueness because swapped entries maintain their original keys. | `Preservation.lean` | S |
+| V7-B4 | | Split `insertLoop_preserves_pcd` base case: extract `insertLoop_pcd_base` for the termination branch where `dist ≤ existingDist` and the displaced entry is placed at the current position. | `Preservation.lean` | S |
+| V7-B5 | | Split `insertLoop_preserves_pcd` recursive case: extract `insertLoop_pcd_recurse` for the swap-and-continue branch. The key insight is that the displaced entry's new distance is ≤ its probe chain distance. | `Preservation.lean` | M |
+| V7-B6 | | Rewrite both `insertLoop_preserves_noDupKeys` and `insertLoop_preserves_pcd` using the extracted lemmas. Target ≤ 400K heartbeats each. Verify with `set_option maxHeartbeats 400000`. | `Preservation.lean` | S |
 | V7-C | M-DS-3 | Make `LawfulBEq` an explicit API-level requirement for `RHTable`. Add `[LawfulBEq α]` to public operation signatures (not just theorem signatures). Document in module docstring. | `SeLe4n/Kernel/RobinHood/Core.lean` | S |
 | V7-D | M-DS-5 | Prove general `filter_preserves_key` theorem for arbitrary predicates on `RHTable`. Remove need for per-predicate proof instances. | `SeLe4n/Kernel/RobinHood/Bridge.lean` | M |
 | V7-E | M-RS-6 | Replace `native_decide` in `RegisterFile.not_lawfulBEq` with `decide` if feasible. If not feasible (timeout), document TCB impact and add tracking comment. | `SeLe4n/Machine.lean` | S |
@@ -411,29 +530,42 @@ do not affect Lean proof surface.
 | V7-I | L-PLAT-2 | Optimize `irqKeysNoDup`/`objIdKeysNoDup` from O(n²) to O(n log n) using sorted comparison or HashSet. | `SeLe4n/Platform/Boot.lean` | S |
 | V7-J | L-SCH-3 | Document `RunQueue.wellFormed` as external predicate design rationale. Consider adding `RunQueue.mk_checked` constructor for validated creation. | `SeLe4n/Kernel/Scheduler/RunQueue.lean` | S |
 
-**Dependencies**: V7-A/V7-B depend on V3-A/V3-B (RobinHood invariant changes). V7-G independent.
+**Dependencies**: V7-A1→A2→A3→A4→A5 is sequential (each lemma feeds the next). V7-B1→B2→B3 and V7-B4→B5 are parallel sub-chains merging at V7-B6. V7-A/V7-B depend on V3-A/V3-B (RobinHood invariant changes). V7-G independent.
 
 ---
 
-### Phase V8: Test Coverage & Documentation (8 sub-tasks)
+### Phase V8: Test Coverage & Documentation (19 sub-tasks)
 
 **Priority**: Pre-release (quality assurance)
 **Gate**: `test_full.sh` green; fixture updated; all new tests pass
-**Estimated scope**: ~500 lines Lean (test code), ~100 lines documentation
+**Estimated scope**: ~800 lines Lean (test code, expanded from ~500 with model changes), ~100 lines documentation
 **Depends on**: V2 (new syscalls to test), V5 (defensive changes to validate)
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|
-| V8-A | M-TST-1 | Add end-to-end test of `syscallEntryChecked` pipeline: register decode → capability lookup → IF check → dispatch → result encode. | `SeLe4n/Testing/MainTraceHarness.lean` | L |
+| V8-A | M-TST-1 | **Add end-to-end `syscallEntryChecked` pipeline test** (6 sub-tasks below). Tests the full path from raw registers through dispatch to result encoding. | `SeLe4n/Testing/MainTraceHarness.lean` | L |
+| V8-A1 | | **Fixture initialization**: Create a test `KernelState` with pre-populated CSpace (3 capabilities: endpoint, notification, CNode), a valid thread with registers set to encode a Send syscall, and the information flow policy permitting the send. | `MainTraceHarness.lean` | S |
+| V8-A2 | | **Register encoding test**: Verify `RegisterDecode.decodeSyscall` correctly extracts syscall number, CPtr, and message registers from the fixture's raw register file. Assert decoded values match expected typed identifiers. | `MainTraceHarness.lean` | S |
+| V8-A3 | | **Argument decode test**: Verify `SyscallArgDecode` produces the correct typed argument struct (e.g., `SendArgs` with endpoint CPtr, message info, badge) from the decoded registers. | `MainTraceHarness.lean` | S |
+| V8-A4 | | **Dispatch test**: Call `dispatchWithCapChecked` with the decoded arguments and verify it performs capability lookup, information flow check, and dispatches to the correct IPC operation. Assert the returned `KernelResult` is `.ok`. | `MainTraceHarness.lean` | M |
+| V8-A5 | | **Invariant preservation test**: Verify that `proofLayerInvariantBundle` holds on the post-dispatch state. This confirms the full checked pipeline preserves all 9 invariant components. | `MainTraceHarness.lean` | S |
+| V8-A6 | | **Trace equivalence test**: Run the same operation through both `dispatchWithCap` (unchecked) and `dispatchWithCapChecked` (checked) and verify the resulting states are identical. This validates the checked path adds no behavioral divergence. | `MainTraceHarness.lean` | S |
 | V8-B | M-TST-2 | Add `cspaceMove` end-to-end test: register decode → move operation → verify source empty, dest populated. | `SeLe4n/Testing/MainTraceHarness.lean` | M |
 | V8-C | M-TST-3 | Fix inter-transition invariant checks to validate mutated state (not original `st1`). Add post-mutation checks after each operation in trace. | `SeLe4n/Testing/MainTraceHarness.lean` | M |
 | V8-D | M-TST-4 | Fix `buildValidated` Check 8 to account for dequeue-on-dispatch semantics. Current thread may not be in run queue after `schedule`. | `SeLe4n/Testing/StateBuilder.lean` | S |
 | V8-E | M-TST-5 | Replace `partial` in `intrusiveQueueReachable` with explicit fuel parameter and `Decidable` instance. Add termination proof. | `SeLe4n/Testing/InvariantChecks.lean` | S |
 | V8-F | M-TST-6 | Add fixture drift detection: compute hash of `MainTraceHarness.lean` semantic operations and compare against recorded hash in expected fixture. | `tests/fixtures/`, `scripts/test_smoke.sh` | S |
-| V8-G | M-TST-9 | Add explicit `ThreadState` enum to model (Running, Ready, BlockedSend, BlockedRecv, BlockedCall, BlockedNotif, Inactive). Refactor queue membership inference to use explicit state field. | `SeLe4n/Model/Object/Types.lean`, `Scheduler/Invariant.lean` | L |
+| V8-G | M-TST-9 | **Add explicit `ThreadState` enum to model** (7 sub-tasks below). This is a model-level change with wide blast radius — schedule last in V8. Currently thread state is inferred from queue membership and `ThreadIpcState` (6 variants). | `SeLe4n/Model/Object/Types.lean`, multiple files | L |
+| V8-G1 | | Define `ThreadState` inductive with 7 constructors: `Running`, `Ready`, `BlockedSend`, `BlockedRecv`, `BlockedCall`, `BlockedNotif`, `Inactive`. Add `threadState : ThreadState` field to `TCB` structure. | `Object/Types.lean` | S |
+| V8-G2 | | Add `threadState_consistent` predicate: `ThreadState` field matches the inferred state from queue membership and `ThreadIpcState`. Add to `schedulerInvariant` as a new conjunct. | `Scheduler/Invariant.lean` | M |
+| V8-G3 | | Update scheduler operations (`schedule`, `handleYield`, `timerTick`) to maintain `threadState` field on state transitions. Each operation that moves a thread between queues must also update the enum. | `Scheduler/Operations/Core.lean` | M |
+| V8-G4 | | Update IPC operations (`sendIpc`, `recvIpc`, `callIpc`, `replyRecvIpc`, `notifSignal`, `notifWait`) to set appropriate `BlockedSend`/`BlockedRecv`/`BlockedCall`/`BlockedNotif` state on blocking, and `Ready` on unblocking. | `IPC/Operations/Endpoint.lean` | M |
+| V8-G5 | | Update lifecycle operations (`retypeObject`, `deleteObject`) to set `Inactive` on creation and handle state cleanup on deletion. | `Lifecycle/Operations.lean` | S |
+| V8-G6 | | Prove `threadState_consistent_preserved` for all operations updated in V8-G3/G4/G5. This requires showing the explicit enum always matches the inferred state. | `Scheduler/Operations/Preservation.lean` | M |
+| V8-G7 | | Refactor test harness `InvariantChecks.lean` to use `threadState` field directly instead of queue-membership inference for thread state queries. Remove or deprecate `intrusiveQueueReachable` (partially addressed by V8-E). Update expected test fixture if trace output changes. | `Testing/InvariantChecks.lean`, `tests/fixtures/` | S |
 | V8-H | M-API-4 | Reduce dispatch code duplication: extract common dispatch logic into shared helper used by both `dispatchWithCap` and `dispatchWithCapChecked`. Add structural equivalence theorem for shared path. | `SeLe4n/Kernel/API.lean` | M |
 
-**Dependencies**: V8-A depends on V2 (notification syscalls). V8-G is a model-level change that may affect V3/V5 proofs — schedule last within V8.
+**Dependencies**: V8-A1→A2→A3→A4→A5→A6 is sequential (each test stage builds on prior fixture). V8-G1→G2 then G3/G4/G5 in parallel, merging at G6→G7. V8-A depends on V2 (notification syscalls). V8-G is a model-level change that may affect V3/V5 proofs — schedule last within V8.
 
 ---
 
@@ -473,13 +605,13 @@ V1 (Rust ABI)
 |-------|-----------|------------|---------------|
 | V1 | 12 | — | — |
 | V2 | 9 | V1 | V4 |
-| V3 | 13 | V2 | V4, V5 |
-| V4 | 14 | V1 | V2, V3, V5 |
+| V3 | 26 | V2 | V4, V5 |
+| V4 | 26 | V1 | V2, V3, V5 |
 | V5 | 16 | V2, V3 | V4, V7 |
-| V6 | 12 | V3, V5 | V7, V8 |
-| V7 | 10 | V3 (partial) | V5, V6, V8 |
-| V8 | 8 | V2, V5 | V6, V7 |
-| **Total** | **94** | | |
+| V6 | 20 | V3, V5 | V7, V8 |
+| V7 | 19 | V3 (partial) | V5, V6, V8 |
+| V8 | 19 | V2, V5 | V6, V7 |
+| **Total** | **147** | | |
 
 ---
 
@@ -588,9 +720,9 @@ mechanisms. Each is documented here with rationale for acceptance.
 | V3-E (ipcUnwrapCaps loop) requires exposing private internal | Medium | May need Lean `@[private]` removal or wrapper pattern |
 | V4-A (boot invariant bridge) is XL scope across 9 invariant components | High | Decompose into per-builder-operation sub-proofs; parallelize |
 | V6-A (cross-subsystem formalization) may reveal actual interference | High | If interference found, it becomes a Critical finding requiring immediate remediation |
-| V6-I (niStepCoverage strengthening) touches 32 constructors | Medium | Incremental: prove 5-8 constructors per sub-task |
+| V6-I (niStepCoverage strengthening) touches 32 constructors | Medium | Decomposed into 4 batches (V6-I1–I4) of 6-10 constructors each; V6-I5 composes |
 | V7-A/V7-B (heartbeat reduction) may not be achievable for all proofs | Low | Set target budgets; document remaining high-heartbeat proofs with justification |
-| V8-G (explicit ThreadState) is a model-level change with wide blast radius | High | Schedule last in V8; run full test suite after; consider as optional if time-constrained |
+| V8-G (explicit ThreadState) is a model-level change with wide blast radius | High | Decomposed into 7 sub-tasks (V8-G1–G7); G3/G4/G5 parallelizable; schedule last in V8; run full test suite after each sub-task |
 
 ### 8.2 Dependency Risks
 
@@ -652,7 +784,7 @@ one of: a WS-V sub-task, an accepted finding (Section 6), or an exclusion.
 
 | | Remediation | Accepted | Excluded | Total |
 |--|-------------|----------|----------|-------|
-| Unique findings | **94 sub-tasks** | **42** | **~245 Info** | **~381** |
+| Unique findings | **95 → 147 sub-tasks** | **42** | **~245 Info** | **~381** |
 | Finding severity | 5 HIGH, 61 MED, 29 LOW | 13+10+11 LOW | Info only | |
 
 ---
