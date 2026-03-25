@@ -92,6 +92,22 @@ instance : Membership ThreadId RunQueue where
 instance (tid : ThreadId) (rq : RunQueue) : Decidable (tid ∈ rq) :=
   show Decidable (rq.contains tid = true) from inferInstance
 
+/-- U8-D/U-L26: Recompute the maximum priority by folding over all priority
+    buckets. Complexity is O(p) where p = number of distinct priority levels
+    currently in the run queue. This is only called on `remove` when the
+    removed thread was the last member of the current max-priority bucket.
+
+    **Design rationale:**
+    - O(p) is acceptable because seL4 (and seLe4n) supports at most 256
+      priority levels. In practice, active priority levels are far fewer.
+    - An alternative O(1) approach (max-heap or secondary index) would add
+      structural complexity disproportionate to the benefit for ≤256 entries.
+    - **Starvation freedom**: This scheduler is a strict fixed-priority
+      preemptive scheduler, matching seL4 semantics. Starvation freedom is
+      NOT guaranteed — a continuously runnable high-priority thread will
+      indefinitely preempt lower-priority threads. This is by design: seL4
+      delegates starvation prevention to the user-level scheduling policy
+      (e.g., MCS scheduling extensions, not yet modeled). -/
 private def recomputeMaxPriority (byPrio : RHTable Priority (List ThreadId)) : Option Priority :=
   byPrio.fold none (fun acc prio bucket =>
     if bucket.isEmpty then acc

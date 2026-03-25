@@ -188,6 +188,14 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
         | [] =>
             -- WS-F5/D1c: Use word-bounded Badge.bor for accumulation.
+            -- U8-C/U-L24: Notification word overflow note: Badge.bor uses
+            -- unbounded Lean Nat internally (bitwise OR). In the formal model
+            -- this is correct — no overflow is possible. However, on real
+            -- hardware (ARM64), notification words are 64-bit. The hardware
+            -- binding workstream (WS-V) must enforce 64-bit word width by
+            -- masking Badge values to 2^64 - 1 at the platform boundary.
+            -- Badge.ofNatMasked already applies a 64-bit mask, and Badge.bor
+            -- preserves the mask (see Badge.bor definition in Prelude.lean).
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge

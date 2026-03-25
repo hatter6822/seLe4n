@@ -852,7 +852,19 @@ private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
       (by omega) hRoom
 
 /-- N2-E1: After inserting key `k` with value `v`, looking up `k` returns `v`.
-    This is the fundamental correctness theorem for Robin Hood insertion. -/
+    This is the fundamental correctness theorem for Robin Hood insertion.
+
+    **U8-E/U-M35: Hash collision assumption.** This theorem (and its companion
+    `get_after_erase_eq`) rely on `LawfulBEq α`, which ensures that `BEq`
+    agrees with propositional equality. The proofs do NOT assume absence of
+    hash collisions — Robin Hood open addressing handles collisions correctly
+    via probe-chain displacement. However, the `Hashable` instance is assumed
+    to be deterministic (same key always produces the same hash). Hash
+    collision resistance is not formally modeled because the kernel uses typed
+    identifiers (`ObjId`, `ThreadId`, `SlotRef`, etc.) as keys, which are
+    system-assigned monotonic IDs — not adversary-controlled inputs. For
+    adversarial key sets, a collision-resistant hash function would be needed,
+    but this is outside the kernel's threat model. -/
 theorem RHTable.get_after_insert_eq [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insert k v).get? k = some v := by

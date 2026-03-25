@@ -254,7 +254,14 @@ This ensures `contextMatchesCurrent` (machine.regs = currentThread.registerConte
 is established atomically by `schedule` itself.
 
 **Performance note:** Membership validation uses O(1) HashSet-backed
-`tid ∈ st'.scheduler.runQueue`. -/
+`tid ∈ st'.scheduler.runQueue`.
+
+**U8-D/U-L26: Starvation and fairness:** This is a strict fixed-priority
+preemptive scheduler matching seL4's classic scheduling model. Starvation
+freedom is NOT a property of this scheduler — a continuously runnable
+high-priority thread will indefinitely preempt lower-priority threads.
+seL4 delegates starvation prevention to user-level policy (e.g., MCS
+scheduling extensions, which are not yet modeled in seLe4n). -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with

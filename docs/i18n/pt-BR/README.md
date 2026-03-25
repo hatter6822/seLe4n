@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.21.6-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.21.7-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -46,11 +46,11 @@ melhorias arquiteturais inovadoras em comparação com outros microkernels:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.21.6` |
+| **Versão** | `0.21.7` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 64.039 em 101 arquivos |
-| **LoC Lean de testes** | 8.318 em 10 suítes de testes |
-| **Declarações provadas** | 1.901 declarações de teorema/lema (zero sorry/axiom) |
+| **LoC Lean de produção** | 64.229 em 100 arquivos |
+| **LoC Lean de testes** | 8.316 em 10 suítes de testes |
+| **Declarações provadas** | 1.878 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Auditoria mais recente** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoria completa pré-lançamento do kernel + codebase Rust |
 | **Mapa do codebase** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário de declarações legível por máquina |
