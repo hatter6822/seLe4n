@@ -72,7 +72,16 @@ bits per hop from the capability address `addr`. Each CNode level:
 
 Termination is guaranteed by strict descent of `bitsRemaining`: each hop
 consumes `guardWidth + radixWidth ≥ 1` bits (enforced by `cnodeWellFormed`
-invariant / `hProgress`). -/
+invariant / `hProgress`).
+
+**seL4 divergence (U-M25):** seL4 checks intermediate capability rights
+(read right) during multi-level CSpace traversal. seLe4n enforces rights
+at the operation layer instead — the resolved capability's rights are
+checked by the calling operation (`cspaceMint`, `cspaceCopy`, etc.) via
+`capHasRight` guards. This is a deliberate design choice: operation-level
+enforcement is simpler to prove and covers all access paths, whereas
+traversal-level enforcement adds per-hop proof obligations without
+strengthening the security guarantee (the operation still checks rights). -/
 def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
     (st : SystemState) : Except KernelError SlotRef :=
   if hZero : bitsRemaining = 0 then .error .illegalState        -- no bits to consume
@@ -779,8 +788,8 @@ Shared transition used by both `cspaceRevokeCdt` (materialized fold) and
 3. If delete succeeds, detach the slot→node mapping and remove the CDT node → `.ok`.
 
 Changed in WS-R2/M-06: errors from `cspaceDeleteSlot` are now propagated
-instead of swallowed. For the legacy lenient behavior, use
-`processRevokeNode_lenient`. -/
+instead of swallowed. CDT-based revocation (`cspaceRevokeCdt`) is the
+canonical revocation entry point — all API dispatch routes through it. -/
 def processRevokeNode (st : SystemState) (node : CdtNodeId)
     : Except KernelError SystemState :=
   match SystemState.lookupCdtSlotOfNode st node with
@@ -806,21 +815,6 @@ def processRevokeNode (st : SystemState) (node : CdtNodeId)
 def severDerivationEdge (st : SystemState) (parent child : CdtNodeId)
     : SystemState :=
   { st with cdt := st.cdt.revokeDerivationEdge parent child }
-
-/-- Legacy lenient variant of `processRevokeNode` that swallows delete errors.
-
-Deprecated since WS-R2/M-06. Retained for backward compatibility with callers
-that explicitly require lenient revocation semantics. -/
-@[deprecated "Use processRevokeNode (error-propagating) instead" (since := "v0.18.1")]
-def processRevokeNode_lenient (st : SystemState) (node : CdtNodeId) : SystemState :=
-  match SystemState.lookupCdtSlotOfNode st node with
-  | none => { st with cdt := st.cdt.removeNode node }
-  | some descAddr =>
-      match cspaceDeleteSlotCore descAddr st with
-      | .error _ => { st with cdt := st.cdt.removeNode node }
-      | .ok ((), stDel) =>
-          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
-          { stDetached with cdt := stDetached.cdt.removeNode node }
 
 -- ============================================================================
 -- WS-E4/C-04: Cross-CNode CDT revocation

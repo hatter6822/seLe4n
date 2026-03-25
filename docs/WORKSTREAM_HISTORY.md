@@ -17,7 +17,24 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U3) are complete.
+through WS-U Phase U4) are complete.
+
+### WS-U workstream (v0.20.7 Audit Remediation) — Phase U4 COMPLETE
+
+WS-U Phase U4 optimizes proof chains and invariant composition. 3 sub-task
+groups completed (U4-A/B/C/D, U4-K, U4-N). Version v0.21.3. Plan:
+[`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
+
+- **U4-A/B/C/D**: Discharged `hProjection` preconditions for all four IPC
+  endpoint operations, making scheduler preservation theorems self-contained.
+- **U4-K**: Made `ipcInvariantFull` preservation self-contained for all four
+  IPC operations by deriving `allPendingMessagesBounded` and `badgeWellFormed`
+  internally. Added 3 primitive + 8 composed preservation theorems.
+- **U4-N**: Proved BFS positional queue lemma and queue membership variant for
+  CDT `descendantsOf`. Key infrastructure for transitive closure fuel
+  sufficiency.
+
+Zero sorry, zero axiom.
 
 ### WS-U workstream (v0.20.7 Audit Remediation) — Phase U3 COMPLETE
 

@@ -1086,6 +1086,394 @@ theorem storeTcbQueueLinks_preserves_projection
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
       exact storeObject_preserves_projection ctx observer st pair.2 tid.toObjId _ hTidObjHigh hObjInv hStore
 
+-- ============================================================================
+-- U4-A: Queue operation projection preservation
+-- ============================================================================
+
+/-- U4-A: endpointQueuePopHead at a non-observable endpoint preserves projection
+    when the popped head and next-of-head threads have non-observable TCBs.
+    This is the key building block for endpointSendDual/ReceiveDual NI proofs. -/
+theorem endpointQueuePopHead_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hHeadObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hNextObjHigh : ∀ nextTid, headTcb.queueNext = some nextTid →
+        objectObservable ctx observer nextTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep; revert hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp
+      | some headTid =>
+        simp only []
+        cases hLookup : lookupTcb st headTid with
+        | none => simp
+        | some htcb =>
+          simp only []
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only []
+            have hObjInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hProjStore := storeObject_preserves_projection ctx observer st pair.2
+                endpointId _ hEndpointHigh hObjInv hStore
+            cases hNext : htcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨hTidEq, hTcbEq, hStEq⟩
+                subst hStEq; subst hTidEq
+                rw [storeTcbQueueLinks_preserves_projection ctx observer pair.2 st3
+                    headTid none none none hHeadObjHigh hObjInv1 hFinal,
+                    hProjStore]
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none
+                    (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨hTidEq, hTcbEq, hStEq⟩
+                    subst hStEq; subst hTidEq
+                    have hNextHigh := hNextObjHigh nextTid (hTcbEq ▸ hNext)
+                    have hObjInv2 := storeTcbQueueLinks_preserves_objects_invExt pair.2 st2
+                        nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hObjInv1 hLink
+                    rw [storeTcbQueueLinks_preserves_projection ctx observer st2 st3
+                        headTid none none none hHeadObjHigh hObjInv2 hFinal,
+                        storeTcbQueueLinks_preserves_projection ctx observer
+                        pair.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext
+                        hNextHigh hObjInv1 hLink,
+                        hProjStore]
+
+/-- U4-A: endpointQueueEnqueue at a non-observable endpoint preserves projection
+    when the enqueued thread and current tail thread have non-observable TCBs. -/
+theorem endpointQueueEnqueue_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hTailObjHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
+        (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = some tailTid →
+        objectObservable ctx observer tailTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []
+                intro hStep
+                have hObjInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair
+                    hObjInv hStore
+                rw [storeTcbQueueLinks_preserves_projection ctx observer pair.2 st'
+                    tid none (some QueuePPrev.endpointHead) none hTidObjHigh hObjInv1 hStep,
+                    storeObject_preserves_projection ctx observer st pair.2
+                    endpointId _ hEndpointHigh hObjInv hStore]
+            | some tailTid =>
+              have hTailHigh := hTailObjHigh ep tailTid hObj hTail
+              cases hLookupTail : lookupTcb st tailTid with
+              | none => simp [hLookupTail]
+              | some tailTcb =>
+                simp only [hLookupTail]
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  simp only []
+                  cases hLink : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev
+                      tailTcb.queuePPrev (some tid) with
+                  | error e => simp
+                  | ok st2 =>
+                    simp only []
+                    intro hStep
+                    have hObjInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair
+                        hObjInv hStore
+                    have hProjStore := storeObject_preserves_projection ctx observer st pair.2
+                        endpointId _ hEndpointHigh hObjInv hStore
+                    have hObjInv2 := storeTcbQueueLinks_preserves_objects_invExt pair.2 st2
+                        tailTid _ _ _ hObjInv1 hLink
+                    rw [storeTcbQueueLinks_preserves_projection ctx observer st2 st'
+                        tid (some tailTid) (some (QueuePPrev.tcbNext tailTid)) none
+                        hTidObjHigh hObjInv2 hStep,
+                        storeTcbQueueLinks_preserves_projection ctx observer pair.2 st2
+                        tailTid _ _ _ hTailHigh hObjInv1 hLink,
+                        hProjStore]
+
+-- ============================================================================
+-- U4-A: endpointSendDual projection preservation
+-- ============================================================================
+
+/-- U4-A: endpointSendDual at a non-observable endpoint preserves projection.
+
+    Replaces the externalized `hProjection` hypothesis with semantic domain
+    isolation hypotheses. The proof composes queue operation projection lemmas
+    with TCB state and scheduler preservation.
+
+    The queue domain hypotheses capture the security property that all threads
+    interacting through a non-observable endpoint are themselves non-observable. -/
+theorem endpointSendDual_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (st st' : SystemState)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hSenderHigh : threadObservable ctx observer sender = false)
+    (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hRecvQueueHeadHigh : ∀ ep receiver, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.receiveQ.head = some receiver → threadObservable ctx observer receiver = false)
+    (hRecvQueueNextHigh : ∀ ep receiver recvTcb nextTid,
+        st.objects[endpointId]? = some (.endpoint ep) →
+        ep.receiveQ.head = some receiver →
+        st.objects[receiver.toObjId]? = some (.tcb recvTcb) →
+        recvTcb.queueNext = some nextTid →
+        objectObservable ctx observer nextTid.toObjId = false)
+    (hSendQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold endpointSendDual at hStep
+  -- Eliminate bounds-check error branches
+  simp only [show ¬(msg.registers.size > maxMessageRegisters) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(msg.caps.size > maxExtraCaps) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hRecvHead : ep.receiveQ.head with
+      | some _ =>
+        -- Path 1: Receiver waiting — PopHead + storeTcbIpcState + ensureRunnable
+        simp only [hRecvHead] at hStep
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hPop] at hStep
+        | ok triple =>
+          obtain ⟨receiver, recvTcb, st1⟩ := triple
+          simp only [hPop] at hStep
+          -- Use existing lemmas to extract receiver identity and TCB
+          have hHeadEq : ep.receiveQ.head = some receiver :=
+            endpointQueuePopHead_returns_head endpointId true st ep receiver st1 hObj hPop
+          have hRecvHigh := hRecvQueueHeadHigh ep receiver hObj hHeadEq
+          have hRecvObjHigh := hCoherent receiver hRecvHigh
+          have hPreTcb := endpointQueuePopHead_returns_pre_tcb endpointId true st ep
+              receiver recvTcb st1 hObj hPop
+          have hNextHighForPop : ∀ nextTid, recvTcb.queueNext = some nextTid →
+              objectObservable ctx observer nextTid.toObjId = false :=
+            fun nextTid hQN => hRecvQueueNextHigh ep receiver recvTcb nextTid hObj
+              hHeadEq hPreTcb hQN
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+              st st1 receiver recvTcb hObjInv hPop
+          have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
+              endpointId true st st1 receiver recvTcb hEndpointHigh hRecvObjHigh
+              hNextHighForPop hObjInv hPop
+          cases hTcbStore : storeTcbIpcStateAndMessage st1 receiver .ready (some msg) with
+          | error e => simp [hTcbStore] at hStep
+          | ok st2 =>
+            simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+            rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
+                storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
+                receiver _ _ hRecvObjHigh hObjInv1 hTcbStore,
+                hProjPop]
+      | none =>
+        -- Path 2: No receiver — Enqueue sender + storeTcbIpcState + removeRunnable
+        simp only [hRecvHead] at hStep
+        have hTailHigh : ∀ ep' tailTid, st.objects[endpointId]? = some (.endpoint ep') →
+            (if false then ep'.receiveQ else ep'.sendQ).tail = some tailTid →
+            objectObservable ctx observer tailTid.toObjId = false := by
+          intro ep' tailTid hEp' hTail; simp at hTail
+          exact hSendQueueTailHigh ep' tailTid hEp' hTail
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hEnq] at hStep
+        | ok st1 =>
+          simp only [hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
+              sender st st1 hObjInv hEnq
+          have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
+              endpointId false sender st st1 hEndpointHigh hSenderObjHigh
+              hTailHigh hObjInv hEnq
+          cases hTcbStore : storeTcbIpcStateAndMessage st1 sender
+              (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hTcbStore] at hStep
+          | ok st2 =>
+            simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+            rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
+                storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
+                sender _ _ hSenderObjHigh hObjInv1 hTcbStore,
+                hProjEnq]
+
+/-- U4-B: endpointReceiveDual at a non-observable endpoint preserves projection.
+
+    Two paths:
+    * Path 1 (sender waiting): PopHead from sendQ → storeTcbIpcStateAndMessage (sender) →
+      [ensureRunnable if send-path] → storeTcbPendingMessage (receiver)
+    * Path 2 (no sender): Enqueue receiver on receiveQ → storeTcbIpcState → removeRunnable -/
+theorem endpointReceiveDual_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hReceiverHigh : threadObservable ctx observer receiver = false)
+    (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hSendQueueHeadHigh : ∀ ep sender, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.head = some sender → threadObservable ctx observer sender = false)
+    (hSendQueueNextHigh : ∀ ep sender senderTcb nextTid,
+        st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.head = some sender →
+        st.objects[sender.toObjId]? = some (.tcb senderTcb) →
+        senderTcb.queueNext = some nextTid →
+        objectObservable ctx observer nextTid.toObjId = false)
+    (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold endpointReceiveDual at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hSendHead : ep.sendQ.head with
+      | some _ =>
+        -- Path 1: Sender waiting — PopHead + storeTcbIpcStateAndMessage + [ensureRunnable] + storeTcbPendingMessage
+        simp only [hSendHead] at hStep
+        cases hPop : endpointQueuePopHead endpointId false st with
+        | error e => simp [hPop] at hStep
+        | ok triple =>
+          obtain ⟨sender, senderTcb, st1⟩ := triple
+          simp only [hPop] at hStep
+          have hHeadEq : ep.sendQ.head = some sender :=
+            endpointQueuePopHead_returns_head endpointId false st ep sender st1 hObj hPop
+          have hSenderHigh := hSendQueueHeadHigh ep sender hObj hHeadEq
+          have hSenderObjHigh := hCoherent sender hSenderHigh
+          have hPreTcb := endpointQueuePopHead_returns_pre_tcb endpointId false st ep
+              sender senderTcb st1 hObj hPop
+          have hNextHighForPop : ∀ nextTid, senderTcb.queueNext = some nextTid →
+              objectObservable ctx observer nextTid.toObjId = false :=
+            fun nextTid hQN => hSendQueueNextHigh ep sender senderTcb nextTid hObj
+              hHeadEq hPreTcb hQN
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
+              st st1 sender senderTcb hObjInv hPop
+          have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
+              endpointId false st st1 sender senderTcb hEndpointHigh hSenderObjHigh
+              hNextHighForPop hObjInv hPop
+          -- Branch on whether sender was in a Call (if senderWasCall then ...)
+          split at hStep
+          · -- Call path: sender → blockedOnReply, then deliver message to receiver
+            cases hIpc : storeTcbIpcStateAndMessage st1 sender
+                (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+                  sender _ _ hObjInv1 hIpc
+              have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                  st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
+              cases hPend : storeTcbPendingMessage st2 receiver senderTcb.pendingMessage with
+              | error e => simp [hPend] at hStep
+              | ok st3 =>
+                simp only [hPend] at hStep
+                have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
+                rw [storeTcbPendingMessage_preserves_projection ctx observer st2 st3
+                    receiver _ hReceiverObjHigh hObjInv2 hPend,
+                    hProjIpc, hProjPop]
+          · -- Send path: sender → ready, ensureRunnable, then deliver message to receiver
+            cases hIpc : storeTcbIpcStateAndMessage st1 sender .ready none with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+                  sender _ _ hObjInv1 hIpc
+              have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                  st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
+              have hProjEns := ensureRunnable_preserves_projection ctx observer st2 sender hSenderHigh
+              have hObjInvEns : (ensureRunnable st2 sender).objects.invExt := by
+                rw [ensureRunnable_preserves_objects]; exact hObjInv2
+              cases hPend : storeTcbPendingMessage (ensureRunnable st2 sender) receiver
+                  senderTcb.pendingMessage with
+              | error e => simp [hPend] at hStep
+              | ok st3 =>
+                simp only [hPend] at hStep
+                have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
+                rw [storeTcbPendingMessage_preserves_projection ctx observer
+                    (ensureRunnable st2 sender) st3 receiver _ hReceiverObjHigh hObjInvEns hPend,
+                    hProjEns, hProjIpc, hProjPop]
+      | none =>
+        -- Path 2: No sender — Enqueue receiver + storeTcbIpcState + removeRunnable
+        simp only [hSendHead] at hStep
+        have hTailHigh : ∀ ep' tailTid, st.objects[endpointId]? = some (.endpoint ep') →
+            (if true then ep'.receiveQ else ep'.sendQ).tail = some tailTid →
+            objectObservable ctx observer tailTid.toObjId = false := by
+          intro ep' tailTid hEp' hTail; simp at hTail
+          exact hRecvQueueTailHigh ep' tailTid hEp' hTail
+        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        | error e => simp [hEnq] at hStep
+        | ok st1 =>
+          simp only [hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true
+              receiver st st1 hObjInv hEnq
+          have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
+              endpointId true receiver st st1 hEndpointHigh hReceiverObjHigh
+              hTailHigh hObjInv hEnq
+          cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+          | error e => simp [hIpc] at hStep
+          | ok st2 =>
+            simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+            rw [removeRunnable_preserves_projection ctx observer st2 receiver hReceiverHigh,
+                storeTcbIpcState_preserves_projection ctx observer st1 st2 receiver _
+                hReceiverObjHigh hObjInv1 hIpc,
+                hProjEnq]
+
 /-- WS-H9: endpointReply at non-observable target preserves projection. -/
 theorem endpointReply_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1144,6 +1532,261 @@ theorem endpointReply_preserves_lowEquivalent
 -- ============================================================================
 -- WS-H8/H9: endpointReceiveDualChecked NI bridge + IPC NI completion
 -- ============================================================================
+
+/-- U4-C: endpointCall at a non-observable endpoint preserves projection.
+
+    Two paths:
+    * Path 1 (receiver waiting on receiveQ): PopHead → storeTcbIpcStateAndMessage (receiver) →
+      ensureRunnable (receiver) → storeTcbIpcState (caller to blockedOnReply) → removeRunnable (caller)
+    * Path 2 (no receiver): Enqueue caller on sendQ → storeTcbIpcStateAndMessage (caller) →
+      removeRunnable (caller) -/
+theorem endpointCall_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (st st' : SystemState)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hCallerHigh : threadObservable ctx observer caller = false)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hRecvQueueHeadHigh : ∀ ep receiver, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.receiveQ.head = some receiver → threadObservable ctx observer receiver = false)
+    (hRecvQueueNextHigh : ∀ ep receiver recvTcb nextTid,
+        st.objects[endpointId]? = some (.endpoint ep) →
+        ep.receiveQ.head = some receiver →
+        st.objects[receiver.toObjId]? = some (.tcb recvTcb) →
+        recvTcb.queueNext = some nextTid →
+        objectObservable ctx observer nextTid.toObjId = false)
+    (hSendQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold endpointCall at hStep
+  -- Eliminate bounds-check error branches
+  simp only [show ¬(msg.registers.size > maxMessageRegisters) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(msg.caps.size > maxExtraCaps) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hRecvHead : ep.receiveQ.head with
+      | some _ =>
+        -- Path 1: Receiver waiting — PopHead + storeTcbIpcStateAndMessage(receiver) +
+        -- ensureRunnable(receiver) + storeTcbIpcState(caller) + removeRunnable(caller)
+        simp only [hRecvHead] at hStep
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hPop] at hStep
+        | ok triple =>
+          obtain ⟨receiver, _recvTcb, st1⟩ := triple
+          simp only [hPop] at hStep
+          have hHeadEq : ep.receiveQ.head = some receiver :=
+            endpointQueuePopHead_returns_head endpointId true st ep receiver st1 hObj hPop
+          have hRecvHigh := hRecvQueueHeadHigh ep receiver hObj hHeadEq
+          have hRecvObjHigh := hCoherent receiver hRecvHigh
+          have hPreTcb := endpointQueuePopHead_returns_pre_tcb endpointId true st ep
+              receiver _recvTcb st1 hObj hPop
+          have hNextHighForPop : ∀ nextTid, _recvTcb.queueNext = some nextTid →
+              objectObservable ctx observer nextTid.toObjId = false :=
+            fun nextTid hQN => hRecvQueueNextHigh ep receiver _recvTcb nextTid hObj
+              hHeadEq hPreTcb hQN
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+              st st1 receiver _recvTcb hObjInv hPop
+          have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
+              endpointId true st st1 receiver _recvTcb hEndpointHigh hRecvObjHigh
+              hNextHighForPop hObjInv hPop
+          cases hTcbStore : storeTcbIpcStateAndMessage st1 receiver .ready (some msg) with
+          | error e => simp [hTcbStore] at hStep
+          | ok st2 =>
+            simp only [hTcbStore] at hStep
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+                receiver _ _ hObjInv1 hTcbStore
+            have hProjTcb := storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                st1 st2 receiver _ _ hRecvObjHigh hObjInv1 hTcbStore
+            have hProjEns := ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh
+            have hObjInvEns : (ensureRunnable st2 receiver).objects.invExt := by
+              rw [ensureRunnable_preserves_objects]; exact hObjInv2
+            cases hIpc : storeTcbIpcState (ensureRunnable st2 receiver) caller
+                (.blockedOnReply endpointId (some receiver)) with
+            | error e => simp [hIpc] at hStep
+            | ok st3 =>
+              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+              rw [removeRunnable_preserves_projection ctx observer st3 caller hCallerHigh,
+                  storeTcbIpcState_preserves_projection ctx observer (ensureRunnable st2 receiver)
+                  st3 caller _ hCallerObjHigh hObjInvEns hIpc,
+                  hProjEns, hProjTcb, hProjPop]
+      | none =>
+        -- Path 2: No receiver — Enqueue caller + storeTcbIpcStateAndMessage + removeRunnable
+        simp only [hRecvHead] at hStep
+        have hTailHigh : ∀ ep' tailTid, st.objects[endpointId]? = some (.endpoint ep') →
+            (if false then ep'.receiveQ else ep'.sendQ).tail = some tailTid →
+            objectObservable ctx observer tailTid.toObjId = false := by
+          intro ep' tailTid hEp' hTail; simp at hTail
+          exact hSendQueueTailHigh ep' tailTid hEp' hTail
+        cases hEnq : endpointQueueEnqueue endpointId false caller st with
+        | error e => simp [hEnq] at hStep
+        | ok st1 =>
+          simp only [hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
+              caller st st1 hObjInv hEnq
+          have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
+              endpointId false caller st st1 hEndpointHigh hCallerObjHigh
+              hTailHigh hObjInv hEnq
+          cases hTcbStore : storeTcbIpcStateAndMessage st1 caller
+              (.blockedOnCall endpointId) (some msg) with
+          | error e => simp [hTcbStore] at hStep
+          | ok st2 =>
+            simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+            rw [removeRunnable_preserves_projection ctx observer st2 caller hCallerHigh,
+                storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
+                caller _ _ hCallerObjHigh hObjInv1 hTcbStore,
+                hProjEnq]
+
+/-- U4-C: endpointReplyRecv at non-observable targets preserves projection.
+
+    Sequential composition: reply (storeTcbIpcStateAndMessage + ensureRunnable) followed
+    by endpointReceiveDual. The reply part modifies only replyTarget's TCB; the endpoint
+    and its queues remain unchanged, so queue domain isolation hypotheses transfer. -/
+theorem endpointReplyRecv_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (endpointId : SeLe4n.ObjId) (replierReceiver replyTarget : SeLe4n.ThreadId)
+    (replyMsg : IpcMessage) (st st' : SystemState)
+    (hEndpointHigh : objectObservable ctx observer endpointId = false)
+    (hReceiverHigh : threadObservable ctx observer replierReceiver = false)
+    (hReceiverObjHigh : objectObservable ctx observer replierReceiver.toObjId = false)
+    (hReplyTargetHigh : threadObservable ctx observer replyTarget = false)
+    (hReplyTargetObjHigh : objectObservable ctx observer replyTarget.toObjId = false)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hSendQueueHeadHigh : ∀ ep sender, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.head = some sender → threadObservable ctx observer sender = false)
+    (hSendQueueNextHigh : ∀ ep sender senderTcb nextTid,
+        st.objects[endpointId]? = some (.endpoint ep) →
+        ep.sendQ.head = some sender →
+        st.objects[sender.toObjId]? = some (.tcb senderTcb) →
+        senderTcb.queueNext = some nextTid →
+        objectObservable ctx observer nextTid.toObjId = false)
+    (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
+        ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold endpointReplyRecv at hStep
+  -- Eliminate bounds-check error branches
+  simp only [show ¬(replyMsg.registers.size > maxMessageRegisters) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(replyMsg.caps.size > maxExtraCaps) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    -- Case split on ipcState
+    cases hIpc : tcb.ipcState with
+    | blockedOnReply ep expectedReplier =>
+      cases hStore : storeTcbIpcStateAndMessage st replyTarget .ready (some replyMsg) with
+      | error e =>
+        exfalso; simp only [hIpc, hStore] at hStep
+        revert hStep; split <;> split <;> simp
+      | ok stReply =>
+        simp only [hIpc, hStore] at hStep
+        -- Case-split endpointReceiveDual to extract the final state
+        cases hRecv : endpointReceiveDual endpointId replierReceiver
+            (ensureRunnable stReply replyTarget) with
+        | error e =>
+          exfalso; revert hStep; rw [hRecv]; split <;> (try split) <;> simp
+        | ok pair =>
+          obtain ⟨senderId, stFinal⟩ := pair
+          have hStEq : st' = stFinal := by
+            revert hStep; rw [hRecv]; split <;> (try split) <;> simp <;> exact Eq.symm
+          subst hStEq
+          have hObjInvReply := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReply
+              replyTarget _ _ hObjInv hStore
+          have hProjReply := storeTcbIpcStateAndMessage_preserves_projection ctx observer
+              st stReply replyTarget _ _ hReplyTargetObjHigh hObjInv hStore
+          have hProjEns := ensureRunnable_preserves_projection ctx observer stReply replyTarget
+              hReplyTargetHigh
+          have hObjInvEns : (ensureRunnable stReply replyTarget).objects.invExt := by
+            rw [ensureRunnable_preserves_objects]; exact hObjInvReply
+          -- Prove endpointId ≠ replyTarget.toObjId from structure
+          have hEpNe : endpointId ≠ replyTarget.toObjId := by
+            intro hContra
+            unfold storeTcbIpcStateAndMessage at hStore; simp only [hLookup] at hStore
+            cases hStObj : storeObject replyTarget.toObjId
+                (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) st with
+            | error e => simp [hStObj] at hStore
+            | ok pair =>
+              simp only [hStObj, Except.ok.injEq] at hStore; subst hStore
+              have hTcbMid : (ensureRunnable pair.2 replyTarget).objects[replyTarget.toObjId]? =
+                  some (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) := by
+                rw [ensureRunnable_preserves_objects pair.2 replyTarget]
+                exact storeObject_objects_eq st pair.2 replyTarget.toObjId _ hObjInv hStObj
+              rw [← hContra] at hTcbMid
+              unfold endpointReceiveDual at hRecv; rw [hTcbMid] at hRecv; simp at hRecv
+          -- Transfer endpoint objects from st to intermediate state
+          have hObjsMid : (ensureRunnable stReply replyTarget).objects[endpointId]? =
+              st.objects[endpointId]? := by
+            rw [ensureRunnable_preserves_objects stReply replyTarget]
+            exact storeTcbIpcStateAndMessage_preserves_objects_ne st stReply replyTarget _ _
+                endpointId hEpNe hObjInv hStore
+          -- Transfer queue hypotheses from st to intermediate state
+          have hSQHH_mid : ∀ ep' sender',
+              (ensureRunnable stReply replyTarget).objects[endpointId]? = some (.endpoint ep') →
+              ep'.sendQ.head = some sender' → threadObservable ctx observer sender' = false := by
+            intro ep' sender' hEp' hHead; rw [hObjsMid] at hEp'
+            exact hSendQueueHeadHigh ep' sender' hEp' hHead
+          have hSQNH_mid : ∀ ep' sender' senderTcb' nextTid',
+              (ensureRunnable stReply replyTarget).objects[endpointId]? = some (.endpoint ep') →
+              ep'.sendQ.head = some sender' →
+              (ensureRunnable stReply replyTarget).objects[sender'.toObjId]? = some (.tcb senderTcb') →
+              senderTcb'.queueNext = some nextTid' →
+              objectObservable ctx observer nextTid'.toObjId = false := by
+            intro ep' sender' senderTcb' nextTid' hEp' hHead hSenderTcb hNext
+            rw [hObjsMid] at hEp'
+            by_cases hSenderNe : sender'.toObjId = replyTarget.toObjId
+            · -- sender at same ObjId as replyTarget — queueNext preserved
+              unfold storeTcbIpcStateAndMessage at hStore; simp only [hLookup] at hStore
+              cases hStObj : storeObject replyTarget.toObjId
+                  (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) st with
+              | error e => simp [hStObj] at hStore
+              | ok pair =>
+                simp only [hStObj, Except.ok.injEq] at hStore; subst hStore
+                have hTcbMid : (ensureRunnable pair.2 replyTarget).objects[sender'.toObjId]? =
+                    some (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) := by
+                  rw [ensureRunnable_preserves_objects pair.2 replyTarget, hSenderNe]
+                  exact storeObject_objects_eq st pair.2 replyTarget.toObjId _ hObjInv hStObj
+                rw [hTcbMid] at hSenderTcb; cases hSenderTcb
+                have hOrigTcb := lookupTcb_some_objects st replyTarget tcb hLookup
+                rw [← hSenderNe] at hOrigTcb
+                exact hSendQueueNextHigh ep' sender' tcb nextTid' hEp' hHead hOrigTcb hNext
+            · have hSenderObj : (ensureRunnable stReply replyTarget).objects[sender'.toObjId]? =
+                  st.objects[sender'.toObjId]? := by
+                rw [ensureRunnable_preserves_objects stReply replyTarget]
+                exact storeTcbIpcStateAndMessage_preserves_objects_ne st stReply replyTarget _ _
+                    sender'.toObjId hSenderNe hObjInv hStore
+              rw [hSenderObj] at hSenderTcb
+              exact hSendQueueNextHigh ep' sender' senderTcb' nextTid' hEp' hHead hSenderTcb hNext
+          have hRQTH_mid : ∀ ep' tailTid,
+              (ensureRunnable stReply replyTarget).objects[endpointId]? = some (.endpoint ep') →
+              ep'.receiveQ.tail = some tailTid →
+              objectObservable ctx observer tailTid.toObjId = false := by
+            intro ep' tailTid hEp' hTail; rw [hObjsMid] at hEp'
+            exact hRecvQueueTailHigh ep' tailTid hEp' hTail
+          rw [endpointReceiveDual_preserves_projection ctx observer endpointId replierReceiver
+              (ensureRunnable stReply replyTarget) st' senderId hEndpointHigh hReceiverHigh
+              hReceiverObjHigh hCoherent hSQHH_mid hSQNH_mid hRQTH_mid hObjInvEns hRecv,
+              hProjEns, hProjReply]
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
+      simp [hIpc] at hStep
 
 /-- R5-A/M-01: endpointReceiveDualChecked NI — projection-based (internalized). -/
 theorem endpointReceiveDualChecked_NI

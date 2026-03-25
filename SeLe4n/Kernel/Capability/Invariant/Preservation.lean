@@ -12,6 +12,41 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-! ## U4-L / U-M26: CDT Hypothesis Pattern Rationale
+
+CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`,
+`cspaceRevoke`) take `cdtCompleteness st' ∧ cdtAcyclicity st'` as an
+**externalized post-state hypothesis** rather than proving it from the
+pre-state invariant. This is deliberate:
+
+1. **Structural separation.** The capability invariant bundle
+   (`capabilityInvariantBundle`) covers slot-level properties (uniqueness,
+   soundness, bounded slot count, depth consistency, `objects.invExt`).
+   CDT structural properties (completeness, acyclicity) are logically
+   orthogonal — they depend on the CDT graph shape, not on per-CNode
+   slot state. Bundling them as hypotheses keeps each proof focused.
+
+2. **CDT operation complexity.** CDT mutations (`addEdge`, `removeNode`,
+   `revokeDerivationEdge`) modify an edge list and two maps (`childMap`,
+   `parentMap`). Proving acyclicity preservation for `addEdge` requires
+   a reachability argument over the graph (no path from child to parent
+   in the pre-state). This argument is inherently CDT-specific and does
+   not compose naturally with the slot-level induction used in capability
+   preservation proofs.
+
+3. **Caller context.** The CDT hypotheses are discharged at the
+   cross-subsystem composition layer (`proofLayerInvariantBundle` in
+   `Architecture/Invariant.lean`), where the full kernel invariant —
+   including CDT acyclicity from `capabilityInvariantBundle` — is
+   available. The decomposition `pre-state bundle → per-subsystem
+   preservation → post-state bundle` works because each subsystem
+   preservation theorem contributes its piece and receives the CDT
+   piece from the composed invariant.
+
+This pattern is consistent with the IPC `dualQueueSystemInvariant`
+externalization (U-M31) and the information flow `hProjection` pattern
+(U-H09). -/
+
 theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)

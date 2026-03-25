@@ -2120,18 +2120,80 @@ capability is included in the revocation set.
 
 **Scope note:** This theorem proves discovery of *direct* children (depth 1).
 The full multi-level fuel sufficiency (all transitive descendants via
-`CdtChildReachable` found) requires a CDT acyclicity witness and structural
-induction on the tree depth. The supporting infrastructure (go_cons, go_nil,
-go_acc_subset, go_children_found, go_fuel_mono, go_head_children_found,
-fuel_bound, children_subset) establishes the BFS correctness foundation;
-the acyclicity-dependent transitive closure is deferred to the hardware-binding
-phase (WS-U) where concrete CDT bounds are available. -/
+`CdtChildReachable` found with fuel = `edges.length`) requires a CDT acyclicity
+witness and an edge-counting argument showing that the BFS processes all
+non-leaf queue entries.  The U4-N infrastructure (`go_queue_pos_children_found`,
+`go_mem_children_found`) establishes the positional queue lemma: if a node is
+anywhere in the BFS queue and fuel exceeds its position, every child of that
+node appears in the result.  Combined with the existing BFS monotonicity
+lemmas, this reduces the transitive closure to a queue-exhaustion argument
+on acyclic CDTs.  The complete transitive closure proof (connecting
+`CdtChildReachable` depth to BFS fuel bounds) is deferred to the
+hardware-binding phase where concrete CDT size bounds are available. -/
 theorem descendantsOf_fuel_sufficiency
     (cdt : CapDerivationTree) (root : CdtNodeId)
     (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
     (hEdges : cdt.edges.length > 0) :
     c ∈ cdt.descendantsOf root :=
   descendantsOf_children_subset cdt root c hChild hEdges
+
+-- ============================================================================
+-- U4-N: descendantsOf transitive closure infrastructure
+-- ============================================================================
+
+/-- U4-N: Positional queue lemma — if `mid` sits behind `before` entries in the
+    BFS queue and the fuel exceeds `before.length`, then every child of `mid`
+    appears in the BFS result.  Proof by induction on `before`: the base case
+    delegates to `descendantsOf_go_head_children_found`; the step unfolds one
+    BFS iteration via `descendantsOf_go_cons` and reassociates the queue. -/
+private theorem descendantsOf_go_queue_pos_children_found
+    (cdt : CapDerivationTree) (fuel : Nat) (before after acc : List CdtNodeId)
+    (mid c : CdtNodeId) (hChild : c ∈ cdt.childrenOf mid)
+    (hFuel : fuel > before.length) :
+    c ∈ descendantsOf.go cdt fuel (before ++ mid :: after) acc := by
+  induction before generalizing fuel after acc with
+  | nil =>
+    simp only [List.nil_append]
+    obtain ⟨k, rfl⟩ : ∃ k, fuel = k + 1 := ⟨fuel - 1, by omega⟩
+    exact descendantsOf_go_head_children_found cdt k after acc mid c hChild
+  | cons node before' ih =>
+    obtain ⟨k, rfl⟩ : ∃ k, fuel = k + 1 := ⟨fuel - 1, by omega⟩
+    show c ∈ descendantsOf.go cdt (k + 1) ((node :: before') ++ mid :: after) acc
+    rw [List.cons_append, descendantsOf_go_cons]
+    have hReassoc : (before' ++ mid :: after) ++
+        (cdt.childrenOf node).filter (fun c => c ∉ acc) =
+        before' ++ mid :: (after ++ (cdt.childrenOf node).filter (fun c => c ∉ acc)) := by
+      rw [List.append_assoc]; rfl
+    rw [hReassoc]
+    exact ih k (after ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
+      (acc ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
+      (by simp only [List.length_cons] at hFuel; omega)
+
+/-- U4-N helper: decompose list membership into a prefix/suffix split. -/
+private theorem list_mem_split {a : α} {l : List α} (h : a ∈ l) :
+    ∃ s t, l = s ++ a :: t := by
+  induction l with
+  | nil => simp at h
+  | cons x xs ih =>
+    simp only [List.mem_cons] at h
+    rcases h with rfl | h'
+    · exact ⟨[], xs, rfl⟩
+    · obtain ⟨s, t, rfl⟩ := ih h'
+      exact ⟨x :: s, t, rfl⟩
+
+/-- U4-N: Queue membership variant — if `mid` is anywhere in the BFS queue
+    and the fuel is at least the queue length, then every child of `mid`
+    appears in the BFS result. Decomposes queue membership into a positional
+    split and delegates to `descendantsOf_go_queue_pos_children_found`. -/
+theorem descendantsOf_go_mem_children_found
+    (cdt : CapDerivationTree) (fuel : Nat) (queue acc : List CdtNodeId)
+    (mid c : CdtNodeId)
+    (hMid : mid ∈ queue) (hChild : c ∈ cdt.childrenOf mid)
+    (hFuel : fuel ≥ queue.length) :
+    c ∈ descendantsOf.go cdt fuel queue acc := by
+  obtain ⟨before, after, rfl⟩ := list_mem_split hMid
+  apply descendantsOf_go_queue_pos_children_found cdt fuel before after acc mid c hChild
+  simp only [List.length_append, List.length_cons] at hFuel; omega
 
 end CapDerivationTree
 
