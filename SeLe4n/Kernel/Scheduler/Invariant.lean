@@ -71,30 +71,11 @@ def currentThreadInActiveDomain (st : SystemState) : Prop :=
       | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
       | _ => True
 
-/-- Invariant bundle that should eventually mirror seL4 proof obligations.
-
-M-05 domain partitioning is treated as normative in WS-E6: whenever a current
-thread exists, it must belong to `activeDomain`. -/
-def kernelInvariant (st : SystemState) : Prop :=
-  queueCurrentConsistent st.scheduler ∧
-    runQueueUnique st.scheduler ∧
-    currentThreadValid st ∧
-    currentThreadInActiveDomain st
-
 /-- Scheduler Invariant Bundle v1 entrypoint used by composed IPC/architecture bundles.
 
-`kernelInvariant` now includes the domain-partitioning obligation
-`currentThreadInActiveDomain`; this compatibility bundle intentionally keeps the
-legacy triad used by cross-subsystem composition surfaces. -/
+The base triad used by cross-subsystem composition surfaces. -/
 def schedulerInvariantBundle (st : SystemState) : Prop :=
   queueCurrentConsistent st.scheduler ∧ runQueueUnique st.scheduler ∧ currentThreadValid st
-
-/-- Canonical scheduler invariant bundle for domain-partitioning semantics.
-
-This is the normative scheduler proof surface and includes
-`currentThreadInActiveDomain`. -/
-abbrev canonicalSchedulerInvariantBundle (st : SystemState) : Prop :=
-  kernelInvariant st
 
 theorem schedulerWellFormed_iff_queueCurrentConsistent (s : SchedulerState) :
     schedulerWellFormed s ↔ queueCurrentConsistent s := by

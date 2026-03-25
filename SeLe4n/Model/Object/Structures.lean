@@ -87,17 +87,13 @@ theorem PagePermissions.ofNat?_invalid (n : Nat) (h : ¬(n < 32)) :
     PagePermissions.ofNat? n = none := by
   simp [PagePermissions.ofNat?, h]
 
-/-- WS-K-D: `PagePermissions.ofNat` is pure. -/
-theorem PagePermissions.ofNat_deterministic (n : Nat) :
-    PagePermissions.ofNat n = PagePermissions.ofNat n := rfl
-
 /-- WS-K-D: Round-trip: encoding then decoding recovers the original. -/
 theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :
     PagePermissions.ofNat (PagePermissions.toNat p) = p := by
   simp only [PagePermissions.ofNat, PagePermissions.toNat]
   cases p with
   | mk r w e u c =>
-    cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> native_decide
+    cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> decide
 
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 

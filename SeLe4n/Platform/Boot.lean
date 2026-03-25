@@ -111,10 +111,6 @@ def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let withIrqs := foldIrqs config.irqTable initial
   foldObjects config.initialObjects withIrqs
 
-/-- Q3-C: Determinism — same config yields same state. -/
-theorem bootFromPlatform_deterministic (config : PlatformConfig) :
-    bootFromPlatform config = bootFromPlatform config := rfl
-
 /-- Q3-C: Boot from empty config yields the empty IntermediateState. -/
 theorem bootFromPlatform_empty :
     bootFromPlatform { irqTable := [], initialObjects := [] } =

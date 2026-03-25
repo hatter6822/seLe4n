@@ -213,7 +213,7 @@ because the empty state has no objects, no threads, no services, and an empty
 scheduler. -/
 private theorem default_schedulerInvariantBundle :
     schedulerInvariantBundle (default : SystemState) := by
-  -- kernelInvariant = queueCurrentConsistent ∧ runQueueUnique ∧ currentThreadValid
+  -- schedulerInvariantBundle = queueCurrentConsistent ∧ runQueueUnique ∧ currentThreadValid
   -- For default state: current = none, runnable = [], objects = none
   refine ⟨?_, ?_, ?_⟩
   · -- queueCurrentConsistent: current = none → True

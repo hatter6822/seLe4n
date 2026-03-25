@@ -127,7 +127,6 @@ run_check "INVARIANT" rg -n '^def mapAdapterError' SeLe4n/Kernel/Architecture/Ad
 run_check "INVARIANT" rg -n '^def adapterAdvanceTimer' SeLe4n/Kernel/Architecture/Adapter.lean
 run_check "INVARIANT" rg -n '^def adapterWriteRegister' SeLe4n/Kernel/Architecture/Adapter.lean
 run_check "INVARIANT" rg -n '^def adapterReadMemory' SeLe4n/Kernel/Architecture/Adapter.lean
-run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_deterministic' SeLe4n/Kernel/Architecture/Adapter.lean
 run_check "INVARIANT" rg -n '^def proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^structure AdapterProofHooks' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
@@ -147,13 +146,6 @@ run_check "INVARIANT" rg -n "^\s*timerMonotonicDecidable\s*:" SeLe4n/Kernel/Arch
 run_check "INVARIANT" rg -n "^\s*registerContextStableDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n "^\s*memoryAccessAllowedDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^structure InterruptBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^inductive ContractRef' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^def assumptionContractMap' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^def assumptionTransitionMap' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^def assumptionInvariantMap' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^theorem assumptionContractMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^theorem assumptionTransitionMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^theorem assumptionInvariantMap_nonempty' SeLe4n/Kernel/Architecture/Assumptions.lean
 
 # WS-H15a: InterruptBoundaryContract decidability fields
 run_check "INVARIANT" rg -n '^\s*irqLineSupportedDecidable' SeLe4n/Kernel/Architecture/Assumptions.lean
@@ -621,7 +613,6 @@ run_check "TRACE" rg -n 'WS-F3.*7-field low-equivalence' tests/InformationFlowSu
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
 run_check "INVARIANT" rg -n '^theorem timerTick_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem timerTick_preserves_kernelInvariant' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceMutate_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation.lean
@@ -831,7 +822,6 @@ run_check "INVARIANT" rg -n 'def validateRegBound' SeLe4n/Kernel/Architecture/Re
 run_check "INVARIANT" rg -n 'def decodeSyscallArgs' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeCapPtr_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeSyscallId_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeSyscallArgs_deterministic' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeSyscallId_error_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_error_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeCapPtr_ok_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
@@ -879,7 +869,6 @@ run_check "INVARIANT" rg -n '^theorem enforcementSoundness_registerServiceChecke
 run_check "INVARIANT" rg -n 'def extractMessageRegisters' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_ipc_bounded' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_deterministic' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_uses_withCaps' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_uses_withCaps' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg' SeLe4n/Kernel/API.lean
@@ -963,7 +952,6 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_deterministic
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_error_iff
@@ -977,13 +965,10 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.objectOfTypeTag
 #check @SeLe4n.Kernel.objectOfTypeTag_type
 #check @SeLe4n.Kernel.objectOfTypeTag_error_iff
-#check @SeLe4n.Kernel.objectOfTypeTag_deterministic
 #check @SeLe4n.Model.PagePermissions.ofNat
 #check @SeLe4n.Model.PagePermissions.toNat
 #check @SeLe4n.Model.PagePermissions.ofNat_toNat_roundtrip
-#check @SeLe4n.Model.PagePermissions.ofNat_deterministic
 #check @SeLe4n.Kernel.lifecycleRetypeDirect
-#check @SeLe4n.Kernel.lifecycleRetypeDirect_deterministic
 #check @SeLe4n.Kernel.lifecycleRetypeDirect_eq_lifecycleRetypeObject
 #check @SeLe4n.Kernel.lifecycleRetypeDirect_error_objectNotFound
 #check @SeLe4n.Kernel.lifecycleRetypeDirect_error_illegalState
@@ -995,7 +980,6 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_length
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_ipc_bounded
-#check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_deterministic
 #check @SeLe4n.Kernel.dispatchWithCap_send_uses_withCaps
 #check @SeLe4n.Kernel.dispatchWithCap_call_uses_withCaps
 #check @SeLe4n.Kernel.dispatchWithCap_reply_populates_msg

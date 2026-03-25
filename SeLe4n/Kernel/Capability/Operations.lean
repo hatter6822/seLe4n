@@ -137,13 +137,6 @@ def cspaceLookupMultiLevel (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRem
 -- WS-H13/H-01: resolveCapAddress theorems
 -- ============================================================================
 
-/-- WS-H13/H-01 (deliverable 8): `resolveCapAddress` is deterministic — same
-inputs always produce the same result. This follows from the function being a
-pure total function with no state mutation or non-deterministic branches. -/
-theorem resolveCapAddress_deterministic
-    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState) :
-    resolveCapAddress rootId addr bits st = resolveCapAddress rootId addr bits st := rfl
-
 /-- WS-H13/H-01 (deliverable 9): `resolveCapAddress` returns `.error .illegalState`
 when called with zero bits remaining. -/
 theorem resolveCapAddress_zero_bits

@@ -1257,10 +1257,6 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     })
   | _ + 6 => .error .invalidTypeTag
 
-/-- WS-K-D: `objectOfTypeTag` is pure. -/
-theorem objectOfTypeTag_deterministic (tag : Nat) (size : Nat) :
-    objectOfTypeTag tag size = objectOfTypeTag tag size := rfl
-
 /-- WS-K-D: `objectOfTypeTag` fails iff the tag exceeds 5. -/
 theorem objectOfTypeTag_error_iff (tag : Nat) (size : Nat) :
     (∃ e, objectOfTypeTag tag size = .error e) ↔ tag > 5 := by
@@ -1371,12 +1367,6 @@ def lifecycleRetypeDirect
             .error .illegalAuthority
         else
           .error .illegalState
-
-/-- WS-K-D: `lifecycleRetypeDirect` is pure. -/
-theorem lifecycleRetypeDirect_deterministic
-    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject) :
-    lifecycleRetypeDirect cap target newObj =
-    lifecycleRetypeDirect cap target newObj := rfl
 
 /-- WS-K-D: When `cspaceLookupSlot` resolves to `(cap, st)` (state unchanged),
 `lifecycleRetypeDirect` with that cap equals `lifecycleRetypeObject` with the

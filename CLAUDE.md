@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.21.5.
+Lean 4.28.0 toolchain, Lake build system, version 0.21.6.
 
 ## Build and run
 
@@ -443,6 +443,7 @@ under `docs/` and `docs/gitbook/`.
 - **Prior portfolios**: WS-N, WS-M, WS-L, WS-K, WS-J1, WS-F — all COMPLETE
 - **Workstream canonical source**: `docs/WORKSTREAM_HISTORY.md`
 - **Latest audits**: `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` and `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_KERNEL_RUST.md`
+- **WS-U Phase U7 COMPLETE**: Dead Code & Proof Hygiene — 12 sub-tasks (U7-A through U7-L), all complete (v0.21.6). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U6 COMPLETE**: Architecture & Platform Fidelity — 12 sub-tasks (U6-A through U6-L), all complete (v0.21.5). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U5 COMPLETE**: API & Dispatch Integrity — 14 sub-tasks (U5-A through U5-N), all complete (v0.21.4). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U4 COMPLETE**: Proof Chain & Invariant Composition — 3 sub-task groups (U4-A/B/C/D, U4-K, U4-N), all complete (v0.21.3). See `docs/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`

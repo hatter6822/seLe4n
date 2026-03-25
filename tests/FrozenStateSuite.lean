@@ -79,17 +79,18 @@ private def fs006_frozenSet : IO Unit := do
     |>.insert ⟨2⟩ ()
     |>.insert ⟨3⟩ ()
   let fs : FrozenSet ThreadId := freezeMap rt
-  expect "FS-006a frozen set member 1" (FrozenSet.mem fs ⟨1⟩ == true)
-  expect "FS-006b frozen set member 2" (FrozenSet.mem fs ⟨2⟩ == true)
-  expect "FS-006c frozen set non-member" (FrozenSet.mem fs ⟨99⟩ == false)
+  expect "FS-006a frozen set member 1" (FrozenMap.contains fs ⟨1⟩ == true)
+  expect "FS-006b frozen set member 2" (FrozenMap.contains fs ⟨2⟩ == true)
+  expect "FS-006c frozen set non-member" (FrozenMap.contains fs ⟨99⟩ == false)
 
-/-- FS-007: FrozenMap.fold — iterates over all entries -/
-private def fs007_frozenMapFold : IO Unit := do
+/-- FS-007: FrozenMap.get? — retrieves entries by key -/
+private def fs007_frozenMapGet : IO Unit := do
   let rt := ((RHTable.empty 16 : RHTable ObjId Nat).insert ⟨1⟩ 10)
     |>.insert ⟨2⟩ 20
   let fm := freezeMap rt
-  let total := fm.fold 0 (fun acc _ v => acc + v)
-  expect "FS-007a fold sums values" (total == 30)
+  expect "FS-007a get key 1" (fm.get? ⟨1⟩ == some 10)
+  expect "FS-007b get key 2" (fm.get? ⟨2⟩ == some 20)
+  expect "FS-007c get missing key" (fm.get? ⟨99⟩ == none)
 
 -- ============================================================================
 -- Q5-T2: FrozenKernelObject Tests (3 scenarios)
@@ -169,12 +170,6 @@ private def fs012_freezeDeterministic : IO Unit := do
   expect "FS-012c same CDT edges" (fss1.cdtEdges == fss2.cdtEdges)
   expect "FS-012d same objectIndex" (fss1.objectIndex == fss2.objectIndex)
 
-/-- FS-013: objectCapacity for empty state -/
-private def fs013_objectCapacity : IO Unit := do
-  let ist := mkEmptyIntermediateState
-  let cap := objectCapacity ist
-  expect "FS-013a empty capacity is 0" (cap == 0)
-
 /-- FS-014: FrozenMap.set preserves data size -/
 private def fs014_frozenMapSetSize : IO Unit := do
   let rt := ((RHTable.empty 16 : RHTable ObjId Nat).insert ⟨1⟩ 10)
@@ -221,7 +216,7 @@ def main : IO Unit := do
   fs004_frozenMapSet
   fs005_frozenMapSetMissing
   fs006_frozenSet
-  fs007_frozenMapFold
+  fs007_frozenMapGet
 
   -- Q5-T2: FrozenKernelObject
   fs008_freezeTcb
@@ -231,10 +226,9 @@ def main : IO Unit := do
   -- Q5-T3: Freeze Integration
   fs011_freezeEmpty
   fs012_freezeDeterministic
-  fs013_objectCapacity
   fs014_frozenMapSetSize
   fs015_freezeMapDataSize
 
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 15 frozen-state tests passed!"
+  IO.println "  All 14 frozen-state tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

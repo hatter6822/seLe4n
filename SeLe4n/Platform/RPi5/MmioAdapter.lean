@@ -52,21 +52,6 @@ open SeLe4n
 open SeLe4n.Model
 
 -- ============================================================================
--- T6-H/M-NEW-8: Memory barrier types for ARM64
--- ============================================================================
-
-/-- T6-H: ARM64 memory barrier instructions.
-    These model the three barrier types available on ARMv8-A:
-    - `dmb`: Data Memory Barrier — orders data memory accesses
-    - `dsb`: Data Synchronization Barrier — ensures completion of accesses
-    - `isb`: Instruction Synchronization Barrier — flushes pipeline -/
-inductive MemoryBarrier where
-  | dmb  -- Data Memory Barrier
-  | dsb  -- Data Synchronization Barrier
-  | isb  -- Instruction Synchronization Barrier
-  deriving Repr, DecidableEq, Inhabited
-
--- ============================================================================
 -- U6-A (U-M08): Formal MMIO Abstraction Boundary
 -- ============================================================================
 
@@ -178,42 +163,6 @@ structure MmioSafe (regions : List MmioRegionDesc) (addr : PAddr) (outcome : Nat
   hOutcome : True  -- Placeholder: WS-V will refine with device state model
 
 -- ============================================================================
--- T6-E/M-NEW-7: MMIO operation types
--- ============================================================================
-
-/-- T6-E: MMIO operation descriptor. Encodes the type of device register
-    access (read/write, 32/64-bit) along with the target address, value,
-    and required memory barriers.
-
-    **Barrier convention for ARM64 MMIO**:
-    - Reads: `barrierAfter := some .dmb` (ensure read completes before
-      subsequent accesses observe the value)
-    - Writes: `barrierBefore := some .dsb` (ensure prior writes complete
-      before the device register write)
-    - Configuration writes: `barrierAfter := some .isb` (flush pipeline
-      after modifying system registers) -/
-inductive MmioOpKind where
-  | read32   -- 32-bit device register read
-  | write32  -- 32-bit device register write
-  | read64   -- 64-bit device register read
-  | write64  -- 64-bit device register write
-  deriving Repr, DecidableEq
-
-/-- T6-E/H: Complete MMIO operation with address, value, and barrier annotations. -/
-structure MmioOp where
-  /-- The kind of MMIO operation. -/
-  kind : MmioOpKind
-  /-- Target device register physical address. -/
-  addr : PAddr
-  /-- Value to write (for write ops) or expected value (for read ops, ignored). -/
-  value : Nat := 0
-  /-- Memory barrier to execute before the MMIO operation. -/
-  barrierBefore : Option MemoryBarrier := none
-  /-- Memory barrier to execute after the MMIO operation. -/
-  barrierAfter : Option MemoryBarrier := none
-  deriving Repr
-
--- ============================================================================
 -- T6-E: Device-region validation
 -- ============================================================================
 
@@ -223,12 +172,6 @@ structure MmioOp where
 def isDeviceAddress (addr : PAddr) : Bool :=
   rpi5MachineConfig.memoryMap.any fun region =>
     region.kind == .device && region.contains addr
-
-/-- T6-E: Check whether a physical address falls within a known MMIO
-    peripheral region. This is a tighter check than `isDeviceAddress` —
-    it validates against the specific peripheral register spaces. -/
-def isMmioPeripheralAddress (addr : PAddr) : Bool :=
-  mmioRegions.any fun region => region.contains addr
 
 -- ============================================================================
 -- T6-E: MMIO read/write operations in the kernel monad
@@ -339,24 +282,6 @@ def mmioWrite64 (addr : PAddr) (val : UInt64) : Kernel Unit :=
       .ok ((), { st with machine := { st.machine with memory := mem' } })
     else
       .error .policyDenied
-
--- ============================================================================
--- T6-E: MMIO operation validation and execution
--- ============================================================================
-
-/-- T6-E: Validate that an MMIO operation targets a valid device address.
-    Returns `true` iff the operation's address is in a `.device` region. -/
-def MmioOp.isValid (op : MmioOp) : Bool :=
-  isDeviceAddress op.addr
-
-/-- T6-E: Validate that an MMIO operation has appropriate barriers for its kind.
-    ARM64 convention:
-    - Reads should have `barrierAfter` (DMB to ensure ordering)
-    - Writes should have `barrierBefore` (DSB to ensure completion) -/
-def MmioOp.hasAppropriateBarriers (op : MmioOp) : Bool :=
-  match op.kind with
-  | .read32 | .read64 => op.barrierAfter.isSome
-  | .write32 | .write64 => op.barrierBefore.isSome
 
 -- ============================================================================
 -- T6-E: Correctness properties

@@ -115,19 +115,4 @@ theorem adapterReadMemory_ok_returns_machine_byte
     exact ⟨hSt.symm, hByte.symm⟩
   · simp [adapterReadMemory, hAllow] at hStep
 
-theorem adapterAdvanceTimer_deterministic
-    (contract : RuntimeBoundaryContract)
-    (ticks : Nat)
-    (st st₁ st₂ : SystemState)
-    (h₁ : adapterAdvanceTimer contract ticks st = .ok ((), st₁))
-    (h₂ : adapterAdvanceTimer contract ticks st = .ok ((), st₂)) :
-    st₁ = st₂ := by
-  have hEq : (.ok ((), st₁) : Except KernelError (Unit × SystemState)) = .ok ((), st₂) := by
-    calc
-      (.ok ((), st₁) : Except KernelError (Unit × SystemState)) =
-          adapterAdvanceTimer contract ticks st := by simpa using h₁.symm
-      _ = .ok ((), st₂) := h₂
-  cases hEq
-  rfl
-
 end SeLe4n.Kernel.Architecture

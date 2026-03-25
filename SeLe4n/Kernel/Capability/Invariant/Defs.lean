@@ -175,24 +175,6 @@ def capabilityInvariantBundle (st : SystemState) : Prop :=
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st ∧ st.objects.invExt
 
-/-- WS-H4/M-G02: Extended capability invariant bundle including mint-tracking
-completeness. Provides the full 7-property assurance without changing the base
-6-tuple bundle. -/
-def capabilityInvariantBundleWithMintCompleteness (st : SystemState) : Prop :=
-  capabilityInvariantBundle st ∧ cdtMintCompleteness st
-
-/-- Extract the base bundle from the extended bundle. -/
-theorem capabilityInvariantBundle_of_withMintCompleteness
-    (st : SystemState)
-    (h : capabilityInvariantBundleWithMintCompleteness st) :
-    capabilityInvariantBundle st := h.1
-
-/-- Extract mint completeness from the extended bundle. -/
-theorem cdtMintCompleteness_of_withMintCompleteness
-    (st : SystemState)
-    (h : capabilityInvariantBundleWithMintCompleteness st) :
-    cdtMintCompleteness st := h.2
-
 -- ============================================================================
 -- S3-D/U-M03: CDT maps consistency as state-level invariant
 -- ============================================================================
@@ -233,29 +215,6 @@ theorem cdtMapsConsistent_default : cdtMapsConsistent (default : SystemState) :=
     · intro ⟨_, hE, _, _⟩
       have : (default : SystemState).cdt.edges = [] := rfl
       rw [this] at hE; exact (nomatch hE)
-
-/-- S3-D: Extended capability invariant bundle with CDT maps consistency.
-    Following the pattern of `cdtMintCompleteness`, this is kept separate
-    from the base 7-tuple bundle to avoid churn on 60+ existing theorems. -/
-def capabilityInvariantBundleWithCdtMaps (st : SystemState) : Prop :=
-  capabilityInvariantBundle st ∧ cdtMapsConsistent st
-
-/-- S3-D: Extract the base bundle from the CDT maps extended bundle. -/
-theorem capabilityInvariantBundle_of_withCdtMaps
-    (st : SystemState)
-    (h : capabilityInvariantBundleWithCdtMaps st) :
-    capabilityInvariantBundle st := h.1
-
-/-- S3-D: Extract CDT maps consistency from the extended bundle. -/
-theorem cdtMapsConsistent_of_withCdtMaps
-    (st : SystemState)
-    (h : capabilityInvariantBundleWithCdtMaps st) :
-    cdtMapsConsistent st := h.2
-
-/-- S3-D: Full extended capability invariant bundle — combines base bundle,
-    CDT maps consistency, and mint completeness. -/
-def capabilityInvariantBundleFull (st : SystemState) : Prop :=
-  capabilityInvariantBundle st ∧ cdtMapsConsistent st ∧ cdtMintCompleteness st
 
 -- ============================================================================
 -- S3-D: cdtMapsConsistent transfer and frame theorems

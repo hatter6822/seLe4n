@@ -226,26 +226,6 @@ theorem extractMessageRegisters_roundtrip
   · simp [Array.size_extract]; omega
   · simp [Array.getElem_extract]
 
-/-- Determinism: extracting message registers from the same inputs produces
-    the same result. Trivially `rfl` since the function is pure. -/
-theorem extractMessageRegisters_deterministic (msgRegs : Array RegValue)
-    (info : MessageInfo) :
-    extractMessageRegisters msgRegs info =
-    extractMessageRegisters msgRegs info := rfl
-
--- ============================================================================
--- Determinism theorem
--- ============================================================================
-
-/-- Determinism: decoding the same register file with the same layout always
-    produces the same result. This is trivially true since all functions are
-    pure, but stated explicitly for proof-surface anchoring. -/
-theorem decodeSyscallArgs_deterministic
-    (layout : SyscallRegisterLayout)
-    (regs : RegisterFile)
-    (regCount : Nat) :
-    decodeSyscallArgs layout regs regCount = decodeSyscallArgs layout regs regCount := rfl
-
 -- ============================================================================
 -- Error exclusivity — each error variant maps to exactly one failure mode
 -- ============================================================================
