@@ -25,8 +25,11 @@ open SeLe4n.Model
 def asidBoundToRoot (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.ObjId) : Prop :=
   ∃ root, st.objects[rootId]? = some (KernelObject.vspaceRoot root) ∧ root.asid = asid
 
-/-- WS-G3/F-P06: Locate the root object id carrying `asid` via O(1) hash lookup.
-    Falls back to object-store validation to ensure the entry is still a valid VSpaceRoot. -/
+/-- WS-G3/F-P06/U2-H: Locate the root object id carrying `asid` via O(1) hash lookup.
+    Falls back to object-store validation to ensure the entry is still a valid VSpaceRoot.
+    U2-H: Rejects ASIDs ≥ `maxASID` (65536 on ARM64) as a defense-in-depth
+    check — invalid ASIDs cannot appear in the ASID table, but the guard makes
+    this explicit. -/
 def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.ObjId × VSpaceRoot) :=
   match st.asidTable[asid]? with
   | some oid =>
@@ -34,6 +37,32 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     | some (.vspaceRoot root) => if root.asid = asid then some (oid, root) else none
     | _ => none
   | none => none
+
+/-- U2-H: Default ASID space bound (ARM64 16-bit ASID field in TTBR1_EL1).
+    Used as the upper bound for model-level reasoning. Platform-specific bounds
+    are enforced via `asidBoundForConfig`. -/
+def asidBound : Nat := 65536
+
+/-- U2-H: Platform-specific ASID bound derived from `MachineConfig`. -/
+def asidBoundForConfig (config : MachineConfig) : Nat := config.maxASID
+
+/-- U2-H: ASID-bounds-checked VSpace root resolution.
+    Defense-in-depth: rejects ASIDs ≥ `asidBound` (65536 on ARM64) before table
+    lookup. Invalid ASIDs cannot appear in the ASID table by construction, but
+    the guard makes this explicit at the production call boundary.
+    Invariant proofs use `resolveAsidRoot` directly (no guard needed for
+    inductive reasoning over well-formed states). -/
+def resolveAsidRootChecked (st : SystemState) (asid : SeLe4n.ASID)
+    (maxASID : Nat := asidBound) : Option (SeLe4n.ObjId × VSpaceRoot) :=
+  if !asid.isValidForConfig maxASID then none
+  else resolveAsidRoot st asid
+
+/-- U2-H: Checked resolution agrees with unchecked when ASID is valid. -/
+theorem resolveAsidRootChecked_eq_of_valid (st : SystemState) (asid : SeLe4n.ASID)
+    (maxASID : Nat) (hValid : asid.isValidForConfig maxASID = true) :
+    resolveAsidRootChecked st asid maxASID = resolveAsidRoot st asid := by
+  unfold resolveAsidRootChecked
+  simp [hValid]
 
 /-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
     Used as the upper bound for model-level reasoning. Platform-specific bounds

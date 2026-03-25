@@ -15,8 +15,9 @@
   internal proof helpers with "do not use directly" docstrings. Updated test
   harness references to use public API.
 - U2-K (U-L03): Added `AccessRightSet.mk_checked` proof-carrying constructor
-  with `bits < 2^5` obligation. Added `empty_valid`, `singleton_valid`, and
-  `mk_checked_valid` lemmas.
+  with `bits < 2^5` obligation. Added `empty_valid`, `singleton_valid`,
+  `mk_checked_valid`, `union_valid`, `inter_valid`, and `isWord5_of_valid`
+  lemmas. Closure proofs use `Nat.or_lt_two_pow` and `Nat.and_le_left`.
 - U2-L (U-M18): Audited all `storeObject` call sites. Documented three
   categories: allocation-guarded (lifecycle retype), in-place mutation (VSpace,
   CSpace, IPC, scheduler), and builder/boot.
@@ -25,7 +26,13 @@
   witness type produces a build error.
 - U2-N (U-M17): Added `RegisterFile.not_lawfulBEq` and `TCB.not_lawfulBEq`
   negative `LawfulBEq` instances via counterexample (out-of-range GPR index 32).
-- Version bump to 0.21.1. Metrics: 62,049 production LoC, 1,859 theorems.
+- **Audit refinements**: Extended `vspaceInvariantBundle` from 6-conjunct to
+  7-conjunct with `canonicalAddressInvariant` (U2-C). Added
+  `resolveAsidRootChecked` layered wrapper with ASID bounds guard (U2-H).
+  Added `asidBound`/`asidBoundForConfig` constants. Preservation proofs
+  updated for map and unmap success paths, default state, and timer/register
+  helpers.
+- Version bump to 0.21.1. Metrics: 62,154 production LoC, 1,867 theorems.
 
 ## [0.21.0] — WS-U Phase U1: Correctness Fixes
 

@@ -2,7 +2,7 @@
   "description": "This GitBook is the long-form guide for seLe4n \u2014 a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.",
   "current_state_bullets": [
     "**Version:** 0.21.1 (Lean v4.28.0).",
-    "**Codebase metrics:** 62,049 production LoC across 100 files; 8,327 test LoC across 10 suites; 1,859 theorem/lemma declarations (zero sorry/axiom).",
+    "**Codebase metrics:** 62,154 production LoC across 101 files; 8,327 test LoC across 10 suites; 1,867 theorem/lemma declarations (zero sorry/axiom).",
     "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical).",
     "**Active workstream:** **WS-U Phase U2 COMPLETE** — Safety Boundary Hardening (14 sub-tasks, v0.21.1). All prior portfolios (WS-B through WS-U U1) completed.",
     "**Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.",

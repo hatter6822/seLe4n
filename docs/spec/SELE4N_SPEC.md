@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.21.1` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 62,049 across 100 Lean files |
+| **Production LoC** | 62,154 across 101 Lean files |
 | **Test LoC** | 8,327 across 10 Lean test suites |
-| **Proved declarations** | 1,859 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 1,867 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
 | **Active workstream** | **WS-U Phase U2 COMPLETE** — Safety Boundary Hardening (14 sub-tasks, U2-A–U2-N, v0.21.1). Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md). Prior: WS-U U1 (v0.21.0), WS-T (v0.20.0–v0.20.7), WS-S–WS-B — all COMPLETE. |

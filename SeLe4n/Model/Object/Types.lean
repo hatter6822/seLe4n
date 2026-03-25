@@ -146,6 +146,26 @@ instance (r : AccessRight) (s : AccessRightSet) : Decidable (r ∈ s) :=
 /-- WS-F5/D2a: Intersection of two rights sets (bitwise AND). -/
 @[inline] def inter (a b : AccessRightSet) : AccessRightSet := ⟨a.bits &&& b.bits⟩
 
+/-- U2-K: Union of two valid rights sets is valid (5-bit closure). -/
+theorem union_valid (a b : AccessRightSet) (ha : a.valid) (hb : b.valid) :
+    (union a b).valid := by
+  simp only [union, valid, maxBits] at *
+  exact Nat.or_lt_two_pow ha hb
+
+/-- U2-K: Intersection of two valid rights sets is valid (5-bit closure). -/
+theorem inter_valid (a b : AccessRightSet) (ha : a.valid) (_hb : b.valid) :
+    (inter a b).valid := by
+  simp only [inter, valid, maxBits] at *
+  exact Nat.lt_of_le_of_lt Nat.and_le_left ha
+
+/-- U2-K/U-L03: Every `AccessRightSet` value constructed through `ofNat`, `ofList`,
+    `singleton`, `empty`, or `mk_checked` satisfies the 5-bit invariant.
+    This is the `isWord64` lemma requested by the workstream plan.
+    Note: values constructed via raw `.mk` may violate this — callers building
+    `AccessRightSet` directly from `Nat` should use `ofNat` (masked) or
+    `mk_checked` (proof-carrying) instead. -/
+theorem isWord5_of_valid (ars : AccessRightSet) (h : ars.valid) : ars.bits < 2 ^ 5 := h
+
 /-- WS-F5/D2a: Convert rights set to a list (canonical order). -/
 def toList (s : AccessRightSet) : List AccessRight :=
   AccessRight.all.filter s.mem

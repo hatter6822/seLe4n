@@ -600,12 +600,14 @@ Data structure (WS-G6 / F-P05):
 
 - `VSpaceRoot.mappings : Std.HashMap VAddr (PAddr × PagePermissions)` — O(1) amortized lookup/insert/erase (WS-G6, enriched by WS-H11 with per-page permissions). HashMap key uniqueness makes `noVirtualOverlap` trivially true. `BEq VSpaceRoot` uses size + fold containment (order-independent HashMap equality). `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
 
-VSpace invariant bundle structure (5-conjunct, WS-G3/WS-H11):
+VSpace invariant bundle structure (7-conjunct, WS-G3/WS-H11/WS-F6/U2-C):
 - `vspaceAsidRootsUnique` — no two VSpaceRoot objects share the same ASID
 - `vspaceRootNonOverlap` — VSpaceRoot mapping ranges do not overlap (trivially true with HashMap, WS-G6)
 - `asidTableConsistent` — bidirectional soundness + completeness between `asidTable` HashMap and VSpaceRoot objects
 - `wxExclusiveInvariant` — no mapping is both writable and executable (W^X, WS-H11)
 - `boundedAddressTranslation` — all translated physical addresses are within `[0, bound)` (WS-H11)
+- `vspaceCrossAsidIsolation` — distinct VSpaceRoot objects have distinct ASIDs (WS-F6/D6)
+- `canonicalAddressInvariant` — all virtual addresses in mappings are canonical (U2-C)
 
 Supporting infrastructure in `VSpace.lean`:
 - `resolveAsidRoot_some_implies_obj` — extracts asidTable + object-store facts from successful ASID resolution (WS-G3: O(1) HashMap lookup)
