@@ -26,16 +26,19 @@ impl CSpaceMintArgs {
     ///
     /// R-M01 fix: validates that the rights register fits in u8 and only
     /// uses valid rights bits (0–4). Values > 0x1F are rejected.
+    /// V1-F (M-RS-4): Returns `InvalidArgument` (not `InvalidMessageInfo`)
+    /// for invalid rights — the message structure is correct, the argument
+    /// value is invalid.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 4 { return Err(KernelError::InvalidMessageInfo); }
         if regs[2] > 0x1F {
-            return Err(KernelError::InvalidMessageInfo);
+            return Err(KernelError::InvalidArgument);
         }
         Ok(Self {
             src_slot: Slot::from(regs[0]),
             dst_slot: Slot::from(regs[1]),
             rights: AccessRights::try_from(regs[2] as u8)
-                .map_err(|_| KernelError::InvalidMessageInfo)?,
+                .map_err(|_| KernelError::InvalidArgument)?,
             badge: Badge::from(regs[3]),
         })
     }
@@ -163,13 +166,14 @@ mod tests {
 
     #[test]
     fn mint_rights_truncation_rejected() {
+        // V1-F: invalid rights return InvalidArgument (not InvalidMessageInfo)
         // 0x20 — bit 5 set, exceeds valid rights range
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x20, 42]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x20, 42]), Err(KernelError::InvalidArgument));
         // 0xFF — u8 max
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0xFF, 42]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0xFF, 42]), Err(KernelError::InvalidArgument));
         // 0x100 — would truncate to 0x00 without bounds check
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x100, 42]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, 0x100, 42]), Err(KernelError::InvalidArgument));
         // u64::MAX — worst case
-        assert_eq!(CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]), Err(KernelError::InvalidMessageInfo));
+        assert_eq!(CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]), Err(KernelError::InvalidArgument));
     }
 }

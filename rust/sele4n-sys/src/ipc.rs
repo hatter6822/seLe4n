@@ -72,8 +72,8 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 /// Returns the received badge and response registers.
 #[inline]
 pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
-    // U3-C: MessageInfo::new(0, 0, 0) is infallible for valid constants.
-    let msg_info = MessageInfo::new(0, 0, 0).unwrap();
+    // V1-D: new_const() is compile-time validated — infallible for valid constants.
+    let msg_info = MessageInfo::new_const(0, 0, 0);
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: src,
         msg_info,
@@ -125,7 +125,7 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
 /// seL4 equivalent: `seL4_Signal(dest)`.
 #[inline]
 pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo::new(0, 0, 0).unwrap();
+    let msg_info = MessageInfo::new_const(0, 0, 0);
     invoke_syscall(SyscallRequest {
         cap_addr: ntfn,
         msg_info,
@@ -139,7 +139,7 @@ pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
 /// Returns the accumulated badge value.
 #[inline]
 pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
-    let msg_info = MessageInfo::new(0, 0, 0).unwrap();
+    let msg_info = MessageInfo::new_const(0, 0, 0);
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: ntfn,
         msg_info,

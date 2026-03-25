@@ -22,13 +22,13 @@ pub fn lifecycle_retype(
 ) -> KernelResult<SyscallResponse> {
     let args = LifecycleRetypeArgs {
         target_obj,
-        new_type: type_tag.to_u64(),
+        new_type: type_tag,
         size,
     };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: untyped_cap,
-        msg_info: MessageInfo::new(3, 0, 0).unwrap(),
+        msg_info: MessageInfo::new_const(3, 0, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::LifecycleRetype,
     })

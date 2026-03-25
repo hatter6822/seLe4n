@@ -187,7 +187,7 @@ fn xval_008_cspace_delete() {
 fn xval_009_lifecycle_retype() {
     let args = lifecycle::LifecycleRetypeArgs {
         target_obj: ObjId::from(42u64),
-        new_type: 2, // Notification
+        new_type: TypeTag::Notification, // V1-C: now TypeTag
         size: 0,
     };
     let encoded = args.encode();
@@ -576,24 +576,26 @@ fn t3d_vspace_map_args_perms_roundtrip() {
 }
 
 /// T3-D: Invalid permission values are rejected at decode.
+/// V1-F consistency: returns InvalidArgument (not InvalidMessageInfo)
+/// because the message structure is correct — the argument value is invalid.
 #[test]
 fn t3d_vspace_map_args_invalid_perms_rejected() {
     // 0x20 — first value outside 5-bit range
     assert_eq!(
         vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
-        Err(KernelError::InvalidMessageInfo)
+        Err(KernelError::InvalidArgument)
     );
 
     // 0xFF — common garbage value
     assert_eq!(
         vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
-        Err(KernelError::InvalidMessageInfo)
+        Err(KernelError::InvalidArgument)
     );
 
     // u64::MAX — extreme case
     assert_eq!(
         vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
-        Err(KernelError::InvalidMessageInfo)
+        Err(KernelError::InvalidArgument)
     );
 }
 
@@ -755,4 +757,146 @@ fn u3g_register_file_bounds() {
 fn u3i_ipc_buffer_layout() {
     assert_eq!(core::mem::size_of::<IpcBuffer>(), 960);
     assert_eq!(core::mem::align_of::<IpcBuffer>(), 8);
+}
+
+// ============================================================================
+// V1 — Rust ABI Hardening conformance tests (Phase V1, WS-V)
+// ============================================================================
+
+/// V1-A (H-RS-1): decode_response must reject u64 values exceeding u32::MAX.
+/// Without the range guard, 0x1_0000_0000 truncates to 0 (false success).
+#[test]
+fn v1a_decode_response_u64_overflow() {
+    use sele4n_abi::decode_response;
+
+    // Value that would truncate to 0 (success) without guard
+    let regs = [0x1_0000_0000u64, 0, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+
+    // u64::MAX
+    let regs = [u64::MAX, 0, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+
+    // Just above u32::MAX
+    let regs = [u32::MAX as u64 + 1, 0, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+}
+
+/// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
+#[test]
+fn v1c_lifecycle_retype_invalid_type_tag() {
+    // Type tag 6 (first invalid)
+    assert_eq!(
+        lifecycle::LifecycleRetypeArgs::decode(&[42, 6, 0]),
+        Err(KernelError::InvalidTypeTag)
+    );
+
+    // Type tag u64::MAX
+    assert_eq!(
+        lifecycle::LifecycleRetypeArgs::decode(&[42, u64::MAX, 0]),
+        Err(KernelError::InvalidTypeTag)
+    );
+
+    // All valid tags (0-5) must succeed
+    for i in 0..=5u64 {
+        assert!(lifecycle::LifecycleRetypeArgs::decode(&[42, i, 0]).is_ok());
+    }
+}
+
+/// V1-E (M-RS-3): IpcBuffer.get_mr returns InvalidArgument for inline indices.
+#[test]
+fn v1e_ipc_buffer_inline_error_variant() {
+    let buf = IpcBuffer::new();
+    for i in 0..4 {
+        assert_eq!(buf.get_mr(i), Err(KernelError::InvalidArgument));
+    }
+}
+
+/// V1-F (M-RS-4): CSpaceMintArgs decode returns InvalidArgument for invalid rights.
+#[test]
+fn v1f_cspace_mint_invalid_rights_error_variant() {
+    assert_eq!(
+        cspace::CSpaceMintArgs::decode(&[1, 2, 0x20, 42]),
+        Err(KernelError::InvalidArgument)
+    );
+    assert_eq!(
+        cspace::CSpaceMintArgs::decode(&[1, 2, u64::MAX, 42]),
+        Err(KernelError::InvalidArgument)
+    );
+}
+
+/// V1-G (M-RS-5): PagePerms checked_bitor rejects W^X violations.
+#[test]
+fn v1g_page_perms_checked_bitor_wx() {
+    use sele4n_abi::args::PagePerms;
+
+    // Safe combinations
+    assert!(PagePerms::READ.checked_bitor(PagePerms::WRITE).is_ok());
+    assert!(PagePerms::READ.checked_bitor(PagePerms::EXECUTE).is_ok());
+    assert!(PagePerms::READ.checked_bitor(PagePerms::USER).is_ok());
+
+    // W^X violation
+    assert_eq!(
+        PagePerms::WRITE.checked_bitor(PagePerms::EXECUTE),
+        Err(KernelError::PolicyDenied)
+    );
+
+    // Transitive W^X violation
+    let rw = PagePerms::READ.checked_bitor(PagePerms::WRITE).unwrap();
+    assert_eq!(
+        rw.checked_bitor(PagePerms::EXECUTE),
+        Err(KernelError::PolicyDenied)
+    );
+}
+
+/// V1-I (L-RS-2): ServiceRegisterArgs rejects out-of-bounds method_count/message_size.
+#[test]
+fn v1i_service_register_bounds() {
+    use sele4n_abi::args::service::{MAX_METHOD_COUNT, MAX_SERVICE_MESSAGE_SIZE};
+
+    // method_count too large
+    assert_eq!(
+        service::ServiceRegisterArgs::decode(&[1, MAX_METHOD_COUNT + 1, 64, 64, 0]),
+        Err(KernelError::InvalidArgument)
+    );
+
+    // max_message_size too large
+    assert_eq!(
+        service::ServiceRegisterArgs::decode(&[1, 5, MAX_SERVICE_MESSAGE_SIZE + 1, 64, 0]),
+        Err(KernelError::InvalidArgument)
+    );
+
+    // Boundary values accepted
+    assert!(
+        service::ServiceRegisterArgs::decode(&[1, MAX_METHOD_COUNT, MAX_SERVICE_MESSAGE_SIZE, MAX_SERVICE_MESSAGE_SIZE, 1]).is_ok()
+    );
+}
+
+/// V1-D (M-RS-2): MessageInfo::new_const is infallible for valid constants.
+#[test]
+fn v1d_message_info_new_const() {
+    let mi = MessageInfo::new_const(0, 0, 0);
+    assert_eq!(mi.length(), 0);
+    assert_eq!(mi.extra_caps(), 0);
+    assert_eq!(mi.label(), 0);
+
+    let mi = MessageInfo::new_const(120, 3, 0xFFFF);
+    assert_eq!(mi.length(), 120);
+    assert_eq!(mi.extra_caps(), 3);
+    assert_eq!(mi.label(), 0xFFFF);
+}
+
+/// V1-H (M-RS-7): Identifier validation methods.
+#[test]
+fn v1h_identifier_validation() {
+    use sele4n_types::{Slot, DomainId, Priority};
+
+    assert!(Slot::from(0u64).is_valid());
+    assert!(!Slot::from(u32::MAX as u64 + 1).is_valid());
+
+    assert!(DomainId::from(255u64).is_valid());
+    assert!(!DomainId::from(256u64).is_valid());
+
+    assert!(Priority::from(255u64).is_valid());
+    assert!(!Priority::from(256u64).is_valid());
 }

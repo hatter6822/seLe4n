@@ -18,6 +18,23 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
+WS-V Phase V1 (Rust ABI Hardening) is complete. Phases V2–V8 remain.
+
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phase V1 COMPLETE
+
+WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
+61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
+[`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md).
+
+- **V1 (Rust ABI Hardening) COMPLETE** (v0.22.0): 12 sub-tasks (V1-A through V1-L).
+  Hardened the Rust ABI boundary: u64→u32 truncation guard in `decode_response`
+  (H-RS-1), `LifecycleRetypeArgs.new_type` changed from raw u64 to validated
+  `TypeTag` (M-RS-1), 13 `unwrap()` calls replaced with `new_const()` (M-RS-2),
+  error variants corrected for `IpcBuffer::get_mr` and `CSpaceMintArgs::decode`
+  (M-RS-3/M-RS-4), W^X `checked_bitor` for `PagePerms` (M-RS-5),
+  `is_reserved()`/`is_valid()` for `Slot`/`DomainId`/`Priority` (M-RS-7),
+  `ServiceRegisterArgs` bounds validation (L-RS-2), stale comment fix (L-RS-1),
+  and 10 new conformance tests. All 157 Rust tests pass, zero warnings.
 
 ### WS-U workstream (v0.20.7 Audit Remediation) — Phase U8 COMPLETE (PORTFOLIO COMPLETE)
 

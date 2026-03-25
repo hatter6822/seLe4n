@@ -95,6 +95,19 @@ impl Slot {
     /// Returns the raw inner value.
     #[inline]
     pub const fn raw(&self) -> u64 { self.0 }
+
+    /// V1-H (M-RS-7): Maximum valid slot index.
+    /// Lean: CNode radix is bounded; slot indices must fit within the radix width.
+    /// The maximum practical radix is 2^32, so slots beyond that are invalid.
+    pub const MAX_VALID: u64 = u32::MAX as u64;
+
+    /// Returns `true` if this slot index exceeds the maximum valid range.
+    #[inline]
+    pub const fn is_reserved(&self) -> bool { self.0 > Self::MAX_VALID }
+
+    /// Returns `true` if this slot index is within the valid range.
+    #[inline]
+    pub const fn is_valid(&self) -> bool { self.0 <= Self::MAX_VALID }
 }
 
 impl From<u64> for Slot { #[inline] fn from(v: u64) -> Self { Self(v) } }
@@ -111,6 +124,18 @@ impl DomainId {
     /// Returns the raw inner value.
     #[inline]
     pub const fn raw(&self) -> u64 { self.0 }
+
+    /// V1-H (M-RS-7): seL4 uses 8-bit domain IDs (256 domains max).
+    /// Lean: `numDomains` is bounded. Values ≥ 256 are invalid.
+    pub const MAX_VALID: u64 = 255;
+
+    /// Returns `true` if this domain ID exceeds the valid range.
+    #[inline]
+    pub const fn is_reserved(&self) -> bool { self.0 > Self::MAX_VALID }
+
+    /// Returns `true` if this domain ID is within the valid range.
+    #[inline]
+    pub const fn is_valid(&self) -> bool { self.0 <= Self::MAX_VALID }
 }
 
 impl From<u64> for DomainId { #[inline] fn from(v: u64) -> Self { Self(v) } }
@@ -127,6 +152,18 @@ impl Priority {
     /// Returns the raw inner value.
     #[inline]
     pub const fn raw(&self) -> u64 { self.0 }
+
+    /// V1-H (M-RS-7): seL4 uses 8-bit priorities (0–255).
+    /// Lean: `maxPriority = 255`. Values > 255 are invalid.
+    pub const MAX_VALID: u64 = 255;
+
+    /// Returns `true` if this priority exceeds the valid range.
+    #[inline]
+    pub const fn is_reserved(&self) -> bool { self.0 > Self::MAX_VALID }
+
+    /// Returns `true` if this priority is within the valid range.
+    #[inline]
+    pub const fn is_valid(&self) -> bool { self.0 <= Self::MAX_VALID }
 }
 
 impl From<u64> for Priority { #[inline] fn from(v: u64) -> Self { Self(v) } }
@@ -337,6 +374,31 @@ mod tests {
     fn badge_bor_idempotent() {
         let a = Badge(0xFF);
         assert_eq!(a.bor(a), a);
+    }
+
+    // V1-H: Slot, DomainId, Priority validation
+    #[test]
+    fn slot_validation() {
+        assert!(Slot::from(0u64).is_valid());
+        assert!(Slot::from(u32::MAX as u64).is_valid());
+        assert!(!Slot::from(u32::MAX as u64 + 1).is_valid());
+        assert!(Slot::from(u32::MAX as u64 + 1).is_reserved());
+    }
+
+    #[test]
+    fn domain_id_validation() {
+        assert!(DomainId::from(0u64).is_valid());
+        assert!(DomainId::from(255u64).is_valid());
+        assert!(!DomainId::from(256u64).is_valid());
+        assert!(DomainId::from(256u64).is_reserved());
+    }
+
+    #[test]
+    fn priority_validation() {
+        assert!(Priority::from(0u64).is_valid());
+        assert!(Priority::from(255u64).is_valid());
+        assert!(!Priority::from(256u64).is_valid());
+        assert!(Priority::from(256u64).is_reserved());
     }
 
     #[test]

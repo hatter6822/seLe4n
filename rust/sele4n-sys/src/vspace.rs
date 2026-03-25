@@ -29,7 +29,7 @@ pub fn vspace_map(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: vspace_cap,
-        msg_info: MessageInfo::new(4, 0, 0).unwrap(),
+        msg_info: MessageInfo::new_const(4, 0, 0),
         msg_regs: encoded,
         syscall_id: SyscallId::VSpaceMap,
     })
@@ -48,7 +48,7 @@ pub fn vspace_unmap(
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: vspace_cap,
-        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
+        msg_info: MessageInfo::new_const(2, 0, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::VSpaceUnmap,
     })

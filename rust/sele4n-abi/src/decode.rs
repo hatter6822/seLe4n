@@ -30,8 +30,14 @@ pub struct SyscallResponse {
 #[inline]
 pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
     if regs[0] != 0 {
-        // Truncate u64 → u32 is safe: kernel error codes are 0–37 (T1-G).
-        // Unrecognized codes (≥38) map to InvalidSyscallNumber (protocol violation).
+        // V1-A (H-RS-1): Guard against u64 values exceeding u32::MAX before cast.
+        // Without this check, a value like 0x1_0000_0000 would truncate to 0,
+        // causing a false-success interpretation.
+        if regs[0] > u32::MAX as u64 {
+            return Err(KernelError::InvalidSyscallNumber);
+        }
+        // Kernel error codes are 0–39 (T1-G, V1-B fix).
+        // Unrecognized codes (≥40) map to InvalidSyscallNumber (protocol violation).
         let err = KernelError::from_u32(regs[0] as u32)
             .unwrap_or(KernelError::InvalidSyscallNumber);
         return Err(err);
@@ -77,6 +83,27 @@ mod tests {
         let regs = [1, 0, 0, 0, 0, 0, 0];
         let result = decode_response(regs);
         assert_eq!(result, Err(KernelError::ObjectNotFound));
+    }
+
+    // V1-A: u64 values exceeding u32::MAX must not truncate to false success.
+    #[test]
+    fn decode_u64_overflow_rejected() {
+        // 0x1_0000_0000 would truncate to 0 (false success) without range guard
+        let regs = [0x1_0000_0000u64, 0, 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+    }
+
+    #[test]
+    fn decode_u64_max_rejected() {
+        let regs = [u64::MAX, 0, 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+    }
+
+    #[test]
+    fn decode_unknown_error_code() {
+        // error code 40 is beyond the 0-39 range
+        let regs = [40, 0, 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
     }
 
     #[test]

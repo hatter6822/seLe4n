@@ -31,7 +31,7 @@ impl VSpaceMapArgs {
     ///
     /// T3-C/M-NEW-10: Validates that `regs[3]` (perms) is a valid 5-bit
     /// permission bitmask (0–0x1F). Values > 0x1F are rejected with
-    /// `InvalidMessageInfo` to prevent silent truncation.
+    /// `InvalidArgument` to prevent silent truncation (V1-F consistency).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 4 { return Err(KernelError::InvalidMessageInfo); }
         let perms = PagePerms::try_from(regs[3])?;
@@ -90,14 +90,15 @@ mod tests {
     }
 
     // T3-C: Invalid perms rejected at decode boundary
+    // V1-F consistency: returns InvalidArgument (not InvalidMessageInfo)
     #[test]
     fn map_invalid_perms_rejected() {
         assert_eq!(VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0xFF]),
-                   Err(KernelError::InvalidMessageInfo));
+                   Err(KernelError::InvalidArgument));
         assert_eq!(VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
-                   Err(KernelError::InvalidMessageInfo));
+                   Err(KernelError::InvalidArgument));
         assert_eq!(VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, u64::MAX]),
-                   Err(KernelError::InvalidMessageInfo));
+                   Err(KernelError::InvalidArgument));
     }
 
     #[test]

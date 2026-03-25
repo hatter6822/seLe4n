@@ -96,14 +96,15 @@ impl IpcBuffer {
 
     /// Get a message register by absolute index (0..120).
     ///
-    /// - Indices 0–3: returns `Err(InvalidMessageInfo)` — those live in
-    ///   ARM64 registers, not in the buffer.
+    /// - Indices 0–3: returns `Err(InvalidArgument)` — those live in
+    ///   ARM64 registers, not in the buffer (V1-E/V1-J: corrected from
+    ///   `InvalidMessageInfo` which was semantically imprecise).
     /// - Indices 4–119: reads from the overflow buffer.
     /// - Index ≥ 120: returns `Err(IpcMessageTooLarge)`.
     #[inline]
     pub fn get_mr(&self, index: usize) -> Result<u64, KernelError> {
         if index < INLINE_REGS {
-            Err(KernelError::InvalidMessageInfo)
+            Err(KernelError::InvalidArgument)
         } else if index < MAX_MSG_REGS {
             Ok(self.msg[index - INLINE_REGS])
         } else {
@@ -178,8 +179,9 @@ mod tests {
     #[test]
     fn get_inline_returns_error() {
         let buf = IpcBuffer::new();
+        // V1-E/V1-J: inline indices return InvalidArgument (not InvalidMessageInfo)
         for i in 0..4 {
-            assert_eq!(buf.get_mr(i), Err(KernelError::InvalidMessageInfo));
+            assert_eq!(buf.get_mr(i), Err(KernelError::InvalidArgument));
         }
     }
 

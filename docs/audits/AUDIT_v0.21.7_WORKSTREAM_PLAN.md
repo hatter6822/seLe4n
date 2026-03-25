@@ -229,11 +229,12 @@ safety. The raw `.mk` constructor is a Lean structure default, not a public API.
 
 ## 4. Phase Definitions
 
-### Phase V1: Rust ABI Hardening & Immediate Fixes (12 sub-tasks)
+### Phase V1: Rust ABI Hardening & Immediate Fixes (12 sub-tasks) — **COMPLETE** (v0.22.0)
 
 **Priority**: Immediate (pre-benchmark blocker)
-**Gate**: `cargo test --all` passes; `lake build` succeeds; `test_smoke.sh` green
+**Gate**: `cargo test --all` passes ✓ (157 tests); `lake build` succeeds ✓; `test_smoke.sh` green ✓
 **Estimated scope**: ~200 lines Rust, ~20 lines Lean
+**Actual**: ~250 lines Rust changed, 10 new conformance tests
 
 These are low-risk, high-value fixes that harden the Rust ABI boundary and
 correct documentation drift. All changes are confined to the Rust crates and
