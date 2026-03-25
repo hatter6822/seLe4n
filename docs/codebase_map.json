@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-safety-hardening-BiaF6",
-      "commit_sha": "649cc19bfa6ed7839331acc6c1a9d7293f5ef6f4",
-      "tree_sha": "0642c8ada70b830378f8214de861769df5cef633",
-      "committed_at_utc": "2026-03-25T04:29:51+00:00"
+      "commit_sha": "f3e809ea64f558dffcdbbd087912c5c4c48b0d53",
+      "tree_sha": "41bc513342bf63be87b6bad888a94fa84ed53ea2",
+      "committed_at_utc": "2026-03-25T04:55:00+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fbbfc550a85fdd65221a33f29f38b0ba6fb732f71539b9db3d34612894b3776a"
+    "source_digest": "e9efa077dcaee028fead76fa588d47789d2e7bcc960e1b325ba5213d91b18d87"
   },
   "summary": {
     "module_count": 111,
