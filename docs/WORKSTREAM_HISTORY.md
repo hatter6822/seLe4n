@@ -35,8 +35,13 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   via `edgeWellFounded_sub` edge-removal proof (M-PRF-1). `resolveCapAddress_callers_check_rights`
   dispatch chain rights theorem in API.lean (M-PRF-3). `notificationSignal_preserves_waitingThreadsPendingMessageNone`
   via `cases`-based path decomposition (M-PRF-5). `notificationWake_pendingMessage_was_none`
-  blocking-state implies `pendingMessage = none` (L-IPC-1). 7 primitive + 2 operation-level
-  preservation lemmas for `waitingThreadsPendingMessageNone`. Predicate definitions:
+  blocking-state implies `pendingMessage = none` (L-IPC-1). 7 primitive + 6 operation-level
+  preservation lemmas for `waitingThreadsPendingMessageNone` covering all IPC operations:
+  `notificationWait`, `notificationSignal`, `endpointSendDual`, `endpointReceiveDual`,
+  `endpointCall`, `endpointReplyRecv`. Critical semantic fix: `blockedOnCall` removed from
+  invariant-constrained states (callers legitimately carry outgoing messages).
+  Two backward lemmas added: `storeTcbQueueLinks_tcb_pendingMessage_backward`,
+  `endpointQueueEnqueue_tcb_pendingMessage_backward`. Predicate definitions:
   `ipcStateQueueMembershipConsistent` (L-IPC-3), `endpointQueueNoDup` (L-LIFE-1).
   Zero sorry/axiom/`True := trivial`, 176 build targets pass, `test_full.sh` green.
 

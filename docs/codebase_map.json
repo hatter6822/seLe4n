@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-proof-chain-hardening-eoEVs",
-      "commit_sha": "18569449c42a450b7660ce756cef869f8b2cea5d",
-      "tree_sha": "b46bd2025abf166fe3609145b0e8a2ee6fe9c157",
-      "committed_at_utc": "2026-03-26T03:58:34+00:00"
+      "commit_sha": "751732e498bbefaa203feced38157d4353f8bdf8",
+      "tree_sha": "3c83c6c31de78044a049d7bd38f19efd317690d3",
+      "committed_at_utc": "2026-03-26T04:50:47+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b4406da288d2310a8894268e876ffb7aeeeab71de210cddc8333989434b5519a"
+    "source_digest": "1188a24e2d5b609b83ae329f2a90bb370fdd99876014a11d2bafe3dc0dc20c95"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3461
+    "declaration_count": 3472
   },
   "readme_sync": {
     "version": "0.22.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 65077,
+    "production_loc": 65904,
     "test_files": 10,
     "test_loc": 8315,
-    "proved_theorem_lemma_decls": 1902,
+    "proved_theorem_lemma_decls": 1913,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -8750,7 +8750,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue.Core",
       "path": "SeLe4n/Kernel/IPC/DualQueue/Core.lean",
-      "declaration_count": 15,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -8885,8 +8885,29 @@
         },
         {
           "kind": "theorem",
+          "name": "storeTcbQueueLinks_tcb_pendingMessage_backward",
+          "line": 156,
+          "called": [
+            "QueuePPrev",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq'",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_ne",
+            "tcbWithQueueLinks",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "storeTcbQueueLinks_tcb_forward",
-          "line": 155,
+          "line": 185,
           "called": [
             "ObjId",
             "QueuePPrev",
@@ -8907,7 +8928,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbQueueLinks_endpoint_forward",
-          "line": 178,
+          "line": 208,
           "called": [
             "Endpoint",
             "ObjId",
@@ -8926,7 +8947,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbQueueLinks_preserves_objects_invExt",
-          "line": 195,
+          "line": 225,
           "called": [
             "QueuePPrev",
             "SystemState",
@@ -8944,7 +8965,7 @@
         {
           "kind": "def",
           "name": "endpointQueuePopHead",
-          "line": 216,
+          "line": 246,
           "called": [
             "Endpoint",
             "IntrusiveQueue",
@@ -8963,7 +8984,7 @@
         {
           "kind": "def",
           "name": "endpointQueueEnqueue",
-          "line": 254,
+          "line": 284,
           "called": [
             "Endpoint",
             "IntrusiveQueue",
@@ -8981,7 +9002,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_objects_invExt",
-          "line": 293,
+          "line": 323,
           "called": [
             "ObjId",
             "SystemState",
@@ -9001,7 +9022,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_preserves_objects_invExt",
-          "line": 347,
+          "line": 377,
           "called": [
             "ObjId",
             "SystemState",
@@ -9022,7 +9043,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue.Transport",
       "path": "SeLe4n/Kernel/IPC/DualQueue/Transport.lean",
-      "declaration_count": 31,
+      "declaration_count": 32,
       "declarations": [
         {
           "kind": "namespace",
@@ -9296,9 +9317,33 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_tcb_pendingMessage_backward",
+          "line": 736,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq'",
+            "storeObject_objects_ne",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "storeTcbQueueLinks_tcb_pendingMessage_backward",
+            "toObjId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "endpointQueueRemoveDual",
-          "line": 738,
+          "line": 798,
           "called": [
             "Endpoint",
             "IntrusiveQueue",
@@ -9317,7 +9362,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_scheduler_eq",
-          "line": 818,
+          "line": 878,
           "called": [
             "ObjId",
             "SystemState",
@@ -9335,7 +9380,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_tcb_forward",
-          "line": 941,
+          "line": 1001,
           "called": [
             "ObjId",
             "SystemState",
@@ -9357,7 +9402,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_endpoint_backward_ne",
-          "line": 1080,
+          "line": 1140,
           "called": [
             "Endpoint",
             "ObjId",
@@ -9379,7 +9424,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_notification_backward",
-          "line": 1216,
+          "line": 1276,
           "called": [
             "Notification",
             "ObjId",
@@ -9402,7 +9447,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_tcb_ipcState_backward",
-          "line": 1361,
+          "line": 1421,
           "called": [
             "ObjId",
             "SystemState",
@@ -9426,7 +9471,7 @@
         {
           "kind": "def",
           "name": "endpointSendDual",
-          "line": 1526,
+          "line": 1586,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -9447,7 +9492,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDual",
-          "line": 1572,
+          "line": 1632,
           "called": [
             "Kernel",
             "ObjId",
@@ -9466,7 +9511,7 @@
         {
           "kind": "def",
           "name": "endpointCall",
-          "line": 1650,
+          "line": 1710,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -9488,7 +9533,7 @@
         {
           "kind": "def",
           "name": "endpointReply",
-          "line": 1694,
+          "line": 1754,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -9505,7 +9550,7 @@
         {
           "kind": "def",
           "name": "endpointReplyRecv",
-          "line": 1722,
+          "line": 1782,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -9525,7 +9570,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_preserves_tail_of_nonTail",
-          "line": 1763,
+          "line": 1823,
           "called": [
             "Endpoint",
             "ObjId",
@@ -9550,7 +9595,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_tail_update",
-          "line": 1862,
+          "line": 1922,
           "called": [
             "Endpoint",
             "ObjId",
@@ -9575,7 +9620,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_empty_sets_head",
-          "line": 1951,
+          "line": 2011,
           "called": [
             "Endpoint",
             "ObjId",
@@ -9598,7 +9643,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_empty_queueNext_none",
-          "line": 1993,
+          "line": 2053,
           "called": [
             "Endpoint",
             "ObjId",
@@ -9623,7 +9668,7 @@
         {
           "kind": "theorem",
           "name": "lookupTcb_of_objects",
-          "line": 2056,
+          "line": 2116,
           "called": [
             "SystemState",
             "TCB",
@@ -9636,7 +9681,7 @@
         {
           "kind": "theorem",
           "name": "tid_not_reserved_of_enqueue",
-          "line": 2067,
+          "line": 2127,
           "called": [
             "ObjId",
             "SystemState",
@@ -9651,7 +9696,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_then_popHead_succeeds",
-          "line": 2090,
+          "line": 2150,
           "called": [
             "Endpoint",
             "Kernel",
@@ -10745,7 +10790,7 @@
         {
           "kind": "def",
           "name": "waitingThreadsPendingMessageNone",
-          "line": 762,
+          "line": 765,
           "called": [
             "SystemState",
             "TCB",
@@ -10757,7 +10802,7 @@
         {
           "kind": "def",
           "name": "ipcStateQueueMembershipConsistent",
-          "line": 785,
+          "line": 787,
           "called": [
             "SystemState",
             "TCB",
@@ -10768,7 +10813,7 @@
         {
           "kind": "def",
           "name": "endpointQueueNoDup",
-          "line": 816,
+          "line": 818,
           "called": [
             "Endpoint",
             "ObjId",
@@ -11999,7 +12044,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 122,
+      "declaration_count": 131,
       "declarations": [
         {
           "kind": "namespace",
@@ -14414,7 +14459,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
-          "line": 6016,
+          "line": 6015,
           "called": [
             "IpcMessage",
             "SystemState",
@@ -14434,7 +14479,7 @@
         {
           "kind": "theorem",
           "name": "notificationWake_pendingMessage_was_none",
-          "line": 6065,
+          "line": 6063,
           "called": [
             "ObjId",
             "SystemState",
@@ -14448,10 +14493,9 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_preserves_waitingThreadsPendingMessageNone",
-          "line": 6077,
+          "line": 6075,
           "called": [
             "Badge",
-            "Kernel",
             "ObjId",
             "SystemState",
             "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
@@ -14461,6 +14505,243 @@
             "storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone",
             "storeObject_preserves_objects_invExt",
             "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_preserves_waitingThreadsPendingMessageNone",
+          "line": 6122,
+          "called": [
+            "QueuePPrev",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbQueueLinks",
+            "tcbWithQueueLinks",
+            "toObjId",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_waitingThreadsPendingMessageNone",
+          "line": 6165,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbPendingMessage",
+            "toObjId",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_waitingThreadsPendingMessageNone",
+          "line": 6213,
+          "called": [
+            "Badge",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "notificationId",
+            "notificationWait",
+            "removeRunnable_preserves_waitingThreadsPendingMessageNone",
+            "storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeObject_preserves_objects_invExt",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbIpcState_preserves_waitingThreadsPendingMessageNone",
+            "toObjId",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_preserves_waitingThreadsPendingMessageNone",
+          "line": 6294,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "endpointQueuePopHead",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "storeTcbQueueLinks_preserves_waitingThreadsPendingMessageNone",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_preserves_waitingThreadsPendingMessageNone",
+          "line": 6357,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone",
+            "storeObject_preserves_objects_invExt",
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "storeTcbQueueLinks_preserves_waitingThreadsPendingMessageNone",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDual_preserves_waitingThreadsPendingMessageNone",
+          "line": 6417,
+          "called": [
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueueEnqueue_preserves_objects_invExt",
+            "endpointQueueEnqueue_preserves_waitingThreadsPendingMessageNone",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "endpointQueuePopHead_preserves_waitingThreadsPendingMessageNone",
+            "endpointSendDual",
+            "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "invExt",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "removeRunnable_preserves_waitingThreadsPendingMessageNone",
+            "size",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReceiveDual_preserves_waitingThreadsPendingMessageNone",
+          "line": 6481,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueueEnqueue_preserves_objects_invExt",
+            "endpointQueueEnqueue_preserves_waitingThreadsPendingMessageNone",
+            "endpointQueueEnqueue_tcb_pendingMessage_backward",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "endpointQueuePopHead_preserves_waitingThreadsPendingMessageNone",
+            "endpointQueuePopHead_tcb_ipcState_backward",
+            "endpointReceiveDual",
+            "ensureRunnable",
+            "ensureRunnable_preserves_objects",
+            "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "invExt",
+            "isReserved",
+            "lookupTcb",
+            "none",
+            "removeRunnable_preserves_waitingThreadsPendingMessageNone",
+            "storeTcbIpcState",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_ipcState_eq",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_objects_ne",
+            "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
+            "storeTcbIpcState_preserves_waitingThreadsPendingMessageNone",
+            "storeTcbPendingMessage",
+            "storeTcbPendingMessage_preserves_waitingThreadsPendingMessageNone",
+            "toObjId",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCall_preserves_waitingThreadsPendingMessageNone",
+          "line": 6674,
+          "called": [
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointCall",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueueEnqueue_preserves_objects_invExt",
+            "endpointQueueEnqueue_preserves_waitingThreadsPendingMessageNone",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "endpointQueuePopHead_preserves_waitingThreadsPendingMessageNone",
+            "ensureRunnable",
+            "ensureRunnable_preserves_objects",
+            "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "invExt",
+            "none",
+            "removeRunnable_preserves_waitingThreadsPendingMessageNone",
+            "storeTcbIpcState",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
+            "storeTcbIpcState_preserves_waitingThreadsPendingMessageNone",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_waitingThreadsPendingMessageNone",
+          "line": 6755,
+          "called": [
+            "IpcMessage",
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointReceiveDual",
+            "endpointReceiveDual_preserves_waitingThreadsPendingMessageNone",
+            "endpointReplyRecv",
+            "ensureRunnable",
+            "ensureRunnable_preserves_objects",
+            "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "ext",
+            "invExt",
+            "isReserved",
+            "lookupTcb",
+            "none",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_fromTcb_eq",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_objects_ne",
+            "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
+            "toObjId",
             "waitingThreadsPendingMessageNone"
           ]
         }

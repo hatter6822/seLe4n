@@ -755,17 +755,19 @@ def ipcStateQueueConsistent (st : SystemState) : Prop :=
     The blocking states covered are:
     - `blockedOnReceive`: waiting for IPC send from another thread
     - `blockedOnNotification`: waiting for notification signal
-    - `blockedOnCall`: waiting for reply after IPC call
 
-    Note: `blockedOnSend` threads MAY have a pending message (they carry
-    the outgoing message in `pendingMessage` while queued). -/
+    Note: `blockedOnSend` and `blockedOnCall` threads MAY have a pending
+    message — they carry the outgoing message in `pendingMessage` while
+    queued, which `endpointReceiveDual` reads upon rendezvous.
+    `blockedOnReply` threads have `pendingMessage = none` (cleared by the
+    receive path), but are not constrained here since `.ready` and other
+    non-receiver states are unconditionally `True`. -/
 def waitingThreadsPendingMessageNone (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     match tcb.ipcState with
     | .blockedOnReceive _ => tcb.pendingMessage = none
     | .blockedOnNotification _ => tcb.pendingMessage = none
-    | .blockedOnCall _ => tcb.pendingMessage = none
     | _ => True
 
 /-- V3-J (L-IPC-3): Strengthened ipcState-queue consistency with queue

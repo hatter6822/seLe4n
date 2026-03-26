@@ -1063,6 +1063,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
 
 -- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
 -- `waitingThreadsPendingMessageNone`.
--- Machine-checked proof: `callReplyRecv_preserves_waitingThreadsPendingMessageNone`
--- in Structural.lean (requires primitive lemmas defined there).
+-- Machine-checked proofs in Structural.lean:
+--   `endpointCall_preserves_waitingThreadsPendingMessageNone`
+--   `endpointReplyRecv_preserves_waitingThreadsPendingMessageNone`
 

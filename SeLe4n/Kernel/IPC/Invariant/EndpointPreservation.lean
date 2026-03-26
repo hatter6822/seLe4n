@@ -1644,8 +1644,9 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
 -- for endpoint operations
 -- ============================================================================
 
--- V3-G4 (M-PRF-5): `endpointSend`/`endpointReceive` preserve
+-- V3-G4 (M-PRF-5): `endpointSendDual`/`endpointReceiveDual` preserve
 -- `waitingThreadsPendingMessageNone`.
--- Machine-checked proof: `endpointOps_preserve_waitingThreadsPendingMessageNone`
--- in Structural.lean (requires primitive lemmas defined there).
+-- Machine-checked proofs in Structural.lean:
+--   `endpointSendDual_preserves_waitingThreadsPendingMessageNone`
+--   `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
 
