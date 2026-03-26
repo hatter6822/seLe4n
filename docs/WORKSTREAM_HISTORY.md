@@ -53,8 +53,11 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   **V3-J/K integration**: `ipcStateQueueMembershipConsistent` (L-IPC-3) and
   `endpointQueueNoDup` (L-LIFE-1) integrated as 6th/7th conjuncts of
   `ipcInvariantFull` (now 7-conjunct). New files: `QueueNoDup.lean` (3 primitive
-  frame lemmas), `QueueMembership.lean` (prim-1 frame lemma + scheduler helpers +
-  pointwise transfer). Definition fix: `blockedOnCall` uses `sendQ` not `receiveQ`.
+  frame lemmas + TCB-store primitives + per-operation proofs for notification,
+  notificationWait, endpointReply), `QueueMembership.lean` (prim-1 frame lemma +
+  scheduler helpers + pointwise transfer + TCB-store primitives with non-blocking
+  precondition + per-operation proofs for notification, notificationWait,
+  endpointReply). Definition fix: `blockedOnCall` uses `sendQ` not `receiveQ`.
   All 10 `_preserves_ipcInvariantFull` bundle theorems updated. New extractors:
   `coreIpcInvariantBundle_to_endpointQueueNoDup`,
   `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`. Default state,

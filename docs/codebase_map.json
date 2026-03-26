@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/implement-proof-chain-hardening-ONYPw",
-      "commit_sha": "ef5009aa991c6e1549b68c40236b5fc485bda57b",
-      "tree_sha": "f8055ce96daefc14b1f2fe63b67290c2b21f721f",
-      "committed_at_utc": "2026-03-26T15:00:53-04:00"
+      "commit_sha": "7871c9c680710fc9a4e43d1fa54750b7ca58b0d4",
+      "tree_sha": "4ac0e572c0f3fa81c601f436cd732f64d2c383b0",
+      "committed_at_utc": "2026-03-26T20:03:03+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0ddf23001861146ff5668fd27603679629d8f4006e5a8c116acff87c6f694417"
+    "source_digest": "b6bb7a14c41412d316b3f815cbdf2f323dacb8b910aa4ec7f2df77d18cb08b25"
   },
   "summary": {
     "module_count": 112,
-    "declaration_count": 3509
+    "declaration_count": 3525
   },
   "readme_sync": {
     "version": "0.22.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 102,
-    "production_loc": 66304,
+    "production_loc": 66973,
     "test_files": 10,
     "test_loc": 8315,
-    "proved_theorem_lemma_decls": 1946,
+    "proved_theorem_lemma_decls": 1962,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -12081,7 +12081,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.QueueMembership",
       "path": "SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean",
-      "declaration_count": 5,
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "namespace",
@@ -12137,7 +12137,6 @@
           "name": "removeRunnable_preserves_ipcStateQueueMembershipConsistent",
           "line": 136,
           "called": [
-            "Kernel",
             "SystemState",
             "ThreadId",
             "get",
@@ -12146,13 +12145,143 @@
             "removeRunnable",
             "removeRunnable_preserves_objects"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent",
+          "line": 149,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadIpcState",
+            "invExt",
+            "ipcStateQueueMembershipConsistent",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbIpcStateAndMessage",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_fromTcb_preserves_ipcStateQueueMembershipConsistent",
+          "line": 230,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadIpcState",
+            "invExt",
+            "ipcStateQueueMembershipConsistent",
+            "lookupTcb",
+            "storeTcbIpcStateAndMessage_fromTcb",
+            "storeTcbIpcStateAndMessage_fromTcb_eq",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_ipcStateQueueMembershipConsistent",
+          "line": 246,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadIpcState",
+            "invExt",
+            "ipcStateQueueMembershipConsistent",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbIpcState",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_ipcStateQueueMembershipConsistent",
+          "line": 326,
+          "called": [
+            "Badge",
+            "ObjId",
+            "SystemState",
+            "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
+            "invExt",
+            "ipcStateQueueMembershipConsistent",
+            "none",
+            "notificationId",
+            "notificationSignal",
+            "storeObject",
+            "storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_ipcStateQueueMembershipConsistent",
+          "line": 372,
+          "called": [
+            "Badge",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "ipcStateQueueMembershipConsistent",
+            "isReserved",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "notificationId",
+            "notificationWait",
+            "removeRunnable_preserves_ipcStateQueueMembershipConsistent",
+            "storeObject",
+            "storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent",
+            "storeObject_objects_ne",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcState",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbIpcState_fromTcb_eq",
+            "storeTcbIpcState_preserves_ipcStateQueueMembershipConsistent",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_ipcStateQueueMembershipConsistent",
+          "line": 452,
+          "called": [
+            "IpcMessage",
+            "Kernel",
+            "SystemState",
+            "ThreadId",
+            "endpointReply",
+            "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
+            "invExt",
+            "ipcStateQueueMembershipConsistent",
+            "lookupTcb",
+            "none",
+            "storeTcbIpcStateAndMessage_fromTcb",
+            "storeTcbIpcStateAndMessage_fromTcb_preserves_ipcStateQueueMembershipConsistent"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.QueueNoDup",
       "path": "SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean",
-      "declaration_count": 4,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -12204,7 +12333,6 @@
           "line": 95,
           "called": [
             "Endpoint",
-            "Kernel",
             "ObjId",
             "SystemState",
             "endpointQueueNoDup",
@@ -12215,6 +12343,192 @@
             "storeObject_objects_ne",
             "tcbQueueChainAcyclic",
             "tcbQueueChainAcyclic_no_self_loop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueNoDup_of_objects_eq",
+          "line": 119,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "endpointQueueNoDup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_endpointQueueNoDup",
+          "line": 130,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "endpointQueueNoDup",
+            "endpointQueueNoDup_of_objects_eq",
+            "ensureRunnable",
+            "ensureRunnable_preserves_objects",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_endpointQueueNoDup",
+          "line": 138,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "endpointQueueNoDup",
+            "endpointQueueNoDup_of_objects_eq",
+            "get",
+            "removeRunnable",
+            "removeRunnable_preserves_objects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup",
+          "line": 148,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "endpointQueueNoDup",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbIpcStateAndMessage",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup",
+          "line": 183,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadIpcState",
+            "endpointQueueNoDup",
+            "invExt",
+            "lookupTcb",
+            "storeTcbIpcStateAndMessage_fromTcb",
+            "storeTcbIpcStateAndMessage_fromTcb_eq",
+            "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_endpointQueueNoDup",
+          "line": 195,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "endpointQueueNoDup",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbIpcState",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbPendingMessage_preserves_endpointQueueNoDup",
+          "line": 229,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "endpointQueueNoDup",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbPendingMessage",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_endpointQueueNoDup",
+          "line": 268,
+          "called": [
+            "Badge",
+            "ObjId",
+            "SystemState",
+            "endpointQueueNoDup",
+            "ensureRunnable_preserves_endpointQueueNoDup",
+            "invExt",
+            "none",
+            "notificationId",
+            "notificationSignal",
+            "storeObject",
+            "storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_endpointQueueNoDup",
+          "line": 310,
+          "called": [
+            "Badge",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointQueueNoDup",
+            "invExt",
+            "isReserved",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "notificationId",
+            "notificationWait",
+            "removeRunnable_preserves_endpointQueueNoDup",
+            "storeObject",
+            "storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup",
+            "storeObject_objects_ne",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcState",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbIpcState_fromTcb_eq",
+            "storeTcbIpcState_preserves_endpointQueueNoDup",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReply_preserves_endpointQueueNoDup",
+          "line": 385,
+          "called": [
+            "IpcMessage",
+            "Kernel",
+            "SystemState",
+            "ThreadId",
+            "endpointQueueNoDup",
+            "endpointReply",
+            "ensureRunnable_preserves_endpointQueueNoDup",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeTcbIpcStateAndMessage_fromTcb",
+            "storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup"
           ]
         }
       ]

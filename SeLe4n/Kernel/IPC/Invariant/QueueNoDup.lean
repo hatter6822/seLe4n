@@ -111,4 +111,319 @@ theorem storeObject_endpoint_preserves_endpointQueueNoDup
     have ⟨_, hK2⟩ := hInv oid' ep'' hEp'
     exact ⟨fun tid tcb hTcb => tcbQueueChainAcyclic_no_self_loop hAcyclic tid tcb hTcb, hK2⟩
 
+-- ============================================================================
+-- Section 2: TCB store primitives + general transfer + scheduler helpers
+-- ============================================================================
+
+/-- Pointwise object equality implies endpointQueueNoDup transfer. -/
+theorem endpointQueueNoDup_of_objects_eq
+    (st st' : SystemState)
+    (hLk : ∀ (x : SeLe4n.ObjId), st'.objects[x]? = st.objects[x]?)
+    (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup st' := by
+  intro oid ep hEp
+  rw [hLk] at hEp
+  have ⟨hK1, hK2⟩ := hInv oid ep hEp
+  exact ⟨fun tid tcb hTcb => by rw [hLk] at hTcb; exact hK1 tid tcb hTcb, hK2⟩
+
+/-- ensureRunnable preserves endpointQueueNoDup (scheduler only, objects unchanged). -/
+theorem ensureRunnable_preserves_endpointQueueNoDup
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup (ensureRunnable st tid) :=
+  endpointQueueNoDup_of_objects_eq st (ensureRunnable st tid)
+    (fun x => congrArg (·.get? x) (ensureRunnable_preserves_objects st tid)) hInv
+
+/-- removeRunnable preserves endpointQueueNoDup (scheduler only, objects unchanged). -/
+theorem removeRunnable_preserves_endpointQueueNoDup
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup (removeRunnable st tid) :=
+  endpointQueueNoDup_of_objects_eq st (removeRunnable st tid)
+    (fun x => congrArg (·.get? x) (removeRunnable_preserves_objects st tid)) hInv
+
+/-- Storing a TCB (via storeTcbIpcStateAndMessage) preserves endpointQueueNoDup.
+K-2 preserved because endpoint objects are unchanged by TCB stores.
+K-1 preserved because { tcb with ipcState, pendingMessage } preserves queueNext. -/
+theorem storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    endpointQueueNoDup st' := by
+  unfold storeTcbIpcStateAndMessage at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro oid ep hEp
+      have hNe : oid ≠ tid.toObjId := by
+        intro h; subst h
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hEp; cases hEp
+      rw [storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hObjInv hSt] at hEp
+      have ⟨hK1, hK2⟩ := hInv oid ep hEp
+      constructor
+      · intro tid' tcb' hTcb'
+        by_cases hEq : tid'.toObjId = tid.toObjId
+        · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hTcb'
+          cases hTcb'
+          -- queueNext preserved: show tcb.queueNext ≠ some tid'
+          exact hK1 tid' tcb (hEq ▸ hTcbObj)
+        · rw [storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId _ hEq hObjInv hSt] at hTcb'
+          exact hK1 tid' tcb' hTcb'
+      · exact hK2
+
+/-- storeTcbIpcStateAndMessage_fromTcb preserves endpointQueueNoDup. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hLookup : lookupTcb st tid = some tcb)
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg = .ok st') :
+    endpointQueueNoDup st' := by
+  rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStore
+  exact storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup st st' tid ipcState msg hInv hObjInv hStore
+
+/-- storeTcbIpcState preserves endpointQueueNoDup. -/
+theorem storeTcbIpcState_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbIpcState st tid ipcState = .ok st') :
+    endpointQueueNoDup st' := by
+  unfold storeTcbIpcState at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore
+      subst hStore
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro oid ep hEp
+      have hNe : oid ≠ tid.toObjId := by
+        intro h; subst h
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hEp; cases hEp
+      rw [storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hObjInv hSt] at hEp
+      have ⟨hK1, hK2⟩ := hInv oid ep hEp
+      constructor
+      · intro tid' tcb' hTcb'
+        by_cases hEq : tid'.toObjId = tid.toObjId
+        · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hTcb'
+          cases hTcb'
+          exact hK1 tid' tcb (hEq ▸ hTcbObj)
+        · rw [storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId _ hEq hObjInv hSt] at hTcb'
+          exact hK1 tid' tcb' hTcb'
+      · exact hK2
+
+/-- storeTcbPendingMessage preserves endpointQueueNoDup. -/
+theorem storeTcbPendingMessage_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbPendingMessage st tid msg = .ok st') :
+    endpointQueueNoDup st' := by
+  unfold storeTcbPendingMessage at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId (.tcb { tcb with pendingMessage := msg }) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore
+      subst hStore
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro oid ep hEp
+      have hNe : oid ≠ tid.toObjId := by
+        intro h; subst h
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hEp; cases hEp
+      rw [storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hObjInv hSt] at hEp
+      have ⟨hK1, hK2⟩ := hInv oid ep hEp
+      constructor
+      · intro tid' tcb' hTcb'
+        by_cases hEq : tid'.toObjId = tid.toObjId
+        · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hTcb'
+          cases hTcb'
+          exact hK1 tid' tcb (hEq ▸ hTcbObj)
+        · rw [storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId _ hEq hObjInv hSt] at hTcb'
+          exact hK1 tid' tcb' hTcb'
+      · exact hK2
+
+-- ============================================================================
+-- Section 3: Per-operation preservation proofs
+-- ============================================================================
+
+/-- V3-K-op-9a: notificationSignal preserves endpointQueueNoDup.
+Notification operations only modify notification objects and TCBs; no endpoint change. -/
+theorem notificationSignal_preserves_endpointQueueNoDup
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    endpointQueueNoDup st' := by
+  unfold notificationSignal at hStep
+  cases hObj : st.objects[notificationId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | notification ntfn =>
+      simp only [hObj] at hStep
+      cases hWaiters : ntfn.waitingThreads with
+      | cons waiter rest =>
+        -- Wake path: storeObject notification → storeTcbIpcStateAndMessage → ensureRunnable
+        simp only [hWaiters] at hStep
+        generalize hStore1 : storeObject notificationId _ st = r1 at hStep
+        cases r1 with
+        | error e => simp at hStep
+        | ok pair1 =>
+          simp only [] at hStep
+          have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
+          have hInv1 := storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
+            st pair1.2 notificationId _ hInv hObjInv
+            (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h) hStore1
+          generalize hMsg : storeTcbIpcStateAndMessage pair1.2 waiter .ready _ = rMsg at hStep
+          cases rMsg with
+          | error e => simp at hStep
+          | ok st2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, rfl⟩ := hStep
+            exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+              storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hMsg
+      | nil =>
+        -- Accumulate path: storeObject notification only
+        simp only [hWaiters] at hStep
+        exact storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
+          st st' notificationId _ hInv hObjInv
+          (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h) hStep
+
+/-- V3-K-op-9b: notificationWait preserves endpointQueueNoDup. -/
+theorem notificationWait_preserves_endpointQueueNoDup
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    endpointQueueNoDup st' := by
+  unfold notificationWait at hStep
+  cases hObj : st.objects[notificationId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | notification ntfn =>
+      simp only [hObj] at hStep
+      cases hBadge : ntfn.pendingBadge with
+      | some badge =>
+        -- Consume path: storeObject notification → storeTcbIpcState
+        simp only [hBadge] at hStep
+        generalize hStore1 : storeObject notificationId _ st = r1 at hStep
+        cases r1 with
+        | error e => simp at hStep
+        | ok pair1 =>
+          simp only [] at hStep
+          have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
+          have hInv1 := storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
+            st pair1.2 notificationId _ hInv hObjInv
+            (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h) hStore1
+          generalize hIpc : storeTcbIpcState pair1.2 waiter .ready = rIpc at hStep
+          cases rIpc with
+          | error e => simp at hStep
+          | ok pair2 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, rfl⟩ := hStep
+            exact storeTcbIpcState_preserves_endpointQueueNoDup _ _ _ _ hInv1 hObjInv1 hIpc
+      | none =>
+        -- Block path: lookupTcb → storeObject notification → storeTcbIpcState_fromTcb → removeRunnable
+        simp only [hBadge] at hStep
+        cases hLookup : lookupTcb st waiter with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          split at hStep
+          · simp at hStep
+          · generalize hStore1 : storeObject notificationId _ st = r1 at hStep
+            cases r1 with
+            | error e => simp at hStep
+            | ok pair1 =>
+              simp only [] at hStep
+              have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
+              have hInv1 := storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
+                st pair1.2 notificationId _ hInv hObjInv
+                (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h) hStore1
+              generalize hIpc : storeTcbIpcState_fromTcb pair1.2 waiter _ _ = rIpc at hStep
+              cases rIpc with
+              | error e => simp at hStep
+              | ok pair2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                have hLookup1 : lookupTcb pair1.2 waiter = some tcb := by
+                  have hNe : waiter.toObjId ≠ notificationId := by
+                    intro h
+                    have hTcbObj := lookupTcb_some_objects st waiter tcb hLookup
+                    rw [h] at hTcbObj; rw [hObj] at hTcbObj; cases hTcbObj
+                  unfold lookupTcb
+                  rw [show waiter.isReserved = false from by
+                    unfold lookupTcb at hLookup; split at hLookup <;> simp_all]
+                  rw [storeObject_objects_ne st pair1.2 notificationId waiter.toObjId _ hNe hObjInv hStore1]
+                  unfold lookupTcb at hLookup
+                  split at hLookup <;> simp_all
+                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hIpc
+                exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
+                  storeTcbIpcState_preserves_endpointQueueNoDup _ _ _ _ hInv1 hObjInv1 hIpc
+
+/-- V3-K-op-7: endpointReply preserves endpointQueueNoDup.
+Reply only modifies a single TCB and scheduler. -/
+theorem endpointReply_preserves_endpointQueueNoDup
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    endpointQueueNoDup st' := by
+  unfold endpointReply at hStep
+  -- Message bounds checks come first in endpointReply
+  split at hStep
+  · simp at hStep
+  · split at hStep
+    · simp at hStep
+    · cases hLookup : lookupTcb st target with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        cases hIpc : tcb.ipcState with
+        | blockedOnReply epId replyTarget =>
+          simp only [hIpc] at hStep
+          -- Handle authorization check (match on replyTarget, then if)
+          split at hStep
+          · -- replyTarget = some expected
+            split at hStep
+            · -- authorized path
+              generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
+              cases rMsg with
+              | error e => simp at hStep
+              | ok st1 =>
+                simp at hStep; obtain ⟨_, rfl⟩ := hStep
+                exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+                  storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
+                    st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
+            · simp at hStep
+          · -- replyTarget = none (authorized = true)
+            generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
+            cases rMsg with
+            | error e => simp at hStep
+            | ok st1 =>
+              simp at hStep; obtain ⟨_, rfl⟩ := hStep
+              exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+                storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
+                  st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
+        | _ => simp [hIpc] at hStep
+
 end SeLe4n.Kernel
