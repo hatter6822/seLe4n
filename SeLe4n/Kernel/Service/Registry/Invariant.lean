@@ -174,11 +174,10 @@ theorem revokeService_preserves_registryEndpointValid
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st'))
     (hInv : registryEndpointValid st)
-    (hSvcInv : st.serviceRegistry.invExt)
-    (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) :
+    (hSvcK : st.serviceRegistry.invExtK) :
     registryEndpointValid st' := by
   have hObjEq := revokeService_preserves_objects st st' sid hStep
-  have hSvcRegEq := revokeService_success_removes st st' sid hSvcInv hStep
+  have hSvcRegEq := revokeService_success_removes st st' sid hSvcK.1 hStep
   intro sid' reg hReg
   -- The post-state serviceRegistry = (erased).serviceRegistry (removeDependenciesOf preserves it)
   -- Need to recover that reg was in st.serviceRegistry
@@ -191,7 +190,7 @@ theorem revokeService_preserves_registryEndpointValid
     rw [removeDependenciesOf_serviceRegistry_eq] at hReg
     have hOrig : st.serviceRegistry[sid']? = some reg := by
       simp only [RHTable_getElem?_eq_get?] at hReg
-      rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg
+      rw [RHTable_getElem?_erase_K st.serviceRegistry sid hSvcK] at hReg
       split at hReg
       · simp at hReg
       · simp only [RHTable_getElem?_eq_get?]; exact hReg
@@ -201,8 +200,7 @@ theorem revokeService_preserves_registryInterfaceValid
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st'))
     (hInv : registryInterfaceValid st)
-    (hSvcInv : st.serviceRegistry.invExt)
-    (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) :
+    (hSvcK : st.serviceRegistry.invExtK) :
     registryInterfaceValid st' := by
   unfold revokeService at hStep
   split at hStep
@@ -212,7 +210,7 @@ theorem revokeService_preserves_registryInterfaceValid
     rw [removeDependenciesOf_serviceRegistry_eq] at hReg
     have hOrig : st.serviceRegistry[sid']? = some reg := by
       simp only [RHTable_getElem?_eq_get?] at hReg
-      rw [RHTable_getElem?_erase st.serviceRegistry sid hSvcInv hSize] at hReg
+      rw [RHTable_getElem?_erase_K st.serviceRegistry sid hSvcK] at hReg
       split at hReg
       · simp at hReg
       · simp only [RHTable_getElem?_eq_get?]; exact hReg
@@ -242,10 +240,9 @@ theorem revokeService_preserves_registryInvariant
     (st st' : SystemState) (sid : ServiceId)
     (hStep : revokeService sid st = .ok ((), st'))
     (hInv : registryInvariant st)
-    (hSvcInv : st.serviceRegistry.invExt)
-    (hSize : st.serviceRegistry.size < st.serviceRegistry.capacity) : registryInvariant st' :=
-  ⟨revokeService_preserves_registryEndpointValid st st' sid hStep hInv.1 hSvcInv hSize,
-   revokeService_preserves_registryInterfaceValid st st' sid hStep hInv.2 hSvcInv hSize⟩
+    (hSvcK : st.serviceRegistry.invExtK) : registryInvariant st' :=
+  ⟨revokeService_preserves_registryEndpointValid st st' sid hStep hInv.1 hSvcK,
+   revokeService_preserves_registryInterfaceValid st st' sid hStep hInv.2 hSvcK⟩
 
 -- ============================================================================
 -- T5-G (L-NEW-2): cleanupEndpointServiceRegistrations preservation

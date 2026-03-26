@@ -2137,13 +2137,13 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
             have hBEq : (curTid == t) = false := by
               cases h : (curTid == t) <;> simp_all
             simp only [RHTable_getElem?_eq_get?]
-            rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExt]
+            rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
             simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
             exact hpm t hOld
           | inr hEq =>
             subst hEq
             simp only [RHTable_getElem?_eq_get?]
-            rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExt]
+            rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
             simp only [beq_self_eq_true, ↓reduceIte]
             simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
         have hAllTcb' : ∀ t, t ∈ { st with scheduler := { st.scheduler with
@@ -2230,14 +2230,14 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
               -- objects side: insert-ne, threadPriority side: insert-ne
               simp only [RHTable_getElem?_eq_get?]
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv,
-                  RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExt]
+                  RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
               simp only [hObjBEq, hBEq, Bool.false_eq_true, ↓reduceIte]
               exact hpm t hOld
             | inr hEq =>
               subst hEq
               -- threadPriority side: (rq.threadPriority.insert t prio).get? t = some prio
               simp only [RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExt]
+              rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
               simp only [beq_self_eq_true, ite_true]
               -- objects side: (st.objects.insert t.toObjId (.tcb {...})).get? t.toObjId = some (.tcb {...})
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
@@ -2569,10 +2569,9 @@ private theorem schedule_preserves_schedulerPriorityMatch
               -- Goal: (stChoose.scheduler.runQueue.threadPriority.erase selTid).get? t = some tcb'.priority
               have hTNeSel : ¬(selTid == t) = true := by
                 intro h; exact hNeSelTid ((eq_of_beq h).symm)
-              rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne
+              rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K
                 stChoose.scheduler.runQueue.threadPriority selTid t hTNeSel
-                stChoose.scheduler.runQueue.threadPrio_invExt
-                stChoose.scheduler.runQueue.threadPrio_sizeOk]
+                stChoose.scheduler.runQueue.threadPrio_invExtK]
               -- Goal: stChoose.scheduler.runQueue.threadPriority.get? t = some tcb'.priority
               have : stChoose.scheduler.runQueue.threadPriority = st.scheduler.runQueue.threadPriority := by
                 rw [hStEqBase]
@@ -2631,14 +2630,14 @@ private theorem handleYield_preserves_schedulerPriorityMatch
             have hBEq : (curTid == t) = false := by cases h : (curTid == t) <;> simp_all
             simp only [RHTable_getElem?_eq_get?]
             rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _
-              st.scheduler.runQueue.threadPrio_invExt]
+              st.scheduler.runQueue.threadPrio_invExtK.1]
             simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
             exact hpm t hOld
           | inr hEq =>
             subst hEq
             simp only [RHTable_getElem?_eq_get?]
             rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _
-              st.scheduler.runQueue.threadPrio_invExt]
+              st.scheduler.runQueue.threadPrio_invExtK.1]
             simp only [beq_self_eq_true, ↓reduceIte]
             simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
         · -- hAllTcb on intermediate state
@@ -2703,14 +2702,14 @@ private theorem timerTick_preserves_schedulerPriorityMatch
               simp only [RHTable_getElem?_eq_get?]
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv,
                   RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _
-                    st.scheduler.runQueue.threadPrio_invExt]
+                    st.scheduler.runQueue.threadPrio_invExtK.1]
               simp only [hObjBEq, hBEq, Bool.false_eq_true, ↓reduceIte]
               exact hpm t hOld
             | inr hEq =>
               subst hEq
               simp only [RHTable_getElem?_eq_get?]
               rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _
-                st.scheduler.runQueue.threadPrio_invExt]
+                st.scheduler.runQueue.threadPrio_invExtK.1]
               simp only [beq_self_eq_true, ite_true]
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               simp only [beq_self_eq_true, ite_true]

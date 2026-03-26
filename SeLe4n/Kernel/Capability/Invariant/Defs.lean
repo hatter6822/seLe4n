@@ -512,8 +512,7 @@ vacuously true) and preserves objects. -/
 theorem cdtCompleteness_of_detachSlotFromCdt
     (st : SystemState) (ref : SlotRef)
     (hComp : cdtCompleteness st)
-    (hCdtNSInv : st.cdtNodeSlot.invExt)
-    (hCdtNSSz : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity) :
+    (hCdtNSK : st.cdtNodeSlot.invExtK) :
     cdtCompleteness (st.detachSlotFromCdt ref) := by
   intro nodeId slotRef hNS
   unfold SystemState.detachSlotFromCdt at hNS ⊢
@@ -524,12 +523,12 @@ theorem cdtCompleteness_of_detachSlotFromCdt
     by_cases hEq : nodeId = origNode
     · subst hEq
       simp only [RHTable_getElem?_eq_get?] at hNS
-      rw [RHTable_get?_erase_self st.cdtNodeSlot nodeId hCdtNSInv] at hNS
+      rw [RHTable_get?_erase_self st.cdtNodeSlot nodeId hCdtNSK.1] at hNS
       exact absurd hNS (by simp)
     · simp only [RHTable_getElem?_eq_get?] at hNS
       have hNeBeq : ¬((origNode == nodeId) = true) := by
         intro hBeq; exact hEq (eq_of_beq hBeq).symm
-      rw [RHTable_get?_erase_ne st.cdtNodeSlot origNode nodeId hNeBeq hCdtNSInv hCdtNSSz] at hNS
+      rw [RHTable_get?_erase_ne_K st.cdtNodeSlot origNode nodeId hNeBeq hCdtNSK] at hNS
       exact hComp nodeId slotRef hNS
 
 /-- WS-H4: detachSlotFromCdt preserves cdtAcyclicity (CDT edges unchanged). -/
@@ -556,13 +555,12 @@ private theorem cdtPredicates_of_detachSlotFromCdt
     (st : SystemState) (ref : SlotRef)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
-    (hCdtNSInv : st.cdtNodeSlot.invExt)
-    (hCdtNSSz : st.cdtNodeSlot.size < st.cdtNodeSlot.capacity) :
+    (hCdtNSK : st.cdtNodeSlot.invExtK) :
     cspaceSlotCountBounded (st.detachSlotFromCdt ref) ∧
     cdtCompleteness (st.detachSlotFromCdt ref) ∧
     cdtAcyclicity (st.detachSlotFromCdt ref) :=
   ⟨cspaceSlotCountBounded_of_detachSlotFromCdt st ref hBounded,
-   cdtCompleteness_of_detachSlotFromCdt st ref hComp hCdtNSInv hCdtNSSz,
+   cdtCompleteness_of_detachSlotFromCdt st ref hComp hCdtNSK,
    cdtAcyclicity_of_detachSlotFromCdt st ref hAcyclic⟩
 
 /-- WS-H13: Transfer cspaceDepthConsistent when objects are unchanged. -/

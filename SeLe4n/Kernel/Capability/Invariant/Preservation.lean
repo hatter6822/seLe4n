@@ -294,7 +294,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
             have hNodeSlotKRef : stRef.cdtNodeSlot.invExtK := by
               rw [hRefNS, hNSMid]; exact hNodeSlotK
             exact ⟨cspaceSlotCountBounded_of_detachSlotFromCdt stRef addr hBndRef,
-              cdtCompleteness_of_detachSlotFromCdt stRef addr hCompRef hNodeSlotKRef.1 hNodeSlotKRef.2.1,
+              cdtCompleteness_of_detachSlotFromCdt stRef addr hCompRef hNodeSlotKRef,
               cdtAcyclicity_of_detachSlotFromCdt stRef addr hAcyclicRef,
               cspaceDepthConsistent_of_detachSlotFromCdt stRef addr hDepthRef,
               (SystemState.detachSlotFromCdt_objects_eq stRef addr) ▸ hObjInvRef⟩
@@ -830,7 +830,7 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
         ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
          cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
          cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
-         cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2 hKDel.1 hKDel.2.1,
+         cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2 hKDel,
          cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
          cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj,
          hDetachObj ▸ hObjInv2⟩
@@ -1087,7 +1087,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
                 ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
                  cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
                  cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
-                 cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2 hKDel.1 hKDel.2.1,
+                 cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2 hKDel,
                  cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
                  cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj,
                  hDetachObj ▸ hObjInv2⟩
