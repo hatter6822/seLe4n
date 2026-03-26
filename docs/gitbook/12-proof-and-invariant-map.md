@@ -41,8 +41,8 @@ in Projection.lean) is intentionally retained.
   `empty` or `mk_checked` (which requires `cdtMapsConsistent` witness) (H-2).
 - `FrozenSystemState.tlb` field added; `freeze_preserves_tlb` correctness
   theorem proves TLB state is preserved across freeze (M-NEW-1).
-- `storeObject_preserves_allTablesInvExt` — bundled theorem composing 16+
-  component preservation proofs for `storeObject` (M-NEW-2).
+- `storeObject_preserves_allTablesInvExtK` — bundled theorem composing 16+
+  component preservation proofs for `storeObject` using `invExtK` (M-NEW-2, V3-B).
 - `capabilityRefs_filter_preserves_invExt` + `capabilityRefs_fold_preserves_invExt`
   — filter-then-fold chain in `storeObject` preserves `invExt` (M-NEW-3).
 - `CNode.guardBounded` predicate added to `CNode.wellFormed` — guard value
