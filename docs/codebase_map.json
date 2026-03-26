@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-proof-chain-hardening-eoEVs",
-      "commit_sha": "cc4aa1abb075f9591af5939f4083835e50b0aa86",
-      "tree_sha": "1b769084f0bb19968f2bdedc38768fec332411fe",
-      "committed_at_utc": "2026-03-25T19:50:27-04:00"
+      "commit_sha": "a9b4d80aa3228afc998827f356d548bbed3d1f97",
+      "tree_sha": "3947454e7414b3e0ef3c2c64a8907df5ebef9eb0",
+      "committed_at_utc": "2026-03-26T00:20:42+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "dc0e2ec7ac960f08d85af997d05fd2c5a212b173a4e7cf1821efa3d3dc82fa86"
+    "source_digest": "04f4cec89d6c94445fa659f64e586503c8bdd8c0748b7444dfe4dc6e6c58a549"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3459
+    "declaration_count": 3464
   },
   "readme_sync": {
     "version": "0.22.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 64948,
+    "production_loc": 65081,
     "test_files": 10,
     "test_loc": 8315,
-    "proved_theorem_lemma_decls": 1900,
+    "proved_theorem_lemma_decls": 1905,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -10119,7 +10119,7 @@
         {
           "kind": "theorem",
           "name": "callReplyRecv_preserves_waitingThreadsPendingMessageNone_note",
-          "line": 1078,
+          "line": 1079,
           "called": []
         }
       ]
@@ -11472,7 +11472,7 @@
         {
           "kind": "theorem",
           "name": "endpointOps_preserve_waitingThreadsPendingMessageNone_note",
-          "line": 1668,
+          "line": 1664,
           "called": []
         }
       ]
@@ -12005,19 +12005,19 @@
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_waitingThreadsPendingMessageNone_note",
-          "line": 1359,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "notificationSignal_preserves_waitingThreadsPendingMessageNone_note",
           "line": 1367,
           "called": []
         },
         {
           "kind": "theorem",
+          "name": "notificationSignal_preserves_waitingThreadsPendingMessageNone_note",
+          "line": 1381,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "notificationWake_pendingMessage_was_none_note",
-          "line": 1388,
+          "line": 1400,
           "called": []
         }
       ]
@@ -12025,7 +12025,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 115,
+      "declaration_count": 120,
       "declarations": [
         {
           "kind": "namespace",
@@ -14340,7 +14340,6 @@
           "called": [
             "Endpoint",
             "IntrusiveQueue",
-            "Kernel",
             "ObjId",
             "QueueNextPath",
             "SystemState",
@@ -14377,6 +14376,86 @@
             "tcbWithQueueLinks",
             "threadId_toObjId_injective",
             "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_preserves_waitingThreadsPendingMessageNone",
+          "line": 5925,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "removeRunnable",
+            "removeRunnable_preserves_objects",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+          "line": 5934,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ensureRunnable",
+            "ensureRunnable_preserves_objects",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone",
+          "line": 5947,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "invExt",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "toObjId",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_waitingThreadsPendingMessageNone",
+          "line": 5972,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbIpcState",
+            "toObjId",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
+          "line": 6016,
+          "called": [
+            "IpcMessage",
+            "Kernel",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "storeTcbIpcStateAndMessage",
+            "toObjId",
+            "waitingThreadsPendingMessageNone"
           ]
         }
       ]
@@ -22055,13 +22134,13 @@
         {
           "kind": "theorem",
           "name": "buildCNodeRadix_hNoPhantom_auto_discharge_note",
-          "line": 325,
+          "line": 324,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "buildCNodeRadix_lookup_equiv",
-          "line": 336,
+          "line": 335,
           "called": [
             "CNodeConfig",
             "CNodeRadix",
@@ -22094,7 +22173,7 @@
         {
           "kind": "theorem",
           "name": "uniqueRadixIndices_sufficient",
-          "line": 439,
+          "line": 438,
           "called": [
             "Capability",
             "RHTable",
@@ -22108,7 +22187,7 @@
         {
           "kind": "def",
           "name": "freezeCNodeSlots",
-          "line": 463,
+          "line": 462,
           "called": [
             "CNode",
             "CNodeRadix",
@@ -22118,7 +22197,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardWidth",
-          "line": 467,
+          "line": 466,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -22129,7 +22208,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardValue",
-          "line": 472,
+          "line": 471,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -22140,7 +22219,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_radixWidth",
-          "line": 477,
+          "line": 476,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -22151,7 +22230,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_wf",
-          "line": 482,
+          "line": 481,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",

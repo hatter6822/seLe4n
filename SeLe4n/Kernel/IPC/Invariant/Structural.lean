@@ -5917,30 +5917,155 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                   exact ⟨hEpWfD, hLinkStF, hAcycSF⟩
 
 -- ============================================================================
--- V3-G6 (M-PRF-5): Integration point for waitingThreadsPendingMessageNone
+-- V3-G6 (M-PRF-5): Primitive preservation for waitingThreadsPendingMessageNone
 -- ============================================================================
+
+/-- `removeRunnable` only modifies the scheduler; objects are unchanged,
+    so `waitingThreadsPendingMessageNone` is trivially preserved. -/
+theorem removeRunnable_preserves_waitingThreadsPendingMessageNone
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : waitingThreadsPendingMessageNone st) :
+    waitingThreadsPendingMessageNone (removeRunnable st tid) := by
+  intro tid' tcb' hObj
+  rw [removeRunnable_preserves_objects] at hObj
+  exact hInv tid' tcb' hObj
+
+/-- `ensureRunnable` only modifies the scheduler; objects are unchanged. -/
+theorem ensureRunnable_preserves_waitingThreadsPendingMessageNone
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : waitingThreadsPendingMessageNone st) :
+    waitingThreadsPendingMessageNone (ensureRunnable st tid) := by
+  intro tid' tcb' hObj
+  rw [ensureRunnable_preserves_objects] at hObj
+  exact hInv tid' tcb' hObj
+
+/-- `storeObject` at a non-TCB-target ID preserves `waitingThreadsPendingMessageNone`
+    when the stored object is not a TCB. Since `storeObject` only modifies the
+    entry at `id`, any TCB at `tid.toObjId ≠ id` is unchanged by frame. For the
+    entry at `id` itself, if the new object is not a TCB, the invariant's universal
+    quantifier over TCBs skips it. -/
+theorem storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st'))
+    (hInv : waitingThreadsPendingMessageNone st) :
+    waitingThreadsPendingMessageNone st' := by
+  intro tid tcb hObj
+  -- All TCBs at different IDs are unchanged by frame
+  have hNe : tid.toObjId ≠ id := by
+    intro hEq
+    have hFrame := storeObject_objects_eq st st' id obj hObjInv hStore
+    rw [hEq] at hObj; rw [hFrame] at hObj
+    cases obj with
+    | tcb t => exact absurd rfl (hNotTcb t)
+    | _ => cases hObj
+  have hFrame := storeObject_objects_ne st st' id tid.toObjId obj hNe hObjInv hStore
+  rw [hFrame] at hObj
+  exact hInv tid tcb hObj
+
+/-- `storeTcbIpcState` preserves `waitingThreadsPendingMessageNone` when the
+    new ipcState either (a) exits the invariant scope (e.g., `.ready`, `.blockedOnSend`),
+    or (b) enters the scope while `pendingMessage` was already `none`. The latter
+    condition is captured by requiring `pendingMessage = none` for the target thread
+    when entering a blocking-receive state. -/
+theorem storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbIpcState st tid ipcState = .ok st')
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hTarget : ∀ tcb, lookupTcb st tid = some tcb →
+      match ipcState with
+      | .blockedOnReceive _ => tcb.pendingMessage = none
+      | .blockedOnNotification _ => tcb.pendingMessage = none
+      | .blockedOnCall _ => tcb.pendingMessage = none
+      | _ => True) :
+    waitingThreadsPendingMessageNone st' := by
+  unfold storeTcbIpcState at hStore
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStore
+  | some tcb =>
+    simp only [hLk] at hStore
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    | error e => simp [hSO] at hStore
+    | ok pair =>
+      simp only [hSO, Except.ok.injEq] at hStore; subst hStore
+      intro tid' tcb' hObj'
+      by_cases hEq : tid'.toObjId = tid.toObjId
+      · -- Same thread: modified TCB with new ipcState, same pendingMessage
+        have hSelf := storeObject_objects_eq st pair.2 tid.toObjId
+          (.tcb { tcb with ipcState := ipcState }) hObjInv hSO
+        rw [hEq] at hObj'; rw [hSelf] at hObj'
+        cases hObj'
+        -- tcb' = { tcb with ipcState := ipcState }, pendingMessage = tcb.pendingMessage
+        have h := hTarget tcb hLk
+        cases ipcState with
+        | blockedOnReceive _ => exact h
+        | blockedOnNotification _ => exact h
+        | blockedOnCall _ => exact h
+        | _ => trivial
+      · -- Different thread: frame
+        have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
+        have hFrame := storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId
+          (.tcb { tcb with ipcState := ipcState }) hNe' hObjInv hSO
+        rw [hFrame] at hObj'
+        exact hInv tid' tcb' hObj'
+
+/-- `storeTcbIpcStateAndMessage` preserves `waitingThreadsPendingMessageNone` when the
+    new state/message combination satisfies the invariant for blocking states. -/
+theorem storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hTarget : match ipcState with
+      | .blockedOnReceive _ => msg = none
+      | .blockedOnNotification _ => msg = none
+      | .blockedOnCall _ => msg = none
+      | _ => True) :
+    waitingThreadsPendingMessageNone st' := by
+  unfold storeTcbIpcStateAndMessage at hStore
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStore
+  | some tcb =>
+    simp only [hLk] at hStore
+    cases hSO : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStore
+    | ok pair =>
+      simp only [hSO, Except.ok.injEq] at hStore; subst hStore
+      intro tid' tcb' hObj'
+      by_cases hEq : tid'.toObjId = tid.toObjId
+      · -- Same thread: new ipcState and pendingMessage
+        have hSelf := storeObject_objects_eq st pair.2 tid.toObjId
+          (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) hObjInv hSO
+        rw [hEq] at hObj'; rw [hSelf] at hObj'
+        cases hObj'
+        cases ipcState with
+        | blockedOnReceive _ => exact hTarget
+        | blockedOnNotification _ => exact hTarget
+        | blockedOnCall _ => exact hTarget
+        | _ => trivial
+      · have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
+        have hFrame := storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId
+          (.tcb { tcb with ipcState := ipcState, pendingMessage := msg })
+          hNe' hObjInv hSO
+        rw [hFrame] at hObj'
+        exact hInv tid' tcb' hObj'
 
 /-! ## V3-G6: waitingThreadsPendingMessageNone Integration
 
-The invariant `waitingThreadsPendingMessageNone` (defined in `IPC/Invariant/Defs.lean`)
-is preserved by all IPC operations:
+The primitive preservation lemmas above (for `removeRunnable`, `ensureRunnable`,
+`storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`) provide
+the building blocks for operation-level preservation proofs.
 
-| Operation | Preservation | Reasoning |
-|-----------|-------------|-----------|
-| `notificationWait` | V3-G2 | Sets ipcState only, pendingMessage unchanged |
-| `notificationSignal` (wake) | V3-G3 | Thread exits scope (becomes .ready) |
-| `endpointSend` (block) | V3-G4 | blockedOnSend not in scope |
-| `endpointSend` (rendezvous) | V3-G4 | Receiver exits scope (becomes .ready) |
-| `endpointReceive` (block) | V3-G4 | Blocks with pendingMessage = none |
-| `endpointReceive` (rendezvous) | V3-G4 | Sender exits scope (was blockedOnSend) |
-| `endpointCall` | V3-G5 | Blocks on call with pendingMessage = none |
-| `endpointReplyRecv` (reply) | V3-G5 | Target exits scope (becomes .ready) |
-| `endpointReplyRecv` (receive) | V3-G5 | Blocks with pendingMessage = none |
-
-**Integration status**: The invariant is defined and all preservation arguments
-are documented. Full formal integration into `coreIpcInvariantBundle` or
-`ipcInvariantFull` is deferred to a future workstream to avoid cascading
-changes to all existing bundle-level preservation proofs.
--/
+**Integration status**: Primitive lemmas are machine-checked. Operation-level
+preservation for all IPC operations follows by composing these primitives
+through the operation's state transition chain. Full integration into
+`coreIpcInvariantBundle` or `ipcInvariantFull` is deferred to a future
+workstream to avoid cascading changes to all existing bundle-level preservation
+proofs (which would each need an additional `waitingThreadsPendingMessageNone`
+component threaded through). -/
 
 end SeLe4n.Kernel

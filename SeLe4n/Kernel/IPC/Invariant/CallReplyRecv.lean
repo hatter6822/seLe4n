@@ -1064,17 +1064,18 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
 /-- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
     `waitingThreadsPendingMessageNone`.
 
-    For `endpointCall` (caller blocks):
-    - The caller transitions to `blockedOnCall` with `pendingMessage = none`
-    - `endpointCall` sends the message via the send leg (which stores it in
-      `pendingMessage`), then transitions to `blockedOnCall`
-    - When blocking on call, `storeTcbIpcState` sets `ipcState := .blockedOnCall`
-      but the `pendingMessage` has already been consumed by the send leg
-    - The thread enters scope with `pendingMessage = none` — invariant holds
+    **Machine-checked primitive lemmas** (in `Structural.lean`):
+    - `storeTcbIpcState_preserves_waitingThreadsPendingMessageNone`
+    - `storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone`
+    - `storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone`
+    - `removeRunnable_preserves_waitingThreadsPendingMessageNone`
+    - `ensureRunnable_preserves_waitingThreadsPendingMessageNone`
 
-    For `endpointReplyRecv` (reply + receive compound):
-    - Reply leg: target transitions from `blockedOnReply` to `.ready` — exits scope
-    - Receive leg: same analysis as `endpointReceive` — blocks with `pendingMessage = none` -/
+    **endpointCall**: Send leg delivers message (`.blockedOnSend` not in scope),
+    then `storeTcbIpcState` sets caller to `.blockedOnCall` — `hTarget` requires
+    `pendingMessage = none`, satisfied since the send leg consumed it.
+    **endpointReplyRecv**: Reply sets target to `.ready` (exits scope), receive
+    blocks caller with `pendingMessage = none` (enters scope with `none`). -/
 theorem callReplyRecv_preserves_waitingThreadsPendingMessageNone_note :
     True := trivial
 

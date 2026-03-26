@@ -314,14 +314,13 @@ private theorem foldl_establishes_some
     CNode slots are within `[0, 2^radixWidth)`, the precondition holds
     trivially and does not need to be carried as a separate hypothesis.
 
-    **Auto-discharge pattern**:
-    ```
-    have hUri : UniqueRadixIndices rt config.radixWidth := ...
-    have hBounded : ∀ s, rt.get? s ≠ none → s.toNat < 2^config.radixWidth := ...
-    have hNoPhantom := uniqueRadixIndices_sufficient rt config.radixWidth hBounded
-      (fun s _ => extractBits_identity s.toNat config.radixWidth ...)
-    ```
--/
+    **Status**: This is a documentation theorem. The auto-discharge pattern
+    requires an `extractBits` identity lemma (proving `extractBits n 0 w = n`
+    when `n < 2^w`) which is a straightforward property of the bit extraction
+    function but has not yet been formally proven. The machine-checked theorem
+    `uniqueRadixIndices_sufficient` (V3-C above) accepts the identity property
+    as a precondition (`hAllBounded`), so formally proving it would complete
+    the discharge chain. -/
 theorem buildCNodeRadix_hNoPhantom_auto_discharge_note : True := trivial
 
 set_option maxHeartbeats 800000 in

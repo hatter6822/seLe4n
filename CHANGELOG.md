@@ -6,29 +6,38 @@
 - V3-B (H-RH-1): Added `erase_preserves_invExtFull` — erase preserves the full
   extended invariant without a separate `hSize` parameter. Load factor bound
   derived internally via V3-A lemma.
-- V3-C (H-RAD-1): Added `uniqueRadixIndices_sufficient` documentation theorem
+- V3-C (H-RAD-1): Added `uniqueRadixIndices_sufficient` machine-checked theorem
   proving that bounded keys + `UniqueRadixIndices` imply the `hNoPhantom`
   precondition for `buildCNodeRadix_lookup_equiv`.
-- V3-D1-D5 (M-PRF-1): Completed CDT acyclicity discharge chain audit.
-  Documented the externalization pattern for CDT-expanding operations
-  (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`) vs internal proofs for
-  CDT-shrinking operations (`cspaceDeleteSlot`, `cspaceRevoke`).
-- V3-E1-E5 (M-PRF-2): Documented `ipcUnwrapCaps` Grant=true loop composition
-  architecture. Per-step theorem (`ipcTransferSingleCap_preserves_capabilityInvariantBundle`)
-  fully proved; loop invariant predicate defined.
-- V3-F (M-PRF-3): Documented post-resolution rights check composition — all 16
-  `SyscallId` dispatch arms pass through `syscallLookupCap` rights gate.
+- V3-D1-D5 (M-PRF-1): CDT acyclicity discharge chain.
+  `cdtExpandingOp_preserves_bundle_with_hypothesis` (machine-checked, returns
+  caller-supplied `hCdtPost`). `cdtShrinkingOps_preserve_acyclicity_note`
+  (documentation-only) documents that shrinking ops prove via `edgeWellFounded_sub`.
+- V3-E1-E5 (M-PRF-2): `ipcUnwrapCapsLoop_capInvariant` predicate defined.
+  Per-step theorem (`ipcTransferSingleCap_preserves_capabilityInvariantBundle`)
+  fully proved (machine-checked). Loop composition proofs (E1–E5) documented
+  but not yet machine-checked.
+- V3-F (M-PRF-3): `resolveCapAddress_callers_check_rights_note`
+  (documentation-only) — documents that all 17 `SyscallId` dispatch arms pass
+  through `syscallLookupCap` rights gate. No machine-checked dispatch analysis.
 - V3-G1-G6 (M-PRF-5): Added `waitingThreadsPendingMessageNone` invariant
   (threads blocked on receive/notification/call have `pendingMessage = none`).
-  Preservation documented for all IPC operations.
-- V3-H (M-DS-4): Added `hNoPhantom` auto-discharge documentation and
-  `buildCNodeRadix_hNoPhantom_auto_discharge_note` for bounded-key CNodes.
-- V3-I (L-IPC-1): Documented `notificationWake_pendingMessage_was_none` —
-  wake path overwrites `none` (no data loss) under the V3-G invariant.
-- V3-J (L-IPC-3): Added `ipcStateQueueMembershipConsistent` — strengthened
-  version of `ipcStateQueueConsistent` with TCB queue reachability predicates.
-- V3-K (L-LIFE-1): Added `endpointQueueNoDup` invariant — no self-loops in
-  intrusive queue chains, sendQ/receiveQ head disjointness.
+  Machine-checked primitive preservation lemmas for `removeRunnable`,
+  `ensureRunnable`, `storeObject` (non-TCB), `storeTcbIpcState`, and
+  `storeTcbIpcStateAndMessage` in `Structural.lean`. Operation-level
+  composition documented for all IPC operations. Bundle integration deferred.
+- V3-H (M-DS-4): `buildCNodeRadix_hNoPhantom_auto_discharge_note`
+  (documentation-only) — documents auto-discharge pattern for bounded-key
+  CNodes. Requires `extractBits_identity` lemma not yet formally proven.
+- V3-I (L-IPC-1): `notificationWake_pendingMessage_was_none` documentation
+  theorem (documentation-only) — wake path overwrites `none` (no data loss)
+  under the V3-G invariant.
+- V3-J (L-IPC-3): Added `ipcStateQueueMembershipConsistent` predicate
+  definition — strengthened version of `ipcStateQueueConsistent` with TCB queue
+  reachability predicates. No preservation proofs yet.
+- V3-K (L-LIFE-1): Added `endpointQueueNoDup` predicate definition — no
+  self-loops in intrusive queue chains, sendQ/receiveQ head disjointness.
+  No preservation proofs yet.
 - Zero `sorry`, zero `axiom`. All 176 build targets pass. `test_full.sh` green.
 
 ## [0.22.0] — WS-V Phase V1: Rust ABI Hardening

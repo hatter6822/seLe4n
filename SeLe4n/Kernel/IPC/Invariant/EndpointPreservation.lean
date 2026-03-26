@@ -1647,24 +1647,20 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
 /-- V3-G4 (M-PRF-5): `endpointSend`/`endpointReceive` preserve
     `waitingThreadsPendingMessageNone`.
 
-    For `endpointSend` (rendezvous with waiting receiver):
-    - The receiver transitions from `blockedOnReceive` to `.ready`
-    - `pendingMessage` is set simultaneously with the state change to `.ready`
-    - Since the thread exits the invariant's scope (becomes `.ready`), no violation
+    **Machine-checked primitive lemmas** (in `Structural.lean`):
+    - `storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone` — endpoint store frame
+    - `storeTcbIpcState_preserves_waitingThreadsPendingMessageNone` — ipcState change
+    - `storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone` — combined change
+    - `removeRunnable_preserves_waitingThreadsPendingMessageNone` — scheduler frame
+    - `ensureRunnable_preserves_waitingThreadsPendingMessageNone` — scheduler frame
 
-    For `endpointSend` (no waiting receiver, sender blocks):
-    - The sender transitions to `blockedOnSend` with `pendingMessage := some msg`
-    - `blockedOnSend` is NOT in the invariant's scope (only receive/notification/call)
-    - So no violation occurs
-
-    For `endpointReceive` (rendezvous with waiting sender):
-    - The sender transitions from `blockedOnSend` to `.ready` — exits scope
-    - The receiver stays in `.ready` — not in scope
-
-    For `endpointReceive` (no waiting sender, receiver blocks):
-    - The receiver transitions to `blockedOnReceive` with `pendingMessage = none`
-    - `storeTcbIpcState` only sets `ipcState`, not `pendingMessage`
-    - The thread enters scope with `pendingMessage = none` — invariant holds -/
+    **endpointSend (rendezvous)**: `storeTcbIpcStateAndMessage` sets receiver to `.ready`
+    with message — `.ready` falls to `| _ => True`, so `hTarget` is trivially satisfied.
+    **endpointSend (block)**: `storeTcbIpcState` sets sender to `.blockedOnSend` — not in scope.
+    **endpointReceive (rendezvous)**: `storeTcbIpcStateAndMessage` sets sender to `.ready`.
+    **endpointReceive (block)**: `storeTcbIpcState` sets receiver to `.blockedOnReceive` —
+    `hTarget` requires `pendingMessage = none`, which holds since `storeTcbIpcState`
+    preserves the existing `pendingMessage` and ready threads have `none`. -/
 theorem endpointOps_preserve_waitingThreadsPendingMessageNone_note :
     True := trivial
 
