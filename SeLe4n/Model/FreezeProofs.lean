@@ -588,7 +588,7 @@ theorem lookup_freeze_objects (ist : IntermediateState) (k : SeLe4n.ObjId) :
   -- (freeze ist).objects is definitionally freezeMapWith ist.state.objects freezeObject
   have hDef : (freeze ist).objects = freezeMapWith ist.state.objects freezeObject := rfl
   rw [hDef]
-  exact freezeMapWith_get?_eq ist.state.objects freezeObject k ist.hAllTables.1
+  exact freezeMapWith_get?_eq ist.state.objects freezeObject k ist.hAllTables.1.1
 
 -- ============================================================================
 -- Q6-A: Per-field lookup equivalence theorems
@@ -603,64 +603,64 @@ witness provides the `invExt` precondition for each field's RHTable. -/
 /-- Q6-A: irqHandlers lookup preserved by freeze. -/
 theorem lookup_freeze_irqHandlers (ist : IntermediateState) (k : SeLe4n.Irq) :
     ist.state.irqHandlers.get? k = (freeze ist).irqHandlers.get? k := by
-  exact freezeMap_get?_eq ist.state.irqHandlers k ist.hAllTables.2.1
+  exact freezeMap_get?_eq ist.state.irqHandlers k ist.hAllTables.2.1.1
 
 /-- Q6-A: asidTable lookup preserved by freeze. -/
 theorem lookup_freeze_asidTable (ist : IntermediateState) (k : SeLe4n.ASID) :
     ist.state.asidTable.get? k = (freeze ist).asidTable.get? k := by
-  exact freezeMap_get?_eq ist.state.asidTable k ist.hAllTables.2.2.1
+  exact freezeMap_get?_eq ist.state.asidTable k ist.hAllTables.2.2.1.1
 
 /-- Q6-A: serviceRegistry lookup preserved by freeze. -/
 theorem lookup_freeze_serviceRegistry (ist : IntermediateState) (k : SeLe4n.ServiceId) :
     ist.state.serviceRegistry.get? k = (freeze ist).serviceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.serviceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.serviceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: interfaceRegistry lookup preserved by freeze. -/
 theorem lookup_freeze_interfaceRegistry (ist : IntermediateState) (k : SeLe4n.InterfaceId) :
     ist.state.interfaceRegistry.get? k = (freeze ist).interfaceRegistry.get? k := by
-  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.interfaceRegistry k ist.hAllTables.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: services lookup preserved by freeze. -/
 theorem lookup_freeze_services (ist : IntermediateState) (k : SeLe4n.ServiceId) :
     ist.state.services.get? k = (freeze ist).services.get? k := by
-  exact freezeMap_get?_eq ist.state.services k ist.hAllTables.2.2.2.2.2.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.services k ist.hAllTables.2.2.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: cdtChildMap lookup preserved by freeze. -/
 theorem lookup_freeze_cdtChildMap (ist : IntermediateState) (k : CdtNodeId) :
     ist.state.cdt.childMap.get? k = (freeze ist).cdtChildMap.get? k := by
-  exact freezeMap_get?_eq ist.state.cdt.childMap k ist.hAllTables.2.2.2.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.cdt.childMap k ist.hAllTables.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: cdtParentMap lookup preserved by freeze. -/
 theorem lookup_freeze_cdtParentMap (ist : IntermediateState) (k : CdtNodeId) :
     ist.state.cdt.parentMap.get? k = (freeze ist).cdtParentMap.get? k := by
-  exact freezeMap_get?_eq ist.state.cdt.parentMap k ist.hAllTables.2.2.2.2.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.cdt.parentMap k ist.hAllTables.2.2.2.2.2.2.2.2.1.1
 
 /-- Q6-A: cdtSlotNode lookup preserved by freeze. -/
 theorem lookup_freeze_cdtSlotNode (ist : IntermediateState) (k : SlotRef) :
     ist.state.cdtSlotNode.get? k = (freeze ist).cdtSlotNode.get? k := by
-  exact freezeMap_get?_eq ist.state.cdtSlotNode k ist.hAllTables.2.2.2.1
+  exact freezeMap_get?_eq ist.state.cdtSlotNode k ist.hAllTables.2.2.2.1.1
 
 /-- Q6-A: cdtNodeSlot lookup preserved by freeze. -/
 theorem lookup_freeze_cdtNodeSlot (ist : IntermediateState) (k : CdtNodeId) :
     ist.state.cdtNodeSlot.get? k = (freeze ist).cdtNodeSlot.get? k := by
-  exact freezeMap_get?_eq ist.state.cdtNodeSlot k ist.hAllTables.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.cdtNodeSlot k ist.hAllTables.2.2.2.2.1.1
 
 /-- Q6-A: objectTypes lookup preserved by freeze. -/
 theorem lookup_freeze_objectTypes (ist : IntermediateState) (k : SeLe4n.ObjId) :
     ist.state.lifecycle.objectTypes.get? k = (freeze ist).objectTypes.get? k := by
-  exact freezeMap_get?_eq ist.state.lifecycle.objectTypes k ist.hAllTables.2.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.lifecycle.objectTypes k ist.hAllTables.2.2.2.2.2.1.1
 
 /-- Q6-A: capabilityRefs lookup preserved by freeze. -/
 theorem lookup_freeze_capabilityRefs (ist : IntermediateState) (k : SlotRef) :
     ist.state.lifecycle.capabilityRefs.get? k = (freeze ist).capabilityRefs.get? k := by
-  exact freezeMap_get?_eq ist.state.lifecycle.capabilityRefs k ist.hAllTables.2.2.2.2.2.2.1
+  exact freezeMap_get?_eq ist.state.lifecycle.capabilityRefs k ist.hAllTables.2.2.2.2.2.2.1.1
 
 /-- Q6-A: objectIndexSet membership preserved by freeze. -/
 theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId) :
     ist.state.objectIndexSet.table.get? k =
       (freeze ist).objectIndexSet.get? k := by
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 -- ============================================================================
 -- Q6-B: CNode Radix Lookup Equivalence
@@ -1261,8 +1261,8 @@ theorem thread_store_commutes_at_key (ist : IntermediateState)
   rw [← freezeMapWith_get?_eq
     (ist.state.objects.insert tid.toObjId (KernelObject.tcb tcb))
     freezeObject tid.toObjId
-    (ist.state.objects.insert_preserves_invExt tid.toObjId _ ist.hAllTables.1)]
-  rw [RHTable.getElem?_insert_self ist.state.objects tid.toObjId _ ist.hAllTables.1]
+    (ist.state.objects.insert_preserves_invExt tid.toObjId _ ist.hAllTables.1.1)]
+  rw [RHTable.getElem?_insert_self ist.state.objects tid.toObjId _ ist.hAllTables.1.1]
   simp [freezeObject]
 
 /-- Thread store preserves non-object fields: modifying the objects table

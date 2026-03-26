@@ -160,4 +160,35 @@ theorem RHSet.mem_iff_contains [BEq κ] [Hashable κ]
     k ∈ s ↔ s.contains k = true := by
   rfl
 
+-- ============================================================================
+-- V3-B Phase 2: invExtK wrappers for RHSet
+-- ============================================================================
+
+/-- Kernel-level extended invariant for RHSet (delegates to RHTable.invExtK). -/
+def RHSet.invExtK [BEq κ] [Hashable κ] (s : RHSet κ) : Prop := s.table.invExtK
+
+/-- Empty set satisfies invExtK. -/
+theorem RHSet.empty_invExtK [BEq κ] [Hashable κ] :
+    (RHSet.empty : RHSet κ).table.invExtK :=
+  RHTable.empty_invExtK 16 (by omega) (by omega)
+
+/-- Insert preserves invExtK. -/
+theorem RHSet.insert_preserves_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (s : RHSet κ) (k : κ) (hK : s.table.invExtK) :
+    (s.insert k).table.invExtK :=
+  s.table.insert_preserves_invExtK k () hK
+
+/-- Erase preserves invExtK. -/
+theorem RHSet.erase_preserves_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (s : RHSet κ) (k : κ) (hK : s.table.invExtK) :
+    (s.erase k).table.invExtK :=
+  s.table.erase_preserves_invExtK k hK
+
+/-- Erasing `k` does not affect containment of other keys (kernel-level API). -/
+theorem RHSet.contains_erase_ne_K [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (s : RHSet κ) (k k' : κ) (hNe : ¬(k == k') = true) (hK : s.table.invExtK) :
+    (s.erase k).contains k' = s.contains k' := by
+  simp [RHSet.contains, RHSet.erase, RHTable.contains,
+        RHTable.getElem?_erase_ne_K s.table k k' hNe hK]
+
 end SeLe4n.Kernel.RobinHood

@@ -676,8 +676,8 @@ private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot)
     rw [this] at hLookup; exact absurd hLookup (by simp)
   · -- s ≠ slot: erase preserves lookup
     have hNe : slot ≠ s := fun heq => h (beq_iff_eq.mpr heq)
-    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne cn.slots slot s
-      (fun hb => hNe (eq_of_beq hb)) hUniq.1 hUniq.2.1
+    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K cn.slots slot s
+      (fun hb => hNe (eq_of_beq hb)) hUniq
     rw [this] at hLookup; change cn.slots.get? s = some cap at hLookup; exact hLookup
 
 /-- WS-H13: CNode.revokeTargetLocal preserves depth/guardWidth/radixWidth and has slot subset. -/

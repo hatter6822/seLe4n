@@ -411,8 +411,9 @@ The Lean model bridges abstract `Nat` semantics to 64-bit hardware:
   construction requires `mk_checked` with `cdtMapsConsistent` witness (T2-B/C/H-2).
 - **Frozen TLB**: `FrozenSystemState.tlb` field preserves TLB state across freeze;
   `freeze_preserves_tlb` correctness theorem (T2-D/E/F/M-NEW-1).
-- **storeObject preservation**: Bundled `storeObject_preserves_allTablesInvExt`
-  theorem composing 16+ component proofs (T2-G/M-NEW-2).
+- **storeObject preservation**: Bundled `storeObject_preserves_allTablesInvExtK`
+  theorem composing 16+ component proofs (T2-G/M-NEW-2). Uses `invExtK` kernel-level
+  invariant bundle (V3-B) — eliminates separate `hSize`/`hCapGe4` threading.
 
 ### 8.3 Memory Alignment Model Gap
 

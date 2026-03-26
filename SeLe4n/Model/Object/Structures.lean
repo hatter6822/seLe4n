@@ -312,14 +312,13 @@ theorem lookup_mapPage_ne
         (paddr, perms) (fun h => hNe (eq_of_beq h)) hExt
 
 /-- TPI-001 helper: unmapPage at vaddr does not affect lookup of a different vaddr'.
-Maps to `RHTable.getElem?_erase_ne` with the inequality hypothesis.
-Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
+Maps to `RHTable.getElem?_erase_ne_K` with the inequality hypothesis.
+Requires `invExtK` for RHTable erase correctness. -/
 theorem lookup_unmapPage_ne
     (root root' : VSpaceRoot)
     (vaddr vaddr' : SeLe4n.VAddr)
     (hNe : vaddr ≠ vaddr')
-    (hExt : root.mappings.invExt)
-    (hSize : root.mappings.size < root.mappings.capacity)
+    (hK : root.mappings.invExtK)
     (hUnmap : root.unmapPage vaddr = some root') :
     root'.lookup vaddr' = root.lookup vaddr' := by
   unfold unmapPage at hUnmap
@@ -328,8 +327,8 @@ theorem lookup_unmapPage_ne
   | some _ =>
       simp [hLookup] at hUnmap; cases hUnmap
       simp only [lookup]
-      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne root.mappings vaddr vaddr'
-        (fun h => hNe (eq_of_beq h)) hExt hSize
+      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K root.mappings vaddr vaddr'
+        (fun h => hNe (eq_of_beq h)) hK
 
 end VSpaceRoot
 
@@ -529,8 +528,7 @@ invariant (`invExt`) and are not full (`size < capacity`).
 WS-N4: With RHTable-backed slots, key uniqueness is enforced by the `noDupKeys`
 component of `invExt`. The `size < capacity` condition is maintained by the
 resize-at-75%-load policy and is required for erase correctness. -/
-def slotsUnique (cn : CNode) : Prop :=
-  cn.slots.invExt ∧ cn.slots.size < cn.slots.capacity ∧ 4 ≤ cn.slots.capacity
+def slotsUnique (cn : CNode) : Prop := cn.slots.invExtK
 
 /-- WS-G5: After removing a slot, lookup returns `none`.
 Maps directly to `RHTable.getElem?_erase_self`. Requires slot invariant
@@ -614,66 +612,33 @@ theorem empty_guardBounded : CNode.empty.guardBounded := by
   simp [empty, guardBounded]
 
 /-- WS-N4: The empty CNode's slots satisfy the slot invariant. -/
-theorem empty_slotsUnique : CNode.empty.slotsUnique := by
-  refine ⟨RHTable.empty_invExt 16 (by omega), ?_, ?_⟩
-  · show (RHTable.empty 16 (by omega : (0 : Nat) < 16)).size <
-      (RHTable.empty 16 (by omega : (0 : Nat) < 16)).capacity
-    simp [RHTable.empty]
-  · show 4 ≤ (RHTable.empty 16 (by omega : (0 : Nat) < 16)).capacity
-    simp [RHTable.empty]
+theorem empty_slotsUnique : CNode.empty.slotsUnique :=
+  RHTable.empty_invExtK 16 (by omega) (by omega)
 
 /-- WS-N4: Insert preserves the slot invariant. -/
 
 theorem insert_slotsUnique
     (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
     (hUniq : cn.slotsUnique) :
-    (cn.insert slot cap).slotsUnique := by
-  refine ⟨cn.slots.insert_preserves_invExt slot cap hUniq.1,
-    cn.slots.insert_size_lt_capacity slot cap hUniq.1 hUniq.2.1 hUniq.2.2, ?_⟩
-  · -- capacity ≥ 4: insert either keeps same capacity or doubles it
-    simp only [CNode.insert]; unfold RHTable.insert; split
-    · -- resize branch: capacity doubles
-      rw [RHTable.insertNoResize_capacity, cn.slots.resize_fold_capacity]
-      have := hUniq.2.2; omega
-    · -- no resize: capacity unchanged
-      rw [RHTable.insertNoResize_capacity]; exact hUniq.2.2
+    (cn.insert slot cap).slotsUnique :=
+  cn.slots.insert_preserves_invExtK slot cap hUniq
 
 /-- WS-N4: Erase preserves the slot invariant. -/
 
 theorem remove_slotsUnique
     (cn : CNode) (slot : SeLe4n.Slot)
     (hUniq : cn.slotsUnique) :
-    (cn.remove slot).slotsUnique := by
-  refine ⟨cn.slots.erase_preserves_invExt slot hUniq.1 hUniq.2.1,
-    cn.slots.erase_size_lt_capacity slot hUniq.2.1, ?_⟩
-  · -- erase preserves capacity
-    simp only [CNode.remove]; unfold RHTable.erase; simp only []; split <;> exact hUniq.2.2
+    (cn.remove slot).slotsUnique :=
+  cn.slots.erase_preserves_invExtK slot hUniq
 
 /-- WS-N4: Filter preserves the slot invariant. -/
 
 theorem revokeTargetLocal_slotsUnique
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (hUniq : cn.slotsUnique) :
-    (cn.revokeTargetLocal sourceSlot target).slotsUnique := by
-  refine ⟨cn.slots.filter_preserves_invExt
-      (fun s c => s == sourceSlot || !(c.target == target)) hUniq.1,
-    cn.slots.filter_size_lt_capacity
-      (fun s c => s == sourceSlot || !(c.target == target)) hUniq.2.1 hUniq.1.1, ?_⟩
-  · -- filter preserves capacity (it rebuilds with same capacity)
-    simp only [CNode.revokeTargetLocal]; unfold RHTable.filter RHTable.fold
-    exact Array.foldl_induction
-      (motive := fun _ (acc : RHTable SeLe4n.Slot Capability) => 4 ≤ acc.capacity)
-      (by simp [RHTable.empty]; exact hUniq.2.2)
-      (fun i acc hAcc => by
-        simp only []; split
-        · exact hAcc
-        · rename_i entry _
-          by_cases hf : (fun s c => s == sourceSlot || !(c.target == target)) entry.key entry.value
-          · simp only [hf, ite_true]
-            rw [RHTable.insertNoResize_capacity]; exact hAcc
-          · simp only [show ((fun s c => s == sourceSlot || !(c.target == target))
-              entry.key entry.value) = false from Bool.eq_false_iff.mpr hf]
-            exact hAcc)
+    (cn.revokeTargetLocal sourceSlot target).slotsUnique :=
+  cn.slots.filter_preserves_invExtK
+    (fun s c => s == sourceSlot || !(c.target == target)) hUniq
 
 -- ============================================================================
 -- WS-H4: Meaningful CNode slot-count bound predicate
@@ -755,8 +720,8 @@ theorem lookup_remove_ne
     (hUniq : cn.slotsUnique) :
     (cn.remove slot).lookup slot' = cn.lookup slot' := by
   simp only [remove, lookup]
-  exact RHTable.getElem?_erase_ne cn.slots slot slot'
-    (fun h => hNe (eq_of_beq h)) hUniq.1 hUniq.2.1
+  exact RHTable.getElem?_erase_ne_K cn.slots slot slot'
+    (fun h => hNe (eq_of_beq h)) hUniq
 
 end CNode
 
@@ -1275,7 +1240,7 @@ Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
 private theorem foldl_erase_preserves
     (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
     (hNotAny : ∀ c ∈ xs, (c == k) = false)
-    (hExt : m.invExt) (hSize : m.size < m.capacity) :
+    (hK : m.invExtK) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = m[k]? := by
   induction xs generalizing m with
   | nil => rfl
@@ -1284,56 +1249,53 @@ private theorem foldl_erase_preserves
     have hxk : (x == k) = false := hNotAny x (.head _)
     have hRest : ∀ c ∈ rest, (c == k) = false :=
       fun c hc => hNotAny c (.tail _ hc)
-    have hExtE := m.erase_preserves_invExt x hExt hSize
-    have hSizeE := m.erase_size_lt_capacity x hSize
-    have h1 := ih _ hRest hExtE hSizeE
-    have h2 := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne m x k (by simp [hxk]) hExt hSize
+    have hKE := m.erase_preserves_invExtK x hK
+    have h1 := ih _ hRest hKE
+    have h2 := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K m x k (by simp [hxk]) hK
     -- h1 : foldl[k]? = (m.erase x)[k]?, h2 : (m.erase x).get? k = m.get? k
     -- Both [k]? and .get? are definitionally equal for RHTable
     exact h1.trans h2
 
 /-- M-P02: Helper — once `[k]? = none`, further `foldl erase` keeps it none.
-Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
+Requires `invExtK` for RHTable erase correctness. -/
 private theorem foldl_erase_none
     (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
     (hNone : m[k]? = none)
-    (hExt : m.invExt) (hSize : m.size < m.capacity) :
+    (hK : m.invExtK) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
   induction xs generalizing m with
   | nil => exact hNone
   | cons x rest ih =>
     simp only [List.foldl_cons]
-    have hExtE := m.erase_preserves_invExt x hExt hSize
-    have hSizeE := m.erase_size_lt_capacity x hSize
-    apply ih _ _ hExtE hSizeE
+    have hKE := m.erase_preserves_invExtK x hK
+    apply ih _ _ hKE
     show (m.erase x).get? k = none
     by_cases hxk : (x == k) = true
     · have hkEq : x = k := eq_of_beq hxk
-      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hExt
-    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne m x k hxk hExt hSize]; exact hNone
+      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hK.1
+    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K m x k hxk hK]; exact hNone
 
 /-- M-P02: Helper — `foldl erase` erases entries for keys in the list.
-Requires `invExt` and `size < capacity` for RHTable erase correctness. -/
+Requires `invExtK` for RHTable erase correctness. -/
 private theorem foldl_erase_mem
     (xs : List CdtNodeId) (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId) (k : CdtNodeId)
     (hMem : ∃ c ∈ xs, (c == k) = true)
-    (hExt : m.invExt) (hSize : m.size < m.capacity) :
+    (hK : m.invExtK) :
     (xs.foldl (fun acc c => acc.erase c) m)[k]? = none := by
   induction xs generalizing m with
   | nil => obtain ⟨_, hMem, _⟩ := hMem; cases hMem
   | cons x rest ih =>
     simp only [List.foldl_cons]
-    have hExtE := m.erase_preserves_invExt x hExt hSize
-    have hSizeE := m.erase_size_lt_capacity x hSize
+    have hKE := m.erase_preserves_invExtK x hK
     obtain ⟨c, hcMem, hck⟩ := hMem
     rcases List.mem_cons.mp hcMem with hcx | hTail
     · -- c = x, so x == k is true
       have hxk : (x == k) = true := hcx ▸ hck
       have hkEq : x = k := eq_of_beq hxk
-      apply foldl_erase_none _ _ _ _ hExtE hSizeE
+      apply foldl_erase_none _ _ _ _ hKE
       show (m.erase x).get? k = none
-      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hExt
-    · exact ih _ ⟨c, hTail, hck⟩ hExtE hSizeE
+      rw [hkEq]; exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self m k hK.1
+    · exact ih _ ⟨c, hTail, hck⟩ hKE
 
 /-- M-P02: `removeNode` preserves `parentMapConsistent`.
 
@@ -1345,28 +1307,25 @@ theorem removeNode_parentMapConsistent
     (cdt : CapDerivationTree) (node : CdtNodeId)
     (hCon : cdt.parentMapConsistent)
     (hChildCon : cdt.childMapConsistent)
-    (hExt : cdt.parentMap.invExt) (hSizePM : cdt.parentMap.size < cdt.parentMap.capacity) :
+    (hK : cdt.parentMap.invExtK) :
     (cdt.removeNode node).parentMapConsistent := by
   intro child parent
   simp only [removeNode]
-  -- Establish invExt/size for the fold result via auxiliary lemma
-  have foldl_erase_invExt : ∀ (xs : List CdtNodeId)
+  -- Establish invExtK for the fold result via auxiliary lemma
+  have foldl_erase_invExtK : ∀ (xs : List CdtNodeId)
       (m : SeLe4n.Kernel.RobinHood.RHTable CdtNodeId CdtNodeId),
-      m.invExt → m.size < m.capacity →
-      (xs.foldl (fun acc c => acc.erase c) m).invExt ∧
-      (xs.foldl (fun acc c => acc.erase c) m).size <
-      (xs.foldl (fun acc c => acc.erase c) m).capacity := by
+      m.invExtK →
+      (xs.foldl (fun acc c => acc.erase c) m).invExtK := by
     intro xs
     induction xs with
-    | nil => intro m hE hS; exact ⟨hE, hS⟩
+    | nil => intro m hM; exact hM
     | cons x rest ih =>
-      intro m hE hS
+      intro m hM
       simp only [List.foldl_cons]
-      exact ih _ (m.erase_preserves_invExt x hE hS) (m.erase_size_lt_capacity x hS)
-  have hFoldBoth := foldl_erase_invExt
-    ((cdt.childMap.get? node).getD []) cdt.parentMap hExt hSizePM
-  have hFoldExt := hFoldBoth.1
-  have hFoldSize := hFoldBoth.2
+      exact ih _ (m.erase_preserves_invExtK x hM)
+  have hFoldK := foldl_erase_invExtK
+    ((cdt.childMap.get? node).getD []) cdt.parentMap hK
+  have hFoldExt := hFoldK.1
   constructor
   · -- Forward: parentMapFinal[child]? = some parent → surviving edge exists
     intro hIn
@@ -1380,8 +1339,8 @@ theorem removeNode_parentMapConsistent
       rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ node hFoldExt] at hIn
       cases hIn
     · -- child ≠ node
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node child hNeNodeBool
-        hFoldExt hFoldSize] at hIn
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node child hNeNodeBool
+        hFoldK] at hIn
       have hNotChild : ∀ c ∈ (cdt.childMap.get? node).getD [], (c == child) = false := by
         intro c hc
         cases h : (c == child)
@@ -1389,11 +1348,11 @@ theorem removeNode_parentMapConsistent
         · exfalso
           have hNone : (List.foldl (fun acc c => acc.erase c) cdt.parentMap
             ((cdt.childMap.get? node).getD [])).get? child = none :=
-            foldl_erase_mem _ cdt.parentMap child ⟨c, hc, h⟩ hExt hSizePM
+            foldl_erase_mem _ cdt.parentMap child ⟨c, hc, h⟩ hK
           rw [hNone] at hIn; exact absurd hIn (by simp)
       have hPreserves : (List.foldl (fun acc c => acc.erase c) cdt.parentMap
         ((cdt.childMap.get? node).getD [])).get? child = cdt.parentMap.get? child :=
-        foldl_erase_preserves _ _ _ hNotChild hExt hSizePM
+        foldl_erase_preserves _ _ _ hNotChild hK
       rw [hPreserves] at hIn
       have ⟨e, heMem, hep, hec⟩ := (hCon child parent).mp hIn
       refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
@@ -1428,8 +1387,8 @@ theorem removeNode_parentMapConsistent
     -- Normalize [k]? to .get? for RHTable rewriting
     show ((List.foldl (fun m c => m.erase c) cdt.parentMap
       ((cdt.childMap.get? node).getD [])).erase node).get? child = some parent
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node child hNeNode
-      hFoldExt hFoldSize]
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node child hNeNode
+      hFoldK]
     -- Now goal is foldl result .get? child = some parent
     show (List.foldl (fun m c => m.erase c) cdt.parentMap
       ((cdt.childMap.get? node).getD [])).get? child = some parent
@@ -1451,7 +1410,7 @@ theorem removeNode_parentMapConsistent
         exact hNotParent (decide_eq_true hep)
     have hPreserves : (List.foldl (fun m c => m.erase c) cdt.parentMap
       ((cdt.childMap.get? node).getD [])).get? child = cdt.parentMap.get? child :=
-      foldl_erase_preserves _ _ _ hNotInChildren hExt hSizePM
+      foldl_erase_preserves _ _ _ hNotInChildren hK
     rw [hPreserves]
     exact (hCon child parent).mpr ⟨e, heMemOrig, hep, hec⟩
 
@@ -1465,14 +1424,13 @@ theorem removeNode_childMapConsistent
     (cdt : CapDerivationTree) (node : CdtNodeId)
     (hCon : cdt.childMapConsistent)
     (hParentCon : cdt.parentMapConsistent)
-    (hExt : cdt.childMap.invExt)
-    (hSizeCM : cdt.childMap.size < cdt.childMap.capacity) :
+    (hK : cdt.childMap.invExtK) :
     (cdt.removeNode node).childMapConsistent := by
   intro parent child
   simp only [removeNode]
-  -- Establish invExt/size for childMap.erase node
-  have hEraseExt := cdt.childMap.erase_preserves_invExt node hExt hSizeCM
-  have hEraseSize := cdt.childMap.erase_size_lt_capacity node hSizeCM
+  -- Establish invExtK for childMap.erase node
+  have hKE := cdt.childMap.erase_preserves_invExtK node hK
+  have hEraseExt := hKE.1
   constructor
   · -- Forward: child ∈ (childMapFinal.get? parent).getD [] → ∃ e ∈ edgesFiltered, ...
     intro hIn
@@ -1491,13 +1449,12 @@ theorem removeNode_childMapConsistent
         · -- parent = node: erased, so get? node = none, contradiction
           have hNodeEq : node = parent := eq_of_beq hpn
           subst hNodeEq
-          have hEraseP_ext := (cdt.childMap.erase node).erase_preserves_invExt p hEraseExt hEraseSize
           have : ((cdt.childMap.erase node).erase p).get? node = none := by
             by_cases hpn2 : (p == node) = true
             · have := eq_of_beq hpn2; subst this
               exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hEraseExt
-            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ p node hpn2 hEraseExt hEraseSize]
-              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt
+            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ p node hpn2 hKE]
+              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1
           rw [this] at hIn; simp at hIn
         · by_cases hpp : (p == parent) = true
           · -- parent = p: erased, so get? p = none, contradiction
@@ -1507,10 +1464,8 @@ theorem removeNode_childMapConsistent
               SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hEraseExt
             rw [this] at hIn; simp at hIn
           · -- parent ≠ node and parent ≠ p: both erases are no-ops for parent
-            have hEraseP_ext := (cdt.childMap.erase node).erase_preserves_invExt p hEraseExt hEraseSize
-            have hEraseP_size := (cdt.childMap.erase node).erase_size_lt_capacity p hEraseSize
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ p parent hpp hEraseExt hEraseSize] at hIn
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hpn hExt hSizeCM] at hIn
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ p parent hpp hKE] at hIn
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hpn hK] at hIn
             have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
             refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
             simp only [decide_eq_true_eq]
@@ -1539,9 +1494,9 @@ theorem removeNode_childMapConsistent
           by_cases hpn2 : (node == p) = true
           · have hNodeP : node = p := eq_of_beq hpn2
             subst hNodeP
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt] at hSib
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1] at hSib
             simp at hSib
-          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node p hpn2 hExt hSizeCM] at hSib
+          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node p hpn2 hK] at hSib
             have ⟨e, heMem, hep, hec⟩ := (hCon p child).mp hSib
             refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
             simp only [decide_eq_true_eq]
@@ -1561,9 +1516,9 @@ theorem removeNode_childMapConsistent
           by_cases hpn2 : (node == parent) = true
           · have hNodeEq : node = parent := eq_of_beq hpn2
             subst hNodeEq
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt] at hIn
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1] at hIn
             simp at hIn
-          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hpn2 hExt hSizeCM] at hIn
+          · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hpn2 hK] at hIn
             have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
             refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
             simp only [decide_eq_true_eq]
@@ -1582,9 +1537,9 @@ theorem removeNode_childMapConsistent
       by_cases hpn : (node == parent) = true
       · have hNodeEq : node = parent := eq_of_beq hpn
         subst hNodeEq
-        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hExt] at hIn
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self _ _ hK.1] at hIn
         simp at hIn
-      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hpn hExt hSizeCM] at hIn
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hpn hK] at hIn
         have ⟨e, heMem, hep, hec⟩ := (hCon parent child).mp hIn
         refine ⟨e, List.mem_filter.mpr ⟨heMem, ?_⟩, hep, hec⟩
         simp only [decide_eq_true_eq]
@@ -1643,7 +1598,7 @@ theorem removeNode_childMapConsistent
             -- parent = node, contradiction with hParentNeNode
             simp at hParentNeNode
           · have hSiblings : (cdt.childMap.erase node).get? p = cdt.childMap.get? p :=
-              SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node p hpn2 hExt hSizeCM
+              SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node p hpn2 hK
             -- child ∈ original siblings
             -- child ∈ siblings (after erase node from childMap, but key is p ≠ node)
             have hChildInSibs : child ∈ ((cdt.childMap.erase node).get? p).getD [] := by
@@ -1661,8 +1616,8 @@ theorem removeNode_childMapConsistent
             rw [this] at hChildSurvives; cases hChildSurvives
         · -- parent ≠ p: both erases are no-ops for parent
           rw [show ((cdt.childMap.erase node).erase p).get? parent = cdt.childMap.get? parent from by
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ p parent hpp hEraseExt hEraseSize]
-            exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hParentNeNode hExt hSizeCM]
+            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ p parent hpp hKE]
+            exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hParentNeNode hK]
           exact hOriginal
       · -- filtered.isEmpty = false → childMapFinal = (childMap.erase node).insert p filtered
         rename_i hNotEmpty
@@ -1680,17 +1635,17 @@ theorem removeNode_childMapConsistent
             by_cases hpn2 : (node == p) = true
             · have hNodeP : node = p := eq_of_beq hpn2
               subst hNodeP; simp at hParentNeNode
-            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node p hpn2 hExt hSizeCM]
+            · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node p hpn2 hK]
               exact hOriginal
           · simp only [bne_iff_ne, ne_eq]
             intro h; apply hChildNeNode; exact beq_of_eq h.symm
         · -- parent ≠ p
           rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hpp hEraseExt]
-          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hParentNeNode hExt hSizeCM]
+          rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hParentNeNode hK]
           exact hOriginal
     · -- none
       rename_i hNoParent
-      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ node parent hParentNeNode hExt hSizeCM]
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K _ node parent hParentNeNode hK]
       exact hOriginal
 
 /-- Slot-address view of a CDT edge (projection through slot backpointers). -/

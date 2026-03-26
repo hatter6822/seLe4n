@@ -890,4 +890,155 @@ theorem RHTable.filter_filter_getElem? [BEq α] [Hashable α] [LawfulBEq α]
 instance [BEq α] [Hashable α] : EmptyCollection (RHTable α β) where
   emptyCollection := RHTable.empty 16
 
+-- ============================================================================
+-- V3-B Phase 1: invExtK — Kernel-Level Extended Invariant Bundle
+-- ============================================================================
+
+/-- Kernel-level extended invariant: includes size bounds needed by erase and
+    insert. All kernel tables satisfy this. RobinHood internal proofs use
+    `invExt` (unchanged).
+
+    - `invExt`: data-structure invariant (WF ∧ distCorrect ∧ noDupKeys ∧ probeChainDominant)
+    - `size < capacity`: erase lookup correctness prerequisite
+    - `4 ≤ capacity`: insert size bound prerequisite -/
+def RHTable.invExtK [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
+  t.invExt ∧ t.size < t.capacity ∧ 4 ≤ t.capacity
+
+-- Projection lemmas
+theorem RHTable.invExtK_invExt [BEq α] [Hashable α] {t : RHTable α β}
+    (h : t.invExtK) : t.invExt := h.1
+
+theorem RHTable.invExtK_size_lt_capacity [BEq α] [Hashable α] {t : RHTable α β}
+    (h : t.invExtK) : t.size < t.capacity := h.2.1
+
+theorem RHTable.invExtK_capacity_ge4 [BEq α] [Hashable α] {t : RHTable α β}
+    (h : t.invExtK) : 4 ≤ t.capacity := h.2.2
+
+-- Constructor lemma
+theorem RHTable.mk_invExtK [BEq α] [Hashable α] {t : RHTable α β}
+    (hExt : t.invExt) (hSize : t.size < t.capacity)
+    (hCap : 4 ≤ t.capacity) : t.invExtK := ⟨hExt, hSize, hCap⟩
+
+-- ============================================================================
+-- V3-B Phase 1: empty_invExtK
+-- ============================================================================
+
+/-- The empty table satisfies `invExtK` when `4 ≤ cap`. -/
+theorem RHTable.empty_invExtK [BEq α] [Hashable α]
+    (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hPos : RHTable α β).invExtK :=
+  ⟨RHTable.empty_invExt cap hPos,
+   by simp [RHTable.empty]; exact hPos,
+   by simp [RHTable.empty]; exact hCapGe4⟩
+
+-- ============================================================================
+-- V3-B Phase 1: erase_preserves_invExtK
+-- ============================================================================
+
+/-- Erase preserves capacity (erase does not change capacity). -/
+private theorem RHTable.erase_capacity_eq [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) :
+    (t.erase k).capacity = t.capacity := by
+  unfold RHTable.erase; simp only []; split <;> rfl
+
+/-- Erase preserves `invExtK`. Composes `erase_preserves_invExt`,
+    `erase_size_lt_capacity`, and capacity preservation. -/
+theorem RHTable.erase_preserves_invExtK [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hK : t.invExtK) :
+    (t.erase k).invExtK :=
+  ⟨t.erase_preserves_invExt k hK.1 hK.2.1,
+   t.erase_size_lt_capacity k hK.2.1,
+   by rw [t.erase_capacity_eq k]; exact hK.2.2⟩
+
+-- ============================================================================
+-- V3-B Phase 1: insert_preserves_invExtK
+-- ============================================================================
+
+/-- Insert preserves capacity ≥ 4 (insert either keeps capacity or doubles it). -/
+private theorem RHTable.insert_capacity_ge4 [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (v : β) (hCap : 4 ≤ t.capacity) :
+    4 ≤ (t.insert k v).capacity := by
+  unfold RHTable.insert; split
+  · rw [RHTable.insertNoResize_capacity, t.resize_fold_capacity]; omega
+  · rw [RHTable.insertNoResize_capacity]; exact hCap
+
+/-- Insert preserves `invExtK`. Composes `insert_preserves_invExt`,
+    `insert_size_lt_capacity`, and capacity preservation. -/
+theorem RHTable.insert_preserves_invExtK [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hK : t.invExtK) :
+    (t.insert k v).invExtK :=
+  ⟨t.insert_preserves_invExt k v hK.1,
+   t.insert_size_lt_capacity k v hK.1 hK.2.1 hK.2.2,
+   t.insert_capacity_ge4 k v hK.2.2⟩
+
+-- ============================================================================
+-- V3-B Phase 1: getElem?_erase_ne_K
+-- ============================================================================
+
+/-- Erasing key `k` does not affect lookups of other keys (kernel-level API
+    taking `invExtK` instead of separate `hExt` + `hSize`). -/
+theorem RHTable.getElem?_erase_ne_K [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k k' : α) (hNe : ¬(k == k') = true)
+    (hK : t.invExtK) :
+    (t.erase k).get? k' = t.get? k' :=
+  t.getElem?_erase_ne k k' hNe hK.1 hK.2.1
+
+-- ============================================================================
+-- V3-B Phase 1: filter_preserves_invExtK
+-- ============================================================================
+
+/-- Filter preserves capacity (filter rebuilds from `empty t.capacity`). -/
+private theorem RHTable.filter_capacity_eq [BEq α] [Hashable α]
+    (t : RHTable α β) (f : α → β → Bool) :
+    (t.filter f).capacity = t.capacity := by
+  unfold RHTable.filter RHTable.fold
+  exact Array.foldl_induction
+    (motive := fun _ (acc : RHTable α β) => acc.capacity = t.capacity)
+    (by simp [RHTable.empty])
+    (fun i acc hAcc => by
+      simp only []
+      split
+      · exact hAcc
+      · rename_i entry _
+        by_cases hf : f entry.key entry.value
+        · simp only [hf, ite_true]
+          rw [RHTable.insertNoResize_capacity]; exact hAcc
+        · simp only [show (f entry.key entry.value) = false from by simp [hf]]
+          exact hAcc)
+
+/-- Filter preserves `invExtK`. Composes `filter_preserves_invExt`,
+    `filter_size_lt_capacity`, and capacity preservation. -/
+theorem RHTable.filter_preserves_invExtK [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (hK : t.invExtK) :
+    (t.filter f).invExtK :=
+  ⟨t.filter_preserves_invExt f hK.1,
+   t.filter_size_lt_capacity f hK.2.1 hK.1.1,
+   by rw [t.filter_capacity_eq f]; exact hK.2.2⟩
+
+-- ============================================================================
+-- V3-B Phase 1: ofList_invExtK
+-- ============================================================================
+
+/-- `ofList` produces a table with capacity ≥ 4 when `4 ≤ cap`. -/
+private theorem RHTable.ofList_capacity_ge4 [BEq α] [Hashable α] [LawfulBEq α]
+    (entries : List (α × β)) (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
+    4 ≤ (RHTable.ofList entries cap hPos).capacity := by
+  suffices ∀ (init : RHTable α β), 4 ≤ init.capacity →
+      4 ≤ (entries.foldl (fun acc (x : α × β) => acc.insert x.1 x.2) init).capacity from
+    this _ (by simp [RHTable.empty]; exact hCapGe4)
+  intro init hInit
+  induction entries generalizing init with
+  | nil => exact hInit
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    exact ih _ (init.insert_capacity_ge4 hd.1 hd.2 hInit)
+
+/-- `ofList` produces a table satisfying `invExtK` when `4 ≤ cap`. -/
+theorem RHTable.ofList_invExtK [BEq α] [Hashable α] [LawfulBEq α]
+    (entries : List (α × β)) (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.ofList entries cap hPos).invExtK :=
+  ⟨RHTable.ofList_invExt entries cap hPos,
+   RHTable.ofList_size_lt_capacity entries cap hPos hCapGe4,
+   RHTable.ofList_capacity_ge4 entries cap hPos hCapGe4⟩
+
 end SeLe4n.Kernel.RobinHood

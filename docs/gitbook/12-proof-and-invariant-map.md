@@ -41,8 +41,8 @@ in Projection.lean) is intentionally retained.
   `empty` or `mk_checked` (which requires `cdtMapsConsistent` witness) (H-2).
 - `FrozenSystemState.tlb` field added; `freeze_preserves_tlb` correctness
   theorem proves TLB state is preserved across freeze (M-NEW-1).
-- `storeObject_preserves_allTablesInvExt` — bundled theorem composing 16+
-  component preservation proofs for `storeObject` (M-NEW-2).
+- `storeObject_preserves_allTablesInvExtK` — bundled theorem composing 16+
+  component preservation proofs for `storeObject` using `invExtK` (M-NEW-2, V3-B).
 - `capabilityRefs_filter_preserves_invExt` + `capabilityRefs_fold_preserves_invExt`
   — filter-then-fold chain in `storeObject` preserves `invExt` (M-NEW-3).
 - `CNode.guardBounded` predicate added to `CNode.wellFormed` — guard value
@@ -286,6 +286,9 @@ probeChainDominant preservation (`Invariant/Preservation.lean`):
 - `invExtFull` — extended invariant plus load factor bound (V3-A, H-RH-1)
 - `invExtFull_implies_size_lt_capacity` — strict size bound from load factor (V3-A)
 - `erase_preserves_invExtFull` — erase without redundant `hSize` hypothesis (V3-B)
+- `invExtK` — kernel-level bundle: `invExt ∧ size < capacity ∧ 4 ≤ capacity` (V3-B)
+- `erase_preserves_invExtK`, `insert_preserves_invExtK`, `filter_preserves_invExtK`,
+  `getElem?_erase_ne_K`, `ofList_invExtK`, `empty_invExtK` — kernel wrappers (V3-B)
 
 Helper infrastructure (`Invariant/Preservation.lean`):
 - `offset_injective` — injectivity of modular offsets from same base
