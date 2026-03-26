@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-v2-api-vq6un",
-      "commit_sha": "5fafa743244462c24546ed8740873c670e66db92",
-      "tree_sha": "20e71cde56bc834476eccd5574f939c9a6af03fe",
-      "committed_at_utc": "2026-03-25T21:42:02+00:00"
+      "branch": "claude/optimize-proof-chain-hardening-eoEVs",
+      "commit_sha": "cc4aa1abb075f9591af5939f4083835e50b0aa86",
+      "tree_sha": "1b769084f0bb19968f2bdedc38768fec332411fe",
+      "committed_at_utc": "2026-03-25T19:50:27-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0e510eb699cefed87842e0f2aceb5af86dd5375ed980e386c9e43cc125ee5350"
+    "source_digest": "dc0e2ec7ac960f08d85af997d05fd2c5a212b173a4e7cf1821efa3d3dc82fa86"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3438
+    "declaration_count": 3459
   },
   "readme_sync": {
-    "version": "0.22.0",
+    "version": "0.22.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 64504,
+    "production_loc": 64948,
     "test_files": 10,
     "test_loc": 8315,
-    "proved_theorem_lemma_decls": 1883,
+    "proved_theorem_lemma_decls": 1900,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -5303,7 +5303,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Preservation",
       "path": "SeLe4n/Kernel/Capability/Invariant/Preservation.lean",
-      "declaration_count": 71,
+      "declaration_count": 75,
       "declarations": [
         {
           "kind": "namespace",
@@ -6661,7 +6661,6 @@
           "line": 2110,
           "called": [
             "CSpaceAddr",
-            "Kernel",
             "SystemState",
             "cdtMapsConsistent",
             "cdtMapsConsistent_of_cdt_eq",
@@ -6673,6 +6672,40 @@
             "revokeAndClearRefsState_cdt_eq",
             "revokeTargetLocal",
             "storeObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtExpandingOp_preserves_bundle_with_hypothesis",
+          "line": 2187,
+          "called": [
+            "SystemState",
+            "capabilityInvariantBundle",
+            "cdtAcyclicity",
+            "cdtCompleteness"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cdtShrinkingOps_preserve_acyclicity_note",
+          "line": 2199,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "ipcUnwrapCapsLoop_capInvariant",
+          "line": 2235,
+          "called": [
+            "SystemState",
+            "capabilityInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveCapAddress_callers_check_rights_note",
+          "line": 2258,
+          "called": [
+            "Kernel"
           ]
         }
       ]
@@ -9733,7 +9766,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.CallReplyRecv",
       "path": "SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean",
-      "declaration_count": 11,
+      "declaration_count": 12,
       "declarations": [
         {
           "kind": "namespace",
@@ -10082,13 +10115,19 @@
             "lookupCspaceRoot",
             "none"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "callReplyRecv_preserves_waitingThreadsPendingMessageNone_note",
+          "line": 1078,
+          "called": []
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Defs",
       "path": "SeLe4n/Kernel/IPC/Invariant/Defs.lean",
-      "declaration_count": 50,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -10704,13 +10743,50 @@
             "ThreadId",
             "toObjId"
           ]
+        },
+        {
+          "kind": "def",
+          "name": "waitingThreadsPendingMessageNone",
+          "line": 762,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcStateQueueMembershipConsistent",
+          "line": 785,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointQueueNoDup",
+          "line": 816,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "none",
+            "toObjId"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.EndpointPreservation",
       "path": "SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean",
-      "declaration_count": 30,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -11392,13 +11468,19 @@
             "none",
             "toObjId"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointOps_preserve_waitingThreadsPendingMessageNone_note",
+          "line": 1668,
+          "called": []
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.NotificationPreservation",
       "path": "SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean",
-      "declaration_count": 25,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -11919,6 +12001,24 @@
             "notificationWaiterConsistent",
             "toObjId"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_preserves_waitingThreadsPendingMessageNone_note",
+          "line": 1359,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_preserves_waitingThreadsPendingMessageNone_note",
+          "line": 1367,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWake_pendingMessage_was_none_note",
+          "line": 1388,
+          "called": []
         }
       ]
     },
@@ -21722,7 +21822,7 @@
     {
       "module": "SeLe4n.Kernel.RadixTree.Bridge",
       "path": "SeLe4n/Kernel/RadixTree/Bridge.lean",
-      "declaration_count": 22,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
@@ -21954,8 +22054,14 @@
         },
         {
           "kind": "theorem",
+          "name": "buildCNodeRadix_hNoPhantom_auto_discharge_note",
+          "line": 325,
+          "called": []
+        },
+        {
+          "kind": "theorem",
           "name": "buildCNodeRadix_lookup_equiv",
-          "line": 314,
+          "line": 336,
           "called": [
             "CNodeConfig",
             "CNodeRadix",
@@ -21986,9 +22092,23 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "uniqueRadixIndices_sufficient",
+          "line": 439,
+          "called": [
+            "Capability",
+            "RHTable",
+            "Slot",
+            "extractBits",
+            "get",
+            "none",
+            "toNat"
+          ]
+        },
+        {
           "kind": "def",
           "name": "freezeCNodeSlots",
-          "line": 407,
+          "line": 463,
           "called": [
             "CNode",
             "CNodeRadix",
@@ -21998,7 +22118,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardWidth",
-          "line": 411,
+          "line": 467,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -22009,7 +22129,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardValue",
-          "line": 416,
+          "line": 472,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -22020,7 +22140,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_radixWidth",
-          "line": 421,
+          "line": 477,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -22031,7 +22151,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_wf",
-          "line": 426,
+          "line": 482,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -24352,7 +24472,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Invariant.Preservation",
       "path": "SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean",
-      "declaration_count": 61,
+      "declaration_count": 68,
       "declarations": [
         {
           "kind": "namespace",
@@ -24635,21 +24755,55 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "RHTable.invExtFull",
+          "line": 469,
+          "called": [
+            "RHTable",
+            "invExt",
+            "loadFactorBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.invExtFull_implies_size_lt_capacity",
+          "line": 475,
+          "called": [
+            "RHTable",
+            "capacity",
+            "invExtFull",
+            "loadFactorBounded",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.empty_invExtFull",
+          "line": 484,
+          "called": [
+            "RHTable",
+            "RHTable.empty",
+            "RHTable.empty_invExt",
+            "RHTable.empty_loadFactorBounded",
+            "invExtFull"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "displacement_roundtrip",
-          "line": 463,
+          "line": 493,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "same_displacement_eq",
-          "line": 484,
+          "line": 514,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_distCorrect",
-          "line": 525,
+          "line": 555,
           "called": [
             "RHEntry",
             "capacity",
@@ -24666,13 +24820,13 @@
         {
           "kind": "theorem",
           "name": "offset_injective",
-          "line": 602,
+          "line": 632,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "getElem_idx_eq",
-          "line": 625,
+          "line": 655,
           "called": [
             "RHEntry",
             "size"
@@ -24681,7 +24835,7 @@
         {
           "kind": "theorem",
           "name": "carried_key_absent",
-          "line": 637,
+          "line": 667,
           "called": [
             "RHEntry",
             "capacity",
@@ -24698,7 +24852,7 @@
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_noDupKeys",
-          "line": 719,
+          "line": 749,
           "called": [
             "RHEntry",
             "capacity",
@@ -24720,7 +24874,7 @@
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_pcd",
-          "line": 989,
+          "line": 1019,
           "called": [
             "RHEntry",
             "capacity",
@@ -24742,7 +24896,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_distCorrect",
-          "line": 1269,
+          "line": 1299,
           "called": [
             "RHTable",
             "capacity",
@@ -24756,7 +24910,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_distCorrect",
-          "line": 1279,
+          "line": 1309,
           "called": [
             "RHTable",
             "RHTable.empty_distCorrect",
@@ -24770,7 +24924,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_distCorrect",
-          "line": 1292,
+          "line": 1322,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -24784,7 +24938,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_noDupKeys",
-          "line": 1303,
+          "line": 1333,
           "called": [
             "RHTable",
             "capacity",
@@ -24799,7 +24953,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_probeChainDominant",
-          "line": 1319,
+          "line": 1349,
           "called": [
             "RHTable",
             "capacity",
@@ -24814,7 +24968,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_invExt",
-          "line": 1333,
+          "line": 1363,
           "called": [
             "RHTable",
             "insertNoResize",
@@ -24828,7 +24982,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_noDupKeys",
-          "line": 1342,
+          "line": 1372,
           "called": [
             "RHTable",
             "RHTable.empty_invExt",
@@ -24844,7 +24998,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_probeChainDominant",
-          "line": 1355,
+          "line": 1385,
           "called": [
             "RHTable",
             "RHTable.empty_invExt",
@@ -24860,7 +25014,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invExt",
-          "line": 1368,
+          "line": 1398,
           "called": [
             "RHTable",
             "invExt",
@@ -24874,7 +25028,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_noDupKeys",
-          "line": 1375,
+          "line": 1405,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -24889,7 +25043,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_probeChainDominant",
-          "line": 1383,
+          "line": 1413,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -24904,7 +25058,7 @@
         {
           "kind": "theorem",
           "name": "noDupKeys_after_clear",
-          "line": 1395,
+          "line": 1425,
           "called": [
             "RHEntry",
             "capacity",
@@ -24916,7 +25070,7 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_noDupKeys",
-          "line": 1418,
+          "line": 1448,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -24930,7 +25084,7 @@
         {
           "kind": "theorem",
           "name": "displacement_backward",
-          "line": 1520,
+          "line": 1550,
           "called": [
             "dist_step_mod",
             "idealIndex",
@@ -24940,7 +25094,7 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_distCorrect",
-          "line": 1589,
+          "line": 1619,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -24956,7 +25110,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_distCorrect",
-          "line": 1671,
+          "line": 1701,
           "called": [
             "RHEntry",
             "RHTable",
@@ -24975,7 +25129,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_noDupKeys",
-          "line": 1700,
+          "line": 1730,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -24994,7 +25148,7 @@
         {
           "kind": "def",
           "name": "relaxedPCD",
-          "line": 1726,
+          "line": 1756,
           "called": [
             "RHEntry",
             "capacity",
@@ -25005,7 +25159,7 @@
         {
           "kind": "theorem",
           "name": "relaxedPCD_to_pcd_at_termination",
-          "line": 1740,
+          "line": 1770,
           "called": [
             "RHEntry",
             "capacity",
@@ -25021,7 +25175,7 @@
         {
           "kind": "theorem",
           "name": "pcd_to_relaxedPCD_after_clear",
-          "line": 1849,
+          "line": 1879,
           "called": [
             "RHEntry",
             "capacity",
@@ -25036,7 +25190,7 @@
         {
           "kind": "theorem",
           "name": "backshiftStep_relaxedPCD",
-          "line": 1875,
+          "line": 1905,
           "called": [
             "RHEntry",
             "capacity",
@@ -25052,13 +25206,13 @@
         {
           "kind": "theorem",
           "name": "mod_add_mod",
-          "line": 2056,
+          "line": 2086,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_pcd",
-          "line": 2064,
+          "line": 2094,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -25079,7 +25233,7 @@
         {
           "kind": "theorem",
           "name": "List.exists_none_of_countP_lt",
-          "line": 2262,
+          "line": 2292,
           "called": [
             "none"
           ]
@@ -25087,7 +25241,7 @@
         {
           "kind": "theorem",
           "name": "exists_none_of_countOccupied_lt",
-          "line": 2279,
+          "line": 2309,
           "called": [
             "List.exists_none_of_countP_lt",
             "RHEntry",
@@ -25100,7 +25254,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 2294,
+          "line": 2324,
           "called": [
             "RHEntry",
             "RHTable",
@@ -25126,7 +25280,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 2394,
+          "line": 2424,
           "called": [
             "RHTable",
             "insert",
@@ -25140,7 +25294,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 2406,
+          "line": 2436,
           "called": [
             "RHTable",
             "capacity",
@@ -25156,7 +25310,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 2415,
+          "line": 2445,
           "called": [
             "RHTable",
             "invExt",
@@ -25165,6 +25319,50 @@
             "resize_preserves_noDupKeys",
             "resize_preserves_probeChainDominant",
             "resize_preserves_wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.erase_preserves_loadFactorBounded",
+          "line": 2459,
+          "called": [
+            "RHTable",
+            "RHTable.erase",
+            "erase",
+            "loadFactorBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.erase_preserves_invExtFull",
+          "line": 2474,
+          "called": [
+            "RHTable",
+            "erase",
+            "erase_preserves_invExt",
+            "erase_preserves_loadFactorBounded",
+            "invExtFull",
+            "invExtFull_implies_size_lt_capacity"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.invExt_of_invExtFull",
+          "line": 2482,
+          "called": [
+            "RHTable",
+            "invExt",
+            "invExtFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RHTable.loadFactorBounded_of_invExtFull",
+          "line": 2485,
+          "called": [
+            "RHTable",
+            "invExtFull",
+            "loadFactorBounded"
           ]
         }
       ]

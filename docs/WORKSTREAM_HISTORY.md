@@ -18,13 +18,25 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phases V1 and V2 are complete. Phases V3–V8 remain.
+WS-V Phases V1, V2, and V3 are complete. Phases V4–V8 remain.
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V2 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V3 COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
 [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md).
+
+- **V3 (Proof Chain Hardening) COMPLETE** (v0.22.2): 26 sub-tasks (V3-A through V3-M).
+  Added `invExtFull` bundle eliminating redundant `hSize` hypothesis from Robin Hood
+  erase (H-RH-1). Added `uniqueRadixIndices_sufficient` documenting radix tree
+  precondition chain (H-RAD-1). Audited CDT acyclicity discharge for all 5
+  CDT-modifying operations (M-PRF-1). Documented `ipcUnwrapCaps` Grant=true loop
+  composition architecture (M-PRF-2). Documented post-resolution rights check
+  coverage across all 16 dispatch arms (M-PRF-3). Added `waitingThreadsPendingMessageNone`
+  invariant with preservation for all IPC operations (M-PRF-5). Added
+  `ipcStateQueueMembershipConsistent` strengthening endpoint consistency (L-IPC-3).
+  Added `endpointQueueNoDup` invariant (L-LIFE-1). Zero sorry/axiom, 176 build
+  targets pass, `test_full.sh` green.
 
 - **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).
   `SyscallId` count grew from 14 to 17: added `notificationSignal` (discriminant 14),

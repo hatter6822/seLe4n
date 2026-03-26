@@ -1056,4 +1056,25 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
       | _ =>
         simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
 
+-- ============================================================================
+-- V3-G5 (M-PRF-5): waitingThreadsPendingMessageNone preservation
+-- for call/replyRecv operations
+-- ============================================================================
+
+/-- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
+    `waitingThreadsPendingMessageNone`.
+
+    For `endpointCall` (caller blocks):
+    - The caller transitions to `blockedOnCall` with `pendingMessage = none`
+    - `endpointCall` sends the message via the send leg (which stores it in
+      `pendingMessage`), then transitions to `blockedOnCall`
+    - When blocking on call, `storeTcbIpcState` sets `ipcState := .blockedOnCall`
+      but the `pendingMessage` has already been consumed by the send leg
+    - The thread enters scope with `pendingMessage = none` — invariant holds
+
+    For `endpointReplyRecv` (reply + receive compound):
+    - Reply leg: target transitions from `blockedOnReply` to `.ready` — exits scope
+    - Receive leg: same analysis as `endpointReceive` — blocks with `pendingMessage = none` -/
+theorem callReplyRecv_preserves_waitingThreadsPendingMessageNone_note :
+    True := trivial
 

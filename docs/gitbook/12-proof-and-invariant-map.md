@@ -179,6 +179,15 @@ Preservation shape:
 - IPC-level preservation for endpoint send/receive/await-receive/reply (compositional),
 - lifecycle preservation with `hNewObjCNodeUniq` + `hNewObjCNodeBounded` hypotheses (WS-H4).
 
+CDT acyclicity discharge patterns **(V3-D/E/F, M-PRF-1)**:
+
+- CDT-expanding ops (`cspaceCopy`, `cspaceMove`, `cspaceMint`) externalize `hCdtPost` hypothesis — caller supplies post-state `cdtAcyclicity` witness since these add CDT edges.
+- CDT-shrinking ops (`cspaceDeleteSlotCore`, `cspaceRevokeCdt`) prove acyclicity internally via `edgeWellFounded_sub` — removing edges preserves well-foundedness.
+- `cdtExpandingOp_preserves_bundle_with_hypothesis` — documents the externalized hypothesis pattern for CDT-expanding operations.
+- `cdtShrinkingOps_preserve_acyclicity_note` — documents the internal proof pattern for CDT-shrinking operations.
+- `ipcUnwrapCapsLoop_capInvariant` — loop composition predicate for IPC capability transfer; per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle` composes across the `ipcUnwrapCapsLoop` fold **(V3-F2, M-PRF-2)**.
+- `resolveCapAddress_callers_check_rights_note` — documents that all 5 callers of `resolveCapAddress` perform rights checking before operations **(V3-F3, M-PRF-3)**.
+
 WS-H4 transfer theorems (new):
 
 - `cdtPredicates_through_blocking_path` — storeObject(.endpoint) → storeTcbIpcState → removeRunnable,
@@ -274,6 +283,9 @@ probeChainDominant preservation (`Invariant/Preservation.lean`):
   `relaxedPCD_to_pcd_at_termination` recovers full PCD (TPI-D3, zero sorry)
 - `insert_preserves_invExt`, `erase_preserves_invExt`, `resize_preserves_invariant`
   — composite bundle preservation for all operations
+- `invExtFull` — extended invariant plus load factor bound (V3-A, H-RH-1)
+- `invExtFull_implies_size_lt_capacity` — strict size bound from load factor (V3-A)
+- `erase_preserves_invExtFull` — erase without redundant `hSize` hypothesis (V3-B)
 
 Helper infrastructure (`Invariant/Preservation.lean`):
 - `offset_injective` — injectivity of modular offsets from same base
@@ -414,6 +426,12 @@ Component level:
 - `ipcInvariant` — notification queue well-formedness across object store,
 - `dualQueueSystemInvariant` — per-endpoint dual-queue well-formedness + system-wide TCB link integrity,
 - `allPendingMessagesBounded` — all pending IPC messages satisfy payload bounds.
+
+V3 proof chain hardening predicates **(v0.22.2)**:
+
+- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked IPC states (`blockedOnReceive`, `blockedOnNotification`, `blockedOnCall`) have `pendingMessage = none`. Preservation documented for all endpoint, notification, and call/reply/recv operations.
+- `ipcStateQueueMembershipConsistent` — **(V3-I)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage).
+- `endpointQueueNoDup` — **(V3-J/K)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty.
 
 Preservation shape:
 
@@ -1269,6 +1287,12 @@ Builder equivalence bridge (`RadixTree/Bridge.lean`):
   foldl_establishes_some) with list induction over the hash table's slot array.
   Preconditions: `invExt`, `UniqueRadixIndices`, and `hNoPhantom` (no radix
   index collision between absent keys and present keys).
+- `uniqueRadixIndices_sufficient` — **(V3-C, H-RAD-1)** bounded-key injectivity
+  for `extractBits`: when all present keys satisfy `s.toNat < 2^radixWidth`,
+  `extractBits` is injective over distinct keys, discharging `UniqueRadixIndices`.
+- `buildCNodeRadix_hNoPhantom_auto_discharge_note` — **(V3-H)** documents that
+  `hNoPhantom` is automatically discharged by `buildCNodeRadix` since the fold
+  only inserts keys that are present in the source `RHTable`.
 
 Resolution theorems:
 

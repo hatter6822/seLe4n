@@ -5916,4 +5916,31 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                       exact ⟨hIqwfD ep'.sendQ hWfPre.1, hIqwfD ep'.receiveQ hWfPre.2⟩
                                   exact ⟨hEpWfD, hLinkStF, hAcycSF⟩
 
+-- ============================================================================
+-- V3-G6 (M-PRF-5): Integration point for waitingThreadsPendingMessageNone
+-- ============================================================================
+
+/-! ## V3-G6: waitingThreadsPendingMessageNone Integration
+
+The invariant `waitingThreadsPendingMessageNone` (defined in `IPC/Invariant/Defs.lean`)
+is preserved by all IPC operations:
+
+| Operation | Preservation | Reasoning |
+|-----------|-------------|-----------|
+| `notificationWait` | V3-G2 | Sets ipcState only, pendingMessage unchanged |
+| `notificationSignal` (wake) | V3-G3 | Thread exits scope (becomes .ready) |
+| `endpointSend` (block) | V3-G4 | blockedOnSend not in scope |
+| `endpointSend` (rendezvous) | V3-G4 | Receiver exits scope (becomes .ready) |
+| `endpointReceive` (block) | V3-G4 | Blocks with pendingMessage = none |
+| `endpointReceive` (rendezvous) | V3-G4 | Sender exits scope (was blockedOnSend) |
+| `endpointCall` | V3-G5 | Blocks on call with pendingMessage = none |
+| `endpointReplyRecv` (reply) | V3-G5 | Target exits scope (becomes .ready) |
+| `endpointReplyRecv` (receive) | V3-G5 | Blocks with pendingMessage = none |
+
+**Integration status**: The invariant is defined and all preservation arguments
+are documented. Full formal integration into `coreIpcInvariantBundle` or
+`ipcInvariantFull` is deferred to a future workstream to avoid cascading
+changes to all existing bundle-level preservation proofs.
+-/
+
 end SeLe4n.Kernel

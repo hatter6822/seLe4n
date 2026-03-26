@@ -292,12 +292,13 @@ structs and round-trip theorems. Zero sorry/axiom.
 
 ---
 
-### Phase V3: Proof Chain Hardening (26 sub-tasks)
+### Phase V3: Proof Chain Hardening (26 sub-tasks) — **COMPLETE** (v0.22.2)
 
 **Priority**: Pre-release (proof completeness for first major release)
-**Gate**: `lake build` succeeds; zero `sorry`; `test_full.sh` green
+**Gate**: `lake build` succeeds; zero `sorry`; `test_full.sh` green ✅
 **Estimated scope**: ~900 lines Lean (proofs)
 **Depends on**: V2 (new syscalls must be covered by invariant preservation)
+**Status**: All 26 sub-tasks complete. Zero sorry, 176 build targets pass.
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|

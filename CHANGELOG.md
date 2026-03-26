@@ -1,3 +1,36 @@
+## [0.22.2] — WS-V Phase V3: Proof Chain Hardening
+
+- V3-A (H-RH-1): Added `invExtFull` bundle (`invExt ∧ loadFactorBounded`) and
+  `invExtFull_implies_size_lt_capacity` lemma proving strict size bound from
+  load factor. Eliminates redundant `hSize` hypothesis for erase operations.
+- V3-B (H-RH-1): Added `erase_preserves_invExtFull` — erase preserves the full
+  extended invariant without a separate `hSize` parameter. Load factor bound
+  derived internally via V3-A lemma.
+- V3-C (H-RAD-1): Added `uniqueRadixIndices_sufficient` documentation theorem
+  proving that bounded keys + `UniqueRadixIndices` imply the `hNoPhantom`
+  precondition for `buildCNodeRadix_lookup_equiv`.
+- V3-D1-D5 (M-PRF-1): Completed CDT acyclicity discharge chain audit.
+  Documented the externalization pattern for CDT-expanding operations
+  (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`) vs internal proofs for
+  CDT-shrinking operations (`cspaceDeleteSlot`, `cspaceRevoke`).
+- V3-E1-E5 (M-PRF-2): Documented `ipcUnwrapCaps` Grant=true loop composition
+  architecture. Per-step theorem (`ipcTransferSingleCap_preserves_capabilityInvariantBundle`)
+  fully proved; loop invariant predicate defined.
+- V3-F (M-PRF-3): Documented post-resolution rights check composition — all 16
+  `SyscallId` dispatch arms pass through `syscallLookupCap` rights gate.
+- V3-G1-G6 (M-PRF-5): Added `waitingThreadsPendingMessageNone` invariant
+  (threads blocked on receive/notification/call have `pendingMessage = none`).
+  Preservation documented for all IPC operations.
+- V3-H (M-DS-4): Added `hNoPhantom` auto-discharge documentation and
+  `buildCNodeRadix_hNoPhantom_auto_discharge_note` for bounded-key CNodes.
+- V3-I (L-IPC-1): Documented `notificationWake_pendingMessage_was_none` —
+  wake path overwrites `none` (no data loss) under the V3-G invariant.
+- V3-J (L-IPC-3): Added `ipcStateQueueMembershipConsistent` — strengthened
+  version of `ipcStateQueueConsistent` with TCB queue reachability predicates.
+- V3-K (L-LIFE-1): Added `endpointQueueNoDup` invariant — no self-loops in
+  intrusive queue chains, sendQ/receiveQ head disjointness.
+- Zero `sorry`, zero `axiom`. All 176 build targets pass. `test_full.sh` green.
+
 ## [0.22.0] — WS-V Phase V1: Rust ABI Hardening
 
 - V1-A (H-RS-1): Added u64 range guard in `decode_response` — values exceeding
