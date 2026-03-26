@@ -239,6 +239,22 @@ theorem syscallInvoke_requires_right
       syscallLookupCap_implies_capability_held gate st cap stLookup hLookupOk
     exact ⟨cap, ref, hResolve, hSlot, hRight⟩
 
+/-- V3-F (M-PRF-3): All callers of `resolveCapAddress` perform post-resolution
+    rights checks. Any successful `syscallInvoke` — the sole gateway used by
+    both `dispatchSyscall` and `dispatchSyscallChecked` — implies the resolved
+    capability holds the required access right. The gate architecture ensures
+    every syscall path composes `resolveCapAddress` → `lookupSlotCap` →
+    `hasRight` before any operation is executed. -/
+theorem resolveCapAddress_callers_check_rights
+    (gate : SyscallGate) (op : Capability → Kernel α)
+    (st : SystemState) (a : α) (st' : SystemState)
+    (hOk : syscallInvoke gate op st = .ok (a, st')) :
+    ∃ cap ref,
+      resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref ∧
+      SystemState.lookupSlotCap st ref = some cap ∧
+      cap.hasRight gate.requiredRight = true :=
+  syscallInvoke_requires_right gate op st a st' hOk
+
 -- ============================================================================
 -- S5-A: Deprecated api* wrappers removed (v0.19.4)
 --

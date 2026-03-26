@@ -456,6 +456,36 @@ theorem RHTable.empty_invExt [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap)
    RHTable.empty_probeChainDominant cap hPos⟩
 
 -- ============================================================================
+-- V3-A (H-RH-1): Extended invariant with load factor bound
+-- ============================================================================
+
+/-- V3-A: Full extended invariant bundle: the operational invariant
+    (`invExt`) plus the load factor bound. All reachable table states
+    satisfy this bundle because `insert` resizes at 75% load.
+
+    The key benefit: `invExtFull` implies `size < capacity`, so
+    `erase_preserves_invExtFull` no longer needs a separate `hSize`
+    hypothesis (addressing H-RH-1). -/
+def RHTable.invExtFull [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
+  t.invExt ∧ t.loadFactorBounded
+
+/-- V3-A: Load factor bound + positive capacity implies strict size bound.
+    Proof: if `size ≥ capacity`, then `size * 4 ≥ capacity * 4 > capacity * 3`,
+    contradicting `loadFactorBounded`. -/
+theorem RHTable.invExtFull_implies_size_lt_capacity [BEq α] [Hashable α]
+    (t : RHTable α β) (h : t.invExtFull) : t.size < t.capacity := by
+  have hWF := h.1.1
+  have hLF := h.2
+  unfold loadFactorBounded at hLF
+  have hCapPos := hWF.capPos
+  omega
+
+/-- V3-A: The empty table satisfies `invExtFull` (size = 0, load = 0%). -/
+theorem RHTable.empty_invExtFull [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
+    (RHTable.empty cap hPos : RHTable α β).invExtFull :=
+  ⟨RHTable.empty_invExt cap hPos, RHTable.empty_loadFactorBounded cap hPos⟩
+
+-- ============================================================================
 -- Section 9b: Modular arithmetic displacement helpers
 -- ============================================================================
 
@@ -2419,5 +2449,40 @@ theorem RHTable.resize_preserves_invariant [BEq α] [Hashable α] [LawfulBEq α]
    t.resize_preserves_distCorrect,
    t.resize_preserves_noDupKeys,
    t.resize_preserves_probeChainDominant⟩
+
+-- ============================================================================
+-- V3-A/V3-B (H-RH-1): invExtFull preservation — erase without hSize
+-- ============================================================================
+
+/-- V3-B: Erase preserves load factor bound (size can only decrease,
+    capacity unchanged). -/
+theorem RHTable.erase_preserves_loadFactorBounded [BEq α] [Hashable α]
+    (t : RHTable α β) (k : α) (hLF : t.loadFactorBounded) :
+    (t.erase k).loadFactorBounded := by
+  unfold loadFactorBounded at *
+  unfold RHTable.erase
+  simp only []
+  split
+  · exact hLF  -- key not found: table unchanged
+  · -- key found: size decreases by 1, capacity unchanged
+    simp only []
+    omega
+
+/-- V3-B (H-RH-1): Erase preserves `invExtFull` without a separate `hSize`
+    hypothesis. The strict size bound is derived internally from
+    `loadFactorBounded` via `invExtFull_implies_size_lt_capacity`. -/
+theorem RHTable.erase_preserves_invExtFull [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hFull : t.invExtFull) :
+    (t.erase k).invExtFull :=
+  ⟨t.erase_preserves_invExt k hFull.1
+      (t.invExtFull_implies_size_lt_capacity hFull),
+   t.erase_preserves_loadFactorBounded k hFull.2⟩
+
+/-- V3-B: `invExtFull` extraction helpers for call site migration. -/
+theorem RHTable.invExt_of_invExtFull [BEq α] [Hashable α]
+    (t : RHTable α β) (h : t.invExtFull) : t.invExt := h.1
+
+theorem RHTable.loadFactorBounded_of_invExtFull [BEq α] [Hashable α]
+    (t : RHTable α β) (h : t.invExtFull) : t.loadFactorBounded := h.2
 
 end SeLe4n.Kernel.RobinHood

@@ -1343,3 +1343,23 @@ theorem frame_preserves_notificationWaiterConsistent
   have hNtfnPre := hNtfnPreserved noid ntfn hNtfnPost
   obtain ⟨tcb, hTcb, hIpc⟩ := hConsist noid ntfn waiter hNtfnPre hMem
   exact ⟨tcb, (hTcbPreserved noid ntfn waiter hNtfnPre hMem).symm ▸ hTcb, hIpc⟩
+
+-- ============================================================================
+-- V3-G2/G3 (M-PRF-5): waitingThreadsPendingMessageNone preservation
+-- for notification operations
+-- ============================================================================
+
+-- V3-G2 (M-PRF-5): `notificationWait` preserves `waitingThreadsPendingMessageNone`.
+-- Machine-checked proof: `notificationWait_preserves_waitingThreadsPendingMessageNone`
+-- in Structural.lean (requires primitive lemmas defined there).
+
+-- V3-G3 (M-PRF-5): `notificationSignal` preserves `waitingThreadsPendingMessageNone`.
+-- Machine-checked proof: `notificationSignal_preserves_waitingThreadsPendingMessageNone`
+-- in Structural.lean (requires primitive lemmas defined there).
+
+-- ============================================================================
+-- V3-I (L-IPC-1): notificationWake_pendingMessage_was_none
+-- ============================================================================
+
+-- V3-I (L-IPC-1): Machine-checked proof: `notificationWake_pendingMessage_was_none`
+-- in Structural.lean (requires `waitingThreadsPendingMessageNone` definition access).

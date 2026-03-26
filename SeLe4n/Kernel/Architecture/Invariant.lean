@@ -284,10 +284,14 @@ private theorem default_badgeWellFormed :
   refine ⟨fun oid _ _ hObj => ?_, fun oid _ _ _ _ hObj => ?_⟩
   all_goals (have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp))
 
+private theorem default_waitingThreadsPendingMessageNone :
+    waitingThreadsPendingMessageNone (default : SystemState) := by
+  intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
   ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded,
-   default_badgeWellFormed⟩
+   default_badgeWellFormed, default_waitingThreadsPendingMessageNone⟩
 
 private theorem default_contextMatchesCurrent :
     contextMatchesCurrent (default : SystemState) := by
@@ -471,8 +475,8 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     (ticks : Nat) (st : SystemState)
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (advanceTimerState ticks st) := by
-  obtain ⟨h1, h2, h3, h4⟩ := hIpc
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4⟩
+  obtain ⟨h1, h2, h3, h4, h5⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_⟩
   -- advanceTimerState only changes machine.timer; objects are identical
   have hObjs : (advanceTimerState ticks st).objects = st.objects := by
     unfold advanceTimerState; rfl
@@ -481,6 +485,11 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
          ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
           fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
          fun tid hp => hAcyc tid (transportPath hObjs hp)⟩
+  · -- waitingThreadsPendingMessageNone: objects unchanged
+    have hObjs : (advanceTimerState ticks st).objects = st.objects := by
+      unfold advanceTimerState; rfl
+    intro tid tcb hObj
+    exact h5 tid tcb (hObjs ▸ hObj)
   where
     transportPath {a b : SeLe4n.ThreadId}
         (hObjs : (advanceTimerState ticks st).objects = st.objects)

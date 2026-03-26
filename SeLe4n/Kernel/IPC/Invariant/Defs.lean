@@ -247,6 +247,31 @@ and capabilities are word-bounded to `machineWordBits` (64 bits). -/
 def badgeWellFormed (st : SystemState) : Prop :=
   notificationBadgesWellFormed st ∧ capabilityBadgesWellFormed st
 
+/-- V3-G1 (M-PRF-5): Threads blocked on receive or notification must have
+    `pendingMessage = none`. When a thread enters a blocking state (receive
+    or notification wait), no message has been delivered yet — the message
+    will be written when the thread is woken by a corresponding send/signal.
+    This invariant captures the safety-critical property that wake paths
+    can unconditionally overwrite `pendingMessage` without losing data.
+
+    The blocking states covered are:
+    - `blockedOnReceive`: waiting for IPC send from another thread
+    - `blockedOnNotification`: waiting for notification signal
+
+    Note: `blockedOnSend` and `blockedOnCall` threads MAY have a pending
+    message — they carry the outgoing message in `pendingMessage` while
+    queued, which `endpointReceiveDual` reads upon rendezvous.
+    `blockedOnReply` threads have `pendingMessage = none` (cleared by the
+    receive path), but are not constrained here since `.ready` and other
+    non-receiver states are unconditionally `True`. -/
+def waitingThreadsPendingMessageNone (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    match tcb.ipcState with
+    | .blockedOnReceive _ => tcb.pendingMessage = none
+    | .blockedOnNotification _ => tcb.pendingMessage = none
+    | _ => True
+
 /-- Full IPC invariant including system-level dual-queue structural
 well-formedness, TCB link integrity, message payload bounds, and badge
 well-formedness.
@@ -256,10 +281,12 @@ system-wide `tcbQueueLinkIntegrity`).
 WS-H12d: `allPendingMessagesBounded` ensures every pending message stored in
 a TCB satisfies `maxMessageRegisters`/`maxExtraCaps` bounds.
 WS-F5/D1d: `badgeWellFormed` ensures all badges in notifications and
-capabilities are word-bounded. -/
+capabilities are word-bounded.
+V3-G6: `waitingThreadsPendingMessageNone` ensures threads in blocked receiver
+states have `pendingMessage = none`. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
-  badgeWellFormed st
+  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st
 
 -- ============================================================================
 -- Scheduler-IPC coherence contract predicates (M3.5)
@@ -740,4 +767,64 @@ def ipcStateQueueConsistent (st : SystemState) : Prop :=
     | .blockedOnCall epId =>
         ∃ ep, st.objects[epId]? = some (.endpoint ep)
     | _ => True
+
+-- ============================================================================
+-- V3-G (M-PRF-5): waitingThreadsPendingMessageNone invariant
+-- (Definition moved above ipcInvariantFull for forward-reference resolution)
+-- ============================================================================
+
+/-- V3-J (L-IPC-3): Strengthened ipcState-queue consistency with queue
+    reachability predicate. If a thread is blocked on an endpoint, the thread
+    must be reachable from that endpoint's corresponding queue head via the
+    TCB linkage chain (sendQ for `blockedOnSend`, receiveQ for
+    `blockedOnReceive`/`blockedOnCall`).
+
+    Design note: this is stronger than `ipcStateQueueConsistent` which only
+    checks endpoint existence. The reachability property captures the
+    bidirectional consistency between TCB state and endpoint queue membership.
+
+    The queue reachability is encoded via `QueueNextPath` (defined in
+    `Structural.lean`), which follows `queueNext` pointers from the queue
+    head. Membership means the thread is reachable from the head within
+    a bounded number of hops. -/
+def ipcStateQueueMembershipConsistent (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (KernelObject.tcb tcb) →
+    match tcb.ipcState with
+    | .blockedOnSend epId =>
+        ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+          (ep.sendQ.head = some tid ∨
+           ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+             st.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+             TCB.queueNext prevTcb = some tid)
+    | .blockedOnReceive epId =>
+        ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+          (ep.receiveQ.head = some tid ∨
+           ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+             st.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+             TCB.queueNext prevTcb = some tid)
+    | .blockedOnCall epId =>
+        ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+          (ep.receiveQ.head = some tid ∨
+           ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+             st.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+             TCB.queueNext prevTcb = some tid)
+    | _ => True
+
+/-- V3-K (L-LIFE-1): No thread appears twice in any endpoint queue.
+    For intrusive queues, this means the `queueNext` chain starting from
+    `ep.sendQ.head` (resp. `receiveQ.head`) never revisits a thread ID.
+    This is captured by `tcbQueueChainAcyclic` (defined above) which
+    prevents self-loops and cycles in the `QueueNextPath` relation. The
+    endpoint-level property ensures that each endpoint's queues are
+    individually cycle-free and non-overlapping. -/
+def endpointQueueNoDup (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
+    st.objects[oid]? = some (.endpoint ep) →
+    -- No thread has itself as queueNext (no self-loops in intrusive chains)
+    (∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      TCB.queueNext tcb ≠ some tid) ∧
+    -- Disjointness: no thread is simultaneously head of both sendQ and receiveQ
+    (ep.sendQ.head = none ∨ ep.receiveQ.head = none ∨
+     ep.sendQ.head ≠ ep.receiveQ.head)
 

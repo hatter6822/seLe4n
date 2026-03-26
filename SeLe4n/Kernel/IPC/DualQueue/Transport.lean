@@ -731,6 +731,66 @@ theorem endpointQueueEnqueue_tcb_ipcState_backward
                     · rw [storeObject_objects_ne st pair.2 endpointId anyTid.toObjId _ hEqEp hObjInv hStore] at hTcb2
                       exact ⟨tcb2, hTcb2, hIpc2.trans hIpc3⟩
 
+/-- `endpointQueueEnqueue` preserves `pendingMessage` for all TCBs. For any TCB in
+the post-state, a TCB with the same `pendingMessage` exists in the pre-state. -/
+theorem endpointQueueEnqueue_tcb_pendingMessage_backward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (enqueueTid : SeLe4n.ThreadId) (st st' : SystemState)
+    (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
+    (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.pendingMessage = tcb'.pendingMessage := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st enqueueTid with
+      | none => simp [hLookup] at hStep
+      | some tcbE =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []; intro hStep
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                obtain ⟨tcb1, hTcb1, hMsg1⟩ := storeTcbQueueLinks_tcb_pendingMessage_backward _ _ enqueueTid _ _ _ hInv1 hStep anyTid tcb' hTcb'
+                by_cases hEqEp : anyTid.toObjId = endpointId
+                · rw [hEqEp] at hTcb1; rw [storeObject_objects_eq' st endpointId _ pair hObjInv hStore] at hTcb1; cases hTcb1
+                · rw [storeObject_objects_ne st pair.2 endpointId anyTid.toObjId _ hEqEp hObjInv hStore] at hTcb1
+                  exact ⟨tcb1, hTcb1, hMsg1⟩
+            | some tailTid =>
+              cases hLookupTail : lookupTcb st tailTid with
+              | none => simp [hLookupTail]
+              | some tailTcb =>
+                simp only [hLookupTail]
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  simp only []
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some enqueueTid) with
+                  | error e => simp
+                  | ok st2 =>
+                    simp only []; intro hStep
+                    have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                    obtain ⟨tcb3, hTcb3, hMsg3⟩ := storeTcbQueueLinks_tcb_pendingMessage_backward _ _ enqueueTid _ _ _ hInv2 hStep anyTid tcb' hTcb'
+                    obtain ⟨tcb2, hTcb2, hMsg2⟩ := storeTcbQueueLinks_tcb_pendingMessage_backward _ _ tailTid _ _ _ hInv1 hLink1 anyTid tcb3 hTcb3
+                    by_cases hEqEp : anyTid.toObjId = endpointId
+                    · rw [hEqEp] at hTcb2; rw [storeObject_objects_eq' st endpointId _ pair hObjInv hStore] at hTcb2; cases hTcb2
+                    · rw [storeObject_objects_ne st pair.2 endpointId anyTid.toObjId _ hEqEp hObjInv hStore] at hTcb2
+                      exact ⟨tcb2, hTcb2, hMsg2.trans hMsg3⟩
+
 /-- WS-E8/M-02: Remove an arbitrary waiter from an intrusive endpoint queue in O(1).
 
 Uses per-node `queuePPrev` metadata (pointer-to-previous-link) so unlinking

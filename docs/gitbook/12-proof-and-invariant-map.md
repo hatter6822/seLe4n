@@ -179,6 +179,15 @@ Preservation shape:
 - IPC-level preservation for endpoint send/receive/await-receive/reply (compositional),
 - lifecycle preservation with `hNewObjCNodeUniq` + `hNewObjCNodeBounded` hypotheses (WS-H4).
 
+CDT acyclicity discharge patterns **(V3-D/E/F, M-PRF-1)**:
+
+- CDT-expanding ops (`cspaceCopy`, `cspaceMove`, `cspaceMint`) externalize `hCdtPost` hypothesis — caller supplies post-state `cdtAcyclicity` witness since these add CDT edges.
+- CDT-shrinking ops (`cspaceDeleteSlotCore`, `cspaceRevokeCdt`) prove acyclicity internally via `edgeWellFounded_sub` — removing edges preserves well-foundedness.
+- `cdtExpandingOp_preserves_bundle_with_hypothesis` — documents the externalized hypothesis pattern for CDT-expanding operations.
+- `cdtShrinkingOps_preserve_acyclicity` — machine-checked proof that CDT-shrinking operations preserve acyclicity via `edgeWellFounded_sub` edge-removal argument.
+- `ipcTransferSingleCap_preserves_capabilityInvariantBundle` — machine-checked per-step theorem for IPC capability transfer. The `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` theorem covers the no-grant path **(V3-E, M-PRF-2)**.
+- `resolveCapAddress_callers_check_rights` — machine-checked theorem proving all `syscallInvoke` dispatch arms pass through `syscallLookupCap` rights gate before operations. Located in `API.lean` **(V3-F, M-PRF-3)**.
+
 WS-H4 transfer theorems (new):
 
 - `cdtPredicates_through_blocking_path` — storeObject(.endpoint) → storeTcbIpcState → removeRunnable,
@@ -274,6 +283,9 @@ probeChainDominant preservation (`Invariant/Preservation.lean`):
   `relaxedPCD_to_pcd_at_termination` recovers full PCD (TPI-D3, zero sorry)
 - `insert_preserves_invExt`, `erase_preserves_invExt`, `resize_preserves_invariant`
   — composite bundle preservation for all operations
+- `invExtFull` — extended invariant plus load factor bound (V3-A, H-RH-1)
+- `invExtFull_implies_size_lt_capacity` — strict size bound from load factor (V3-A)
+- `erase_preserves_invExtFull` — erase without redundant `hSize` hypothesis (V3-B)
 
 Helper infrastructure (`Invariant/Preservation.lean`):
 - `offset_injective` — injectivity of modular offsets from same base
@@ -401,19 +413,25 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (4-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed`, WS-H12c + WS-H12d + WS-F5)
+- `ipcInvariantFull` (5-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone`, WS-H12c + WS-H12d + WS-F5 + V3-G6)
 - `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
 Cross-subsystem composition (WS-H12e + WS-F5):
 
-- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` were defined but not composed into the cross-subsystem proof surface
-- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (5-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, and `waitingThreadsPendingMessageNone` were defined but not composed into the cross-subsystem proof surface
+- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`
 
 Component level:
 
 - `ipcInvariant` — notification queue well-formedness across object store,
 - `dualQueueSystemInvariant` — per-endpoint dual-queue well-formedness + system-wide TCB link integrity,
 - `allPendingMessagesBounded` — all pending IPC messages satisfy payload bounds.
+
+V3 proof chain hardening predicates **(v0.22.2)**:
+
+- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked receiver states (`blockedOnReceive`, `blockedOnNotification`) have `pendingMessage = none`. Note: `blockedOnSend` and `blockedOnCall` are excluded because these states legitimately carry outgoing messages in `pendingMessage`. **Integrated as 5th conjunct of `ipcInvariantFull` (V3-G6).** Seven machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbQueueLinks`, `storeTcbPendingMessage`) in `Structural.lean`. Full operation-level machine-checked proofs: `notificationWait_preserves_*`, `notificationSignal_preserves_*`, `endpointSendDual_preserves_*`, `endpointReceiveDual_preserves_*`, `endpointCall_preserves_*`, `endpointReply_preserves_*`, `endpointReplyRecv_preserves_*`. `notificationWake_pendingMessage_was_none` proves blocking-state implies `pendingMessage = none`. Two backward lemmas added: `storeTcbQueueLinks_tcb_pendingMessage_backward` (Core.lean) and `endpointQueueEnqueue_tcb_pendingMessage_backward` (Transport.lean).
+- `ipcStateQueueMembershipConsistent` — **(V3-J, L-IPC-3)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage). Predicate definition in `Structural.lean`.
+- `endpointQueueNoDup` — **(V3-K, L-LIFE-1)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty. Predicate definition in `Structural.lean`.
 
 Preservation shape:
 
@@ -1172,7 +1190,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | Bundle | Change | Effect |
 |---|---|---|
 | `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12) | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches TCB priority |
-| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` now composed into cross-subsystem proof surface |
+| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (5-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, and `waitingThreadsPendingMessageNone` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
 | `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 7 scheduler conjuncts |
 
@@ -1206,7 +1224,7 @@ Composed `ipcInvariantFull` preservation (7):
 - `endpointReplyRecv_preserves_ipcInvariantFull`
 
 Default-state proofs (7):
-- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_badgeWellFormed`, `default_ipcInvariantFull`
+- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_badgeWellFormed`, `default_waitingThreadsPendingMessageNone`, `default_ipcInvariantFull`
 - `default_contextMatchesCurrent`, `default_currentThreadDequeueCoherent`, `default_schedulerInvariantBundleFull`
 
 Badge well-formedness preservation (WS-F5/D1d):
@@ -1269,6 +1287,12 @@ Builder equivalence bridge (`RadixTree/Bridge.lean`):
   foldl_establishes_some) with list induction over the hash table's slot array.
   Preconditions: `invExt`, `UniqueRadixIndices`, and `hNoPhantom` (no radix
   index collision between absent keys and present keys).
+- `uniqueRadixIndices_sufficient` — **(V3-C, H-RAD-1)** bounded-key injectivity
+  for `extractBits`: when all present keys satisfy `s.toNat < 2^radixWidth`,
+  `extractBits` is injective over distinct keys, discharging `UniqueRadixIndices`.
+- `buildCNodeRadix_hNoPhantom_auto_discharge_note` — **(V3-H)** documentation-only
+  theorem. Documents auto-discharge pattern for bounded-key CNodes; requires
+  `extractBits_identity` lemma (not yet formally proven) to complete the chain.
 
 Resolution theorems:
 
@@ -1737,7 +1761,7 @@ High-level IPC operation preservation (L3-C3):
 - `notificationSignal_preserves_ipcStateQueueConsistent` — wake + badge accumulation
 - `notificationWait_preserves_ipcStateQueueConsistent` — consume + blocking paths
 - `storeObject_notification_preserves_ipcStateQueueConsistent` — notification store helper
-- `ipcInvariantFull_compositional` — convenience 4-component composition
+- `ipcInvariantFull_compositional` — convenience 5-component composition
 
 **T4-D: endpointQueueRemoveDual dualQueueSystemInvariant preservation** (`Structural.lean`):
 

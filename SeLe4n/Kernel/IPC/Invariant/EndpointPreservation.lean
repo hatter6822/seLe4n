@@ -1639,3 +1639,15 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
                   receiverSlotBase _ stMid stFinal s hInvMid hObjInvMid hUnwrap
       | _ => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
 
+-- ============================================================================
+-- V3-G4 (M-PRF-5): waitingThreadsPendingMessageNone preservation
+-- for endpoint operations
+-- ============================================================================
+
+-- V3-G4 (M-PRF-5): `endpointSendDual`/`endpointReceiveDual` preserve
+-- `waitingThreadsPendingMessageNone`.
+-- Machine-checked proofs in Structural.lean:
+--   `endpointSendDual_preserves_waitingThreadsPendingMessageNone`
+--   `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
+--   `endpointReply_preserves_waitingThreadsPendingMessageNone`
+

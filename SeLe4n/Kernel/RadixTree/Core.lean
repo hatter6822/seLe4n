@@ -43,6 +43,16 @@ theorem extractBits_zero_width (n offset : Nat) :
     extractBits n offset 0 = 0 := by
   simp [extractBits, Nat.mod_one]
 
+/-- V3-H: `extractBits n 0 w = n` when `n < 2^w`. The zero-offset extraction
+    is the identity on bounded values. This closes the hNoPhantom discharge
+    chain: bounded slot keys have identity radix indices, so distinct keys
+    map to distinct radix positions. -/
+theorem extractBits_identity (n w : Nat) (h : n < 2 ^ w) :
+    extractBits n 0 w = n := by
+  unfold extractBits
+  simp [Nat.shiftRight_zero]
+  exact Nat.mod_eq_of_lt h
+
 -- ============================================================================
 -- Q4-A2: CNodeRadix — Flat Radix Array for CNode Slots
 -- ============================================================================
