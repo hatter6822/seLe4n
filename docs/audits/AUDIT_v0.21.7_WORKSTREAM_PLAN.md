@@ -298,7 +298,7 @@ structs and round-trip theorems. Zero sorry/axiom.
 **Gate**: `lake build` succeeds; zero `sorry`; `test_full.sh` green ✅
 **Estimated scope**: ~900 lines Lean (proofs)
 **Depends on**: V2 (new syscalls must be covered by invariant preservation)
-**Status**: All 26 sub-tasks complete. Zero sorry, 176 build targets pass.
+**Status**: Gate met (zero sorry, 176 build targets, test_full.sh green). Machine-checked proofs for V3-A/B/C/D/G-primitives. Documentation-only theorems for V3-D(shrinking)/E(loop)/F/G(operations)/H/I. Predicate definitions only (no preservation) for V3-J/K. V3-B call-site migration and V3-G6 bundle integration deferred.
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|

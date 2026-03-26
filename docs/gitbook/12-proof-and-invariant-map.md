@@ -185,8 +185,8 @@ CDT acyclicity discharge patterns **(V3-D/E/F, M-PRF-1)**:
 - CDT-shrinking ops (`cspaceDeleteSlotCore`, `cspaceRevokeCdt`) prove acyclicity internally via `edgeWellFounded_sub` — removing edges preserves well-foundedness.
 - `cdtExpandingOp_preserves_bundle_with_hypothesis` — documents the externalized hypothesis pattern for CDT-expanding operations.
 - `cdtShrinkingOps_preserve_acyclicity_note` — documents the internal proof pattern for CDT-shrinking operations.
-- `ipcUnwrapCapsLoop_capInvariant` — loop composition predicate for IPC capability transfer; per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle` composes across the `ipcUnwrapCapsLoop` fold **(V3-F2, M-PRF-2)**.
-- `resolveCapAddress_callers_check_rights_note` — documents that all 5 callers of `resolveCapAddress` perform rights checking before operations **(V3-F3, M-PRF-3)**.
+- `ipcUnwrapCapsLoop_capInvariant` — loop invariant predicate (alias for `capabilityInvariantBundle`) for IPC capability transfer. Per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle` is machine-checked; full loop composition (base case, inductive step) is documented but not yet machine-checked **(V3-E, M-PRF-2)**.
+- `resolveCapAddress_callers_check_rights_note` — documentation-only theorem noting that all 17 `SyscallId` dispatch arms pass through `syscallLookupCap` rights gate before operations **(V3-F, M-PRF-3)**.
 
 WS-H4 transfer theorems (new):
 
@@ -429,9 +429,9 @@ Component level:
 
 V3 proof chain hardening predicates **(v0.22.2)**:
 
-- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked IPC states (`blockedOnReceive`, `blockedOnNotification`, `blockedOnCall`) have `pendingMessage = none`. Preservation documented for all endpoint, notification, and call/reply/recv operations.
-- `ipcStateQueueMembershipConsistent` — **(V3-I)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage).
-- `endpointQueueNoDup` — **(V3-J/K)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty.
+- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked IPC states (`blockedOnReceive`, `blockedOnNotification`, `blockedOnCall`) have `pendingMessage = none`. Five machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`) in `Structural.lean`. Operation-level composition documented for all IPC operations but not yet machine-checked. Bundle integration deferred.
+- `ipcStateQueueMembershipConsistent` — **(V3-J, L-IPC-3)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage). Predicate definition only; no preservation proofs yet.
+- `endpointQueueNoDup` — **(V3-K, L-LIFE-1)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty. Predicate definition only; no preservation proofs yet.
 
 Preservation shape:
 
@@ -1290,9 +1290,9 @@ Builder equivalence bridge (`RadixTree/Bridge.lean`):
 - `uniqueRadixIndices_sufficient` — **(V3-C, H-RAD-1)** bounded-key injectivity
   for `extractBits`: when all present keys satisfy `s.toNat < 2^radixWidth`,
   `extractBits` is injective over distinct keys, discharging `UniqueRadixIndices`.
-- `buildCNodeRadix_hNoPhantom_auto_discharge_note` — **(V3-H)** documents that
-  `hNoPhantom` is automatically discharged by `buildCNodeRadix` since the fold
-  only inserts keys that are present in the source `RHTable`.
+- `buildCNodeRadix_hNoPhantom_auto_discharge_note` — **(V3-H)** documentation-only
+  theorem. Documents auto-discharge pattern for bounded-key CNodes; requires
+  `extractBits_identity` lemma (not yet formally proven) to complete the chain.
 
 Resolution theorems:
 
