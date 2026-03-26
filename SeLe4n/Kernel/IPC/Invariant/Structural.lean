@@ -6744,6 +6744,72 @@ theorem endpointCall_preserves_waitingThreadsPendingMessageNone
                 exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
 
 -- ============================================================================
+-- V3-G: endpointReply preservation
+-- ============================================================================
+
+/-- `endpointReply` preserves `waitingThreadsPendingMessageNone`.
+    Reply sets replyTarget's ipcState from `.blockedOnReply` to `.ready` with
+    `pendingMessage := some msg`, then `ensureRunnable`. Both `.blockedOnReply`
+    and `.ready` are unconstrained states, so the target case is trivial.
+    Other threads: frame reasoning via storeTcbIpcStateAndMessage + ensureRunnable. -/
+theorem endpointReply_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    waitingThreadsPendingMessageNone st' := by
+  unfold endpointReply at hStep
+  -- Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  -- lookupTcb
+  cases hLk : lookupTcb st target with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk] at hStep
+    -- ipcState match — only blockedOnReply proceeds
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId _ =>
+      simp only [hIpc] at hStep
+      -- WS-H1/M-02: Branch on replyTarget (authorized replier check)
+      -- Use suffices: any state produced by storeTcbIpcStateAndMessage(.ready, msg)
+      -- + ensureRunnable preserves the invariant
+      suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
+          waitingThreadsPendingMessageNone (ensureRunnable st1 target) by
+        split at hStep
+        · -- some expected
+          split at hStep
+          · -- authorized = true
+            revert hStep
+            cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+            | error e => simp
+            | ok st1 =>
+              intro hEq; cases hEq
+              exact this st1 hMsg
+          · simp_all
+        · -- none: no replyTarget constraint, authorized = true
+          dsimp only at hStep
+          revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp
+          | ok st1 =>
+            intro hEq; cases hEq
+            exact this st1 hMsg
+      intro st1 hMsg
+      exact ensureRunnable_preserves_waitingThreadsPendingMessageNone _ _
+        (storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+          st st1 target .ready (some msg) hObjInv hMsg hInv trivial)
+
+-- ============================================================================
 -- V3-G5: endpointReplyRecv preservation
 -- ============================================================================
 

@@ -1649,4 +1649,5 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
 -- Machine-checked proofs in Structural.lean:
 --   `endpointSendDual_preserves_waitingThreadsPendingMessageNone`
 --   `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
+--   `endpointReply_preserves_waitingThreadsPendingMessageNone`
 

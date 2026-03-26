@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-proof-chain-hardening-eoEVs",
-      "commit_sha": "751732e498bbefaa203feced38157d4353f8bdf8",
-      "tree_sha": "3c83c6c31de78044a049d7bd38f19efd317690d3",
-      "committed_at_utc": "2026-03-26T04:50:47+00:00"
+      "commit_sha": "0f48aa6c5026a4a10e48b44b763814cf4b174234",
+      "tree_sha": "b6366ee479f4414ad7533f45fd8bd4df891c4d7c",
+      "committed_at_utc": "2026-03-26T06:21:34+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1188a24e2d5b609b83ae329f2a90bb370fdd99876014a11d2bafe3dc0dc20c95"
+    "source_digest": "0bf9b1791e96834f42c8c5c15c04a907423c41107685dbd0c7ac7a28acc5dc56"
   },
   "summary": {
     "module_count": 110,
-    "declaration_count": 3472
+    "declaration_count": 3473
   },
   "readme_sync": {
     "version": "0.22.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 100,
-    "production_loc": 65904,
+    "production_loc": 65971,
     "test_files": 10,
     "test_loc": 8315,
-    "proved_theorem_lemma_decls": 1913,
+    "proved_theorem_lemma_decls": 1914,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -12044,7 +12044,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Structural",
       "path": "SeLe4n/Kernel/IPC/Invariant/Structural.lean",
-      "declaration_count": 131,
+      "declaration_count": 132,
       "declarations": [
         {
           "kind": "namespace",
@@ -14716,8 +14716,31 @@
         },
         {
           "kind": "theorem",
-          "name": "endpointReplyRecv_preserves_waitingThreadsPendingMessageNone",
+          "name": "endpointReply_preserves_waitingThreadsPendingMessageNone",
           "line": 6755,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "endpointReply",
+            "ensureRunnable",
+            "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "invExt",
+            "lookupTcb",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "size",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_fromTcb_eq",
+            "storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone",
+            "waitingThreadsPendingMessageNone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyRecv_preserves_waitingThreadsPendingMessageNone",
+          "line": 6821,
           "called": [
             "IpcMessage",
             "Kernel",
