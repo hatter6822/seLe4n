@@ -333,48 +333,91 @@ theorem storeObject_endpoint_preserves_endpointQueueNoDup
 This is the **most important** V3-K proof. `endpointQueueEnqueue` modifies
 one endpoint's queue and one or two TCBs' queue links.
 
-**Two sub-cases**:
+**Approach**: Self-contained via `queuePPrev`. A thread being enqueued has
+`queuePPrev = none` (guard at Core.lean:296). A queue head has
+`queuePPrev = some .endpointHead` (set at Core.lean:306). Since
+`none ≠ some .endpointHead`, the enqueuing thread cannot be any queue head.
+This completely avoids any V3-J dependency.
 
-**Case A: Empty queue** (no existing tail)
-- Queue becomes `{ head := some tid, tail := some tid }`
-- The other queue is unchanged
-- If the enqueue targets sendQ: `receiveQ.head` unchanged. The new
-  `sendQ.head = some tid`. Must show `tid ≠ receiveQ.head` (if receiveQ
-  is non-empty). This follows from the enqueue guard: `ipcState = .ready`
-  means the thread is not blocked on receive, so it cannot be in the
-  receive queue head.
+**Sub-step K-op-1a: Case split on `isReceiveQ` × `q.tail`**
 
-**Case B: Non-empty queue** (existing tail)
-- Queue head is unchanged (only tail is updated)
-- New thread is appended at tail, not head
-- K-2 is trivially preserved (heads unchanged)
+The proof unfolds `endpointQueueEnqueue` and splits into 4 top-level cases:
+- `(isReceiveQ = false, q.tail = none)` — sendQ empty enqueue
+- `(isReceiveQ = false, q.tail = some tailTid)` — sendQ non-empty enqueue
+- `(isReceiveQ = true, q.tail = none)` — receiveQ empty enqueue
+- `(isReceiveQ = true, q.tail = some tailTid)` — receiveQ non-empty enqueue
 
-**Key precondition**: The thread being enqueued has `ipcState = .ready` and
-no existing queue links. This means it's not currently in any queue, which
-implies it cannot be any queue's head. Combined with the pre-state K-2
-disjointness, the post-state disjointness follows.
+By symmetry, send-side and receive-side proofs are structurally identical
+(one modifies sendQ, the other receiveQ), so we describe the send-side in
+detail.
 
-**Proof sketch** (Case A, send-side enqueue):
+**Sub-step K-op-1b: Empty-queue case (sendQ, `q.tail = none`)**
+
+Post-state: `sendQ' = { head := some tid, tail := some tid }`, `receiveQ' = receiveQ`
+(unchanged because only sendQ was modified).
+
+Proof of K-2 for the **stored endpoint** (at `endpointId`):
 ```
--- Pre: hInv gives (for all eps) sendQ.head = none ∨ ...
--- Post: sendQ.head = some tid
--- Need: some tid ≠ receiveQ.head
--- From: tid has ipcState = .ready (enqueue guard)
--- From: ipcSchedulerCoherence (or separate precondition) implies tid not in any queue
--- Therefore: tid ≠ receiveQ.head
+-- Goal: some tid = none ∨ receiveQ.head = none ∨ some tid ≠ receiveQ.head
+-- Case: receiveQ.head = none → middle disjunct, done
+-- Case: receiveQ.head = some x →
+--   Need: tid ≠ x
+--   From guard: tid has queuePPrev = none (Core.lean:296)
+--   If x is receiveQ head, x has queuePPrev = some .endpointHead
+--     (from intrusiveQueueWellFormed / endpointQueueEnqueue setup)
+--   Since none ≠ some .endpointHead → tid ≠ x
 ```
 
-**Important**: This proof may need `ipcStateQueueMembershipConsistent` or a
-weaker precondition (thread not in any queue head) as a hypothesis. If so,
-this creates a **dependency from V3-K to V3-J** for the receive-side case.
-See Section 7.1 for analysis.
+Proof of K-2 for **other endpoints** (at `oid ≠ endpointId`):
+```
+-- storeObject_objects_ne: st'.objects[oid]? = st.objects[oid]?
+-- Therefore their queue heads are unchanged → hInv transfers
+```
 
-**Alternative approach**: Use the `endpointQueueEnqueue` guard check
-(`tcb.ipcState ≠ .ready` returns error) plus the observation that the
-queue head TCB must have a non-ready ipcState. Since the enqueue guard
-ensures `ipcState = .ready`, and queue-head threads have non-ready ipcState,
-the enqueuing thread cannot equal any queue head. This avoids the V3-J
-dependency and is self-contained.
+Proof of K-1: follows from `hAcyclic` (post-state `tcbQueueChainAcyclic`).
+
+**Sub-step K-op-1c: Non-empty-queue case (sendQ, `q.tail = some tailTid`)**
+
+Post-state: `sendQ' = { head := q.head, tail := some tid }`, `receiveQ' = receiveQ`.
+
+Proof of K-2: **Queue head is unchanged** (`sendQ'.head = q.head`).
+The pre-state `hInv` already gave `q.head = none ∨ receiveQ.head = none ∨
+q.head ≠ receiveQ.head`. Since `sendQ'.head = q.head` and `receiveQ'` is
+unchanged, K-2 transfers directly from `hInv`. No `queuePPrev` reasoning
+needed — this is the trivial case.
+
+**Sub-step K-op-1d: Precondition for `queuePPrev` argument**
+
+The proof requires access to the enqueuing thread's pre-state TCB to read
+`queuePPrev = none`. This is available from the enqueue guard check at
+Core.lean:296 (`tcb.queuePPrev.isSome`). Extracting this from the
+`endpointQueueEnqueue` success means:
+```lean
+-- From hEnqueue success:
+-- lookupTcb st tid = some tcb
+-- tcb.queuePPrev.isSome = false → tcb.queuePPrev = none
+```
+
+For the opposite queue's head, we need `head.queuePPrev = some .endpointHead`.
+This follows from `intrusiveQueueWellFormed` (part of `dualQueueSystemInvariant`).
+Specifically, when an endpoint has `receiveQ.head = some x`, then `x` was
+placed there by a prior `endpointQueueEnqueue` (empty case) which set
+`queuePPrev := some .endpointHead` (Core.lean:306), or by a prior
+`endpointQueuePopHead` which set the next thread's `queuePPrev := some .endpointHead`
+(Core.lean:274).
+
+**Theorem signature**:
+```lean
+theorem endpointQueueEnqueue_preserves_endpointQueueNoDup
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hInv : endpointQueueNoDup st)
+    (hAcyclic : tcbQueueChainAcyclic st')
+    (hObjInv : st.objects.invExt)
+    (hDQWF : dualQueueEndpointWellFormed st)  -- for queuePPrev = endpointHead on heads
+    (hEnqueue : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    endpointQueueNoDup st'
+```
 
 #### V3-K-op-2: `endpointQueuePopHead` Preservation
 
@@ -383,44 +426,147 @@ dependency and is self-contained.
 
 PopHead removes the head of one queue and advances to the next element.
 
-**Analysis**: PopHead on sendQ changes `sendQ.head` from `some h` to
-`h.queueNext` (or `none`). The `receiveQ.head` is unchanged. If the new
-`sendQ.head` (= `h.queueNext`) equals `receiveQ.head`, that would violate
-K-2. But this cannot happen because:
+**Approach**: Self-contained via `queuePrev` reasoning. Uses existing
+`dualQueueSystemInvariant` infrastructure (no V3-J dependency).
 
-1. `h.queueNext` points to the next thread in the send queue
-2. That thread has `ipcState = .blockedOnSend` (it's in the send queue)
-3. If it were also `receiveQ.head`, it would need to be in the receive queue
-4. But a thread can only be in one queue (by `ipcState` exclusivity)
-5. Therefore `h.queueNext ≠ receiveQ.head`
+**Sub-step K-op-2a: Case split on `headTcb.queueNext`**
 
-**Precondition needed**: A weaker form of V3-J — that threads reachable via
-sendQ have `ipcState = .blockedOnSend`, not `.blockedOnReceive`. OR we can
-use `tcbQueueLinkIntegrity` + `intrusiveQueueWellFormed` to argue that
-queue-internal threads cannot be queue heads of the opposite queue.
+PopHead at Core.lean:246-282 has two sub-cases after finding head `tid`:
+- `headTcb.queueNext = none` → queue becomes empty (`q' = {}`)
+- `headTcb.queueNext = some nextTid` → head advances (`q'.head = some nextTid`)
 
-**Alternative self-contained approach**: Use the existing
-`dualQueueEndpointWellFormed` (receiveQ head has `queuePrev = none`) and
-`tcbQueueLinkIntegrity` (if `h.queueNext = some n`, then `n.queuePrev = some h`,
-so `n.queuePrev ≠ none`). Since `receiveQ.head` has `queuePrev = none` and
-`h.queueNext` has `queuePrev = some h ≠ none`, they cannot be the same thread.
+**Sub-step K-op-2b: Queue-becomes-empty case (`queueNext = none`)**
 
-This is the **cleanest approach** — it uses only existing infrastructure from
-`dualQueueSystemInvariant` without needing V3-J.
+Post-state: `sendQ' = { head := none, tail := none }`, receiveQ unchanged.
+K-2 becomes: `none = none ∨ ...` — first disjunct, trivially true. Done.
+
+**Sub-step K-op-2c: Head-advances case (`queueNext = some nextTid`)**
+
+Post-state: `sendQ'.head = some nextTid`, receiveQ unchanged.
+Need: `some nextTid ≠ receiveQ.head` (when receiveQ.head is non-empty).
+
+Self-contained argument using `queuePrev`:
+```
+-- From PopHead implementation (Core.lean:274):
+--   nextTid gets queuePPrev := some .endpointHead, queuePrev := none
+--   BUT before that, nextTid has queuePrev = some tid (it's tid's successor)
+-- Wait — PopHead CLEARS nextTid's prev: storeTcbQueueLinks st1 nextTid none (some .endpointHead) nextTcb.queueNext
+-- So post-PopHead: nextTid.queuePrev = none
+--
+-- This means we can't use queuePrev to distinguish nextTid from receiveQ.head
+-- (both might have queuePrev = none after the operation).
+--
+-- Better argument: use queuePPrev on the OPPOSITE queue's head.
+-- receiveQ.head (if some x) has queuePPrev = some .endpointHead (from DQWF)
+-- nextTid also gets queuePPrev = some .endpointHead (from PopHead at Core.lean:274)
+-- These are the same! So we need a different distinguisher.
+--
+-- CORRECT argument: use the PRE-state dualQueueEndpointWellFormed.
+-- In the pre-state:
+--   nextTid has queuePrev = some tid (it's the 2nd element, predecessor is the head)
+--   receiveQ.head (if some x) has queuePrev = none (well-formed queue head)
+-- Since queuePrev differs, nextTid ≠ receiveQ.head in the pre-state.
+-- storeObject for the endpoint doesn't change TCB objects.
+-- storeTcbQueueLinks for nextTid changes nextTid's prev but doesn't change receiveQ.head's identity.
+-- The ObjId inequality (nextTid ≠ x) is a value identity, not a field property — it persists.
+```
+
+Refined proof:
+```lean
+-- From dualQueueEndpointWellFormed (pre-state):
+--   if ep.receiveQ.head = some x, then lookupTcb st x = some xTcb with xTcb.queuePrev = none
+-- From tcbQueueLinkIntegrity (pre-state):
+--   if headTcb.queueNext = some nextTid, then lookupTcb st nextTid = some nextTcb
+--     with nextTcb.queuePrev = some tid   (tid is the head being popped)
+-- Since some tid ≠ none, nextTcb.queuePrev ≠ xTcb.queuePrev
+-- By objects.invExt (ObjId injective), nextTid ≠ x
+-- ThreadId inequality persists across state changes → sendQ'.head ≠ receiveQ.head
+```
+
+**Sub-step K-op-2d: Frame for other endpoints**
+
+Other endpoints at `oid ≠ endpointId` are unchanged by `storeObject_objects_ne`.
+K-2 transfers from `hInv`.
+
+**Theorem signature**:
+```lean
+theorem endpointQueuePopHead_preserves_endpointQueueNoDup
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hInv : endpointQueueNoDup st)
+    (hAcyclic : tcbQueueChainAcyclic st')
+    (hObjInv : st.objects.invExt)
+    (hDQWF : dualQueueEndpointWellFormed st)
+    (hLinkInt : tcbQueueLinkIntegrity st)
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    endpointQueueNoDup st'
+```
 
 #### V3-K-op-3: `endpointQueueRemoveDual` Preservation
 
 **File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Medium (~60-80 lines)
 
-`endpointQueueRemoveDual` removes an arbitrary thread from a queue (not just
-the head). It handles head removal, tail removal, and middle removal.
+`endpointQueueRemoveDual` (Transport.lean:798-870) removes an arbitrary thread
+from a queue using the `queuePPrev` metadata for O(1) unlinking. Three cases
+based on position in the queue.
 
-**Head removal case**: Similar to PopHead — the new head is the removed
-thread's `queueNext`. By the same `queuePrev` argument as V3-K-op-2, the
-new head cannot be the opposite queue's head.
+**Sub-step K-op-3a: Case split on `tcb.queuePPrev`**
 
-**Tail/middle removal**: Queue heads are unchanged. K-2 trivially preserved.
+The implementation branches on `pprev`:
+- `pprev = .endpointHead` → removing the queue head
+- `pprev = .tcbNext prevTid` → removing a non-head element
+
+Combined with `tcb.queueNext`:
+- `queueNext = none` → removing the tail
+- `queueNext = some nextTid` → removing a middle element (or head with successor)
+
+This gives 3 distinct proof cases:
+
+**Sub-step K-op-3b: Head removal (`pprev = .endpointHead`)**
+
+Post-state: queue head advances to `tcb.queueNext` (or `none` if tail).
+Same argument as V3-K-op-2c: the new head (if any) had `queuePrev = some tid`
+in the pre-state, while the opposite queue's head has `queuePrev = none`.
+By `tcbQueueLinkIntegrity` + `dualQueueEndpointWellFormed`, the new head
+cannot be the opposite queue's head.
+
+Note: `endpointQueueRemoveDual` also stores a SECOND endpoint object at
+line 866 (updating head/tail). The proof must track through both storeObject
+calls. The first storeObject (line 827) updates the queue head, and the
+second storeObject (line 866) is a no-op for the head case (`q.head = some tid`
+means the if-branch at line 861 uses `tcb.queueNext`).
+
+**Sub-step K-op-3c: Non-head tail removal (`pprev = .tcbNext prevTid`, `queueNext = none`)**
+
+Queue head is unchanged. Only the tail pointer and `prevTid.queueNext` change.
+K-2 transfers directly from `hInv` since heads are identical.
+
+**Sub-step K-op-3d: Non-head middle removal (`pprev = .tcbNext prevTid`, `queueNext = some nextTid`)**
+
+Queue head is unchanged. `prevTid.queueNext` is relinked to `nextTid`, and
+`nextTid.queuePrev/queuePPrev` are updated. K-2 transfers from `hInv` since
+heads are identical.
+
+**Sub-step K-op-3e: Frame for other endpoints**
+
+`endpointQueueRemoveDual` only modifies the endpoint at `endpointId` and the
+removed thread's TCB (plus up to 2 neighbor TCBs). Other endpoints are
+unchanged by `storeObject_objects_ne`.
+
+**Theorem signature**:
+```lean
+theorem endpointQueueRemoveDual_preserves_endpointQueueNoDup
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hInv : endpointQueueNoDup st)
+    (hAcyclic : tcbQueueChainAcyclic st')
+    (hObjInv : st.objects.invExt)
+    (hDQWF : dualQueueEndpointWellFormed st)
+    (hLinkInt : tcbQueueLinkIntegrity st)
+    (hRemove : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    endpointQueueNoDup st'
+```
 
 #### V3-K-op-4: `endpointSendDual` Preservation
 
@@ -486,11 +632,9 @@ from endpoint object stability under notification stores.
 
 | File | Lines Added | Lines Modified | Type |
 |------|-------------|----------------|------|
-| `IPC/Invariant/Structural.lean` | ~350-450 | 0 | Primitive + operation proofs |
-| `IPC/Invariant/EndpointPreservation.lean` | ~40-60 | 0 | Operation proofs (optional, may go in Structural) |
-| `IPC/Invariant/CallReplyRecv.lean` | ~30-50 | 0 | Operation proofs (optional, may go in Structural) |
-| `IPC/Invariant/NotificationPreservation.lean` | ~25-35 | 0 | Frame proofs |
-| **Total** | **~445-595** | **0** | |
+| `IPC/Invariant/Structural.lean` | ~500 | 0 | Primitives (105) + queue ops (170) + IPC ops (225) |
+| `IPC/Invariant/NotificationPreservation.lean` | ~25 | 0 | Frame proofs |
+| **Total** | **~525** | **0** | |
 
 ---
 
@@ -629,212 +773,665 @@ operation proof.
 **File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Hard (~100-140 lines)
 
-**This is the hardest proof in the entire plan.**
+**This is the hardest proof in the entire plan.** The complexity arises from
+three interacting concerns: the enqueued thread's own ipcState, previously
+blocked threads' continued reachability, and cross-endpoint frame reasoning
+when `queueNext` pointers change.
 
-`endpointQueueEnqueue(endpointId, isReceiveQ, tid)` modifies:
-1. The endpoint's queue (head/tail)
-2. The old tail's `queueNext` (to point to `tid`)
-3. The new thread's `queuePrev` (to point to old tail)
+`endpointQueueEnqueue(endpointId, isReceiveQ, tid)` (Core.lean:284-319)
+modifies:
+1. The endpoint's queue head/tail
+2. The old tail's `queueNext` (from `none` to `some tid`) — non-empty case only
+3. The new thread's `queuePrev`/`queuePPrev` — both cases
 
-**Proof obligations**:
+**Decomposition into 5 focused sub-lemmas:**
 
-*For the newly enqueued thread `tid`*:
-- After enqueue, `tid` is NOT yet in a blocking state — its `ipcState` is
-  still `.ready` (the enqueue guard checks this). So the predicate evaluates
-  to `True` for `tid` in the post-state. The `storeTcbIpcState` call that
-  follows (in the parent operation) is what transitions `tid` into a blocking
-  state, and V3-J-prim-2 handles that.
+##### V3-J-op-1a: Helper — enqueued thread has trivial obligation
 
-*For previously blocked threads*:
-- Empty-queue case: Queue was empty. No threads were blocked on this endpoint
-  (because the queue was empty, no thread could have been the head). After
-  enqueue, head = tid. Other threads' reachability is unaffected since no
-  `queueNext` pointers changed (except the new thread's).
-- Non-empty case: Queue had existing members. Old head is unchanged. Old
-  tail's `queueNext` now points to `tid`. For threads that were reachable
-  before, they remain reachable because:
-  - The head hasn't changed
-  - No existing thread's `queueNext` was changed to point away from its
-    successor (only the old tail gained a new `queueNext`)
-  - The old tail's successor chain is extended, not broken
-
-*For threads blocked on OTHER endpoints*:
-- Other endpoints' queue heads are unchanged
-- `queueNext` changes only affect `tid` and the old tail, not threads in
-  other queues
-- But we must be careful: changing the old tail's `queueNext` from `none`
-  to `some tid` means `tid` now has a predecessor. If `tid` happened to be
-  blocked on a different endpoint (impossible by the enqueue guard, since
-  `ipcState = .ready`), this would incorrectly establish reachability. The
-  enqueue guard prevents this.
-
-**Helper lemma needed**:
 ```lean
-/-- After endpointQueueEnqueue, threads previously reachable remain reachable. -/
-private theorem endpointQueueEnqueue_preserves_existing_reachability ...
+/-- The enqueued thread has ipcState = .ready (from guard), so V3-J evaluates to True. -/
+private theorem enqueue_target_ipcState_ready
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hLookup : lookupTcb st tid = some tcb)
+    (hReady : tcb.ipcState = .ready) :
+    -- V3-J for tid: match .ready with ... => True
+    True := trivial
 ```
 
-#### V3-J-op-2: `endpointQueuePopHead` Preservation
+This is trivial but documents the key invariant: `endpointQueueEnqueue`'s
+guard checks `tcb.ipcState ≠ .ready` and errors, so success implies
+`ipcState = .ready`. V3-J maps `.ready` to `True`. The enqueued thread
+is not yet in scope — it enters scope only when the parent operation calls
+`storeTcbIpcState` to transition to a blocking state.
+
+##### V3-J-op-1b: Helper — empty-queue case preserves existing reachability
+
+**Proof target**: When the queue was empty (`q.tail = none`), no existing
+thread was blocked on this endpoint's queue (because the queue had no head).
+After enqueue, `head = some tid`, but `tid` has `ipcState = .ready`, so no
+thread in the post-state has a blocking state pointing to this queue.
+
+```lean
+/-- Empty-queue enqueue: no existing thread's reachability is affected.
+    Pre-state: q.head = none (empty queue), so no thread had
+    ipcState = .blockedOnSend epId with reachability from this queue's head.
+    Post-state: q'.head = some tid, but tid.ipcState = .ready.
+    All other threads' TCBs and ipcStates are unchanged. -/
+private theorem endpointQueueEnqueue_empty_preserves_reachability ...
+```
+
+Proof structure:
+```
+-- intro tid' tcb' hObj'
+-- by_cases hEq : tid' = tid
+-- Case tid' = tid:
+--   tcb'.ipcState was .ready (from guard), modified TCB still has .ready
+--   (enqueue only changes queuePrev/queuePPrev/queueNext, not ipcState)
+--   V3-J maps .ready → True
+-- Case tid' ≠ tid:
+--   tid'.tcb is unchanged (storeObject_objects_ne for endpoint store + storeTcbQueueLinks for tid)
+--   tid'.ipcState is unchanged
+--   Need: tid' still reachable if blocked
+--   Subcase: tid' blocked on this endpoint (epId = endpointId)
+--     Pre-state: impossible — queue was empty (head = none), so no thread was reachable from head
+--     This contradicts hInv (pre-state V3-J required reachability, but head was none)
+--     Wait: hInv says blocked → reachable from head OR has predecessor
+--     With head = none and no predecessor in empty queue, this is impossible
+--     So no thread had ipcState = .blockedOnSend endpointId → vacuously true
+--   Subcase: tid' blocked on different endpoint (epId ≠ endpointId)
+--     That endpoint is unchanged → reachability preserved from hInv
+--     But tid' might gain a NEW predecessor (the old tail's queueNext changed)
+--     NO: in empty-queue case, no old tail exists, so no queueNext changed
+--     Only tid's queuePrev/queuePPrev changed → tid' is unaffected
+```
+
+##### V3-J-op-1c: Helper — non-empty-queue case preserves existing reachability
+
+**This is the most complex sub-lemma.** When the queue has existing members,
+the old tail's `queueNext` changes from `none` to `some tid`. This means:
+
+1. `tid` gains a new predecessor (the old tail) — harmless since `tid` has
+   `ipcState = .ready`
+2. No existing thread LOSES a predecessor — the old tail previously had
+   `queueNext = none`, so it wasn't anyone's predecessor before
+3. The queue head is unchanged → all threads reachable from head via
+   `queueNext` remain reachable
+
+```lean
+/-- Non-empty-queue enqueue: existing threads remain reachable.
+    Key insight: the old tail's queueNext was none (it was the tail),
+    so changing it to some tid doesn't remove any existing predecessor link.
+    The head is unchanged, so head-reachable threads stay head-reachable. -/
+private theorem endpointQueueEnqueue_nonempty_preserves_reachability ...
+```
+
+Proof structure:
+```
+-- intro tid' tcb' hObj'
+-- by_cases hEq : tid' = tid → .ready, trivially True
+-- by_cases hEq2 : tid' = tailTid
+--   Case tid' = tailTid (the old tail):
+--     tailTid's ipcState is unchanged (storeTcbQueueLinks doesn't change ipcState)
+--     tailTid's reachability: was reachable in pre-state (by hInv)
+--     Post-state: tailTid's TCB has modified queueNext but same ObjId
+--     tailTid is STILL reachable because:
+--       - Head is unchanged
+--       - tailTid's predecessor's queueNext is unchanged (only tailTid's own queueNext changed)
+--       - So tailTid still has the same predecessor pointing to it
+-- Case tid' ≠ tid ∧ tid' ≠ tailTid:
+--   tid'.tcb is unchanged (frame: storeObject for endpoint at endpointId,
+--     storeTcbQueueLinks for tailTid, storeTcbQueueLinks for tid — all at different ObjIds)
+--   tid'.ipcState unchanged
+--   If blocked on this endpoint: predecessor is unchanged (predecessor ≠ tailTid by case split,
+--     and predecessor ≠ tid since tid was .ready). Head unchanged. Reachability preserved.
+--   If blocked on other endpoint: frame — other endpoint unchanged, predecessor unchanged
+```
+
+##### V3-J-op-1d: Helper — cross-endpoint frame
+
+When `tid` is enqueued on `endpointId`'s queue, threads blocked on OTHER
+endpoints must remain reachable. This requires showing that no reachability
+link for another endpoint was broken.
+
+```lean
+/-- Enqueue on one endpoint preserves reachability for all other endpoints. -/
+private theorem endpointQueueEnqueue_cross_endpoint_frame
+    -- For any thread tid' blocked on epId ≠ endpointId:
+    -- (a) The endpoint at epId is unchanged (storeObject_objects_ne)
+    -- (b) tid''s predecessor's queueNext is unchanged (no TCB modification
+    --     touched a thread in a different endpoint's queue)
+    -- (c) Therefore reachability is preserved
+```
+
+The key observation: `endpointQueueEnqueue` modifies exactly 3 objects:
+- The endpoint at `endpointId` (storeObject)
+- The old tail TCB at `tailTid` (storeTcbQueueLinks — queueNext changed)
+- The new thread TCB at `tid` (storeTcbQueueLinks — queuePrev/queuePPrev set)
+
+For threads blocked on a different endpoint `epId ≠ endpointId`:
+- The endpoint at `epId` is unchanged → queue heads unchanged
+- If a thread's predecessor is `tailTid`: `tailTid.queueNext` changed from
+  `none` to `some tid`. But `tailTid.queueNext = none` in pre-state means
+  `tailTid` was NOT anyone's predecessor before. So no thread had
+  `tailTid` as predecessor → this case is vacuous.
+- If a thread's predecessor is `tid`: `tid` had `queueNext = none` in
+  pre-state (from enqueue guard at Core.lean:296). Same argument — `tid`
+  was not anyone's predecessor.
+
+##### V3-J-op-1e: Main theorem — compose sub-lemmas
+
+```lean
+theorem endpointQueueEnqueue_preserves_ipcStateQueueMembershipConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hInv : ipcStateQueueMembershipConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hEnqueue : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ipcStateQueueMembershipConsistent st'
+```
+
+Proof outline:
+```
+-- unfold endpointQueueEnqueue, extract guards and case splits
+-- intro tid' tcb' hObj'
+-- cases q.tail
+-- | none => apply endpointQueueEnqueue_empty_preserves_reachability
+-- | some tailTid => apply endpointQueueEnqueue_nonempty_preserves_reachability
+```
+
+**Estimated breakdown**: 1a (~5 lines), 1b (~25 lines), 1c (~45 lines),
+1d (~30 lines), 1e (~35 lines) = ~140 lines total.
+
+#### V3-J-op-2: `endpointQueuePopHead` Helper Lemmas (NOT standalone preservation)
 
 **File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Hard (~80-120 lines)
 
-PopHead removes the head thread and clears its queue links. The new head
-is the old head's `queueNext`.
+**Critical design decision**: PopHead **temporarily violates** V3-J. After
+popping the head, the old head still has `ipcState = .blockedOnReceive epId`
+(or `.blockedOnSend`) but is no longer reachable from the queue. The caller
+operation (`endpointSendDual`, etc.) restores the invariant by changing the
+popped thread's `ipcState` to `.ready` or `.blockedOnReply`. Therefore, we
+do NOT prove standalone V3-J preservation for PopHead. Instead, we prove
+**transfer lemmas** that the operation-level proofs (V3-J-op-3, V3-J-op-4)
+compose.
 
-**Proof obligations**:
+**Decomposition into 4 focused helper lemmas:**
 
-*For the popped thread (old head)*:
-- Its `ipcState` is NOT changed by PopHead itself. The caller (`endpointSendDual`,
-  etc.) will change it to `.ready` or another state via `storeTcbIpcState(AndMessage)`.
-- In the intermediate state after PopHead but before ipcState change, the
-  popped thread still has its old `ipcState` (e.g., `.blockedOnReceive epId`)
-  but is no longer reachable (queue head has advanced). **The invariant
-  temporarily breaks here.**
-- This means the invariant must be proven at the **full operation level**, not
-  at the PopHead level alone.
-
-**Strategy**: Like V3-J-prim-4, this confirms that V3-J preservation should
-be proven at the **composite operation level** (`endpointSendDual`,
-`endpointReceiveDual`, etc.) rather than at the primitive level. The primitive
-PopHead may temporarily violate the invariant, but the full operation
-(PopHead + ipcState change) restores it.
-
-**Alternative**: Add a **weaker lemma** that tracks what PopHead does to
-reachability and ipcState, then compose it at the operation level:
+##### V3-J-op-2a: Remaining-threads reachability transfer
 
 ```lean
-/-- After PopHead, all previously reachable threads (except the popped head)
-remain reachable via the new head's queueNext chain. -/
-private theorem endpointQueuePopHead_reachability_transfer ...
-
-/-- After PopHead, the popped thread's queueNext is cleared. -/
-private theorem endpointQueuePopHead_clears_head_links ...
+/-- After PopHead, all threads that were reachable from the OLD head's successor
+    are reachable from the NEW head (= old head's queueNext). -/
+private theorem endpointQueuePopHead_remaining_reachable
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st'))
+    -- For any thread tid' ≠ tid that had a predecessor in the pre-state:
+    (tid' : SeLe4n.ThreadId) (hNe : tid' ≠ tid)
+    (prev : SeLe4n.ThreadId) (prevTcb : TCB)
+    (hPrevLookup : st.objects[prev.toObjId]? = some (.tcb prevTcb))
+    (hPrevNext : prevTcb.queueNext = some tid') :
+    -- tid' still has a predecessor in the post-state, or is the new head
+    (st'.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid') ∨
+    (∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
+      (if isReceiveQ then ep'.receiveQ.head else ep'.sendQ.head) = some tid')
 ```
+
+Proof structure:
+```
+-- Case: prev ≠ tid (predecessor is not the popped head)
+--   prev's TCB is unchanged (frame: storeTcbQueueLinks targets tid and nextTid, not prev)
+--   prev.queueNext still = some tid' → left disjunct
+-- Case: prev = tid (predecessor IS the popped head)
+--   tid.queueNext = some tid' (from hPrevNext)
+--   But headTcb.queueNext = some tid' means tid' is the NEW head
+--   PopHead sets q'.head = some tid' (Core.lean:262)
+--   → right disjunct (tid' is the new head)
+```
+
+##### V3-J-op-2b: Popped head's ipcState unchanged
+
+```lean
+/-- PopHead does not modify the popped thread's ipcState.
+    The returned headTcb records the pre-dequeue ipcState. -/
+private theorem endpointQueuePopHead_ipcState_stable
+    -- After PopHead, the popped thread's ipcState in st' equals headTcb.ipcState
+    -- (storeTcbQueueLinks only modifies queue link fields, not ipcState)
+```
+
+This is essential for the operation-level proofs: they need to know the
+popped thread's ipcState to discharge the `storeTcbIpcStateAndMessage`
+precondition (V3-J-prim-3).
+
+Proof: `storeTcbQueueLinks` stores `{ tcb with queuePrev, queuePPrev, queueNext }`,
+which preserves `tcb.ipcState`. The popped thread's final TCB (after clearing
+links) has the same `ipcState` as `headTcb`.
+
+##### V3-J-op-2c: Popped head's links are cleared
+
+```lean
+/-- After PopHead, the popped thread has queuePrev = none, queuePPrev = none,
+    queueNext = none. -/
+private theorem endpointQueuePopHead_clears_head_links
+    -- storeTcbQueueLinks st2 tid none none none (Core.lean:278)
+```
+
+This is needed by operation-level proofs to show the popped thread is no
+longer anyone's predecessor (queueNext = none) after PopHead.
+
+##### V3-J-op-2d: Cross-endpoint frame
+
+```lean
+/-- PopHead on one endpoint preserves reachability for threads blocked on
+    other endpoints. -/
+private theorem endpointQueuePopHead_cross_endpoint_frame
+    -- Other endpoints at oid ≠ endpointId: unchanged (storeObject_objects_ne)
+    -- TCB modifications: only tid and nextTid are touched
+    -- For a thread blocked on epId ≠ endpointId with predecessor prev:
+    --   If prev ≠ tid ∧ prev ≠ nextTid: prev.tcb unchanged → reachability preserved
+    --   If prev = tid: tid was the head of THIS endpoint's queue, not another's
+    --     (by dualQueueEndpointWellFormed, tid can only be head of one queue)
+    --     So prev was tid only for threads in this endpoint's queue, not others
+    --   If prev = nextTid: nextTid.queueNext is preserved by storeTcbQueueLinks
+    --     (Core.lean:274 stores queuePrev/queuePPrev but preserves queueNext via nextTcb.queueNext)
+    --     So prev.queueNext is unchanged → reachability preserved
+```
+
+**Estimated breakdown**: 2a (~35 lines), 2b (~15 lines), 2c (~10 lines),
+2d (~40 lines) = ~100 lines total.
 
 #### V3-J-op-3: `endpointSendDual` Preservation
 
 **File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Hard (~80-120 lines)
 
-Two paths:
+`endpointSendDual` (Transport.lean:1586-1614) has two paths. Each path is a
+multi-step composition where the invariant may transiently break between steps
+but is restored by the final step.
 
-**Rendezvous path** (receiver waiting):
-1. `endpointQueuePopHead(ep, true)` — removes receiver from receiveQ
-2. `storeTcbIpcStateAndMessage(receiver, .ready, msg)` — receiver exits scope
-3. `ensureRunnable(receiver)` — scheduler only
+##### V3-J-op-3a: Rendezvous path — state transition trace
 
-After step 1, the popped receiver still has `ipcState = .blockedOnReceive` but
-is no longer in the queue. After step 2, the receiver has `ipcState = .ready`,
-exiting the predicate's scope. For all other threads in the receiveQ, the new
-head (old head's `queueNext`) maintains reachability via the same chain with
-one link removed from the front. Threads in other queues are unaffected.
+```
+st0 (pre-state, V3-J holds)
+ │ endpointQueuePopHead(ep, true)
+st1 ← INVARIANT TEMPORARILY BROKEN for popped receiver
+ │     (receiver.ipcState = .blockedOnReceive, but no longer reachable from receiveQ.head)
+ │ storeTcbIpcStateAndMessage(receiver, .ready, some msg)
+st2 ← INVARIANT RESTORED
+ │     (receiver.ipcState = .ready → True; remaining threads reachable via V3-J-op-2a)
+ │ ensureRunnable(receiver)
+st3 ← INVARIANT STILL HOLDS (ensureRunnable only modifies scheduler)
+```
 
-The sender's ipcState remains `.ready` throughout — trivially `True`.
+Proof composition for rendezvous:
+```
+-- Step 1: PopHead removes receiver from receiveQ
+--   Use V3-J-op-2a: remaining threads in receiveQ are still reachable from new head
+--   Use V3-J-op-2d: threads in other endpoints unaffected
+--   The popped receiver is the ONLY thread that violates V3-J in st1
+--
+-- Step 2: storeTcbIpcStateAndMessage sets receiver.ipcState = .ready
+--   For the receiver: .ready → True, invariant satisfied
+--   For other threads:
+--     The store modifies receiver's TCB (at receiver.toObjId)
+--     No other thread's TCB, ipcState, or queueNext is changed
+--     No endpoint object is changed
+--     → Other threads' reachability is unchanged from st1
+--     Combined with V3-J-op-2a (remaining threads still reachable), V3-J holds in st2
+--
+-- Step 3: ensureRunnable — scheduler only, objects unchanged → V3-J preserved
+```
 
-**Block path** (no receiver):
-1. `endpointQueueEnqueue(ep, false, sender)` — adds sender to sendQ
-2. `storeTcbIpcStateAndMessage(sender, .blockedOnSend epId, msg)` — sender enters scope
-3. `removeRunnable(sender)` — scheduler only
+**Key helper needed for Step 2**: A lemma showing that if V3-J holds for
+all threads EXCEPT one specific thread `t`, and then `t`'s ipcState is set
+to a non-blocking state, then V3-J holds in the result:
 
-After step 1, sender has `ipcState = .ready` (trivially `True`). After step 2,
-sender has `ipcState = .blockedOnSend epId` and must be reachable from
-`sendQ.head`. If the queue was empty, sender IS the head. If non-empty,
-sender is the tail, reachable via the old tail's `queueNext` (set by enqueue).
+```lean
+/-- If V3-J holds for all threads except tid, and tid's ipcState becomes
+    non-blocking (ready/blockedOnReply/blockedOnNotification), then V3-J holds. -/
+private theorem ipcStateQueueMembership_restore_by_clearing_ipcState
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hAllExcept : ∀ tid' tcb', tid' ≠ tid →
+      st.objects[tid'.toObjId]? = some (.tcb tcb') →
+      <V3-J predicate for tid'>)
+    (hStore : storeTcbIpcStateAndMessage st tid .ready msg = .ok st')
+    (hObjInv : st.objects.invExt) :
+    ipcStateQueueMembershipConsistent st'
+```
 
-**Precondition satisfaction**: Step 2's precondition (V3-J-prim-3) — that the
-sender is reachable — is discharged by step 1's enqueue result. The enqueue
-either made the sender the head (empty case) or linked the old tail to the
-sender (non-empty case).
+##### V3-J-op-3b: Block path — state transition trace
+
+```
+st0 (pre-state, V3-J holds)
+ │ endpointQueueEnqueue(ep, false, sender)
+st1 ← V3-J STILL HOLDS (sender.ipcState = .ready → True; existing threads preserved by V3-J-op-1)
+ │ storeTcbIpcStateAndMessage(sender, .blockedOnSend endpointId, some msg)
+st2 ← V3-J HOLDS (sender now in scope, must verify reachability)
+ │ removeRunnable(sender)
+st3 ← V3-J HOLDS (scheduler only)
+```
+
+Proof composition for block path:
+```
+-- Step 1: endpointQueueEnqueue adds sender to sendQ
+--   By V3-J-op-1e: V3-J preserved in st1
+--   Additionally, we need a FACT about st1: sender is reachable from sendQ.head
+--   Empty case: sender IS the head → head = some sender
+--   Non-empty case: old tail's queueNext = some sender → sender has predecessor
+--
+-- Step 2: storeTcbIpcStateAndMessage sets sender.ipcState = .blockedOnSend endpointId
+--   For sender: must verify reachability from ep.sendQ.head
+--     From Step 1 fact: sender is head OR has predecessor
+--     Endpoint object is UNCHANGED by storeTcbIpcStateAndMessage (it stores a TCB, not endpoint)
+--     Predecessor's queueNext is UNCHANGED (storeTcbIpcStateAndMessage modifies sender's TCB only)
+--     → sender's reachability established
+--   For other threads: frame — sender's TCB modification doesn't affect their reachability
+--
+-- Step 3: removeRunnable — scheduler only → V3-J preserved
+```
+
+**Key helper needed for Step 2**: A lemma extracting the enqueue post-condition
+(sender is reachable) from `endpointQueueEnqueue` success:
+
+```lean
+/-- After endpointQueueEnqueue, the enqueued thread is reachable from the queue head:
+    either it IS the head, or the old tail's queueNext points to it. -/
+private theorem endpointQueueEnqueue_thread_reachable
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hEnqueue : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
+      let q' := if isReceiveQ then ep'.receiveQ else ep'.sendQ
+      (q'.head = some tid ∨
+       ∃ prev prevTcb, st'.objects[prev.toObjId]? = some (.tcb prevTcb) ∧
+         prevTcb.queueNext = some tid)
+```
+
+##### V3-J-op-3c: Main theorem
+
+```lean
+theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (st st' : SystemState)
+    (hInv : ipcStateQueueMembershipConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hSend : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    ipcStateQueueMembershipConsistent st'
+```
+
+**Estimated breakdown**: 3a rendezvous (~40 lines), 3b block path (~45 lines),
+3c dispatch (~15 lines), helpers (~20 lines) = ~120 lines total.
 
 #### V3-J-op-4: `endpointReceiveDual` Preservation
 
 **File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Hard (~100-140 lines)
 
-**Rendezvous path** (sender waiting):
-1. `endpointQueuePopHead(ep, false)` — removes sender from sendQ
-2. Split on `senderWasCall`:
-   - Call: `storeTcbIpcStateAndMessage(sender, .blockedOnReply, none)` — sender enters reply scope (not in send/receive/call, so `True`)
-   - Send: `storeTcbIpcStateAndMessage(sender, .ready, none)` + `ensureRunnable` — sender exits scope
-3. `storeTcbPendingMessage(receiver, senderMsg)` — receiver's message only, no ipcState change
+`endpointReceiveDual` (Transport.lean:1632-1678) is the **most complex
+operation** due to the Call/Send split in the rendezvous path. Three distinct
+sub-paths must be proven.
 
-The receiver's ipcState is never changed by this path (stays `.ready`).
-Sender transitions out of `.blockedOnSend`/`.blockedOnCall` scope.
+##### V3-J-op-4a: Rendezvous + Send sub-path — state transition trace
 
-**Block path** (no sender):
-1. `endpointQueueEnqueue(ep, true, receiver)` — adds receiver to receiveQ
-2. `storeTcbIpcState(receiver, .blockedOnReceive epId)` — receiver enters scope
-3. `removeRunnable(receiver)` — scheduler only
+When `senderTcb.ipcState` is NOT `.blockedOnCall`:
 
-Same reachability discharge pattern as V3-J-op-3 block path.
+```
+st0 (pre-state, V3-J holds)
+ │ endpointQueuePopHead(ep, false)   — pop sender from sendQ
+st1 ← TRANSIENTLY BROKEN (sender.ipcState = .blockedOnSend, not reachable)
+ │ storeTcbIpcStateAndMessage(sender, .ready, none)
+st2 ← RESTORED (sender.ipcState = .ready → True)
+ │ ensureRunnable(sender)
+st3 ← scheduler only, unchanged
+ │ storeTcbPendingMessage(receiver, senderMsg)
+st4 ← STILL HOLDS (receiver.ipcState unchanged by storeTcbPendingMessage)
+```
+
+Proof composition:
+```
+-- Steps 1-3: Identical structure to V3-J-op-3a (rendezvous path of Send)
+--   except PopHead is on sendQ (isReceiveQ = false) not receiveQ
+--   Use V3-J-op-2a for remaining sendQ threads, V3-J-op-2d for cross-endpoint
+--   ipcStateQueueMembership_restore_by_clearing_ipcState handles sender → .ready
+--
+-- Step 4: storeTcbPendingMessage modifies only receiver's pendingMessage
+--   V3-J does NOT depend on pendingMessage at all
+--   All TCB ipcStates unchanged, all queueNext unchanged, all endpoints unchanged
+--   → V3-J trivially preserved from st3
+```
+
+##### V3-J-op-4b: Rendezvous + Call sub-path — state transition trace
+
+When `senderTcb.ipcState = .blockedOnCall epId`:
+
+```
+st0 (pre-state, V3-J holds)
+ │ endpointQueuePopHead(ep, false)   — pop sender from sendQ
+st1 ← TRANSIENTLY BROKEN (sender.ipcState = .blockedOnCall, not reachable from sendQ)
+ │ storeTcbIpcStateAndMessage(sender, .blockedOnReply endpointId (some receiver), none)
+st2 ← RESTORED (.blockedOnReply → True in V3-J predicate)
+ │ storeTcbPendingMessage(receiver, senderMsg)
+st3 ← STILL HOLDS
+```
+
+The key difference from sub-path 4a: the sender transitions from
+`.blockedOnCall` to `.blockedOnReply`, NOT to `.ready`. But `.blockedOnReply`
+evaluates to `True` in V3-J just like `.ready` does. So the same
+`ipcStateQueueMembership_restore_by_clearing_ipcState` helper works here
+(generalized to accept any non-send/receive/call ipcState).
+
+**Critical correctness check**: After the V3-J-fix (Phase 0), the
+`.blockedOnCall` case maps to `sendQ`. The sender was indeed in `sendQ`
+(PopHead pops from sendQ). So in the pre-state, the sender satisfied V3-J
+for `.blockedOnCall` (reachable from `sendQ.head`). After PopHead, the
+sender is no longer reachable, but `storeTcbIpcStateAndMessage` changes
+ipcState to `.blockedOnReply`, which exits scope. All consistent.
+
+##### V3-J-op-4c: Block path — state transition trace
+
+```
+st0 (pre-state, V3-J holds)
+ │ endpointQueueEnqueue(ep, true, receiver)
+st1 ← V3-J STILL HOLDS (receiver.ipcState = .ready → True)
+ │ storeTcbIpcState(receiver, .blockedOnReceive endpointId)
+st2 ← V3-J HOLDS (receiver now in scope with blocking state)
+ │ removeRunnable(receiver)
+st3 ← scheduler only
+```
+
+Proof composition:
+```
+-- Step 1: endpointQueueEnqueue on receiveQ
+--   V3-J-op-1e: V3-J preserved
+--   endpointQueueEnqueue_thread_reachable: receiver reachable from receiveQ.head
+--
+-- Step 2: storeTcbIpcState(receiver, .blockedOnReceive endpointId)
+--   For receiver: .blockedOnReceive endpointId → must be reachable from ep.receiveQ.head
+--     From Step 1: receiver is reachable (head or has predecessor)
+--     storeTcbIpcState stores a TCB, not endpoint → endpoint unchanged → queue heads unchanged
+--     storeTcbIpcState modifies only receiver's TCB → predecessor's queueNext unchanged
+--     → receiver still reachable in st2
+--   For other threads: frame (only receiver's TCB changed)
+--
+-- Step 3: removeRunnable → scheduler only → preserved
+```
+
+##### V3-J-op-4d: Main theorem
+
+```lean
+theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (st : SystemState) (sender : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : ipcStateQueueMembershipConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hRecv : endpointReceiveDual endpointId receiver st = .ok (sender, st')) :
+    ipcStateQueueMembershipConsistent st'
+```
+
+**Estimated breakdown**: 4a Send sub-path (~35 lines), 4b Call sub-path
+(~30 lines, shares helpers with 4a), 4c block path (~35 lines), 4d dispatch
+(~15 lines), storeTcbPendingMessage frame lemma (~10 lines) = ~125 lines total.
 
 #### V3-J-op-5: `endpointCall` Preservation
 
 **File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Medium-Hard (~70-100 lines)
 
-**Rendezvous path**: PopHead(receiveQ) + wake receiver + block caller as `.blockedOnReply`
-- Caller never enters a send/receive/call queue — only transitions to `.blockedOnReply`, which evaluates to `True`
-- Receiver transitions to `.ready` — exits scope
+`endpointCall` (Transport.lean:1710-1743) has rendezvous and block paths.
 
-**Block path**: Enqueue(sendQ, caller) + `storeTcbIpcStateAndMessage(caller, .blockedOnCall epId, msg)`
-- Caller is enqueued on sendQ, then enters `.blockedOnCall epId`
-- `.blockedOnCall epId` requires reachability from `ep.receiveQ.head`
-- **Wait** — the definition says `.blockedOnCall epId` should be reachable from **receiveQ**, but the caller is enqueued on **sendQ**.
+**Prerequisite**: V3-J-fix must be applied first. The current definition maps
+`blockedOnCall epId` to `receiveQ.head`, but `endpointCall` enqueues callers on
+`sendQ` (Transport.lean:1735: `endpointQueueEnqueue endpointId false caller`).
+After V3-J-fix, `blockedOnCall` maps to `sendQ.head`, matching the implementation.
 
-**Critical check of V3-J definition** (Defs.lean:806-811):
+##### V3-J-op-5a: Rendezvous path — state transition trace
+
+```
+st0 (pre-state, V3-J holds)
+ │ endpointQueuePopHead(ep, true)   — pop receiver from receiveQ
+st1 ← TRANSIENTLY BROKEN (receiver.ipcState = .blockedOnReceive, not reachable)
+ │ storeTcbIpcStateAndMessage(receiver, .ready, some msg)
+st2 ← RESTORED (receiver.ipcState = .ready → True)
+ │ ensureRunnable(receiver)
+st3 ← scheduler only
+ │ storeTcbIpcState(caller, .blockedOnReply endpointId (some receiver))
+st4 ← HOLDS (.blockedOnReply → True)
+ │ removeRunnable(caller)
+st5 ← scheduler only
+```
+
+Proof composition:
+```
+-- Steps 1-3: Same pattern as V3-J-op-3a (Send rendezvous)
+--   PopHead on receiveQ, then clear receiver's blocking state
+--   V3-J-op-2a: remaining receiveQ threads reachable
+--   ipcStateQueueMembership_restore_by_clearing_ipcState: receiver → .ready
+--
+-- Step 4: storeTcbIpcState(caller, .blockedOnReply ...)
+--   .blockedOnReply → True in V3-J → no reachability obligation
+--   For other threads: caller's TCB modification doesn't affect their reachability
+--   (caller was .ready throughout, no queue links changed)
+--
+-- Step 5: removeRunnable → scheduler only → preserved
+```
+
+##### V3-J-op-5b: Block path — state transition trace
+
+```
+st0 (pre-state, V3-J holds)
+ │ endpointQueueEnqueue(ep, false, caller)   — enqueue on sendQ
+st1 ← V3-J HOLDS (caller.ipcState = .ready → True)
+ │ storeTcbIpcStateAndMessage(caller, .blockedOnCall endpointId, some msg)
+st2 ← V3-J HOLDS (caller now in scope)
+ │ removeRunnable(caller)
+st3 ← scheduler only
+```
+
+Proof composition:
+```
+-- Step 1: endpointQueueEnqueue on sendQ
+--   V3-J-op-1e: V3-J preserved
+--   endpointQueueEnqueue_thread_reachable: caller reachable from sendQ.head
+--
+-- Step 2: storeTcbIpcStateAndMessage(caller, .blockedOnCall endpointId, msg)
+--   After V3-J-fix: .blockedOnCall → reachable from sendQ.head (not receiveQ!)
+--   From Step 1: caller IS reachable from sendQ.head (head or has predecessor)
+--   storeTcbIpcStateAndMessage modifies only caller's TCB, not endpoint
+--   → caller still reachable from sendQ.head in st2
+--   For other threads: frame
+--
+-- Step 3: removeRunnable → scheduler only → preserved
+```
+
+**Structural similarity**: The block path is identical to V3-J-op-3b (Send
+block path) except the ipcState is `.blockedOnCall` instead of `.blockedOnSend`.
+After V3-J-fix, both map to `sendQ.head`, so the same reachability argument
+applies. Consider factoring out a shared helper.
+
+##### V3-J-op-5c: V3-J Definition Fix (V3-J-fix) — detailed specification
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (line ~806)
+
+Current (incorrect):
 ```lean
 | .blockedOnCall epId =>
     ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
-      (ep.receiveQ.head = some tid ∨ ...)
+      (ep.receiveQ.head = some tid ∨
+       ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+         st.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+         TCB.queueNext prevTcb = some tid)
 ```
 
-The definition says `blockedOnCall` threads should be reachable from
-**`receiveQ.head`**. But `endpointCall` enqueues on the **sendQ** (not receiveQ).
-When a receiver later calls `endpointReceiveDual`, it pops from sendQ and
-the caller transitions from `.blockedOnCall` to `.blockedOnReply`.
+Fixed (correct):
+```lean
+| .blockedOnCall epId =>
+    ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+      (ep.sendQ.head = some tid ∨
+       ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+         st.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+         TCB.queueNext prevTcb = some tid)
+```
 
-**Issue**: The `blockedOnCall` case in V3-J checks `receiveQ.head`, but Call
-callers are enqueued on sendQ. This appears to be a **definition error** in
-the V3-J predicate.
+Change: `ep.receiveQ.head` → `ep.sendQ.head` in the `blockedOnCall` case.
 
-**Analysis**: Looking at `endpointReceiveDual` (Transport.lean:1640-1650),
-when a sender is popped from `sendQ` and `senderTcb.ipcState = .blockedOnCall _`,
-the sender transitions to `.blockedOnReply`. The sender was in `sendQ`, not
-`receiveQ`. The V3-J definition's use of `receiveQ` for `blockedOnCall` is
-incorrect — it should be `sendQ`.
+**Justification**: `endpointCall` enqueues callers on sendQ via
+`endpointQueueEnqueue endpointId false caller` (Transport.lean:1735, where
+`false` = sendQ). `endpointReceiveDual` pops from sendQ via
+`endpointQueuePopHead endpointId false st` (Transport.lean:1640). The caller
+is always in sendQ, never receiveQ.
 
-**However**: Let's check if `endpointCall`'s block path actually enqueues on
-sendQ. Yes — `endpointQueueEnqueue endpointId false caller` where `false`
-means sendQ (Transport.lean:1735). So `blockedOnCall` callers are in `sendQ`.
+**Impact of fix**: No existing proofs reference V3-J predicates (this is the
+first preservation work). The fix changes the definition before any proof
+consumers exist. Build gate: `lake build SeLe4n.Kernel.IPC.Invariant.Defs`.
 
-**Conclusion**: The V3-J predicate definition may need a **fix** for the
-`blockedOnCall` case: `ep.sendQ.head` instead of `ep.receiveQ.head`. This
-is a **definition-level issue** that must be resolved before preservation
-proofs can proceed.
-
-**Alternative reading**: Perhaps `blockedOnCall` was intentionally mapped to
-`receiveQ` because in seL4's model, Call senders eventually become receivers.
-But in seLe4n's implementation, Call callers sit on `sendQ` until a receiver
-pops them. The definition should match the implementation.
-
-**Resolution sub-task** (V3-J-fix): Fix `ipcStateQueueMembershipConsistent`
-definition for `blockedOnCall` to use `sendQ` instead of `receiveQ`. This is
-a ~2-line change in `Defs.lean`.
+**Estimated breakdown**: 5a rendezvous (~30 lines), 5b block (~30 lines),
+5c definition fix (~2 lines) = ~62 lines total.
 
 #### V3-J-op-6: `endpointReply` / `endpointReplyRecv` Preservation
 
 **File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Medium (~60-80 lines combined)
 
-`endpointReply` wakes a `.blockedOnReply` thread (to `.ready`). Since
-`.blockedOnReply` evaluates to `True` in V3-J, and `.ready` also evaluates
-to `True`, the predicate is trivially preserved for the target thread. No
-queue operations occur.
+##### V3-J-op-6a: `endpointReply` — trivial preservation
 
-`endpointReplyRecv` = Reply + ReceiveDual. Chains V3-J-op-6 (Reply) with
-V3-J-op-4 (ReceiveDual).
+`endpointReply` (Transport.lean:1754-1776) modifies exactly one TCB:
+- `storeTcbIpcStateAndMessage_fromTcb(target, .ready, some msg)` — target goes from `.blockedOnReply` to `.ready`
+- `ensureRunnable(target)` — scheduler only
+
+Both `.blockedOnReply` and `.ready` evaluate to `True` in V3-J. No endpoint
+objects change. No `queueNext` links change. No queue heads change.
+
+```lean
+theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
+    -- Proof: unfold, extract storeObject, by_cases tid' = target
+    -- Same thread: .ready → True
+    -- Other threads: frame (storeObject_objects_ne)
+```
+
+Estimated: ~25 lines.
+
+##### V3-J-op-6b: `endpointReplyRecv` — composition
+
+`endpointReplyRecv` (Transport.lean:1782-1810) = Reply + ReceiveDual.
+
+```
+st0 → endpointReply (target) → st1 → endpointReceiveDual (receiver) → st2
+```
+
+Proof: Chain V3-J-op-6a (Reply preserves V3-J) with V3-J-op-4d (ReceiveDual
+preserves V3-J). The intermediate state `st1` satisfies V3-J by 6a. Then
+`endpointReceiveDual` preserves it by 4d.
+
+**Precondition threading**: V3-J-op-4d requires `dualQueueSystemInvariant st1`.
+This must come from the existing `endpointReply` preservation proofs for
+`dualQueueSystemInvariant`. This is an existing theorem — no new work.
+
+Estimated: ~35 lines (mostly precondition discharge).
 
 #### V3-J-op-7: `notificationSignal` / `notificationWait` Preservation
 
@@ -851,10 +1448,10 @@ untouched.
 
 | File | Lines Added | Lines Modified | Type |
 |------|-------------|----------------|------|
-| `IPC/Invariant/Defs.lean` | 0 | ~2 (blockedOnCall fix if needed) | Definition fix |
-| `IPC/Invariant/Structural.lean` | ~550-750 | 0 | Operation-level proofs |
-| `IPC/Invariant/NotificationPreservation.lean` | ~30-40 | 0 | Frame proofs |
-| **Total** | **~580-790** | **~2** | |
+| `IPC/Invariant/Defs.lean` | 0 | ~2 (blockedOnCall fix) | Definition fix |
+| `IPC/Invariant/Structural.lean` | ~960 | 0 | Helpers (240) + queue ops (375) + IPC ops (345) |
+| `IPC/Invariant/NotificationPreservation.lean` | ~30 | 0 | Frame proofs |
+| **Total** | **~990** | **~2** | |
 
 ---
 
@@ -909,20 +1506,65 @@ Every theorem in `Structural.lean` that reconstructs `ipcInvariantFull` from
 its components must be extended to include `endpointQueueNoDup` and
 `ipcStateQueueMembershipConsistent` preservation.
 
-Similarly, `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` in
-`Preservation.lean` must thread the two new components. Lifecycle retype
-creates new objects — both predicates are trivially preserved because retype
-does not modify existing endpoint queues or TCB `ipcState`/`queueNext` fields.
+**Specific reconstruction theorems to update** (each currently builds a 5-way
+`And.intro`, must become 7-way):
 
-### 5.4. Bundle Integration File Changes
+| Theorem | File | Current Pattern |
+|---------|------|----------------|
+| `endpointSendDual_preserves_ipcInvariantFull` | `Structural.lean` | `⟨hIpc, hDQ, hPMB, hBWF, hWTPN⟩` |
+| `endpointReceiveDual_preserves_ipcInvariantFull` | `Structural.lean` | same |
+| `endpointCall_preserves_ipcInvariantFull` | `CallReplyRecv.lean` | same |
+| `endpointReply_preserves_ipcInvariantFull` | `CallReplyRecv.lean` | same |
+| `endpointReplyRecv_preserves_ipcInvariantFull` | `CallReplyRecv.lean` | same |
+| `notificationSignal_preserves_ipcInvariantFull` | `NotificationPres.lean` | same |
+| `notificationWait_preserves_ipcInvariantFull` | `NotificationPres.lean` | same |
+
+Each must be extended to: `⟨hIpc, hDQ, hPMB, hBWF, hWTPN, hNoDup, hQMC⟩`
+
+### 5.4. Phase 4: Lifecycle Integration
+
+`lifecycleRetypeObject_preserves_coreIpcInvariantBundle` in
+`Capability/Invariant/Preservation.lean` must thread the two new components.
+
+**Retype preserves both predicates trivially** because:
+- Retype creates a NEW object at an unused ObjId
+- No existing endpoint queue heads change (no endpoint modified)
+- No existing TCB ipcState/queueNext changes (no TCB modified)
+- The new object is fresh — not in any queue, not blocking on anything
+
+### 5.5. Phase 5: Cascading Call-Site Audit
+
+The conjunction path change for `waitingThreadsPendingMessageNone` (from
+`.2.2.2.2.2.2` to `.2.2.2.2.2.1`) will break any proof that destructures
+`ipcInvariantFull` or `coreIpcInvariantBundle` positionally. Files to audit:
+
+| File | What to Check |
+|------|--------------|
+| `IPC/Invariant/Structural.lean` | All `_preserves_ipcInvariantFull` theorems |
+| `IPC/Invariant/EndpointPreservation.lean` | All bundle deconstruction |
+| `IPC/Invariant/CallReplyRecv.lean` | All bundle deconstruction |
+| `IPC/Invariant/NotificationPreservation.lean` | All bundle deconstruction |
+| `Capability/Invariant/Preservation.lean` | Extractor theorems, lifecycle |
+| `Kernel/CrossSubsystem.lean` | Cross-subsystem invariant composition |
+| `Kernel/API.lean` | If it uses bundle extractors |
+| `Service/Invariant/Policy.lean` | If it extracts IPC invariants |
+
+**Strategy**: After updating `ipcInvariantFull`, run `lake build` and fix
+each compilation error. The errors will be type mismatches in conjunction
+destructuring — each is a mechanical fix (add the two new conjunct bindings).
+
+### 5.6. Bundle Integration File Changes (Revised)
 
 | File | Lines Added | Lines Modified | Type |
 |------|-------------|----------------|------|
 | `IPC/Invariant/Defs.lean` | 2 | 2 | Definition extension |
-| `Capability/Invariant/Preservation.lean` | ~15 | ~10 | Extractors + lifecycle |
-| `IPC/Invariant/Structural.lean` | ~30-50 | ~20-30 | Bundle reconstruction |
-| `Architecture/Invariant.lean` | 0 | ~5 | Path fixes if needed |
-| **Total** | **~47-67** | **~37-47** | |
+| `Capability/Invariant/Preservation.lean` | ~20 | ~15 | Extractors + lifecycle |
+| `IPC/Invariant/Structural.lean` | ~40-60 | ~30-40 | Bundle reconstruction |
+| `IPC/Invariant/EndpointPreservation.lean` | ~10 | ~10 | Path fixes |
+| `IPC/Invariant/CallReplyRecv.lean` | ~10 | ~10 | Path fixes |
+| `IPC/Invariant/NotificationPreservation.lean` | ~5 | ~5 | Path fixes |
+| `Kernel/CrossSubsystem.lean` | 0 | ~5 | Path fixes if needed |
+| **Total** | **~87-107** | **~77-87** | |
 
 ---
 
@@ -953,58 +1595,108 @@ V3-J-fix (blockedOnCall sendQ fix, if needed)
                   (Defs + Preservation + Structural + Architecture)
 ```
 
-### 6.2. Recommended Execution Phases
+### 6.2. Recommended Execution Phases (Optimized)
 
-**Phase 0: Definition Fix (if needed)**
-- Verify V3-J `blockedOnCall` → `sendQ` vs `receiveQ` correctness
-- If fix needed: update `ipcStateQueueMembershipConsistent` definition
-- ~5 minutes
-- **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Defs`
+The execution order is optimized for three goals: (1) resolve blockers
+earliest, (2) maximize parallelism between V3-K and V3-J chains, and
+(3) fail fast — validate the hardest proof (V3-J-op-1) before investing
+in the easier downstream proofs.
 
-**Phase 1: V3-K Primitive + Queue Operation Proofs**
-- V3-K-prim-1: Non-TCB/non-endpoint frame lemma (~20 min)
-- V3-K-prim-2: `storeTcbQueueLinks` preservation (~30 min)
-- V3-K-prim-3: Endpoint store with known heads (~40 min)
-- V3-K-op-1: `endpointQueueEnqueue` preservation (~1-1.5 hours)
-- V3-K-op-2: `endpointQueuePopHead` preservation (~1 hour)
-- V3-K-op-3: `endpointQueueRemoveDual` preservation (~1 hour)
+**Phase 0: Definition Fix + Validation** (blocking prerequisite)
+- V3-J-fix: Change `blockedOnCall` from `receiveQ.head` to `sendQ.head`
+- Verify with `lake build SeLe4n.Kernel.IPC.Invariant.Defs`
+- **Gate**: Build succeeds, no downstream breakage
+
+**Phase 1a: V3-K Primitives** (no dependencies)
+- V3-K-prim-1: Non-TCB/non-endpoint frame lemma
+- V3-K-prim-2: `storeTcbQueueLinks` K-2 preservation
+- V3-K-prim-3: Endpoint store with known heads
 - **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural`
 
-**Phase 2: V3-K IPC Operation Proofs (parallelizable)**
-- V3-K-op-4 through V3-K-op-9: Compose primitive proofs
-- ~3-4 hours total
-- **Gate**: Individual module builds
-
-**Phase 3: V3-J Queue Operation Proofs** (can run in parallel with Phase 2)
-- V3-J-prim-1 through V3-J-prim-3: Frame/primitive lemmas (~1.5 hours)
-- V3-J-op-1: `endpointQueueEnqueue` preservation (~2-3 hours — hardest proof)
-- V3-J-op-2: `endpointQueuePopHead` helper lemmas (~1.5 hours)
+**Phase 1b: V3-J Primitives + Shared Helpers** (parallel with 1a)
+- V3-J-prim-1: Non-TCB/non-endpoint frame lemma
+- V3-J-prim-2: `storeTcbIpcState` preservation (with reachability precondition)
+- V3-J-prim-3: `storeTcbIpcStateAndMessage` preservation
+- Shared helper: `ipcStateQueueMembership_restore_by_clearing_ipcState`
+- Shared helper: `storeTcbPendingMessage_preserves_ipcStateQueueMembershipConsistent`
 - **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural`
 
-**Phase 4: V3-J IPC Operation Proofs**
-- V3-J-op-3 through V3-J-op-7: Compose queue + primitive proofs
-- ~4-5 hours total
-- **Gate**: Individual module builds
+**Phase 2a: V3-K Queue Operations** (depends on Phase 1a)
+- V3-K-op-1: `endpointQueueEnqueue` K-2 (4 sub-steps: K-op-1a through 1d)
+- V3-K-op-2: `endpointQueuePopHead` K-2 (4 sub-steps: K-op-2a through 2d)
+- V3-K-op-3: `endpointQueueRemoveDual` K-2 (5 sub-steps: K-op-3a through 3e)
+- **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural`
 
-**Phase 5: Bundle Integration**
-- Update `ipcInvariantFull` definition
-- Add extractor theorems, fix paths
-- Update bundle reconstruction theorems
-- ~2-3 hours
+**Phase 2b: V3-J Queue Operations — CRITICAL PATH** (depends on Phase 1b)
+- V3-J-op-1: `endpointQueueEnqueue` reachability (5 sub-lemmas: J-op-1a through 1e)
+  - **This is the hardest proof. Do it first to unblock Phases 3-4.**
+- V3-J-op-2: `endpointQueuePopHead` helper lemmas (4 sub-lemmas: J-op-2a through 2d)
+- V3-J helper: `endpointQueueEnqueue_thread_reachable` (used by all block paths)
+- **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural`
+
+**Phase 3: IPC Operation Proofs** (depends on Phase 2a + 2b)
+- V3-K-op-4 through V3-K-op-9: Compose primitive proofs for K
+- V3-J-op-3: `endpointSendDual` (3 sub-steps: J-op-3a through 3c)
+- V3-J-op-4: `endpointReceiveDual` (4 sub-steps: J-op-4a through 4d)
+- V3-J-op-5: `endpointCall` (3 sub-steps: J-op-5a through 5c)
+- V3-J-op-6: `endpointReply`/`endpointReplyRecv` (2 sub-steps: J-op-6a, 6b)
+- V3-J-op-7 + V3-K-op-9: Notification ops (both predicates, separate file)
+- **Gate**: All module builds pass
+
+**Phase 4: Bundle Integration** (depends on ALL of Phase 3)
+- Step 4a: Update `ipcInvariantFull` definition (Defs.lean)
+- Step 4b: Add 2 new extractor theorems, fix 1 changed path (Preservation.lean)
+- Step 4c: Update all bundle reconstruction theorems (Structural.lean + others)
+- Step 4d: Lifecycle integration (Preservation.lean)
+- Step 4e: Cascading call-site audit — fix all compilation errors
 - **Gate**: Full `lake build` succeeds
 
-**Phase 6: Validation & Documentation**
-- `test_full.sh`
-- Documentation sync (see Section 10)
-- **Gate**: All tests pass; zero `sorry`
+**Phase 5: Validation & Documentation**
+- `test_full.sh` (Tier 0-3)
+- `grep -r "sorry"` / `grep -r "axiom "` hygiene check
+- Trace regression: `lake exe sele4n` vs `tests/fixtures/main_trace_smoke.expected`
+- Documentation sync (Section 10)
+- **Gate**: All tests pass; zero `sorry`; docs synchronized
 
-### 6.3. Parallelization Opportunities
+### 6.3. Critical Path Analysis
+
+The longest dependency chain determines the minimum total execution time:
+
+```
+Phase 0 → Phase 1b → Phase 2b (V3-J-op-1) → Phase 3 (V3-J-op-3/4/5) → Phase 4 → Phase 5
+```
+
+**V3-J-op-1 is on the critical path.** Any delay in the enqueue reachability
+proof directly delays all downstream work. Prioritize this proof above all
+V3-K work.
+
+V3-K work runs in parallel off the critical path:
+```
+Phase 0 → Phase 1a → Phase 2a → Phase 3 (V3-K IPC ops) → (merge at Phase 4)
+```
+
+### 6.4. Parallelization Opportunities
 
 | Can Parallelize | Cannot Parallelize |
 |-----------------|-------------------|
-| V3-K primitives ∥ V3-J primitives (different predicates, same file — separate regions) | V3-K ops depend on V3-K primitives |
-| V3-K IPC ops ∥ V3-J queue ops (different proof chains) | V3-J IPC ops depend on V3-J queue ops |
-| V3-K notification proofs ∥ V3-K endpoint proofs (different files) | Bundle integration depends on ALL proofs |
+| Phase 1a (V3-K prims) ∥ Phase 1b (V3-J prims + helpers) | Phase 2 depends on Phase 1 |
+| Phase 2a (V3-K queue ops) ∥ Phase 2b (V3-J queue ops) | Phase 3 depends on Phase 2 |
+| V3-K IPC ops ∥ V3-J IPC ops (within Phase 3) | Phase 4 depends on ALL of Phase 3 |
+| V3-K notification ∥ V3-K endpoint proofs (different files) | Bundle integration is sequential |
+| V3-J-op-3 (Send) ∥ V3-J-op-5 (Call) — structurally similar | V3-J-op-6b (ReplyRecv) depends on V3-J-op-4 |
+
+### 6.5. Shared Helper Lemma Registry
+
+Several V3-J sub-tasks share helper lemmas. Building these first avoids
+duplication and accelerates downstream work:
+
+| Helper Lemma | Used By | Phase |
+|-------------|---------|-------|
+| `ipcStateQueueMembership_restore_by_clearing_ipcState` | J-op-3a, J-op-4a, J-op-4b, J-op-5a | 1b |
+| `endpointQueueEnqueue_thread_reachable` | J-op-3b, J-op-4c, J-op-5b | 2b |
+| `storeTcbPendingMessage_preserves_ipcStateQueueMembershipConsistent` | J-op-4a, J-op-4b | 1b |
+| `endpointQueuePopHead_remaining_reachable` | J-op-3a, J-op-4a, J-op-4b, J-op-5a | 2b |
+| `endpointQueuePopHead_cross_endpoint_frame` | J-op-3a, J-op-4a, J-op-4b, J-op-5a | 2b |
 
 ---
 
@@ -1012,60 +1704,27 @@ V3-J-fix (blockedOnCall sendQ fix, if needed)
 
 ### 7.1. V3-K / V3-J Interaction at `endpointQueueEnqueue`
 
-V3-K-op-1 (enqueue preserves queue head disjointness) needs to show that a
-newly enqueued thread on sendQ is not the receiveQ head. The cleanest approach
-uses the **well-formedness** infrastructure:
+**Resolution**: Self-contained via `queuePPrev` (no V3-J dependency).
 
-The enqueued thread has `ipcState = .ready` (guard check). The receiveQ head
-(if it exists) has `queuePrev = none` (from `intrusiveQueueWellFormed`). By
-`tcbQueueLinkIntegrity`, a thread with `queuePrev = none` can only be a queue
-head. The enqueued thread, having `queuePrev = none` AND `queueNext = none`
-AND `queuePPrev = none` (from enqueue guard checks on links at
-DualQueue/Core.lean:296), could potentially match these properties.
-
-**Better argument**: After enqueue in the empty-queue case, the new thread
-becomes head of sendQ. If it were ALSO head of receiveQ, that would mean the
-same endpoint has the same thread as head of both queues simultaneously. But
-the pre-state had `sendQ.head = none` (queue was empty), and the receiveQ was
-untouched by the sendQ enqueue. If receiveQ.head was `some x`, then `x ≠ tid`
-because the pre-state `endpointQueueNoDup` held (K-2 disjointness was trivially
-satisfied since sendQ.head was `none`). After enqueue, sendQ.head = `some tid`.
-The receiveQ.head is still `some x` with `x ≠ tid` because:
-- `tid` had `ipcState = .ready` (enqueue guard)
-- If `tid` were the receiveQ head, it would need `ipcState = .blockedOnReceive _`
-  (by V3-J or the operational semantics). Contradiction with `.ready`.
-
-**This reasoning uses V3-J semantically but not formally.** The proof can be
-made self-contained by requiring a weaker precondition: "the enqueuing thread
-is not the head of any queue." This can be derived from the enqueue guard's
-link check (`queuePPrev = none ∧ queuePrev = none ∧ queueNext = none`).
-A thread that is a queue head has `queuePPrev = some .endpointHead`
-(DualQueue/Core.lean:306), so a thread with `queuePPrev = none` cannot be
-any queue head. This is the **self-contained approach** — no V3-J dependency.
+The enqueued thread has `queuePPrev = none` (guard check at Core.lean:296).
+Queue heads have `queuePPrev = some .endpointHead` (set at Core.lean:306
+for empty-queue enqueue and Core.lean:274 for PopHead successor promotion).
+Since `none ≠ some .endpointHead`, the enqueuing thread cannot be any queue
+head. This proves K-2 for the empty-queue case (where the new thread becomes
+a queue head — it cannot also be the opposite queue's head) without invoking
+V3-J reasoning. See V3-K-op-1 (Section 3.3) for full proof sketch.
 
 ### 7.2. V3-J `blockedOnCall` Queue Assignment Issue
 
-As identified in Section 4.3 (V3-J-op-5), the V3-J definition maps
-`blockedOnCall epId` to `receiveQ.head`, but the implementation enqueues
-Call callers on `sendQ`. This must be investigated before V3-J proofs begin.
+**Resolution**: Fix the definition (Phase 0, V3-J-fix).
 
-**Three possible resolutions**:
+The V3-J predicate maps `blockedOnCall epId` to `receiveQ.head`, but the
+implementation enqueues Call callers on `sendQ` (Transport.lean:1735:
+`endpointQueueEnqueue endpointId false caller` where `false` = sendQ).
+The definition must be changed to use `sendQ.head`. See V3-J-op-5c
+(Section 4.3) for the exact 2-line diff.
 
-1. **Fix the definition** (recommended): Change `blockedOnCall` to use `sendQ`
-   instead of `receiveQ`. This matches the implementation.
-
-2. **Leave as-is if intentional**: If the definition deliberately models a
-   different semantics (e.g., post-dequeue state), document the rationale.
-   But this would make the invariant unprovable for the current implementation.
-
-3. **Change the implementation**: Enqueue Call callers on receiveQ instead of
-   sendQ. This would be a significant behavioral change and is not recommended.
-
-**Action item**: Verify the intended semantics by examining how `endpointCall`
-and `endpointReceiveDual` interact. The implementation clearly shows Call
-callers enter `sendQ` (Transport.lean:1735), are popped by
-`endpointReceiveDual` from `sendQ` (Transport.lean:1640), and then transition
-to `.blockedOnReply`. The definition should use `sendQ`.
+No existing proofs consume V3-J, so the fix has zero downstream breakage.
 
 ### 7.3. Structural.lean Size Management
 
@@ -1111,17 +1770,27 @@ done first.
 
 ### 8.3. Second-Highest Risk: R2 (Enqueue Reachability)
 
-The `endpointQueueEnqueue` preservation proof for V3-J must show that after
-enqueue, the newly added thread is reachable from the queue head. This requires
-reasoning about the `queueNext` chain structure after the enqueue's TCB
-modifications. The proof will need to:
+The `endpointQueueEnqueue` preservation proof for V3-J (sub-tasks J-op-1a
+through 1e, ~140 lines total) is the **hardest proof in the plan**. It has
+been decomposed into 5 focused sub-lemmas to manage complexity:
 
-1. Show the new thread is linked by the old tail's `queueNext` (non-empty case)
-2. Show existing threads' reachability is preserved (no chain breaks)
-3. Handle both empty-queue and non-empty-queue sub-cases
+1. **J-op-1a** (~5 lines): Trivial — enqueued thread has `.ready` ipcState
+2. **J-op-1b** (~25 lines): Empty-queue — no existing thread affected
+3. **J-op-1c** (~45 lines): **CORE DIFFICULTY** — non-empty queue, must show
+   existing threads remain reachable when old tail's `queueNext` changes
+4. **J-op-1d** (~30 lines): Cross-endpoint frame — old tail/tid were nobody's
+   predecessor in other endpoints' queues
+5. **J-op-1e** (~35 lines): Main theorem composing sub-lemmas
 
-This is estimated at ~100-140 lines and may require 2-3 intermediate helper
-lemmas.
+The highest-risk sub-lemma is **J-op-1c**. The key insight is that the old
+tail's `queueNext` was `none` (it was the tail), so changing it to `some tid`
+doesn't remove any existing predecessor relationship. No thread had the old
+tail as its predecessor before, so no thread loses reachability.
+
+If J-op-1c proves harder than expected, a fallback strategy is to strengthen
+the lemma's preconditions by requiring `dualQueueEndpointWellFormed` (which
+gives `queuePrev` chain properties that can substitute for direct
+`queueNext`-based reasoning).
 
 ---
 
@@ -1131,10 +1800,12 @@ lemmas.
 
 | Phase | Build Command |
 |-------|--------------|
-| Phase 0 | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Defs` |
-| Phase 1-2 (V3-K) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
-| Phase 3-4 (V3-J) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
-| Phase 5 (Bundle) | `source ~/.elan/env && lake build SeLe4n.Kernel.Architecture.Invariant` |
+| Phase 0 (Def fix) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Defs` |
+| Phase 1a/1b (Primitives) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
+| Phase 2a/2b (Queue ops) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
+| Phase 3 (IPC ops) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
+| Phase 3 (Notifications) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation` |
+| Phase 4 (Bundle) | `source ~/.elan/env && lake build` (full build — catches all downstream breakage) |
 | If sub-modules created | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.QueueNoDup` etc. |
 
 ### 9.2. Integration Validation
@@ -1196,35 +1867,100 @@ diff tests/fixtures/main_trace_smoke.expected /tmp/trace_output.txt
 
 ## Appendix A: Complete Sub-Task Registry
 
-| ID | Finding | Task Summary | File(s) | Scope | Depends On |
-|----|---------|-------------|---------|-------|------------|
-| V3-J-fix | L-IPC-3 | Fix `blockedOnCall` queue assignment (sendQ, not receiveQ) | `Defs.lean` | S | — |
-| V3-K-prim-1 | L-LIFE-1 | Non-TCB/non-endpoint frame lemma | `Structural.lean` | S | — |
-| V3-K-prim-2 | L-LIFE-1 | `storeTcbQueueLinks` K-2 preservation | `Structural.lean` | S | — |
-| V3-K-prim-3 | L-LIFE-1 | Endpoint store with known heads | `Structural.lean` | M | — |
-| V3-K-op-1 | L-LIFE-1 | `endpointQueueEnqueue` K-2 preservation | `Structural.lean` | M | prim-1,2,3 |
-| V3-K-op-2 | L-LIFE-1 | `endpointQueuePopHead` K-2 preservation | `Structural.lean` | M | prim-1,2,3 |
-| V3-K-op-3 | L-LIFE-1 | `endpointQueueRemoveDual` K-2 preservation | `Structural.lean` | M | prim-1,2,3 |
-| V3-K-op-4 | L-LIFE-1 | `endpointSendDual` preservation | `Structural.lean` | M | op-1,2 |
-| V3-K-op-5 | L-LIFE-1 | `endpointReceiveDual` preservation | `Structural.lean` | M | op-1,2 |
-| V3-K-op-6 | L-LIFE-1 | `endpointCall` preservation | `Structural.lean` | M | op-1,2 |
-| V3-K-op-7 | L-LIFE-1 | `endpointReply` preservation | `Structural.lean` | S | prim-2 |
-| V3-K-op-8 | L-LIFE-1 | `endpointReplyRecv` preservation | `Structural.lean` | M | op-5,7 |
-| V3-K-op-9 | L-LIFE-1 | Notification ops preservation | `NotificationPres.lean` | S | prim-1,2 |
-| V3-J-prim-1 | L-IPC-3 | Non-TCB/non-endpoint frame lemma | `Structural.lean` | S | — |
-| V3-J-prim-2 | L-IPC-3 | `storeTcbIpcState` preservation | `Structural.lean` | M | — |
-| V3-J-prim-3 | L-IPC-3 | `storeTcbIpcStateAndMessage` preservation | `Structural.lean` | M | — |
-| V3-J-op-1 | L-IPC-3 | `endpointQueueEnqueue` reachability | `Structural.lean` | H | prim-1,2,3 |
-| V3-J-op-2 | L-IPC-3 | `endpointQueuePopHead` reachability | `Structural.lean` | H | prim-1,2,3 |
-| V3-J-op-3 | L-IPC-3 | `endpointSendDual` preservation | `Structural.lean` | H | op-1,2; prim-2,3 |
-| V3-J-op-4 | L-IPC-3 | `endpointReceiveDual` preservation | `Structural.lean` | H | op-1,2; prim-2,3 |
-| V3-J-op-5 | L-IPC-3 | `endpointCall` preservation | `Structural.lean` | M-H | op-1,2; prim-2,3 |
-| V3-J-op-6 | L-IPC-3 | `endpointReply`/`endpointReplyRecv` preservation | `Structural.lean` | M | prim-2,3; op-4 |
-| V3-J-op-7 | L-IPC-3 | Notification ops preservation | `NotificationPres.lean` | S | prim-1 |
-| V3-JK-int | L-IPC-3/L-LIFE-1 | Bundle integration (Defs + extractors + reconstruction) | Multiple | M | ALL above |
+### A.1. Phase 0: Definition Fix
 
-**Total sub-tasks**: 24 (5 Small, 12 Medium, 6 Hard, 1 Integration)
-**Total estimated new Lean proof lines**: ~1075-1450
-**Total estimated modified lines**: ~39-49
-**Files touched**: 5-7 (depending on sub-module decision)
+| ID | Task Summary | File(s) | Lines | Depends On |
+|----|-------------|---------|-------|------------|
+| V3-J-fix | Fix `blockedOnCall` → `sendQ.head` (was `receiveQ.head`) | `Defs.lean:806` | ~2 mod | — |
+
+### A.2. V3-K Preservation Tasks
+
+| ID | Task Summary | File(s) | Lines | Depends On |
+|----|-------------|---------|-------|------------|
+| V3-K-prim-1 | Non-TCB/non-endpoint `storeObject` frame lemma | `Structural.lean` | ~25 | — |
+| V3-K-prim-2 | `storeTcbQueueLinks` K-2 preservation (endpoint unchanged by TCB store) | `Structural.lean` | ~30 | — |
+| V3-K-prim-3 | Endpoint `storeObject` K-2 preservation (with `hDisjoint` precondition) | `Structural.lean` | ~50 | — |
+| V3-K-op-1a | `endpointQueueEnqueue` K-2: `isReceiveQ × q.tail` case split | `Structural.lean` | ~10 | prim-1,2,3 |
+| V3-K-op-1b | Empty-queue case: `queuePPrev` self-contained disjointness argument | `Structural.lean` | ~25 | 1a |
+| V3-K-op-1c | Non-empty-queue case: head unchanged, trivial K-2 transfer | `Structural.lean` | ~15 | 1a |
+| V3-K-op-1d | Extract `queuePPrev = none` from enqueue guard success | `Structural.lean` | ~10 | 1b |
+| V3-K-op-2a | `endpointQueuePopHead` K-2: `queueNext` case split | `Structural.lean` | ~10 | prim-1,2,3 |
+| V3-K-op-2b | Queue-becomes-empty: trivial (head = none → first disjunct) | `Structural.lean` | ~5 | 2a |
+| V3-K-op-2c | Head-advances: `queuePrev` argument (pre-state nextTid.prev ≠ oppositeHead.prev) | `Structural.lean` | ~30 | 2a |
+| V3-K-op-2d | Frame for other endpoints | `Structural.lean` | ~10 | 2a |
+| V3-K-op-3a | `endpointQueueRemoveDual` K-2: `queuePPrev` case split | `Structural.lean` | ~10 | prim-1,2,3 |
+| V3-K-op-3b | Head removal: same `queuePrev` argument as K-op-2c | `Structural.lean` | ~25 | 3a |
+| V3-K-op-3c | Non-head tail removal: heads unchanged, trivial transfer | `Structural.lean` | ~10 | 3a |
+| V3-K-op-3d | Non-head middle removal: heads unchanged, trivial transfer | `Structural.lean` | ~10 | 3a |
+| V3-K-op-3e | Frame for other endpoints | `Structural.lean` | ~10 | 3a |
+| V3-K-op-4 | `endpointSendDual` K-2: compose PopHead/Enqueue + frame lemmas | `Structural.lean` | ~45 | op-1,2 |
+| V3-K-op-5 | `endpointReceiveDual` K-2: compose (3 sub-paths) | `Structural.lean` | ~55 | op-1,2 |
+| V3-K-op-6 | `endpointCall` K-2: compose PopHead/Enqueue | `Structural.lean` | ~45 | op-1,2 |
+| V3-K-op-7 | `endpointReply` K-2: no queue changes, trivial | `Structural.lean` | ~20 | prim-2 |
+| V3-K-op-8 | `endpointReplyRecv` K-2: chain Reply + ReceiveDual | `Structural.lean` | ~35 | op-5,7 |
+| V3-K-op-9 | Notification ops K-2: no endpoint changes, frame | `NotificationPres.lean` | ~25 | prim-1,2 |
+
+### A.3. V3-J Preservation Tasks
+
+| ID | Task Summary | File(s) | Lines | Depends On |
+|----|-------------|---------|-------|------------|
+| V3-J-prim-1 | Non-TCB/non-endpoint `storeObject` frame lemma | `Structural.lean` | ~25 | — |
+| V3-J-prim-2 | `storeTcbIpcState` with reachability precondition | `Structural.lean` | ~60 | — |
+| V3-J-prim-3 | `storeTcbIpcStateAndMessage` with reachability precondition | `Structural.lean` | ~60 | — |
+| V3-J-helper-1 | `ipcStateQueueMembership_restore_by_clearing_ipcState` | `Structural.lean` | ~40 | prim-2,3 |
+| V3-J-helper-2 | `storeTcbPendingMessage_preserves_ipcStateQueueMembershipConsistent` | `Structural.lean` | ~20 | — |
+| V3-J-helper-3 | `endpointQueueEnqueue_thread_reachable` (post-enqueue reachability) | `Structural.lean` | ~35 | — |
+| V3-J-op-1a | Enqueue: enqueued thread has `.ready` → `True` (trivial) | `Structural.lean` | ~5 | — |
+| V3-J-op-1b | Enqueue empty-queue: no existing thread's reachability affected | `Structural.lean` | ~25 | prim-1 |
+| V3-J-op-1c | Enqueue non-empty: existing threads remain reachable (main complexity) | `Structural.lean` | ~45 | prim-1 |
+| V3-J-op-1d | Enqueue cross-endpoint frame: old tail/tid were nobody's predecessor | `Structural.lean` | ~30 | 1b,1c |
+| V3-J-op-1e | Main `endpointQueueEnqueue_preserves_ipcStateQueueMembershipConsistent` | `Structural.lean` | ~35 | 1a-1d |
+| V3-J-op-2a | PopHead: remaining threads reachability transfer helper | `Structural.lean` | ~35 | — |
+| V3-J-op-2b | PopHead: ipcState unchanged by queue link clearing | `Structural.lean` | ~15 | — |
+| V3-J-op-2c | PopHead: popped head links cleared (queueNext = none) | `Structural.lean` | ~10 | — |
+| V3-J-op-2d | PopHead: cross-endpoint frame | `Structural.lean` | ~40 | — |
+| V3-J-op-3a | `endpointSendDual` rendezvous: PopHead + clear ipcState composition | `Structural.lean` | ~40 | op-2a-2d, helper-1 |
+| V3-J-op-3b | `endpointSendDual` block: Enqueue + set blocking state composition | `Structural.lean` | ~45 | op-1e, helper-3 |
+| V3-J-op-3c | Main `endpointSendDual_preserves_ipcStateQueueMembershipConsistent` | `Structural.lean` | ~15 | 3a,3b |
+| V3-J-op-4a | `endpointReceiveDual` rendezvous + Send sub-path | `Structural.lean` | ~35 | op-2a-2d, helper-1,2 |
+| V3-J-op-4b | `endpointReceiveDual` rendezvous + Call sub-path | `Structural.lean` | ~30 | op-2a-2d, helper-1,2 |
+| V3-J-op-4c | `endpointReceiveDual` block path | `Structural.lean` | ~35 | op-1e, helper-3 |
+| V3-J-op-4d | Main `endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent` | `Structural.lean` | ~15 | 4a-4c |
+| V3-J-op-5a | `endpointCall` rendezvous: PopHead + clear + block caller as reply | `Structural.lean` | ~30 | op-2a-2d, helper-1 |
+| V3-J-op-5b | `endpointCall` block: Enqueue + set `.blockedOnCall` (uses V3-J-fix) | `Structural.lean` | ~30 | op-1e, helper-3, J-fix |
+| V3-J-op-5c | Main `endpointCall_preserves_ipcStateQueueMembershipConsistent` | `Structural.lean` | ~15 | 5a,5b |
+| V3-J-op-6a | `endpointReply`: `.blockedOnReply → .ready`, both `True` | `Structural.lean` | ~25 | prim-3 |
+| V3-J-op-6b | `endpointReplyRecv`: chain Reply + ReceiveDual | `Structural.lean` | ~35 | 6a, op-4d |
+| V3-J-op-7 | Notification ops: `.blockedOnNotification` → `True` | `NotificationPres.lean` | ~30 | prim-1 |
+
+### A.4. Bundle Integration Tasks
+
+| ID | Task Summary | File(s) | Lines | Depends On |
+|----|-------------|---------|-------|------------|
+| V3-JK-int-1 | Add V3-J/K to `ipcInvariantFull` (5 → 7 conjuncts) | `Defs.lean` | ~4 | ALL proofs |
+| V3-JK-int-2 | Add 2 new extractor theorems | `Cap/Inv/Preservation.lean` | ~10 | int-1 |
+| V3-JK-int-3 | Fix `waitingThreadsPendingMessageNone` extractor path | `Cap/Inv/Preservation.lean` | ~3 mod | int-1 |
+| V3-JK-int-4 | Update all `_preserves_ipcInvariantFull` bundle reconstruction | `Structural.lean` + others | ~50 mod | int-1, ALL proofs |
+| V3-JK-int-5 | Lifecycle `retype` integration (trivial — fresh object) | `Cap/Inv/Preservation.lean` | ~15 | int-1 |
+| V3-JK-int-6 | Cascading call-site audit — fix compilation errors | Multiple | ~30 mod | int-1-5 |
+
+### A.5. Summary Statistics
+
+**Total atomic sub-tasks**: 55 (was 24 — each complex task decomposed)
+
+| Category | Count | Total Lines (est.) |
+|----------|-------|--------------------|
+| Phase 0 (definition fix) | 1 | ~2 modified |
+| V3-K primitives | 3 | ~105 new |
+| V3-K queue ops (sub-steps) | 12 | ~170 new |
+| V3-K IPC ops | 6 | ~225 new |
+| V3-J primitives + helpers | 6 | ~240 new |
+| V3-J queue ops (sub-steps) | 14 | ~375 new |
+| V3-J IPC ops (sub-steps) | 11 | ~345 new |
+| Bundle integration | 6 | ~82 new, ~83 modified |
+| **Grand Total** | **59** | **~1542 new, ~85 modified** |
+
+**Files touched**: 7-8 (Defs.lean, Structural.lean, NotificationPreservation.lean,
+EndpointPreservation.lean, CallReplyRecv.lean, Capability/Invariant/Preservation.lean,
+CrossSubsystem.lean, possibly Architecture/Invariant.lean)
 
