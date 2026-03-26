@@ -97,7 +97,7 @@ private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
 /-- TPH-001a: mkEmptyIntermediateState satisfies all invariants. -/
 private def tph001a_emptyBuilder : IO Unit := do
   let ist := mkEmptyIntermediateState
-  -- Empty state must have allTablesInvExt (proven at compile time)
+  -- Empty state must have allTablesInvExtK (proven at compile time)
   expect "TPH-001a empty builder valid" true
   -- Empty state has no objects
   expect "TPH-001b empty objects" (ist.state.objects.size == 0)

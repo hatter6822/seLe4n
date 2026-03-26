@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/phase-2-wrapper-updates-9Zw9b",
-      "commit_sha": "c57027183a4ebe249445e7aabcad10d3e7fcbb7c",
-      "tree_sha": "16168b505d47b847bd663dd843e2add8d16027cb",
-      "committed_at_utc": "2026-03-26T14:01:36-04:00"
+      "commit_sha": "612509654acf1145ad935c0616c8de372bbcd39a",
+      "tree_sha": "3508fc677bc1cdc915024f1df0f383152318e79b",
+      "committed_at_utc": "2026-03-26T18:31:26+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c4e061c6eb96842333c06d551cc1adbb8877a87bdf74f85d8fe53c4528b682f1"
+    "source_digest": "c94bde1e0ee3acde223dbcffc65efc7e995a328b8ae5d66a0b7ddd58896930d0"
   },
   "summary": {
     "module_count": 110,
