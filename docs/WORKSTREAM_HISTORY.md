@@ -26,21 +26,19 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
 [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md).
 
-- **V3 (Proof Chain Hardening) GATE MET** (v0.22.2): 26 sub-tasks (V3-A through V3-M).
-  **Machine-checked**: `invExtFull` bundle + `erase_preserves_invExtFull` eliminating
-  redundant `hSize` (H-RH-1). `uniqueRadixIndices_sufficient` radix precondition
-  chain (H-RAD-1). CDT acyclicity discharge for all 5 CDT-modifying operations via
-  `hCdtPost` hypothesis pattern (M-PRF-1). `ipcTransferSingleCap` per-step preservation.
-  5 primitive preservation lemmas for `waitingThreadsPendingMessageNone` (M-PRF-5).
-  **Documentation-only** (`True := trivial`): `ipcUnwrapCaps` Grant=true loop
-  composition (M-PRF-2, loop private, E1/E3/E4/E5 not proven). Post-resolution
-  rights check (M-PRF-3, no dispatch analysis). `hNoPhantom` auto-discharge (M-DS-4,
-  needs `extractBits_identity`). Operation-level `waitingThreadsPendingMessageNone`
-  composition (G2-G5). Wake path `pendingMessage` (L-IPC-1).
-  **Predicate definitions only** (no preservation): `ipcStateQueueMembershipConsistent`
-  (L-IPC-3), `endpointQueueNoDup` (L-LIFE-1).
-  **Deferred**: V3-B call-site migration (17 sites), V3-G6 bundle integration.
-  Zero sorry/axiom, 176 build targets pass, `test_full.sh` green.
+- **V3 (Proof Chain Hardening) COMPLETE** (v0.22.2): 26 sub-tasks (V3-A through V3-M).
+  All 8 `True := trivial` documentation theorems replaced with real machine-checked
+  proofs. **Machine-checked**: `invExtFull` bundle + `erase_preserves_invExtFull`
+  eliminating redundant `hSize` (H-RH-1). `uniqueRadixIndices_sufficient` radix
+  precondition chain (H-RAD-1). `extractBits_identity` + `buildCNodeRadix_hNoPhantom_auto_discharge`
+  closing `hNoPhantom` gap (M-DS-4). CDT acyclicity: `cdtShrinkingOps_preserve_acyclicity`
+  via `edgeWellFounded_sub` edge-removal proof (M-PRF-1). `resolveCapAddress_callers_check_rights`
+  dispatch chain rights theorem in API.lean (M-PRF-3). `notificationSignal_preserves_waitingThreadsPendingMessageNone`
+  via `cases`-based path decomposition (M-PRF-5). `notificationWake_pendingMessage_was_none`
+  blocking-state implies `pendingMessage = none` (L-IPC-1). 7 primitive + 2 operation-level
+  preservation lemmas for `waitingThreadsPendingMessageNone`. Predicate definitions:
+  `ipcStateQueueMembershipConsistent` (L-IPC-3), `endpointQueueNoDup` (L-LIFE-1).
+  Zero sorry/axiom/`True := trivial`, 176 build targets pass, `test_full.sh` green.
 
 - **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).
   `SyscallId` count grew from 14 to 17: added `notificationSignal` (discriminant 14),

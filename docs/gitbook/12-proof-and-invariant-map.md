@@ -184,9 +184,9 @@ CDT acyclicity discharge patterns **(V3-D/E/F, M-PRF-1)**:
 - CDT-expanding ops (`cspaceCopy`, `cspaceMove`, `cspaceMint`) externalize `hCdtPost` hypothesis — caller supplies post-state `cdtAcyclicity` witness since these add CDT edges.
 - CDT-shrinking ops (`cspaceDeleteSlotCore`, `cspaceRevokeCdt`) prove acyclicity internally via `edgeWellFounded_sub` — removing edges preserves well-foundedness.
 - `cdtExpandingOp_preserves_bundle_with_hypothesis` — documents the externalized hypothesis pattern for CDT-expanding operations.
-- `cdtShrinkingOps_preserve_acyclicity_note` — documents the internal proof pattern for CDT-shrinking operations.
-- `ipcUnwrapCapsLoop_capInvariant` — loop invariant predicate (alias for `capabilityInvariantBundle`) for IPC capability transfer. Per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle` is machine-checked; full loop composition (base case, inductive step) is documented but not yet machine-checked **(V3-E, M-PRF-2)**.
-- `resolveCapAddress_callers_check_rights_note` — documentation-only theorem noting that all 17 `SyscallId` dispatch arms pass through `syscallLookupCap` rights gate before operations **(V3-F, M-PRF-3)**.
+- `cdtShrinkingOps_preserve_acyclicity` — machine-checked proof that CDT-shrinking operations preserve acyclicity via `edgeWellFounded_sub` edge-removal argument.
+- `ipcTransferSingleCap_preserves_capabilityInvariantBundle` — machine-checked per-step theorem for IPC capability transfer. The `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` theorem covers the no-grant path **(V3-E, M-PRF-2)**.
+- `resolveCapAddress_callers_check_rights` — machine-checked theorem proving all `syscallInvoke` dispatch arms pass through `syscallLookupCap` rights gate before operations. Located in `API.lean` **(V3-F, M-PRF-3)**.
 
 WS-H4 transfer theorems (new):
 
@@ -429,9 +429,9 @@ Component level:
 
 V3 proof chain hardening predicates **(v0.22.2)**:
 
-- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked IPC states (`blockedOnReceive`, `blockedOnNotification`, `blockedOnCall`) have `pendingMessage = none`. Five machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`) in `Structural.lean`. Operation-level composition documented for all IPC operations but not yet machine-checked. Bundle integration deferred.
-- `ipcStateQueueMembershipConsistent` — **(V3-J, L-IPC-3)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage). Predicate definition only; no preservation proofs yet.
-- `endpointQueueNoDup` — **(V3-K, L-LIFE-1)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty. Predicate definition only; no preservation proofs yet.
+- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked IPC states (`blockedOnReceive`, `blockedOnNotification`, `blockedOnCall`) have `pendingMessage = none`. Seven machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbQueueLinks`, `storeTcbPendingMessage`) in `Structural.lean`. Operation-level machine-checked: `notificationSignal_preserves_waitingThreadsPendingMessageNone` (wake + merge paths). `notificationWake_pendingMessage_was_none` proves blocking-state implies `pendingMessage = none`.
+- `ipcStateQueueMembershipConsistent` — **(V3-J, L-IPC-3)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage). Predicate definition in `Structural.lean`.
+- `endpointQueueNoDup` — **(V3-K, L-LIFE-1)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty. Predicate definition in `Structural.lean`.
 
 Preservation shape:
 

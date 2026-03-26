@@ -6054,18 +6054,64 @@ theorem storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
         rw [hFrame] at hObj'
         exact hInv tid' tcb' hObj'
 
-/-! ## V3-G6: waitingThreadsPendingMessageNone Integration
+-- ============================================================================
+-- V3-G/I: Operation-level waitingThreadsPendingMessageNone preservation proofs
+-- ============================================================================
 
-The primitive preservation lemmas above (for `removeRunnable`, `ensureRunnable`,
-`storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`) provide
-the building blocks for operation-level preservation proofs.
+/-- V3-I (L-IPC-1): Before `notificationSignal` delivers a badge to a waiting
+    thread, the waiter's `pendingMessage` was `none`. Direct extraction from the
+    `waitingThreadsPendingMessageNone` invariant: any thread with
+    `ipcState = .blockedOnNotification _` has `pendingMessage = none`. -/
+theorem notificationWake_pendingMessage_was_none
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (nid : SeLe4n.ObjId)
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hLookup : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hBlocked : tcb.ipcState = .blockedOnNotification nid) :
+    tcb.pendingMessage = none := by
+  have h := hInv tid tcb hLookup
+  rw [hBlocked] at h
+  exact h
 
-**Integration status**: Primitive lemmas are machine-checked. Operation-level
-preservation for all IPC operations follows by composing these primitives
-through the operation's state transition chain. Full integration into
-`coreIpcInvariantBundle` or `ipcInvariantFull` is deferred to a future
-workstream to avoid cascading changes to all existing bundle-level preservation
-proofs (which would each need an additional `waitingThreadsPendingMessageNone`
-component threaded through). -/
+/-- V3-G3 (M-PRF-5): `notificationSignal` preserves `waitingThreadsPendingMessageNone`.
+    Wake path: sets `.ready` (out of scope). Merge path: non-TCB store only. -/
+theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    waitingThreadsPendingMessageNone st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · -- some (.notification ntfn)
+    rename_i ntfn hObj
+    -- After first split: ntfn.waitingThreads branches
+    cases hWaiters : ntfn.waitingThreads with
+    | cons waiter rest =>
+      -- Wake path: storeObject → storeTcbIpcStateAndMessage (.ready) → ensureRunnable
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction  -- storeObject error
+      next st1 hSO =>
+        have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+          st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction  -- storeTcbIpcStateAndMessage error
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have hInv2 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+            st1 st2 waiter .ready _ hObjInv1 hSM hInv1 (by trivial)
+          exact ensureRunnable_preserves_waitingThreadsPendingMessageNone st2 waiter hInv2
+    | nil =>
+      -- Merge path: storeObject only
+      simp only [hWaiters] at hStep
+      -- pendingBadge match produces two sub-cases, both are storeObject
+      split at hStep
+      all_goals (
+        exact storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+          st st' notificationId (.notification _) (fun tcb => by simp) hObjInv hStep hInv)
+  · contradiction
+  · contradiction
 
 end SeLe4n.Kernel

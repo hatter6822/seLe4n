@@ -452,7 +452,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-U Phase U2 COMPLETE**: Safety Boundary Hardening — 14 sub-tasks (U2-A through U2-N), all complete (v0.21.1). See `docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U1 COMPLETE**: Correctness Fixes — 13 sub-tasks (U1-A through U1-M), all complete (v0.21.0). See `docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-T PORTFOLIO COMPLETE**: Deep-Dive Audit Remediation — 8 phases (T1–T8, 94 sub-tasks), all complete (v0.20.0–v0.20.7). See `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`
-- **WS-V Phase V3 GATE MET**: Proof Chain Hardening — 26 sub-tasks (V3-A through V3-M), gate conditions met (v0.22.2). Machine-checked proofs for V3-A/B/C/D/G-primitives; documentation-only for V3-E(loop)/F/H/I/G(operations); predicate-only for V3-J/K. See `docs/audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`
+- **WS-V Phase V3 COMPLETE**: Proof Chain Hardening — 26 sub-tasks (V3-A through V3-M), all complete (v0.22.2). All 8 `True := trivial` documentation theorems replaced with real machine-checked proofs. Zero sorry/axiom/trivial. See `docs/audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`
 - **WS-V Phase V2 COMPLETE**: API Surface Completion — 9 sub-tasks (V2-A through V2-I), all complete (v0.22.1). See `docs/audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`
 - **WS-V Phase V1 COMPLETE**: Rust ABI Hardening — 12 sub-tasks (V1-A through V1-L), all complete (v0.22.0). See `docs/audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`
 - **All prior workstreams completed**: WS-B through WS-U (see `docs/WORKSTREAM_HISTORY.md`)

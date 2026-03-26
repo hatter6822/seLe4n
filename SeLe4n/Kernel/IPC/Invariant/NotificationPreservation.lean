@@ -1349,53 +1349,17 @@ theorem frame_preserves_notificationWaiterConsistent
 -- for notification operations
 -- ============================================================================
 
-/-- V3-G2 (M-PRF-5): `notificationWait` preserves `waitingThreadsPendingMessageNone`.
+-- V3-G2 (M-PRF-5): `notificationWait` preserves `waitingThreadsPendingMessageNone`.
+-- Machine-checked proof: `notificationWait_preserves_waitingThreadsPendingMessageNone`
+-- in Structural.lean (requires primitive lemmas defined there).
 
-    **Machine-checked primitive lemmas** (in `Structural.lean`):
-    - `removeRunnable_preserves_waitingThreadsPendingMessageNone` — scheduler-only change
-    - `storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone` — notification store frame
-    - `storeTcbIpcState_preserves_waitingThreadsPendingMessageNone` — ipcState change with
-      `hTarget` precondition: waiter's `pendingMessage = none` when entering blocking state
-
-    **Composition argument**: `notificationWait` composes `storeObject (notification)` →
-    `storeTcbIpcState (.blockedOnNotification)` → `removeRunnable`. Each step is covered
-    by the primitive lemmas above. The `hTarget` precondition for `storeTcbIpcState`
-    requires that the waiter had `pendingMessage = none` before entering the wait,
-    which follows from the pre-state `waitingThreadsPendingMessageNone` if the waiter
-    was in a non-blocking state (ready threads have `pendingMessage = none` after IPC
-    message delivery or initialization). -/
-theorem notificationWait_preserves_waitingThreadsPendingMessageNone_note :
-    True := trivial
-
-/-- V3-G3 (M-PRF-5): `notificationSignal` preserves `waitingThreadsPendingMessageNone`.
-
-    **Machine-checked primitive lemmas** (in `Structural.lean`):
-    - `storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone` — notification store frame
-    - `storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone` — combined
-      ipcState + pendingMessage change with `hTarget` precondition
-
-    **Wake path**: `storeTcbIpcStateAndMessage` sets `ipcState := .ready` and
-    `pendingMessage := some badge`. Since `.ready` falls to the `| _ => True` arm of
-    `waitingThreadsPendingMessageNone`, the `hTarget` precondition is trivially satisfied.
-    **Merge path**: `storeObject (notification)` only — no TCB modification. -/
-theorem notificationSignal_preserves_waitingThreadsPendingMessageNone_note :
-    True := trivial
+-- V3-G3 (M-PRF-5): `notificationSignal` preserves `waitingThreadsPendingMessageNone`.
+-- Machine-checked proof: `notificationSignal_preserves_waitingThreadsPendingMessageNone`
+-- in Structural.lean (requires primitive lemmas defined there).
 
 -- ============================================================================
 -- V3-I (L-IPC-1): notificationWake_pendingMessage_was_none
 -- ============================================================================
 
-/-- V3-I (L-IPC-1): Before `notificationSignal` delivers a badge to a waiting
-    thread (wake path), the waiter's `pendingMessage` was `none`.
-
-    Under the `waitingThreadsPendingMessageNone` invariant (V3-G1), any thread
-    with `ipcState = .blockedOnNotification _` has `pendingMessage = none`,
-    so the wake path's `pendingMessage := some (badge delivery)` overwrites
-    `none` — no data loss occurs.
-
-    **Status**: This is a documentation theorem. The property follows directly
-    from `waitingThreadsPendingMessageNone` once the invariant is maintained
-    through the operation chain. The primitive preservation lemmas in
-    `Structural.lean` provide the building blocks for the formal proof. -/
-theorem notificationWake_pendingMessage_was_none_note :
-    True := trivial
+-- V3-I (L-IPC-1): Machine-checked proof: `notificationWake_pendingMessage_was_none`
+-- in Structural.lean (requires `waitingThreadsPendingMessageNone` definition access).

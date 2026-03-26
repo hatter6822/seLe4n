@@ -1061,21 +1061,8 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
 -- for call/replyRecv operations
 -- ============================================================================
 
-/-- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
-    `waitingThreadsPendingMessageNone`.
-
-    **Machine-checked primitive lemmas** (in `Structural.lean`):
-    - `storeTcbIpcState_preserves_waitingThreadsPendingMessageNone`
-    - `storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone`
-    - `storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone`
-    - `removeRunnable_preserves_waitingThreadsPendingMessageNone`
-    - `ensureRunnable_preserves_waitingThreadsPendingMessageNone`
-
-    **endpointCall**: Send leg delivers message (`.blockedOnSend` not in scope),
-    then `storeTcbIpcState` sets caller to `.blockedOnCall` — `hTarget` requires
-    `pendingMessage = none`, satisfied since the send leg consumed it.
-    **endpointReplyRecv**: Reply sets target to `.ready` (exits scope), receive
-    blocks caller with `pendingMessage = none` (enters scope with `none`). -/
-theorem callReplyRecv_preserves_waitingThreadsPendingMessageNone_note :
-    True := trivial
+-- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
+-- `waitingThreadsPendingMessageNone`.
+-- Machine-checked proof: `callReplyRecv_preserves_waitingThreadsPendingMessageNone`
+-- in Structural.lean (requires primitive lemmas defined there).
 

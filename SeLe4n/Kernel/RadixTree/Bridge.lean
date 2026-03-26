@@ -302,27 +302,6 @@ private theorem foldl_establishes_some
           (fun e1 e2 h1 h2 => hRadixUniq e1 e2 (List.mem_cons_of_mem _ h1)
             (List.mem_cons_of_mem _ h2))
 
-/-- V3-H (M-DS-4): The `hNoPhantom` precondition is automatically satisfied
-    for all well-formed CNodes where slot values are bounded by `2^radixWidth`.
-    In this case, `extractBits slot.toNat 0 radixWidth = slot.toNat` (the
-    extraction is the identity), making `UniqueRadixIndices` equivalent to
-    key uniqueness — which is guaranteed by `noDupKeys` from `invExt`.
-
-    Callers of `buildCNodeRadix_lookup_equiv` can discharge `hNoPhantom` by
-    combining `UniqueRadixIndices` with bounded-key evidence via
-    `uniqueRadixIndices_sufficient` (V3-C). For the common case where all
-    CNode slots are within `[0, 2^radixWidth)`, the precondition holds
-    trivially and does not need to be carried as a separate hypothesis.
-
-    **Status**: This is a documentation theorem. The auto-discharge pattern
-    requires an `extractBits` identity lemma (proving `extractBits n 0 w = n`
-    when `n < 2^w`) which is a straightforward property of the bit extraction
-    function but has not yet been formally proven. The machine-checked theorem
-    `uniqueRadixIndices_sufficient` (V3-C above) accepts the identity property
-    as a precondition (`hAllBounded`), so formally proving it would complete
-    the discharge chain. -/
-theorem buildCNodeRadix_hNoPhantom_auto_discharge_note : True := trivial
-
 set_option maxHeartbeats 800000 in
 /-- T4-I (M-DS-3): Bidirectional lookup equivalence for `buildCNodeRadix`.
 After constructing a `CNodeRadix` from an `RHTable`, lookups in the radix
@@ -450,6 +429,22 @@ theorem uniqueRadixIndices_sufficient
   have : s = slot := by
     cases s; cases slot; simp [SeLe4n.Slot.toNat] at hEq; exact congrArg _ hEq
   exact absurd this hNe
+
+/-- V3-H (M-DS-4): The `hNoPhantom` precondition is automatically discharged
+    for well-formed CNodes where slot values are bounded by `2^radixWidth`.
+    `extractBits_identity` proves `extractBits n 0 w = n` when `n < 2^w`,
+    making radix indices equal to slot keys. Combined with
+    `uniqueRadixIndices_sufficient` (V3-C), this shows that bounded-key CNodes
+    satisfy `hNoPhantom` unconditionally — absent keys cannot collide with
+    present keys in the radix index space. -/
+theorem buildCNodeRadix_hNoPhantom_auto_discharge
+    (rt : RHTable SeLe4n.Slot Capability) (radixWidth : Nat)
+    (hBounded : ∀ s : SeLe4n.Slot, rt.get? s ≠ none → s.toNat < 2 ^ radixWidth) :
+    ∀ slot, slot.toNat < 2 ^ radixWidth →
+      rt.get? slot = none → ∀ s, rt.get? s ≠ none → s ≠ slot →
+      extractBits s.toNat 0 radixWidth ≠ extractBits slot.toNat 0 radixWidth :=
+  uniqueRadixIndices_sufficient rt radixWidth hBounded
+    (fun s hBnd => extractBits_identity s.toNat radixWidth hBnd)
 
 -- ============================================================================
 -- Q4-D10: freezeCNodeSlots — integration point for Q5

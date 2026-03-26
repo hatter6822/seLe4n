@@ -2191,13 +2191,17 @@ theorem cdtExpandingOp_preserves_bundle_with_hypothesis
     cdtCompleteness _st' ∧ cdtAcyclicity _st' := hCdtPost
 
 /-- V3-D4: CDT-shrinking operations (delete, revoke) preserve acyclicity
-    unconditionally because removing edges from a well-founded relation
-    yields a well-founded sub-relation. This is already proven in
-    `cspaceDeleteSlot_preserves_capabilityInvariantBundle` and
-    `cspaceRevoke_preserves_capabilityInvariantBundle` — no additional
-    hypothesis is needed for these operations. -/
-theorem cdtShrinkingOps_preserve_acyclicity_note :
-    True := trivial
+    unconditionally. Removing edges from an acyclic graph yields an acyclic
+    subgraph — any cycle in the smaller edge set would be a cycle in the
+    original, contradicting well-foundedness. This is the mathematical
+    foundation used by `cspaceDeleteSlot_preserves_capabilityInvariantBundle`
+    and `cspaceRevoke_preserves_capabilityInvariantBundle`. -/
+theorem cdtShrinkingOps_preserve_acyclicity
+    (st st' : SystemState)
+    (hAcyclic : cdtAcyclicity st)
+    (hEdgeSub : ∀ e ∈ st'.cdt.edges, e ∈ st.cdt.edges) :
+    cdtAcyclicity st' :=
+  CapDerivationTree.edgeWellFounded_sub st.cdt st'.cdt hAcyclic hEdgeSub
 
 -- ============================================================================
 -- V3-E (M-PRF-2): ipcUnwrapCaps Grant=true loop composition
@@ -2218,7 +2222,7 @@ The per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
 state, trivially preserving the invariant.
 
 **Inductive step**: given the invariant holds at step `i`, and the per-step
-theorem proves preservation for `ipcTransferSingleCap`, the invariant
+proof establishes preservation for `ipcTransferSingleCap`, the invariant
 holds at step `i+1`.
 
 **Key design**: `ipcUnwrapCapsLoop` is `private` in `CapTransfer.lean`.
@@ -2231,31 +2235,20 @@ The noGrant case is already proven above as
 `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`.
 -/
 
-/-- V3-E2: Loop invariant predicate for `ipcUnwrapCapsLoop`. -/
-def ipcUnwrapCapsLoop_capInvariant (st : SystemState) : Prop :=
-  capabilityInvariantBundle st
+-- V3-E2: The loop invariant for `ipcUnwrapCapsLoop` is `capabilityInvariantBundle`.
+-- The grant=false case is proven by `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`.
+-- The grant=true loop composition requires per-step CDT preservation hypotheses
+-- (same pattern as `cdtExpandingOp_preserves_bundle_with_hypothesis`).
+-- Individual loop preservation proofs (scheduler, services, objects) are proven
+-- in CapTransfer.lean (9 private theorems + 7 public wrappers).
 
 -- ============================================================================
 -- V3-F (M-PRF-3): Post-resolution rights check composition
 -- ============================================================================
 
-/-- V3-F (M-PRF-3): All callers of `resolveCapAddress` perform post-resolution
-    rights checks. This is guaranteed by the dispatch architecture:
-
-    1. `syscallLookupCap` (API.lean) composes `resolveCapAddress` with
-       `cap.hasRight gate.requiredRight` — every syscall path goes through
-       this gate.
-    2. The `requiredRight` mapping (`syscallRequiredRight`) covers all 16
-       `SyscallId` variants, ensuring no dispatch arm skips the check.
-    3. Additional operation-specific rights checks occur inside each
-       dispatch arm (e.g., `rightsSubset` in `cspaceMint`, `capAttenuates`
-       in `mintDerivedCap`).
-
-    This theorem documents the invariant: any successful syscall dispatch
-    has passed through the `hasRight` gate. The proof is by the structure
-    of `dispatchSyscall`/`dispatchSyscallChecked`, which both call
-    `syscallLookupCap` before `dispatchWithCap`. -/
-theorem resolveCapAddress_callers_check_rights_note :
-    True := trivial
+-- V3-F (M-PRF-3): See `resolveCapAddress_callers_check_rights` in API.lean.
+-- All callers of `resolveCapAddress` perform post-resolution rights checks.
+-- The machine-checked proof lives in API.lean where `syscallInvoke` is
+-- defined, avoiding circular imports.
 
 end SeLe4n.Kernel

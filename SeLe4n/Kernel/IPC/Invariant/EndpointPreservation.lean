@@ -1644,23 +1644,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
 -- for endpoint operations
 -- ============================================================================
 
-/-- V3-G4 (M-PRF-5): `endpointSend`/`endpointReceive` preserve
-    `waitingThreadsPendingMessageNone`.
-
-    **Machine-checked primitive lemmas** (in `Structural.lean`):
-    - `storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone` — endpoint store frame
-    - `storeTcbIpcState_preserves_waitingThreadsPendingMessageNone` — ipcState change
-    - `storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone` — combined change
-    - `removeRunnable_preserves_waitingThreadsPendingMessageNone` — scheduler frame
-    - `ensureRunnable_preserves_waitingThreadsPendingMessageNone` — scheduler frame
-
-    **endpointSend (rendezvous)**: `storeTcbIpcStateAndMessage` sets receiver to `.ready`
-    with message — `.ready` falls to `| _ => True`, so `hTarget` is trivially satisfied.
-    **endpointSend (block)**: `storeTcbIpcState` sets sender to `.blockedOnSend` — not in scope.
-    **endpointReceive (rendezvous)**: `storeTcbIpcStateAndMessage` sets sender to `.ready`.
-    **endpointReceive (block)**: `storeTcbIpcState` sets receiver to `.blockedOnReceive` —
-    `hTarget` requires `pendingMessage = none`, which holds since `storeTcbIpcState`
-    preserves the existing `pendingMessage` and ready threads have `none`. -/
-theorem endpointOps_preserve_waitingThreadsPendingMessageNone_note :
-    True := trivial
+-- V3-G4 (M-PRF-5): `endpointSend`/`endpointReceive` preserve
+-- `waitingThreadsPendingMessageNone`.
+-- Machine-checked proof: `endpointOps_preserve_waitingThreadsPendingMessageNone`
+-- in Structural.lean (requires primitive lemmas defined there).
 
