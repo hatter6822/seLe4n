@@ -47,8 +47,8 @@ def perObjectMappingsInvariant (st : SystemState) : Prop :=
 /-- Q3-A: Builder-phase state: all maps verified, all invariants carried.
 
 The four proof fields guarantee:
-1. **`hAllTables`** — every RHTable/RHSet in `SystemState` satisfies `invExt`
-   (WF ∧ distCorrect ∧ noDupKeys ∧ probeChainDominant).
+1. **`hAllTables`** — every RHTable/RHSet in `SystemState` satisfies `invExtK`
+   (invExt ∧ size < capacity ∧ 4 ≤ capacity).
 2. **`hPerObjectSlots`** — for every CNode in the object store, its `slots`
    RHTable satisfies `slotsUnique` (invExt ∧ size < capacity ∧ 4 ≤ capacity).
 3. **`hPerObjectMappings`** — for every VSpaceRoot in the object store, its
@@ -57,7 +57,7 @@ The four proof fields guarantee:
    is mutually consistent with the object store. -/
 structure IntermediateState where
   state : SystemState
-  hAllTables : state.allTablesInvExt
+  hAllTables : state.allTablesInvExtK
   hPerObjectSlots : perObjectSlotsInvariant state
   hPerObjectMappings : perObjectMappingsInvariant state
   hLifecycleConsistent : SystemState.lifecycleMetadataConsistent state
@@ -85,7 +85,7 @@ theorem perObjectMappingsInvariant_default :
 /-- Q3-A: The default (empty) SystemState yields a valid IntermediateState. -/
 def mkEmptyIntermediateState : IntermediateState where
   state := default
-  hAllTables := default_allTablesInvExt
+  hAllTables := default_allTablesInvExtK
   hPerObjectSlots := perObjectSlotsInvariant_default
   hPerObjectMappings := perObjectMappingsInvariant_default
   hLifecycleConsistent := default_systemState_lifecycleConsistent
@@ -93,7 +93,7 @@ def mkEmptyIntermediateState : IntermediateState where
 /-- Q3-A: `mkEmptyIntermediateState` is well-formed. -/
 theorem mkEmptyIntermediateState_valid :
     let e := mkEmptyIntermediateState
-    e.state.allTablesInvExt ∧
+    e.state.allTablesInvExtK ∧
     perObjectSlotsInvariant e.state ∧
     perObjectMappingsInvariant e.state ∧
     SystemState.lifecycleMetadataConsistent e.state :=

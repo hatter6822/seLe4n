@@ -938,6 +938,50 @@ theorem RHTable_empty_invExt {α β : Type} [BEq α] [Hashable α]
     (RHTable.empty cap hPos : RHTable α β).invExt :=
   RHTable.empty_invExt cap hPos
 
+-- ============================================================================
+-- V3-B Phase 2: invExtK re-exports for kernel code
+-- ============================================================================
+
+open SeLe4n.Kernel.RobinHood in
+/-- V3-B: Erase preserves invExtK. -/
+theorem RHTable_erase_preserves_invExtK {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hK : t.invExtK) :
+    (t.erase k).invExtK :=
+  t.erase_preserves_invExtK k hK
+
+open SeLe4n.Kernel.RobinHood in
+/-- V3-B: Erasing key `k` does not affect lookups of other keys (invExtK API). -/
+theorem RHTable_get?_erase_ne_K {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k k' : α) (hNe : ¬(k == k') = true) (hK : t.invExtK) :
+    (t.erase k).get? k' = t.get? k' :=
+  t.getElem?_erase_ne_K k k' hNe hK
+
+open SeLe4n.Kernel.RobinHood in
+/-- V3-B: Combined erase lookup characterization (invExtK API). -/
+theorem RHTable_getElem?_erase_K {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (hK : t.invExtK) (a : α) :
+    (t.erase k).get? a = if k == a then none else t.get? a := by
+  by_cases h : (k == a) = true
+  · simp only [h, ite_true]
+    have hka : a = k := (eq_of_beq h).symm; subst hka
+    exact RHTable.getElem?_erase_self t a hK.1
+  · simp only [show (k == a) = false from Bool.eq_false_iff.mpr h]
+    exact RHTable.getElem?_erase_ne_K t k a h hK
+
+open SeLe4n.Kernel.RobinHood in
+/-- V3-B: Insert preserves invExtK. -/
+theorem RHTable_insert_preserves_invExtK {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) (hK : t.invExtK) :
+    (t.insert k v).invExtK :=
+  t.insert_preserves_invExtK k v hK
+
+open SeLe4n.Kernel.RobinHood in
+/-- V3-B: Filter preserves invExtK. -/
+theorem RHTable_filter_preserves_invExtK {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (hK : t.invExtK) :
+    (t.filter f).invExtK :=
+  RHTable.filter_preserves_invExtK t f hK
+
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Filter preserves invExt. -/
 theorem RHTable_filter_preserves_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]

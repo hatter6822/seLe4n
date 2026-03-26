@@ -25,24 +25,12 @@ structure RunQueue where
       the flat list. Together with `flat_wf`, this yields bidirectional
       consistency between O(1) membership checks and list-based scans. -/
   flat_wf_rev : ∀ tid, membership.contains tid = true → tid ∈ flat
-  /-- RHSet invariant extension — maintained by all RunQueue operations. -/
-  mem_invExt : membership.table.invExt
-  /-- RHTable invariant extension for byPriority — maintained by all operations. -/
-  byPrio_invExt : byPriority.invExt
-  /-- RHTable invariant extension for threadPriority — maintained by all operations. -/
-  threadPrio_invExt : threadPriority.invExt
-  /-- RHSet size bound — required for erase operations. -/
-  mem_sizeOk : membership.table.size < membership.table.capacity
-  /-- RHTable size bound for byPriority — required for erase operations. -/
-  byPrio_sizeOk : byPriority.size < byPriority.capacity
-  /-- RHTable size bound for threadPriority — required for erase operations. -/
-  threadPrio_sizeOk : threadPriority.size < threadPriority.capacity
-  /-- RHSet capacity ≥ 4 — required for insert_size_lt_capacity. -/
-  mem_capGe4 : 4 ≤ membership.table.capacity
-  /-- RHTable byPriority capacity ≥ 4. -/
-  byPrio_capGe4 : 4 ≤ byPriority.capacity
-  /-- RHTable threadPriority capacity ≥ 4. -/
-  threadPrio_capGe4 : 4 ≤ threadPriority.capacity
+  /-- RHSet kernel-level invariant bundle (invExt ∧ size < capacity ∧ 4 ≤ capacity). -/
+  mem_invExtK : membership.table.invExtK
+  /-- RHTable kernel-level invariant bundle for byPriority. -/
+  byPrio_invExtK : byPriority.invExtK
+  /-- RHTable kernel-level invariant bundle for threadPriority. -/
+  threadPrio_invExtK : threadPriority.invExtK
   /- WS-G4: Implicit invariant (maintained structurally by `insert`/`remove` API):
      Every thread in `membership` has a corresponding entry in `threadPriority`,
      and vice versa. This is NOT enforced as a proof obligation in the structure
@@ -51,6 +39,18 @@ structure RunQueue where
      Violation would require direct structure construction bypassing the API.
      Runtime verification: `InvariantChecks.runQueueThreadPriorityConsistentB`. -/
 namespace RunQueue
+
+-- Backward-compat projections: downstream files reference these field names
+theorem mem_invExt (rq : RunQueue) : rq.membership.table.invExt := rq.mem_invExtK.1
+theorem mem_sizeOk (rq : RunQueue) : rq.membership.table.size < rq.membership.table.capacity := rq.mem_invExtK.2.1
+theorem mem_capGe4 (rq : RunQueue) : 4 ≤ rq.membership.table.capacity := rq.mem_invExtK.2.2
+theorem byPrio_invExt (rq : RunQueue) : rq.byPriority.invExt := rq.byPrio_invExtK.1
+theorem byPrio_sizeOk (rq : RunQueue) : rq.byPriority.size < rq.byPriority.capacity := rq.byPrio_invExtK.2.1
+theorem byPrio_capGe4 (rq : RunQueue) : 4 ≤ rq.byPriority.capacity := rq.byPrio_invExtK.2.2
+theorem threadPrio_invExt (rq : RunQueue) : rq.threadPriority.invExt := rq.threadPrio_invExtK.1
+theorem threadPrio_sizeOk (rq : RunQueue) : rq.threadPriority.size < rq.threadPriority.capacity := rq.threadPrio_invExtK.2.1
+theorem threadPrio_capGe4 (rq : RunQueue) : 4 ≤ rq.threadPriority.capacity := rq.threadPrio_invExtK.2.2
+
 @[inline] def empty : RunQueue where
   byPriority := {}; membership := {}; threadPriority := {}
   flat := []; size := 0; maxPriority := none
@@ -59,29 +59,9 @@ namespace RunQueue
     intro tid h
     exact absurd h (by rw [show ({} : RHSet ThreadId) = RHSet.empty from rfl,
       RHSet.contains_empty]; decide)
-  mem_invExt := RHSet.empty_invExt
-  byPrio_invExt := RHTable.empty_invExt' 16 (by omega)
-  threadPrio_invExt := RHTable.empty_invExt' 16 (by omega)
-  mem_sizeOk := by
-    show (RHSet.empty : RHSet ThreadId).table.size < (RHSet.empty : RHSet ThreadId).table.capacity
-    decide
-  byPrio_sizeOk := by
-    show (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).size <
-         (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
-    decide
-  threadPrio_sizeOk := by
-    show (EmptyCollection.emptyCollection : RHTable ThreadId Priority).size <
-         (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
-    decide
-  mem_capGe4 := by
-    show 4 ≤ (RHSet.empty : RHSet ThreadId).table.capacity
-    decide
-  byPrio_capGe4 := by
-    show 4 ≤ (EmptyCollection.emptyCollection : RHTable Priority (List ThreadId)).capacity
-    decide
-  threadPrio_capGe4 := by
-    show 4 ≤ (EmptyCollection.emptyCollection : RHTable ThreadId Priority).capacity
-    decide
+  mem_invExtK := RHSet.empty_invExtK
+  byPrio_invExtK := RHTable.empty_invExtK 16 (by omega) (by omega)
+  threadPrio_invExtK := RHTable.empty_invExtK 16 (by omega) (by omega)
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat
@@ -151,37 +131,11 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
         rcases hx' with rfl | hOld
         · exact List.mem_append.mpr (Or.inr (by simp))
         · exact List.mem_append.mpr (Or.inl (rq.flat_wf_rev x hOld))
-      mem_invExt := RHSet.insert_preserves_invExt rq.membership tid rq.mem_invExt
-      byPrio_invExt := rq.byPriority.insert_preserves_invExt prio
-          ((rq.byPriority[prio]?).getD [] ++ [tid]) rq.byPrio_invExt
-      threadPrio_invExt := rq.threadPriority.insert_preserves_invExt tid prio
-          rq.threadPrio_invExt
-      mem_sizeOk := rq.membership.table.insert_size_lt_capacity tid ()
-          rq.mem_invExt rq.mem_sizeOk rq.mem_capGe4
-      byPrio_sizeOk := rq.byPriority.insert_size_lt_capacity prio
-          ((rq.byPriority[prio]?).getD [] ++ [tid]) rq.byPrio_invExt rq.byPrio_sizeOk
-          rq.byPrio_capGe4
-      threadPrio_sizeOk := rq.threadPriority.insert_size_lt_capacity tid prio
-          rq.threadPrio_invExt rq.threadPrio_sizeOk rq.threadPrio_capGe4
-      mem_capGe4 := by
-        show 4 ≤ (rq.membership.insert tid).table.capacity
-        simp only [RHSet.insert]
-        unfold RHTable.insert; split
-        · rw [RHTable.insertNoResize_capacity, rq.membership.table.resize_fold_capacity]
-          have := rq.mem_capGe4; omega
-        · rw [RHTable.insertNoResize_capacity]; exact rq.mem_capGe4
-      byPrio_capGe4 := by
-        show 4 ≤ (rq.byPriority.insert prio ((rq.byPriority[prio]?).getD [] ++ [tid])).capacity
-        unfold RHTable.insert; split
-        · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
-          have := rq.byPrio_capGe4; omega
-        · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4
-      threadPrio_capGe4 := by
-        show 4 ≤ (rq.threadPriority.insert tid prio).capacity
-        unfold RHTable.insert; split
-        · rw [RHTable.insertNoResize_capacity, rq.threadPriority.resize_fold_capacity]
-          have := rq.threadPrio_capGe4; omega
-        · rw [RHTable.insertNoResize_capacity]; exact rq.threadPrio_capGe4 }
+      mem_invExtK := RHSet.insert_preserves_invExtK rq.membership tid rq.mem_invExtK
+      byPrio_invExtK := rq.byPriority.insert_preserves_invExtK prio
+          ((rq.byPriority[prio]?).getD [] ++ [tid]) rq.byPrio_invExtK
+      threadPrio_invExtK := rq.threadPriority.insert_preserves_invExtK tid prio
+          rq.threadPrio_invExtK }
 
 /-- S5-J: Complexity is O(k + n) where k = priority bucket size for the
     removed thread, and n = flat list length. The bucket filter is O(k) and
@@ -230,8 +184,8 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
                  fun h => hEq (by simp [beq_iff_eq]; exact h.symm)⟩
       have hFlat : x ∈ rq.flat := rq.flat_wf_rev x hx'.1
       exact List.mem_filter.mpr ⟨hFlat, by simpa [beq_iff_eq] using hx'.2⟩
-    mem_invExt := RHSet.erase_preserves_invExt rq.membership tid rq.mem_invExt rq.mem_sizeOk
-    byPrio_invExt := by
+    mem_invExtK := RHSet.erase_preserves_invExtK rq.membership tid rq.mem_invExtK
+    byPrio_invExtK := by
       -- byPrio' is let-bound to `match rq.threadPriority.get? tid with ...`
       -- Use `show` to replace byPrio' with its definition, then split on the match
       show (match rq.threadPriority.get? tid with
@@ -239,69 +193,15 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
         | some p =>
           let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
           if bucket.isEmpty then rq.byPriority.erase p
-          else rq.byPriority.insert p bucket).invExt
+          else rq.byPriority.insert p bucket).invExtK
       split
-      · exact rq.byPrio_invExt
+      · exact rq.byPrio_invExtK
       next p _ =>
         dsimp only []
         split
-        · exact rq.byPriority.erase_preserves_invExt p rq.byPrio_invExt rq.byPrio_sizeOk
-        · exact rq.byPriority.insert_preserves_invExt p _ rq.byPrio_invExt
-    threadPrio_invExt := rq.threadPriority.erase_preserves_invExt tid rq.threadPrio_invExt
-        rq.threadPrio_sizeOk
-    mem_sizeOk := rq.membership.table.erase_size_lt_capacity tid rq.mem_sizeOk
-    byPrio_sizeOk := by
-      show (match rq.threadPriority.get? tid with
-        | none => rq.byPriority
-        | some p =>
-          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
-          if bucket.isEmpty then rq.byPriority.erase p
-          else rq.byPriority.insert p bucket).size <
-        (match rq.threadPriority.get? tid with
-        | none => rq.byPriority
-        | some p =>
-          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
-          if bucket.isEmpty then rq.byPriority.erase p
-          else rq.byPriority.insert p bucket).capacity
-      split
-      · exact rq.byPrio_sizeOk
-      · next p _ =>
-        dsimp only []
-        split
-        · exact rq.byPriority.erase_size_lt_capacity p rq.byPrio_sizeOk
-        · exact rq.byPriority.insert_size_lt_capacity p _ rq.byPrio_invExt rq.byPrio_sizeOk
-            rq.byPrio_capGe4
-    threadPrio_sizeOk := rq.threadPriority.erase_size_lt_capacity tid rq.threadPrio_sizeOk
-    mem_capGe4 := by
-      show 4 ≤ (rq.membership.erase tid).table.capacity
-      have : (rq.membership.erase tid).table.capacity = rq.membership.table.capacity := by
-        simp only [RHSet.erase, RHTable.erase]
-        split <;> simp_all
-      rw [this]; exact rq.mem_capGe4
-    byPrio_capGe4 := by
-      show 4 ≤ (match rq.threadPriority.get? tid with
-        | none => rq.byPriority
-        | some p =>
-          let bucket := ((rq.byPriority[p]?).getD []).filter (· ≠ tid)
-          if bucket.isEmpty then rq.byPriority.erase p
-          else rq.byPriority.insert p bucket).capacity
-      split
-      · exact rq.byPrio_capGe4
-      · next p _ =>
-        dsimp only []
-        split
-        · have : (rq.byPriority.erase p).capacity = rq.byPriority.capacity := by
-            simp only [RHTable.erase]; split <;> simp_all
-          rw [this]; exact rq.byPrio_capGe4
-        · unfold RHTable.insert; split
-          · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
-            have := rq.byPrio_capGe4; omega
-          · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4
-    threadPrio_capGe4 := by
-      show 4 ≤ (rq.threadPriority.erase tid).capacity
-      have : (rq.threadPriority.erase tid).capacity = rq.threadPriority.capacity := by
-        simp only [RHTable.erase]; split <;> simp_all
-      rw [this]; exact rq.threadPrio_capGe4 }
+        · exact rq.byPriority.erase_preserves_invExtK p rq.byPrio_invExtK
+        · exact rq.byPriority.insert_preserves_invExtK p _ rq.byPrio_invExtK
+    threadPrio_invExtK := rq.threadPriority.erase_preserves_invExtK tid rq.threadPrio_invExtK }
 
 /-- S5-J: Complexity is O(k + n) where k = priority bucket size and n = flat
     list length. Filters the thread from the bucket O(k), appends to end O(1),
@@ -328,14 +228,7 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
           · subst hEq
             exact List.mem_append.mpr (Or.inr (by simp))
           · exact List.mem_append.mpr (Or.inl ((List.mem_erase_of_ne hEq).2 hFlat))
-        byPrio_invExt := rq.byPriority.insert_preserves_invExt prio bucket' rq.byPrio_invExt
-        byPrio_sizeOk := rq.byPriority.insert_size_lt_capacity prio bucket'
-            rq.byPrio_invExt rq.byPrio_sizeOk rq.byPrio_capGe4
-        byPrio_capGe4 := by
-          unfold RHTable.insert; split
-          · rw [RHTable.insertNoResize_capacity, rq.byPriority.resize_fold_capacity]
-            have := rq.byPrio_capGe4; omega
-          · rw [RHTable.insertNoResize_capacity]; exact rq.byPrio_capGe4 }
+        byPrio_invExtK := rq.byPriority.insert_preserves_invExtK prio bucket' rq.byPrio_invExtK }
   else rq
 
 @[inline] def toList (rq : RunQueue) : List ThreadId := rq.flat

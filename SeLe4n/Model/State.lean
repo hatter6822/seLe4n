@@ -275,71 +275,71 @@ instance : Inhabited SystemState where
 satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys ∧
 probeChainDominant). This is the global well-formedness condition for the
 builder-phase state representation. -/
-def SystemState.allTablesInvExt (st : SystemState) : Prop :=
+def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   -- SystemState direct fields
-  st.objects.invExt ∧
-  st.irqHandlers.invExt ∧
-  st.asidTable.invExt ∧
-  st.cdtSlotNode.invExt ∧
-  st.cdtNodeSlot.invExt ∧
+  st.objects.invExtK ∧
+  st.irqHandlers.invExtK ∧
+  st.asidTable.invExtK ∧
+  st.cdtSlotNode.invExtK ∧
+  st.cdtNodeSlot.invExtK ∧
   -- LifecycleMetadata
-  st.lifecycle.objectTypes.invExt ∧
-  st.lifecycle.capabilityRefs.invExt ∧
+  st.lifecycle.objectTypes.invExtK ∧
+  st.lifecycle.capabilityRefs.invExtK ∧
   -- CDT
-  st.cdt.childMap.invExt ∧
-  st.cdt.parentMap.invExt ∧
+  st.cdt.childMap.invExtK ∧
+  st.cdt.parentMap.invExtK ∧
   -- Service and registry
-  st.services.invExt ∧
-  st.interfaceRegistry.invExt ∧
-  st.serviceRegistry.invExt ∧
+  st.services.invExtK ∧
+  st.interfaceRegistry.invExtK ∧
+  st.serviceRegistry.invExtK ∧
   -- RunQueue
-  st.scheduler.runQueue.byPriority.invExt ∧
-  st.scheduler.runQueue.threadPriority.invExt ∧
-  -- RHSet invExt (via table field)
-  st.objectIndexSet.table.invExt ∧
-  st.scheduler.runQueue.membership.table.invExt
+  st.scheduler.runQueue.byPriority.invExtK ∧
+  st.scheduler.runQueue.threadPriority.invExtK ∧
+  -- RHSet invExtK (via table field)
+  st.objectIndexSet.table.invExtK ∧
+  st.scheduler.runQueue.membership.table.invExtK
 
-/-- The default SystemState satisfies `allTablesInvExt` because all tables are
-empty, and empty RHTables trivially satisfy `invExt`. -/
-theorem default_allTablesInvExt : (default : SystemState).allTablesInvExt := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt' 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExt
-  exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExt
+/-- The default SystemState satisfies `allTablesInvExtK` because all tables are
+empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
+theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega) (by omega)
+  constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
+  exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
 
-/-- U2-M: Compile-time completeness witness for `allTablesInvExt`.
-    This theorem destructures `allTablesInvExt` into exactly 16 named conjuncts.
+/-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
+    This theorem destructures `allTablesInvExtK` into exactly 16 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
-    `allTablesInvExt` without updating this witness, the proof fails. -/
-theorem allTablesInvExt_witness (st : SystemState) (h : st.allTablesInvExt) :
-    st.objects.invExt ∧
-    st.irqHandlers.invExt ∧
-    st.asidTable.invExt ∧
-    st.cdtSlotNode.invExt ∧
-    st.cdtNodeSlot.invExt ∧
-    st.lifecycle.objectTypes.invExt ∧
-    st.lifecycle.capabilityRefs.invExt ∧
-    st.cdt.childMap.invExt ∧
-    st.cdt.parentMap.invExt ∧
-    st.services.invExt ∧
-    st.interfaceRegistry.invExt ∧
-    st.serviceRegistry.invExt ∧
-    st.scheduler.runQueue.byPriority.invExt ∧
-    st.scheduler.runQueue.threadPriority.invExt ∧
-    st.objectIndexSet.table.invExt ∧
-    st.scheduler.runQueue.membership.table.invExt := h
+    `allTablesInvExtK` without updating this witness, the proof fails. -/
+theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
+    st.objects.invExtK ∧
+    st.irqHandlers.invExtK ∧
+    st.asidTable.invExtK ∧
+    st.cdtSlotNode.invExtK ∧
+    st.cdtNodeSlot.invExtK ∧
+    st.lifecycle.objectTypes.invExtK ∧
+    st.lifecycle.capabilityRefs.invExtK ∧
+    st.cdt.childMap.invExtK ∧
+    st.cdt.parentMap.invExtK ∧
+    st.services.invExtK ∧
+    st.interfaceRegistry.invExtK ∧
+    st.serviceRegistry.invExtK ∧
+    st.scheduler.runQueue.byPriority.invExtK ∧
+    st.scheduler.runQueue.threadPriority.invExtK ∧
+    st.objectIndexSet.table.invExtK ∧
+    st.scheduler.runQueue.membership.table.invExtK := h
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
@@ -1220,6 +1220,17 @@ theorem capabilityRefs_fold_preserves_invExt
   RHTable.fold_preserves cn.slots cleared _ (fun t => t.invExt) hInv
     (fun acc _ _ hAcc => RHTable.insert_preserves_invExt acc _ _ hAcc)
 
+/-- V3-B: capabilityRefs fold insert preserves invExtK. -/
+theorem capabilityRefs_fold_preserves_invExtK
+    (cn : CNode)
+    (cleared : RHTable SlotRef CapTarget)
+    (id : SeLe4n.ObjId)
+    (hInvK : cleared.invExtK) :
+    (cn.slots.fold (init := cleared) fun refs slot cap =>
+      refs.insert { cnode := id, slot := slot } cap.target).invExtK :=
+  RHTable.fold_preserves cn.slots cleared _ (fun t => t.invExtK) hInvK
+    (fun acc _ _ hAcc => RHTable.insert_preserves_invExtK acc _ _ hAcc)
+
 -- ============================================================================
 -- T2-G (M-NEW-2): Bundled storeObject preserves allTablesInvExt
 -- ============================================================================
@@ -1235,16 +1246,15 @@ theorem capabilityRefs_fold_preserves_invExt
     `insert`, `filter`, or `erase` — all of which preserve `invExt` — and
     leaves unchanged fields (scheduler, CDT maps, services) structurally equal
     to the pre-state. -/
-theorem storeObject_preserves_allTablesInvExt
+theorem storeObject_preserves_allTablesInvExtK
     (st st' : SystemState)
     (id : SeLe4n.ObjId)
     (obj : KernelObject)
-    (hAll : st.allTablesInvExt)
-    (hAsidSize : st.asidTable.size < st.asidTable.capacity)
+    (hAll : st.allTablesInvExtK)
     (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.allTablesInvExt := by
+    st'.allTablesInvExtK := by
   unfold storeObject at hStore; cases hStore
-  unfold SystemState.allTablesInvExt at hAll ⊢
+  unfold SystemState.allTablesInvExtK at hAll ⊢
   simp only
   -- Extract components from pre-state invariant
   have hObj := hAll.1
@@ -1263,37 +1273,37 @@ theorem storeObject_preserves_allTablesInvExt
   have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
   have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
   have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
-  -- Prove objects insert preserves invExt
-  have hObj' := RHTable.insert_preserves_invExt st.objects id obj hObj
-  -- Prove objectTypes insert preserves invExt
-  have hObjTypes' := RHTable.insert_preserves_invExt st.lifecycle.objectTypes id obj.objectType hObjTypes
-  -- Prove capabilityRefs filter+fold preserves invExt
-  have hFiltered := capabilityRefs_filter_preserves_invExt st.lifecycle.capabilityRefs id hCapRefs
+  -- Prove objects insert preserves invExtK
+  have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
+  -- Prove objectTypes insert preserves invExtK
+  have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
+  -- Prove capabilityRefs filter+fold preserves invExtK
+  have hFiltered := RHTable.filter_preserves_invExtK st.lifecycle.capabilityRefs (fun ref _ => ref.cnode ≠ id) hCapRefs
   have hCapRefs' : (match obj with
       | .cnode cn => cn.slots.fold (init := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id))
           fun refs slot cap => refs.insert { cnode := id, slot := slot } cap.target
-      | _ => st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)).invExt := by
+      | _ => st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)).invExtK := by
     cases obj with
-    | cnode cn => exact capabilityRefs_fold_preserves_invExt cn _ id hFiltered
+    | cnode cn => exact capabilityRefs_fold_preserves_invExtK cn _ id hFiltered
     | _ => exact hFiltered
-  -- Prove objectIndexSet insert preserves invExt
-  have hObjIdxSet' := RHSet.insert_preserves_invExt st.objectIndexSet id hObjIdxSet
-  -- Prove asidTable preserves invExt (erase + insert depending on obj type)
+  -- Prove objectIndexSet insert preserves invExtK
+  have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
+  -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
   have hAsid' : (let cleared := match st.objects[id]? with
         | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
         | _ => st.asidTable
       match obj with
       | .vspaceRoot newRoot => cleared.insert newRoot.asid id
-      | _ => cleared).invExt := by
-    -- The cleared table preserves invExt via erase or identity
+      | _ => cleared).invExtK := by
+    -- The cleared table preserves invExtK via erase or identity
     have hCleared : (match st.objects[id]? with
         | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
-        | _ => st.asidTable).invExt := by
+        | _ => st.asidTable).invExtK := by
       split
-      · rename_i r _; exact RHTable.erase_preserves_invExt st.asidTable r.asid hAsid hAsidSize
+      · rename_i r _; exact RHTable.erase_preserves_invExtK st.asidTable r.asid hAsid
       · exact hAsid
     cases obj with
-    | vspaceRoot vs => exact RHTable.insert_preserves_invExt _ _ _ hCleared
+    | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
   -- Compose all 16 components
   exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes', hCapRefs',

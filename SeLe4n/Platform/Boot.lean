@@ -116,9 +116,9 @@ theorem bootFromPlatform_empty :
     bootFromPlatform { irqTable := [], initialObjects := [] } =
     mkEmptyIntermediateState := rfl
 
-/-- Q3-C: The booted state satisfies allTablesInvExt. -/
-theorem bootFromPlatform_allTablesInvExt (config : PlatformConfig) :
-    (bootFromPlatform config).state.allTablesInvExt :=
+/-- Q3-C: The booted state satisfies allTablesInvExtK. -/
+theorem bootFromPlatform_allTablesInvExtK (config : PlatformConfig) :
+    (bootFromPlatform config).state.allTablesInvExtK :=
   (bootFromPlatform config).hAllTables
 
 /-- Q3-C: The booted state satisfies per-object CNode slots invariant. -/
@@ -139,11 +139,11 @@ theorem bootFromPlatform_lifecycleConsistent (config : PlatformConfig) :
 /-- Q3-C: Master validity theorem — boot produces a fully valid state. -/
 theorem bootFromPlatform_valid (config : PlatformConfig) :
     let ist := bootFromPlatform config
-    ist.state.allTablesInvExt ∧
+    ist.state.allTablesInvExtK ∧
     perObjectSlotsInvariant ist.state ∧
     perObjectMappingsInvariant ist.state ∧
     SystemState.lifecycleMetadataConsistent ist.state :=
-  ⟨bootFromPlatform_allTablesInvExt config,
+  ⟨bootFromPlatform_allTablesInvExtK config,
    bootFromPlatform_perObjectSlots config,
    bootFromPlatform_perObjectMappings config,
    bootFromPlatform_lifecycleConsistent config⟩

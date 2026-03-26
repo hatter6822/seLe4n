@@ -28,7 +28,12 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 
 - **V3 (Proof Chain Hardening) COMPLETE** (v0.22.2): 26 sub-tasks (V3-A through V3-M).
   All 8 `True := trivial` documentation theorems replaced with real machine-checked
-  proofs. **Machine-checked**: `invExtFull` bundle + `erase_preserves_invExtFull`
+  proofs. **V3-B `invExtK` migration**: Kernel-level `invExtK` bundle
+  (`invExt ∧ size < capacity ∧ 4 ≤ capacity`) in Bridge.lean eliminates 59
+  kernel-facing `hSize`/`hCapGe4` parameters across 13 files. RunQueue fields
+  reduced 9→3. `slotsUnique` = `invExtK` (transparent alias). `allTablesInvExtK`
+  replaces `allTablesInvExt` with 16 `invExtK` conjuncts. Zero sorry/axiom.
+  **Machine-checked**: `invExtFull` bundle + `erase_preserves_invExtFull`
   eliminating redundant `hSize` (H-RH-1). `uniqueRadixIndices_sufficient` radix
   precondition chain (H-RAD-1). `extractBits_identity` + `buildCNodeRadix_hNoPhantom_auto_discharge`
   closing `hNoPhantom` gap (M-DS-4). CDT acyclicity: `cdtShrinkingOps_preserve_acyclicity`

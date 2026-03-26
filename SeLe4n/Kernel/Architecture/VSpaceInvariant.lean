@@ -451,9 +451,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
     (hAsidInv : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) →
         (st.asidTable.erase root.asid).invExt)
     (hAsidSize : st.asidTable.size < st.asidTable.capacity)
-    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
-    (hMappingsSize : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) →
-        root.mappings.size < root.mappings.capacity)
+    (hMappingsK : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExtK)
     (hTableInv : st.asidTable.invExt)
     (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
     vspaceInvariantBundle st' := by
@@ -474,9 +472,10 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             fun oid hNe => storeObject_objects_ne st st' rootId oid (.vspaceRoot root') hNe hObjInv hStore
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
-          have hMappingsInv : root.mappings.invExt := hMappingsWF rootId root hObjRoot
+          have hMappingsInvK : root.mappings.invExtK := hMappingsK rootId root hObjRoot
+          have hMappingsInv : root.mappings.invExt := hMappingsInvK.1
           have hMappingsSize' : root.mappings.size < root.mappings.capacity :=
-            hMappingsSize rootId root hObjRoot
+            hMappingsInvK.2.1
           have hAsidInv' : (match st.objects[rootId]? with
               | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
               | _ => st.asidTable).invExt := by
@@ -730,9 +729,7 @@ theorem vspaceLookup_unmap_other
     (hObjInv : st.objects.invExt)
     (hAsidInv : ∀ (oid : ObjId) (root : VSpaceRoot), st.objects[oid]? = some (KernelObject.vspaceRoot root) →
         (st.asidTable.erase root.asid).invExt)
-    (hMappingsWF : ∀ (oid : ObjId) (root : VSpaceRoot), st.objects[oid]? = some (KernelObject.vspaceRoot root) → root.mappings.invExt)
-    (hMappingsSize : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) →
-        root.mappings.size < root.mappings.capacity)
+    (hMappingsK : ∀ (oid : ObjId) (root : VSpaceRoot), st.objects[oid]? = some (KernelObject.vspaceRoot root) → root.mappings.invExtK)
     (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
     (vspaceLookup asid vaddr' st').map Prod.fst = (vspaceLookup asid vaddr' st).map Prod.fst := by
   unfold vspaceUnmapPage at hStep
@@ -760,12 +757,10 @@ theorem vspaceLookup_unmap_other
           have hResolve' : resolveAsidRoot st' asid = some (rootId, root') :=
             resolveAsidRoot_of_asidTable_entry st' asid rootId root'
               (hAsidEq ▸ hTablePost) hObjEq hAsidEq
-          have hMappingsInv : root.mappings.invExt := hMappingsWF rootId root hObjRoot
-          have hMappingsSize' : root.mappings.size < root.mappings.capacity :=
-            hMappingsSize rootId root hObjRoot
+          have hMappingsInvK : root.mappings.invExtK := hMappingsK rootId root hObjRoot
           have hLookupNe : root'.lookupAddr vaddr' = root.lookupAddr vaddr' := by
             simp [VSpaceRoot.lookupAddr,
-              VSpaceRoot.lookup_unmapPage_ne root root' vaddr vaddr' hNe hMappingsInv hMappingsSize' hUnmapRoot]
+              VSpaceRoot.lookup_unmapPage_ne root root' vaddr vaddr' hNe hMappingsInvK hUnmapRoot]
           simp [vspaceLookup, hResolve', hResolve, hLookupNe, Except.map]
           cases root.lookupAddr vaddr' <;> rfl
 
