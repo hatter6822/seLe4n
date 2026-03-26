@@ -2,10 +2,10 @@
 
 **Workstream**: WS-V Phase V3 — Proof Chain Hardening
 **Audit Finding**: M-PRF-2 (MEDIUM severity)
-**Sub-task**: V3-E (5 sequential units: V3-E1 through V3-E5)
+**Sub-task**: V3-E (5 major units, 10 micro-units: V3-E1, E2, E3, E4a/b/c/d, E5a/b/c)
 **Dependencies**: V3-D1 (CDT acyclicity audit — complete), V2 (API Surface — complete)
 **Gate Conditions**: `lake build` succeeds; zero `sorry`; `test_full.sh` green
-**Estimated Scope**: ~200-350 lines Lean proof code across 2 files
+**Estimated Scope**: ~115-155 lines new Lean proof code across 2 files
 
 ---
 
@@ -16,14 +16,17 @@
 3. [Current State Analysis](#3-current-state-analysis)
 4. [Technical Design](#4-technical-design)
 5. [V3-E1: Expose ipcUnwrapCapsLoop](#5-v3-e1-expose-ipcunwrapcapsloop)
-6. [V3-E2: Define Loop Invariant Predicate](#6-v3-e2-define-loop-invariant-predicate)
-7. [V3-E3: Prove Base Case](#7-v3-e3-prove-base-case)
-8. [V3-E4: Prove Inductive Step](#8-v3-e4-prove-inductive-step)
-9. [V3-E5: Compose Full Loop Theorem](#9-v3-e5-compose-full-loop-theorem)
+6. [V3-E2: Define Loop Theorem Signature](#6-v3-e2-define-loop-theorem-signature)
+7. [V3-E3: Prove Base Cases](#7-v3-e3-prove-base-cases)
+8. [V3-E4: Prove Inductive Step](#8-v3-e4-prove-inductive-step) (V3-E4a/b/c/d)
+9. [V3-E5: Compose Full Loop Theorem](#9-v3-e5-compose-full-loop-theorem) (V3-E5a/b/c)
 10. [Execution Order and Dependency Graph](#10-execution-order-and-dependency-graph)
 11. [Risk Assessment and Mitigations](#11-risk-assessment-and-mitigations)
 12. [Testing and Validation Strategy](#12-testing-and-validation-strategy)
 13. [Documentation Synchronization](#13-documentation-synchronization)
+14. [Appendix A: Reference Proof](#appendix-a-reference-proof--complete-v3-e-tactic-sequence)
+15. [Appendix B: Pre-Implementation Checklist](#appendix-b-pre-implementation-checklist)
+16. [Appendix C: Glossary](#appendix-c-glossary-of-key-identifiers)
 
 ---
 
@@ -49,8 +52,9 @@ The `Grant=false` path is already proved trivially
 3. Two hypotheses (`hSlotCapacity` and `hCdtPost`) must be threaded through
    each iteration, because each `ipcTransferSingleCap` call modifies the state
 
-This plan decomposes the work into 5 sequential units (V3-E1 through V3-E5),
-each building on the previous. Total estimated proof code: ~200-350 lines.
+This plan decomposes the work into 5 major units (V3-E1 through V3-E5) further
+broken into 10 micro-units with exact tactic sequences derived from the 8
+existing `ipcUnwrapCapsLoop` proofs. Total estimated proof code: ~115-155 lines.
 
 ---
 
@@ -354,7 +358,69 @@ CapTransfer.lean:53-56:
 The proof for this path is trivial: since the state is unchanged, the
 inductive hypothesis applies directly with the original `hInv`.
 
-### 4.5. File Placement
+### 4.5. Induction Structure: `generalizing` Clause and IH Shape
+
+The induction must generalize exactly the variables that change across
+recursive calls. From the existing `ipcUnwrapCapsLoop` proofs in
+CapTransfer.lean (Pattern 1A/1B/1C), the standard `generalizing` clause is:
+
+```lean
+induction fuel generalizing idx nextBase accResults st with
+```
+
+This generalizes **4 variables** that change on each recursive call:
+- `idx` — incremented by 1 each iteration
+- `nextBase` — conditionally incremented based on result type
+- `accResults` — appended with each iteration's result
+- `st` — modified by successful `ipcTransferSingleCap` calls
+
+**The IH shape depends on which hypotheses are NOT generalized.** Variables
+NOT in the `generalizing` clause remain fixed across the induction. For V3-E:
+
+- `caps`, `senderRoot`, `receiverRoot` — fixed (loop parameters)
+- `st'`, `summary` — the final state/result (bound by `hStep`)
+- `hSlotCap`, `hCdtPost` — universally quantified, so they apply to any state
+
+**Critical design point**: `hSlotCap` and `hCdtPost` must NOT be generalized
+because they are universally quantified over all states. They remain available
+unchanged across all inductive steps. This matches Pattern 1C where `hObjInv`
+is NOT generalized but IS threaded: the error path passes the original, and the
+success path passes an updated version.
+
+**IH argument count**: The IH will have 4 implicit arguments (from
+`generalizing`) plus 1 explicit hypothesis argument (`hInv` for the current
+state's bundle), plus the step hypothesis. Total: `ih _ _ _ _ hInvCurrent hStep`.
+
+This matches Pattern 1C (`ih _ _ _ _ hObjInvNext hStep`) where the invariant
+is explicitly passed and the 4 generalized variables are inferred by Lean.
+
+### 4.6. Proven Tactic Vocabulary
+
+Based on analysis of all 8 existing `ipcUnwrapCapsLoop` proofs and both
+`revokeCdtFold_preserves` and `streamingRevokeBFS_preserves`, the exact tactic
+vocabulary for V3-E is:
+
+| Tactic | Usage | Where Used |
+|--------|-------|-----------|
+| `simp [ipcUnwrapCapsLoop] at hStep` | Unfold loop definition (zero case) | All 8 loop proofs |
+| `simp only [ipcUnwrapCapsLoop] at hStep` | Surgical unfold (succ case) | All 8 loop proofs |
+| `cases hCap : caps[idx]? with` | Case split on array lookup | All 8 loop proofs |
+| `simp [hCap] at hStep` | Normalize after array lookup | All 8 loop proofs |
+| `obtain ⟨_, rfl⟩ := hStep` | Extract state equality in base case | All 8 loop proofs |
+| `cases hTransfer : ipcTransferSingleCap ...` | Case split on transfer result | All 8 loop proofs |
+| `simp [hTransfer] at hStep` | Normalize after transfer result | All 8 loop proofs |
+| `rcases pair with ⟨result, stNext⟩` | Destructure success pair | All 8 loop proofs |
+| `cases result with` | Case split on CapTransferResult | Patterns 1A/1B/1C |
+| `exact ih _ _ _ _ hHyp hStep` | Apply IH with threaded hypothesis | Pattern 1C |
+| `rw [ih _ _ _ _ hStep, hProp]` | Rewrite with IH (equational) | Patterns 1A/1B |
+| `have hX := lemma ... hTransfer` | Extract single-step preservation | All success paths |
+
+**Key distinction**: Patterns 1A/1B use `rw [ih ..., hProp]` because they prove
+**equational** properties (scheduler = scheduler). V3-E4 proves a **predicate**
+(`capabilityInvariantBundle st'`), so it will use `exact ih ...` like Pattern
+1C, NOT `rw [ih ...]`.
+
+### 4.7. File Placement
 
 | Sub-task | File | Rationale |
 |----------|------|-----------|
@@ -455,7 +521,7 @@ Rejected because:
 
 ---
 
-## 6. V3-E2: Define Loop Invariant Predicate
+## 6. V3-E2: Define Loop Theorem Signature
 
 **Scope**: Small (~15-25 lines)
 **File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
@@ -534,14 +600,89 @@ reuse value beyond this single theorem. Use named predicates if V3-E5 or
 future theorems need to reference them. The implementation should start with
 inline hypotheses and refactor to named predicates only if needed.
 
-### 6.4. Implementation Steps
+### 6.4. Exact Theorem Signature
+
+The following is the precise signature that V3-E2 must produce. It is derived
+directly from the `ipcUnwrapCapsLoop` function signature (CapTransfer.lean:36-42)
+combined with the hypothesis pattern from
+`ipcTransferSingleCap_preserves_capabilityInvariantBundle` (Preservation.lean:1910-1919):
+
+```lean
+/-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
+through fuel-indexed induction. Each iteration delegates to
+`ipcTransferSingleCap_preserves_capabilityInvariantBundle`, threading
+slot capacity and CDT postcondition hypotheses through the recursive structure.
+
+The `hCdtPost` hypothesis is externalized following the standard pattern for
+CDT-expanding operations (see `cspaceCopy_preserves_capabilityInvariantBundle`).
+The caller (API layer) is responsible for discharging CDT obligations. -/
+theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : capabilityInvariantBundle st)
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        cap ∈ caps.toList →
+        capabilityInvariantBundle stI →
+        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
+          ∀ s, (cn.insert s cap).slotCountBounded)
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
+        capabilityInvariantBundle stI →
+        ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit stI
+          = .ok (result, stJ) →
+        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase
+             accResults fuel st = .ok (summary, st')) :
+    capabilityInvariantBundle st' := by
+  sorry
+```
+
+**Parameter correspondence to function definition**:
+
+| Theorem param | ipcUnwrapCapsLoop param | Notes |
+|--------------|------------------------|-------|
+| `caps` | `caps` | Fixed across recursion |
+| `senderRoot` | `senderCspaceRoot` | Renamed for consistency |
+| `receiverRoot` | `receiverCspaceRoot` | Renamed for consistency |
+| `idx` | `idx` | Generalized in induction |
+| `nextBase` | `nextBase` | Generalized in induction |
+| `accResults` | `accResults` | Generalized in induction |
+| `fuel` | `fuel` | Induction variable |
+| `st` | (state arg) | Generalized in induction |
+| `st'` | (output state) | Bound by `hStep` |
+| `summary` | (output summary) | Bound by `hStep` |
+| `hInv` | (new) | Pre-state invariant |
+| `hSlotCap` | (new) | Per-state slot capacity |
+| `hCdtPost` | (new) | Per-step CDT postcondition |
+| `hStep` | (new) | Loop execution evidence |
+
+### 6.5. Insertion Location
+
+The theorem is inserted at Preservation.lean between lines 1960 and 1962,
+replacing the M3-D3 comment block (lines 1962-1980):
+
+```
+Line 1960:  (end of ipcTransferSingleCap_preserves_capabilityInvariantBundle proof)
+Line 1961:  (blank line)
+Line 1962:  -- ===== M3-D3 comment block (TO BE REPLACED) =====
+  ...
+Line 1980:  -- ===== end comment block =====
+Line 1981:  (blank line)
+Line 1982:  (start of ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant)
+```
+
+The new theorem replaces lines 1962-1980. The `_noGrant` theorem at line 1982
+remains unchanged.
+
+### 6.6. Implementation Steps
 
 1. **Read Preservation.lean lines 1960-1997** to identify the exact insertion
    point (between `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
    and the M3-D3 comment block)
-2. **Draft the loop theorem signature** with inline hypotheses (do not add
-   the proof body yet — use `sorry` temporarily during V3-E2, replaced in
-   V3-E3/E4)
+2. **Replace the M3-D3 comment block** (lines 1962-1980) with the exact
+   theorem signature from Section 6.4 above, including docstring
 3. **Verify build**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
    — the `sorry` will generate a warning but not an error
 4. **Note**: The `sorry` is temporary scaffolding only. It MUST be removed
@@ -556,7 +697,7 @@ inline hypotheses and refactor to named predicates only if needed.
 
 ---
 
-## 7. V3-E3: Prove Base Case
+## 7. V3-E3: Prove Base Cases
 
 **Scope**: Small (~15-25 lines)
 **File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
@@ -584,46 +725,77 @@ directly from `hInv : capabilityInvariantBundle st`.
 When the index exceeds the array bounds, the loop terminates early. Again,
 `st' = st`, so the conclusion is immediate.
 
-### 7.2. Proof Sketch
+### 7.2. Exact Tactic Sequence
+
+The base case proof follows the identical pattern from all 8 existing
+`ipcUnwrapCapsLoop` proofs (CapTransfer.lean:99-107). The only difference
+is the conclusion: instead of `rfl` (equational) we use `exact hInv`
+(predicate preservation).
 
 ```lean
-induction fuel generalizing idx nextBase accResults st with
-| zero =>
-    -- fuel = 0: loop returns immediately
+-- Replace `sorry` with:
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    -- Base: fuel exhausted → loop returns immediately, state unchanged
     simp [ipcUnwrapCapsLoop] at hStep
     obtain ⟨_, rfl⟩ := hStep
     exact hInv
-| succ n ih =>
-    -- fuel = n + 1: check caps[idx]?
+  | succ n ih =>
+    -- Recursive case: unfold one step of the loop
     simp only [ipcUnwrapCapsLoop] at hStep
+    -- Case split on array lookup
     cases hCap : caps[idx]? with
     | none =>
-        -- Index out of bounds: loop returns immediately
-        simp [hCap] at hStep
-        obtain ⟨_, rfl⟩ := hStep
-        exact hInv
+      -- Base: index out of bounds → loop returns immediately, state unchanged
+      simp [hCap] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      exact hInv
     | some cap =>
-        -- Inductive step (V3-E4)
-        ...
+      -- Inductive step (V3-E4 — filled in next)
+      sorry
 ```
+
+**Tactic-by-tactic explanation**:
+
+1. `simp [ipcUnwrapCapsLoop] at hStep` — Unfolds the `match fuel with | 0 => ...`
+   and simplifies the result. In the `zero` case, this reduces `hStep` to
+   `(.ok ({ results := accResults }, st)) = .ok (summary, st')`, which `simp`
+   normalizes to `summary = { results := accResults } ∧ st' = st`.
+
+2. `obtain ⟨_, rfl⟩ := hStep` — Destructures the conjunction, discarding the
+   summary equality (irrelevant to the goal) and substituting `st' := st` into
+   the goal via `rfl`. The goal becomes `capabilityInvariantBundle st`.
+
+3. `exact hInv` — Closes the goal directly from the hypothesis.
+
+4. `simp only [ipcUnwrapCapsLoop] at hStep` — In the `succ` case, uses `simp only`
+   (not `simp`) to unfold only `ipcUnwrapCapsLoop` without applying other lemmas.
+   This is important: bare `simp` might simplify too aggressively and destroy
+   the match structure needed for the next `cases` tactic.
+
+5. `cases hCap : caps[idx]?` — Names the case hypothesis `hCap` so it can be
+   used with `simp [hCap]` to normalize `hStep` in each branch.
 
 ### 7.3. Implementation Steps
 
-1. **Begin the induction proof** in the loop theorem body
-2. **Handle the `zero` case**: unfold `ipcUnwrapCapsLoop`, extract state
-   equality, apply `hInv`
-3. **Handle the `none` case in `succ`**: unfold, case split on `caps[idx]?`,
-   handle `none` branch
-4. **Leave the `some cap` branch** for V3-E4 (use `sorry` temporarily)
-5. **Verify build**: module compiles with the `sorry` in the `some` branch
+1. **Replace `sorry`** in the theorem body with the induction tactic and base
+   case handling from Section 7.2 above
+2. **Verify the `zero` case** closes with `exact hInv`
+3. **Verify the `none` case** closes with `exact hInv`
+4. **Leave `sorry`** in the `some cap` branch for V3-E4
+5. **Verify build**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
+   — should compile with a single sorry warning
 
 ### 7.4. Validation
 
-The base case proof should be ~10-15 lines. Verify by reading the proof term
+The base case proof should be exactly 12 lines (matching the pattern from
+`ipcUnwrapCapsLoop_preserves_scheduler`). Verify by reading the proof term
 and confirming that:
-- The `zero` branch produces `exact hInv` (not a tactic chain)
-- The `none` branch produces `exact hInv`
-- Both branches correctly extract `rfl : st' = st` from the step hypothesis
+- The `zero` branch uses `simp [ipcUnwrapCapsLoop]` (NOT `simp only`)
+- The `succ` case uses `simp only [ipcUnwrapCapsLoop]` (NOT `simp`)
+- Both base branches produce `exact hInv`
+- Both base branches correctly extract `rfl : st' = st` via `obtain ⟨_, rfl⟩`
+- The `generalizing` clause includes exactly `idx nextBase accResults st`
 
 ### 7.5. Acceptance Criteria
 
@@ -636,222 +808,454 @@ and confirming that:
 
 ## 8. V3-E4: Prove Inductive Step
 
-**Scope**: Medium (~80-150 lines)
+**Scope**: Medium-Large (~80-150 lines)
 **File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
 **Prerequisite**: V3-E3 complete (base cases proved)
 
-This is the most complex sub-task. It handles the `some cap` branch in the
-`succ n` case of the fuel induction.
+This is the most complex sub-task. It is decomposed into 4 sequential
+micro-units (V3-E4a through V3-E4d) to manage complexity and enable
+incremental validation.
 
-### 8.1. Case Analysis
-
-After matching `caps[idx]? = some cap`, the loop calls `ipcTransferSingleCap`.
-The result determines the proof path:
+### 8.1. Sub-Unit Decomposition
 
 ```
-ipcTransferSingleCap cap senderSlot receiverRoot nextBase maxExtraCaps st
+V3-E4: Prove Inductive Step
   │
-  ├── .error _e  →  Error path (state unchanged for this cap)
-  │     Loop pushes .noSlot and recurses with SAME state `st`
-  │     Proof: apply ih directly with original hInv
+  ├── V3-E4a: Preliminary setup — simp/cases scaffolding       (~10 lines)
+  │     Open the `some cap` branch, normalize `hStep`, split on
+  │     ipcTransferSingleCap result
   │
-  └── .ok (result, stNext)  →  Success path (state modified)
-        │
-        ├── result = .installed cnode slot
-        │     nextBase advances by 1
-        │     stNext has modified CNode (new cap inserted) and CDT (new edge)
-        │
-        └── result = .noSlot (or other)
-              nextBase unchanged
-              stNext still modified (partial state changes before .noSlot)
+  ├── V3-E4b: Error path — state unchanged                     (~5 lines)
+  │     When ipcTransferSingleCap returns .error, apply ih with
+  │     original hInv
+  │
+  ├── V3-E4c: Success path — per-step preservation + IH        (~40-80 lines)
+  │     When ipcTransferSingleCap returns .ok, chain:
+  │     (1) Extract hCapMem from hCap
+  │     (2) Instantiate hSlotCap and hCdtPost
+  │     (3) Apply ipcTransferSingleCap_preserves_capabilityInvariantBundle
+  │     (4) Case split on result for nextBase'
+  │     (5) Apply ih with updated hInvNext
+  │
+  └── V3-E4d: (Contingency) Extract helper lemmas               (~30-50 lines)
+        Only if V3-E4c causes elaboration timeout. Factor the
+        success path into a separate lemma.
 ```
 
-### 8.2. Error Path Proof
+### 8.2. V3-E4a: Preliminary Setup
+
+**Goal**: Open the `some cap` branch, normalize the step hypothesis, and set up
+the case split on `ipcTransferSingleCap`.
+
+**Exact tactic sequence** (replacing `sorry` from V3-E3):
 
 ```lean
-simp [hCap] at hStep
-cases hTransfer : ipcTransferSingleCap cap
-    { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
-    receiverRoot nextBase maxExtraCaps st with
-| error e =>
-    -- State unchanged: loop recurses with same st
-    simp [hTransfer] at hStep
-    -- hStep now equates to ipcUnwrapCapsLoop ... fuel' st = .ok (summary, st')
-    exact ih (idx + 1) (SeLe4n.Slot.ofNat (nextBase.toNat + 1))
-             (accResults.push .noSlot) st hInv hStep
-```
-
-This is straightforward: since the error path recurses with the same state
-`st`, the inductive hypothesis applies with the original `hInv`.
-
-### 8.3. Success Path Proof — Core Chain
-
-The success path is the heart of V3-E. After `ipcTransferSingleCap` succeeds
-with `.ok (result, stNext)`:
-
-**Step 1: Obtain per-step preservation**
-```lean
-| ok pair =>
-    obtain ⟨result, stNext⟩ := pair
-    -- Apply the per-step theorem
-    have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
-      st stNext cap { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
-      receiverRoot nextBase maxExtraCaps result
-      hInv
-      (hSlotCap st cap hCapMem hInv)   -- slot capacity for pre-state
-      (hCdtPost st stNext cap ... hInv hTransfer)  -- CDT post for this step
-      hTransfer
-```
-
-**Step 2: Compute nextBase'**
-```lean
-    let nextBase' := match result with
-      | .installed _ _ => SeLe4n.Slot.ofNat (nextBase.toNat + 1)
-      | _ => nextBase
-```
-
-**Step 3: Apply inductive hypothesis**
-```lean
-    -- hStep now equates to ipcUnwrapCapsLoop ... fuel' stNext = .ok (summary, st')
-    simp [hTransfer] at hStep
-    exact ih (idx + 1) nextBase' (accResults.push result) stNext hInvNext hStep
-```
-
-### 8.4. Key Proof Obligations in the Success Path
-
-#### 8.4.1. Supplying `hSlotCap` for the Pre-State
-
-The per-step theorem requires:
-```lean
-hSlotCapacity : ∀ cn, st.objects[receiverRoot]? = some (.cnode cn) →
-    ∀ s, (cn.insert s cap).slotCountBounded
-```
-
-This is supplied by instantiating the universally-quantified `hSlotCap`
-hypothesis with `st` and `cap`:
-```lean
-hSlotCap st cap hCapMem hInv
-```
-
-where `hCapMem : cap ∈ caps.toList` is derived from `caps[idx]? = some cap`
-via `Array.getElem?_some_mem` or similar.
-
-#### 8.4.2. Supplying `hCdtPost` for the Per-Step Post-State
-
-The per-step theorem requires:
-```lean
-hCdtPost : cdtCompleteness stNext ∧ cdtAcyclicity stNext
-```
-
-This is supplied by instantiating the universally-quantified `hCdtPost`
-hypothesis with `st`, `stNext`, `cap`, and the step evidence:
-```lean
-hCdtPost st stNext cap ... hInv hTransfer
-```
-
-#### 8.4.3. Threading `hSlotCap` to the Inductive Hypothesis
-
-The inductive hypothesis requires `hSlotCap` to hold for `stNext` (not just
-`st`). Since `hSlotCap` is universally quantified over all intermediate states,
-it applies to `stNext` directly — no re-proving needed.
-
-#### 8.4.4. Threading `hCdtPost` to the Inductive Hypothesis
-
-Similarly, `hCdtPost` is universally quantified over all intermediate state
-pairs, so it applies to any future `ipcTransferSingleCap` call starting from
-`stNext`.
-
-### 8.5. Potential Complications
-
-#### 8.5.1. `simp` Unfolding Depth
-
-The `ipcUnwrapCapsLoop` definition has nested matches (fuel, then caps[idx]?,
-then ipcTransferSingleCap result, then result variant for nextBase'). The
-`simp` tactic may not unfold all levels automatically.
-
-**Mitigation**: Use `unfold ipcUnwrapCapsLoop` followed by targeted `simp`
-or `cases`/`split` instead of relying on `simp` alone. The existing 8 private
-theorems in CapTransfer.lean demonstrate the correct unfolding strategy.
-
-#### 8.5.2. Array Membership Evidence
-
-Deriving `cap ∈ caps.toList` from `caps[idx]? = some cap` requires a lemma
-about array indexing. In Lean 4 / Mathlib:
-```lean
-theorem Array.getElem?_eq_some_iff {a : Array α} {i : Nat} {x : α} :
-    a[i]? = some x ↔ ∃ h : i < a.size, a[i] = x
-```
-
-From this, `cap ∈ caps.toList` follows via `Array.mem_toList_of_getElem`.
-If this exact lemma is not available, a small helper can be proved inline.
-
-#### 8.5.3. `nextBase'` Case Split
-
-The computation of `nextBase'` depends on the result variant. The proof must
-handle both `installed` and non-`installed` branches. Since the recursive
-call uses `nextBase'` in both cases, a `cases result` or `match result` in
-the proof may be needed to align with the definition.
-
-**Mitigation**: After the `ipcTransferSingleCap` case split, further split
-on the result to determine `nextBase'`, then apply the inductive hypothesis.
-Alternatively, if Lean can unify without the split (because the recursive call
-pattern is the same regardless of `nextBase'`), skip the case split.
-
-### 8.6. Reference Implementation Pattern
-
-The closest existing proof pattern is `streamingRevokeBFS_preserves`
-(Preservation.lean:1129-1154). Adapting it for V3-E4:
-
-```lean
--- Existing pattern (CDT-shrinking):
-| succ n ih =>
-    cases hProc : processRevokeNode stInit node with
-    | error e => contradiction
-    | ok stNext =>
-        have hStepInv := step_preserves stInit stNext ...
-        exact ih ... stNext hStepInv ...
-
--- V3-E4 pattern (CDT-expanding):
-| succ n ih =>
-    cases hCap : caps[idx]? with
-    | none => base case (already proved in V3-E3)
     | some cap =>
-        cases hTransfer : ipcTransferSingleCap ... st with
-        | error e =>
-            simp [hCap, hTransfer] at hStep
-            exact ih ... st hInv hStep
-        | ok pair =>
-            obtain ⟨result, stNext⟩ := pair
-            have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
-                st stNext cap ... hInv (hSlotCap ...) (hCdtPost ...) hTransfer
-            simp [hCap, hTransfer] at hStep
-            -- May need to case split on result for nextBase' computation
-            exact ih ... stNext hInvNext hStep
+      -- Normalize hStep after matching caps[idx]? = some cap
+      simp [hCap] at hStep
+      -- Case split on ipcTransferSingleCap result
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        sorry  -- V3-E4b
+      | ok pair =>
+        sorry  -- V3-E4c
 ```
 
-### 8.7. Implementation Steps
+**Why this exact form**: This matches the tactic sequence from
+`ipcUnwrapCapsLoop_preserves_scheduler` (CapTransfer.lean:109-113) exactly.
+The `simp [hCap]` normalizes `hStep` by substituting `caps[idx]? = some cap`
+into the unfolded loop definition. The `cases hTransfer` then splits on the
+result of the single-cap transfer, naming the evidence `hTransfer` for use in
+subsequent `simp [hTransfer]` calls.
 
-1. **Read CapTransfer.lean:93-137** for the existing
-   `ipcUnwrapCapsLoop_preserves_scheduler` proof to understand the exact
-   unfolding and case-splitting strategy
-2. **Fill in the `some cap` branch** from V3-E3's `sorry`
-3. **Handle the error path** (case split on `ipcTransferSingleCap` result)
-4. **Handle the success path**:
-   a. Apply `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
-   b. Supply `hSlotCap` and `hCdtPost` instantiations
-   c. Simplify `hStep` to the recursive form
-   d. Apply the inductive hypothesis `ih`
-5. **Handle the `nextBase'` case split** if needed
-6. **Verify build**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
-7. **Remove all `sorry`** from the loop theorem
+**Validation**: After V3-E4a, the module should build with exactly 2 `sorry`
+warnings (one for each branch of the `cases hTransfer`).
 
-### 8.8. Acceptance Criteria
+### 8.3. V3-E4b: Error Path
 
-- [ ] Inductive step fully proved (no `sorry`)
-- [ ] Error path handled: state unchanged, `ih` applied with original `hInv`
-- [ ] Success path handled: per-step preservation applied, hypotheses threaded
-- [ ] Both `hSlotCap` and `hCdtPost` correctly instantiated at each step
-- [ ] Module builds with zero errors and zero `sorry`
+**Goal**: When `ipcTransferSingleCap` returns `.error e`, prove that the loop
+still preserves `capabilityInvariantBundle`.
+
+**Key insight**: On error, the loop recurses with the **original state** `st`:
+```lean
+| .error _e =>
+    ipcUnwrapCapsLoop caps senderCspaceRoot receiverCspaceRoot
+      (idx + 1) (SeLe4n.Slot.ofNat (nextBase.toNat + 1))
+      (accResults.push .noSlot) fuel' st  -- same st!
+```
+
+Since `st` is unchanged, the original `hInv : capabilityInvariantBundle st`
+applies directly. The IH is invoked with the 4 generalized variables
+(all inferred by Lean via underscores) plus `hInv` (unchanged).
+
+**Exact tactic sequence**:
+
+```lean
+      | error e =>
+        -- Normalize: substitute hTransfer = .error e into hStep
+        simp [hTransfer] at hStep
+        -- hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot
+        --   (idx + 1) (Slot.ofNat (nextBase.toNat + 1))
+        --   (accResults.push .noSlot) n st = .ok (summary, st')
+        -- Apply IH with same state and same invariant
+        exact ih _ _ _ _ hInv hStep
+```
+
+**Tactic-by-tactic**:
+
+1. `simp [hTransfer] at hStep` — Substitutes `.error e` for the
+   `ipcTransferSingleCap` result in `hStep`. After substitution, `hStep` is a
+   recursive call to `ipcUnwrapCapsLoop` with `fuel' = n` (one less than
+   `fuel = n + 1`), starting from the same state `st`.
+
+2. `exact ih _ _ _ _ hInv hStep` — Applies the inductive hypothesis.
+   - The 4 underscores correspond to the generalized variables: `idx + 1`,
+     `Slot.ofNat (nextBase.toNat + 1)`, `accResults.push .noSlot`, `st`.
+     Lean infers these from `hStep`.
+   - `hInv` is passed explicitly because the pre-state is unchanged.
+   - `hStep` provides the loop execution evidence for the remaining iterations.
+
+**This matches Pattern 1A** (CapTransfer.lean:114-116) exactly, with the only
+difference being `exact ih` (predicate) instead of `rw [ih ...]` (equational).
+
+**Validation**: After V3-E4b, the module should build with exactly 1 `sorry`
+warning (in the `ok pair` branch).
+
+### 8.4. V3-E4c: Success Path — Core Proof Chain
+
+**Goal**: When `ipcTransferSingleCap` returns `.ok (result, stNext)`, prove
+`capabilityInvariantBundle st'` by chaining per-step preservation with the IH.
+
+This is the most intricate part of V3-E. It has 5 sequential proof steps:
+
+#### Step 1: Destructure the success pair
+
+```lean
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+```
+
+Uses `rcases` (not `obtain`) to match the existing pattern in all 8 loop
+proofs (e.g., CapTransfer.lean:118). `result : CapTransferResult` and
+`stNext : SystemState` are now in scope.
+
+#### Step 2: Derive array membership evidence
+
+```lean
+        -- Derive: cap ∈ caps.toList (needed for hSlotCap)
+        have hCapMem : cap ∈ caps.toList := by
+          exact Array.getElem?_mem hCap
+```
+
+This derives `cap ∈ caps.toList` from `hCap : caps[idx]? = some cap`.
+
+**Contingency**: If `Array.getElem?_mem` is not available in Lean 4.28.0,
+use one of these alternatives:
+
+```lean
+-- Alternative 1: Manual proof via getElem? semantics
+have hCapMem : cap ∈ caps.toList := by
+  have ⟨hBound, hEq⟩ := Array.getElem?_eq_some.mp hCap
+  exact Array.mem_toList.mpr ⟨idx, hBound, hEq⟩
+
+-- Alternative 2: Weaken hSlotCap to not require membership
+-- (see Section 8.7 Design Alternative)
+```
+
+**Important**: If the array membership proof is problematic, consider
+reformulating `hSlotCap` to quantify over ALL capabilities (not just those in
+`caps.toList`). See Section 8.7 for this alternative design.
+
+#### Step 3: Apply per-step preservation theorem
+
+```lean
+        -- Apply ipcTransferSingleCap_preserves_capabilityInvariantBundle
+        have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
+          st stNext cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps result
+          hInv                                    -- pre-state invariant
+          (hSlotCap st cap hCapMem hInv)          -- slot capacity
+          (hCdtPost st stNext cap                 -- CDT postcondition
+            { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+            nextBase maxExtraCaps result
+            hInv hTransfer)
+          hTransfer                               -- step evidence
+```
+
+This is the **core proof step**. It instantiates the per-step theorem with:
+
+| Argument | Value | Source |
+|----------|-------|--------|
+| `st` | `st` | Current pre-state (in scope) |
+| `st'` | `stNext` | Post-state (from `rcases`) |
+| `cap` | `cap` | Current capability (from `cases hCap`) |
+| `senderSlot` | `{ cnode := senderRoot, slot := Slot.ofNat 0 }` | Fixed sender slot |
+| `receiverRoot` | `receiverRoot` | Fixed receiver (in scope) |
+| `slotBase` | `nextBase` | Current slot base (generalized) |
+| `scanLimit` | `maxExtraCaps` | Fixed scan limit |
+| `result` | `result` | Transfer result (from `rcases`) |
+| `hInv` | `hInv` | Pre-state invariant (in scope) |
+| `hSlotCapacity` | `hSlotCap st cap hCapMem hInv` | Instantiated from universal |
+| `hCdtPost` | `hCdtPost st stNext cap ... hInv hTransfer` | Instantiated from universal |
+| `hStep` | `hTransfer` | Transfer execution evidence |
+
+**Output**: `hInvNext : capabilityInvariantBundle stNext`
+
+#### Step 4: Normalize hStep for the recursive call
+
+```lean
+        -- Simplify hStep by substituting the successful transfer result
+        simp [hTransfer] at hStep
+```
+
+After this, `hStep` contains the recursive `ipcUnwrapCapsLoop` call with
+`fuel' = n`, starting from state `stNext`. However, the `nextBase'`
+computation (a `match result with | .installed _ _ => ... | _ => ...`) may
+still be present in `hStep`, requiring a case split on `result`.
+
+#### Step 5: Case split on result and apply IH
+
+```lean
+        -- Case split on result to resolve nextBase' computation
+        cases result with
+        | installed c s =>
+          -- nextBase' = Slot.ofNat (nextBase.toNat + 1)
+          exact ih _ _ _ _ hInvNext hStep
+        | noSlot =>
+          -- nextBase' = nextBase
+          exact ih _ _ _ _ hInvNext hStep
+        | grantDenied =>
+          -- nextBase' = nextBase (unreachable in practice, but must be handled)
+          exact ih _ _ _ _ hInvNext hStep
+```
+
+This case split resolves the `match result with` in the loop's `nextBase'`
+computation. Each branch has an identical proof (`exact ih _ _ _ _ hInvNext hStep`)
+because:
+- The IH is parametric over `nextBase` (generalized)
+- `hInvNext` holds regardless of the result variant
+- `hStep` contains the correct recursive call for each branch
+
+**This matches Pattern 1A** (CapTransfer.lean:121-124) which uses the same
+3-way case split with identical branches.
+
+**Optimization**: If Lean can unify all three branches without the case split
+(i.e., if `simp [hTransfer]` fully resolves the `match result` in `hStep`),
+the case split can be omitted:
+
+```lean
+        -- Optimistic: if simp resolves nextBase' without case split
+        simp [hTransfer] at hStep
+        exact ih _ _ _ _ hInvNext hStep
+```
+
+Try the optimistic version first. Fall back to the 3-way case split if Lean
+reports a unification error.
+
+### 8.5. V3-E4d: (Contingency) Extract Helper Lemmas
+
+**Trigger**: Only needed if V3-E4c causes Lean elaboration timeout (>60s) or
+if the proof term becomes too large for the elaborator.
+
+**Strategy**: Factor the success path into a standalone lemma:
+
+```lean
+/-- V3-E helper: single-step capability transfer preserves the loop invariant.
+Extracts the success-path proof from the inductive step to reduce elaboration
+pressure on the main induction. -/
+private theorem ipcUnwrapCapsLoop_step_preserves_capabilityInvariantBundle
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot)
+    (cap : Capability) (result : CapTransferResult) (st stNext : SystemState)
+    (hInv : capabilityInvariantBundle st)
+    (hCap : caps[idx]? = some cap)
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        cap ∈ caps.toList →
+        capabilityInvariantBundle stI →
+        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
+          ∀ s, (cn.insert s cap).slotCountBounded)
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
+        capabilityInvariantBundle stI →
+        ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit stI
+          = .ok (result, stJ) →
+        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
+    (hTransfer : ipcTransferSingleCap cap
+        { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+        receiverRoot nextBase maxExtraCaps st = .ok (result, stNext)) :
+    capabilityInvariantBundle stNext := by
+  have hCapMem : cap ∈ caps.toList := Array.getElem?_mem hCap
+  exact ipcTransferSingleCap_preserves_capabilityInvariantBundle
+    st stNext cap
+    { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+    receiverRoot nextBase maxExtraCaps result
+    hInv
+    (hSlotCap st cap hCapMem hInv)
+    (hCdtPost st stNext cap _ nextBase maxExtraCaps result hInv hTransfer)
+    hTransfer
+```
+
+Then the main induction's success path becomes:
+
+```lean
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hInvNext := ipcUnwrapCapsLoop_step_preserves_capabilityInvariantBundle
+          caps senderRoot receiverRoot idx nextBase cap result st stNext
+          hInv hCap hSlotCap hCdtPost hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hInvNext hStep
+        | noSlot => exact ih _ _ _ _ hInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hInvNext hStep
+```
+
+This separates the hypothesis-threading complexity from the induction
+structure, significantly reducing elaboration pressure.
+
+### 8.6. Complete Tactic Sequence (V3-E4a through V3-E4c Combined)
+
+For reference, here is the complete `some cap` branch proof that replaces the
+`sorry` from V3-E3:
+
+```lean
+    | some cap =>
+      -- V3-E4a: Preliminary setup
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      -- V3-E4b: Error path
+      | error e =>
+        simp [hTransfer] at hStep
+        exact ih _ _ _ _ hInv hStep
+      -- V3-E4c: Success path
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hCapMem : cap ∈ caps.toList := Array.getElem?_mem hCap
+        have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
+          st stNext cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps result
+          hInv
+          (hSlotCap st cap hCapMem hInv)
+          (hCdtPost st stNext cap
+            { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+            nextBase maxExtraCaps result hInv hTransfer)
+          hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hInvNext hStep
+        | noSlot => exact ih _ _ _ _ hInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hInvNext hStep
+```
+
+**Total line count**: ~25 lines for the `some cap` branch. Combined with the
+base cases from V3-E3, the full proof body is ~37 lines.
+
+### 8.7. Design Alternative: Weaken hSlotCap Membership Requirement
+
+If the array membership evidence (`cap ∈ caps.toList`) proves problematic
+(see Section 8.4, Step 2 contingency), the `hSlotCap` hypothesis can be
+strengthened to quantify over ALL capabilities, not just those in `caps`:
+
+```lean
+-- Weakened membership requirement (quantify over all caps):
+(hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+    capabilityInvariantBundle stI →
+    ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
+      ∀ s, (cn.insert s cap).slotCountBounded)
+```
+
+This removes the `cap ∈ caps.toList` precondition entirely. The caller must
+then prove that ANY capability insertion keeps the slot count bounded, which
+is a stronger obligation but eliminates the array membership proof entirely.
+
+**Trade-off analysis**:
+- **Pro**: Simpler proof (no array membership lemma needed)
+- **Pro**: Fewer tactic steps (no `have hCapMem` step)
+- **Con**: Stronger caller obligation (must prove for all caps, not just message caps)
+- **Con**: Less precise specification (weakly typed)
+
+**Recommendation**: Start with the precise formulation (with membership).
+Fall back to the weakened version only if the array membership proof is
+genuinely unavailable or excessively complex.
+
+### 8.8. Potential Complications and Mitigations
+
+#### 8.8.1. `simp [hTransfer]` Does Not Fully Resolve `hStep`
+
+**Symptom**: After `simp [hTransfer] at hStep`, the `hStep` hypothesis still
+contains unreduced `match` expressions or `let` bindings.
+
+**Mitigation**: Use `simp only [hTransfer]` followed by `simp only []` to
+normalize without applying rewrite rules. If still unresolved, try:
+```lean
+simp [hCap, hTransfer] at hStep  -- provide both hypotheses at once
+```
+or use `dsimp` for definitional simplification:
+```lean
+dsimp only [] at hStep
+simp [hTransfer] at hStep
+```
+
+#### 8.8.2. IH Unification Failure on `nextBase'`
+
+**Symptom**: `exact ih _ _ _ _ hInvNext hStep` fails with a unification error
+because Lean cannot determine which `nextBase'` value to use.
+
+**Mitigation**: The 3-way case split on `result` (Section 8.4, Step 5) ensures
+that `nextBase'` is fully determined in each branch. This is the same pattern
+used in all 8 existing loop proofs and is confirmed to work.
+
+#### 8.8.3. `hCdtPost` Instantiation Argument Mismatch
+
+**Symptom**: The `hCdtPost` instantiation fails because Lean cannot match the
+expected argument types.
+
+**Mitigation**: Verify that the `hCdtPost` hypothesis signature in V3-E2
+exactly matches the arguments of `ipcTransferSingleCap`. The `senderSlot`
+argument in the loop is always `{ cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }`,
+which must be a valid `CSpaceAddr`. Ensure the `hCdtPost` quantifier includes
+this as a bound variable (not a fixed value).
+
+#### 8.8.4. Lean Elaboration Timeout
+
+**Symptom**: The proof takes >60s to elaborate, or Lean reports a deterministic
+timeout error.
+
+**Mitigation**: Apply the V3-E4d contingency plan — extract the success path
+into a standalone helper lemma. This is the standard response in this codebase
+(see `streamingRevokeBFS_step_preserves`, which is a 3-line wrapper that exists
+solely to reduce elaboration pressure on the main induction).
+
+### 8.9. Implementation Steps
+
+1. **V3-E4a**: Replace `sorry` in the `some cap` branch with simp/cases
+   scaffolding (Section 8.2). Verify: 2 sorry warnings.
+2. **V3-E4b**: Fill the `error e` branch (Section 8.3). Verify: 1 sorry warning.
+3. **V3-E4c**: Fill the `ok pair` branch (Section 8.4). Verify: 0 sorry.
+4. **V3-E4d**: (Only if needed) Extract helper lemma (Section 8.5).
+5. **Final build**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
+   — zero errors, zero sorry.
+
+### 8.10. Acceptance Criteria
+
+- [ ] V3-E4a: `some cap` branch scaffolding compiles (2 sorry)
+- [ ] V3-E4b: Error path fully proved, IH applied with original `hInv` (1 sorry)
+- [ ] V3-E4c: Success path fully proved:
+  - [ ] Array membership evidence derived from `hCap`
+  - [ ] `hSlotCap` instantiated for pre-state
+  - [ ] `hCdtPost` instantiated for this step's post-state
+  - [ ] `ipcTransferSingleCap_preserves_capabilityInvariantBundle` applied
+  - [ ] Result case split resolves `nextBase'` computation
+  - [ ] IH applied with `hInvNext` and remaining loop evidence
+- [ ] Zero `sorry` in the complete loop theorem
+- [ ] Module builds with zero errors
 - [ ] The complete `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle`
   theorem is now fully proved
 
@@ -859,59 +1263,104 @@ The closest existing proof pattern is `streamingRevokeBFS_preserves`
 
 ## 9. V3-E5: Compose Full Loop Theorem
 
-**Scope**: Medium (~40-70 lines)
+**Scope**: Medium (~40-70 lines across 3 deliverables)
 **File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
 **Prerequisite**: V3-E4 complete (loop theorem fully proved)
 
-### 9.1. Goal
+V3-E5 is decomposed into 3 sequential micro-units:
 
-Prove the top-level theorem that composes the loop lemma with the
-`ipcUnwrapCaps` entry point to establish end-to-end preservation:
+```
+V3-E5: Compose Full Loop Theorem
+  │
+  ├── V3-E5a: Grant=true top-level theorem               (~15 lines)
+  │     Unfold ipcUnwrapCaps, delegate to loop theorem
+  │
+  ├── V3-E5b: Unified Bool-parametric theorem             (~25 lines)
+  │     Case split on endpointGrantRight, delegate to
+  │     _grant and _noGrant variants
+  │
+  └── V3-E5c: Comment block cleanup + docstrings          (~10 lines)
+        Replace M3-D3 comment block, add docstrings,
+        update _noGrant cross-reference
+```
+
+### 9.1. V3-E5a: Grant=true Top-Level Theorem
+
+**Goal**: Bridge from `ipcUnwrapCaps` (entry point) to
+`ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` (loop theorem).
+
+**Exact signature and proof**:
 
 ```lean
+/-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`
+when the endpoint has Grant right (grantRight = true). Delegates to
+`ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` after unfolding
+the entry point. -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
     (st st' : SystemState) (msg : IpcMessage)
     (senderRoot receiverRoot : SeLe4n.ObjId)
     (slotBase : SeLe4n.Slot)
     (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCap : ∀ stI cap, cap ∈ msg.caps.toList →
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        cap ∈ msg.caps.toList →
         capabilityInvariantBundle stI →
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
-    (hCdtPost : ∀ stI stJ cap senderSlot slotBase' scanLimit result,
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase' : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
         capabilityInvariantBundle stI →
         ipcTransferSingleCap cap senderSlot receiverRoot slotBase' scanLimit stI
           = .ok (result, stJ) →
         cdtCompleteness stJ ∧ cdtAcyclicity stJ)
     (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase true st
              = .ok (summary, st')) :
-    capabilityInvariantBundle st'
-```
-
-### 9.2. Proof Structure
-
-The proof unfolds `ipcUnwrapCaps` for the `Grant=true` path, which delegates
-to `ipcUnwrapCapsLoop` with `fuel = msg.caps.size`:
-
-```lean
-theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant ... := by
-  -- Unfold ipcUnwrapCaps for Grant=true path
+    capabilityInvariantBundle st' := by
   simp [ipcUnwrapCaps] at hStep
-  -- hStep : ipcUnwrapCapsLoop msg.caps senderRoot receiverRoot
-  --           0 slotBase #[] msg.caps.size st = .ok (summary, st')
   exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
     msg.caps senderRoot receiverRoot
     0 slotBase #[] msg.caps.size
     st st' summary hInv hSlotCap hCdtPost hStep
 ```
 
-### 9.3. Unified Theorem (Optional)
+**Tactic-by-tactic**:
 
-After proving both the Grant=true and Grant=false cases, a unified theorem
-can combine them:
+1. `simp [ipcUnwrapCaps] at hStep` — Unfolds `ipcUnwrapCaps` and evaluates
+   the `if !true then ...` branch. Since `!true = false`, the `else` branch
+   is taken, reducing `hStep` to:
+   ```
+   ipcUnwrapCapsLoop msg.caps senderRoot receiverRoot
+     0 slotBase #[] msg.caps.size st = .ok (summary, st')
+   ```
+
+2. `exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle ...` — Applies
+   the loop theorem with explicit arguments. The initial values are:
+   - `idx = 0` (start from the first capability)
+   - `accResults = #[]` (empty accumulator)
+   - `fuel = msg.caps.size` (one iteration per capability)
+
+**Note on hypothesis forwarding**: The `hSlotCap` hypothesis quantifies over
+`msg.caps.toList`, which is the same `caps` array passed to the loop. This is
+why the hypotheses forward directly without conversion.
+
+### 9.2. V3-E5b: Unified Bool-Parametric Theorem
+
+**Goal**: Provide a single entry point that covers both Grant cases.
+
+**Exact signature and proof**:
 
 ```lean
+/-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`
+for any value of `endpointGrantRight`. This is the primary entry point for
+the IPC rendezvous composition chain.
+
+- **Grant=false**: State unchanged (no transfers), trivially preserved.
+- **Grant=true**: Fuel-indexed induction over `ipcUnwrapCapsLoop`, threading
+  slot capacity and CDT postcondition hypotheses per-iteration.
+
+The `hSlotCap` and `hCdtPost` hypotheses are vacuous when Grant=false
+(no `ipcTransferSingleCap` calls occur). -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (st st' : SystemState) (msg : IpcMessage)
     (senderRoot receiverRoot : SeLe4n.ObjId)
@@ -919,211 +1368,270 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
     (endpointGrantRight : Bool)
     (summary : CapTransferSummary)
     (hInv : capabilityInvariantBundle st)
-    (hSlotCap : ∀ stI cap, cap ∈ msg.caps.toList →
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        cap ∈ msg.caps.toList →
         capabilityInvariantBundle stI →
         ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
           ∀ s, (cn.insert s cap).slotCountBounded)
-    (hCdtPost : ∀ stI stJ cap senderSlot slotBase' scanLimit result,
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase' : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
         capabilityInvariantBundle stI →
         ipcTransferSingleCap cap senderSlot receiverRoot slotBase' scanLimit stI
           = .ok (result, stJ) →
         cdtCompleteness stJ ∧ cdtAcyclicity stJ)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase endpointGrantRight st
-             = .ok (summary, st')) :
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase
+             endpointGrantRight st = .ok (summary, st')) :
     capabilityInvariantBundle st' := by
   cases endpointGrantRight with
   | false =>
-      exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
-        st st' msg senderRoot receiverRoot slotBase summary hInv hStep
+    exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
+      st st' msg senderRoot receiverRoot slotBase summary hInv hStep
   | true =>
-      exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
-        st st' msg senderRoot receiverRoot slotBase summary hInv hSlotCap hCdtPost hStep
+    exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
+      st st' msg senderRoot receiverRoot slotBase summary
+      hInv hSlotCap hCdtPost hStep
 ```
 
-**Decision**: The unified theorem is highly recommended as it provides a single
-entry point for the IPC rendezvous composition chain. The Grant=false path
-ignores `hSlotCap` and `hCdtPost` (they are vacuously satisfied since the
-state is unchanged).
+**Tactic-by-tactic**:
 
-### 9.4. Integration with Comment Block
+1. `cases endpointGrantRight with` — Case split on the Bool. Lean generates
+   two goals, one for `false` and one for `true`.
 
-The M3-D3 comment block (Preservation.lean:1962-1980) documents this exact gap:
+2. `| false =>` — In this branch, `endpointGrantRight = false` is substituted
+   into `hStep`, which now matches the `_noGrant` theorem's signature exactly.
 
-```
--- The grantRight = true case requires per-step induction on the internal
--- ipcUnwrapCapsLoop, threading two preconditions through each iteration:
---   (a) hSlotCapacity: the receiver CNode can accommodate each insert
---   (b) hCdtPost: cdtCompleteness ∧ cdtAcyclicity hold in each intermediate state
--- ... planned for M3-D3b (WS-M4/M5).
-```
+3. `| true =>` — In this branch, `endpointGrantRight = true` is substituted
+   into `hStep`, which now matches the `_grant` theorem's signature exactly.
 
-This comment block should be **replaced** with the actual theorem(s). The
-docstring on the new theorem should reference M3-D3b and V3-E as the
-resolution.
+### 9.3. V3-E5c: Comment Block Cleanup and Docstrings
 
-### 9.5. Downstream Impact
+**Goal**: Replace the M3-D3 placeholder comment block with the actual theorems
+and update cross-references.
 
-The unified `ipcUnwrapCaps_preserves_capabilityInvariantBundle` theorem can
-be immediately used by:
+**Tasks**:
 
-1. **IPC/Invariant/EndpointPreservation.lean**: The IPC rendezvous composition
-   chain (`endpointSend_preserves_*`, `endpointCall_preserves_*`) can now
-   invoke the unified theorem for the cap-transfer phase, closing the
-   preservation gap for the full IPC path.
+1. **Delete the M3-D3 comment block** (Preservation.lean:1962-1980):
+   ```
+   -- ============================================================================
+   -- M3-D3: ipcUnwrapCaps preserves capabilityInvariantBundle
+   -- ... (18 lines of comments)
+   -- ============================================================================
+   ```
+   This is replaced by the actual `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle`
+   theorem (V3-E2/E3/E4) and the `_grant` + unified theorems (V3-E5a/E5b).
 
-2. **Kernel/API.lean**: The syscall wrapper for `SyscallSend` and `SyscallCall`
-   can reference the theorem as evidence that the full IPC path preserves
-   `capabilityInvariantBundle`.
+2. **Update the `_noGrant` docstring** (Preservation.lean:1982-1984):
+   Change from:
+   ```lean
+   /-- M3-D3: ipcUnwrapCaps preserves capabilityInvariantBundle when the endpoint
+   lacks Grant right (grantRight = false). ...
+   ```
+   To:
+   ```lean
+   /-- M3-D3 / V3-E: ipcUnwrapCaps preserves capabilityInvariantBundle when the
+   endpoint lacks Grant right (grantRight = false). In this case, all caps are
+   silently dropped and the state is unchanged, so the invariant trivially holds.
+   See also: `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` for the
+   Grant=true case, and `ipcUnwrapCaps_preserves_capabilityInvariantBundle` for
+   the unified theorem. -/
+   ```
 
-3. **InformationFlow/Invariant/Operations.lean**: Non-interference proofs
-   for IPC operations can leverage the preservation guarantee to show that
-   cap transfers do not violate information flow policies.
+3. **Verify the final theorem ordering** in Preservation.lean:
+   ```
+   ipcTransferSingleCap_preserves_capabilityInvariantBundle  (existing, line 1910)
+   ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle      (V3-E2/E3/E4, NEW)
+   ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant    (V3-E5a, NEW)
+   ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant  (existing, line 1985)
+   ipcUnwrapCaps_preserves_capabilityInvariantBundle          (V3-E5b, NEW)
+   ```
+   The `_noGrant` theorem is kept in place. The new theorems are inserted
+   before it (loop + grant) and after it (unified).
 
-### 9.6. Implementation Steps
+### 9.4. Downstream Impact
 
-1. **Add the Grant=true theorem** after the loop theorem (V3-E4 result)
-2. **Add the unified theorem** combining both Grant cases
-3. **Replace the M3-D3 comment block** (lines 1962-1980) with the new theorems
-4. **Update the docstring** on `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`
-   to cross-reference the Grant=true theorem
-5. **Verify build**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
+The unified `ipcUnwrapCaps_preserves_capabilityInvariantBundle` theorem
+closes the proof gap for the IPC rendezvous path. Downstream consumers:
+
+| Consumer File | Usage | Priority |
+|--------------|-------|----------|
+| `IPC/Invariant/EndpointPreservation.lean` | `endpointSend_preserves_*`, `endpointCall_preserves_*` can invoke unified theorem for cap-transfer phase | High |
+| `Kernel/API.lean` | Syscall wrappers (`SyscallSend`, `SyscallCall`) reference theorem as cap-transfer evidence | Medium |
+| `InformationFlow/Invariant/Operations.lean` | NI proofs for IPC ops leverage preservation guarantee | Medium |
+| `Kernel/CrossSubsystem.lean` | Cross-subsystem invariant composition can include cap-transfer path | Low |
+
+**Note**: Downstream integration is NOT part of V3-E scope. These are future
+work items that V3-E unblocks.
+
+### 9.5. Implementation Steps
+
+1. **V3-E5a**: Add the `_grant` theorem (Section 9.1) after the loop theorem
+2. **V3-E5b**: Add the unified theorem (Section 9.2) after `_noGrant`
+3. **V3-E5c**: Delete M3-D3 comment block, update `_noGrant` docstring
+4. **Verify build**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
+5. **Sorry audit**: `grep -r "sorry" SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
 6. **Run full test suite**: `./scripts/test_full.sh`
 
-### 9.7. Acceptance Criteria
+### 9.6. Acceptance Criteria
 
-- [ ] `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` fully proved
-- [ ] Unified `ipcUnwrapCaps_preserves_capabilityInvariantBundle` covers both Grant cases
-- [ ] M3-D3 comment block replaced with actual proofs
+- [ ] V3-E5a: `_grant` theorem fully proved and type-checks
+- [ ] V3-E5b: Unified theorem covers both Grant cases
+- [ ] V3-E5c: M3-D3 comment block removed; docstrings updated
 - [ ] Zero `sorry` in entire `Preservation.lean`
 - [ ] `lake build SeLe4n.Kernel.Capability.Invariant.Preservation` succeeds
 - [ ] `test_full.sh` passes
+- [ ] Theorem ordering in file is logically sequential
 
 ---
 
 ## 10. Execution Order and Dependency Graph
 
-### 10.1. Strict Sequential Order
+### 10.1. Detailed Execution Order
 
 ```
-V3-E1  →  V3-E2  →  V3-E3  →  V3-E4  →  V3-E5
- │          │         │          │          │
- │          │         │          │          └─ Compose top-level theorem
- │          │         │          └─ Prove inductive step (core chain)
- │          │         └─ Prove base cases (fuel=0, idx OOB)
- │          └─ Define theorem signature + hypotheses
- └─ Remove private from ipcUnwrapCapsLoop
+V3-E1           Remove private from ipcUnwrapCapsLoop + 8 helper theorems
+  │
+  ▼
+V3-E2           Define loop theorem signature (sorry body)
+  │
+  ▼
+V3-E3           Prove base cases (fuel=0, idx OOB). sorry in some cap branch.
+  │
+  ▼
+V3-E4a          Setup: simp/cases scaffolding in some cap branch (2 sorry)
+  │
+  ▼
+V3-E4b          Error path: exact ih _ _ _ _ hInv hStep (1 sorry)
+  │
+  ▼
+V3-E4c          Success path: per-step preservation + IH (0 sorry)
+  │
+  ├──[if timeout]── V3-E4d: Extract helper lemma, retry V3-E4c
+  │
+  ▼
+V3-E5a          Grant=true top-level theorem (simp + exact loop lemma)
+  │
+  ▼
+V3-E5b          Unified Bool-parametric theorem (cases + exact)
+  │
+  ▼
+V3-E5c          Comment block cleanup + docstring updates
 ```
 
-Each sub-task strictly depends on the previous. No parallelization is possible
-within V3-E because each step builds on the proof state from the prior step.
+### 10.2. Critical Path Analysis
 
-### 10.2. External Dependencies
+The critical path runs through V3-E4c (success path proof). All other units
+are either scaffolding (V3-E1/E2/E3/E4a/E4b) or composition (V3-E5a/E5b/E5c).
+
+**If V3-E4c encounters difficulties**, the contingency path is:
+1. Attempt V3-E4c directly (~40-80 lines inline)
+2. If elaboration timeout → execute V3-E4d (extract helper) → retry V3-E4c
+3. If array membership issue → apply Design Alternative (Section 8.7)
+4. If IH unification failure → apply 3-way case split (Section 8.4, Step 5)
+
+### 10.3. External Dependencies
 
 | Dependency | Status | Required By |
 |-----------|--------|-------------|
-| V3-D1 (CDT acyclicity audit) | COMPLETE | V3-E4 (hCdtPost threading) |
+| V3-D1 (CDT acyclicity audit) | COMPLETE | V3-E4c (hCdtPost threading) |
 | V2 (API Surface Completion) | COMPLETE | V3-E5 (downstream integration) |
-| `ipcTransferSingleCap_preserves_capabilityInvariantBundle` | PROVED | V3-E4 (per-step lemma) |
-| `ipcUnwrapCapsLoop_preserves_scheduler` (+ 7 others) | PROVED | V3-E4 (structural reference) |
-| `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` | PROVED | V3-E5 (Grant=false case) |
+| `ipcTransferSingleCap_preserves_capabilityInvariantBundle` | PROVED (line 1910) | V3-E4c (per-step lemma) |
+| 8 `ipcUnwrapCapsLoop_preserves_*` theorems | PROVED (lines 93-494) | V3-E4 (structural reference) |
+| `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` | PROVED (line 1985) | V3-E5b (Grant=false case) |
+| `Array.getElem?_mem` or equivalent | Lean 4 stdlib | V3-E4c (array membership) |
 
 All external dependencies are satisfied. V3-E is unblocked.
 
-### 10.3. Estimated Effort Per Sub-Task
+### 10.4. Estimated Effort Per Unit
 
-| Sub-task | Complexity | Est. Lines | Est. Time |
-|----------|-----------|------------|-----------|
-| V3-E1 | Small | 5-10 changed | Quick |
-| V3-E2 | Small | 15-25 new | Quick |
-| V3-E3 | Small | 15-25 new | Quick |
-| V3-E4 | Medium | 80-150 new | Primary effort |
-| V3-E5 | Medium | 40-70 new | Moderate |
-| **Total** | | **~155-280 new** | |
+| Unit | Complexity | Est. Lines | Description |
+|------|-----------|------------|-------------|
+| V3-E1 | Trivial | 9 lines changed | Remove `private` keyword (9 occurrences) |
+| V3-E2 | Small | 25-30 new | Theorem signature + docstring + `sorry` |
+| V3-E3 | Small | 12 new | Base case tactics (2 branches) |
+| V3-E4a | Trivial | 5 new | simp + cases scaffolding |
+| V3-E4b | Trivial | 3 new | Error path: simp + exact ih |
+| V3-E4c | Medium | 20-25 new | Success path: have + exact chain |
+| V3-E4d | Small | 25-35 new | (Contingency) Helper lemma extraction |
+| V3-E5a | Small | 15 new | Grant=true theorem: simp + exact |
+| V3-E5b | Small | 25 new | Unified theorem: cases + exact |
+| V3-E5c | Trivial | 10 changed | Comment/docstring cleanup |
+| **Total** | | **~115-155 new** (without V3-E4d) | |
 
-### 10.4. Commit Strategy
+### 10.5. Commit Strategy
 
-Each sub-task should be committed separately for clean git history:
+The pre-commit hook blocks `sorry` in staged content. Therefore, intermediate
+sub-tasks that contain `sorry` (V3-E2, V3-E3, V3-E4a, V3-E4b) cannot be
+committed individually. The recommended commit strategy groups sorry-free
+boundaries:
 
-1. `V3-E1: expose ipcUnwrapCapsLoop for external proof composition`
-2. `V3-E2: define loop theorem signature for capabilityInvariantBundle preservation`
-3. `V3-E3: prove base cases for ipcUnwrapCapsLoop preservation induction`
-4. `V3-E4: prove inductive step for ipcUnwrapCapsLoop preservation`
-5. `V3-E5: compose ipcUnwrapCaps_preserves_capabilityInvariantBundle (Grant=true)`
+**Recommended: 3-commit strategy**
 
-**Important**: V3-E2 and V3-E3 may temporarily contain `sorry` in intermediate
-commits. The `sorry` MUST be fully eliminated by the V3-E4 commit. Under no
-circumstances should a `sorry` persist past V3-E4.
+| Commit | Units | Sorry-Free? | Message |
+|--------|-------|-------------|---------|
+| 1 | V3-E1 | Yes | `V3-E1: expose ipcUnwrapCapsLoop for external proof composition` |
+| 2 | V3-E2 + V3-E3 + V3-E4 | Yes (all sorry removed by E4) | `V3-E2/E3/E4: prove ipcUnwrapCapsLoop preserves capabilityInvariantBundle` |
+| 3 | V3-E5a + V3-E5b + V3-E5c | Yes | `V3-E5: compose ipcUnwrapCaps_preserves_capabilityInvariantBundle` |
 
-**Alternative**: If intermediate `sorry` commits are undesirable (due to
-pre-commit hooks blocking sorry), V3-E2 through V3-E4 can be collapsed into
-a single commit: `V3-E2/E3/E4: prove ipcUnwrapCapsLoop preservation induction`.
+**Alternative: 2-commit strategy** (if V3-E1 is small enough to combine)
+
+| Commit | Units | Message |
+|--------|-------|---------|
+| 1 | V3-E1 + V3-E2 + V3-E3 + V3-E4 | `V3-E: prove ipcUnwrapCapsLoop preserves capabilityInvariantBundle` |
+| 2 | V3-E5a + V3-E5b + V3-E5c | `V3-E5: compose ipcUnwrapCaps_preserves_capabilityInvariantBundle` |
+
+**Build verification before each commit**:
+```bash
+source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Operations.CapTransfer    # Commit 1
+source ~/.elan/env && lake build SeLe4n.Kernel.Capability.Invariant.Preservation  # Commits 2, 3
+```
 
 ---
 
 ## 11. Risk Assessment and Mitigations
 
-### 11.1. Risk: Lean Elaboration Timeout on Large Proof Terms
+### 11.1. Risk Matrix
 
-**Severity**: Medium
-**Likelihood**: Medium (the inductive step involves deeply nested case splits)
+| # | Risk | Severity | Likelihood | Unit | Mitigation | Reference |
+|---|------|----------|-----------|------|-----------|-----------|
+| R1 | Elaboration timeout on inductive step | Medium | Medium | V3-E4c | Extract helper lemma (V3-E4d) | Section 8.5 |
+| R2 | `simp` fails to normalize loop step | Low | Medium | V3-E4a | Use `simp only` + explicit lemma names | Section 8.8.1 |
+| R3 | `Array.getElem?_mem` unavailable | Low | Low | V3-E4c | Inline 5-line helper or weaken `hSlotCap` | Section 8.7 |
+| R4 | `nextBase'` causes IH unification failure | Low | Medium | V3-E4c | 3-way `cases result` split (confirmed pattern) | Section 8.8.2 |
+| R5 | Pre-commit hook blocks `sorry` | Low | High | V3-E2/E3 | Use collapsed commit strategy (Section 10.5) | Section 10.5 |
+| R6 | `hCdtPost` argument mismatch | Low | Low | V3-E4c | Verify signature alignment in V3-E2 first | Section 8.8.3 |
+| R7 | Downstream name collision after deprivatization | Low | Low | V3-E1 | Check `lake build` on all importers | Section 5.4 |
 
-**Mitigation**:
-- Extract helper lemmas for sub-goals instead of inlining everything
-- Use `have` bindings to name intermediate results, reducing term size
-- If elaboration exceeds 60 seconds, refactor the proof into separate lemmas:
-  - `ipcUnwrapCapsLoop_error_step_preserves` (error path helper)
-  - `ipcUnwrapCapsLoop_success_step_preserves` (success path helper)
-  - `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` (induction shell)
+### 11.2. Highest-Risk Unit: V3-E4c
 
-### 11.2. Risk: `simp` Fails to Normalize Loop Step
+V3-E4c (success path proof) concentrates all technical risk. The ~20-25 line
+proof must correctly:
+1. Derive array membership evidence
+2. Instantiate 2 universally-quantified hypotheses with 6-8 explicit arguments each
+3. Apply a theorem with 12 arguments
+4. Resolve a conditional `match` in the recursive call
 
-**Severity**: Low
-**Likelihood**: Medium (nested match unfolding can be brittle)
+**Fallback cascade**:
+```
+Attempt V3-E4c directly (inline, ~25 lines)
+  │
+  ├── If elaboration timeout → V3-E4d: extract helper lemma
+  │
+  ├── If Array.getElem?_mem missing → weaken hSlotCap (Section 8.7)
+  │
+  ├── If IH unification fails → add 3-way cases result split
+  │
+  └── If hCdtPost mismatch → fix signature in V3-E2, rebuild V3-E3/E4
+```
 
-**Mitigation**:
-- Study the existing 8 private theorems in CapTransfer.lean for the exact
-  `simp`/`unfold`/`cases` strategy that works
-- Use `simp only [ipcUnwrapCapsLoop, hCap, hTransfer]` with explicit lemma
-  names instead of bare `simp`
-- Fall back to `conv` or `rw` for targeted rewriting if `simp` diverges
+### 11.3. Process Risk: Sorry in Intermediate State
 
-### 11.3. Risk: Array Membership Lemma Not Available
+The pre-commit hook blocks `sorry` in staged files. Since V3-E2 introduces
+a theorem with `sorry` body that isn't removed until V3-E4c, these units
+MUST be completed in a single session and committed together.
 
-**Severity**: Low
-**Likelihood**: Low (standard Lean 4 library)
-
-**Mitigation**:
-- If `Array.mem_toList_of_getElem` or equivalent is not available, prove a
-  small helper inline:
-  ```lean
-  private theorem array_getElem?_mem {a : Array α} {i : Nat} {x : α}
-      (h : a[i]? = some x) : x ∈ a.toList := by
-    have ⟨hBound, hEq⟩ := Array.getElem?_eq_some.mp h
-    exact Array.mem_toList.mpr ⟨i, hBound, hEq⟩
-  ```
-- This is at most 5 lines of proof and is self-contained
-
-### 11.4. Risk: `nextBase'` Pattern Match Causes Proof Branching
-
-**Severity**: Low
-**Likelihood**: Medium
-
-**Mitigation**:
-- The `nextBase'` computation only affects the recursive call's arguments,
-  not the state or the invariant. The inductive hypothesis is parametric over
-  `nextBase`, so both branches should unify.
-- If not, case split on `result` before applying `ih`. This adds ~10 lines
-  but is straightforward.
-
-### 11.5. Risk: Pre-Commit Hook Blocks Sorry
-
-**Severity**: Low (process risk, not technical)
-**Likelihood**: High (hook checks for sorry in staged content)
-
-**Mitigation**:
-- Use the collapsed commit strategy (V3-E2/E3/E4 as one commit) to avoid
-  ever staging a file with `sorry`
-- Or: complete V3-E2 through V3-E4 as a single editing session before committing
+**Resolution**: Use the 3-commit strategy from Section 10.5, where Commit 2
+groups V3-E2+E3+E4 into a single sorry-free commit.
 
 ---
 
@@ -1221,3 +1729,163 @@ The caller (API layer) is responsible for discharging CDT obligations. -/
 The M3-D3 comment block (Preservation.lean:1962-1980) should be replaced with
 the actual proof theorems. The comment's planned reference "M3-D3b (WS-M4/M5)"
 is resolved by V3-E.
+
+---
+
+## Appendix A: Reference Proof — Complete V3-E Tactic Sequence
+
+This appendix provides the complete, uninterrupted tactic sequence for the
+entire V3-E proof chain. This is the concatenation of V3-E3 (base cases) and
+V3-E4 (inductive step) into a single proof body. Use this as the reference
+implementation.
+
+### A.1. ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle (Full Proof)
+
+```lean
+/-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
+through fuel-indexed induction. Each iteration delegates to
+`ipcTransferSingleCap_preserves_capabilityInvariantBundle`, threading
+`hSlotCap` (slot capacity) and `hCdtPost` (CDT completeness + acyclicity)
+through the recursive structure.
+
+The `hCdtPost` hypothesis is externalized following the standard pattern for
+CDT-expanding operations (see `cspaceCopy_preserves_capabilityInvariantBundle`).
+The caller (API layer) is responsible for discharging CDT obligations. -/
+theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : capabilityInvariantBundle st)
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        cap ∈ caps.toList →
+        capabilityInvariantBundle stI →
+        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
+          ∀ s, (cn.insert s cap).slotCountBounded)
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
+        capabilityInvariantBundle stI →
+        ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit stI
+          = .ok (result, stJ) →
+        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase
+             accResults fuel st = .ok (summary, st')) :
+    capabilityInvariantBundle st' := by
+  -- ── V3-E3: Induction + base cases ──
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep
+    exact hInv
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none =>
+      simp [hCap] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      exact hInv
+    -- ── V3-E4a: Setup ──
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      -- ── V3-E4b: Error path ──
+      | error e =>
+        simp [hTransfer] at hStep
+        exact ih _ _ _ _ hInv hStep
+      -- ── V3-E4c: Success path ──
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hCapMem : cap ∈ caps.toList := Array.getElem?_mem hCap
+        have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
+          st stNext cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps result
+          hInv
+          (hSlotCap st cap hCapMem hInv)
+          (hCdtPost st stNext cap
+            { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+            nextBase maxExtraCaps result hInv hTransfer)
+          hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hInvNext hStep
+        | noSlot => exact ih _ _ _ _ hInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hInvNext hStep
+```
+
+**Total proof body**: ~37 lines of tactics.
+
+### A.2. Comparison with Closest Existing Proof
+
+The closest structural match is `ipcUnwrapCapsLoop_preserves_objects_ne`
+(CapTransfer.lean:186-220), which also threads a hypothesis through the
+induction. Key differences:
+
+| Aspect | `_preserves_objects_ne` | V3-E (this proof) |
+|--------|------------------------|-------------------|
+| Property type | Equational (`st'.objects[oid]? = st.objects[oid]?`) | Predicate (`capabilityInvariantBundle st'`) |
+| IH application | `rw [ih ..., hObj]` | `exact ih ...` |
+| Threaded hypothesis | `hObjInv : st.objects.invExt` (1 hyp) | `hInv : capabilityInvariantBundle st` (1 hyp) |
+| Single-step lemmas | 2 (`_preserves_objects_invExt`, `_preserves_objects_ne`) | 1 (`_preserves_capabilityInvariantBundle`) |
+| Additional obligations | None | `hSlotCap` + `hCdtPost` instantiation |
+| Error path IH args | `ih _ _ _ _ hObjInv hStep` (5 args) | `ih _ _ _ _ hInv hStep` (5 args) |
+| Success path IH args | `ih _ _ _ _ hObjInvNext hStep` (5 args) | `ih _ _ _ _ hInvNext hStep` (5 args) |
+
+The V3-E proof is structurally isomorphic to `_preserves_objects_ne` with
+the addition of `hSlotCap`/`hCdtPost` instantiation in the success path.
+
+---
+
+## Appendix B: Pre-Implementation Checklist
+
+Before beginning V3-E implementation, verify each item:
+
+### B.1. Codebase Prerequisites
+
+- [ ] `lake build` succeeds with zero errors on current main
+- [ ] `ipcTransferSingleCap_preserves_capabilityInvariantBundle` exists at
+  Preservation.lean:1910 with the expected signature
+- [ ] The M3-D3 comment block exists at Preservation.lean:1962-1980
+- [ ] `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` exists at
+  Preservation.lean:1985
+- [ ] `ipcUnwrapCapsLoop` is `private` at CapTransfer.lean:36
+- [ ] All 8 `ipcUnwrapCapsLoop_preserves_*` theorems are `private`
+- [ ] No existing theorem named `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle`
+
+### B.2. Lean Toolchain
+
+- [ ] Lean 4.28.0 is active (`lean --version`)
+- [ ] `elan` environment is sourced (`source ~/.elan/env`)
+- [ ] `Array.getElem?_mem` or equivalent is available in Lean 4.28.0 stdlib
+  (test with: `#check @Array.getElem?_mem`)
+
+### B.3. Test Infrastructure
+
+- [ ] `./scripts/test_fast.sh` passes on current codebase
+- [ ] `./scripts/test_smoke.sh` passes on current codebase
+- [ ] Pre-commit hook is installed and blocks `sorry`
+
+---
+
+## Appendix C: Glossary of Key Identifiers
+
+| Identifier | Type | Location | Description |
+|-----------|------|----------|-------------|
+| `ipcUnwrapCapsLoop` | `def` | CapTransfer.lean:36 | Private recursive helper for batch cap transfer |
+| `ipcUnwrapCaps` | `def` | CapTransfer.lean:79 | Public entry point for IPC cap transfer |
+| `ipcTransferSingleCap` | `def` | Capability/Operations.lean | Transfer one capability into receiver CNode |
+| `capabilityInvariantBundle` | `def` | Capability/Invariant/Defs.lean | 7-tuple conjunction of capability invariants |
+| `cspaceSlotUnique` | `def` | Capability/Invariant/Defs.lean | Per-CNode slot index uniqueness |
+| `cspaceLookupSound` | `def` | Capability/Invariant/Defs.lean | Lookup completeness |
+| `cspaceSlotCountBounded` | `def` | Capability/Invariant/Defs.lean | Slot count ≤ 2^radixBits |
+| `cdtCompleteness` | `def` | Capability/Invariant/Defs.lean | CDT node-slot reachability |
+| `cdtAcyclicity` | `def` | Capability/Invariant/Defs.lean | CDT cycle-freedom |
+| `cspaceDepthConsistent` | `def` | Capability/Invariant/Defs.lean | CSpace depth bounds |
+| `CapTransferResult` | `inductive` | Model/Object/Types.lean | `.installed`, `.noSlot`, `.grantDenied` |
+| `CapTransferSummary` | `structure` | Model/Object/Types.lean | Wrapper around `Array CapTransferResult` |
+| `maxExtraCaps` | `def` | Model/Object/Types.lean | Constant = 3 (scan limit) |
+| `Kernel` | `abbrev` | (Monad) | `SystemState → Except KernelError (α × SystemState)` |
+| `hSlotCap` | hypothesis | V3-E (new) | Per-state slot capacity for receiver CNode |
+| `hCdtPost` | hypothesis | V3-E (new) | Per-step CDT completeness + acyclicity |
