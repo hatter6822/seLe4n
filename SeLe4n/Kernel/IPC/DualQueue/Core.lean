@@ -150,6 +150,36 @@ theorem storeTcbQueueLinks_tcb_ipcState_backward
     rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next anyTid.toObjId hEq hObjInv hStep] at hTcb'
     exact ⟨tcb', hTcb', rfl⟩
 
+/-- `storeTcbQueueLinks` preserves `pendingMessage` for all TCBs. At the target,
+`tcbWithQueueLinks` only modifies queue link fields; at non-targets, the object
+is unchanged. -/
+theorem storeTcbQueueLinks_tcb_pendingMessage_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.pendingMessage = tcb'.pendingMessage := by
+  by_cases hEq : anyTid.toObjId = tid.toObjId
+  · -- Target: queue links changed but pendingMessage preserved
+    unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some origTcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks origTcb prev pprev next)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [hEq, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
+        simp at hTcb'; subst hTcb'
+        exact ⟨origTcb, hEq ▸ lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
+  · -- Non-target: object unchanged
+    rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next anyTid.toObjId hEq hObjInv hStep] at hTcb'
+    exact ⟨tcb', hTcb', rfl⟩
+
 /-- WS-F1: storeTcbQueueLinks forward-preserves TCB existence. If a TCB exists
 at oid in the pre-state, some TCB exists at oid in the post-state. -/
 theorem storeTcbQueueLinks_tcb_forward

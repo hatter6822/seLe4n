@@ -18,13 +18,36 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phases V1 and V2 are complete. Phases V3–V8 remain.
+WS-V Phases V1, V2, and V3 are complete. Phases V4–V8 remain.
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V2 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V3 COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
 [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md).
+
+- **V3 (Proof Chain Hardening) COMPLETE** (v0.22.2): 26 sub-tasks (V3-A through V3-M).
+  All 8 `True := trivial` documentation theorems replaced with real machine-checked
+  proofs. **Machine-checked**: `invExtFull` bundle + `erase_preserves_invExtFull`
+  eliminating redundant `hSize` (H-RH-1). `uniqueRadixIndices_sufficient` radix
+  precondition chain (H-RAD-1). `extractBits_identity` + `buildCNodeRadix_hNoPhantom_auto_discharge`
+  closing `hNoPhantom` gap (M-DS-4). CDT acyclicity: `cdtShrinkingOps_preserve_acyclicity`
+  via `edgeWellFounded_sub` edge-removal proof (M-PRF-1). `resolveCapAddress_callers_check_rights`
+  dispatch chain rights theorem in API.lean (M-PRF-3). `notificationSignal_preserves_waitingThreadsPendingMessageNone`
+  via `cases`-based path decomposition (M-PRF-5). `notificationWake_pendingMessage_was_none`
+  blocking-state implies `pendingMessage = none` (L-IPC-1). 7 primitive + 7 operation-level
+  preservation lemmas for `waitingThreadsPendingMessageNone` covering all IPC operations:
+  `notificationWait`, `notificationSignal`, `endpointSendDual`, `endpointReceiveDual`,
+  `endpointCall`, `endpointReply`, `endpointReplyRecv`. Critical semantic fix: `blockedOnCall` removed from
+  invariant-constrained states (callers legitimately carry outgoing messages).
+  Two backward lemmas added: `storeTcbQueueLinks_tcb_pendingMessage_backward`,
+  `endpointQueueEnqueue_tcb_pendingMessage_backward`. V3-G6: `waitingThreadsPendingMessageNone`
+  integrated as 5th conjunct of `ipcInvariantFull` (was 4-conjunct). All bundle
+  preservation theorems, extractors, default proofs, and `ipcInvariantFull_compositional`
+  updated. New extractor: `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`.
+  Predicate definitions: `ipcStateQueueMembershipConsistent` (L-IPC-3),
+  `endpointQueueNoDup` (L-LIFE-1). Zero sorry/axiom/`True := trivial`, 176 build
+  targets pass, `test_full.sh` green.
 
 - **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).
   `SyscallId` count grew from 14 to 17: added `notificationSignal` (discriminant 14),

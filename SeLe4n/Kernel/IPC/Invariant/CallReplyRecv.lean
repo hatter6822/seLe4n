@@ -1056,4 +1056,14 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
       | _ =>
         simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
 
+-- ============================================================================
+-- V3-G5 (M-PRF-5): waitingThreadsPendingMessageNone preservation
+-- for call/replyRecv operations
+-- ============================================================================
+
+-- V3-G5 (M-PRF-5): `endpointCall`/`endpointReplyRecv` preserve
+-- `waitingThreadsPendingMessageNone`.
+-- Machine-checked proofs in Structural.lean:
+--   `endpointCall_preserves_waitingThreadsPendingMessageNone`
+--   `endpointReplyRecv_preserves_waitingThreadsPendingMessageNone`
 
