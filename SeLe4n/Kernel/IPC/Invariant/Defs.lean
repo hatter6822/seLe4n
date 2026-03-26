@@ -283,10 +283,15 @@ a TCB satisfies `maxMessageRegisters`/`maxExtraCaps` bounds.
 WS-F5/D1d: `badgeWellFormed` ensures all badges in notifications and
 capabilities are word-bounded.
 V3-G6: `waitingThreadsPendingMessageNone` ensures threads in blocked receiver
-states have `pendingMessage = none`. -/
-def ipcInvariantFull (st : SystemState) : Prop :=
-  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
-  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st
+states have `pendingMessage = none`.
+V3-K: `endpointQueueNoDup` ensures no self-loops and send/receive queue head
+disjointness.
+V3-J: `ipcStateQueueMembershipConsistent` ensures every blocked thread is
+reachable from its endpoint's queue head.
+
+Note: The actual definition of `ipcInvariantFull` is placed after the
+V3-K and V3-J predicate definitions to ensure forward reference resolution. -/
+-- Forward reference: see `ipcInvariantFull` below (after V3-K/V3-J definitions)
 
 -- ============================================================================
 -- Scheduler-IPC coherence contract predicates (M3.5)
@@ -805,7 +810,7 @@ def ipcStateQueueMembershipConsistent (st : SystemState) : Prop :=
              TCB.queueNext prevTcb = some tid)
     | .blockedOnCall epId =>
         ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
-          (ep.receiveQ.head = some tid ∨
+          (ep.sendQ.head = some tid ∨
            ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
              st.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
              TCB.queueNext prevTcb = some tid)
@@ -828,3 +833,14 @@ def endpointQueueNoDup (st : SystemState) : Prop :=
     (ep.sendQ.head = none ∨ ep.receiveQ.head = none ∨
      ep.sendQ.head ≠ ep.receiveQ.head)
 
+-- ============================================================================
+-- Full IPC invariant bundle (7 conjuncts)
+-- ============================================================================
+
+/-- Full IPC invariant: conjunction of all seven IPC sub-invariants. -/
+def ipcInvariantFull (st : SystemState) : Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st
+
+end SeLe4n.Kernel

@@ -50,8 +50,15 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   integrated as 5th conjunct of `ipcInvariantFull` (was 4-conjunct). All bundle
   preservation theorems, extractors, default proofs, and `ipcInvariantFull_compositional`
   updated. New extractor: `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`.
-  Predicate definitions: `ipcStateQueueMembershipConsistent` (L-IPC-3),
-  `endpointQueueNoDup` (L-LIFE-1). Zero sorry/axiom/`True := trivial`, 176 build
+  **V3-J/K integration**: `ipcStateQueueMembershipConsistent` (L-IPC-3) and
+  `endpointQueueNoDup` (L-LIFE-1) integrated as 6th/7th conjuncts of
+  `ipcInvariantFull` (now 7-conjunct). New files: `QueueNoDup.lean` (3 primitive
+  frame lemmas), `QueueMembership.lean` (prim-1 frame lemma + scheduler helpers +
+  pointwise transfer). Definition fix: `blockedOnCall` uses `sendQ` not `receiveQ`.
+  All 10 `_preserves_ipcInvariantFull` bundle theorems updated. New extractors:
+  `coreIpcInvariantBundle_to_endpointQueueNoDup`,
+  `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`. Default state,
+  lifecycle, and `advanceTimerState` cascade fixes. Zero sorry/axiom, 180 build
   targets pass, `test_full.sh` green.
 
 - **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).
