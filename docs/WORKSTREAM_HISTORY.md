@@ -41,9 +41,13 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   `endpointCall`, `endpointReply`, `endpointReplyRecv`. Critical semantic fix: `blockedOnCall` removed from
   invariant-constrained states (callers legitimately carry outgoing messages).
   Two backward lemmas added: `storeTcbQueueLinks_tcb_pendingMessage_backward`,
-  `endpointQueueEnqueue_tcb_pendingMessage_backward`. Predicate definitions:
-  `ipcStateQueueMembershipConsistent` (L-IPC-3), `endpointQueueNoDup` (L-LIFE-1).
-  Zero sorry/axiom/`True := trivial`, 176 build targets pass, `test_full.sh` green.
+  `endpointQueueEnqueue_tcb_pendingMessage_backward`. V3-G6: `waitingThreadsPendingMessageNone`
+  integrated as 5th conjunct of `ipcInvariantFull` (was 4-conjunct). All bundle
+  preservation theorems, extractors, default proofs, and `ipcInvariantFull_compositional`
+  updated. New extractor: `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`.
+  Predicate definitions: `ipcStateQueueMembershipConsistent` (L-IPC-3),
+  `endpointQueueNoDup` (L-LIFE-1). Zero sorry/axiom/`True := trivial`, 176 build
+  targets pass, `test_full.sh` green.
 
 - **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).
   `SyscallId` count grew from 14 to 17: added `notificationSignal` (discriminant 14),

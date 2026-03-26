@@ -21,11 +21,14 @@
   (documentation-only) — documents that all 17 `SyscallId` dispatch arms pass
   through `syscallLookupCap` rights gate. No machine-checked dispatch analysis.
 - V3-G1-G6 (M-PRF-5): Added `waitingThreadsPendingMessageNone` invariant
-  (threads blocked on receive/notification/call have `pendingMessage = none`).
+  (threads blocked on receive/notification have `pendingMessage = none`).
   Machine-checked primitive preservation lemmas for `removeRunnable`,
-  `ensureRunnable`, `storeObject` (non-TCB), `storeTcbIpcState`, and
-  `storeTcbIpcStateAndMessage` in `Structural.lean`. Operation-level
-  composition documented for all IPC operations. Bundle integration deferred.
+  `ensureRunnable`, `storeObject` (non-TCB), `storeTcbIpcState`,
+  `storeTcbIpcStateAndMessage`, `storeTcbQueueLinks`, and
+  `storeTcbPendingMessage` in `Structural.lean`. Full operation-level
+  machine-checked proofs for all 7 IPC operations. V3-G6: integrated as
+  5th conjunct of `ipcInvariantFull` (was 4-conjunct). Updated all bundle
+  preservation theorems, extractors, and default proofs.
 - V3-H (M-DS-4): `buildCNodeRadix_hNoPhantom_auto_discharge_note`
   (documentation-only) — documents auto-discharge pattern for bounded-key
   CNodes. Requires `extractBits_identity` lemma not yet formally proven.

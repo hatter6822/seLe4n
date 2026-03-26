@@ -413,13 +413,13 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (4-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed`, WS-H12c + WS-H12d + WS-F5)
+- `ipcInvariantFull` (5-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone`, WS-H12c + WS-H12d + WS-F5 + V3-G6)
 - `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
 Cross-subsystem composition (WS-H12e + WS-F5):
 
-- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` were defined but not composed into the cross-subsystem proof surface
-- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (5-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, and `waitingThreadsPendingMessageNone` were defined but not composed into the cross-subsystem proof surface
+- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`
 
 Component level:
 
@@ -429,7 +429,7 @@ Component level:
 
 V3 proof chain hardening predicates **(v0.22.2)**:
 
-- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked receiver states (`blockedOnReceive`, `blockedOnNotification`) have `pendingMessage = none`. Note: `blockedOnSend` and `blockedOnCall` are excluded because these states legitimately carry outgoing messages in `pendingMessage`. Seven machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbQueueLinks`, `storeTcbPendingMessage`) in `Structural.lean`. Full operation-level machine-checked proofs: `notificationWait_preserves_*`, `notificationSignal_preserves_*`, `endpointSendDual_preserves_*`, `endpointReceiveDual_preserves_*`, `endpointCall_preserves_*`, `endpointReply_preserves_*`, `endpointReplyRecv_preserves_*`. `notificationWake_pendingMessage_was_none` proves blocking-state implies `pendingMessage = none`. Two backward lemmas added: `storeTcbQueueLinks_tcb_pendingMessage_backward` (Core.lean) and `endpointQueueEnqueue_tcb_pendingMessage_backward` (Transport.lean).
+- `waitingThreadsPendingMessageNone` — **(V3-G, M-PRF-5)** threads in blocked receiver states (`blockedOnReceive`, `blockedOnNotification`) have `pendingMessage = none`. Note: `blockedOnSend` and `blockedOnCall` are excluded because these states legitimately carry outgoing messages in `pendingMessage`. **Integrated as 5th conjunct of `ipcInvariantFull` (V3-G6).** Seven machine-checked primitive preservation lemmas (`removeRunnable`, `ensureRunnable`, `storeObject_nonTcb`, `storeTcbIpcState`, `storeTcbIpcStateAndMessage`, `storeTcbQueueLinks`, `storeTcbPendingMessage`) in `Structural.lean`. Full operation-level machine-checked proofs: `notificationWait_preserves_*`, `notificationSignal_preserves_*`, `endpointSendDual_preserves_*`, `endpointReceiveDual_preserves_*`, `endpointCall_preserves_*`, `endpointReply_preserves_*`, `endpointReplyRecv_preserves_*`. `notificationWake_pendingMessage_was_none` proves blocking-state implies `pendingMessage = none`. Two backward lemmas added: `storeTcbQueueLinks_tcb_pendingMessage_backward` (Core.lean) and `endpointQueueEnqueue_tcb_pendingMessage_backward` (Transport.lean).
 - `ipcStateQueueMembershipConsistent` — **(V3-J, L-IPC-3)** bidirectional consistency: threads claiming blocked-on-endpoint state are reachable from the corresponding endpoint queue (via `head` or `queueNext` linkage). Predicate definition in `Structural.lean`.
 - `endpointQueueNoDup` — **(V3-K, L-LIFE-1)** intrusive queue no-cycle and disjointness: no thread's `queueNext` points to itself, and `sendQ.head ≠ receiveQ.head` when both are non-empty. Predicate definition in `Structural.lean`.
 
@@ -1190,7 +1190,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | Bundle | Change | Effect |
 |---|---|---|
 | `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12) | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches TCB priority |
-| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (4-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, and `badgeWellFormed` now composed into cross-subsystem proof surface |
+| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (5-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, and `waitingThreadsPendingMessageNone` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
 | `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 7 scheduler conjuncts |
 
@@ -1224,7 +1224,7 @@ Composed `ipcInvariantFull` preservation (7):
 - `endpointReplyRecv_preserves_ipcInvariantFull`
 
 Default-state proofs (7):
-- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_badgeWellFormed`, `default_ipcInvariantFull`
+- `default_dualQueueSystemInvariant`, `default_allPendingMessagesBounded`, `default_badgeWellFormed`, `default_waitingThreadsPendingMessageNone`, `default_ipcInvariantFull`
 - `default_contextMatchesCurrent`, `default_currentThreadDequeueCoherent`, `default_schedulerInvariantBundleFull`
 
 Badge well-formedness preservation (WS-F5/D1d):
@@ -1761,7 +1761,7 @@ High-level IPC operation preservation (L3-C3):
 - `notificationSignal_preserves_ipcStateQueueConsistent` — wake + badge accumulation
 - `notificationWait_preserves_ipcStateQueueConsistent` — consume + blocking paths
 - `storeObject_notification_preserves_ipcStateQueueConsistent` — notification store helper
-- `ipcInvariantFull_compositional` — convenience 4-component composition
+- `ipcInvariantFull_compositional` — convenience 5-component composition
 
 **T4-D: endpointQueueRemoveDual dualQueueSystemInvariant preservation** (`Structural.lean`):
 

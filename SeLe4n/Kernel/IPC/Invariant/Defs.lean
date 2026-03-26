@@ -247,6 +247,31 @@ and capabilities are word-bounded to `machineWordBits` (64 bits). -/
 def badgeWellFormed (st : SystemState) : Prop :=
   notificationBadgesWellFormed st ∧ capabilityBadgesWellFormed st
 
+/-- V3-G1 (M-PRF-5): Threads blocked on receive or notification must have
+    `pendingMessage = none`. When a thread enters a blocking state (receive
+    or notification wait), no message has been delivered yet — the message
+    will be written when the thread is woken by a corresponding send/signal.
+    This invariant captures the safety-critical property that wake paths
+    can unconditionally overwrite `pendingMessage` without losing data.
+
+    The blocking states covered are:
+    - `blockedOnReceive`: waiting for IPC send from another thread
+    - `blockedOnNotification`: waiting for notification signal
+
+    Note: `blockedOnSend` and `blockedOnCall` threads MAY have a pending
+    message — they carry the outgoing message in `pendingMessage` while
+    queued, which `endpointReceiveDual` reads upon rendezvous.
+    `blockedOnReply` threads have `pendingMessage = none` (cleared by the
+    receive path), but are not constrained here since `.ready` and other
+    non-receiver states are unconditionally `True`. -/
+def waitingThreadsPendingMessageNone (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    match tcb.ipcState with
+    | .blockedOnReceive _ => tcb.pendingMessage = none
+    | .blockedOnNotification _ => tcb.pendingMessage = none
+    | _ => True
+
 /-- Full IPC invariant including system-level dual-queue structural
 well-formedness, TCB link integrity, message payload bounds, and badge
 well-formedness.
@@ -256,10 +281,12 @@ system-wide `tcbQueueLinkIntegrity`).
 WS-H12d: `allPendingMessagesBounded` ensures every pending message stored in
 a TCB satisfies `maxMessageRegisters`/`maxExtraCaps` bounds.
 WS-F5/D1d: `badgeWellFormed` ensures all badges in notifications and
-capabilities are word-bounded. -/
+capabilities are word-bounded.
+V3-G6: `waitingThreadsPendingMessageNone` ensures threads in blocked receiver
+states have `pendingMessage = none`. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
-  badgeWellFormed st
+  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st
 
 -- ============================================================================
 -- Scheduler-IPC coherence contract predicates (M3.5)
@@ -743,32 +770,8 @@ def ipcStateQueueConsistent (st : SystemState) : Prop :=
 
 -- ============================================================================
 -- V3-G (M-PRF-5): waitingThreadsPendingMessageNone invariant
+-- (Definition moved above ipcInvariantFull for forward-reference resolution)
 -- ============================================================================
-
-/-- V3-G1 (M-PRF-5): Threads blocked on receive or notification must have
-    `pendingMessage = none`. When a thread enters a blocking state (receive
-    or notification wait), no message has been delivered yet — the message
-    will be written when the thread is woken by a corresponding send/signal.
-    This invariant captures the safety-critical property that wake paths
-    can unconditionally overwrite `pendingMessage` without losing data.
-
-    The blocking states covered are:
-    - `blockedOnReceive`: waiting for IPC send from another thread
-    - `blockedOnNotification`: waiting for notification signal
-
-    Note: `blockedOnSend` and `blockedOnCall` threads MAY have a pending
-    message — they carry the outgoing message in `pendingMessage` while
-    queued, which `endpointReceiveDual` reads upon rendezvous.
-    `blockedOnReply` threads have `pendingMessage = none` (cleared by the
-    receive path), but are not constrained here since `.ready` and other
-    non-receiver states are unconditionally `True`. -/
-def waitingThreadsPendingMessageNone (st : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
-    st.objects[tid.toObjId]? = some (.tcb tcb) →
-    match tcb.ipcState with
-    | .blockedOnReceive _ => tcb.pendingMessage = none
-    | .blockedOnNotification _ => tcb.pendingMessage = none
-    | _ => True
 
 /-- V3-J (L-IPC-3): Strengthened ipcState-queue consistency with queue
     reachability predicate. If a thread is blocked on an endpoint, the thread
