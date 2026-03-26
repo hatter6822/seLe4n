@@ -1,11 +1,12 @@
-# V3-E & V3-G6: Proof Chain Hardening Implementation Plan
+# V3-J/K: Preservation Proofs for Queue Membership & No-Duplicate Invariants
 
-**Workstream**: WS-V Phase V3 — Proof Chain Hardening
-**Scope**: V3-E (ipcUnwrapCaps Grant=true Loop Composition) + V3-G (pendingMessage Invariant, culminating in V3-G6 Bundle Integration)
-**Source Findings**: M-PRF-2 (V3-E), M-PRF-5 (V3-G)
-**Dependencies**: V2 complete (v0.22.1) — new syscalls covered by invariant preservation
+**Workstream**: WS-V Phase V3+ — Proof Chain Hardening (Preservation Extension)
+**Scope**: V3-J (ipcStateQueueMembershipConsistent preservation) + V3-K (endpointQueueNoDup preservation)
+**Source Findings**: L-IPC-3 (V3-J), L-LIFE-1 (V3-K)
+**Prerequisites**: V3 Phase complete (v0.22.2) — predicate definitions machine-checked
+**Dependencies**: `dualQueueSystemInvariant` preservation (complete), `tcbQueueChainAcyclic` (complete)
 **Gate Conditions**: `lake build` succeeds; zero `sorry`; `test_full.sh` green
-**Estimated Scope**: ~900 lines Lean (proofs), ~0 lines runtime code
+**Estimated Scope**: ~1200-1600 lines Lean (proofs), ~30-50 lines modified, ~0 lines runtime code
 
 ---
 
@@ -13,847 +14,915 @@
 
 1. [Executive Summary](#1-executive-summary)
 2. [Current State Analysis](#2-current-state-analysis)
-3. [V3-E: ipcUnwrapCaps Grant=true Loop Composition](#3-v3-e-ipcunwrapcaps-granttrue-loop-composition)
-4. [V3-G: pendingMessage Invariant for Waiting Threads](#4-v3-g-pendingmessage-invariant-for-waiting-threads)
-5. [Cross-Cutting Concerns](#5-cross-cutting-concerns)
+3. [V3-K: endpointQueueNoDup Preservation Proofs](#3-v3-k-endpointqueuenodup-preservation-proofs)
+4. [V3-J: ipcStateQueueMembershipConsistent Preservation Proofs](#4-v3-j-ipcstatequeuemembershipconsistent-preservation-proofs)
+5. [Bundle Integration Plan](#5-bundle-integration-plan)
 6. [Execution Order & Dependency Graph](#6-execution-order--dependency-graph)
-7. [Risk Assessment & Mitigations](#7-risk-assessment--mitigations)
-8. [Testing & Validation Strategy](#8-testing--validation-strategy)
-9. [Documentation Synchronization](#9-documentation-synchronization)
+7. [Cross-Cutting Concerns](#7-cross-cutting-concerns)
+8. [Risk Assessment & Mitigations](#8-risk-assessment--mitigations)
+9. [Testing & Validation Strategy](#9-testing--validation-strategy)
+10. [Documentation Synchronization](#10-documentation-synchronization)
 
 ---
 
 ## 1. Executive Summary
 
-V3-E and V3-G6 are complementary proof-chain hardening tasks within Phase V3
-of the WS-V audit remediation workstream. Together they close two medium-priority
-proof gaps (M-PRF-2, M-PRF-5) that currently prevent full machine-checked
-verification of the IPC subsystem's capability transfer and message-state
-consistency properties.
+Phase V3 (Proof Chain Hardening) delivered predicate definitions for two critical
+queue invariants — `ipcStateQueueMembershipConsistent` (V3-J) and
+`endpointQueueNoDup` (V3-K) — as machine-checked definitions in
+`IPC/Invariant/Defs.lean`. However, **no preservation proofs** exist for either
+predicate. Without preservation proofs, these invariants cannot be composed into
+the kernel's invariant bundle, and the machine-checked guarantee that they hold
+across all state transitions is absent.
 
-**V3-E** completes the loop composition proof for `ipcUnwrapCaps` when the
-endpoint has Grant right. The per-step theorem
-(`ipcTransferSingleCap_preserves_capabilityInvariantBundle`) is already fully
-proved; what remains is composing it across the fuel-indexed recursive helper
-`ipcUnwrapCapsLoop` via structural induction, threading `hSlotCapacity` and
-`hCdtPost` preconditions through each iteration.
+This plan details the complete implementation of preservation proofs for both
+predicates across all IPC operations that modify endpoint queues, TCB ipcState,
+or TCB queueNext links. The work is structured as two parallel proof chains
+(V3-K and V3-J) that converge at a bundle integration phase.
 
-**V3-G** (sub-tasks G1–G6) introduces a new invariant predicate
-`waitingThreadsPendingMessageNone` — asserting that threads blocked on receive
-or notification wait have `pendingMessage = none` — and proves its preservation
-through all IPC operations. **V3-G6** is the capstone integration task that
-wires this predicate into `ipcInvariantFull` and propagates it through all
-bundle-level preservation theorems.
+**V3-K (`endpointQueueNoDup`)** enforces two properties:
+1. No TCB self-loops: `queueNext tcb ≠ some tid` for all threads
+2. Send/receive queue head disjointness: no thread heads both queues simultaneously
 
-Neither task introduces runtime code changes. Both are pure proof additions
-that strengthen the verified invariant surface.
+**V3-J (`ipcStateQueueMembershipConsistent`)** enforces bidirectional consistency:
+- Every thread with `ipcState = .blockedOnSend epId` is reachable from
+  `ep.sendQ.head` via `queueNext` links
+- Every thread with `ipcState = .blockedOnReceive epId` or `.blockedOnCall epId`
+  is reachable from `ep.receiveQ.head` via `queueNext` links
+
+Together, these predicates close the formal gap between the kernel's queue
+structure and the IPC blocking state machine, ensuring that blocked threads are
+always located in the correct queue and that queue traversal is guaranteed to
+terminate without revisiting nodes.
 
 ---
 
 ## 2. Current State Analysis
 
-### 2.1. Invariant Bundle Architecture
+### 2.1. Predicate Definitions (Complete — v0.22.2)
 
-The kernel's proof surface is organized in layered invariant bundles:
+Both predicates are defined in `SeLe4n/Kernel/IPC/Invariant/Defs.lean`:
 
-```
-kernelInvariantBundle (Architecture/Invariant.lean:57-63)
-  ├── coreIpcInvariantBundle (Capability/Invariant/Preservation.lean:1355-1356)
-  │     ├── schedulerInvariantBundle
-  │     ├── capabilityInvariantBundle
-  │     │     ├── cspaceSlotUnique
-  │     │     ├── cspaceLookupSound
-  │     │     ├── cspaceSlotCountBounded
-  │     │     ├── cdtCompleteness
-  │     │     ├── cdtAcyclicity
-  │     │     ├── cspaceDepthConsistent
-  │     │     └── objects.invExt
-  │     └── ipcInvariantFull (IPC/Invariant/Defs.lean:260-262)
-  │           ├── ipcInvariant (notification queue well-formedness)
-  │           ├── dualQueueSystemInvariant (endpoint queue structure + TCB links)
-  │           ├── allPendingMessagesBounded (msg payload size bounds)
-  │           └── badgeWellFormed (badge value word-bounded)
-  ├── ipcSchedulerCoherenceComponent
-  │     ├── runnableThreadIpcReady
-  │     ├── blockedOnSendNotRunnable
-  │     ├── blockedOnReceiveNotRunnable
-  │     ├── blockedOnCallNotRunnable
-  │     ├── blockedOnReplyNotRunnable
-  │     └── blockedOnNotificationNotRunnable
-  ├── contextMatchesCurrent
-  └── currentThreadDequeueCoherent
+**V3-K: `endpointQueueNoDup`** (Defs.lean:821-829)
+```lean
+def endpointQueueNoDup (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
+    st.objects[oid]? = some (.endpoint ep) →
+    (∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      TCB.queueNext tcb ≠ some tid) ∧
+    (ep.sendQ.head = none ∨ ep.receiveQ.head = none ∨
+     ep.sendQ.head ≠ ep.receiveQ.head)
 ```
 
-**V3-E** targets `capabilityInvariantBundle` preservation through the
-`ipcUnwrapCaps` loop. **V3-G6** targets `ipcInvariantFull` by adding a new
-`waitingThreadsPendingMessageNone` conjunct.
+**V3-J: `ipcStateQueueMembershipConsistent`** (Defs.lean:790-812)
+```lean
+def ipcStateQueueMembershipConsistent (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (KernelObject.tcb tcb) →
+    match tcb.ipcState with
+    | .blockedOnSend epId =>
+        ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+          (ep.sendQ.head = some tid ∨
+           ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+             st.objects[prev.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+             TCB.queueNext prevTcb = some tid)
+    | .blockedOnReceive epId =>
+        ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+          (ep.receiveQ.head = some tid ∨ ...)
+    | .blockedOnCall epId =>
+        ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+          (ep.receiveQ.head = some tid ∨ ...)
+    | _ => True
+```
 
-### 2.2. ipcUnwrapCaps Loop — Current Proof Coverage
+### 2.2. Existing Proof Infrastructure
 
-**File**: `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`
+The V3-G6 work (complete) established the pattern for adding invariant
+predicates to the IPC subsystem. The template involves:
 
-The `ipcUnwrapCapsLoop` (line 36, `private`) is a fuel-indexed recursive helper
-that processes capabilities one at a time via `ipcTransferSingleCap`. The
-existing proof surface includes loop-level preservation theorems for:
+1. **Primitive frame lemmas** in `Structural.lean` — showing storage operations
+   that don't touch the relevant fields preserve the invariant
+2. **Per-operation preservation** in the appropriate preservation file
+3. **Bundle integration** — adding the predicate to `ipcInvariantFull` and
+   updating extractor theorems
 
-| Property | Loop Theorem (private) | Public Wrapper |
-|----------|----------------------|----------------|
-| `scheduler` equality | `ipcUnwrapCapsLoop_preserves_scheduler` (line 93) | `ipcUnwrapCaps_preserves_scheduler` (line 126) |
-| `services` equality | `ipcUnwrapCapsLoop_preserves_services` (line 139) | `ipcUnwrapCaps_preserves_services` (line 172) |
-| `objects[oid]?` for `oid ≠ receiverRoot` | `ipcUnwrapCapsLoop_preserves_objects_ne` (line 185) | `ipcUnwrapCaps_preserves_objects_ne` (line 222) |
-| Notification object stability | `ipcUnwrapCapsLoop_preserves_ntfn_objects` (line 237) | `ipcUnwrapCaps_preserves_ntfn_objects` (line 278) |
-| Endpoint object stability | `ipcUnwrapCapsLoop_preserves_ep_objects` (line 330) | `ipcUnwrapCaps_preserves_ep_objects` (line 368) |
-| TCB object stability | `ipcUnwrapCapsLoop_preserves_tcb_objects` (line 384) | `ipcUnwrapCaps_preserves_tcb_objects` (line 422) |
-| CNode type at receiverRoot | `ipcUnwrapCapsLoop_preserves_cnode_at_root` (line 441) | (internal) |
-| `objects.invExt` | `ipcUnwrapCapsLoop_preserves_objects_invExt` | `ipcUnwrapCaps_preserves_objects_invExt` |
+**Existing related infrastructure**:
 
-**Gap**: `capabilityInvariantBundle` preservation for the Grant=true path.
-Only `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` (line 2010)
-exists — the trivial case where `grantRight = false` causes zero state mutation.
+| Infrastructure | Location | Status | Relevance |
+|---------------|----------|--------|-----------|
+| `tcbQueueChainAcyclic` preservation | `Structural.lean` | Complete | V3-K self-loop property is implied by acyclicity |
+| `tcbQueueLinkIntegrity` preservation | `Structural.lean` | Complete | V3-J reachability depends on link integrity |
+| `dualQueueSystemInvariant` preservation | `Structural.lean` | Complete | Contains `tcbQueueChainAcyclic` as conjunct |
+| `intrusiveQueueWellFormed` preservation | `Structural.lean` | Complete | Queue structure needed for V3-J head reasoning |
+| `QueueNextPath` inductive type | `Defs.lean:135-141` | Complete | V3-J reachability encoding |
+| `QueueNextPath_trans` | `Defs.lean:148-154` | Complete | Path composition for V3-J |
+| `tcbQueueChainAcyclic_no_self_loop` | `Defs.lean:157-163` | Complete | Directly proves V3-K component 1 |
+| `storeTcbQueueLinks_preserves_*` | `DualQueue/Core.lean` | Complete | Primitive for queue link operations |
 
-All existing loop proofs follow an identical induction template:
-1. `induction fuel generalizing idx nextBase accResults st`
-2. Base case (`fuel = 0`): `simp [ipcUnwrapCapsLoop]`, state unchanged
-3. Step case (`fuel' + 1`): case-split on `caps[idx]?` then `ipcTransferSingleCap` result
-4. Error branch: recursive call on unchanged state
-5. Ok branch: apply per-step preservation lemma, then recurse
+### 2.3. Critical Observation: V3-K Self-Loop Redundancy
 
-The `capabilityInvariantBundle` proof will follow this same template but must
-additionally thread two preconditions (`hSlotCapacity`, `hCdtPost`) whose
-intermediate-state forms must be derived at each inductive step.
+The V3-K predicate's first component (no self-loops) states:
+```lean
+∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+  st.objects[tid.toObjId]? = some (.tcb tcb) →
+  TCB.queueNext tcb ≠ some tid
+```
 
-### 2.3. pendingMessage Field — Current Invariant Coverage
+This is **already implied** by `tcbQueueChainAcyclic` (which is part of
+`dualQueueSystemInvariant`, which is part of `ipcInvariantFull`). The existing
+theorem `tcbQueueChainAcyclic_no_self_loop` (Defs.lean:157-163) proves exactly
+this. Therefore, V3-K's first component preservation is **already done** — it
+follows from the existing `dualQueueSystemInvariant` preservation proofs.
 
-**Field**: `TCB.pendingMessage : Option IpcMessage` (Object/Types.lean:381-384)
+The only new proof work for V3-K is the **second component**: send/receive
+queue head disjointness.
 
-Currently covered by `allPendingMessagesBounded` (Defs.lean:211-215), which
-asserts that when `pendingMessage = some msg`, `msg.bounded` holds. This is a
-**payload-level** constraint.
+### 2.4. Current `ipcInvariantFull` (5 conjuncts)
 
-**Not covered**: The **state-level** constraint that threads in waiting states
-(`blockedOnReceive`, `blockedOnNotification`) must have `pendingMessage = none`.
-This is structurally correct in the implementation (no code path sets
-`pendingMessage` without also transitioning `ipcState` out of waiting) but is
-not machine-verified.
+```lean
+def ipcInvariantFull (st : SystemState) : Prop :=
+  ipcInvariant st ∧
+  dualQueueSystemInvariant st ∧
+  allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧
+  waitingThreadsPendingMessageNone st
+```
 
-**Relevant storage operations** (IPC/Operations/Endpoint.lean:64-109):
-- `storeTcbIpcState` — updates only `ipcState`, leaves `pendingMessage` unchanged
-- `storeTcbPendingMessage` — updates only `pendingMessage`, leaves `ipcState` unchanged
-- `storeTcbIpcStateAndMessage` — atomically updates both fields (used in signal wake path)
+After V3-J/K integration, this will become 7 conjuncts:
+```lean
+def ipcInvariantFull (st : SystemState) : Prop :=
+  ipcInvariant st ∧
+  dualQueueSystemInvariant st ∧
+  allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧
+  waitingThreadsPendingMessageNone st ∧
+  endpointQueueNoDup st ∧
+  ipcStateQueueMembershipConsistent st
+```
+
+### 2.5. Operations Requiring Preservation Proofs
+
+Every operation that modifies endpoint queues, TCB `ipcState`, or TCB
+`queueNext` fields must preserve both predicates. The complete list:
+
+| Operation | Modifies Queues | Modifies ipcState | Modifies queueNext | File |
+|-----------|:-:|:-:|:-:|------|
+| `endpointQueueEnqueue` | head/tail | — | prev.queueNext, new.queuePrev | `DualQueue/Core.lean` |
+| `endpointQueuePopHead` | head | — | next.queuePrev, head.queueNext/Prev | `DualQueue/Core.lean` |
+| `endpointQueueRemoveDual` | head/tail | — | prev.queueNext, next.queuePrev | `DualQueue/Transport.lean` |
+| `storeTcbIpcState` | — | target | — | `Operations/Endpoint.lean` |
+| `storeTcbIpcStateAndMessage` | — | target | — | `Operations/Endpoint.lean` |
+| `storeTcbQueueLinks` | — | — | target | `DualQueue/Core.lean` |
+| `endpointSendDual` | yes (enqueue or popHead) | sender + receiver | yes (via queue ops) | `DualQueue/Transport.lean` |
+| `endpointReceiveDual` | yes (enqueue or popHead) | receiver + sender | yes (via queue ops) | `DualQueue/Transport.lean` |
+| `endpointCall` | yes (enqueue or popHead) | caller + receiver | yes (via queue ops) | `DualQueue/Transport.lean` |
+| `endpointReply` | — | target | — | `DualQueue/Transport.lean` |
+| `endpointReplyRecv` | yes (reply + receive) | replier + target | yes (via receive) | `DualQueue/Transport.lean` |
+| `notificationSignal` | — | waiter | — | `Operations/Endpoint.lean` |
+| `notificationWait` | — | waiter | — | `Operations/Endpoint.lean` |
+| `lifecycleRetypeObject` | — | — | — | `Lifecycle/Operations.lean` |
+| `storeObject` (non-TCB) | varies | — | — | (generic) |
+
+**Operations that do NOT need proofs** (only modify scheduler, capabilities,
+or unrelated fields):
+- `ensureRunnable` / `removeRunnable` — scheduler only, no object modification
+- `ipcUnwrapCaps` / `ipcTransferSingleCap` — CNode only, no TCB/endpoint modification
+- `cspaceMint` / `cspaceDelete` — CNode + CDT only
 
 ---
 
-## 3. V3-E: ipcUnwrapCaps Grant=true Loop Composition
+## 3. V3-K: endpointQueueNoDup Preservation Proofs
 
-### 3.1. Problem Statement (M-PRF-2)
+### 3.1. Predicate Decomposition
 
-The per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
-(Preservation.lean:1935-1985) is fully proved. It shows that a single capability
-transfer preserves the 7-component `capabilityInvariantBundle` given:
-- `hInv : capabilityInvariantBundle st` — pre-state invariant
-- `hSlotCapacity` — receiver CNode can accommodate the insertion
-- `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` — CDT invariants in post-state
+`endpointQueueNoDup` is a universally-quantified conjunction over all endpoints.
+For each endpoint, two properties must hold:
 
-The missing proof is the **loop composition**: showing that iterating this
-per-step theorem across all capabilities in `ipcUnwrapCapsLoop` preserves the
-bundle from the initial state to the final state.
-
-### 3.2. Design Decision: Exposing `ipcUnwrapCapsLoop`
-
-The loop helper is currently `private` (CapTransfer.lean:36). Three options:
-
-| Option | Approach | Trade-off |
-|--------|----------|-----------|
-| **A. Remove `private`** | Make `ipcUnwrapCapsLoop` module-internal | Simplest; exposes implementation detail but only within kernel namespace |
-| **B. Public wrapper** | Add `ipcUnwrapCapsLoop'` with identical signature | No visibility change but code duplication |
-| **C. `@[simp]` unfolding lemma** | Add `ipcUnwrapCapsLoop.unfold` lemma exposing recursion structure | Clean but adds proof maintenance burden |
-
-**Recommended: Option A** — Remove `private`. Rationale:
-1. All six existing loop-level preservation theorems are already `private` in
-   the same file and follow the same fuel-indexed induction. The new
-   `capabilityInvariantBundle` preservation theorem will join them.
-2. The function is only reachable from within `SeLe4n.Kernel` namespace.
-3. The existing proofs already `simp [ipcUnwrapCapsLoop]` — the definition is
-   effectively exposed to the proof engine.
-4. A `@[simp]` lemma would need careful `@[local simp]` scoping to avoid
-   polluting the global simp set, adding unnecessary complexity.
-
-### 3.3. Sub-Task Breakdown
-
-#### V3-E1: Expose `ipcUnwrapCapsLoop` for External Reasoning
-
-**File**: `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`
-**Scope**: Small (~5 lines changed)
-**Action**: Remove `private` keyword from `ipcUnwrapCapsLoop` definition (line 36).
-
+**Component K-1**: No self-loops in `queueNext` (global over all TCBs)
 ```lean
--- Before:
-private def ipcUnwrapCapsLoop ...
--- After:
-def ipcUnwrapCapsLoop ...
+∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+  st.objects[tid.toObjId]? = some (.tcb tcb) →
+  TCB.queueNext tcb ≠ some tid
 ```
 
-**Verification**: `lake build SeLe4n.Kernel.IPC.Operations.CapTransfer`
-
-**Cascading effects**: All existing private loop theorems (lines 93-450+) reference
-`ipcUnwrapCapsLoop` by name. Since they are in the same file and already use
-`simp [ipcUnwrapCapsLoop]`, removing `private` is backward-compatible. No
-downstream modules import `ipcUnwrapCapsLoop` directly — they use the public
-`ipcUnwrapCaps` wrappers.
-
-**Risk**: Negligible. If any naming collision arises (unlikely — the name is
-unique within the kernel namespace), a simple rename to `ipcUnwrapCapsLoopImpl`
-resolves it.
-
-#### V3-E2: State the Loop Invariant Formally
-
-**File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
-**Scope**: Small (~15-25 lines)
-**Location**: After line 2021 (after the noGrant theorem)
-
-Define a predicate capturing the loop invariant at each step:
-
+**Component K-2**: Send/receive queue head disjointness
 ```lean
-/-- V3-E2: Loop invariant for ipcUnwrapCapsLoop. At each recursive step,
-the capability invariant bundle is maintained and the receiver CNode
-remains capable of accommodating further insertions. -/
-private def ipcUnwrapCapsLoop_invariant
-    (receiverRoot : SeLe4n.ObjId)
-    (st : SystemState) : Prop :=
-  capabilityInvariantBundle st ∧
-  (∀ cn, st.objects[receiverRoot]? = some (.cnode cn) →
-    cn.slotCountBounded)
+ep.sendQ.head = none ∨ ep.receiveQ.head = none ∨
+ep.sendQ.head ≠ ep.receiveQ.head
 ```
 
-**Design notes**:
-- The `slotCountBounded` component captures the `hSlotCapacity` precondition
-  in a form that can be threaded through each iteration.
-- The `capabilityInvariantBundle` component subsumes `objects.invExt` (needed
-  by per-step preservation of object map structure).
-- We do NOT need to track `idx`, `nextBase`, or `accResults` in the invariant —
-  these are loop-control variables that don't appear in the postcondition.
-- The CDT postcondition (`hCdtPost`) is handled externally: the per-step
-  theorem takes `cdtCompleteness st' ∧ cdtAcyclicity st'` as a hypothesis,
-  and `capabilityInvariantBundle` already includes `cdtCompleteness` and
-  `cdtAcyclicity` as components. After each step, the post-state bundle
-  provides the CDT precondition for the next step.
+As noted in Section 2.3, K-1 is **already proven** via `tcbQueueChainAcyclic`
+(part of `dualQueueSystemInvariant`). The theorem
+`tcbQueueChainAcyclic_no_self_loop` (Defs.lean:157-163) provides exactly this.
+Therefore, K-1 preservation follows from existing `dualQueueSystemInvariant`
+preservation proofs — no new work needed.
 
-**Verification**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
+**All new proof work for V3-K targets K-2 exclusively.**
 
-#### V3-E3: Prove Base Case
+### 3.2. K-2 Analysis: Queue Head Disjointness
 
-**File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+The disjointness property states that for every endpoint, no thread ID
+appears as the head of both `sendQ` and `receiveQ` simultaneously.
+
+**Why this holds structurally**: `endpointQueueEnqueue` guards against
+double-enqueue via the `ipcState ≠ .ready` check (DualQueue/Core.lean:294).
+A thread must be `.ready` to enqueue. After enqueue, its `ipcState` changes
+to a blocking state. Since a thread can only be in one blocking state at a
+time, it can only be in one queue at a time. Queue heads are drawn from
+their respective queues, so they must be different threads.
+
+**Operations that can change queue heads**:
+
+| Operation | sendQ.head change | receiveQ.head change |
+|-----------|------------------|---------------------|
+| `endpointQueueEnqueue(_, false, tid)` | `none → some tid` (empty) or unchanged (non-empty) | unchanged |
+| `endpointQueueEnqueue(_, true, tid)` | unchanged | `none → some tid` (empty) or unchanged |
+| `endpointQueuePopHead(_, false)` | `some h → some h.next` or `none` | unchanged |
+| `endpointQueuePopHead(_, true)` | unchanged | `some h → some h.next` or `none` |
+| `endpointQueueRemoveDual` (at head) | may change | may change |
+| `storeObject` (replacing endpoint) | arbitrary | arbitrary |
+
+### 3.3. V3-K Sub-Task Breakdown
+
+#### V3-K-prim-1: Primitive `storeObject` Frame Lemma
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
 **Scope**: Small (~20-30 lines)
-**Location**: After V3-E2 definition
 
-Prove that when the loop terminates (either `fuel = 0` or `idx ≥ caps.size`,
-i.e., `caps[idx]? = none`), the state is unchanged and the invariant trivially
-holds:
-
-```lean
-/-- V3-E3: Base case — when fuel is exhausted or all caps are processed,
-ipcUnwrapCapsLoop returns the input state unchanged. -/
-private theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle_base
-    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hInv : capabilityInvariantBundle st)
-    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase
-             accResults 0 st = .ok (summary, st')) :
-    capabilityInvariantBundle st' := by
-  simp [ipcUnwrapCapsLoop] at hStep
-  obtain ⟨_, rfl⟩ := hStep
-  exact hInv
-```
-
-**Proof strategy**: Identical to the base case of every existing loop theorem
-(e.g., `ipcUnwrapCapsLoop_preserves_scheduler` lines 100-103). The `fuel = 0`
-and `caps[idx]? = none` branches both return `.ok ({ results := accResults }, st)`,
-meaning `st' = st`.
-
-**Verification**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
-
-#### V3-E4: Prove Inductive Step
-
-**File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
-**Scope**: Medium (~80-120 lines)
-**Location**: After V3-E3
-
-This is the core proof work. The inductive step must show: given the loop
-invariant holds at step `i`, and `ipcTransferSingleCap` preserves
-`capabilityInvariantBundle`, the invariant holds at step `i+1`.
-
-**Proof skeleton**:
+When `storeObject` stores a non-endpoint, non-TCB object, `endpointQueueNoDup`
+is trivially preserved because neither endpoint queues nor TCB `queueNext`
+fields change.
 
 ```lean
-/-- V3-E4: Inductive step — if capabilityInvariantBundle holds before
-processing cap at index idx, it holds after processing that cap and
-continuing the loop. -/
-private theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
-    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
-    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
-    (hInv : capabilityInvariantBundle st)
-    (hSlotCap : ∀ cn cap', st.objects[receiverRoot]? = some (.cnode cn) →
-      (cn.insert nextBase cap').slotCountBounded)
-    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase
-             accResults fuel st = .ok (summary, st')) :
-    capabilityInvariantBundle st' := by
-  induction fuel generalizing idx nextBase accResults st with
-  | zero =>
-    simp [ipcUnwrapCapsLoop] at hStep
-    obtain ⟨_, rfl⟩ := hStep; exact hInv
-  | succ n ih =>
-    simp only [ipcUnwrapCapsLoop] at hStep
-    cases hCap : caps[idx]? with
-    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
-    | some cap =>
-      simp [hCap] at hStep
-      cases hTransfer : ipcTransferSingleCap cap
-          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
-          receiverRoot nextBase maxExtraCaps st with
-      | error e =>
-        -- Error: state unchanged, recurse with same invariant
-        simp [hTransfer] at hStep
-        exact ih _ _ _ _ hInv hSlotCap hStep
-      | ok pair =>
-        rcases pair with ⟨result, stNext⟩
-        -- Success: apply per-step preservation theorem
-        -- 1. Derive capabilityInvariantBundle stNext from per-step theorem
-        -- 2. Derive hSlotCap for stNext (slot capacity is monotone under insert)
-        -- 3. Apply inductive hypothesis
-        sorry -- V3-E4 proof body
+/-- Storing a non-endpoint, non-TCB object preserves endpointQueueNoDup. -/
+theorem storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hNotEp : ∀ ep, obj ≠ .endpoint ep)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    endpointQueueNoDup st'
 ```
 
-**Key proof obligations at each step**:
+**Proof strategy**: For K-1, TCBs at `tid ≠ oid` are unchanged
+(`storeObject_objects_ne`), and `oid` is not a TCB (`hNotTcb`). For K-2,
+endpoints at `epId ≠ oid` are unchanged, and `oid` is not an endpoint
+(`hNotEp`).
 
-1. **Derive `capabilityInvariantBundle stNext`**: Apply
-   `ipcTransferSingleCap_preserves_capabilityInvariantBundle` with:
-   - `hInv` (from inductive hypothesis)
-   - `hSlotCapacity` (from loop invariant, specialized to current `nextBase`)
-   - `hCdtPost` (extracted from `capabilityInvariantBundle stNext` — note this
-     is circular; see resolution below)
+#### V3-K-prim-2: `storeTcbQueueLinks` Preservation
 
-2. **CDT circularity resolution**: The per-step theorem requires
-   `cdtCompleteness st' ∧ cdtAcyclicity st'` as a *hypothesis*. This is an
-   externalized postcondition pattern. The proof must establish CDT invariants
-   for the intermediate state `stNext` independently of the bundle. Two approaches:
-   - **Approach A (preferred)**: Prove separate lemmas
-     `ipcTransferSingleCap_preserves_cdtCompleteness` and
-     `ipcTransferSingleCap_preserves_cdtAcyclicity` that derive CDT invariants
-     from the pre-state CDT invariants. These already exist implicitly within
-     `cspaceInsertSlot_preserves_capabilityInvariantBundle` (which the per-step
-     theorem delegates to).
-   - **Approach B**: Factor `hCdtPost` out of the per-step theorem entirely by
-     proving CDT preservation as a separate chain. This requires refactoring the
-     existing theorem signature.
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Small (~25-40 lines)
 
-   **Recommended**: Approach A — add two focused CDT preservation lemmas for
-   `ipcTransferSingleCap`. These are thin wrappers around the existing CSpace
-   insert + CDT edge-addition proofs.
-
-3. **Derive `hSlotCap` for next iteration**: After a successful insertion at
-   `nextBase`, the CNode at `receiverRoot` has been modified (one more slot
-   filled). The slot capacity predicate must hold for the *new* CNode at the
-   *new* `nextBase'`. This follows from `slotCountBounded` being a global
-   property of the CNode (total slot count ≤ capacity), which is preserved by
-   `cspaceInsertSlot_preserves_cspaceSlotCountBounded`.
-
-4. **Case split on `result`**: The three `CapTransferResult` variants
-   (`.installed`, `.noSlot`, `.grantDenied`) determine whether `nextBase`
-   advances. The proof must handle each variant, mirroring the existing
-   pattern in `ipcUnwrapCapsLoop_preserves_scheduler` (lines 121-124).
-
-**Estimated complexity**: This is the hardest sub-task. The proof body will be
-~80-120 lines, following the established induction template but with additional
-hypothesis threading. The CDT auxiliary lemmas add ~30-40 lines.
-
-**Verification**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
-
-#### V3-E5: Compose Full `ipcUnwrapCaps` Theorem
-
-**File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
-**Scope**: Medium (~30-50 lines)
-**Location**: After V3-E4
-
-Lift the loop-level theorem to the public `ipcUnwrapCaps` entry point:
+`storeTcbQueueLinks` modifies one TCB's queue links. K-1 is already handled
+by `dualQueueSystemInvariant`. For K-2, endpoint queue heads are NOT changed
+by TCB stores (endpoints are different objects), so the disjointness property
+transfers directly.
 
 ```lean
-/-- V3-E5: ipcUnwrapCaps preserves capabilityInvariantBundle for all values
-of grantRight. When grantRight = false, state is unchanged (trivial).
-When grantRight = true, applies the loop induction from V3-E4. -/
-theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
-    (st st' : SystemState) (msg : IpcMessage)
-    (senderRoot receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (summary : CapTransferSummary)
-    (hInv : capabilityInvariantBundle st)
-    (hSlotCap : ∀ cn cap', st.objects[receiverRoot]? = some (.cnode cn) →
-      (cn.insert slotBase cap').slotCountBounded)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
-             = .ok (summary, st')) :
-    capabilityInvariantBundle st' := by
-  unfold ipcUnwrapCaps at hStep
-  split at hStep
-  · -- grantRight = false: state unchanged
-    simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
-  · -- grantRight = true: apply loop theorem
-    exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
-      _ _ _ _ _ _ _ _ _ _ hInv hSlotCap hStep
+theorem storeTcbQueueLinks_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : endpointQueueNoDup st)
+    (hAcyclic : tcbQueueChainAcyclic st')
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    endpointQueueNoDup st'
 ```
 
-**This theorem**:
-- Subsumes the existing `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`
-- Is the final deliverable for V3-E
-- Plugs directly into the call sites in `endpointSendDual`, `endpointCall`,
-  and `endpointReplyRecv` where cap transfer occurs during IPC rendezvous
+**Proof strategy**: Storing a TCB does not modify any endpoint object.
+For any endpoint `ep` at `oid`, `st'.objects[oid]? = st.objects[oid]?` (since
+`oid` is an endpoint key, not a TCB key, and `objects.invExt` ensures type
+safety). Therefore `ep.sendQ.head` and `ep.receiveQ.head` are unchanged.
+K-1 follows from `hAcyclic` (post-state acyclicity). K-2 follows from
+endpoint object stability.
 
-**Verification**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation`
+#### V3-K-prim-3: Endpoint Store with Known Queue Heads
 
-### 3.4. V3-E Auxiliary Lemmas Required
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium (~40-60 lines)
 
-Before V3-E4 can proceed, the following helper lemmas must be established:
+When `storeObject` replaces an endpoint, we need to verify that the new
+endpoint's queue heads satisfy disjointness. This requires a precondition
+about the new endpoint's queue structure.
 
-| Lemma | Purpose | File | Scope |
-|-------|---------|------|-------|
-| `ipcTransferSingleCap_preserves_cdtCompleteness` | CDT completeness after single cap transfer | `Capability/Invariant/Preservation.lean` | S |
-| `ipcTransferSingleCap_preserves_cdtAcyclicity` | CDT acyclicity after single cap transfer | `Capability/Invariant/Preservation.lean` | S |
-| `ipcTransferSingleCap_slotCountBounded_next` | Slot capacity monotonicity through single transfer | `Capability/Invariant/Preservation.lean` | S |
+```lean
+theorem storeObject_endpoint_preserves_endpointQueueNoDup
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (ep' : Endpoint)
+    (hInv : endpointQueueNoDup st)
+    (hAcyclic : tcbQueueChainAcyclic st')
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.endpoint ep') st = .ok ((), st'))
+    (hDisjoint : ep'.sendQ.head = none ∨ ep'.receiveQ.head = none ∨
+                 ep'.sendQ.head ≠ ep'.receiveQ.head) :
+    endpointQueueNoDup st'
+```
 
-These lemmas extract facts that are currently embedded within the existing
-per-step bundle proof. They may be provable by decomposing the
-`capabilityInvariantBundle stNext` result from the per-step theorem, or by
-independent derivation from the component operations (`cspaceInsertSlot`,
-`ensureCdtNodeForSlot`, `addEdge`).
+**Proof strategy**: For the stored endpoint at `oid`, K-2 follows from
+`hDisjoint`. For other endpoints at `oid' ≠ oid`, their objects are unchanged
+(`storeObject_objects_ne`). K-1 follows from `hAcyclic`.
 
-### 3.5. V3-E Complete File Change Summary
+#### V3-K-op-1: `endpointQueueEnqueue` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium (~60-80 lines)
+
+This is the **most important** V3-K proof. `endpointQueueEnqueue` modifies
+one endpoint's queue and one or two TCBs' queue links.
+
+**Two sub-cases**:
+
+**Case A: Empty queue** (no existing tail)
+- Queue becomes `{ head := some tid, tail := some tid }`
+- The other queue is unchanged
+- If the enqueue targets sendQ: `receiveQ.head` unchanged. The new
+  `sendQ.head = some tid`. Must show `tid ≠ receiveQ.head` (if receiveQ
+  is non-empty). This follows from the enqueue guard: `ipcState = .ready`
+  means the thread is not blocked on receive, so it cannot be in the
+  receive queue head.
+
+**Case B: Non-empty queue** (existing tail)
+- Queue head is unchanged (only tail is updated)
+- New thread is appended at tail, not head
+- K-2 is trivially preserved (heads unchanged)
+
+**Key precondition**: The thread being enqueued has `ipcState = .ready` and
+no existing queue links. This means it's not currently in any queue, which
+implies it cannot be any queue's head. Combined with the pre-state K-2
+disjointness, the post-state disjointness follows.
+
+**Proof sketch** (Case A, send-side enqueue):
+```
+-- Pre: hInv gives (for all eps) sendQ.head = none ∨ ...
+-- Post: sendQ.head = some tid
+-- Need: some tid ≠ receiveQ.head
+-- From: tid has ipcState = .ready (enqueue guard)
+-- From: ipcSchedulerCoherence (or separate precondition) implies tid not in any queue
+-- Therefore: tid ≠ receiveQ.head
+```
+
+**Important**: This proof may need `ipcStateQueueMembershipConsistent` or a
+weaker precondition (thread not in any queue head) as a hypothesis. If so,
+this creates a **dependency from V3-K to V3-J** for the receive-side case.
+See Section 7.1 for analysis.
+
+**Alternative approach**: Use the `endpointQueueEnqueue` guard check
+(`tcb.ipcState ≠ .ready` returns error) plus the observation that the
+queue head TCB must have a non-ready ipcState. Since the enqueue guard
+ensures `ipcState = .ready`, and queue-head threads have non-ready ipcState,
+the enqueuing thread cannot equal any queue head. This avoids the V3-J
+dependency and is self-contained.
+
+#### V3-K-op-2: `endpointQueuePopHead` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium (~50-70 lines)
+
+PopHead removes the head of one queue and advances to the next element.
+
+**Analysis**: PopHead on sendQ changes `sendQ.head` from `some h` to
+`h.queueNext` (or `none`). The `receiveQ.head` is unchanged. If the new
+`sendQ.head` (= `h.queueNext`) equals `receiveQ.head`, that would violate
+K-2. But this cannot happen because:
+
+1. `h.queueNext` points to the next thread in the send queue
+2. That thread has `ipcState = .blockedOnSend` (it's in the send queue)
+3. If it were also `receiveQ.head`, it would need to be in the receive queue
+4. But a thread can only be in one queue (by `ipcState` exclusivity)
+5. Therefore `h.queueNext ≠ receiveQ.head`
+
+**Precondition needed**: A weaker form of V3-J — that threads reachable via
+sendQ have `ipcState = .blockedOnSend`, not `.blockedOnReceive`. OR we can
+use `tcbQueueLinkIntegrity` + `intrusiveQueueWellFormed` to argue that
+queue-internal threads cannot be queue heads of the opposite queue.
+
+**Alternative self-contained approach**: Use the existing
+`dualQueueEndpointWellFormed` (receiveQ head has `queuePrev = none`) and
+`tcbQueueLinkIntegrity` (if `h.queueNext = some n`, then `n.queuePrev = some h`,
+so `n.queuePrev ≠ none`). Since `receiveQ.head` has `queuePrev = none` and
+`h.queueNext` has `queuePrev = some h ≠ none`, they cannot be the same thread.
+
+This is the **cleanest approach** — it uses only existing infrastructure from
+`dualQueueSystemInvariant` without needing V3-J.
+
+#### V3-K-op-3: `endpointQueueRemoveDual` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium (~60-80 lines)
+
+`endpointQueueRemoveDual` removes an arbitrary thread from a queue (not just
+the head). It handles head removal, tail removal, and middle removal.
+
+**Head removal case**: Similar to PopHead — the new head is the removed
+thread's `queueNext`. By the same `queuePrev` argument as V3-K-op-2, the
+new head cannot be the opposite queue's head.
+
+**Tail/middle removal**: Queue heads are unchanged. K-2 trivially preserved.
+
+#### V3-K-op-4: `endpointSendDual` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` or `Structural.lean`
+**Scope**: Medium (~40-60 lines)
+
+Composes primitive preservation:
+- **Rendezvous path**: `endpointQueuePopHead` (receive queue) + `storeTcbIpcStateAndMessage` + `ensureRunnable`
+- **Block path**: `endpointQueueEnqueue` (send queue) + `storeTcbIpcStateAndMessage` + `removeRunnable`
+
+Each step's preservation chains to the next.
+
+#### V3-K-op-5: `endpointReceiveDual` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` or `Structural.lean`
+**Scope**: Medium (~50-70 lines)
+
+- **Rendezvous path**: `endpointQueuePopHead` (send queue) + `storeTcbIpcStateAndMessage` × 2 + `ensureRunnable` + `storeTcbPendingMessage`
+- **Block path**: `endpointQueueEnqueue` (receive queue) + `storeTcbIpcState` + `removeRunnable`
+
+More complex than send due to the Call/Send split in the rendezvous path.
+
+#### V3-K-op-6: `endpointCall` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` or `Structural.lean`
+**Scope**: Medium (~40-60 lines)
+
+- **Rendezvous path**: PopHead + wake receiver + block caller as `.blockedOnReply`
+- **Block path**: Enqueue caller on send queue + block as `.blockedOnCall`
+
+Neither path creates new queue heads that violate disjointness.
+
+#### V3-K-op-7: `endpointReply` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` or `Structural.lean`
+**Scope**: Small (~20-30 lines)
+
+Reply does not touch any endpoint queue. It only modifies TCB `ipcState`
+(`.blockedOnReply` → `.ready`) and `pendingMessage`. No queue heads change.
+K-2 trivially preserved. K-1 follows from `tcbQueueChainAcyclic` preservation.
+
+#### V3-K-op-8: `endpointReplyRecv` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` or `Structural.lean`
+**Scope**: Medium (~40-60 lines)
+
+Compound: Reply + ReceiveDual. Chains V3-K-op-7 with V3-K-op-5.
+
+#### V3-K-op-9: `notificationSignal` / `notificationWait` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean`
+**Scope**: Small (~25-35 lines)
+
+Neither notification operation modifies endpoint queues or TCB `queueNext`
+fields. `notificationSignal` stores a notification object and a TCB
+(`storeTcbIpcStateAndMessage`). `notificationWait` stores a notification
+and calls `storeTcbIpcState`. Neither touches endpoint objects.
+
+K-1 follows from `tcbQueueChainAcyclic` preservation (existing). K-2 follows
+from endpoint object stability under notification stores.
+
+### 3.4. V3-K File Change Summary
 
 | File | Lines Added | Lines Modified | Type |
 |------|-------------|----------------|------|
-| `IPC/Operations/CapTransfer.lean` | 0 | 1 (remove `private`) | Visibility |
-| `Capability/Invariant/Preservation.lean` | ~180-220 | 0 | Proof |
-| **Total** | **~180-220** | **1** | |
+| `IPC/Invariant/Structural.lean` | ~350-450 | 0 | Primitive + operation proofs |
+| `IPC/Invariant/EndpointPreservation.lean` | ~40-60 | 0 | Operation proofs (optional, may go in Structural) |
+| `IPC/Invariant/CallReplyRecv.lean` | ~30-50 | 0 | Operation proofs (optional, may go in Structural) |
+| `IPC/Invariant/NotificationPreservation.lean` | ~25-35 | 0 | Frame proofs |
+| **Total** | **~445-595** | **0** | |
 
 ---
 
-## 4. V3-G: pendingMessage Invariant for Waiting Threads
+## 4. V3-J: ipcStateQueueMembershipConsistent Preservation Proofs
 
-### 4.1. Problem Statement (M-PRF-5)
+### 4.1. Predicate Structure Analysis
 
-The `pendingMessage` field in TCB objects is modified by `storeTcbPendingMessage`
-and `storeTcbIpcStateAndMessage`. No formal invariant currently constrains the
-relationship between a thread's `ipcState` and its `pendingMessage` field.
+`ipcStateQueueMembershipConsistent` asserts a **bidirectional binding** between
+a thread's `ipcState` and the endpoint queue structure. For every thread:
 
-The implementation is structurally correct: every code path that sets
-`pendingMessage := some msg` simultaneously transitions `ipcState` out of
-waiting states (to `.ready` or `.blockedOnSend`). But this coupling is not
-machine-verified.
+- `blockedOnSend epId` → reachable from `ep.sendQ.head` via `queueNext`
+- `blockedOnReceive epId` → reachable from `ep.receiveQ.head` via `queueNext`
+- `blockedOnCall epId` → reachable from `ep.receiveQ.head` via `queueNext`
+- Other states → `True` (unconstrained)
 
-**Security relevance**: Without this invariant, a hypothetical bug could leave
-a thread in `blockedOnReceive` or `blockedOnNotification` with a stale
-`pendingMessage`, causing message duplication or data leakage on the next
-dequeue.
+"Reachable" means either:
+1. The thread IS the queue head: `ep.sendQ.head = some tid` (or receiveQ)
+2. There exists a predecessor: `∃ prev prevTcb, prev.objects = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid`
 
-### 4.2. Invariant Scope Decision
+This is a **one-hop reachability** check — the thread is either the head or
+has a direct predecessor in the queue chain. This is weaker than full transitive
+`QueueNextPath` reachability but sufficient to guarantee presence in the queue
+(combined with `tcbQueueLinkIntegrity`, one-hop backward reachability implies
+full forward reachability from the head).
 
-The audit finding M-PRF-5 specifies the invariant scope as:
+### 4.2. Proof Complexity Assessment
 
-> threads with `ipcState ∈ {blockedOnReceive, blockedOnNotification}` must
-> have `pendingMessage = none`
+V3-J is **significantly harder** than V3-K because:
 
-**Design question**: Should `blockedOnSend` threads also be constrained?
+1. **Three ipcState variants** must be tracked (send, receive, call) across
+   every operation, with each variant having its own queue (sendQ vs receiveQ).
 
-**Analysis**:
-- `blockedOnSend` threads **carry** a pending message (the outgoing payload
-  staged for delivery when a receiver arrives). Their `pendingMessage` is
-  intentionally `some msg`.
-- `blockedOnReceive` threads are waiting to *receive* — they have no outgoing
-  payload. `pendingMessage` should be `none`.
-- `blockedOnNotification` threads are waiting for a signal — they have no
-  outgoing payload. `pendingMessage` should be `none`.
-- `blockedOnCall` threads have already sent their message and are waiting for
-  a reply. Their `pendingMessage` may be `none` (message already delivered)
-  or `some msg` (implementation-dependent staging). **Exclude from scope** —
-  the Call semantics are complex and the audit finding specifically scopes to
-  receive/notification.
-- `blockedOnReply` threads: Similar to Call — exclude from scope.
+2. **Queue operations modify both the endpoint and TCBs**. After
+   `endpointQueueEnqueue`, the new thread must be shown reachable (it's the
+   new tail, linked by the old tail's `queueNext`). After
+   `endpointQueuePopHead`, the removed thread exits scope (ipcState changes)
+   and the remaining threads must remain reachable (head advances to next).
 
-**Decision**: Scope to `{blockedOnReceive, blockedOnNotification}` as specified
-in M-PRF-5. This is the minimal correct scope that addresses the finding
-without over-constraining Call/Reply semantics.
+3. **ipcState transitions and queue membership must stay synchronized**. When
+   `storeTcbIpcState` changes a thread from `.ready` to `.blockedOnSend epId`,
+   the thread must already be in `ep.sendQ` (via prior enqueue). When changing
+   from `.blockedOnSend` to `.ready` (dequeue + wake), the thread must no
+   longer appear in the queue.
 
-### 4.3. Sub-Task Breakdown
+4. **Cross-thread reasoning**: Modifying one TCB's `queueNext` affects the
+   reachability of the thread it previously pointed to.
 
-#### V3-G1: Define `waitingThreadsPendingMessageNone`
+### 4.3. V3-J Sub-Task Breakdown
 
-**File**: `SeLe4n/Kernel/IPC/Invariant/Defs.lean`
-**Scope**: Small (~15-20 lines)
-**Location**: After `badgeWellFormed` definition (line 248), before `ipcInvariantFull` (line 260)
+#### V3-J-prim-1: `storeObject` Non-TCB, Non-Endpoint Frame Lemma
 
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Small (~20-30 lines)
+
+Non-TCB, non-endpoint stores do not affect TCB `ipcState`, `queueNext`, or
+endpoint queue heads. The predicate is trivially preserved via
+`storeObject_objects_ne`.
+
+#### V3-J-prim-2: `storeTcbIpcState` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium (~50-70 lines)
+
+`storeTcbIpcState` modifies one thread's `ipcState` without changing
+`queueNext` or any endpoint object. Two proof obligations:
+
+**For the target thread `tid`**:
+- If the new `ipcState` is a blocking state (`blockedOnSend epId`, etc.),
+  the thread must be reachable from the corresponding queue head. This
+  requires a **precondition**: the caller must ensure the thread is already
+  enqueued before setting its blocking state.
+- If the new `ipcState` is `.ready` or another non-blocking state, the
+  obligation is `True` — trivially satisfied.
+
+**For all other threads**:
+- Their TCBs are unchanged (`storeObject_objects_ne`)
+- Their `ipcState` and reachability are unaffected
+
+**Key precondition pattern**:
 ```lean
--- ============================================================================
--- V3-G1/M-PRF-5: Waiting-thread pending-message consistency
--- ============================================================================
-
-/-- V3-G1/M-PRF-5: Threads blocked on receive or notification wait must not
-have a staged pending message. This ensures no stale message data can leak
-across IPC state transitions.
-
-Scope: `blockedOnReceive` and `blockedOnNotification` states only.
-`blockedOnSend` threads intentionally carry `pendingMessage = some msg`
-(the outgoing payload). Call/Reply threads are excluded per M-PRF-5 scope. -/
-def waitingThreadsPendingMessageNone (st : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
-    st.objects[tid.toObjId]? = some (.tcb tcb) →
-    (match tcb.ipcState with
-     | .blockedOnReceive _ => true
-     | .blockedOnNotification _ => true
-     | _ => false) = true →
-    tcb.pendingMessage = none
-```
-
-**Design notes**:
-- Uses match-based predicate rather than two separate implications to keep the
-  definition compact and the proof obligations at each call site to a single
-  case analysis.
-- Alternative formulation using disjunction (`tcb.ipcState = .blockedOnReceive _
-  ∨ tcb.ipcState = .blockedOnNotification _`) is equivalent but harder to
-  `simp` in proofs due to existential quantification over the endpoint/notification ID.
-- The match-based form allows `simp [waitingThreadsPendingMessageNone]` to
-  reduce cleanly when the thread's `ipcState` is known.
-
-**Verification**: `lake build SeLe4n.Kernel.IPC.Invariant.Defs`
-
-#### V3-G2: Prove Preservation for `notificationWait`
-
-**File**: `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean`
-**Scope**: Small (~30-40 lines)
-
-`notificationWait` transitions a thread from `.ready` to
-`.blockedOnNotification oid` and adds it to the notification's waiting list.
-
-**Proof strategy**:
-1. For the transitioning thread: Before the operation, it was `.ready` (outside
-   invariant scope). After, it is `.blockedOnNotification oid`. We must show
-   `pendingMessage = none` for this thread in the post-state.
-   - `notificationWait` calls `storeTcbIpcState` which updates `ipcState` only,
-     leaving `pendingMessage` unchanged.
-   - **Precondition needed**: The thread must have `pendingMessage = none`
-     before entering the wait. This follows from a broader property: runnable
-     threads with `ipcState = .ready` should have `pendingMessage = none`.
-     This is the natural pre-state condition — the thread is entering a wait,
-     so it should have no pending message.
-   - If this precondition is not directly available, we need a **caller-side
-     precondition** that the thread's `pendingMessage = none` before calling
-     `notificationWait`.
-
-2. For all other threads: `storeTcbIpcState` only modifies the target thread's
-   TCB. Other threads' `ipcState` and `pendingMessage` are unchanged. The
-   invariant for non-target threads follows from `storeObject_objects_ne`.
-
-**Key lemma needed**:
-```lean
-theorem storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (newState : ThreadIpcState)
-    (hInv : waitingThreadsPendingMessageNone st)
+theorem storeTcbIpcState_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (newState : ThreadIpcState)
+    (hInv : ipcStateQueueMembershipConsistent st)
     (hObjInv : st.objects.invExt)
     (hStore : storeTcbIpcState st tid newState = .ok ((), st'))
-    -- When transitioning INTO a waiting state, the thread's pendingMessage must be none
-    (hPre : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) →
-      (match newState with
-       | .blockedOnReceive _ => true
-       | .blockedOnNotification _ => true
-       | _ => false) = true →
-      tcb.pendingMessage = none) :
-    waitingThreadsPendingMessageNone st'
+    -- When transitioning INTO a blocking state, the thread must be reachable
+    (hReachable : match newState with
+      | .blockedOnSend epId =>
+          ∃ ep, st.objects[epId]? = some (.endpoint ep) ∧
+            (ep.sendQ.head = some tid ∨ ∃ prev prevTcb, ...)
+      | .blockedOnReceive epId => ...
+      | .blockedOnCall epId => ...
+      | _ => True) :
+    ipcStateQueueMembershipConsistent st'
 ```
 
-**Verification**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation`
+This precondition can be discharged at each call site from the operation
+context (e.g., `endpointSendDual` calls `endpointQueueEnqueue` before
+`storeTcbIpcState`, establishing the reachability).
 
-#### V3-G3: Prove Preservation for `notificationSignal` (Wake Path)
+#### V3-J-prim-3: `storeTcbIpcStateAndMessage` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium (~50-70 lines)
+
+Same structure as V3-J-prim-2 but for the combined ipcState + message store.
+Identical precondition pattern.
+
+#### V3-J-prim-4: `storeTcbQueueLinks` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium-Hard (~60-90 lines)
+
+`storeTcbQueueLinks` modifies one TCB's `queuePrev`, `queuePPrev`, and
+`queueNext` fields. This **directly affects reachability**:
+
+- If `tid`'s `queueNext` changes from `some x` to `some y`, then `x` loses
+  its predecessor (affecting `x`'s reachability) and `y` gains a predecessor
+- If `tid`'s `queueNext` changes from `some x` to `none`, `x` loses its
+  predecessor
+
+**Proof strategy**: This primitive is always called as part of a larger
+queue operation (`endpointQueueEnqueue`, `endpointQueuePopHead`,
+`endpointQueueRemoveDual`). The invariant may not hold at intermediate states
+within these multi-step operations. Therefore, it may be more practical to
+prove preservation at the **operation level** (enqueue, popHead, removeDual)
+rather than at the primitive `storeTcbQueueLinks` level.
+
+**Decision**: Prove V3-J at the operation level, not the primitive level.
+The primitive `storeTcbQueueLinks` will be handled implicitly within each
+operation proof.
+
+#### V3-J-op-1: `endpointQueueEnqueue` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Hard (~100-140 lines)
+
+**This is the hardest proof in the entire plan.**
+
+`endpointQueueEnqueue(endpointId, isReceiveQ, tid)` modifies:
+1. The endpoint's queue (head/tail)
+2. The old tail's `queueNext` (to point to `tid`)
+3. The new thread's `queuePrev` (to point to old tail)
+
+**Proof obligations**:
+
+*For the newly enqueued thread `tid`*:
+- After enqueue, `tid` is NOT yet in a blocking state — its `ipcState` is
+  still `.ready` (the enqueue guard checks this). So the predicate evaluates
+  to `True` for `tid` in the post-state. The `storeTcbIpcState` call that
+  follows (in the parent operation) is what transitions `tid` into a blocking
+  state, and V3-J-prim-2 handles that.
+
+*For previously blocked threads*:
+- Empty-queue case: Queue was empty. No threads were blocked on this endpoint
+  (because the queue was empty, no thread could have been the head). After
+  enqueue, head = tid. Other threads' reachability is unaffected since no
+  `queueNext` pointers changed (except the new thread's).
+- Non-empty case: Queue had existing members. Old head is unchanged. Old
+  tail's `queueNext` now points to `tid`. For threads that were reachable
+  before, they remain reachable because:
+  - The head hasn't changed
+  - No existing thread's `queueNext` was changed to point away from its
+    successor (only the old tail gained a new `queueNext`)
+  - The old tail's successor chain is extended, not broken
+
+*For threads blocked on OTHER endpoints*:
+- Other endpoints' queue heads are unchanged
+- `queueNext` changes only affect `tid` and the old tail, not threads in
+  other queues
+- But we must be careful: changing the old tail's `queueNext` from `none`
+  to `some tid` means `tid` now has a predecessor. If `tid` happened to be
+  blocked on a different endpoint (impossible by the enqueue guard, since
+  `ipcState = .ready`), this would incorrectly establish reachability. The
+  enqueue guard prevents this.
+
+**Helper lemma needed**:
+```lean
+/-- After endpointQueueEnqueue, threads previously reachable remain reachable. -/
+private theorem endpointQueueEnqueue_preserves_existing_reachability ...
+```
+
+#### V3-J-op-2: `endpointQueuePopHead` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Hard (~80-120 lines)
+
+PopHead removes the head thread and clears its queue links. The new head
+is the old head's `queueNext`.
+
+**Proof obligations**:
+
+*For the popped thread (old head)*:
+- Its `ipcState` is NOT changed by PopHead itself. The caller (`endpointSendDual`,
+  etc.) will change it to `.ready` or another state via `storeTcbIpcState(AndMessage)`.
+- In the intermediate state after PopHead but before ipcState change, the
+  popped thread still has its old `ipcState` (e.g., `.blockedOnReceive epId`)
+  but is no longer reachable (queue head has advanced). **The invariant
+  temporarily breaks here.**
+- This means the invariant must be proven at the **full operation level**, not
+  at the PopHead level alone.
+
+**Strategy**: Like V3-J-prim-4, this confirms that V3-J preservation should
+be proven at the **composite operation level** (`endpointSendDual`,
+`endpointReceiveDual`, etc.) rather than at the primitive level. The primitive
+PopHead may temporarily violate the invariant, but the full operation
+(PopHead + ipcState change) restores it.
+
+**Alternative**: Add a **weaker lemma** that tracks what PopHead does to
+reachability and ipcState, then compose it at the operation level:
+
+```lean
+/-- After PopHead, all previously reachable threads (except the popped head)
+remain reachable via the new head's queueNext chain. -/
+private theorem endpointQueuePopHead_reachability_transfer ...
+
+/-- After PopHead, the popped thread's queueNext is cleared. -/
+private theorem endpointQueuePopHead_clears_head_links ...
+```
+
+#### V3-J-op-3: `endpointSendDual` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Hard (~80-120 lines)
+
+Two paths:
+
+**Rendezvous path** (receiver waiting):
+1. `endpointQueuePopHead(ep, true)` — removes receiver from receiveQ
+2. `storeTcbIpcStateAndMessage(receiver, .ready, msg)` — receiver exits scope
+3. `ensureRunnable(receiver)` — scheduler only
+
+After step 1, the popped receiver still has `ipcState = .blockedOnReceive` but
+is no longer in the queue. After step 2, the receiver has `ipcState = .ready`,
+exiting the predicate's scope. For all other threads in the receiveQ, the new
+head (old head's `queueNext`) maintains reachability via the same chain with
+one link removed from the front. Threads in other queues are unaffected.
+
+The sender's ipcState remains `.ready` throughout — trivially `True`.
+
+**Block path** (no receiver):
+1. `endpointQueueEnqueue(ep, false, sender)` — adds sender to sendQ
+2. `storeTcbIpcStateAndMessage(sender, .blockedOnSend epId, msg)` — sender enters scope
+3. `removeRunnable(sender)` — scheduler only
+
+After step 1, sender has `ipcState = .ready` (trivially `True`). After step 2,
+sender has `ipcState = .blockedOnSend epId` and must be reachable from
+`sendQ.head`. If the queue was empty, sender IS the head. If non-empty,
+sender is the tail, reachable via the old tail's `queueNext` (set by enqueue).
+
+**Precondition satisfaction**: Step 2's precondition (V3-J-prim-3) — that the
+sender is reachable — is discharged by step 1's enqueue result. The enqueue
+either made the sender the head (empty case) or linked the old tail to the
+sender (non-empty case).
+
+#### V3-J-op-4: `endpointReceiveDual` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Hard (~100-140 lines)
+
+**Rendezvous path** (sender waiting):
+1. `endpointQueuePopHead(ep, false)` — removes sender from sendQ
+2. Split on `senderWasCall`:
+   - Call: `storeTcbIpcStateAndMessage(sender, .blockedOnReply, none)` — sender enters reply scope (not in send/receive/call, so `True`)
+   - Send: `storeTcbIpcStateAndMessage(sender, .ready, none)` + `ensureRunnable` — sender exits scope
+3. `storeTcbPendingMessage(receiver, senderMsg)` — receiver's message only, no ipcState change
+
+The receiver's ipcState is never changed by this path (stays `.ready`).
+Sender transitions out of `.blockedOnSend`/`.blockedOnCall` scope.
+
+**Block path** (no sender):
+1. `endpointQueueEnqueue(ep, true, receiver)` — adds receiver to receiveQ
+2. `storeTcbIpcState(receiver, .blockedOnReceive epId)` — receiver enters scope
+3. `removeRunnable(receiver)` — scheduler only
+
+Same reachability discharge pattern as V3-J-op-3 block path.
+
+#### V3-J-op-5: `endpointCall` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium-Hard (~70-100 lines)
+
+**Rendezvous path**: PopHead(receiveQ) + wake receiver + block caller as `.blockedOnReply`
+- Caller never enters a send/receive/call queue — only transitions to `.blockedOnReply`, which evaluates to `True`
+- Receiver transitions to `.ready` — exits scope
+
+**Block path**: Enqueue(sendQ, caller) + `storeTcbIpcStateAndMessage(caller, .blockedOnCall epId, msg)`
+- Caller is enqueued on sendQ, then enters `.blockedOnCall epId`
+- `.blockedOnCall epId` requires reachability from `ep.receiveQ.head`
+- **Wait** — the definition says `.blockedOnCall epId` should be reachable from **receiveQ**, but the caller is enqueued on **sendQ**.
+
+**Critical check of V3-J definition** (Defs.lean:806-811):
+```lean
+| .blockedOnCall epId =>
+    ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+      (ep.receiveQ.head = some tid ∨ ...)
+```
+
+The definition says `blockedOnCall` threads should be reachable from
+**`receiveQ.head`**. But `endpointCall` enqueues on the **sendQ** (not receiveQ).
+When a receiver later calls `endpointReceiveDual`, it pops from sendQ and
+the caller transitions from `.blockedOnCall` to `.blockedOnReply`.
+
+**Issue**: The `blockedOnCall` case in V3-J checks `receiveQ.head`, but Call
+callers are enqueued on sendQ. This appears to be a **definition error** in
+the V3-J predicate.
+
+**Analysis**: Looking at `endpointReceiveDual` (Transport.lean:1640-1650),
+when a sender is popped from `sendQ` and `senderTcb.ipcState = .blockedOnCall _`,
+the sender transitions to `.blockedOnReply`. The sender was in `sendQ`, not
+`receiveQ`. The V3-J definition's use of `receiveQ` for `blockedOnCall` is
+incorrect — it should be `sendQ`.
+
+**However**: Let's check if `endpointCall`'s block path actually enqueues on
+sendQ. Yes — `endpointQueueEnqueue endpointId false caller` where `false`
+means sendQ (Transport.lean:1735). So `blockedOnCall` callers are in `sendQ`.
+
+**Conclusion**: The V3-J predicate definition may need a **fix** for the
+`blockedOnCall` case: `ep.sendQ.head` instead of `ep.receiveQ.head`. This
+is a **definition-level issue** that must be resolved before preservation
+proofs can proceed.
+
+**Alternative reading**: Perhaps `blockedOnCall` was intentionally mapped to
+`receiveQ` because in seL4's model, Call senders eventually become receivers.
+But in seLe4n's implementation, Call callers sit on `sendQ` until a receiver
+pops them. The definition should match the implementation.
+
+**Resolution sub-task** (V3-J-fix): Fix `ipcStateQueueMembershipConsistent`
+definition for `blockedOnCall` to use `sendQ` instead of `receiveQ`. This is
+a ~2-line change in `Defs.lean`.
+
+#### V3-J-op-6: `endpointReply` / `endpointReplyRecv` Preservation
+
+**File**: `SeLe4n/Kernel/IPC/Invariant/Structural.lean`
+**Scope**: Medium (~60-80 lines combined)
+
+`endpointReply` wakes a `.blockedOnReply` thread (to `.ready`). Since
+`.blockedOnReply` evaluates to `True` in V3-J, and `.ready` also evaluates
+to `True`, the predicate is trivially preserved for the target thread. No
+queue operations occur.
+
+`endpointReplyRecv` = Reply + ReceiveDual. Chains V3-J-op-6 (Reply) with
+V3-J-op-4 (ReceiveDual).
+
+#### V3-J-op-7: `notificationSignal` / `notificationWait` Preservation
 
 **File**: `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean`
-**Scope**: Small (~35-50 lines)
+**Scope**: Small (~30-40 lines combined)
 
-The `notificationSignal` wake path (NotificationPreservation.lean:53-75):
-1. `storeObject` — updates notification (removes waiter from queue)
-2. `storeTcbIpcStateAndMessage` — sets `ipcState := .ready` AND
-   `pendingMessage := some { badge := some badge }` (delivers badge)
-3. `ensureRunnable` — adds thread to scheduler run queue
+Neither notification operation modifies endpoint queues or TCB `queueNext`.
+`notificationSignal` changes a waiter's `ipcState` from `.blockedOnNotification`
+to `.ready` — both evaluate to `True` in V3-J. `notificationWait` changes
+`ipcState` to `.blockedOnNotification` — also `True`. Endpoint objects are
+untouched.
 
-**Proof strategy**: The woken thread transitions FROM `.blockedOnNotification`
-TO `.ready` while simultaneously receiving a message. Since `.ready` is outside
-the invariant's scope, the thread exits the constrained set — no violation.
+### 4.4. V3-J File Change Summary
 
-For all other threads:
-- `storeObject` (notification store) does not modify any TCB
-- `storeTcbIpcStateAndMessage` only modifies the target thread's TCB
-- `ensureRunnable` does not modify any TCB objects (only scheduler state)
+| File | Lines Added | Lines Modified | Type |
+|------|-------------|----------------|------|
+| `IPC/Invariant/Defs.lean` | 0 | ~2 (blockedOnCall fix if needed) | Definition fix |
+| `IPC/Invariant/Structural.lean` | ~550-750 | 0 | Operation-level proofs |
+| `IPC/Invariant/NotificationPreservation.lean` | ~30-40 | 0 | Frame proofs |
+| **Total** | **~580-790** | **~2** | |
 
-The key insight is that `storeTcbIpcStateAndMessage` atomically moves the
-thread OUT of the invariant scope (to `.ready`) while setting `pendingMessage`,
-so the invariant is trivially preserved for the target thread.
+---
 
-**Proof structure**:
-```lean
--- For target thread (waiter):
---   Pre: ipcState = .blockedOnNotification oid (in scope, pendingMessage = none by hInv)
---   Post: ipcState = .ready (OUT of scope — invariant vacuously holds)
--- For non-target threads:
---   TCB unchanged by storeTcbIpcStateAndMessage (storeObject_objects_ne)
---   ipcState and pendingMessage preserved
-```
+## 5. Bundle Integration Plan
 
-**Verification**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation`
+### 5.1. Phase 1: Add Predicates to `ipcInvariantFull`
 
-#### V3-G4: Prove Preservation for `endpointSend`/`endpointReceive`
-
-**File**: `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean`
-**Scope**: Medium (~80-120 lines)
-
-**Endpoint send** (`endpointSendDual`): Two paths —
-- **Rendezvous** (receiver waiting): Dequeues receiver from receive queue,
-  delivers message, transitions receiver from `.blockedOnReceive` to `.ready`.
-  Sender remains `.ready` (or becomes `.blockedOnCall` for Call variant).
-  - Receiver exits invariant scope (`.ready`) — trivially preserved.
-  - All other threads: TCBs not modified for non-participants.
-
-- **Block** (no receiver): Sender transitions to `.blockedOnSend` with
-  `pendingMessage := some msg`. `.blockedOnSend` is outside scope — preserved.
-
-**Endpoint receive** (`endpointReceiveDual`): Two paths —
-- **Rendezvous** (sender waiting): Dequeues sender from send queue,
-  receives message. Sender transitions from `.blockedOnSend` to `.ready`.
-  Receiver was `.ready`, stays `.ready` (or enters `.blockedOnReply`).
-  - Sender exits `.blockedOnSend` (out of scope) to `.ready` (out of scope).
-  - Invariant: only `.blockedOnReceive`/`.blockedOnNotification` threads matter,
-    and none of them are touched by this operation.
-
-- **Block** (no sender): Receiver transitions from `.ready` to
-  `.blockedOnReceive oid`. `pendingMessage` is NOT set (receiver has no
-  outgoing message). Must show `pendingMessage = none` — follows from the
-  receiver's `.ready` state having no pending message (precondition from
-  the calling context or the broader scheduler-IPC coherence).
-
-**Key helper lemma** (reusable across G4 and G5):
-```lean
-/-- Dual-queue popHead + storeTcbIpcStateAndMessage preserves the invariant
-when the dequeued thread transitions to .ready (exiting scope). -/
-private theorem dualQueuePopHead_wake_preserves_waitingThreadsPendingMessageNone ...
-```
-
-**Sub-steps for V3-G4**:
-1. Prove `endpointQueueEnqueue_preserves_waitingThreadsPendingMessageNone`
-   (frame lemma — queue ops don't modify TCB ipcState/pendingMessage)
-2. Prove `endpointQueuePopHead_preserves_waitingThreadsPendingMessageNone`
-   (frame lemma — queue ops modify endpoint object, not TCBs)
-3. Prove `endpointSendDual_preserves_waitingThreadsPendingMessageNone`
-   (composes queue + TCB store preservation)
-4. Prove `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
-   (composes queue + TCB store preservation)
-
-**Verification**: `lake build SeLe4n.Kernel.IPC.Invariant.EndpointPreservation`
-
-#### V3-G5: Prove Preservation for `endpointCall`/`endpointReplyRecv`
-
-**File**: `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean`
-**Scope**: Medium (~80-120 lines)
-
-**`endpointCall`**: Compound operation = send + block-on-reply.
-- Send leg: follows `endpointSendDual` preservation (V3-G4)
-- Block-on-reply leg: caller transitions to `.blockedOnReply oid`. This is
-  outside the invariant scope — preserved.
-
-**`endpointReplyRecv`**: Compound operation = reply + receive.
-- Reply leg: wakes the reply-blocked thread (`.blockedOnReply` → `.ready`).
-  Outside scope — preserved.
-- Receive leg: follows `endpointReceiveDual` preservation (V3-G4)
-
-**`endpointReply`**: Wakes a reply-blocked thread. Outside scope — preserved.
-
-**Sub-steps**:
-1. Prove `endpointCall_preserves_waitingThreadsPendingMessageNone`
-2. Prove `endpointReply_preserves_waitingThreadsPendingMessageNone`
-3. Prove `endpointReplyRecv_preserves_waitingThreadsPendingMessageNone`
-
-Each proof composes the primitive preservation lemmas from V3-G4 with
-the Call/Reply operation structure.
-
-**Verification**: `lake build SeLe4n.Kernel.IPC.Invariant.CallReplyRecv`
-
-#### V3-G6: Integrate into `ipcInvariantFull` and Bundle Theorems
-
-**Files**: `IPC/Invariant/Defs.lean`, `IPC/Invariant/Structural.lean`,
-`Capability/Invariant/Preservation.lean`
-**Scope**: Small (~40-60 lines across 3 files)
-
-**Step 1**: Add `waitingThreadsPendingMessageNone` to `ipcInvariantFull`
-(Defs.lean:260-262):
+**File**: `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (line 287-289)
 
 ```lean
--- Before:
-def ipcInvariantFull (st : SystemState) : Prop :=
-  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
-  badgeWellFormed st
-
--- After:
+-- Before (5 conjuncts):
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st
+
+-- After (7 conjuncts):
+def ipcInvariantFull (st : SystemState) : Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st
 ```
 
-**Step 2**: Update extractor theorems in `Preservation.lean`:
+### 5.2. Phase 2: Update Extractor Theorems
 
-```lean
--- Add new extractor:
-theorem coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone
-    {st : SystemState} (h : coreIpcInvariantBundle st) :
-    waitingThreadsPendingMessageNone st :=
-  h.2.2.2.2.2.2  -- path through the conjunction chain
+**File**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~lines 1358-1382)
+
+Current extractors and their conjunction paths:
+```
+coreIpcInvariantBundle_to_ipcInvariant              → h.2.2.1
+coreIpcInvariantBundle_to_dualQueueSystemInvariant   → h.2.2.2.1
+coreIpcInvariantBundle_to_allPendingMessagesBounded  → h.2.2.2.2.1
+coreIpcInvariantBundle_to_badgeWellFormed            → h.2.2.2.2.2.1
+coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone → h.2.2.2.2.2.2
 ```
 
-**Note**: Adding a conjunct to `ipcInvariantFull` changes the destructuring
-paths for ALL existing extractors. The existing extractors are:
-- `coreIpcInvariantBundle_to_ipcInvariant` → `h.2.2.1` (unchanged)
-- `coreIpcInvariantBundle_to_dualQueueSystemInvariant` → `h.2.2.2.1` (unchanged)
-- `coreIpcInvariantBundle_to_allPendingMessagesBounded` → `h.2.2.2.2.1` (unchanged)
-- `coreIpcInvariantBundle_to_badgeWellFormed` → `h.2.2.2.2.2` → becomes `h.2.2.2.2.2.1`
+After adding 2 conjuncts, the last extractor path changes, and 2 new
+extractors are needed:
 
-**This is a breaking change** to `coreIpcInvariantBundle_to_badgeWellFormed`.
-The fix is a single-character edit (`.2` → `.2.1`) but must be identified and
-applied. All call sites of this extractor must be audited.
+```
+coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone → h.2.2.2.2.2.1  (was .2)
+coreIpcInvariantBundle_to_endpointQueueNoDup               → h.2.2.2.2.2.2.1 (NEW)
+coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent → h.2.2.2.2.2.2.2 (NEW)
+```
 
-**Step 3**: Update all bundle-level preservation theorems in `Structural.lean`
-that reconstruct `ipcInvariantFull` to include the new component. These
-theorems take individual component preservation proofs and compose them into
-the bundle. Each must be extended to thread the new
-`waitingThreadsPendingMessageNone` preservation proof.
+**Breaking change**: `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`
+path changes from `.2.2.2.2.2.2` to `.2.2.2.2.2.1`. All call sites must be
+audited and updated.
 
-**Step 4**: Update `lifecycleRetypeObject_preserves_coreIpcInvariantBundle`
-(Preservation.lean:1534) to include the new component. Lifecycle retype creates
-new objects — the new invariant is trivially preserved because retype does not
-modify existing TCB `ipcState` or `pendingMessage` fields.
+### 5.3. Phase 3: Update Bundle Reconstruction Theorems
 
-**Cascading bundle updates** (files that reconstruct `ipcInvariantFull` or
-`coreIpcInvariantBundle`):
+Every theorem in `Structural.lean` that reconstructs `ipcInvariantFull` from
+its components must be extended to include `endpointQueueNoDup` and
+`ipcStateQueueMembershipConsistent` preservation.
 
-| File | Theorem | Change |
-|------|---------|--------|
-| `Capability/Invariant/Preservation.lean` | `coreIpcInvariantBundle_to_badgeWellFormed` | Fix path `.2.2.2.2.2` → `.2.2.2.2.2.1` |
-| `Capability/Invariant/Preservation.lean` | `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` | Add component |
-| `IPC/Invariant/Structural.lean` | Bundle reconstruction theorems | Add component |
-| `Architecture/Invariant.lean` | `kernelInvariantBundle` composition | May need update if it decomposes `ipcInvariantFull` |
+Similarly, `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` in
+`Preservation.lean` must thread the two new components. Lifecycle retype
+creates new objects — both predicates are trivially preserved because retype
+does not modify existing endpoint queues or TCB `ipcState`/`queueNext` fields.
 
-**Verification**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural` then
-`lake build SeLe4n.Kernel.Architecture.Invariant`
-
-### 4.4. V3-G Shared Infrastructure Lemmas
-
-The following frame/transport lemmas are needed across multiple V3-G sub-tasks:
-
-| Lemma | Purpose | Reused By |
-|-------|---------|-----------|
-| `storeObject_preserves_waitingThreadsPendingMessageNone_non_tcb` | Storing non-TCB objects (endpoints, notifications) preserves the invariant | G2, G3, G4, G5 |
-| `storeObject_tcb_preserves_waitingThreadsPendingMessageNone` | Storing a TCB preserves the invariant when the new TCB satisfies the predicate or exits scope | G2, G3, G4, G5 |
-| `ensureRunnable_preserves_waitingThreadsPendingMessageNone` | `ensureRunnable` only modifies scheduler, not objects | G3, G4, G5 |
-| `removeRunnable_preserves_waitingThreadsPendingMessageNone` | `removeRunnable` only modifies scheduler, not objects | G4, G5 |
-
-These are structural frame lemmas — the invariant speaks about TCB objects,
-and operations that don't modify TCBs trivially preserve it. They follow the
-same pattern as existing `*_preserves_ipcInvariant` frame lemmas in
-`NotificationPreservation.lean`.
-
-### 4.5. V3-G Complete File Change Summary
+### 5.4. Bundle Integration File Changes
 
 | File | Lines Added | Lines Modified | Type |
 |------|-------------|----------------|------|
-| `IPC/Invariant/Defs.lean` | ~20 | 3 (ipcInvariantFull def) | Definition + bundle update |
-| `IPC/Invariant/NotificationPreservation.lean` | ~70-90 | 0 | Proofs (G2, G3) |
-| `IPC/Invariant/EndpointPreservation.lean` | ~100-130 | 0 | Proofs (G4) |
-| `IPC/Invariant/CallReplyRecv.lean` | ~80-120 | 0 | Proofs (G5) |
-| `IPC/Invariant/Structural.lean` | ~40-60 | ~10-20 | Frame lemmas + bundle updates (G6) |
-| `Capability/Invariant/Preservation.lean` | ~15 | ~10 | Extractor + lifecycle (G6) |
-| `Architecture/Invariant.lean` | 0 | ~5 | Path fixes if needed (G6) |
-| **Total** | **~325-435** | **~28-38** | |
-
----
-
-## 5. Cross-Cutting Concerns
-
-### 5.1. Interaction Between V3-E and V3-G
-
-V3-E and V3-G modify different parts of the invariant hierarchy:
-- V3-E adds proofs about `capabilityInvariantBundle` (capability subsystem)
-- V3-G adds a predicate to `ipcInvariantFull` (IPC subsystem)
-
-Both are composed into `coreIpcInvariantBundle`:
-```lean
-def coreIpcInvariantBundle (st : SystemState) : Prop :=
-  schedulerInvariantBundle st ∧ capabilityInvariantBundle st ∧ ipcInvariantFull st
-```
-
-**Interaction point**: V3-G6 changes `ipcInvariantFull`, which changes
-`coreIpcInvariantBundle`, which changes the destructuring paths used by V3-E's
-`ipcUnwrapCaps_preserves_capabilityInvariantBundle` when it needs to extract
-sub-components.
-
-**Resolution**: V3-E operates at the `capabilityInvariantBundle` level, not
-the `coreIpcInvariantBundle` level. V3-E's theorems take
-`capabilityInvariantBundle st` as a hypothesis and prove
-`capabilityInvariantBundle st'`. They do NOT directly construct or decompose
-`ipcInvariantFull`. Therefore, V3-E and V3-G are **structurally independent**
-at the proof level.
-
-The only shared dependency is at the bundle composition layer (V3-G6 step 4),
-where `coreIpcInvariantBundle` reconstruction must include both the V3-E
-capability proof and the V3-G pending-message proof. This is a composition
-task, not a conflict.
-
-**Recommendation**: Implement V3-E first (no bundle changes needed), then
-V3-G (bundle changes in G6). This ordering minimizes merge conflicts and
-allows V3-E to be validated independently.
-
-### 5.2. `private` Theorem Visibility
-
-V3-E4 creates a `private` loop theorem in `Preservation.lean` that references
-`ipcUnwrapCapsLoop` from `CapTransfer.lean`. After V3-E1 removes `private`
-from the loop function, the theorem can reference it across module boundaries.
-
-However, `Preservation.lean` already imports `CapTransfer.lean` transitively
-(via `Capability/Operations.lean` → `IPC/Operations.lean`). The import chain
-must be verified:
-
-```
-Preservation.lean
-  → imports Capability/Invariant/Defs.lean
-  → which imports ... → IPC/Operations/CapTransfer.lean (?)
-```
-
-If `CapTransfer.lean` is not in the import chain, V3-E4 will need an explicit
-import addition. This is a small mechanical change but must be verified.
-
-### 5.3. Precondition Propagation for V3-G2
-
-The `notificationWait` preservation proof (V3-G2) requires knowing that the
-thread entering the wait has `pendingMessage = none`. This fact must come from
-one of:
-
-1. **The caller's context**: `endpointReceiveDual` or the syscall dispatch
-   layer knows the thread is `.ready` and has no pending message.
-2. **A broader invariant**: If we prove that all `.ready` threads have
-   `pendingMessage = none`, V3-G2 follows trivially.
-3. **An explicit precondition**: Add `hPre : tcb.pendingMessage = none` to
-   `notificationWait_preserves_waitingThreadsPendingMessageNone`.
-
-**Recommended approach**: Option 3 (explicit precondition). This is the most
-modular — it doesn't require proving a new global invariant about `.ready`
-threads, and the precondition can be discharged at the call site from the
-operation's context (the thread is executing a syscall, so it has already been
-dispatched and its pending message consumed).
-
-If a broader invariant about `.ready` threads is later desired (it would
-strengthen the proof surface), it can be added as a separate V3 sub-task
-without modifying V3-G2.
+| `IPC/Invariant/Defs.lean` | 2 | 2 | Definition extension |
+| `Capability/Invariant/Preservation.lean` | ~15 | ~10 | Extractors + lifecycle |
+| `IPC/Invariant/Structural.lean` | ~30-50 | ~20-30 | Bundle reconstruction |
+| `Architecture/Invariant.lean` | 0 | ~5 | Path fixes if needed |
+| **Total** | **~47-67** | **~37-47** | |
 
 ---
 
@@ -862,187 +931,231 @@ without modifying V3-G2.
 ### 6.1. Dependency DAG
 
 ```
-V3-E1 (expose loop)
+V3-J-fix (blockedOnCall sendQ fix, if needed)
   │
-  ├── V3-E2 (loop invariant def)
-  │     │
-  │     ├── V3-E3 (base case)
-  │     │     │
-  │     │     └── V3-E4 (inductive step) ←── auxiliary CDT lemmas
-  │     │           │
-  │     │           └── V3-E5 (compose full theorem)
-  │     │
-  │     └── [auxiliary CDT lemmas: cdtCompleteness, cdtAcyclicity, slotCountBounded]
-  │
-  V3-G1 (define predicate)
-  │
-  ├── V3-G2 (notificationWait) ──────────────────┐
-  ├── V3-G3 (notificationSignal) ────────────────┤
-  ├── V3-G4 (endpointSend/Receive) ─────────────┤
-  │     ↑                                        │
-  │     └── [shared frame lemmas]                │
-  ├── V3-G5 (endpointCall/ReplyRecv) ───────────┤
-  │     ↑                                        │
-  │     └── depends on V3-G4 primitives          │
+  ├───────────────────────────────────────────────┐
+  │                                               │
+  V3-K primitives                           V3-J primitives
+  (prim-1, prim-2, prim-3)                 (prim-1, prim-2, prim-3)
+  │                                               │
+  V3-K queue ops                            V3-J queue ops
+  (op-1: enqueue, op-2: popHead,            (op-1: enqueue, op-2: popHead)
+   op-3: removeDual)                              │
+  │                                               │
+  V3-K IPC ops                              V3-J IPC ops
+  (op-4: send, op-5: recv,                 (op-3: send, op-4: recv,
+   op-6: call, op-7: reply,                 op-5: call, op-6: reply/replyRecv,
+   op-8: replyRecv, op-9: ntfn)             op-7: ntfn)
   │                                               │
   └───────────────────────────────────────────────┘
-                      │
-                V3-G6 (bundle integration)
-                      │
-                      ↓
-              [V3-K: endpointQueueNoDup — future task]
+                          │
+                  Bundle Integration
+                  (Defs + Preservation + Structural + Architecture)
 ```
 
 ### 6.2. Recommended Execution Phases
 
-**Phase A: Foundation (V3-E1 + V3-G1 + shared lemmas)**
-- V3-E1: Remove `private` from `ipcUnwrapCapsLoop` (~5 min)
-- V3-G1: Define `waitingThreadsPendingMessageNone` (~15 min)
-- V3-G shared frame lemmas: `storeObject_preserves_*`, `ensureRunnable_preserves_*` (~30 min)
-- **Gate**: `lake build` succeeds for modified modules
+**Phase 0: Definition Fix (if needed)**
+- Verify V3-J `blockedOnCall` → `sendQ` vs `receiveQ` correctness
+- If fix needed: update `ipcStateQueueMembershipConsistent` definition
+- ~5 minutes
+- **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Defs`
 
-**Phase B: V3-E Proof Chain (sequential)**
-- V3-E2: Loop invariant definition (~15 min)
-- V3-E auxiliary lemmas: CDT preservation for `ipcTransferSingleCap` (~45 min)
-- V3-E3: Base case proof (~15 min)
-- V3-E4: Inductive step proof (~2-3 hours — main proof effort)
-- V3-E5: Full composition (~30 min)
-- **Gate**: `lake build SeLe4n.Kernel.Capability.Invariant.Preservation` succeeds
+**Phase 1: V3-K Primitive + Queue Operation Proofs**
+- V3-K-prim-1: Non-TCB/non-endpoint frame lemma (~20 min)
+- V3-K-prim-2: `storeTcbQueueLinks` preservation (~30 min)
+- V3-K-prim-3: Endpoint store with known heads (~40 min)
+- V3-K-op-1: `endpointQueueEnqueue` preservation (~1-1.5 hours)
+- V3-K-op-2: `endpointQueuePopHead` preservation (~1 hour)
+- V3-K-op-3: `endpointQueueRemoveDual` preservation (~1 hour)
+- **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural`
 
-**Phase C: V3-G Per-Operation Proofs (parallelizable within phase)**
-- V3-G2: `notificationWait` preservation (~30 min)
-- V3-G3: `notificationSignal` preservation (~45 min)
-- V3-G4: `endpointSend`/`endpointReceive` preservation (~1.5-2 hours)
-- V3-G5: `endpointCall`/`endpointReplyRecv` preservation (~1.5-2 hours)
-- **Gate**: Individual module builds succeed
+**Phase 2: V3-K IPC Operation Proofs (parallelizable)**
+- V3-K-op-4 through V3-K-op-9: Compose primitive proofs
+- ~3-4 hours total
+- **Gate**: Individual module builds
 
-**Phase D: Integration (V3-G6)**
-- Update `ipcInvariantFull` definition (~5 min)
-- Fix extractor theorem paths (~15 min)
-- Update bundle-level preservation theorems in `Structural.lean` (~45 min)
-- Update `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` (~15 min)
-- Audit `Architecture/Invariant.lean` for path breakage (~15 min)
-- **Gate**: Full `lake build` succeeds; `test_full.sh` green
+**Phase 3: V3-J Queue Operation Proofs** (can run in parallel with Phase 2)
+- V3-J-prim-1 through V3-J-prim-3: Frame/primitive lemmas (~1.5 hours)
+- V3-J-op-1: `endpointQueueEnqueue` preservation (~2-3 hours — hardest proof)
+- V3-J-op-2: `endpointQueuePopHead` helper lemmas (~1.5 hours)
+- **Gate**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural`
 
-**Phase E: Validation & Documentation**
-- Run `test_full.sh` (~10 min)
-- Update documentation (see Section 9)
-- **Gate**: All tests pass; no `sorry`; docs synchronized
+**Phase 4: V3-J IPC Operation Proofs**
+- V3-J-op-3 through V3-J-op-7: Compose queue + primitive proofs
+- ~4-5 hours total
+- **Gate**: Individual module builds
+
+**Phase 5: Bundle Integration**
+- Update `ipcInvariantFull` definition
+- Add extractor theorems, fix paths
+- Update bundle reconstruction theorems
+- ~2-3 hours
+- **Gate**: Full `lake build` succeeds
+
+**Phase 6: Validation & Documentation**
+- `test_full.sh`
+- Documentation sync (see Section 10)
+- **Gate**: All tests pass; zero `sorry`
 
 ### 6.3. Parallelization Opportunities
 
 | Can Parallelize | Cannot Parallelize |
 |-----------------|-------------------|
-| V3-E1 ∥ V3-G1 (different files) | V3-E3 → V3-E4 → V3-E5 (sequential proof chain) |
-| V3-G2 ∥ V3-G3 (different operations, same file — use separate regions) | V3-G5 depends on V3-G4 primitives |
-| Phase B ∥ Phase C (V3-E and V3-G are structurally independent) | V3-G6 depends on all of V3-G2-G5 |
-
-**Maximum parallelism**: Run Phase B (V3-E chain) and Phase C (V3-G per-op
-proofs) concurrently. They modify disjoint files except `Preservation.lean`
-(V3-E) and `Defs.lean` (V3-G1), which are in different regions.
+| V3-K primitives ∥ V3-J primitives (different predicates, same file — separate regions) | V3-K ops depend on V3-K primitives |
+| V3-K IPC ops ∥ V3-J queue ops (different proof chains) | V3-J IPC ops depend on V3-J queue ops |
+| V3-K notification proofs ∥ V3-K endpoint proofs (different files) | Bundle integration depends on ALL proofs |
 
 ---
 
-## 7. Risk Assessment & Mitigations
+## 7. Cross-Cutting Concerns
 
-### 7.1. Risk Matrix
+### 7.1. V3-K / V3-J Interaction at `endpointQueueEnqueue`
+
+V3-K-op-1 (enqueue preserves queue head disjointness) needs to show that a
+newly enqueued thread on sendQ is not the receiveQ head. The cleanest approach
+uses the **well-formedness** infrastructure:
+
+The enqueued thread has `ipcState = .ready` (guard check). The receiveQ head
+(if it exists) has `queuePrev = none` (from `intrusiveQueueWellFormed`). By
+`tcbQueueLinkIntegrity`, a thread with `queuePrev = none` can only be a queue
+head. The enqueued thread, having `queuePrev = none` AND `queueNext = none`
+AND `queuePPrev = none` (from enqueue guard checks on links at
+DualQueue/Core.lean:296), could potentially match these properties.
+
+**Better argument**: After enqueue in the empty-queue case, the new thread
+becomes head of sendQ. If it were ALSO head of receiveQ, that would mean the
+same endpoint has the same thread as head of both queues simultaneously. But
+the pre-state had `sendQ.head = none` (queue was empty), and the receiveQ was
+untouched by the sendQ enqueue. If receiveQ.head was `some x`, then `x ≠ tid`
+because the pre-state `endpointQueueNoDup` held (K-2 disjointness was trivially
+satisfied since sendQ.head was `none`). After enqueue, sendQ.head = `some tid`.
+The receiveQ.head is still `some x` with `x ≠ tid` because:
+- `tid` had `ipcState = .ready` (enqueue guard)
+- If `tid` were the receiveQ head, it would need `ipcState = .blockedOnReceive _`
+  (by V3-J or the operational semantics). Contradiction with `.ready`.
+
+**This reasoning uses V3-J semantically but not formally.** The proof can be
+made self-contained by requiring a weaker precondition: "the enqueuing thread
+is not the head of any queue." This can be derived from the enqueue guard's
+link check (`queuePPrev = none ∧ queuePrev = none ∧ queueNext = none`).
+A thread that is a queue head has `queuePPrev = some .endpointHead`
+(DualQueue/Core.lean:306), so a thread with `queuePPrev = none` cannot be
+any queue head. This is the **self-contained approach** — no V3-J dependency.
+
+### 7.2. V3-J `blockedOnCall` Queue Assignment Issue
+
+As identified in Section 4.3 (V3-J-op-5), the V3-J definition maps
+`blockedOnCall epId` to `receiveQ.head`, but the implementation enqueues
+Call callers on `sendQ`. This must be investigated before V3-J proofs begin.
+
+**Three possible resolutions**:
+
+1. **Fix the definition** (recommended): Change `blockedOnCall` to use `sendQ`
+   instead of `receiveQ`. This matches the implementation.
+
+2. **Leave as-is if intentional**: If the definition deliberately models a
+   different semantics (e.g., post-dequeue state), document the rationale.
+   But this would make the invariant unprovable for the current implementation.
+
+3. **Change the implementation**: Enqueue Call callers on receiveQ instead of
+   sendQ. This would be a significant behavioral change and is not recommended.
+
+**Action item**: Verify the intended semantics by examining how `endpointCall`
+and `endpointReceiveDual` interact. The implementation clearly shows Call
+callers enter `sendQ` (Transport.lean:1735), are popped by
+`endpointReceiveDual` from `sendQ` (Transport.lean:1640), and then transition
+to `.blockedOnReply`. The definition should use `sendQ`.
+
+### 7.3. Structural.lean Size Management
+
+`Structural.lean` is already ~6934 lines (the largest file in the project).
+Adding ~900-1200 lines of V3-J/K proofs will push it to ~8000+ lines.
+
+**Mitigation options**:
+1. **Accept the growth**: The file is already chunked by section headers and
+   read in offset/limit chunks per CLAUDE.md guidelines.
+2. **Split into sub-modules**: Create `IPC/Invariant/QueueMembership.lean`
+   and `IPC/Invariant/QueueNoDup.lean` for the new proofs, re-exporting
+   through `Structural.lean`.
+3. **Hybrid**: Put primitive frame lemmas in `Structural.lean` (close to
+   existing primitives) and operation-level proofs in new files.
+
+**Recommended**: Option 2 — create new sub-modules. This keeps files
+manageable and follows the existing pattern where `Structural.lean` is
+a re-export hub for structural invariant proofs.
+
+---
+
+## 8. Risk Assessment & Mitigations
+
+### 8.1. Risk Matrix
 
 | ID | Risk | Probability | Impact | Mitigation |
 |----|------|-------------|--------|------------|
-| R1 | V3-E4 CDT circularity: per-step theorem requires `hCdtPost` as hypothesis, creating apparent circular dependency | Medium | High | Prove standalone CDT preservation lemmas (Approach A in Section 3.3) |
-| R2 | V3-E1 `private` removal causes naming collision | Low | Low | Rename to `ipcUnwrapCapsLoopImpl` if needed |
-| R3 | V3-G2 precondition (`pendingMessage = none` for entering thread) not available at call site | Medium | Medium | Use explicit precondition (Option 3 in Section 5.3); discharge from dispatch context |
-| R4 | V3-G6 bundle change breaks downstream proofs beyond identified extractors | Medium | Medium | Full `lake build` after bundle change; search for all `ipcInvariantFull` destructuring patterns |
-| R5 | V3-E4 proof complexity exceeds estimate due to Lean 4 tactic behavior with nested fuel induction | Low-Medium | Medium | Follow existing proof template exactly; if tactics diverge, use `show` annotations to guide unification |
-| R6 | V3-G4 endpoint operations have complex case splits that multiply proof obligations | Medium | Low | Reuse frame lemma infrastructure; factor common patterns into shared helpers |
-| R7 | Import cycle when `Preservation.lean` needs `CapTransfer.lean` | Low | Low | Verify import chain; add explicit import if needed |
+| R1 | V3-J `blockedOnCall` definition bug — maps to `receiveQ` instead of `sendQ` | High | High | Verify and fix definition before starting proofs (Phase 0) |
+| R2 | V3-J-op-1 (enqueue preservation) proof complexity — hardest proof in plan | High | Medium | Factor into helper lemmas for reachability transfer; start early |
+| R3 | V3-J intermediate invariant violations during multi-step operations | Medium | High | Prove at operation level, not primitive level; use helper lemma pattern |
+| R4 | V3-K-op-1 needs V3-J-like reasoning for head disjointness | Medium | Medium | Use self-contained `queuePPrev` argument (Section 7.1) |
+| R5 | Structural.lean exceeds manageable size | Medium | Low | Create sub-modules (Section 7.3) |
+| R6 | Bundle integration breaks downstream proofs | Medium | Medium | Full `lake build` after integration; audit all extractor call sites |
+| R7 | V3-J reachability proofs require QueueNextPath induction, which is complex in Lean 4 | Medium | Medium | Use one-hop reachability (predecessor existence) instead of full transitive closure |
+| R8 | `endpointQueueRemoveDual` has complex case splits (head/tail/middle removal) | Medium | Low | Factor into per-case helpers; reuse existing remove preservation infrastructure |
 
-### 7.2. Highest-Risk Item: V3-E4 CDT Postcondition Threading
+### 8.2. Highest-Risk Item: R1 (blockedOnCall Definition)
 
-The per-step theorem signature:
-```lean
-theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
-    ...
-    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st') ...
-```
+This must be resolved in Phase 0 before any V3-J work begins. If the
+definition is wrong, all V3-J proofs for `endpointCall` and
+`endpointReceiveDual` will fail. The fix is simple (~2 lines) but must be
+done first.
 
-requires CDT invariants of the *post-state* as a *precondition*. In the loop
-induction, each step's post-state is the next step's pre-state. The CDT
-invariants must be available at each intermediate state.
+### 8.3. Second-Highest Risk: R2 (Enqueue Reachability)
 
-**Mitigation plan**:
-1. **First attempt**: Extract CDT invariants from `capabilityInvariantBundle stNext`
-   (which the per-step theorem proves). Since `capabilityInvariantBundle`
-   includes `cdtCompleteness` and `cdtAcyclicity` as components, the CDT
-   invariants for `stNext` can be extracted from the theorem's *output* and
-   fed into the next step's `hCdtPost`. This is well-founded because the
-   per-step theorem proves the full bundle, which includes CDT, which provides
-   the hypothesis for the next step.
+The `endpointQueueEnqueue` preservation proof for V3-J must show that after
+enqueue, the newly added thread is reachable from the queue head. This requires
+reasoning about the `queueNext` chain structure after the enqueue's TCB
+modifications. The proof will need to:
 
-2. **Fallback**: If the above creates a unification issue (Lean cannot
-   resolve the circular extraction), prove:
-   ```lean
-   theorem ipcTransferSingleCap_preserves_cdtCompleteness ...
-   theorem ipcTransferSingleCap_preserves_cdtAcyclicity ...
-   ```
-   as standalone lemmas that do NOT depend on the full bundle proof. These
-   can be derived directly from the component operations (`ensureCdtNodeForSlot`
-   + `addEdge` preserve CDT structure).
+1. Show the new thread is linked by the old tail's `queueNext` (non-empty case)
+2. Show existing threads' reachability is preserved (no chain breaks)
+3. Handle both empty-queue and non-empty-queue sub-cases
+
+This is estimated at ~100-140 lines and may require 2-3 intermediate helper
+lemmas.
 
 ---
 
-## 8. Testing & Validation Strategy
+## 9. Testing & Validation Strategy
 
-### 8.1. Per-Sub-Task Validation
+### 9.1. Per-Phase Build Verification
 
-Every sub-task must pass its module build before proceeding:
+| Phase | Build Command |
+|-------|--------------|
+| Phase 0 | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Defs` |
+| Phase 1-2 (V3-K) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
+| Phase 3-4 (V3-J) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
+| Phase 5 (Bundle) | `source ~/.elan/env && lake build SeLe4n.Kernel.Architecture.Invariant` |
+| If sub-modules created | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.QueueNoDup` etc. |
 
-| Sub-Task | Build Command |
-|----------|--------------|
-| V3-E1 | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Operations.CapTransfer` |
-| V3-E2-E5 | `source ~/.elan/env && lake build SeLe4n.Kernel.Capability.Invariant.Preservation` |
-| V3-G1, V3-G6 (Defs) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Defs` |
-| V3-G2, V3-G3 | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation` |
-| V3-G4 | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.EndpointPreservation` |
-| V3-G5 | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.CallReplyRecv` |
-| V3-G6 (Structural) | `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Invariant.Structural` |
-| V3-G6 (Preservation) | `source ~/.elan/env && lake build SeLe4n.Kernel.Capability.Invariant.Preservation` |
-| V3-G6 (Architecture) | `source ~/.elan/env && lake build SeLe4n.Kernel.Architecture.Invariant` |
-
-### 8.2. Integration Validation
-
-After all sub-tasks complete:
+### 9.2. Integration Validation
 
 ```bash
-# Tier 0+1: Hygiene + full build
-./scripts/test_fast.sh
-
-# Tier 0-2: + trace + negative-state
-./scripts/test_smoke.sh
-
-# Tier 0-3: + invariant surface anchors (REQUIRED for theorem changes)
-./scripts/test_full.sh
+./scripts/test_fast.sh      # Tier 0+1: Hygiene + full build
+./scripts/test_smoke.sh     # Tier 0-2: + trace + negative-state
+./scripts/test_full.sh      # Tier 0-3: + invariant surface anchors (REQUIRED)
 ```
 
-### 8.3. Proof Hygiene Checks
+### 9.3. Proof Hygiene
 
 ```bash
-# Zero sorry check
 grep -r "sorry" SeLe4n/ --include="*.lean" | grep -v "^--" | grep -v "doc"
-
-# Zero axiom check (excluding Lean builtins)
 grep -r "axiom " SeLe4n/ --include="*.lean" | grep -v "^--"
-
-# Invariant surface anchor check (test_tier3)
 ./scripts/test_tier3_invariant_surface.sh
 ```
 
-### 8.4. Regression Safety
+### 9.4. Regression Safety
 
-The trace harness (`lake exe sele4n`) and expected output fixture
-(`tests/fixtures/main_trace_smoke.expected`) should be unaffected — no runtime
-code changes. Verify with:
-
+No runtime code changes — trace harness output is unaffected:
 ```bash
 lake exe sele4n > /tmp/trace_output.txt 2>&1
 diff tests/fixtures/main_trace_smoke.expected /tmp/trace_output.txt
@@ -1050,35 +1163,33 @@ diff tests/fixtures/main_trace_smoke.expected /tmp/trace_output.txt
 
 ---
 
-## 9. Documentation Synchronization
-
-Per CLAUDE.md documentation rules, the following must be updated in the same PR:
+## 10. Documentation Synchronization
 
 | Document | Update Required |
 |----------|----------------|
-| `docs/WORKSTREAM_HISTORY.md` | Mark V3-E and V3-G as complete; update V3 phase progress |
-| `docs/spec/SELE4N_SPEC.md` | Update proof coverage table for IPC cap transfer and pending-message invariant |
+| `docs/WORKSTREAM_HISTORY.md` | Add V3-J/K preservation completion entry |
+| `docs/spec/SELE4N_SPEC.md` | Update proof coverage for queue membership and no-dup |
 | `docs/CLAIM_EVIDENCE_INDEX.md` | Add evidence entries for new theorems |
-| `docs/DEVELOPMENT.md` | Update invariant bundle description if architecture section references `ipcInvariantFull` |
-| `docs/gitbook/12-proof-and-invariant-map.md` | Add `waitingThreadsPendingMessageNone` to invariant map; update `ipcUnwrapCaps` proof status |
+| `docs/gitbook/12-proof-and-invariant-map.md` | Add V3-J/K to invariant map with preservation status |
 | `docs/codebase_map.json` | Regenerate (Lean sources changed) |
-| `CHANGELOG.md` | Add V3-E and V3-G entries under next version |
+| `CHANGELOG.md` | Add V3-J/K preservation entries |
 
-### 9.1. CHANGELOG Entry Template
+### 10.1. CHANGELOG Entry Template
 
 ```markdown
 ## [v0.22.X] - YYYY-MM-DD
 
 ### Added
-- **V3-E/M-PRF-2**: Complete loop composition proof for `ipcUnwrapCaps`
-  with `Grant=true`. Fuel-indexed induction over `ipcUnwrapCapsLoop`
-  threading `capabilityInvariantBundle` preservation through each cap transfer
-  step. Closes the last proof gap in IPC capability transfer.
-- **V3-G/M-PRF-5**: New `waitingThreadsPendingMessageNone` invariant ensuring
-  threads in `blockedOnReceive` or `blockedOnNotification` states have
-  `pendingMessage = none`. Proved preservation through all IPC operations
-  (endpoint send/receive, call/reply/replyRecv, notification signal/wait).
-  Integrated into `ipcInvariantFull` and all bundle-level theorems.
+- **V3-K/L-LIFE-1**: Preservation proofs for `endpointQueueNoDup` across all
+  IPC operations. Queue head disjointness maintained through enqueue, popHead,
+  removeDual, and all compound IPC operations. Self-loop component follows
+  from existing `tcbQueueChainAcyclic` preservation. Integrated into
+  `ipcInvariantFull` as 6th conjunct.
+- **V3-J/L-IPC-3**: Preservation proofs for `ipcStateQueueMembershipConsistent`
+  across all IPC operations. Bidirectional consistency between TCB `ipcState`
+  and endpoint queue reachability machine-verified through all send/receive/
+  call/reply/notification paths. Integrated into `ipcInvariantFull` as 7th
+  conjunct.
 ```
 
 ---
@@ -1087,21 +1198,33 @@ Per CLAUDE.md documentation rules, the following must be updated in the same PR:
 
 | ID | Finding | Task Summary | File(s) | Scope | Depends On |
 |----|---------|-------------|---------|-------|------------|
-| V3-E1 | M-PRF-2 | Remove `private` from `ipcUnwrapCapsLoop` | `CapTransfer.lean` | S | — |
-| V3-E2 | M-PRF-2 | Define `ipcUnwrapCapsLoop_invariant` predicate | `Preservation.lean` | S | V3-E1 |
-| V3-E-aux | M-PRF-2 | CDT preservation lemmas for `ipcTransferSingleCap` | `Preservation.lean` | S | — |
-| V3-E3 | M-PRF-2 | Prove loop base case (fuel=0 / idx≥size) | `Preservation.lean` | S | V3-E2 |
-| V3-E4 | M-PRF-2 | Prove loop inductive step (threading hSlotCap + hCdtPost) | `Preservation.lean` | M | V3-E3, V3-E-aux |
-| V3-E5 | M-PRF-2 | Compose `ipcUnwrapCaps_preserves_capabilityInvariantBundle` | `Preservation.lean` | M | V3-E4 |
-| V3-G1 | M-PRF-5 | Define `waitingThreadsPendingMessageNone` | `Defs.lean` | S | — |
-| V3-G-infra | M-PRF-5 | Shared frame lemmas (storeObject, ensureRunnable, etc.) | `Structural.lean` | S | V3-G1 |
-| V3-G2 | M-PRF-5 | Preservation for `notificationWait` | `NotificationPreservation.lean` | S | V3-G1, V3-G-infra |
-| V3-G3 | M-PRF-5 | Preservation for `notificationSignal` (wake + merge) | `NotificationPreservation.lean` | S | V3-G1, V3-G-infra |
-| V3-G4 | M-PRF-5 | Preservation for `endpointSend`/`endpointReceive` | `EndpointPreservation.lean` | M | V3-G1, V3-G-infra |
-| V3-G5 | M-PRF-5 | Preservation for `endpointCall`/`endpointReplyRecv` | `CallReplyRecv.lean` | M | V3-G4 |
-| V3-G6 | M-PRF-5 | Integrate into `ipcInvariantFull` + update all bundle theorems | `Defs.lean`, `Structural.lean`, `Preservation.lean` | S | V3-G2-G5 |
+| V3-J-fix | L-IPC-3 | Fix `blockedOnCall` queue assignment (sendQ, not receiveQ) | `Defs.lean` | S | — |
+| V3-K-prim-1 | L-LIFE-1 | Non-TCB/non-endpoint frame lemma | `Structural.lean` | S | — |
+| V3-K-prim-2 | L-LIFE-1 | `storeTcbQueueLinks` K-2 preservation | `Structural.lean` | S | — |
+| V3-K-prim-3 | L-LIFE-1 | Endpoint store with known heads | `Structural.lean` | M | — |
+| V3-K-op-1 | L-LIFE-1 | `endpointQueueEnqueue` K-2 preservation | `Structural.lean` | M | prim-1,2,3 |
+| V3-K-op-2 | L-LIFE-1 | `endpointQueuePopHead` K-2 preservation | `Structural.lean` | M | prim-1,2,3 |
+| V3-K-op-3 | L-LIFE-1 | `endpointQueueRemoveDual` K-2 preservation | `Structural.lean` | M | prim-1,2,3 |
+| V3-K-op-4 | L-LIFE-1 | `endpointSendDual` preservation | `Structural.lean` | M | op-1,2 |
+| V3-K-op-5 | L-LIFE-1 | `endpointReceiveDual` preservation | `Structural.lean` | M | op-1,2 |
+| V3-K-op-6 | L-LIFE-1 | `endpointCall` preservation | `Structural.lean` | M | op-1,2 |
+| V3-K-op-7 | L-LIFE-1 | `endpointReply` preservation | `Structural.lean` | S | prim-2 |
+| V3-K-op-8 | L-LIFE-1 | `endpointReplyRecv` preservation | `Structural.lean` | M | op-5,7 |
+| V3-K-op-9 | L-LIFE-1 | Notification ops preservation | `NotificationPres.lean` | S | prim-1,2 |
+| V3-J-prim-1 | L-IPC-3 | Non-TCB/non-endpoint frame lemma | `Structural.lean` | S | — |
+| V3-J-prim-2 | L-IPC-3 | `storeTcbIpcState` preservation | `Structural.lean` | M | — |
+| V3-J-prim-3 | L-IPC-3 | `storeTcbIpcStateAndMessage` preservation | `Structural.lean` | M | — |
+| V3-J-op-1 | L-IPC-3 | `endpointQueueEnqueue` reachability | `Structural.lean` | H | prim-1,2,3 |
+| V3-J-op-2 | L-IPC-3 | `endpointQueuePopHead` reachability | `Structural.lean` | H | prim-1,2,3 |
+| V3-J-op-3 | L-IPC-3 | `endpointSendDual` preservation | `Structural.lean` | H | op-1,2; prim-2,3 |
+| V3-J-op-4 | L-IPC-3 | `endpointReceiveDual` preservation | `Structural.lean` | H | op-1,2; prim-2,3 |
+| V3-J-op-5 | L-IPC-3 | `endpointCall` preservation | `Structural.lean` | M-H | op-1,2; prim-2,3 |
+| V3-J-op-6 | L-IPC-3 | `endpointReply`/`endpointReplyRecv` preservation | `Structural.lean` | M | prim-2,3; op-4 |
+| V3-J-op-7 | L-IPC-3 | Notification ops preservation | `NotificationPres.lean` | S | prim-1 |
+| V3-JK-int | L-IPC-3/L-LIFE-1 | Bundle integration (Defs + extractors + reconstruction) | Multiple | M | ALL above |
 
-**Total sub-tasks**: 13 (6 Small, 5 Medium, 2 Infrastructure)
-**Total estimated new Lean proof lines**: ~505-655
-**Total estimated modified lines**: ~29-39
-**Files touched**: 8
+**Total sub-tasks**: 24 (5 Small, 12 Medium, 6 Hard, 1 Integration)
+**Total estimated new Lean proof lines**: ~1075-1450
+**Total estimated modified lines**: ~39-49
+**Files touched**: 5-7 (depending on sub-module decision)
+
