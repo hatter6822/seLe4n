@@ -138,8 +138,7 @@ private theorem asidTableConsistent_of_storeObject_vspaceRoot
     (hAsidInv : (match st.objects[rootId]? with
       | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
       | _ => st.asidTable).invExt)
-    (hAsidSize : st.asidTable.size < st.asidTable.capacity)
-    (hTableInv : st.asidTable.invExt) :
+    (hAsidK : st.asidTable.invExtK) :
     asidTableConsistent st' := by
   have hTableNew : st'.asidTable[root'.asid]? = some rootId :=
     storeObject_asidTable_vspaceRoot st st' rootId root' hAsidInv hStore
@@ -163,7 +162,7 @@ private theorem asidTableConsistent_of_storeObject_vspaceRoot
       have hAsidNeRoot : a ≠ root.asid := by
         rw [← hAsidPreserved]; exact hAEq
       simp only [RHTable_getElem?_eq_get?] at hLookup ⊢
-      rw [RHTable_getElem?_erase st.asidTable root.asid hTableInv hAsidSize] at hLookup
+      rw [RHTable_getElem?_erase_K st.asidTable root.asid hAsidK] at hLookup
       have hEraseNe : ¬((root.asid == a) = true) := by
         intro h; exact hAsidNeRoot (eq_of_beq h).symm
       simp only [hEraseNe] at hLookup
@@ -193,7 +192,7 @@ private theorem asidTableConsistent_of_storeObject_vspaceRoot
       · rw [hTableNe r'.asid hAEq]
         simp only [hObjRoot]
         simp only [RHTable_getElem?_eq_get?]
-        rw [RHTable_getElem?_erase st.asidTable root.asid hTableInv hAsidSize]
+        rw [RHTable_getElem?_erase_K st.asidTable root.asid hAsidK]
         have hEraseNe : ¬((root.asid == r'.asid) = true) := by
           intro h; exact hAsidNe (eq_of_beq h).symm
         simp only [hEraseNe]
@@ -255,18 +254,17 @@ private theorem VSpaceRoot.unmapPage_mappings_erase
 private theorem RHTable_lookup_of_erase_lookup
     (mappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))
     (vaddr v : SeLe4n.VAddr) (p : SeLe4n.PAddr) (pm : PagePermissions)
-    (hExt : mappings.invExt)
-    (hSize : mappings.size < mappings.capacity)
+    (hK : mappings.invExtK)
     (hErase : (mappings.erase vaddr)[v]? = some (p, pm)) :
     mappings[v]? = some (p, pm) := by
   by_cases hV : vaddr = v
   · subst hV
     simp only [RHTable_getElem?_eq_get?] at hErase
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self mappings vaddr hExt] at hErase
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self mappings vaddr hK.1] at hErase
     exact absurd hErase (by simp)
   · have hBeq : ¬((vaddr == v) = true) := by intro h; exact hV (eq_of_beq h)
     simp only [RHTable_getElem?_eq_get?] at hErase ⊢
-    rwa [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne mappings vaddr v hBeq hExt hSize] at hErase
+    rwa [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K mappings vaddr v hBeq hK] at hErase
 
 -- ============================================================================
 -- F-08 / TPI-D05: VSpace successful-operation invariant preservation
@@ -292,9 +290,8 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
     (hObjInv : st.objects.invExt)
     (hAsidInv : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) →
         (st.asidTable.erase root.asid).invExt)
-    (hAsidSize : st.asidTable.size < st.asidTable.capacity)
+    (hAsidK : st.asidTable.invExtK)
     (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
-    (hTableInv : st.asidTable.invExt)
     (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
     vspaceInvariantBundle st' := by
   unfold vspaceMapPage at hStep
@@ -360,7 +357,7 @@ theorem vspaceMapPage_success_preserves_vspaceInvariantBundle
             -- 3. asidTableConsistent st' (via shared helper)
             · exact asidTableConsistent_of_storeObject_vspaceRoot
                 st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
-                hAsidInv' hAsidSize hTableInv
+                hAsidInv' hAsidK
             -- 4. wxExclusiveInvariant st'
             · intro oid r v p pm hObjR hMap
               have hInsert := VSpaceRoot.mapPage_mappings_insert root root' vaddr paddr perms hMapRoot
@@ -450,9 +447,8 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
     (hObjInv : st.objects.invExt)
     (hAsidInv : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) →
         (st.asidTable.erase root.asid).invExt)
-    (hAsidSize : st.asidTable.size < st.asidTable.capacity)
+    (hAsidK : st.asidTable.invExtK)
     (hMappingsK : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExtK)
-    (hTableInv : st.asidTable.invExt)
     (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
     vspaceInvariantBundle st' := by
   unfold vspaceUnmapPage at hStep
@@ -473,9 +469,6 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
           have hAsidPreserved : root'.asid = root.asid :=
             VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmapRoot
           have hMappingsInvK : root.mappings.invExtK := hMappingsK rootId root hObjRoot
-          have hMappingsInv : root.mappings.invExt := hMappingsInvK.1
-          have hMappingsSize' : root.mappings.size < root.mappings.capacity :=
-            hMappingsInvK.2.1
           have hAsidInv' : (match st.objects[rootId]? with
               | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
               | _ => st.asidTable).invExt := by
@@ -517,14 +510,14 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
           -- 3. asidTableConsistent st' (via shared helper)
           · exact asidTableConsistent_of_storeObject_vspaceRoot
               st st' rootId root root' hStore hObjRoot hObjEq hObjNe hAsidPreserved hUniq hConsist
-              hAsidInv' hAsidSize hTableInv
+              hAsidInv' hAsidK
           -- 4. wxExclusiveInvariant st' (unmap only removes entries — subset of pre-state mappings)
           · intro oid r v p pm hObjR hMap
             have hErase := VSpaceRoot.unmapPage_mappings_erase root root' vaddr hUnmapRoot
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
               have hRootMap := RHTable_lookup_of_erase_lookup root.mappings vaddr v p pm
-                hMappingsInv hMappingsSize' (hErase ▸ hMap)
+                hMappingsInvK (hErase ▸ hMap)
               exact hWxInv _ root v p pm hObjRoot hRootMap
             · rw [hObjNe oid hEq] at hObjR
               exact hWxInv oid r v p pm hObjR hMap
@@ -534,7 +527,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
               have hRootMap := RHTable_lookup_of_erase_lookup root.mappings vaddr v p pm
-                hMappingsInv hMappingsSize' (hErase ▸ hMap)
+                hMappingsInvK (hErase ▸ hMap)
               exact hBoundInv _ root v p pm hObjRoot hRootMap
             · rw [hObjNe oid hEq] at hObjR
               exact hBoundInv oid r v p pm hObjR hMap
@@ -564,7 +557,7 @@ theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle
             by_cases hEq : oid = rootId
             · subst hEq; rw [hObjEq] at hObjR; cases hObjR
               have hRootMap := RHTable_lookup_of_erase_lookup root.mappings vaddr v p pm
-                hMappingsInv hMappingsSize' (hErase ▸ hMap)
+                hMappingsInvK (hErase ▸ hMap)
               exact hCanonicalInv _ root v p pm hObjRoot hRootMap
             · rw [hObjNe oid hEq] at hObjR
               exact hCanonicalInv oid r v p pm hObjR hMap
@@ -779,9 +772,8 @@ theorem vspaceMapPageChecked_success_preserves_vspaceInvariantBundle
     (hObjInv : st.objects.invExt)
     (hAsidInv : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) →
         (st.asidTable.erase root.asid).invExt)
-    (hAsidSize : st.asidTable.size < st.asidTable.capacity)
+    (hAsidK : st.asidTable.invExtK)
     (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot), st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
-    (hTableInv : st.asidTable.invExt)
     (hStep : vspaceMapPageChecked asid vaddr paddr perms st = .ok ((), st')) :
     vspaceInvariantBundle st' := by
   -- U2-A: vspaceMapPageChecked now has two guards: VAddr canonical then PAddr bounds
@@ -799,7 +791,7 @@ theorem vspaceMapPageChecked_success_preserves_vspaceInvariantBundle
                     decide_eq_true_eq] at *
         assumption
       exact vspaceMapPage_success_preserves_vspaceInvariantBundle
-        st st' asid vaddr paddr perms hInv hBound hCanonical hObjInv hAsidInv hAsidSize hMappingsWF hTableInv hStep
+        st st' asid vaddr paddr perms hInv hBound hCanonical hObjInv hAsidInv hAsidK hMappingsWF hStep
 
 /-- WS-H11/A-05: `vspaceMapPageChecked` error on out-of-bounds preserves invariant trivially. -/
 theorem vspaceMapPageChecked_error_preserves_vspaceInvariantBundle

@@ -40,17 +40,6 @@ structure RunQueue where
      Runtime verification: `InvariantChecks.runQueueThreadPriorityConsistentB`. -/
 namespace RunQueue
 
--- Backward-compat projections: downstream files reference these field names
-theorem mem_invExt (rq : RunQueue) : rq.membership.table.invExt := rq.mem_invExtK.1
-theorem mem_sizeOk (rq : RunQueue) : rq.membership.table.size < rq.membership.table.capacity := rq.mem_invExtK.2.1
-theorem mem_capGe4 (rq : RunQueue) : 4 ≤ rq.membership.table.capacity := rq.mem_invExtK.2.2
-theorem byPrio_invExt (rq : RunQueue) : rq.byPriority.invExt := rq.byPrio_invExtK.1
-theorem byPrio_sizeOk (rq : RunQueue) : rq.byPriority.size < rq.byPriority.capacity := rq.byPrio_invExtK.2.1
-theorem byPrio_capGe4 (rq : RunQueue) : 4 ≤ rq.byPriority.capacity := rq.byPrio_invExtK.2.2
-theorem threadPrio_invExt (rq : RunQueue) : rq.threadPriority.invExt := rq.threadPrio_invExtK.1
-theorem threadPrio_sizeOk (rq : RunQueue) : rq.threadPriority.size < rq.threadPriority.capacity := rq.threadPrio_invExtK.2.1
-theorem threadPrio_capGe4 (rq : RunQueue) : 4 ≤ rq.threadPriority.capacity := rq.threadPrio_invExtK.2.2
-
 @[inline] def empty : RunQueue where
   byPriority := {}; membership := {}; threadPriority := {}
   flat := []; size := 0; maxPriority := none
@@ -115,17 +104,17 @@ def insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
           by_cases hEq : (tid == x) = true
           · have hTidEqX := eq_of_beq hEq
             rw [hTidEqX]
-            exact RHSet.contains_insert_self rq.membership x rq.mem_invExt
-          · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt]; exact hOld
+            exact RHSet.contains_insert_self rq.membership x rq.mem_invExtK.1
+          · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExtK.1]; exact hOld
         · rw [hEqTid]
-          exact RHSet.contains_insert_self rq.membership tid rq.mem_invExt
+          exact RHSet.contains_insert_self rq.membership tid rq.mem_invExtK.1
       flat_wf_rev := by
         intro x hx
         have hx0 : tid = x ∨ rq.membership.contains x = true := by
           by_cases hEq : (tid == x) = true
           · exact Or.inl (eq_of_beq hEq)
           · right
-            rwa [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt] at hx
+            rwa [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExtK.1] at hx
         have hx' : x = tid ∨ rq.membership.contains x = true :=
           hx0.elim (fun h => Or.inl h.symm) Or.inr
         rcases hx' with rfl | hOld
@@ -169,7 +158,7 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
       have hXNeTid : x ≠ tid := by simpa using hNe
       have hMem := rq.flat_wf x hFlat
       have hNeBeq : ¬(tid == x) = true := by simp [beq_iff_eq]; exact Ne.symm hXNeTid
-      rw [RHSet.contains_erase_ne rq.membership tid x hNeBeq rq.mem_invExt rq.mem_sizeOk]
+      rw [RHSet.contains_erase_ne_K rq.membership tid x hNeBeq rq.mem_invExtK]
       exact hMem
     flat_wf_rev := by
       intro x hx
@@ -177,10 +166,9 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
         by_cases hEq : (tid == x) = true
         · have := eq_of_beq hEq
           subst this
-          rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExt] at hx
+          rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExtK.1] at hx
           exact absurd hx (by simp)
-        · exact ⟨by rwa [RHSet.contains_erase_ne rq.membership tid x hEq rq.mem_invExt
-                    rq.mem_sizeOk] at hx,
+        · exact ⟨by rwa [RHSet.contains_erase_ne_K rq.membership tid x hEq rq.mem_invExtK] at hx,
                  fun h => hEq (by simp [beq_iff_eq]; exact h.symm)⟩
       have hFlat : x ∈ rq.flat := rq.flat_wf_rev x hx'.1
       exact List.mem_filter.mpr ⟨hFlat, by simpa [beq_iff_eq] using hx'.2⟩
@@ -274,17 +262,17 @@ theorem mem_insert (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : Threa
     · intro hIns
       by_cases hEq : (tid == x) = true
       · exact Or.inr (eq_of_beq hEq).symm
-      · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt] at hIns
+      · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExtK.1] at hIns
         exact Or.inl hIns
     · intro hOr
       rcases hOr with hOld | hEqTid
       · by_cases hEq : (tid == x) = true
         · have hTidEqX := eq_of_beq hEq
           rw [hTidEqX]
-          exact RHSet.contains_insert_self rq.membership x rq.mem_invExt
-        · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExt]; exact hOld
+          exact RHSet.contains_insert_self rq.membership x rq.mem_invExtK.1
+        · rw [RHSet.contains_insert_ne rq.membership tid x hEq rq.mem_invExtK.1]; exact hOld
       · rw [hEqTid]
-        exact RHSet.contains_insert_self rq.membership tid rq.mem_invExt
+        exact RHSet.contains_insert_self rq.membership tid rq.mem_invExtK.1
 
 theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
     x ∈ rq.remove tid ↔ x ∈ rq ∧ x ≠ tid := by
@@ -295,15 +283,15 @@ theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
     have hNeBeq : ¬(tid == x) = true := by
       intro hEq
       have := eq_of_beq hEq; subst this
-      rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExt] at h
+      rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExtK.1] at h
       exact absurd h (by simp)
     constructor
-    · rwa [RHSet.contains_erase_ne rq.membership tid x hNeBeq rq.mem_invExt rq.mem_sizeOk] at h
+    · rwa [RHSet.contains_erase_ne_K rq.membership tid x hNeBeq rq.mem_invExtK] at h
     · intro hEq; exact hNeBeq (by simp [beq_iff_eq]; exact hEq.symm)
   · intro h
     rcases h with ⟨hx, hne⟩
     have hne' : ¬(tid == x) = true := by simp [beq_iff_eq]; exact fun h => hne h.symm
-    rw [RHSet.contains_erase_ne rq.membership tid x hne' rq.mem_invExt rq.mem_sizeOk]
+    rw [RHSet.contains_erase_ne_K rq.membership tid x hne' rq.mem_invExtK]
     exact hx
 
 theorem mem_rotateToBack (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
@@ -639,7 +627,7 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
     unfold wellFormed
     simp only [rotateToBack, hc, dite_true]
     -- Now goal has: rq.membership, rq.threadPriority, rq.byPriority.insert ...
-    have hByPrioInv := rq.byPrio_invExt
+    have hByPrioInv := rq.byPrio_invExtK.1
     -- Helper: bracket notation resolves to get? for RHTable
     have hGetElem : ∀ (t : RHTable Priority (List ThreadId)) (k : Priority),
         t[k]? = t.get? k := fun _ _ => rfl
@@ -712,9 +700,9 @@ theorem insert_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
   · -- contains = false: prove for the new struct
     rename_i hNotContains
     have hNotMem : ¬(rq.membership.contains tid = true) := hNotContains
-    have hByPrioInv := rq.byPrio_invExt
-    have hTPrioInv := rq.threadPrio_invExt
-    have hMemInv := rq.mem_invExt
+    have hByPrioInv := rq.byPrio_invExtK.1
+    have hTPrioInv := rq.threadPrio_invExtK.1
+    have hMemInv := rq.mem_invExtK.1
     -- Helper: bracket notation resolves to get? for RHTable
     have hGetElemBP : ∀ (t : RHTable Priority (List ThreadId)) (k : Priority),
         t[k]? = t.get? k := fun _ _ => rfl
@@ -804,15 +792,15 @@ private theorem remove_byPrio_to_orig (rq : RunQueue)
   · next p_tid _ =>
     split at hMem
     · by_cases hPEq : (p_tid == p) = true
-      · rw [eq_of_beq hPEq, RHTable_get?_erase_self rq.byPriority p rq.byPrio_invExt] at hMem
+      · rw [eq_of_beq hPEq, RHTable_get?_erase_self rq.byPriority p rq.byPrio_invExtK.1] at hMem
         simp [Option.getD] at hMem
-      · rwa [RHTable_get?_erase_ne rq.byPriority p_tid p hPEq
-               rq.byPrio_invExt rq.byPrio_sizeOk] at hMem
+      · rwa [RHTable_get?_erase_ne_K rq.byPriority p_tid p hPEq
+               rq.byPrio_invExtK] at hMem
     · by_cases hPEq : (p_tid == p) = true
-      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExt] at hMem
+      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExtK.1] at hMem
         simp only [Option.getD] at hMem
         exact (List.mem_filter.mp hMem).1
-      · rwa [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExt] at hMem
+      · rwa [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExtK.1] at hMem
 
 /-- S3-F helper: byPriority bucket membership transfers from original to removed. -/
 private theorem remove_byPrio_from_orig (rq : RunQueue)
@@ -838,14 +826,14 @@ private theorem remove_byPrio_from_orig (rq : RunQueue)
           exact ⟨hInBucket, by simp [hNe]⟩
         rw [hFiltEmpty] at this
         simp at this
-      · rw [RHTable_get?_erase_ne rq.byPriority p_tid p hPEq rq.byPrio_invExt rq.byPrio_sizeOk]
+      · rw [RHTable_get?_erase_ne_K rq.byPriority p_tid p hPEq rq.byPrio_invExtK]
         exact hBucket
     · -- Filtered bucket non-empty → inserted
       by_cases hPEq : (p_tid == p) = true
-      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExt]
+      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExtK.1]
         simp only [Option.getD]
         exact List.mem_filter.mpr ⟨hBucket, by simpa [beq_iff_eq] using hNe⟩
-      · rw [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExt]
+      · rw [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExtK.1]
         exact hBucket
 
 /-- S3-F helper: tid is not in any bucket of the removed RunQueue. -/
@@ -862,18 +850,18 @@ private theorem remove_tid_not_in_bucket (rq : RunQueue) (hwf : rq.wellFormed)
   · next p_tid hTP =>
     split at hMem
     · by_cases hPEq : (p_tid == p) = true
-      · rw [eq_of_beq hPEq, RHTable_get?_erase_self rq.byPriority p rq.byPrio_invExt] at hMem
+      · rw [eq_of_beq hPEq, RHTable_get?_erase_self rq.byPriority p rq.byPrio_invExtK.1] at hMem
         simp [Option.getD] at hMem
-      · rw [RHTable_get?_erase_ne rq.byPriority p_tid p hPEq
-              rq.byPrio_invExt rq.byPrio_sizeOk] at hMem
+      · rw [RHTable_get?_erase_ne_K rq.byPriority p_tid p hPEq
+              rq.byPrio_invExtK] at hMem
         have hFwd := (hwf.1 p tid hMem).2
         simp only [RHTable_getElem?_eq_get?] at hFwd
         rw [hTP] at hFwd
         exact absurd (Option.some.inj hFwd) (by simpa [beq_iff_eq] using hPEq)
     · by_cases hPEq : (p_tid == p) = true
-      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExt] at hMem
+      · rw [eq_of_beq hPEq, RHTable_get?_insert_self rq.byPriority p _ rq.byPrio_invExtK.1] at hMem
         simp [Option.getD] at hMem
-      · rw [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExt] at hMem
+      · rw [RHTable_get?_insert_ne rq.byPriority p_tid p _ hPEq rq.byPrio_invExtK.1] at hMem
         have hFwd := (hwf.1 p tid hMem).2
         simp only [RHTable_getElem?_eq_get?] at hFwd
         rw [hTP] at hFwd
@@ -901,10 +889,10 @@ theorem remove_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
     simp only [RHTable_getElem?_eq_get?] at hFwd
     refine ⟨?_, ?_⟩
     · show (rq.membership.erase tid).contains t = true
-      rw [RHSet.contains_erase_ne rq.membership tid t hNeBeq rq.mem_invExt rq.mem_sizeOk]
+      rw [RHSet.contains_erase_ne_K rq.membership tid t hNeBeq rq.mem_invExtK]
       exact hFwd.1
     · show (rq.threadPriority.erase tid).get? t = some p
-      rw [RHTable_get?_erase_ne rq.threadPriority tid t hNeBeq rq.threadPrio_invExt rq.threadPrio_sizeOk]
+      rw [RHTable_get?_erase_ne_K rq.threadPriority tid t hNeBeq rq.threadPrio_invExtK]
       exact hFwd.2
   · -- Reverse: membership → ∃ prio with bucket entry
     intro t hMem
@@ -912,17 +900,17 @@ theorem remove_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
     have hTNe : t ≠ tid := by
       intro hEq; rw [hEq] at hMem
       change (rq.membership.erase tid).contains tid = true at hMem
-      rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExt] at hMem
+      rw [RHSet.contains_erase_self rq.membership tid rq.mem_invExtK.1] at hMem
       exact absurd hMem (by simp)
     have hNeBeq : ¬(tid == t) = true := by simp [beq_iff_eq]; exact Ne.symm hTNe
     have hOldMem : rq.membership.contains t = true := by
       change (rq.membership.erase tid).contains t = true at hMem
-      rwa [RHSet.contains_erase_ne rq.membership tid t hNeBeq rq.mem_invExt rq.mem_sizeOk] at hMem
+      rwa [RHSet.contains_erase_ne_K rq.membership tid t hNeBeq rq.mem_invExtK] at hMem
     obtain ⟨p, hpTP, hpBucket⟩ := hwf.2 t hOldMem
     simp only [RHTable_getElem?_eq_get?] at hpTP hpBucket
     refine ⟨p, ?_, ?_⟩
     · show (rq.threadPriority.erase tid).get? t = some p
-      rw [RHTable_get?_erase_ne rq.threadPriority tid t hNeBeq rq.threadPrio_invExt rq.threadPrio_sizeOk]
+      rw [RHTable_get?_erase_ne_K rq.threadPriority tid t hNeBeq rq.threadPrio_invExtK]
       exact hpTP
     · exact remove_byPrio_from_orig rq tid p t hTNe hpBucket
 

@@ -8,6 +8,7 @@
 hypothesis not derivable from `invExt`
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 **Gate**: `lake build` succeeds for every modified module; `test_full.sh` green
+**Status**: COMPLETE (v0.22.2) — All 6 phases delivered, all 9 success criteria met
 
 ---
 

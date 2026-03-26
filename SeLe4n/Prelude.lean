@@ -848,14 +848,6 @@ theorem RHTable_get?_erase_self {α β : Type} [BEq α] [Hashable α] [LawfulBEq
   RHTable.getElem?_erase_self t k hExt
 
 open SeLe4n.Kernel.RobinHood in
-/-- Q2-A: Erasing key `k` does not affect lookups of other keys. -/
-theorem RHTable_get?_erase_ne {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k k' : α) (hNe : ¬(k == k') = true)
-    (hExt : t.invExt) (hSize : t.size < t.capacity) :
-    (t.erase k).get? k' = t.get? k' :=
-  RHTable.getElem?_erase_ne t k k' hNe hExt hSize
-
-open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Combined insert lookup characterization.
     Provides `if k == a then some v else t.get? a` for insert lookups. -/
 theorem RHTable_getElem?_insert {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
@@ -867,19 +859,6 @@ theorem RHTable_getElem?_insert {α β : Type} [BEq α] [Hashable α] [LawfulBEq
     exact RHTable.getElem?_insert_self t a v hExt
   · simp only [show (k == a) = false from Bool.eq_false_iff.mpr h]
     exact RHTable.getElem?_insert_ne t k a v h hExt
-
-open SeLe4n.Kernel.RobinHood in
-/-- Q2-A: Combined erase lookup characterization.
-    Provides `if k == a then none else t.get? a` for erase lookups. -/
-theorem RHTable_getElem?_erase {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (hExt : t.invExt) (hSize : t.size < t.capacity) (a : α) :
-    (t.erase k).get? a = if k == a then none else t.get? a := by
-  by_cases h : (k == a) = true
-  · simp only [h, ite_true]
-    have hka : a = k := (eq_of_beq h).symm; subst hka
-    exact RHTable.getElem?_erase_self t a hExt
-  · simp only [show (k == a) = false from Bool.eq_false_iff.mpr h]
-    exact RHTable.getElem?_erase_ne t k a h hExt hSize
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Membership is equivalent to `get?` returning `some`. -/
@@ -922,14 +901,6 @@ theorem RHTable_insert_preserves_invExt {α β : Type} [BEq α] [Hashable α] [L
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insert k v).invExt :=
   t.insert_preserves_invExt k v hExt
-
-open SeLe4n.Kernel.RobinHood in
-/-- Q2-A: Erase preserves invExt. -/
-theorem RHTable_erase_preserves_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (k : α) (hExt : t.invExt)
-    (hSize : t.size < t.capacity) :
-    (t.erase k).invExt :=
-  t.erase_preserves_invExt k hExt hSize
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Empty table satisfies invExt. -/
@@ -981,13 +952,6 @@ theorem RHTable_filter_preserves_invExtK {α β : Type} [BEq α] [Hashable α] [
     (t : RHTable α β) (f : α → β → Bool) (hK : t.invExtK) :
     (t.filter f).invExtK :=
   RHTable.filter_preserves_invExtK t f hK
-
-open SeLe4n.Kernel.RobinHood in
-/-- Q2-A: Filter preserves invExt. -/
-theorem RHTable_filter_preserves_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
-    (t : RHTable α β) (f : α → β → Bool) (hExt : t.invExt) :
-    (t.filter f).invExt :=
-  RHTable.filter_preserves_invExt t f hExt
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Filter preserves key when predicate is true for that key. -/
