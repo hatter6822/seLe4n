@@ -464,4 +464,38 @@ theorem threadPriority_membership_consistent_remove
           rq.threadPrio_invExtK, ← RHTable_getElem?_eq_get?]
       exact hTPMC.2 tid' hMem'
 
+-- ============================================================================
+-- V5-H (M-HW-7): Domain time-remaining positivity invariant
+-- ============================================================================
+
+/-- V5-H (M-HW-7): The scheduler's `domainTimeRemaining` is always positive (> 0).
+
+This invariant ensures that `scheduleDomain`'s decrement operation
+(`domainTimeRemaining - 1`) never underflows to `Nat.zero` in the
+non-expiry branch. It is established at initialization (default value 5)
+and maintained by:
+- `scheduleDomain`: on expiry, `switchDomain` sets `domainTimeRemaining` to
+  the next domain entry's `length` field (which must be positive per
+  `DomainScheduleEntry` well-formedness); on non-expiry, decrements by 1
+  (result ≥ 1 since pre-condition was > 1).
+- `timerTick`: does not modify `domainTimeRemaining`.
+- `schedule`: does not modify `domainTimeRemaining`.
+- `handleYield`: does not modify `domainTimeRemaining`. -/
+def domainTimeRemainingPositive (st : SystemState) : Prop :=
+  st.scheduler.domainTimeRemaining > 0
+
+/-- V5-H: The default SchedulerState satisfies `domainTimeRemainingPositive`.
+    Default `domainTimeRemaining` is 5, which is > 0. -/
+theorem domainTimeRemainingPositive_default (st : SystemState)
+    (h : st.scheduler.domainTimeRemaining = 5) :
+    domainTimeRemainingPositive st := by
+  unfold domainTimeRemainingPositive; omega
+
+/-- V5-H: `domainTimeRemainingPositive` is preserved when `scheduler` is unchanged. -/
+theorem domainTimeRemainingPositive_of_scheduler_eq
+    (st st' : SystemState) (h : st'.scheduler = st.scheduler)
+    (hInv : domainTimeRemainingPositive st) :
+    domainTimeRemainingPositive st' := by
+  unfold domainTimeRemainingPositive at *; rw [h]; exact hInv
+
 end SeLe4n.Kernel

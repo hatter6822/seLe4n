@@ -91,6 +91,11 @@ structure SchedulerState where
   domainSchedule : List DomainScheduleEntry := []
   /-- M-05/WS-E6: Current index into `domainSchedule`. -/
   domainScheduleIndex : Nat := 0
+  /-- V5-L (L-SCH-1): Configurable default time-slice quantum (ticks per
+      scheduling round). Defaults to 5, matching seL4's default. Used by
+      `timerTick` to reset time-slices on preemption. Thread-level time
+      slices are deferred to a future MCS scheduling extension. -/
+  configDefaultTimeSlice : Nat := 5
   deriving Repr
 
 /-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained
@@ -400,6 +405,16 @@ S4-B/U2-L: Capacity enforcement is performed at the allocation boundary
 defined above) is preserved by allocation-time checking, and `storeObject`
 remains infallible for internal use by IPC, scheduler, and capability
 operations.
+
+V5-K (L-FND-1): **Design rationale for infallibility.** `storeObject` always
+returns `.ok` — it never fails. This is intentional: the object store is an
+in-memory map (`RHTable`) with unbounded capacity at the model level. Capacity
+enforcement is deferred to `retypeFromUntyped`, which checks
+`objectIndexBounded` before creating new objects. Internal mutations (IPC,
+scheduler, capability operations) overwrite existing keys and do not grow the
+index. This split keeps the common-path kernel operations (`endpointSend`,
+`schedule`, etc.) free of error-handling overhead while concentrating capacity
+policy at the allocation boundary.
 
 **U2-L callsite audit** (v0.21.1):
 - **Allocation-guarded** (capacity checked by `retypeFromUntyped`):

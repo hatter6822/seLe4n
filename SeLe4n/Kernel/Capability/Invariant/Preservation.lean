@@ -775,17 +775,13 @@ private theorem processRevokeNode_preserves_cdtNodeSlot
     | error _ => simp [hDel] at hStep
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
+      -- V5-N: After removing redundant detachSlotFromCdt, the post-state is
+      -- { stDel with cdt := stDel.cdt.removeNode node }, which has the same
+      -- cdtNodeSlot as stDel (only cdt is changed by removeNode).
       simp [hDel] at hStep; cases hStep
       have hKDel := cspaceDeleteSlotCore_preserves_cdtNodeSlot st stDel descAddr
         hNodeSlotK hDel
-      have hDetachNS : (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.invExtK := by
-        unfold SystemState.detachSlotFromCdt
-        cases hLookup : stDel.cdtSlotNode[descAddr]? with
-        | none => simp only []; exact hKDel
-        | some origNode =>
-          simp only []
-          exact stDel.cdtNodeSlot.erase_preserves_invExtK origNode hKDel
-      exact hDetachNS
+      exact hKDel
 
 /-- R2-A/R2-F: `processRevokeNode` preserves the full capability invariant bundle
 when it succeeds.
@@ -819,24 +815,17 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
     | error _ => simp [hDel] at hStep
     | ok pair =>
       obtain ⟨_, stDel⟩ := pair
+      -- V5-N: processRevokeNode no longer calls detachSlotFromCdt after
+      -- cspaceDeleteSlotCore (it's already done inside cspaceDeleteSlotCore).
+      -- The proof goes directly from stDel to removeNode.
       simp [hDel] at hStep; cases hStep
       have hDelInv := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st stDel descAddr hInv
         hNodeSlotK hDel
       have hKDel :=
         cspaceDeleteSlotCore_preserves_cdtNodeSlot st stDel descAddr hNodeSlotK hDel
-      have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
-      rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del, hObjInv2⟩
-      have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
-        ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
-         cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
-         cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
-         cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2 hKDel,
-         cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
-         cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj,
-         hDetachObj ▸ hObjInv2⟩
-      exact capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.1
-          (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node))
+      exact capabilityInvariantBundle_of_cdt_update _ _ hDelInv
+        (CapDerivationTree.edgeWellFounded_sub _ _ hDelInv.2.2.2.2.1
+          (CapDerivationTree.removeNode_edges_sub stDel.cdt node))
 
 /-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node.
 Delegates to `processRevokeNode` for the actual state transformation.
@@ -1040,9 +1029,9 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
                             offendingNode := node, offendingSlot := some descAddr, error := err } },
                          { stCur with cdt := stCur.cdt.removeNode node })
                     | .ok ((), stDel) =>
-                        let stDetached := SystemState.detachSlotFromCdt stDel descAddr
+                        -- V5-N: Redundant detachSlotFromCdt removed (done inside cspaceDeleteSlotCore)
                         ({ report with deletedSlots := descAddr :: report.deletedSlots },
-                         { stDetached with cdt := stDetached.cdt.removeNode node })
+                         { stDel with cdt := stDel.cdt.removeNode node })
           ) (rep, stAcc)).2 by
         simp at hStep
         have hInvFold := h (stLocal.cdt.descendantsOf rootNode)
@@ -1077,32 +1066,16 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
             | ok pair =>
               obtain ⟨_, stDel⟩ := pair
               simp
+              -- V5-N: After removing redundant detachSlotFromCdt, the proof goes
+              -- directly from stDel to removeNode (detach is already inside cspaceDeleteSlotCore).
               have hDelInv := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle stAcc stDel
                 descAddr hI hKAcc hDel
               have hKDel := cspaceDeleteSlotCore_preserves_cdtNodeSlot stAcc stDel
                 descAddr hKAcc hDel
-              have hDetachObj := SystemState.detachSlotFromCdt_objects_eq stDel descAddr
-              rcases hDelInv with ⟨hU2, _, hBnd2, hComp2, hAcyclic2, hDepth2del, hObjInv2⟩
-              have hDetachInv : capabilityInvariantBundle (SystemState.detachSlotFromCdt stDel descAddr) :=
-                ⟨cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj,
-                 cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq stDel _ hU2 hDetachObj),
-                 cspaceSlotCountBounded_of_detachSlotFromCdt stDel descAddr hBnd2,
-                 cdtCompleteness_of_detachSlotFromCdt stDel descAddr hComp2 hKDel,
-                 cdtAcyclicity_of_detachSlotFromCdt stDel descAddr hAcyclic2,
-                 cspaceDepthConsistent_of_objects_eq stDel _ hDepth2del hDetachObj,
-                 hDetachObj ▸ hObjInv2⟩
-              -- Derive cdtNodeSlot invExtK for the detached state
-              have hDetachK : (SystemState.detachSlotFromCdt stDel descAddr).cdtNodeSlot.invExtK := by
-                unfold SystemState.detachSlotFromCdt
-                cases hL : stDel.cdtSlotNode[descAddr]? with
-                | none => simp only []; exact hKDel
-                | some origNode =>
-                  simp only []
-                  exact stDel.cdtNodeSlot.erase_preserves_invExtK origNode hKDel
-              exact ih _ _ (capabilityInvariantBundle_of_cdt_update _ _ hDetachInv
-                (CapDerivationTree.edgeWellFounded_sub _ _ hDetachInv.2.2.2.2.1
-                  (CapDerivationTree.removeNode_edges_sub (SystemState.detachSlotFromCdt stDel descAddr).cdt node)))
-                hDetachK
+              exact ih _ _ (capabilityInvariantBundle_of_cdt_update _ _ hDelInv
+                (CapDerivationTree.edgeWellFounded_sub _ _ hDelInv.2.2.2.2.1
+                  (CapDerivationTree.removeNode_edges_sub stDel.cdt node)))
+                hKDel
 
 -- ============================================================================
 -- M-P04: Streaming CDT revocation preservation (WS-M5)

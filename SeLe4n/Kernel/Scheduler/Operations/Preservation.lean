@@ -359,8 +359,8 @@ private theorem handleYield_preserves_queueCurrentConsistent
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_queueCurrentConsistent st st' hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -398,8 +398,8 @@ private theorem handleYield_preserves_runQueueUnique
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_runQueueUnique st st' hUnique hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -429,8 +429,8 @@ private theorem handleYield_preserves_currentThreadValid
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_currentThreadValid st st' hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -452,8 +452,8 @@ private theorem handleYield_preserves_currentThreadInActiveDomain
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_currentThreadInActiveDomain st st' hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -914,8 +914,8 @@ private theorem handleYield_preserves_timeSlicePositive
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_timeSlicePositive st st' hInv hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -1167,8 +1167,8 @@ private theorem handleYield_preserves_currentTimeSlicePositive
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_currentTimeSlicePositive st st' hTS hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -1485,9 +1485,8 @@ theorem handleYield_preserves_runnableThreadsAreTCBs
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-      -- No current thread: handleYield just calls schedule
+      -- V5-F: handleYield now returns .error .invalidArgument when current = none
       simp [hCur] at hStep
-      exact schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep
   | some tid =>
       cases hObj : st.objects[tid.toObjId]? with
       | none => simp [hCur, hObj] at hStep
@@ -2101,8 +2100,8 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some curTid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[curTid.toObjId]? with
@@ -2350,9 +2349,8 @@ private theorem handleYield_preserves_contextMatchesCurrent
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    -- No current thread → directly calls schedule
-    simp only [hCur] at hStep
-    exact schedule_preserves_contextMatchesCurrent st st' hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -2599,8 +2597,8 @@ private theorem handleYield_preserves_schedulerPriorityMatch
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
     simp [hCur] at hStep
-    exact schedule_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep
   | some curTid =>
     cases hObj : st.objects[curTid.toObjId]? with
     | none => simp [hCur, hObj] at hStep

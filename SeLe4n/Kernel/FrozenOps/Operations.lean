@@ -268,9 +268,14 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
-/-- Q7-C2: Pop head from a frozen intrusive queue.
+/-- Q7-C2/V5-O: Pop head from a frozen intrusive queue.
 Follows `queueNext` link in the head TCB to advance the queue.
-Returns the dequeued ThreadId, its TCB, and updated state. -/
+Returns the dequeued ThreadId, its TCB, and updated state.
+
+V5-O (L-DS-3): Validates that the head thread's IPC state is consistent
+with the queue it's being dequeued from (blocked-on-send for send queues,
+blocked-on-receive for receive queues). Returns `.endpointStateMismatch`
+if the head TCB's blocking state doesn't match the queue direction. -/
 private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st : FrozenSystemState) : Except KernelError (SeLe4n.ThreadId × TCB × FrozenSystemState) :=
   match st.objects.get? endpointId with
@@ -282,6 +287,18 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
           match frozenLookupTcb st headTid with
           | none => .error .objectNotFound
           | some headTcb =>
+              -- V5-O: Verify the head thread's blocking state matches queue direction
+              let stateConsistent := if isReceiveQ then
+                match headTcb.ipcState with
+                | .blockedOnReceive epId => epId == endpointId
+                | _ => false
+              else
+                match headTcb.ipcState with
+                | .blockedOnSend epId => epId == endpointId
+                | .blockedOnCall epId => epId == endpointId
+                | _ => false
+              if !stateConsistent then .error .endpointStateMismatch
+              else
               -- Advance queue head to next TCB in chain
               let newHead := headTcb.queueNext
               let newTail := if newHead = none then none else queue.tail
@@ -485,18 +502,27 @@ def frozenCspaceLookupSlot (cptr : SeLe4n.CPtr) (rootId : SeLe4n.ObjId)
     | .ok cap => .ok (cap, st)
     | .error e => .error e
 
-/-- Q7-C3: Frozen CSpace mint — insert a capability into a frozen CNode.
-The CNodeRadix supports insert via its radix array. -/
+/-- Q7-C3/V5-P: Frozen CSpace mint — insert a capability into a frozen CNode.
+The CNodeRadix supports insert via its radix array.
+
+V5-P (L-DS-4): Checks whether the target slot is already occupied before
+insertion. If the slot contains an existing capability, returns `.targetSlotOccupied`
+instead of silently overwriting. This prevents accidental capability leaks
+where a mint operation clobbers an existing capability without revoking it. -/
 def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (cap : Capability) : FrozenKernel Unit :=
   fun st =>
     match st.objects.get? rootId with
     | some (.cnode cn) =>
-        let slots' := cn.slots.insert slot cap
-        let cn' : FrozenCNode := { cn with slots := slots' }
-        match st.objects.set rootId (.cnode cn') with
-        | some objects' => .ok ((), { st with objects := objects' })
-        | none => .error .objectNotFound
+        -- V5-P: Reject if slot is already occupied
+        match cn.slots.lookup slot with
+        | some _ => .error .targetSlotOccupied
+        | none =>
+            let slots' := cn.slots.insert slot cap
+            let cn' : FrozenCNode := { cn with slots := slots' }
+            match st.objects.set rootId (.cnode cn') with
+            | some objects' => .ok ((), { st with objects := objects' })
+            | none => .error .objectNotFound
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 

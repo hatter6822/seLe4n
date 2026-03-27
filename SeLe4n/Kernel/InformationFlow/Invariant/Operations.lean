@@ -1882,9 +1882,8 @@ theorem handleYield_preserves_projection
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
     simp [hCur] at hStep
-    exact schedule_preserves_projection ctx observer st st'
-      (fun _ h => by simp [hCur] at h) hAllRunnable hObjInv hStep
   | some tid =>
     have hTidHigh := hCurrentHigh tid hCur
     simp only [hCur] at hStep

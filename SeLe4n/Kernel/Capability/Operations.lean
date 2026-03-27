@@ -592,7 +592,35 @@ def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
     else
       cspaceDeleteSlotCore addr st
 
-/-- Revoke capabilities with the same target as the source in the containing CNode.
+/-- V5-G (M-DEF-7): **Revocation routing guide.**
+
+seLe4n provides three revocation entry points for different use cases:
+
+- **`cspaceRevoke`** (this function): Local, single-CNode revocation. Removes
+  sibling capabilities within the same CNode that share the source slot's
+  target. Does NOT traverse the CDT or affect capabilities in other CNodes.
+  Use when revoking derived caps that are known to be co-located.
+
+- **`cspaceRevokeCdt`**: Cross-CNode revocation via CDT traversal. First
+  performs local revocation (`cspaceRevoke`), then walks all CDT descendants
+  of the source slot and deletes their capabilities from any CNode in the
+  system. This is the **recommended entry point** for general revocation.
+  Errors from descendant deletion are propagated (strict mode).
+
+- **`cspaceRevokeCdtStrict`**: Structured variant of `cspaceRevokeCdt` that
+  returns a detailed `RevokeCdtStrictReport` including which slots were
+  deleted and which (if any) failed. Use when the caller needs diagnostic
+  information about partial revocation failures.
+
+- **`cspaceRevokeCdtStreaming`**: Fuel-bounded BFS variant providing the same
+  semantics as `cspaceRevokeCdt` with guaranteed O(fuel) termination. Use
+  when deterministic execution time is required.
+
+**API dispatch**: `dispatchWithCap` and `dispatchWithCapChecked` route
+`SyscallId.cspaceRevoke` through `cspaceRevokeCdt` (the CDT-traversing
+variant), which is the correct default for untrusted userspace invocations.
+
+Revoke capabilities with the same target as the source in the containing CNode.
 
 This is the local (single-CNode) revocation variant. For cross-CNode revocation
 using CDT traversal, see `cspaceRevokeCdt` and `cspaceRevokeCdtStrict`.
@@ -791,8 +819,13 @@ def processRevokeNode (st : SystemState) (node : CdtNodeId)
       match cspaceDeleteSlotCore descAddr st with
       | .error e => .error e
       | .ok ((), stDel) =>
-          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
-          .ok { stDetached with cdt := stDetached.cdt.removeNode node }
+          -- V5-N (L-CAP-1): The second `detachSlotFromCdt` that was here has been
+          -- removed. `cspaceDeleteSlotCore` already calls `detachSlotFromCdt` internally
+          -- (see line ~579), so the call here was redundant. `detachSlotFromCdt` is
+          -- idempotent (detaching an already-detached slot is a no-op), so the duplicate
+          -- was harmless but misleading. After `cspaceDeleteSlotCore`, the slot is already
+          -- detached; we only need `removeNode` to clean up the CDT node itself.
+          .ok { stDel with cdt := stDel.cdt.removeNode node }
 
 /-- S3-C: Fine-grained CDT revocation — severs a single parent→child
     derivation edge without destroying the child node.
@@ -962,8 +995,8 @@ def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
                           let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
                           ({ report with firstFailure := some failure }, stRemoved)
                       | .ok ((), stDel) =>
-                          let stDetached := SystemState.detachSlotFromCdt stDel descAddr
-                          let stRemoved := { stDetached with cdt := stDetached.cdt.removeNode node }
+                          -- V5-N: Redundant detachSlotFromCdt removed (already done by cspaceDeleteSlotCore)
+                          let stRemoved := { stDel with cdt := stDel.cdt.removeNode node }
                           ({ report with deletedSlots := descAddr :: report.deletedSlots }, stRemoved)
             let (report, stFinal) := descendants.foldl step ({ deletedSlots := [], firstFailure := none }, stLocal)
             .ok ({ report with deletedSlots := report.deletedSlots.reverse }, stFinal)

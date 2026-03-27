@@ -1582,10 +1582,11 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.withLifecycleObjectType ⟨10⟩ .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.buildChecked)
-  -- handleYield with current=none → schedule on empty queue → current stays none
-  let (_, stYielded) ← expectOkState "chain24: yield empty queue"
+  -- V5-F: handleYield with current=none now returns .error .invalidArgument
+  -- (defensive: yielding requires a current thread to re-enqueue)
+  expectError "chain24: yield empty queue returns invalidArgument"
     (SeLe4n.Kernel.handleYield stEmpty)
-  expect "chain24: no thread after empty yield" (stYielded.scheduler.current == none)
+    .invalidArgument
 
 /-- L-P07: IRQ handler dispatch — register an IRQ handler and verify
 signal is dispatched to the correct notification object. -/
