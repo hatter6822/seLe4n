@@ -203,9 +203,12 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Invariant/EndpointPreservation.lean` — endpoint preservation proofs.
   - `Invariant/CallReplyRecv.lean` — call/replyRecv compound preservation proofs.
   - `Invariant/NotificationPreservation.lean` — notification preservation proofs.
+  - `Invariant/QueueNoDup.lean` — V3-K: no self-loops, send/receive head disjointness.
+  - `Invariant/QueueMembership.lean` — V3-J: queue membership consistency proofs.
+  - `Invariant/QueueNextBlocking.lean` — V3-J-cross: queueNext blocking consistency proofs.
   - `Invariant/Structural.lean` — `dualQueueSystemInvariant` with `intrusiveQueueWellFormed`,
     `tcbQueueLinkIntegrity` (WS-H5), `ipcStateQueueConsistent` (WS-L3),
-    ipcInvariantFull composition theorems.
+    ipcInvariantFull 9-conjunct composition theorems.
 
 **WS-L optimizations** (v0.16.9–v0.16.13): IPC hot-path performance — eliminated
 4 redundant TCB lookups by passing pre-dequeue TCB from `endpointQueuePopHead`

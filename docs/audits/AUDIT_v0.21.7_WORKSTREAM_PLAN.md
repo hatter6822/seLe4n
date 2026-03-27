@@ -298,7 +298,7 @@ structs and round-trip theorems. Zero sorry/axiom.
 **Gate**: `lake build` succeeds; zero `sorry`; `test_full.sh` green ✅
 **Estimated scope**: ~900 lines Lean (proofs)
 **Depends on**: V2 (new syscalls must be covered by invariant preservation)
-**Status**: COMPLETE. All 8 `True := trivial` documentation theorems replaced with real machine-checked proofs. Zero sorry/axiom/trivial. 176 build targets pass, `test_full.sh` green. Machine-checked proofs for all V3 sub-tasks: `extractBits_identity` + `buildCNodeRadix_hNoPhantom_auto_discharge` (V3-H), `cdtShrinkingOps_preserve_acyclicity` via `edgeWellFounded_sub` (V3-D), `resolveCapAddress_callers_check_rights` dispatch chain (V3-F), `notificationSignal_preserves_waitingThreadsPendingMessageNone` (V3-G3), `notificationWake_pendingMessage_was_none` (V3-I). Predicate definitions retained: `ipcStateQueueMembershipConsistent` (V3-J), `endpointQueueNoDup` (V3-K).
+**Status**: COMPLETE. All 8 `True := trivial` documentation theorems replaced with real machine-checked proofs. Zero sorry/axiom/trivial. 182 build targets pass, `test_full.sh` green. Machine-checked proofs for all V3 sub-tasks: `extractBits_identity` + `buildCNodeRadix_hNoPhantom_auto_discharge` (V3-H), `cdtShrinkingOps_preserve_acyclicity` via `edgeWellFounded_sub` (V3-D), `resolveCapAddress_callers_check_rights` dispatch chain (V3-F), `notificationSignal_preserves_waitingThreadsPendingMessageNone` (V3-G3), `notificationWake_pendingMessage_was_none` (V3-I). Predicate definitions retained: `ipcStateQueueMembershipConsistent` (V3-J), `endpointQueueNoDup` (V3-K).
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|

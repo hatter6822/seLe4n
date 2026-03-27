@@ -88,7 +88,7 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants
     (WS-H12e: uses `schedulerInvariantBundleFull` and `coreIpcInvariantBundle` with full
-    `ipcInvariantFull` 3-conjunct; 6 default-state proofs for new bundle components).
+    `ipcInvariantFull` 9-conjunct; 6 default-state proofs for new bundle components).
 
 ### Information-flow layer
 
