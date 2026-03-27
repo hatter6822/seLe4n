@@ -47,12 +47,22 @@
   `QueueNoDup.lean`: `storeObject_non_ep_non_tcb_preserves_*`,
   `storeTcbQueueLinks_preserves_*`, `storeObject_endpoint_preserves_*`.
   Integrated as 6th conjunct of `ipcInvariantFull`.
-- V3-J/K bundle integration: `ipcInvariantFull` expanded from 5 to 7 conjuncts.
-  All 10 `_preserves_ipcInvariantFull` theorems updated. New extractors:
-  `coreIpcInvariantBundle_to_endpointQueueNoDup`,
-  `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`. Default state
+- V3-J-cross: `queueNextBlockingConsistent` — new invariant ensuring that if
+  `a.queueNext = some b`, then `a` and `b` are blocked on the same endpoint with
+  compatible queue types (send/call share sendQ, receive uses receiveQ).
+  Extracted `queueNextBlockingMatch` helper predicate. Integrated as 8th
+  conjunct of `ipcInvariantFull` (was 7). Primitive preservation proofs in
+  new `QueueNextBlocking.lean`: `ensureRunnable`, `removeRunnable`,
+  `storeObject_endpoint`, `storeObject_non_ep_non_tcb`, `storeTcbQueueLinks`
+  (conditional), `storeTcbIpcStateAndMessage` (general + `.ready` + no-links
+  variants). Resolves cross-endpoint PopHead frame gap in V3-J-op-2d.
+- V3-J/K/J-cross bundle integration: `ipcInvariantFull` expanded from 5 to 8
+  conjuncts. All 10 `_preserves_ipcInvariantFull` theorems updated. New
+  extractors: `coreIpcInvariantBundle_to_endpointQueueNoDup`,
+  `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`,
+  `coreIpcInvariantBundle_to_queueNextBlockingConsistent`. Default state
   proofs, lifecycle integration, and `advanceTimerState` preservation updated.
-- Zero `sorry`, zero `axiom`. All 180 build targets pass. `test_full.sh` green.
+- Zero `sorry`, zero `axiom`. All 182 build targets pass. `test_full.sh` green.
 
 ## [0.22.0] — WS-V Phase V1: Rust ABI Hardening
 

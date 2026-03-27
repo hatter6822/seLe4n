@@ -834,13 +834,42 @@ def endpointQueueNoDup (st : SystemState) : Prop :=
      ep.sendQ.head ≠ ep.receiveQ.head)
 
 -- ============================================================================
--- Full IPC invariant bundle (7 conjuncts)
+-- V3-J-cross: Queue-next blocking consistency (cross-queue link prevention)
 -- ============================================================================
 
-/-- Full IPC invariant: conjunction of all seven IPC sub-invariants. -/
+/-- Helper: the blocking-compatibility condition for two IPC states linked by queueNext.
+    Compatible queue types: blockedOnSend and blockedOnCall both map to sendQ,
+    so they are mutually compatible. blockedOnReceive maps to receiveQ and is
+    only compatible with itself. Non-blocking states are unconstrained. -/
+def queueNextBlockingMatch (s1 s2 : ThreadIpcState) : Prop :=
+  match s1, s2 with
+  | .blockedOnSend epA, .blockedOnSend epB => epA = epB
+  | .blockedOnSend epA, .blockedOnCall epB => epA = epB
+  | .blockedOnCall epA, .blockedOnSend epB => epA = epB
+  | .blockedOnCall epA, .blockedOnCall epB => epA = epB
+  | .blockedOnReceive epA, .blockedOnReceive epB => epA = epB
+  | _, _ => True
+
+/-- V3-J-cross: If a.queueNext = some b, then a and b are blocked on the same
+    endpoint with compatible queue types. This ensures queueNext chains are
+    intra-queue, preventing cross-endpoint/cross-queue links that would break
+    V3-J preservation through PopHead operations. -/
+def queueNextBlockingConsistent (st : SystemState) : Prop :=
+  ∀ (a b : SeLe4n.ThreadId) (tcbA tcbB : TCB),
+    st.objects[a.toObjId]? = some (.tcb tcbA) →
+    st.objects[b.toObjId]? = some (.tcb tcbB) →
+    tcbA.queueNext = some b →
+    queueNextBlockingMatch tcbA.ipcState tcbB.ipcState
+
+-- ============================================================================
+-- Full IPC invariant bundle (8 conjuncts)
+-- ============================================================================
+
+/-- Full IPC invariant: conjunction of all eight IPC sub-invariants. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
-  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
+  queueNextBlockingConsistent st
 
 end SeLe4n.Kernel

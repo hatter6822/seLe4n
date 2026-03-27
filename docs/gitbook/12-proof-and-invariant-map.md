@@ -416,13 +416,13 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (7-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent`, WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J)
+- `ipcInvariantFull` (8-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent`, WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross)
 - `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
 Cross-subsystem composition (WS-H12e + WS-F5):
 
-- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (7-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, `endpointQueueNoDup`, and `ipcStateQueueMembershipConsistent` were defined but not composed into the cross-subsystem proof surface
-- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`, `coreIpcInvariantBundle_to_endpointQueueNoDup`, `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (8-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, and `queueNextBlockingConsistent` were defined but not composed into the cross-subsystem proof surface
+- Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`, `coreIpcInvariantBundle_to_endpointQueueNoDup`, `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`, `coreIpcInvariantBundle_to_queueNextBlockingConsistent`
 
 Component level:
 

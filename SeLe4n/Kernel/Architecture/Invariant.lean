@@ -296,11 +296,16 @@ private theorem default_ipcStateQueueMembershipConsistent :
     ipcStateQueueMembershipConsistent (default : SystemState) := by
   intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
 
+private theorem default_queueNextBlockingConsistent :
+    queueNextBlockingConsistent (default : SystemState) := by
+  intro a b tcbA tcbB hA; have h : (default : SystemState).objects[a.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hA; exact absurd hA (by simp)
+
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
   ⟨default_ipcInvariant, default_dualQueueSystemInvariant, default_allPendingMessagesBounded,
    default_badgeWellFormed, default_waitingThreadsPendingMessageNone,
-   default_endpointQueueNoDup, default_ipcStateQueueMembershipConsistent⟩
+   default_endpointQueueNoDup, default_ipcStateQueueMembershipConsistent,
+   default_queueNextBlockingConsistent⟩
 
 private theorem default_contextMatchesCurrent :
     contextMatchesCurrent (default : SystemState) := by
@@ -484,12 +489,12 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     (ticks : Nat) (st : SystemState)
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (advanceTimerState ticks st) := by
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hIpc
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := hIpc
   have hObjs : (advanceTimerState ticks st).objects = st.objects := by
     unfold advanceTimerState; rfl
   have hLk : ∀ (x : SeLe4n.ObjId), (advanceTimerState ticks st).objects[x]? = st.objects[x]? := by
     intro x; exact congrArg (·.get? x) hObjs
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_⟩
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_⟩
   -- dualQueueSystemInvariant
   · obtain ⟨hEp, hLink, hAcyc⟩ := h2
     refine ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
@@ -502,6 +507,9 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
   · intro oid ep hObj; rw [hLk] at hObj; exact h6 oid ep hObj
   -- ipcStateQueueMembershipConsistent
   · exact ipcStateQueueMembershipConsistent_of_objects_eq st _ hLk h7
+  -- queueNextBlockingConsistent
+  · intro a b tcbA tcbB hA hB hN
+    exact h8 a b tcbA tcbB (hObjs ▸ hA) (hObjs ▸ hB) hN
   where
     transportPath {a b : SeLe4n.ThreadId}
         (hObjs : (advanceTimerState ticks st).objects = st.objects)
