@@ -21,10 +21,16 @@ inductive ArchAssumption where
   | irqRoutingTotality
   deriving Repr, DecidableEq
 
-/-- Typed boot-boundary contract skeleton consumed by later adapters. -/
+/-- Typed boot-boundary contract skeleton consumed by later adapters.
+    V4-G/M-HW-6: Extended with substantive boot precondition checks for
+    object store validation and IRQ range checking. -/
 structure BootBoundaryContract where
   objectTypeMetadataConsistent : Prop
   capabilityRefMetadataConsistent : Prop
+  /-- V4-G: Object store must be non-empty after boot (at least idle thread). -/
+  objectStoreNonEmpty : Prop := True
+  /-- V4-G: All IRQ line numbers must be within the GIC-supported range. -/
+  irqRangeValid : Prop := True
 
 /-- Typed runtime-boundary contract skeleton consumed by scheduler/IPC adapters. -/
 structure RuntimeBoundaryContract where

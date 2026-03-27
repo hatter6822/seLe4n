@@ -49,6 +49,13 @@ private def collectQueueMembers
     | some (.tcb tcb) => tid :: collectQueueMembers objects tcb.queueNext fuel
     | _ => [tid]  -- tid exists but not a TCB (should not happen in well-formed state)
 
+/-- V4-A: When the starting thread is `none`, `collectQueueMembers` returns `[]`.
+    Public bridge lemma for boot-phase proofs that need to discharge interior
+    queue member goals when queue heads are empty. -/
+theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (fuel : Nat) : collectQueueMembers objects none fuel = [] := by
+  cases fuel <;> rfl
+
 /-- R4-E.1 + T5-I (M-CS-1): No endpoint queue references a non-existent TCB.
     For every endpoint object, every ThreadId reachable via the intrusive
     `queueNext` chain from the queue head must reference an existing TCB

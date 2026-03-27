@@ -236,6 +236,37 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
          vaddr := VAddr.ofNat r1.val }
 
 -- ============================================================================
+-- V4-F/M-HW-5: MemoryKind cross-check for VSpace permissions
+-- ============================================================================
+
+/-- V4-F/M-HW-5: Post-decode validation that cross-checks VSpace permissions
+    against the target physical address's `MemoryKind`. Device regions must not
+    receive execute permission (execute-from-device is undefined on ARM64).
+
+    This validation occurs after `decodeVSpaceMapArgs` because the memory map
+    is not available at the register-decode layer. Callers (API dispatch) should
+    invoke this check before passing arguments to `vspaceMapPageWithFlush`. -/
+def validateVSpaceMapPermsForMemoryKind
+    (args : VSpaceMapArgs) (memoryMap : List MemoryRegion) : Except KernelError VSpaceMapArgs :=
+  let regionKind := memoryMap.find? (fun r => r.contains args.paddr)
+    |>.map (fun r => r.kind)
+  match regionKind with
+  | some MemoryKind.device =>
+    -- Device regions must not have execute permission
+    if args.perms.execute then .error .policyDenied
+    else .ok args
+  | _ => .ok args
+
+/-- V4-F: Device regions with execute permission are rejected. -/
+theorem validateVSpaceMapPermsForMemoryKind_device_noexec
+    (args : VSpaceMapArgs) (memoryMap : List MemoryRegion)
+    (hFind : memoryMap.find? (fun r => r.contains args.paddr) = some region)
+    (hDevice : region.kind = .device)
+    (hExec : args.perms.execute = true) :
+    ∃ e, validateVSpaceMapPermsForMemoryKind args memoryMap = .error e := by
+  simp [validateVSpaceMapPermsForMemoryKind, hFind, hDevice, hExec]
+
+-- ============================================================================
 -- Encode functions (inverse of decode, for round-trip proofs)
 -- ============================================================================
 
@@ -619,16 +650,21 @@ private theorem pagePermissions_toNat_lt_32 (p : PagePermissions) :
   rcases p with ⟨r, w, e, u, c⟩
   cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> decide
 
-private theorem pagePermissions_ofNat?_toNat (p : PagePermissions) :
+private theorem pagePermissions_ofNat?_toNat (p : PagePermissions)
+    (hWx : p.wxCompliant = true) :
     PagePermissions.ofNat? p.toNat = some (PagePermissions.ofNat p.toNat) := by
-  simp [PagePermissions.ofNat?, pagePermissions_toNat_lt_32]
+  have hLt := pagePermissions_toNat_lt_32 p
+  have hWxRt : (PagePermissions.ofNat p.toNat).wxCompliant = true := by
+    rw [PagePermissions.ofNat_toNat_roundtrip]; exact hWx
+  simp [PagePermissions.ofNat?, hLt, hWxRt]
 
-/-- U2-B/U2-G: Round-trip requires VAddr is canonical (within 48-bit range)
-    and ASID is valid for config 65536. Non-canonical addresses and invalid
-    ASIDs are rejected at decode time. -/
+/-- U2-B/U2-G/V4-K: Round-trip requires VAddr is canonical (within 48-bit range),
+    ASID is valid for config 65536, and permissions are W^X compliant.
+    V4-K: W^X compliance is now enforced at decode time by `ofNat?`. -/
 theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs)
     (hAsid : args.asid.isValidForConfig 65536 = true)
-    (hVAddr : args.vaddr.isCanonical = true) :
+    (hVAddr : args.vaddr.isCanonical = true)
+    (hWx : args.perms.wxCompliant = true) :
     decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args := by
   rcases args with ⟨a, v, p, perms⟩
   show decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs ⟨a, v, p, perms⟩)) = .ok ⟨a, v, p, perms⟩
@@ -645,9 +681,10 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs)
   rcases perms with ⟨r, w, e, u, c⟩
   have hA : a.isValidForConfig 65536 = true := hAsid
   have hV : v.isCanonical = true := hVAddr
+  -- V4-K: W^X cases (write=true, execute=true) are excluded by hWx
   cases r <;> cases w <;> cases e <;> cases u <;> cases c <;>
-    simp [decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
-      bind, Except.bind, requireMsgReg, hA, hV,
+    simp_all [decodeVSpaceMapArgs, encodeVSpaceMapArgs, stubDecoded,
+      bind, Except.bind, requireMsgReg, PagePermissions.wxCompliant,
       PagePermissions.toNat, PagePermissions.ofNat?, PagePermissions.ofNat,
       ASID.ofNat_toNat, VAddr.ofNat_toNat, PAddr.ofNat_toNat, pure, Except.pure]
 
@@ -890,6 +927,7 @@ theorem decode_layer2_roundtrip_all :
     (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
     (∀ args, decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig 65536 = true → args.vaddr.isCanonical = true →
+      args.perms.wxCompliant = true →
       decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig 65536 = true →
       decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
@@ -904,7 +942,7 @@ theorem decode_layer2_roundtrip_all :
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
    decodeLifecycleRetypeArgs_roundtrip,
-   fun args hA hV => decodeVSpaceMapArgs_roundtrip args hA hV,
+   fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args hA hV hWx,
    fun args hA => decodeVSpaceUnmapArgs_roundtrip args hA,
    decodeServiceRegisterArgs_roundtrip,
    decodeServiceRevokeArgs_roundtrip,

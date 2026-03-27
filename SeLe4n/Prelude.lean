@@ -314,6 +314,11 @@ theorem default_eq_sentinel : (default : CPtr) = CPtr.sentinel := rfl
 
 theorem sentinel_isReserved : CPtr.sentinel.isReserved = true := rfl
 
+/-- V4-L/L-FND-4: A CPtr is hardware-representable if its value fits in 64 bits.
+    Hardware decode paths should validate this before passing to kernel operations.
+    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`. -/
+@[inline] def isWord64Bounded (ptr : CPtr) : Bool := ptr.val < 2 ^ 64
+
 end CPtr
 
 /-- Slot index within a CNode. -/
@@ -336,6 +341,11 @@ namespace Slot
 
 instance : ToString Slot where
   toString slot := toString slot.toNat
+
+/-- V4-L/L-FND-4: A Slot is hardware-representable if its value fits in 64 bits.
+    Hardware decode paths should validate this before passing to kernel operations.
+    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`. -/
+@[inline] def isWord64Bounded (slot : Slot) : Bool := slot.val < 2 ^ 64
 
 end Slot
 

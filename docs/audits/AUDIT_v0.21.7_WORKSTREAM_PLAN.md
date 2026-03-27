@@ -371,7 +371,7 @@ The `pendingMessage` field is modified by `storeTcbPendingMessage` and
 
 ---
 
-### Phase V4: Platform & Hardware Fidelity (26 sub-tasks)
+### Phase V4: Platform & Hardware Fidelity (26 sub-tasks) — **COMPLETE** (v0.22.3)
 
 **Priority**: Pre-hardware-binding (RPi5 deployment blocker)
 **Gate**: `lake build SeLe4n.Platform.RPi5.Contract`; `lake build SeLe4n.Platform.Boot`; `test_smoke.sh` green
@@ -397,31 +397,31 @@ IPC state, so scheduler/IPC invariants are trivially preserved). The strategy
 is to prove non-interaction (frame) lemmas first, then handle the few
 substantive cases.
 
-| ID | Finding | Task | Files | Scope |
-|----|---------|------|-------|-------|
-| V4-A1 | H-BOOT-1 | Enumerate which builder operations touch which state fields. Create a 7×9 interaction matrix (builder op × invariant component). Mark each cell as "vacuous" (op doesn't touch relevant fields) or "substantive" (proof needed). | `Boot.lean`, `Builder.lean` | S |
-| V4-A2 | H-BOOT-1 | Prove frame lemma: `registerIrq` only modifies `st.irqHandlers` — all 9 invariant components that don't read `irqHandlers` are trivially preserved. Expected: 7-8 vacuous, 1-2 substantive (crossSubsystem: `registryEndpointValid` may read IRQ table). | `Boot.lean` | M |
-| V4-A3 | H-BOOT-1 | Prove frame lemma: `registerService` only modifies `st.services` — scheduler, capability, IPC, VSpace invariants are vacuously preserved. Prove `serviceGraphInvariant` preservation (substantive: new registration must not create cycles). | `Boot.lean`, `Service/Invariant/Acyclicity.lean` | M |
-| V4-A4 | H-BOOT-1 | Prove frame lemma: `createObject` modifies `st.objects` + lifecycle metadata. Most scheduler/IPC invariants are vacuous for a fresh object with no queue membership. Prove `allTablesInvExt` for the new object's slots (already in 4 structural). Extend to capabilityInvariantBundle (empty CNode has trivial CDT). | `Boot.lean`, `Builder.lean` | M |
-| V4-A5 | H-BOOT-1 | Prove frame lemma: `insertCap` modifies a CNode's slot table. Prove `capabilityInvariantBundle` preservation (substantive: slot uniqueness, CDT consistency for new derivation). | `Boot.lean`, `Capability/Invariant/Preservation.lean` | M |
-| V4-A6 | H-BOOT-1 | Prove frame lemma: `mapPage` modifies a VSpaceRoot's mappings. Prove `vspaceInvariantBundle` preservation (substantive: non-overlap, ASID consistency). | `Boot.lean`, `Architecture/VSpaceInvariant.lean` | M |
-| V4-A7 | H-BOOT-1 | Prove `tlbConsistent` preservation: all builder operations operate on the abstract state only; TLB is untouched during boot. Single frame lemma for all 7 operations. | `Boot.lean` | S |
-| V4-A8 | H-BOOT-1 | Compose all per-operation proofs into `bootFromPlatform_proofLayerInvariantBundle_general`: for any well-formed `PlatformConfig`, the post-boot state satisfies all 9 components. Chain the per-operation frame lemmas through the boot sequence fold. | `Boot.lean` | M |
-| V4-A9 | H-BOOT-1 | Extend `bootToRuntime_invariantBridge` to accept general configs: compose V4-A8 with the existing freeze-preserves-invariants proof. | `Boot.lean` | S |
+| ID | Finding | Task | Files | Scope | Status |
+|----|---------|------|-------|-------|--------|
+| V4-A1 | H-BOOT-1 | Enumerate which builder operations touch which state fields. Create a 7×9 interaction matrix (builder op × invariant component). Mark each cell as "vacuous" (op doesn't touch relevant fields) or "substantive" (proof needed). | `Boot.lean`, `Builder.lean` | S | DONE |
+| V4-A2 | H-BOOT-1 | Prove frame lemma: `registerIrq` only modifies `st.irqHandlers` — all 9 invariant components that don't read `irqHandlers` are trivially preserved. Expected: 7-8 vacuous, 1-2 substantive (crossSubsystem: `registryEndpointValid` may read IRQ table). | `Boot.lean` | M | DONE |
+| V4-A3 | H-BOOT-1 | Prove frame lemma: `registerService` only modifies `st.services` — scheduler, capability, IPC, VSpace invariants are vacuously preserved. Prove `serviceGraphInvariant` preservation (substantive: new registration must not create cycles). | `Boot.lean`, `Service/Invariant/Acyclicity.lean` | M | DONE |
+| V4-A4 | H-BOOT-1 | Prove frame lemma: `createObject` modifies `st.objects` + lifecycle metadata. Most scheduler/IPC invariants are vacuous for a fresh object with no queue membership. Prove `allTablesInvExt` for the new object's slots (already in 4 structural). Extend to capabilityInvariantBundle (empty CNode has trivial CDT). | `Boot.lean`, `Builder.lean` | M | DONE |
+| V4-A5 | H-BOOT-1 | Prove frame lemma: `insertCap` modifies a CNode's slot table. Prove `capabilityInvariantBundle` preservation (substantive: slot uniqueness, CDT consistency for new derivation). | `Boot.lean`, `Capability/Invariant/Preservation.lean` | M | DONE |
+| V4-A6 | H-BOOT-1 | Prove frame lemma: `mapPage` modifies a VSpaceRoot's mappings. Prove `vspaceInvariantBundle` preservation (substantive: non-overlap, ASID consistency). | `Boot.lean`, `Architecture/VSpaceInvariant.lean` | M | DONE |
+| V4-A7 | H-BOOT-1 | Prove `tlbConsistent` preservation: all builder operations operate on the abstract state only; TLB is untouched during boot. Single frame lemma for all 7 operations. | `Boot.lean` | S | DONE |
+| V4-A8 | H-BOOT-1 | Compose all per-operation proofs into `bootFromPlatform_proofLayerInvariantBundle_general`: for any well-formed `PlatformConfig`, the post-boot state satisfies all 9 components. Chain the per-operation frame lemmas through the boot sequence fold. | `Boot.lean` | M | DONE |
+| V4-A9 | H-BOOT-1 | Extend `bootToRuntime_invariantBridge` to accept general configs: compose V4-A8 with the existing freeze-preserves-invariants proof. | `Boot.lean` | S | DONE |
 
-| ID | Finding | Task | Files | Scope |
-|----|---------|------|-------|-------|
-| V4-B | M-HW-1 | Add 4-byte alignment check to `mmioRead32`/`mmioWrite32` and 8-byte alignment check to `mmioRead64`/`mmioWrite64`. Return `MmioError.unaligned` on violation. | `RPi5/MmioAdapter.lean` | M |
-| V4-C | M-HW-2 | Model write-one-clear (W1C) semantics for GIC registers. Add `MmioWriteKind.writeOneClear` case to `mmioWrite32` that computes `old_val & ~write_val`. | `RPi5/MmioAdapter.lean` | M |
-| V4-D | M-HW-3 | Parameterize RPi5 RAM region from `PlatformConfig` rather than hardcoding 4GB. Add `ramSize` field to `BCM2712Config`. | `RPi5/Board.lean` | M |
-| V4-E | M-HW-4 | Make non-flush `vspaceMapPage`/`vspaceUnmapPage` variants `private`. Only flush-inclusive versions remain in public API. | `Architecture/VSpace.lean` | S |
-| V4-F | M-HW-5 | Add `MemoryKind` cross-check in `VSpaceMapArgs` decode: device regions cannot receive execute permission. | `Architecture/SyscallArgDecode.lean` | S |
-| V4-G | M-HW-6 | Add substantive boot precondition checks to simulation `BootContract`. At minimum: non-empty object store validation, IRQ range check. | `Sim/BootContract.lean` | S |
-| V4-H | M-HW-8 | Add validation for truncated DTB `reg` entries: reject entries with fewer than `address-cells + size-cells` bytes. | `DeviceTree.lean` | S |
-| V4-I | M-HW-9 | Fix `registerContextStableCheck` to actually use pre-state parameter in comparison, or document why it's intentionally ignored. | `RPi5/RuntimeContract.lean` | S |
-| V4-J | M-DEF-8 | Document that internal `vspaceMapPage` default permissions are overridden by all production entry points. Add assertion or comment. | `Architecture/VSpace.lean` | XS |
-| V4-K | L-FND-2 | Add W^X rejection in `PagePermissions.ofNat`: if both write and execute are set, return `readOnly` or error. | `Object/Structures.lean` | S |
-| V4-L | L-FND-4 | Document `machineWordBounded` invariant scope. Add `isWord64` predicates to `Badge`, `CPtr`, `Slot` flowing to hardware decode. | `Prelude.lean`, `RegisterDecode.lean` | M |
+| ID | Finding | Task | Files | Scope | Status |
+|----|---------|------|-------|-------|--------|
+| V4-B | M-HW-1 | Add 4-byte alignment check to `mmioRead32`/`mmioWrite32` and 8-byte alignment check to `mmioRead64`/`mmioWrite64`. Return `MmioError.unaligned` on violation. | `RPi5/MmioAdapter.lean` | M | DONE |
+| V4-C | M-HW-2 | Model write-one-clear (W1C) semantics for GIC registers. Add `MmioWriteKind.writeOneClear` case to `mmioWrite32` that computes `old_val & ~write_val`. | `RPi5/MmioAdapter.lean` | M | DONE |
+| V4-D | M-HW-3 | Parameterize RPi5 RAM region from `PlatformConfig` rather than hardcoding 4GB. Add `ramSize` field to `BCM2712Config`. | `RPi5/Board.lean` | M | DONE |
+| V4-E | M-HW-4 | Make non-flush `vspaceMapPage`/`vspaceUnmapPage` variants `private`. Only flush-inclusive versions remain in public API. | `Architecture/VSpace.lean` | S | DONE |
+| V4-F | M-HW-5 | Add `MemoryKind` cross-check in `VSpaceMapArgs` decode: device regions cannot receive execute permission. | `Architecture/SyscallArgDecode.lean` | S | DONE |
+| V4-G | M-HW-6 | Add substantive boot precondition checks to simulation `BootContract`. At minimum: non-empty object store validation, IRQ range check. | `Sim/BootContract.lean` | S | DONE |
+| V4-H | M-HW-8 | Add validation for truncated DTB `reg` entries: reject entries with fewer than `address-cells + size-cells` bytes. | `DeviceTree.lean` | S | DONE |
+| V4-I | M-HW-9 | Fix `registerContextStableCheck` to actually use pre-state parameter in comparison, or document why it's intentionally ignored. | `RPi5/RuntimeContract.lean` | S | DONE |
+| V4-J | M-DEF-8 | Document that internal `vspaceMapPage` default permissions are overridden by all production entry points. Add assertion or comment. | `Architecture/VSpace.lean` | XS | DONE |
+| V4-K | L-FND-2 | Add W^X rejection in `PagePermissions.ofNat`: if both write and execute are set, return `readOnly` or error. | `Object/Structures.lean` | S | DONE |
+| V4-L | L-FND-4 | Document `machineWordBounded` invariant scope. Add `isWord64` predicates to `Badge`, `CPtr`, `Slot` flowing to hardware decode. | `Prelude.lean`, `RegisterDecode.lean` | M | DONE |
 
 **V4-M expanded: DTB parsing implementation** (L-PLAT-1)
 
@@ -431,17 +431,17 @@ The file already contains substantial infrastructure: `parseFdtHeader`,
 regions). The missing piece is FDT structure block traversal to find the
 `/memory` node and extract its `reg` property automatically.
 
-| ID | Finding | Task | Files | Scope |
-|----|---------|------|-------|-------|
-| V4-M1 | L-PLAT-1 | Implement `readCString`: read a null-terminated string from a `ByteArray` at a given offset, returning the string and the 4-byte-aligned offset past it. | `DeviceTree.lean` | S |
-| V4-M2 | L-PLAT-1 | Implement `lookupFdtString`: given string table offset `offDtStrings` and a property's `nameoff`, read the property name from the DTB string table using `readCString`. | `DeviceTree.lean` | S |
-| V4-M3 | L-PLAT-1 | Implement `findMemoryRegProperty`: fuel-bounded traversal of the FDT structure block. Iterate tokens (`FDT_BEGIN_NODE`, `FDT_PROP`, `FDT_END_NODE`, `FDT_NOP`, `FDT_END`), track node depth, detect the `/memory` node by name, and return the `reg` property's raw bytes when found. | `DeviceTree.lean` | M |
-| V4-M4 | L-PLAT-1 | Wire `findMemoryRegProperty` into `fromDtb`: call `parseAndValidateFdtHeader`, then `findMemoryRegProperty`, then `extractMemoryRegions`, then `fromDtbWithRegions`. Replace the `none` stub with the full pipeline. | `DeviceTree.lean` | S |
-| V4-M5 | L-PLAT-1 | Add correctness theorem `parseFdtHeader_fromDtb_some`: if a blob has valid magic and version, `fromDtb` returns `some dt` (not `none`). Add `fromDtb_memoryRegions_nonempty` if `/memory` node is present. | `DeviceTree.lean` | S |
+| ID | Finding | Task | Files | Scope | Status |
+|----|---------|------|-------|-------|--------|
+| V4-M1 | L-PLAT-1 | Implement `readCString`: read a null-terminated string from a `ByteArray` at a given offset, returning the string and the 4-byte-aligned offset past it. | `DeviceTree.lean` | S | DONE |
+| V4-M2 | L-PLAT-1 | Implement `lookupFdtString`: given string table offset `offDtStrings` and a property's `nameoff`, read the property name from the DTB string table using `readCString`. | `DeviceTree.lean` | S | DONE |
+| V4-M3 | L-PLAT-1 | Implement `findMemoryRegProperty`: fuel-bounded traversal of the FDT structure block. Iterate tokens (`FDT_BEGIN_NODE`, `FDT_PROP`, `FDT_END_NODE`, `FDT_NOP`, `FDT_END`), track node depth, detect the `/memory` node by name, and return the `reg` property's raw bytes when found. | `DeviceTree.lean` | M | DONE |
+| V4-M4 | L-PLAT-1 | Wire `findMemoryRegProperty` into `fromDtb`: call `parseAndValidateFdtHeader`, then `findMemoryRegProperty`, then `extractMemoryRegions`, then `fromDtbWithRegions`. Replace the `none` stub with the full pipeline. | `DeviceTree.lean` | S | DONE |
+| V4-M5 | L-PLAT-1 | Add correctness theorem `parseFdtHeader_fromDtb_some`: if a blob has valid magic and version, `fromDtb` returns `some dt` (not `none`). Add `fromDtb_memoryRegions_nonempty` if `/memory` node is present. | `DeviceTree.lean` | S | DONE |
 
-| ID | Finding | Task | Files | Scope |
-|----|---------|------|-------|-------|
-| V4-N | L-PLAT-3 | Generalize `extractMemoryRegions` to handle both 1-cell (32-bit) and 2-cell (64-bit) address formats. Accept `addressCells`/`sizeCells` parameters. | `DeviceTree.lean` | M |
+| ID | Finding | Task | Files | Scope | Status |
+|----|---------|------|-------|-------|--------|
+| V4-N | L-PLAT-3 | Generalize `extractMemoryRegions` to handle both 1-cell (32-bit) and 2-cell (64-bit) address formats. Accept `addressCells`/`sizeCells` parameters. | `DeviceTree.lean` | M | DONE |
 
 **Dependencies**: V4-A1 first (produces interaction matrix guiding all V4-A2–A9). V4-A2–A7 can parallelize. V4-A8 requires all of V4-A2–A7. V4-M1 → V4-M2 → V4-M3 → V4-M4 → V4-M5. V4-E before V4-J.
 
