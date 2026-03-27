@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.21.7-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.22.7-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -52,11 +52,11 @@ aux autres micro-noyaux :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.21.7` |
+| **Version** | `0.22.7` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 64 229 réparties sur 100 fichiers |
-| **LoC Lean de test** | 8 316 réparties sur 10 suites de tests |
-| **Déclarations prouvées** | 1 878 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 72 569 réparties sur 103 fichiers |
+| **LoC Lean de test** | 8 437 réparties sur 10 suites de tests |
+| **Déclarations prouvées** | 2 138 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Audit complet pré-publication du noyau et de la base Rust |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |
