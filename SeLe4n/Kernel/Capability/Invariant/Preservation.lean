@@ -1349,7 +1349,27 @@ theorem coreIpcInvariantBundle_to_badgeWellFormed {st : SystemState}
 /-- V3-G6: Extract `waitingThreadsPendingMessageNone` from the core bundle. -/
 theorem coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone {st : SystemState}
     (h : coreIpcInvariantBundle st) : waitingThreadsPendingMessageNone st :=
-  h.2.2.2.2.2.2
+  h.2.2.2.2.2.2.1
+
+/-- V3-K: Extract `endpointQueueNoDup` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_endpointQueueNoDup {st : SystemState}
+    (h : coreIpcInvariantBundle st) : endpointQueueNoDup st :=
+  h.2.2.2.2.2.2.2.1
+
+/-- V3-J: Extract `ipcStateQueueMembershipConsistent` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent {st : SystemState}
+    (h : coreIpcInvariantBundle st) : ipcStateQueueMembershipConsistent st :=
+  h.2.2.2.2.2.2.2.2.1
+
+/-- V3-J-cross: Extract `queueNextBlockingConsistent` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_queueNextBlockingConsistent {st : SystemState}
+    (h : coreIpcInvariantBundle st) : queueNextBlockingConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.1
+
+/-- V3-J-cross: Extract `queueHeadBlockedConsistent` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_queueHeadBlockedConsistent {st : SystemState}
+    (h : coreIpcInvariantBundle st) : queueHeadBlockedConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
@@ -1522,6 +1542,10 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hBounded' : allPendingMessagesBounded st')
     (hBadge' : badgeWellFormed st')
     (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpcFull⟩
@@ -1531,7 +1555,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
       hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
-           hDualQueue', hBounded', hBadge', hWtpmn'⟩
+           hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)
@@ -1552,6 +1576,10 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hBounded' : allPendingMessagesBounded st')
     (hBadge' : badgeWellFormed st')
     (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleCompositionInvariantBundle st' := by
@@ -1559,7 +1587,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep

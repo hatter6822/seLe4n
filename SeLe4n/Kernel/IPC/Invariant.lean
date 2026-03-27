@@ -10,6 +10,9 @@ import SeLe4n.Kernel.IPC.Invariant.Defs
 import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
 import SeLe4n.Kernel.IPC.Invariant.CallReplyRecv
 import SeLe4n.Kernel.IPC.Invariant.NotificationPreservation
+import SeLe4n.Kernel.IPC.Invariant.QueueNoDup
+import SeLe4n.Kernel.IPC.Invariant.QueueMembership
+import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.Structural
 
 /-! # IPC Invariant Preservation — Re-export Hub

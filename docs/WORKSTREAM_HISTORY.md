@@ -50,8 +50,24 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   integrated as 5th conjunct of `ipcInvariantFull` (was 4-conjunct). All bundle
   preservation theorems, extractors, default proofs, and `ipcInvariantFull_compositional`
   updated. New extractor: `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`.
-  Predicate definitions: `ipcStateQueueMembershipConsistent` (L-IPC-3),
-  `endpointQueueNoDup` (L-LIFE-1). Zero sorry/axiom/`True := trivial`, 176 build
+  **V3-J/K/J-cross integration**: `ipcStateQueueMembershipConsistent` (L-IPC-3),
+  `endpointQueueNoDup` (L-LIFE-1), `queueNextBlockingConsistent`, and
+  `queueHeadBlockedConsistent` integrated as 6th/7th/8th/9th conjuncts of
+  `ipcInvariantFull` (now 9-conjunct). New files: `QueueNoDup.lean` (3 primitive
+  frame lemmas + TCB-store primitives + per-operation proofs for notification,
+  notificationWait, endpointReply), `QueueMembership.lean` (prim-1 frame lemma +
+  scheduler helpers + pointwise transfer + TCB-store primitives with non-blocking
+  and general variants + per-operation proofs for notification, notificationWait,
+  endpointReply), `QueueNextBlocking.lean` (10 primitive preservation proofs +
+  QHBC primitives). 4 compound V3-J preservation proofs in `Structural.lean`:
+  `endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReplyRecv`
+  all preserve `ipcStateQueueMembershipConsistent`. Definition fix: `blockedOnCall`
+  uses `sendQ` not `receiveQ`. All 10 `_preserves_ipcInvariantFull` bundle theorems
+  updated. New extractors: `coreIpcInvariantBundle_to_endpointQueueNoDup`,
+  `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`,
+  `coreIpcInvariantBundle_to_queueNextBlockingConsistent`,
+  `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`. Default state,
+  lifecycle, and `advanceTimerState` cascade fixes. Zero sorry/axiom, 182 build
   targets pass, `test_full.sh` green.
 
 - **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).

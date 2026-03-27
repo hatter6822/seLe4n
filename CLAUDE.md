@@ -102,6 +102,9 @@ SeLe4n/Kernel/IPC/*              IPC subsystem
     Invariant/EndpointPreservation.lean Endpoint preservation proofs
     Invariant/CallReplyRecv.lean Call/ReplyRecv preservation proofs
     Invariant/NotificationPreservation.lean Notification preservation proofs
+    Invariant/QueueNoDup.lean    V3-K: No self-loops, send/receive head disjointness
+    Invariant/QueueMembership.lean V3-J: Queue membership consistency proofs
+    Invariant/QueueNextBlocking.lean V3-J-cross: queueNext blocking consistency proofs
     Invariant/Structural.lean    Structural invariants, composition theorems
 SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
 SeLe4n/Kernel/Service/*          Service orchestration + policy

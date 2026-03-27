@@ -35,13 +35,50 @@
 - V3-I (L-IPC-1): `notificationWake_pendingMessage_was_none` documentation
   theorem (documentation-only) — wake path overwrites `none` (no data loss)
   under the V3-G invariant.
-- V3-J (L-IPC-3): Added `ipcStateQueueMembershipConsistent` predicate
-  definition — strengthened version of `ipcStateQueueConsistent` with TCB queue
-  reachability predicates. No preservation proofs yet.
-- V3-K (L-LIFE-1): Added `endpointQueueNoDup` predicate definition — no
-  self-loops in intrusive queue chains, sendQ/receiveQ head disjointness.
-  No preservation proofs yet.
-- Zero `sorry`, zero `axiom`. All 176 build targets pass. `test_full.sh` green.
+- V3-J (L-IPC-3): `ipcStateQueueMembershipConsistent` — strengthened version of
+  `ipcStateQueueConsistent` with TCB queue reachability predicates. Primitive
+  frame lemmas in `QueueMembership.lean`: `storeObject_non_ep_non_tcb_preserves_*`,
+  scheduler helpers (`ensureRunnable`/`removeRunnable`), and pointwise lookup
+  transfer helper `ipcStateQueueMembershipConsistent_of_objects_eq`. Integrated
+  as 7th conjunct of `ipcInvariantFull`. Definition moved from `Structural.lean`
+  to `Defs.lean` for forward-reference resolution.
+- V3-K (L-LIFE-1): `endpointQueueNoDup` — no self-loops in intrusive queue
+  chains, sendQ/receiveQ head disjointness. Primitive frame lemmas in
+  `QueueNoDup.lean`: `storeObject_non_ep_non_tcb_preserves_*`,
+  `storeTcbQueueLinks_preserves_*`, `storeObject_endpoint_preserves_*`.
+  Integrated as 6th conjunct of `ipcInvariantFull`.
+- V3-J-cross: `queueNextBlockingConsistent` — new invariant ensuring that if
+  `a.queueNext = some b`, then `a` and `b` are blocked on the same endpoint with
+  compatible queue types (send/call share sendQ, receive uses receiveQ).
+  Extracted `queueNextBlockingMatch` helper predicate. Integrated as 8th
+  conjunct of `ipcInvariantFull` (was 7). Primitive preservation proofs in
+  new `QueueNextBlocking.lean`: `ensureRunnable`, `removeRunnable`,
+  `storeObject_endpoint`, `storeObject_non_ep_non_tcb`, `storeTcbQueueLinks`
+  (conditional), `storeTcbIpcStateAndMessage` (general + `.ready` + no-links
+  variants). Resolves cross-endpoint PopHead frame gap in V3-J-op-2d.
+  QHBC primitive preservation proofs: `ensureRunnable`, `removeRunnable`,
+  `storeTcbIpcStateAndMessage` (with `hNotHead` precondition),
+  `storeTcbPendingMessage`.
+- V3-J compound proofs: `queueHeadBlockedConsistent` (QHBC) invariant added —
+  queue heads must be in correct blocking state (`blockedOnReceive` for receiveQ
+  heads, `blockedOnSend ∨ blockedOnCall` for sendQ heads). Integrated as 9th
+  conjunct of `ipcInvariantFull` (was 8). `storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent`
+  added — general variant allowing blocking states with reachability callbacks.
+  4 compound V3-J preservation proofs in `Structural.lean`:
+  `endpointSendDual_preserves_ipcStateQueueMembershipConsistent`,
+  `endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent`,
+  `endpointCall_preserves_ipcStateQueueMembershipConsistent`,
+  `endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent`.
+  Uses `tcbQueueChainAcyclic_no_self_loop` for prev≠sender derivation
+  and QHBC for `.blockedOnReply` hNotHead derivation.
+- V3-J/K/J-cross bundle integration: `ipcInvariantFull` expanded from 5 to 9
+  conjuncts. All 10 `_preserves_ipcInvariantFull` theorems updated. New
+  extractors: `coreIpcInvariantBundle_to_endpointQueueNoDup`,
+  `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`,
+  `coreIpcInvariantBundle_to_queueNextBlockingConsistent`,
+  `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`. Default state
+  proofs, lifecycle integration, and `advanceTimerState` preservation updated.
+- Zero `sorry`, zero `axiom`. All 182 build targets pass. `test_full.sh` green.
 
 ## [0.22.0] — WS-V Phase V1: Rust ABI Hardening
 
