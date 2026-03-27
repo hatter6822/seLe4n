@@ -356,7 +356,10 @@ theorem enforcementBoundaryExtended_count :
     enforcementBoundaryExtended.length = 22 := by rfl
 
 /-- V6-L (L-IF-3): `enforcementBoundaryExtended` and `enforcementBoundary`
-    have the same length, ensuring neither is stale relative to the other. -/
+    have the same length, ensuring neither list is stale relative to the other.
+    Note: This proves cardinality equivalence, not element-wise correspondence;
+    both lists are defined as literals in the same file so visual inspection
+    confirms they classify the same 22 operations. -/
 theorem enforcementBoundaryExtended_matches_canonical :
     enforcementBoundaryExtended.length = enforcementBoundary.length := by rfl
 

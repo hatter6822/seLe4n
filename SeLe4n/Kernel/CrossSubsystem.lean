@@ -218,7 +218,7 @@ inductive StateField where
     - `registryDependencyConsistent` reads `services` only
     - `noStaleEndpointQueueReferences` reads `objects` only
     - `noStaleNotificationWaitReferences` reads `objects` only
-    - `serviceGraphInvariant` reads `services` only -/
+    - `serviceGraphInvariant` reads `services` and `objectIndex` -/
 def registryEndpointValid_fields : List StateField :=
   [.serviceRegistry, .objects]
 

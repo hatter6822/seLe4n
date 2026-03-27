@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-information-flow-docU4",
-      "commit_sha": "cd2bbe9b6126eef0c0d1dcacba7ee115673a433a",
-      "tree_sha": "1030c45f57a11ac37b7d3404d7a51c36644b964e",
-      "committed_at_utc": "2026-03-27T19:23:21+00:00"
+      "commit_sha": "727ac4253f75e80f072288db08846c53977592b5",
+      "tree_sha": "7b0a3fc24529e4e89ab3707f560a7dceca5806d1",
+      "committed_at_utc": "2026-03-27T19:44:46+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "20e27db25859f527fb6df3454db467ba5e4104f2071a4ab3183a429d37b223d1"
+    "source_digest": "e98c99dbca7c466bbd427c95f2867b39adce669bc5ebddb6bfe4c4e02e823a46"
   },
   "summary": {
     "module_count": 113,
@@ -27,7 +27,7 @@
     "version": "0.22.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 72566,
+    "production_loc": 72569,
     "test_files": 10,
     "test_loc": 8437,
     "proved_theorem_lemma_decls": 2138,
@@ -18347,13 +18347,13 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_matches_canonical",
-          "line": 360,
+          "line": 363,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointSendDualChecked",
-          "line": 374,
+          "line": 377,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -18371,7 +18371,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationSignalChecked",
-          "line": 391,
+          "line": 394,
           "called": [
             "Badge",
             "LabelingContext",
@@ -18387,7 +18387,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceCopyChecked",
-          "line": 404,
+          "line": 407,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -18400,7 +18400,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMoveChecked",
-          "line": 416,
+          "line": 419,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -18413,7 +18413,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReceiveDualChecked",
-          "line": 428,
+          "line": 431,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -18428,7 +18428,7 @@
         {
           "kind": "def",
           "name": "declassifyStore",
-          "line": 466,
+          "line": 469,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -18442,7 +18442,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_eq_storeObject_when_authorized",
-          "line": 483,
+          "line": 486,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -18457,7 +18457,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_normal_allowed",
-          "line": 497,
+          "line": 500,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -18471,7 +18471,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_declass_denied",
-          "line": 510,
+          "line": 513,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -18485,7 +18485,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_denied_no_state_change",
-          "line": 524,
+          "line": 527,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -18500,7 +18500,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_declassifyStore",
-          "line": 538,
+          "line": 541,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -18514,7 +18514,7 @@
         {
           "kind": "structure",
           "name": "InformationFlowConfigInvariant",
-          "line": 585,
+          "line": 588,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -18527,7 +18527,7 @@
         {
           "kind": "theorem",
           "name": "defaultConfigInvariant",
-          "line": 596,
+          "line": 599,
           "called": [
             "DomainFlowPolicy.allowAll_wellFormed",
             "InformationFlowConfigInvariant",
@@ -18539,7 +18539,7 @@
         {
           "kind": "theorem",
           "name": "kernelTransition_preserves_ifConfigInvariant",
-          "line": 613,
+          "line": 616,
           "called": [
             "InformationFlowConfigInvariant",
             "SystemState"
@@ -18548,7 +18548,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_flowDenied_preserves_state",
-          "line": 636,
+          "line": 639,
           "called": [
             "cspaceMintChecked",
             "cspaceMintChecked_denied_preserves_state",
@@ -18561,13 +18561,13 @@
         {
           "kind": "def",
           "name": "checkedDispatchEnforcementCoverage",
-          "line": 658,
+          "line": 661,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "checkedDispatchEnforcementCoverage_complete",
-          "line": 673,
+          "line": 676,
           "called": [
             "Kernel"
           ]
