@@ -435,7 +435,7 @@ default state proofs extended. Closes systemic invariant composition gaps from W
 `maxMessageRegisters`(120)/`maxExtraCaps`(3). Bounds enforcement at all 4 send
 boundaries (`endpointSendDual`/`endpointCall`/`endpointReply`/`endpointReplyRecv`).
 4 `*_message_bounded` theorems. `allPendingMessagesBounded` system invariant
-integrated into `ipcInvariantFull` 3-conjunct bundle. `checkBounds_iff_bounded`
+integrated into `ipcInvariantFull` bundle (now 9-conjunct as of V3-G6/J/K). `checkBounds_iff_bounded`
 decidability bridge. Information-flow enforcement updated with bounds-before-flow
 ordering. Closes A-09 (HIGH).
 
