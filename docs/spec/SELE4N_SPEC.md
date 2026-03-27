@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.22.2` (`lakefile.toml`) |
+| **Package version** | `0.22.3` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 64,229 across 100 Lean files |
-| **Test LoC** | 8,316 across 10 Lean test suites |
-| **Proved declarations** | 1,935 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 69,875 across 103 Lean files |
+| **Test LoC** | 8,315 across 10 Lean test suites |
+| **Proved declarations** | 2,005 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md) — pre-release audit remediation (5 HIGH, 61 MEDIUM, 29 LOW) |
 | **Active workstream** | **WS-V Phases V1–V3 COMPLETE** — Rust ABI Hardening (v0.22.0), API Surface Completion (v0.22.1), and Proof Chain Hardening (v0.22.2). V3 added `invExtFull` bundle, `uniqueRadixIndices_sufficient`, CDT acyclicity discharge documentation, `waitingThreadsPendingMessageNone`/`ipcStateQueueMembershipConsistent`/`endpointQueueNoDup` IPC invariants. Plan: [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md). Prior: WS-U (all 8 phases, v0.21.0–v0.21.7 COMPLETE), WS-T (v0.20.0–v0.20.7), WS-S–WS-B — all COMPLETE. |
