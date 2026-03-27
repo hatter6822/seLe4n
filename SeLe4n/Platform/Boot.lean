@@ -823,7 +823,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     rw [hSch]; decide
   -- 1. schedulerInvariantBundleFull
   have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
-    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [queueCurrentConsistent, hSch]
     · show (bootFromPlatform config).state.scheduler.runnable.Nodup
       rw [hRun]; exact List.nodup_nil
@@ -836,6 +836,8 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro tid hMem
       have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
       simp [RunQueue.toList, hRQflat] at hInFlat
+    · -- V5-H: domainTimeRemainingPositive — boot scheduler is default, DTR = 5
+      unfold domainTimeRemainingPositive; rw [hSch]; decide
   -- Boot-safe object bridge and shared helpers
   have hBS := bootFromPlatform_objects_bootSafe config hSafe
   have hCdtNS := bootFromPlatform_cdtNodeSlot_eq config

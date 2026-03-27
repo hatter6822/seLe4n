@@ -1,3 +1,15 @@
+## [0.22.5] — V5 Audit: domainTimeRemainingPositive bundle integration
+
+- V5-H (M-HW-7): **Audit fix** — `domainTimeRemainingPositive` is now the 8th
+  conjunct of `schedulerInvariantBundleFull`. Added per-operation preservation
+  proofs for `schedule`, `handleYield`, `timerTick`, `switchDomain`, and
+  `scheduleDomain`. Updated `default_schedulerInvariantBundleFull` (Architecture)
+  and `bootFromPlatform_proofLayerInvariantBundle_general` (Boot). All proofs
+  machine-checked, zero sorry.
+- V5-C (M-DEF-3): Test code updated to use `bootFromPlatformUnchecked` alias.
+- V5-D/E (M-DEF-4/5): Added design note to `schedule` documenting checked vs
+  unchecked context save/restore usage rationale.
+
 ## [0.22.4] — V5: Defensive Coding & Robustness
 
 - V5-A (M-DEF-1): Replaced panicking `ByteArray.get!` with safe `data[·]?`

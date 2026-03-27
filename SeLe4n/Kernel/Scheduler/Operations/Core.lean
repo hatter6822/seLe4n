@@ -261,7 +261,16 @@ preemptive scheduler matching seL4's classic scheduling model. Starvation
 freedom is NOT a property of this scheduler — a continuously runnable
 high-priority thread will indefinitely preempt lower-priority threads.
 seL4 delegates starvation prevention to user-level policy (e.g., MCS
-scheduling extensions, which are not yet modeled in seLe4n). -/
+scheduling extensions, which are not yet modeled in seLe4n).
+
+**V5-D/V5-E design note:** `schedule` uses the unchecked `saveOutgoingContext` /
+`restoreIncomingContext` internally because all 20+ preservation proofs
+(`schedule_preserves_schedulerInvariantBundle`, etc.) unfold these functions by
+name. The checked variants (`saveOutgoingContextChecked` / `restoreIncomingContextChecked`)
+return `SystemState × Bool` for defense-in-depth at API boundaries; equivalence
+theorems (`saveOutgoingContextChecked_fst_eq`, `restoreIncomingContextChecked_fst_eq`)
+guarantee the state component is identical. Under `currentThreadValid`, the
+`false` branches are unreachable. -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with
