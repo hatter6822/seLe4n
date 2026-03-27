@@ -33,7 +33,7 @@ open SeLe4n.Model
 /-- M-D01: Recursive helper for unwrapping caps. Processes caps from index
 `idx` to the end of the array. Termination is structural on `fuel`
 (initially `caps.size - idx`). -/
-private def ipcUnwrapCapsLoop
+def ipcUnwrapCapsLoop
     (caps : Array Capability)
     (senderCspaceRoot : SeLe4n.ObjId)
     (receiverCspaceRoot : SeLe4n.ObjId)
@@ -90,7 +90,7 @@ def ipcUnwrapCaps
       ipcUnwrapCapsLoop msg.caps senderCspaceRoot receiverCspaceRoot
         0 receiverSlotBase #[] msg.caps.size st
 
-private theorem ipcUnwrapCapsLoop_preserves_scheduler
+theorem ipcUnwrapCapsLoop_preserves_scheduler
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
@@ -136,7 +136,7 @@ theorem ipcUnwrapCaps_preserves_scheduler
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
   · exact ipcUnwrapCapsLoop_preserves_scheduler _ _ _ _ _ _ _ _ _ _ hStep
 
-private theorem ipcUnwrapCapsLoop_preserves_services
+theorem ipcUnwrapCapsLoop_preserves_services
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
@@ -182,7 +182,7 @@ theorem ipcUnwrapCaps_preserves_services
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
   · exact ipcUnwrapCapsLoop_preserves_services _ _ _ _ _ _ _ _ _ _ hStep
 
-private theorem ipcUnwrapCapsLoop_preserves_objects_ne
+theorem ipcUnwrapCapsLoop_preserves_objects_ne
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
@@ -234,7 +234,7 @@ theorem ipcUnwrapCaps_preserves_objects_ne
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
   · exact ipcUnwrapCapsLoop_preserves_objects_ne _ _ _ _ _ _ _ _ _ _ _ hNe hObjInv hStep
 
-private theorem ipcUnwrapCapsLoop_preserves_ntfn_objects
+theorem ipcUnwrapCapsLoop_preserves_ntfn_objects
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
@@ -290,7 +290,7 @@ theorem ipcUnwrapCaps_preserves_ntfn_objects
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNtfn
   · exact ipcUnwrapCapsLoop_preserves_ntfn_objects _ _ _ _ _ _ _ _ _ _ _ _ hNtfn hObjInv hStep
 
-private theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
+theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
@@ -327,7 +327,7 @@ private theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
         | noSlot => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hNextNotNtfn hObjInvNext hStep
 
-private theorem ipcUnwrapCapsLoop_preserves_ep_objects
+theorem ipcUnwrapCapsLoop_preserves_ep_objects
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
@@ -381,7 +381,7 @@ theorem ipcUnwrapCaps_preserves_ep_objects
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hEp
   · exact ipcUnwrapCapsLoop_preserves_ep_objects _ _ _ _ _ _ _ _ _ _ _ _ hEp hObjInv hStep
 
-private theorem ipcUnwrapCapsLoop_preserves_tcb_objects
+theorem ipcUnwrapCapsLoop_preserves_tcb_objects
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
@@ -438,7 +438,7 @@ theorem ipcUnwrapCaps_preserves_tcb_objects
 /-- M3-E4: ipcUnwrapCapsLoop preserves CNode type at receiverRoot.
 If receiverRoot is a CNode before the loop, it remains a CNode after
 (though the CNode contents may change as caps are inserted). -/
-private theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
+theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
     (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
