@@ -859,4 +859,51 @@ theorem serviceBfsFuel_min_bound (st : SystemState) :
     serviceBfsFuel st ≥ 256 := by
   unfold serviceBfsFuel; omega
 
+/-- V6-A5/V6-B: If `services` and `objectIndex` are preserved, `serviceCountBounded` transfers.
+    This enables cross-subsystem frame reasoning: operations that don't touch
+    `services` or `objectIndex` preserve the service count bound automatically. -/
+theorem serviceCountBounded_of_eq
+    {st st' : SystemState}
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hInv : serviceCountBounded st) :
+    serviceCountBounded st' := by
+  obtain ⟨ns, ⟨hNodup, hComplete, hClosed⟩, hLen⟩ := hInv
+  refine ⟨ns, ⟨hNodup, ?_, ?_⟩, ?_⟩
+  · intro sid hReg
+    apply hComplete sid
+    show lookupService st sid ≠ none
+    unfold lookupService at hReg ⊢
+    rw [← hServices]; exact hReg
+  · intro sid hMem dep hDep
+    apply hClosed sid hMem dep
+    show dep ∈ lookupDeps st sid
+    unfold lookupDeps lookupService at hDep ⊢
+    rw [← hServices]; exact hDep
+  · unfold serviceBfsFuel; rw [hObjIdx]; exact hLen
+
+/-- V6-B: `serviceCountBounded` is monotone in `objectIndex` length —
+    growing the object index only increases fuel, preserving the bound.
+    This covers operations like `storeObject` that prepend to `objectIndex`. -/
+theorem serviceCountBounded_monotone
+    {st st' : SystemState}
+    (hServices : st'.services = st.services)
+    (hGrow : st.objectIndex.length ≤ st'.objectIndex.length)
+    (hInv : serviceCountBounded st) :
+    serviceCountBounded st' := by
+  obtain ⟨ns, ⟨hNodup, hComplete, hClosed⟩, hLen⟩ := hInv
+  refine ⟨ns, ⟨hNodup, ?_, ?_⟩, ?_⟩
+  · intro sid hReg
+    apply hComplete sid
+    unfold lookupService at hReg ⊢
+    rw [← hServices]; exact hReg
+  · intro sid hMem dep hDep
+    apply hClosed sid hMem dep
+    show dep ∈ lookupDeps st sid
+    unfold lookupDeps lookupService at hDep ⊢
+    rw [← hServices]; exact hDep
+  · have hFuel : serviceBfsFuel st ≤ serviceBfsFuel st' := by
+      unfold serviceBfsFuel; omega
+    omega
+
 end SeLe4n.Kernel

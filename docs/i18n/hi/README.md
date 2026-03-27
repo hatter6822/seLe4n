@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.21.7-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.22.7-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -59,11 +59,11 @@ seLe4n एक सूक्ष्म नाभिक (microkernel) है जो 
 
 | विशेषता | मान |
 |----------|------|
-| **संस्करण (Version)** | `0.21.7` |
+| **संस्करण (Version)** | `0.22.7` |
 | **Lean टूलचेन (Toolchain)** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 100 फ़ाइलों में 64,229 |
-| **परीक्षण Lean LoC** | 10 परीक्षण सुइट्स में 8,316 |
-| **प्रमाणित घोषणाएँ (Proved declarations)** | 1,878 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **उत्पादन Lean LoC** | 103 फ़ाइलों में 72,569 |
+| **परीक्षण Lean LoC** | 10 परीक्षण सुइट्स में 8,437 |
+| **प्रमाणित घोषणाएँ (Proved declarations)** | 2,138 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **लक्ष्य हार्डवेयर (Target hardware)** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **नवीनतम लेखापरीक्षा (Latest audit)** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — पूर्ण कर्नेल + Rust कोडबेस प्री-रिलीज़ लेखापरीक्षा |
 | **कोडबेस मानचित्र (Codebase map)** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय घोषणा सूची |

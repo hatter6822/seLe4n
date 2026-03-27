@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.22.7-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -70,11 +70,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.22.3` |
+| **Version** | `0.22.7` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 69,994 across 103 files |
-| **Test Lean LoC** | 8,315 across 10 test suites |
-| **Proved declarations** | 2,008 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 72,569 across 103 files |
+| **Test Lean LoC** | 8,437 across 10 test suites |
+| **Proved declarations** | 2,138 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md) — pre-release audit remediation (5 HIGH, 61 MEDIUM, 29 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |

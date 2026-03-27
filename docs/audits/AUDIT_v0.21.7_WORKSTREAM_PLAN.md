@@ -477,8 +477,9 @@ regions). The missing piece is FDT structure block traversal to find the
 
 ---
 
-### Phase V6: Information Flow & Cross-Subsystem (20 sub-tasks)
+### Phase V6: Information Flow & Cross-Subsystem (20 sub-tasks) — COMPLETE
 
+**Status**: COMPLETE. All 20 sub-tasks delivered (V6-A through V6-L). Zero sorry/axiom.
 **Priority**: Pre-release (security property completeness)
 **Gate**: `lake build SeLe4n.Kernel.InformationFlow.Invariant.Composition`; `lake build SeLe4n.Kernel.CrossSubsystem`; `test_full.sh` green
 **Estimated scope**: ~800 lines Lean (expanded from ~500 with sub-task decomposition)

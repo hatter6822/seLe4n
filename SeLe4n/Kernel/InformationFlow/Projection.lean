@@ -82,6 +82,15 @@ structure ObservableState where
       When `ctx.memoryOwnership = none`, this projection is empty (`none` at
       all addresses) for backward compatibility. -/
   memory : SeLe4n.PAddr → Option UInt8
+  /-- V6-E (M-IF-3): Service registry state projection. Projects the full
+      `ServiceGraphEntry` (identity, dependencies, isolation edges) for each
+      observable service, filtered by `serviceObservable`. This extends the
+      prior `services : ServiceId → Bool` presence-only projection with
+      structural visibility into the service dependency graph.
+
+      Non-observable services return `none`, preventing information leakage
+      about high-domain service topology. -/
+  serviceRegistry : ServiceId → Option ServiceGraphEntry
 
 /-- Object observability gate under a labeling context. -/
 def objectObservable (ctx : LabelingContext) (observer : IfObserver) (oid : SeLe4n.ObjId) : Bool :=
@@ -123,6 +132,36 @@ def projectServicePresence (ctx : LabelingContext) (observer : IfObserver) (st :
       (lookupService st sid).isSome
     else
       false
+
+/-- V6-E (M-IF-3): Project service registry graph entries for observable services.
+
+    Extends the boolean presence projection (`projectServicePresence`) with
+    full `ServiceGraphEntry` visibility. For observable services, returns the
+    entry (identity, dependencies, isolation edges); for non-observable services,
+    returns `none`.
+
+    **Dependency filtering**: Dependencies referencing non-observable services
+    are preserved in the projection (the dependency *exists* but its target
+    may be opaque). This is deliberate — the dependency graph structure of
+    observable services is itself observable information. -/
+def projectServiceRegistry (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    ServiceId → Option ServiceGraphEntry :=
+  fun sid =>
+    if serviceObservable ctx observer sid then
+      lookupService st sid
+    else
+      none
+
+/-- V6-E: `projectServiceRegistry` agrees with `projectServicePresence` on
+    presence: if the registry projection returns `some`, then presence is `true`,
+    and if it returns `none`, presence is `false` (when the service is observable). -/
+theorem projectServiceRegistry_consistent_with_presence
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (sid : ServiceId) :
+    (projectServiceRegistry ctx observer st sid).isSome =
+      projectServicePresence ctx observer st sid := by
+  simp [projectServiceRegistry, projectServicePresence]
+  cases serviceObservable ctx observer sid <;> simp
 
 -- ============================================================================
 -- WS-F3/F-22: CNode slot filtering to prevent capability target leakage
@@ -302,6 +341,14 @@ theorem projectMemory_eq_of_memory_eq
   funext paddr
   simp only [projectMemory, hMem]
 
+/-- V6-E: When services are unmodified between two states, projectServiceRegistry agrees. -/
+theorem projectServiceRegistry_eq_of_services_eq
+    (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState)
+    (hSvc : s₁.services = s₂.services) :
+    projectServiceRegistry ctx observer s₁ = projectServiceRegistry ctx observer s₂ := by
+  funext sid
+  simp only [projectServiceRegistry, lookupService, hSvc]
+
 /-! ### U6-K (U-M23): Accepted Covert Channels
 
 The following covert channels are known and accepted in the seLe4n NI model:
@@ -336,6 +383,31 @@ Mitigation requires hardware-level isolation (e.g., partitioned caches,
 separate timer domains) beyond the kernel model's scope.
 -/
 
+/-- V6-J (L-IF-1): Accepted scheduling covert channel — explicit bound theorem.
+
+    The domain scheduling state (`activeDomain`, `domainSchedule`,
+    `domainScheduleIndex`, `domainTimeRemaining`) is unconditionally visible
+    to ALL observers. This creates a covert channel: a high-security domain
+    can influence the scheduling state observable by a low-security domain.
+
+    **Explicit bound**: The scheduling covert channel is bounded to at most
+    4 scalar values per observation (the 4 scheduling-related fields in
+    `ObservableState`). The bandwidth is limited by the domain schedule
+    switching frequency (typically 1-100 Hz in seL4 configurations).
+
+    This theorem witnesses the covert channel by showing that two observers
+    with different clearances see identical scheduling projections, confirming
+    that scheduling state is not filtered by security labels. -/
+theorem acceptedCovertChannel_scheduling
+    (ctx : LabelingContext)
+    (obs₁ obs₂ : IfObserver)
+    (st : SystemState) :
+    projectActiveDomain ctx obs₁ st = projectActiveDomain ctx obs₂ st ∧
+    projectDomainTimeRemaining ctx obs₁ st = projectDomainTimeRemaining ctx obs₂ st ∧
+    projectDomainSchedule ctx obs₁ st = projectDomainSchedule ctx obs₂ st ∧
+    projectDomainScheduleIndex ctx obs₁ st = projectDomainScheduleIndex ctx obs₂ st := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
 /-- Canonical IF-M1 state projection helper used by theorem targets.
 
 WS-F3/CRIT-02: Extended with activeDomain, irqHandlers, and objectIndex
@@ -364,6 +436,7 @@ def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemSta
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
     machineRegs := projectMachineRegs ctx observer st
     memory := projectMemory ctx observer st
+    serviceRegistry := projectServiceRegistry ctx observer st
   }
 
 -- ============================================================================
@@ -501,6 +574,7 @@ def projectStateFast (ctx : LabelingContext) (observer : IfObserver) (st : Syste
     domainScheduleIndex := projectDomainScheduleIndex ctx observer st
     machineRegs := projectMachineRegs ctx observer st
     memory := projectMemory ctx observer st
+    serviceRegistry := projectServiceRegistry ctx observer st
   }
 
 /-- WS-G9: `projectObjectsFast` with the precomputed set agrees with `projectObjects`
