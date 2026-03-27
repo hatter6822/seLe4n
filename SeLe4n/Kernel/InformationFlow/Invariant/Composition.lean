@@ -705,7 +705,7 @@ theorem syscallNI_coverage_witness
     -- Every NI step composes into a single-step trace
     (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
       NonInterferenceTrace ctx observer st st') ∧
-    -- step_preserves_projection is total (exhaustive match on all 34 constructors)
+    -- step_preserves_projection is total (exhaustive match on all 32 constructors)
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,

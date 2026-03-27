@@ -81,14 +81,19 @@ def integrityFlowsTo : Integrity → Integrity → Bool
 /-- V6-C (M-IF-1): Standard BIBA integrity order for comparison.
 
     Standard BIBA denies write-up: untrusted subjects cannot write to trusted
-    objects. `bibaIntegrityFlowsTo src dst` returns `true` iff `src` is at
-    least as trusted as `dst` (i.e., `src ≥ dst` in the integrity lattice).
+    objects. This function is designed as a **drop-in replacement** for
+    `integrityFlowsTo` in the `securityFlowsTo` formula, which passes arguments
+    in reversed order: `integrityFlowsTo dst.integrity src.integrity`.
 
-    This is the **opposite** direction from `integrityFlowsTo`, which allows
-    trusted→untrusted flow (write-down) and denies untrusted→trusted (write-up).
-    seLe4n uses `integrityFlowsTo` (non-standard) because its integrity
-    dimension tracks authority delegation, not data purity. See the
-    `integrityFlowsTo` docstring above for the full design rationale. -/
+    When substituted into `securityFlowsTo` as `bibaIntegrityFlowsTo dst.int src.int`,
+    it checks `src.int ≥ dst.int` (standard BIBA: source must be at least as
+    trusted as destination, preventing write-up). This is the **opposite** of
+    seLe4n's `integrityFlowsTo`, which in the same position checks `dst.int ≥ src.int`
+    (allowing untrusted sources to reach trusted destinations).
+
+    **Standalone semantics**: `bibaIntegrityFlowsTo a b = true` iff `b ≥ a`
+    in the trust ordering (i.e., the second argument is at least as trusted
+    as the first). -/
 def bibaIntegrityFlowsTo : Integrity → Integrity → Bool
   | .trusted, .trusted => true
   | .trusted, .untrusted => false
@@ -101,15 +106,24 @@ def bibaIntegrityFlowsTo : Integrity → Integrity → Bool
     tracking. This theorem provides an explicit compile-time witness that the
     two models differ, serving as a documentation anchor for auditors.
 
-    The witness: under BIBA, trusted cannot flow to untrusted (no write-down);
-    under seLe4n's model, trusted CAN flow to untrusted (delegation). -/
+    The witness case `(trusted, untrusted)`: in `securityFlowsTo`, the integrity
+    check is `integrityFlowsTo dst.int src.int`. When `dst=trusted, src=untrusted`:
+    - seLe4n: `integrityFlowsTo .trusted .untrusted = true` → ALLOWS flow
+      from untrusted source to trusted destination (authority receipt)
+    - BIBA:   `bibaIntegrityFlowsTo .trusted .untrusted = false` → DENIES this
+      flow (standard no-write-up rule) -/
 theorem integrityFlowsTo_is_not_biba :
     integrityFlowsTo .trusted .untrusted = true ∧
     bibaIntegrityFlowsTo .trusted .untrusted = false := by
   decide
 
-/-- V6-C (M-IF-1): Standard BIBA allows untrusted→trusted (write-up),
-    while seLe4n denies it. This is the complementary witness. -/
+/-- V6-C (M-IF-1): Complementary witness for the opposite case.
+
+    When `dst=untrusted, src=trusted` in `securityFlowsTo`:
+    - seLe4n: `integrityFlowsTo .untrusted .trusted = false` → DENIES flow
+      from trusted source to untrusted destination (no authority delegation)
+    - BIBA:   `bibaIntegrityFlowsTo .untrusted .trusted = true` → ALLOWS this
+      flow (standard write-down is permitted in BIBA) -/
 theorem integrityFlowsTo_denies_write_up_biba_allows :
     integrityFlowsTo .untrusted .trusted = false ∧
     bibaIntegrityFlowsTo .untrusted .trusted = true := by
@@ -608,6 +622,12 @@ structure DeclassificationEvent where
   dstDomain : SecurityDomain
   /-- Object ID of the target being declassified to. -/
   targetObject : SeLe4n.ObjId
+  /-- Authorization basis for this declassification. Records which policy
+      rule or system-integrator authority permitted the downgrade. Examples:
+      `"DeclassificationPolicy.canDeclassify"`, `"system-integrator-override"`.
+      The kernel does not interpret this value — it is stored for audit
+      trail consumption by external analysis tools. -/
+  authorizationBasis : String
   /-- Monotonic event counter (not wall-clock time — the kernel has no
       notion of real time). Used for ordering events in the audit log. -/
   timestamp : Nat

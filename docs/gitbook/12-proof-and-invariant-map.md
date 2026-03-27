@@ -942,15 +942,15 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 
 **V6 — Information flow & cross-subsystem formalization:**
 
-- `integrityFlowsTo_is_not_biba` — documents non-standard integrity flow direction vs. Biba model (V6-C),
+- `bibaIntegrityFlowsTo` reference model (standalone: `dst ≥ src`; drop-in for `securityFlowsTo` swapped-argument position) + `integrityFlowsTo_is_not_biba` / `integrityFlowsTo_denies_write_up_biba_allows` comparison theorems (V6-C),
 - `LabelingContextValid` predicate with `defaultLabelingContext_valid` — NI deployment requirements (V6-D),
 - `endpointPolicyRestricted` — per-endpoint policy subset of global policy well-formedness (V6-G),
-- `DeclassificationEvent` structure with `recordDeclassification` audit trail (V6-H),
+- `DeclassificationEvent` structure with `authorizationBasis` field and `recordDeclassification` audit trail (V6-H),
 - `kernelOperationNiConstructor` — 32-variant operation→constructor mapping (V6-I),
-- `niStepCoverage_operational`, `niStepCoverage_injective`, `niStepCoverage_count` — strengthened NI coverage (V6-I),
+- `niStepCoverage_operational`, `niStepCoverage_injective`, `niStepCoverage_count` — NI coverage documentation (V6-I),
 - `acceptedCovertChannel_scheduling` — documented scheduling covert channel (V6-J),
 - `defaultLabelingContext_insecure` — warning that default labeling provides no security (V6-K),
-- `StateField` enum + 7 disjointness theorems + `registryDependencyConsistent_frame`, `serviceGraphInvariant_frame` (V6-A),
+- `StateField` enum + 10 pairwise disjointness/overlap witnesses (6 disjoint + 4 non-disjoint) + `registryDependencyConsistent_frame`, `serviceGraphInvariant_frame` (V6-A),
 - `serviceCountBounded_of_eq`, `serviceCountBounded_monotone`, `serviceGraphInvariant_monotone` (V6-B).
 
 **WS-H10/C-05/A-38 — MachineState projection & security lattice:**

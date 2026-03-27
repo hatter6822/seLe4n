@@ -283,6 +283,24 @@ theorem staleEndpoint_shares_staleNotification :
     fieldsDisjoint noStaleEndpointQueueReferences_fields
                    noStaleNotificationWaitReferences_fields = false := by decide
 
+/-- V6-A3: `registryEndpointValid` (serviceRegistry + objects) shares `objects`
+    with `noStaleEndpointQueueReferences` (objects). -/
+theorem regEndpointValid_shares_staleEndpoint :
+    fieldsDisjoint registryEndpointValid_fields
+                   noStaleEndpointQueueReferences_fields = false := by decide
+
+/-- V6-A3: `registryEndpointValid` (serviceRegistry + objects) shares `objects`
+    with `noStaleNotificationWaitReferences` (objects). -/
+theorem regEndpointValid_shares_staleNotification :
+    fieldsDisjoint registryEndpointValid_fields
+                   noStaleNotificationWaitReferences_fields = false := by decide
+
+/-- V6-A3: `registryDependencyConsistent` (services) shares `services` with
+    `serviceGraphInvariant` (services + objectIndex). -/
+theorem regDepConsistent_shares_serviceGraph :
+    fieldsDisjoint registryDependencyConsistent_fields
+                   serviceGraphInvariant_fields = false := by decide
+
 /-- V6-A4: All predicate field-sets mapped to the canonical list. -/
 def crossSubsystemFieldSets : List (String × List StateField) :=
   [ ("registryEndpointValid", registryEndpointValid_fields)

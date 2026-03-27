@@ -90,15 +90,18 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   affected Preservation.lean proofs updated for V5-F/V5-N changes. V5-C test
   code migrated to `bootFromPlatformUnchecked` alias. Zero sorry/axiom.
 
-- **V6 (Information Flow & Cross-Subsystem) COMPLETE** (v0.22.6): 20 sub-tasks
+- **V6 (Information Flow & Cross-Subsystem) COMPLETE** (v0.22.7): 20 sub-tasks
   (V6-A through V6-L). Cross-subsystem field-disjointness formalization:
-  `StateField` enum + 7 disjointness theorems + 2 frame lemmas
+  `StateField` enum + 10 pairwise disjointness/overlap witnesses (6 disjoint +
+  4 non-disjoint with explicit `false` witnesses) + 2 frame lemmas
   (`registryDependencyConsistent_frame`, `serviceGraphInvariant_frame`) in
   `CrossSubsystem.lean` (V6-A). `serviceCountBounded` preservation:
   `serviceCountBounded_of_eq`, `serviceCountBounded_monotone`,
   `serviceGraphInvariant_monotone` across lifecycle and IPC operations (V6-B).
-  `integrityFlowsTo_is_not_biba` documentation theorem and
-  `integrityFlowsTo_denies_write_up_biba_allows` comparison (V6-C).
+  `bibaIntegrityFlowsTo` reference model with corrected docstrings (standalone
+  semantics: `dst ≥ src`; designed for drop-in use in `securityFlowsTo`'s
+  swapped-argument position), `integrityFlowsTo_is_not_biba` and
+  `integrityFlowsTo_denies_write_up_biba_allows` comparison theorems (V6-C).
   `LabelingContextValid` predicate with `defaultLabelingContext_valid` and
   `labelingContextValid_provides_coherence` (V6-D). `ObservableState.serviceRegistry`
   field extension with `projectServiceRegistry` + full ripple fixes across
@@ -107,14 +110,15 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   `enforcementBoundary_names_nonempty` (V6-F). `endpointPolicyRestricted`
   well-formedness with `endpointPolicyRestricted_no_overrides` and
   `endpointFlowCheck_restricted_subset` (V6-G). `DeclassificationEvent` structure
-  with `recordDeclassification` audit trail and 3 preservation theorems (V6-H).
+  with `authorizationBasis` field, `recordDeclassification` audit trail, and
+  3 preservation theorems (V6-H).
   `kernelOperationNiConstructor` 32-variant mapping, `niStepCoverage_operational`,
   `niStepCoverage_injective` (1:1), `niStepCoverage_count` (=32) (V6-I).
   `acceptedCovertChannel_scheduling` documented covert channel (V6-J).
   `defaultLabelingContext_insecure` + `defaultLabelingContext_all_threads_observable`
   warnings (V6-K). `enforcementBoundaryExtended` updated to 22 entries with
   `enforcementBoundaryExtended_count` and `enforcementBoundaryExtended_matches_canonical`
-  (V6-L). Zero sorry/axiom.
+  (V6-L). 26 V6 test cases in InformationFlowSuite. Zero sorry/axiom.
 
 - **V4 (Platform & Hardware Fidelity) COMPLETE** (v0.22.3): 26 sub-tasks (V4-A1
   through V4-N). **V4-A boot-to-runtime invariant bridge**: Complete machine-checked
