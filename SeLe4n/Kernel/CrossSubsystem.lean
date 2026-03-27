@@ -197,4 +197,177 @@ theorem crossSubsystemInvariant_iff_folded (st : SystemState) :
 theorem crossSubsystemPredicates_count :
     crossSubsystemPredicates.length = 5 := by rfl
 
+-- ============================================================================
+-- V6-A (A1-A5): Cross-Subsystem Field-Disjointness Formalization
+-- ============================================================================
+
+/-- V6-A1: Enumeration of SystemState top-level fields, for static
+    field-disjointness analysis between cross-subsystem predicates. -/
+inductive StateField where
+  | machine | objects | objectIndex | objectIndexSet
+  | services | scheduler | irqHandlers | lifecycle
+  | asidTable | interfaceRegistry | serviceRegistry
+  | cdt | cdtSlotNode | cdtNodeSlot | cdtNextNode | tlb
+  deriving DecidableEq, Repr
+
+/-- V6-A2: Field read-sets for each cross-subsystem predicate.
+    Each entry maps a predicate to the fields it inspects.
+
+    Analysis:
+    - `registryEndpointValid` reads `serviceRegistry` and `objects`
+    - `registryDependencyConsistent` reads `services` only
+    - `noStaleEndpointQueueReferences` reads `objects` only
+    - `noStaleNotificationWaitReferences` reads `objects` only
+    - `serviceGraphInvariant` reads `services` only -/
+def registryEndpointValid_fields : List StateField :=
+  [.serviceRegistry, .objects]
+
+def registryDependencyConsistent_fields : List StateField :=
+  [.services]
+
+def noStaleEndpointQueueReferences_fields : List StateField :=
+  [.objects]
+
+def noStaleNotificationWaitReferences_fields : List StateField :=
+  [.objects]
+
+def serviceGraphInvariant_fields : List StateField :=
+  [.services, .objectIndex]
+
+/-- V6-A3: Helper — two field lists are disjoint (no shared elements). -/
+def fieldsDisjoint (fs₁ fs₂ : List StateField) : Bool :=
+  fs₁.all (fun f => fs₂.all (fun g => f != g))
+
+/-- V6-A3: Pairwise disjointness: `registryDependencyConsistent` (services)
+    is disjoint from `noStaleEndpointQueueReferences` (objects). -/
+theorem regDepConsistent_disjoint_staleEndpoint :
+    fieldsDisjoint registryDependencyConsistent_fields
+                   noStaleEndpointQueueReferences_fields = true := by decide
+
+/-- V6-A3: `registryDependencyConsistent` (services) is disjoint from
+    `noStaleNotificationWaitReferences` (objects). -/
+theorem regDepConsistent_disjoint_staleNotification :
+    fieldsDisjoint registryDependencyConsistent_fields
+                   noStaleNotificationWaitReferences_fields = true := by decide
+
+/-- V6-A3: `serviceGraphInvariant` (services) is disjoint from
+    `noStaleEndpointQueueReferences` (objects). -/
+theorem serviceGraph_disjoint_staleEndpoint :
+    fieldsDisjoint serviceGraphInvariant_fields
+                   noStaleEndpointQueueReferences_fields = true := by decide
+
+/-- V6-A3: `serviceGraphInvariant` (services) is disjoint from
+    `noStaleNotificationWaitReferences` (objects). -/
+theorem serviceGraph_disjoint_staleNotification :
+    fieldsDisjoint serviceGraphInvariant_fields
+                   noStaleNotificationWaitReferences_fields = true := by decide
+
+/-- V6-A3: `registryDependencyConsistent` (services) is disjoint from
+    `registryEndpointValid` on the `services` field. They share no fields —
+    `registryEndpointValid` reads `serviceRegistry` + `objects`,
+    `registryDependencyConsistent` reads `services`. -/
+theorem regDepConsistent_disjoint_regEndpointValid :
+    fieldsDisjoint registryDependencyConsistent_fields
+                   registryEndpointValid_fields = true := by decide
+
+/-- V6-A3: `serviceGraphInvariant` (services) is disjoint from
+    `registryEndpointValid` (serviceRegistry + objects). -/
+theorem serviceGraph_disjoint_regEndpointValid :
+    fieldsDisjoint serviceGraphInvariant_fields
+                   registryEndpointValid_fields = true := by decide
+
+/-- V6-A3: `noStaleEndpointQueueReferences` (objects) is disjoint from
+    `noStaleNotificationWaitReferences` (objects) — they share `objects`,
+    so this is NOT disjoint. This compile-time witness makes the overlap explicit. -/
+theorem staleEndpoint_shares_staleNotification :
+    fieldsDisjoint noStaleEndpointQueueReferences_fields
+                   noStaleNotificationWaitReferences_fields = false := by decide
+
+/-- V6-A4: All predicate field-sets mapped to the canonical list. -/
+def crossSubsystemFieldSets : List (String × List StateField) :=
+  [ ("registryEndpointValid", registryEndpointValid_fields)
+  , ("registryDependencyConsistent", registryDependencyConsistent_fields)
+  , ("noStaleEndpointQueueReferences", noStaleEndpointQueueReferences_fields)
+  , ("noStaleNotificationWaitReferences", noStaleNotificationWaitReferences_fields)
+  , ("serviceGraphInvariant", serviceGraphInvariant_fields) ]
+
+/-- V6-A4: Field-set count matches predicate count. -/
+theorem crossSubsystemFieldSets_count :
+    crossSubsystemFieldSets.length = 5 := by rfl
+
+/-- V6-A5: Frame lemma — if an operation preserves the `services` field,
+    `registryDependencyConsistent` is preserved. This is the canonical
+    pattern for field-disjointness–based invariant frame reasoning. -/
+theorem registryDependencyConsistent_frame
+    (st st' : SystemState)
+    (hServices : st'.services = st.services)
+    (hInv : registryDependencyConsistent st) :
+    registryDependencyConsistent st' := by
+  intro sid entry hLookup dep hDep
+  rw [hServices] at hLookup
+  have hPresent := hInv sid entry hLookup dep hDep
+  rwa [hServices]
+
+/-- V6-A5: Frame lemma — if an operation preserves the `services` and
+    `objectIndex` fields, `serviceGraphInvariant` is preserved.
+    (`serviceBfsFuel` reads `objectIndex.length`.)
+
+    Note: Uses `serviceDependencyAcyclic_of_services_eq` and
+    `serviceCountBounded_of_services_objectIndex_eq` from the
+    acyclicity module, which transfer the invariant across states
+    with equal `services` and `objectIndex` fields. -/
+theorem serviceGraphInvariant_frame
+    (st st' : SystemState)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hInv : serviceGraphInvariant st) :
+    serviceGraphInvariant st' := by
+  unfold serviceGraphInvariant at hInv ⊢
+  have hEdgeTransfer : ∀ a b, serviceEdge st' a b → serviceEdge st a b := by
+    intro a b ⟨svc, hLookup, hDep⟩
+    refine ⟨svc, ?_, hDep⟩
+    unfold lookupService at hLookup ⊢; rw [← hServices]; exact hLookup
+  have hPathTransfer : ∀ a b, serviceNontrivialPath st' a b → serviceNontrivialPath st a b := by
+    intro a b hPath
+    induction hPath with
+    | single hEdge => exact .single (hEdgeTransfer _ _ hEdge)
+    | cons hEdge _ ih => exact .cons (hEdgeTransfer _ _ hEdge) ih
+  constructor
+  · -- serviceDependencyAcyclic: transfer via path equivalence
+    intro sid hPath
+    exact hInv.1 sid (hPathTransfer sid sid hPath)
+  · -- serviceCountBounded: reuse exact witness, adjusting services
+    exact serviceCountBounded_of_eq hServices hObjIdx hInv.2
+
+-- ============================================================================
+-- V6-B: serviceCountBounded / serviceGraphInvariant preservation
+-- ============================================================================
+
+/-- V6-B: `serviceGraphInvariant` is preserved by any operation that preserves
+    `services` and does not shrink `objectIndex`. This covers `storeObject`
+    (lifecycle retype), IPC endpoint operations, and capability operations.
+
+    Uses `serviceCountBounded_monotone` and `serviceDependencyAcyclic` transfer
+    from the acyclicity module. -/
+theorem serviceGraphInvariant_monotone
+    (st st' : SystemState)
+    (hServices : st'.services = st.services)
+    (hGrow : st.objectIndex.length ≤ st'.objectIndex.length)
+    (hInv : serviceGraphInvariant st) :
+    serviceGraphInvariant st' := by
+  unfold serviceGraphInvariant at hInv ⊢
+  have hEdgeTransfer : ∀ a b, serviceEdge st' a b → serviceEdge st a b := by
+    intro a b ⟨svc, hLookup, hDep⟩
+    refine ⟨svc, ?_, hDep⟩
+    unfold lookupService at hLookup ⊢; rw [← hServices]; exact hLookup
+  constructor
+  · intro sid hPath
+    have hPathTransfer : ∀ a b, serviceNontrivialPath st' a b → serviceNontrivialPath st a b := by
+      intro a b hPath
+      induction hPath with
+      | single hEdge => exact .single (hEdgeTransfer _ _ hEdge)
+      | cons hEdge _ ih => exact .cons (hEdgeTransfer _ _ hEdge) ih
+    exact hInv.1 sid (hPathTransfer sid sid hPath)
+  · exact serviceCountBounded_monotone hServices hGrow hInv.2
+
 end SeLe4n.Kernel

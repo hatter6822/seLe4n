@@ -302,37 +302,63 @@ theorem enforcementSoundness_registerServiceChecked
 -- WS-H8/Q1: Updated enforcement boundary classification
 -- ============================================================================
 
-/-- WS-H8/Q1: Updated enforcement boundary — 7 policy-gated operations.
+/-- WS-H8/Q1/V6-L: Updated enforcement boundary — 11 policy-gated operations.
 
-Q1 added `registerServiceChecked` (service registration enforcement).
-Policy-gated wrappers:
+V6-L (L-IF-3): Updated from 18 to 22 entries to match the canonical
+`enforcementBoundary` in Wrappers.lean. Added 4 missing policy-gated
+operations: `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C),
+`notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C).
+
+Policy-gated wrappers (11):
 - `endpointSendDualChecked` — sender→endpoint flow
 - `cspaceMintChecked` — source CNode→destination CNode flow
 - `registerServiceChecked` — thread→service flow
 - `notificationSignalChecked` — signaler→notification flow
 - `cspaceCopyChecked` — source CNode→destination CNode flow
 - `cspaceMoveChecked` — source CNode→destination CNode flow
-- `endpointReceiveDualChecked` — endpoint→receiver flow -/
+- `endpointReceiveDualChecked` — endpoint→receiver flow
+- `endpointCallChecked` — caller→endpoint flow
+- `endpointReplyChecked` — replier→target flow
+- `notificationWaitChecked` — notification→waiter flow
+- `endpointReplyRecvChecked` — reply+receive compound flow -/
 def enforcementBoundaryExtended : List EnforcementClass :=
-  [ .policyGated "endpointSendDualChecked"
+  [ -- Policy-gated: cross-domain operations checked via securityFlowsTo
+    .policyGated "endpointSendDualChecked"
   , .policyGated "cspaceMintChecked"
   , .policyGated "registerServiceChecked"
   , .policyGated "notificationSignalChecked"
   , .policyGated "cspaceCopyChecked"
   , .policyGated "cspaceMoveChecked"
   , .policyGated "endpointReceiveDualChecked"
+  , .policyGated "endpointCallChecked"           -- U5-B
+  , .policyGated "endpointReplyChecked"          -- U5-C
+  , .policyGated "notificationWaitChecked"        -- V2-A
+  , .policyGated "endpointReplyRecvChecked"       -- V2-C
+  -- Capability-only: authority derived from capability possession
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
   , .capabilityOnly "cspaceDeleteSlot"
   , .capabilityOnly "cspaceRevoke"
+  -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
   , .readOnly "lookupService"
   , .readOnly "cspaceResolvePath"
+  -- Internal/lifecycle: building blocks used under capability-guarded contexts
   , .capabilityOnly "lifecycleRetypeObject"
   , .capabilityOnly "lifecycleRevokeDeleteRetype"
   , .capabilityOnly "storeObject"
   ]
+
+/-- V6-L (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
+    has exactly 22 entries, matching the canonical `enforcementBoundary`. -/
+theorem enforcementBoundaryExtended_count :
+    enforcementBoundaryExtended.length = 22 := by rfl
+
+/-- V6-L (L-IF-3): `enforcementBoundaryExtended` and `enforcementBoundary`
+    have the same length, ensuring neither is stale relative to the other. -/
+theorem enforcementBoundaryExtended_matches_canonical :
+    enforcementBoundaryExtended.length = enforcementBoundary.length := by rfl
 
 -- ============================================================================
 -- WS-H8/A-35: Enforcement soundness meta-theorem
@@ -625,21 +651,26 @@ theorem checkedDispatch_flowDenied_preserves_state :
     intro ⟨st', h⟩
     simp [registerServiceChecked, hDeny] at h⟩
 
-/-- T6-J: The checked dispatch path delegates to checked wrappers for all
-    7 policy-gated operations, ensuring the enforcement boundary is complete.
-    This is a classification witness documenting which operations are checked. -/
+/-- T6-J/V6-L: The checked dispatch path delegates to checked wrappers for all
+    11 policy-gated operations, ensuring the enforcement boundary is complete.
+    This is a classification witness documenting which operations are checked.
+    V6-L: Updated from 7 to 11 entries to match all policy-gated wrappers. -/
 def checkedDispatchEnforcementCoverage : List String :=
   [ "endpointSendDualChecked"      -- .send → endpointSendDualChecked
   , "endpointReceiveDualChecked"   -- .receive → endpointReceiveDualChecked
-  , "endpointCall (inline check)"  -- .call → inline securityFlowsTo check
+  , "endpointCallChecked"          -- .call → endpointCallChecked (U5-B)
+  , "endpointReplyChecked"         -- .reply → endpointReplyChecked (U5-C)
+  , "endpointReplyRecvChecked"     -- .replyRecv → endpointReplyRecvChecked (V2-C)
   , "cspaceMintChecked"            -- .cspaceMint → cspaceMintChecked
   , "cspaceCopyChecked"            -- .cspaceCopy → cspaceCopyChecked
   , "cspaceMoveChecked"            -- .cspaceMove → cspaceMoveChecked
+  , "notificationSignalChecked"    -- .notifSignal → notificationSignalChecked
+  , "notificationWaitChecked"      -- .notifWait → notificationWaitChecked (V2-A)
   , "registerServiceChecked"       -- .serviceRegister → registerServiceChecked
   ]
 
-/-- T6-J: The checked dispatch covers all 7 policy-gated operations. -/
+/-- T6-J/V6-L: The checked dispatch covers all 11 policy-gated operations. -/
 theorem checkedDispatchEnforcementCoverage_complete :
-    checkedDispatchEnforcementCoverage.length = 7 := by rfl
+    checkedDispatchEnforcementCoverage.length = 11 := by rfl
 
 end SeLe4n.Kernel

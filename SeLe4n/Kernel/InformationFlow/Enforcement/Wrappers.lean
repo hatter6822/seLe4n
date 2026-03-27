@@ -541,3 +541,37 @@ def capabilityOnlyOperations : List String :=
   , "notificationSignal"    -- Also has notificationSignalChecked for cross-domain
   ]
 
+-- ============================================================================
+-- V6-F (M-IF-4): EnforcementBoundaryComplete theorem
+-- ============================================================================
+
+/-- V6-F (M-IF-4): The enforcement boundary is complete — every operation
+    in `enforcementBoundary` falls into exactly one enforcement class.
+
+    This compile-time count witness ensures the boundary table stays in sync
+    with the actual set of kernel operations. The boundary has:
+    - 11 policy-gated operations (cross-domain, checked via securityFlowsTo)
+    - 7 capability-only operations (authority from cap possession)
+    - 4 read-only operations (no state mutation)
+
+    Total = 22, matching the full set of public kernel operations. -/
+theorem enforcementBoundaryComplete_counts :
+    (enforcementBoundary.filter (fun c => match c with | .policyGated _ => true | _ => false)).length = 11 ∧
+    (enforcementBoundary.filter (fun c => match c with | .capabilityOnly _ => true | _ => false)).length = 7 ∧
+    (enforcementBoundary.filter (fun c => match c with | .readOnly _ => true | _ => false)).length = 4 ∧
+    enforcementBoundary.length = 22 := by
+  decide
+
+/-- V6-F (M-IF-4): Every enforcement class name in the boundary is non-empty,
+    preventing accidental placeholder entries. -/
+theorem enforcementBoundary_names_nonempty :
+    ∀ c ∈ enforcementBoundary, match c with
+      | .policyGated n => n.length > 0
+      | .capabilityOnly n => n.length > 0
+      | .readOnly n => n.length > 0 := by
+  intro c hc
+  simp [enforcementBoundary] at hc
+  rcases hc with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+                   rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals decide
+

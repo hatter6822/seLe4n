@@ -927,16 +927,31 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 17-entry classification table (3 policy-gated),
-- `enforcementBoundaryExtended` — extended table (7 policy-gated),
-- `denied_preserves_state_*` — denial preservation for all 7 policy-gated operations,
-- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 7 policy-gated operations.
+- `enforcementBoundary` — exhaustive 22-entry classification table (11 policy-gated, 7 capability-only, 4 read-only),
+- `enforcementBoundaryExtended` — extended table (11 policy-gated, V6-L),
+- `enforcementBoundaryComplete_counts` — compile-time count witness (11+7+4=22, V6-F),
+- `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
+- `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
+- `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 11 policy-gated operations.
 
 **WS-H8/A-36 — Projection hardening:**
 
-- `ObservableState` extended with `domainTimeRemaining`, `domainSchedule`, `domainScheduleIndex`,
-- `projectDomainTimeRemaining`, `projectDomainSchedule`, `projectDomainScheduleIndex` projection helpers,
-- All 19 NI theorems updated to handle new fields.
+- `ObservableState` extended with `domainTimeRemaining`, `domainSchedule`, `domainScheduleIndex`, `serviceRegistry` (V6-E),
+- `projectDomainTimeRemaining`, `projectDomainSchedule`, `projectDomainScheduleIndex`, `projectServiceRegistry` projection helpers,
+- All 19 NI theorems updated to handle new fields (including V6-E serviceRegistry ripple fixes).
+
+**V6 — Information flow & cross-subsystem formalization:**
+
+- `integrityFlowsTo_is_not_biba` — documents non-standard integrity flow direction vs. Biba model (V6-C),
+- `LabelingContextValid` predicate with `defaultLabelingContext_valid` — NI deployment requirements (V6-D),
+- `endpointPolicyRestricted` — per-endpoint policy subset of global policy well-formedness (V6-G),
+- `DeclassificationEvent` structure with `recordDeclassification` audit trail (V6-H),
+- `kernelOperationNiConstructor` — 32-variant operation→constructor mapping (V6-I),
+- `niStepCoverage_operational`, `niStepCoverage_injective`, `niStepCoverage_count` — strengthened NI coverage (V6-I),
+- `acceptedCovertChannel_scheduling` — documented scheduling covert channel (V6-J),
+- `defaultLabelingContext_insecure` — warning that default labeling provides no security (V6-K),
+- `StateField` enum + 7 disjointness theorems + `registryDependencyConsistent_frame`, `serviceGraphInvariant_frame` (V6-A),
+- `serviceCountBounded_of_eq`, `serviceCountBounded_monotone`, `serviceGraphInvariant_monotone` (V6-B).
 
 **WS-H10/C-05/A-38 — MachineState projection & security lattice:**
 

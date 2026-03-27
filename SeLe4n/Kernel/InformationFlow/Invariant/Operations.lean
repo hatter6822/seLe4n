@@ -576,6 +576,7 @@ theorem switchDomain_preserves_lowEquivalent
         | exact congrArg ObservableState.objectIndex hLow
         | exact congrArg ObservableState.machineRegs hLow
         | exact congrArg ObservableState.memory hLow
+        | exact congrArg ObservableState.serviceRegistry hLow
         | rfl
 
 -- ============================================================================
@@ -890,6 +891,8 @@ private theorem cdt_only_preserves_projection
   · simp [projectMachineRegs, hScheduler, hMachine]
   · -- R5-C.1: memory
     exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
+  · -- V6-E: serviceRegistry
+    exact projectServiceRegistry_eq_of_services_eq ctx observer st' st hServices
 
 /-- WS-H9: ensureCdtNodeForSlot preserves projection (modifies only CDT). -/
 private theorem ensureCdtNodeForSlot_preserves_projection
@@ -944,6 +947,9 @@ private theorem cspaceInsertSlot_preserves_projection
   · -- R5-C.1: memory
     exact projectMemory_eq_of_memory_eq ctx observer st' st
       (by rw [cspaceInsertSlot_preserves_machine st st' dst cap hStep])
+  · -- V6-E: serviceRegistry
+    exact projectServiceRegistry_eq_of_services_eq ctx observer st' st
+      (cspaceInsertSlot_preserves_services st st' dst cap hStep)
 
 /-- WS-H9: cspaceCopy at non-observable CNodes preserves projection.
 cspaceCopy = cspaceLookupSlot (read-only) + cspaceInsertSlot (at non-obs dst)

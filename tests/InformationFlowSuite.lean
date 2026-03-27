@@ -758,8 +758,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "WS-H8/Q1: enforcement boundary has 7 policy-gated ops"
-    (policyGatedCount = 7)
+  expect "WS-H8/Q1/V6-L: enforcement boundary has 11 policy-gated ops"
+    (policyGatedCount = 11)
 
   IO.println "WS-H8 enforcement boundary classification verified"
 

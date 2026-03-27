@@ -18,9 +18,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phases V1, V2, V3, V4, and V5 are complete. Phases V6–V8 remain.
+WS-V Phases V1, V2, V3, V4, V5, and V6 are complete. Phases V7–V8 remain.
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V5 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V6 COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
@@ -89,6 +89,32 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   V5-J added `ThreadId.toObjIdVerified` with TCB type verification. All 10
   affected Preservation.lean proofs updated for V5-F/V5-N changes. V5-C test
   code migrated to `bootFromPlatformUnchecked` alias. Zero sorry/axiom.
+
+- **V6 (Information Flow & Cross-Subsystem) COMPLETE** (v0.22.6): 20 sub-tasks
+  (V6-A through V6-L). Cross-subsystem field-disjointness formalization:
+  `StateField` enum + 7 disjointness theorems + 2 frame lemmas
+  (`registryDependencyConsistent_frame`, `serviceGraphInvariant_frame`) in
+  `CrossSubsystem.lean` (V6-A). `serviceCountBounded` preservation:
+  `serviceCountBounded_of_eq`, `serviceCountBounded_monotone`,
+  `serviceGraphInvariant_monotone` across lifecycle and IPC operations (V6-B).
+  `integrityFlowsTo_is_not_biba` documentation theorem and
+  `integrityFlowsTo_denies_write_up_biba_allows` comparison (V6-C).
+  `LabelingContextValid` predicate with `defaultLabelingContext_valid` and
+  `labelingContextValid_provides_coherence` (V6-D). `ObservableState.serviceRegistry`
+  field extension with `projectServiceRegistry` + full ripple fixes across
+  Helpers.lean, Operations.lean, Composition.lean (V6-E).
+  `enforcementBoundaryComplete_counts` (11+7+4=22) and
+  `enforcementBoundary_names_nonempty` (V6-F). `endpointPolicyRestricted`
+  well-formedness with `endpointPolicyRestricted_no_overrides` and
+  `endpointFlowCheck_restricted_subset` (V6-G). `DeclassificationEvent` structure
+  with `recordDeclassification` audit trail and 3 preservation theorems (V6-H).
+  `kernelOperationNiConstructor` 32-variant mapping, `niStepCoverage_operational`,
+  `niStepCoverage_injective` (1:1), `niStepCoverage_count` (=32) (V6-I).
+  `acceptedCovertChannel_scheduling` documented covert channel (V6-J).
+  `defaultLabelingContext_insecure` + `defaultLabelingContext_all_threads_observable`
+  warnings (V6-K). `enforcementBoundaryExtended` updated to 22 entries with
+  `enforcementBoundaryExtended_count` and `enforcementBoundaryExtended_matches_canonical`
+  (V6-L). Zero sorry/axiom.
 
 - **V4 (Platform & Hardware Fidelity) COMPLETE** (v0.22.3): 26 sub-tasks (V4-A1
   through V4-N). **V4-A boot-to-runtime invariant bridge**: Complete machine-checked

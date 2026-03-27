@@ -78,6 +78,43 @@ def integrityFlowsTo : Integrity → Integrity → Bool
   | .untrusted, .untrusted => true
   | .untrusted, .trusted => false
 
+/-- V6-C (M-IF-1): Standard BIBA integrity order for comparison.
+
+    Standard BIBA denies write-up: untrusted subjects cannot write to trusted
+    objects. `bibaIntegrityFlowsTo src dst` returns `true` iff `src` is at
+    least as trusted as `dst` (i.e., `src ≥ dst` in the integrity lattice).
+
+    This is the **opposite** direction from `integrityFlowsTo`, which allows
+    trusted→untrusted flow (write-down) and denies untrusted→trusted (write-up).
+    seLe4n uses `integrityFlowsTo` (non-standard) because its integrity
+    dimension tracks authority delegation, not data purity. See the
+    `integrityFlowsTo` docstring above for the full design rationale. -/
+def bibaIntegrityFlowsTo : Integrity → Integrity → Bool
+  | .trusted, .trusted => true
+  | .trusted, .untrusted => false
+  | .untrusted, .untrusted => true
+  | .untrusted, .trusted => true
+
+/-- V6-C (M-IF-1): `integrityFlowsTo` is **not** standard BIBA integrity.
+
+    The seLe4n integrity model deliberately reverses BIBA for authority-flow
+    tracking. This theorem provides an explicit compile-time witness that the
+    two models differ, serving as a documentation anchor for auditors.
+
+    The witness: under BIBA, trusted cannot flow to untrusted (no write-down);
+    under seLe4n's model, trusted CAN flow to untrusted (delegation). -/
+theorem integrityFlowsTo_is_not_biba :
+    integrityFlowsTo .trusted .untrusted = true ∧
+    bibaIntegrityFlowsTo .trusted .untrusted = false := by
+  decide
+
+/-- V6-C (M-IF-1): Standard BIBA allows untrusted→trusted (write-up),
+    while seLe4n denies it. This is the complementary witness. -/
+theorem integrityFlowsTo_denies_write_up_biba_allows :
+    integrityFlowsTo .untrusted .trusted = false ∧
+    bibaIntegrityFlowsTo .untrusted .trusted = true := by
+  decide
+
 /-- Combined policy relation: confidentiality must not flow down; integrity
     must not flow up (source must be at least as trusted as destination).
 
@@ -113,6 +150,36 @@ def defaultLabelingContext : LabelingContext :=
     endpointLabelOf := fun _ => SecurityLabel.publicLabel
     serviceLabelOf := fun _ => SecurityLabel.publicLabel
   }
+
+/-- V6-K (L-IF-2): Warning theorem — the default labeling context assigns
+    `publicLabel` (low confidentiality, untrusted integrity) to ALL entities.
+    Under this labeling, `securityFlowsTo` is trivially `true` for all pairs,
+    meaning NO information flow is restricted.
+
+    **Production deployments MUST override `defaultLabelingContext` with a
+    domain-specific labeling that assigns appropriate security labels to each
+    entity.** Using the default labeling in production negates all information-
+    flow enforcement guarantees.
+
+    This theorem witnesses the insecurity: the default labeling context allows
+    information to flow from any entity to any other entity. -/
+theorem defaultLabelingContext_insecure :
+    ∀ (oid₁ oid₂ : SeLe4n.ObjId),
+    securityFlowsTo (defaultLabelingContext.objectLabelOf oid₁)
+                    (defaultLabelingContext.objectLabelOf oid₂) = true := by
+  intro _ _
+  simp [defaultLabelingContext, SecurityLabel.publicLabel, securityFlowsTo,
+        confidentialityFlowsTo, integrityFlowsTo]
+
+/-- V6-K (L-IF-2): Corollary — the default labeling makes ALL threads
+    mutually observable, defeating domain separation. -/
+theorem defaultLabelingContext_all_threads_observable :
+    ∀ (tid₁ tid₂ : SeLe4n.ThreadId),
+    securityFlowsTo (defaultLabelingContext.threadLabelOf tid₁)
+                    (defaultLabelingContext.threadLabelOf tid₂) = true := by
+  intro _ _
+  simp [defaultLabelingContext, SecurityLabel.publicLabel, securityFlowsTo,
+        confidentialityFlowsTo, integrityFlowsTo]
 
 theorem confidentialityFlowsTo_refl (c : Confidentiality) :
     confidentialityFlowsTo c c = true := by
@@ -521,6 +588,61 @@ theorem securityLattice_transitive :
   securityFlowsTo_trans
 
 -- ============================================================================
+-- V6-H (M-IF-6): Declassification audit trail
+-- ============================================================================
+
+/-- V6-H (M-IF-6): Record of a declassification event for audit purposes.
+
+    Every declassification operation should produce a `DeclassificationEvent`
+    recording the source domain, destination domain, authorization basis,
+    and a monotonic timestamp. The audit trail enables post-hoc analysis of
+    information-flow boundary crossings.
+
+    **Usage**: The enforcement wrappers in `Enforcement/Soundness.lean`
+    (`declassifyStore`) produce declassification events. The caller is
+    responsible for recording these events in an append-only audit log. -/
+structure DeclassificationEvent where
+  /-- Source domain initiating the declassification. -/
+  srcDomain : SecurityDomain
+  /-- Destination domain receiving the declassified information. -/
+  dstDomain : SecurityDomain
+  /-- Object ID of the target being declassified to. -/
+  targetObject : SeLe4n.ObjId
+  /-- Monotonic event counter (not wall-clock time — the kernel has no
+      notion of real time). Used for ordering events in the audit log. -/
+  timestamp : Nat
+  deriving Repr, DecidableEq
+
+/-- V6-H: An audit log is a list of declassification events, ordered by
+    timestamp (most recent last). -/
+abbrev DeclassificationAuditLog := List DeclassificationEvent
+
+/-- V6-H: Record a declassification event in the audit log. -/
+def recordDeclassification
+    (log : DeclassificationAuditLog)
+    (event : DeclassificationEvent) : DeclassificationAuditLog :=
+  log ++ [event]
+
+/-- V6-H: The audit log is append-only — recording preserves existing entries. -/
+theorem recordDeclassification_preserves_existing
+    (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
+    ∀ e ∈ log, e ∈ recordDeclassification log event := by
+  intro e hMem
+  exact List.mem_append_left _ hMem
+
+/-- V6-H: A recorded event is always in the resulting log. -/
+theorem recordDeclassification_contains_new
+    (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
+    event ∈ recordDeclassification log event := by
+  simp [recordDeclassification]
+
+/-- V6-H: Audit log length increases by exactly 1 on each record. -/
+theorem recordDeclassification_length
+    (log : DeclassificationAuditLog) (event : DeclassificationEvent) :
+    (recordDeclassification log event).length = log.length + 1 := by
+  simp [recordDeclassification]
+
+-- ============================================================================
 -- WS-H10/A-39: Declassification model
 -- ============================================================================
 
@@ -646,5 +768,51 @@ theorem endpointFlowCheck_transitive
   | some customPolicy =>
     simp [hEP, domainFlowsTo] at h₁ h₂ ⊢
     exact (hWF.2 endpointId customPolicy hEP).2 a b c h₁ h₂
+
+-- ============================================================================
+-- V6-G (M-IF-5): Endpoint policy restriction well-formedness
+-- ============================================================================
+
+/-- V6-G (M-IF-5): Per-endpoint policy must be a **subset** of the global policy.
+
+    An endpoint's custom policy should only restrict flows, never widen them.
+    If an endpoint policy allows a flow that the global policy denies, that
+    endpoint becomes a policy bypass — threads could circumvent domain
+    separation by routing traffic through the permissive endpoint.
+
+    This predicate requires: for every domain pair (src, dst), if the endpoint
+    policy allows the flow, then the global policy must also allow it. -/
+def endpointPolicyRestricted
+    (globalPolicy : DomainFlowPolicy)
+    (epPolicy : EndpointFlowPolicy) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (customPolicy : DomainFlowPolicy),
+    epPolicy.endpointPolicy oid = some customPolicy →
+    ∀ (src dst : SecurityDomain),
+      customPolicy.canFlow src dst = true →
+      globalPolicy.canFlow src dst = true
+
+/-- V6-G (M-IF-5): If no endpoint overrides exist, the restriction is trivially
+    satisfied. -/
+theorem endpointPolicyRestricted_no_overrides
+    (globalPolicy : DomainFlowPolicy) :
+    endpointPolicyRestricted globalPolicy { endpointPolicy := fun _ => none } := by
+  intro _ _ h; simp at h
+
+/-- V6-G (M-IF-5): Under restriction, the effective endpoint flow check is at
+    most as permissive as the global flow check. -/
+theorem endpointFlowCheck_restricted_subset
+    (ctx : GenericLabelingContext)
+    (epPolicy : EndpointFlowPolicy)
+    (endpointId : SeLe4n.ObjId)
+    (src dst : SecurityDomain)
+    (hRestricted : endpointPolicyRestricted ctx.policy epPolicy)
+    (hFlow : endpointFlowCheck ctx epPolicy endpointId src dst = true) :
+    genericFlowCheck ctx src dst = true := by
+  unfold endpointFlowCheck at hFlow
+  cases hEP : epPolicy.endpointPolicy endpointId with
+  | none => simp [hEP] at hFlow; exact hFlow
+  | some customPolicy =>
+    simp [hEP, domainFlowsTo] at hFlow
+    exact hRestricted endpointId customPolicy hEP src dst hFlow
 
 end SeLe4n.Kernel
