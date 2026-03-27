@@ -13,10 +13,16 @@
   `cdtExpandingOp_preserves_bundle_with_hypothesis` (machine-checked, returns
   caller-supplied `hCdtPost`). `cdtShrinkingOps_preserve_acyclicity_note`
   (documentation-only) documents that shrinking ops prove via `edgeWellFounded_sub`.
-- V3-E1-E5 (M-PRF-2): `ipcUnwrapCapsLoop_capInvariant` predicate defined.
-  Per-step theorem (`ipcTransferSingleCap_preserves_capabilityInvariantBundle`)
-  fully proved (machine-checked). Loop composition proofs (E1–E5) documented
-  but not yet machine-checked.
+- V3-E1-E5 (M-PRF-2): Full loop composition for IPC capability transfer.
+  `ipcUnwrapCapsLoop` exposed (was private) with 8 helper theorems.
+  `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` — fuel-indexed
+  induction threading `hSlotCap` (slot capacity) and `hCdtPost` (CDT
+  completeness + acyclicity) through each iteration (machine-checked).
+  `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` — Grant=true
+  top-level theorem. `ipcUnwrapCaps_preserves_capabilityInvariantBundle` —
+  unified Bool-parametric entry point for both Grant cases (machine-checked).
+  Closes M-PRF-2 proof gap: the entire capability transfer preservation chain
+  is now fully machine-checked for both Grant=true and Grant=false paths.
 - V3-F (M-PRF-3): `resolveCapAddress_callers_check_rights_note`
   (documentation-only) — documents that all 17 `SyscallId` dispatch arms pass
   through `syscallLookupCap` rights gate. No machine-checked dispatch analysis.

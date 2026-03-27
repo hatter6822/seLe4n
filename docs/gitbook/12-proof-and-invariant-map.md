@@ -185,7 +185,7 @@ CDT acyclicity discharge patterns **(V3-D/E/F, M-PRF-1)**:
 - CDT-shrinking ops (`cspaceDeleteSlotCore`, `cspaceRevokeCdt`) prove acyclicity internally via `edgeWellFounded_sub` — removing edges preserves well-foundedness.
 - `cdtExpandingOp_preserves_bundle_with_hypothesis` — documents the externalized hypothesis pattern for CDT-expanding operations.
 - `cdtShrinkingOps_preserve_acyclicity` — machine-checked proof that CDT-shrinking operations preserve acyclicity via `edgeWellFounded_sub` edge-removal argument.
-- `ipcTransferSingleCap_preserves_capabilityInvariantBundle` — machine-checked per-step theorem for IPC capability transfer. The `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant` theorem covers the no-grant path **(V3-E, M-PRF-2)**.
+- `ipcTransferSingleCap_preserves_capabilityInvariantBundle` — machine-checked per-step theorem for IPC capability transfer. `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` — fuel-indexed induction composing per-step preservation across all loop iterations, threading slot capacity and CDT postcondition hypotheses. `ipcUnwrapCaps_preserves_capabilityInvariantBundle` — unified Bool-parametric theorem covering both Grant=true (loop induction) and Grant=false (state unchanged) paths. Full capability transfer preservation chain is machine-checked **(V3-E, M-PRF-2)**.
 - `resolveCapAddress_callers_check_rights` — machine-checked theorem proving all `syscallInvoke` dispatch arms pass through `syscallLookupCap` rights gate before operations. Located in `API.lean` **(V3-F, M-PRF-3)**.
 
 WS-H4 transfer theorems (new):

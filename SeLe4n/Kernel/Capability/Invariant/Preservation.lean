@@ -1987,29 +1987,108 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
                 cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,
                 hObjFinal ▸ hObjInv2⟩
 
--- ============================================================================
--- M3-D3: ipcUnwrapCaps preserves capabilityInvariantBundle
---
--- The grantRight = false case is trivial (state unchanged) — proved below as
--- `ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant`.
---
--- The grantRight = true case requires per-step induction on the internal
--- ipcUnwrapCapsLoop, threading two preconditions through each iteration:
---   (a) hSlotCapacity: the receiver CNode can accommodate each insert
---   (b) hCdtPost: cdtCompleteness ∧ cdtAcyclicity hold in each intermediate state
--- These match the existing `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
--- signature. The per-step theorem is fully proved above; the loop composition
--- requires exposing the private ipcUnwrapCapsLoop and threading CDT postconditions
--- through a fuel-indexed induction — planned for M3-D3b (WS-M4/M5).
---
--- Security note: the grantRight = false path is the security-critical one
--- (enforces the Grant-right gate). When Grant is absent, the bundle is trivially
--- preserved because no state mutation occurs.
--- ============================================================================
+/-- V3-E / M3-D3b: `ipcUnwrapCapsLoop` preserves `capabilityInvariantBundle`
+through fuel-indexed induction. Each iteration delegates to
+`ipcTransferSingleCap_preserves_capabilityInvariantBundle`, threading
+`hSlotCap` (slot capacity) and `hCdtPost` (CDT completeness + acyclicity)
+through the recursive structure.
 
-/-- M3-D3: ipcUnwrapCaps preserves capabilityInvariantBundle when the endpoint
-lacks Grant right (grantRight = false). In this case, all caps are silently
-dropped and the state is unchanged, so the invariant trivially holds. -/
+The `hCdtPost` hypothesis is externalized following the standard pattern for
+CDT-expanding operations (see `cspaceCopy_preserves_capabilityInvariantBundle`).
+The caller (API layer) is responsible for discharging CDT obligations. -/
+theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : capabilityInvariantBundle st)
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        capabilityInvariantBundle stI →
+        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
+          ∀ s, (cn.insert s cap).slotCountBounded)
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
+        capabilityInvariantBundle stI →
+        ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit stI
+          = .ok (result, stJ) →
+        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase
+             accResults fuel st = .ok (summary, st')) :
+    capabilityInvariantBundle st' := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep
+    exact hInv
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none =>
+      simp [hCap] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      exact hInv
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        exact ih _ _ _ _ hInv hStep
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
+          st stNext cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps result
+          hInv
+          (hSlotCap st cap hInv)
+          (hCdtPost st stNext cap
+            { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+            nextBase maxExtraCaps result hInv hTransfer)
+          hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hInvNext hStep
+        | noSlot => exact ih _ _ _ _ hInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hInvNext hStep
+
+/-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`
+when the endpoint has Grant right (grantRight = true). Delegates to
+`ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` after unfolding
+the entry point. -/
+theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
+    (st st' : SystemState) (msg : IpcMessage)
+    (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot)
+    (summary : CapTransferSummary)
+    (hInv : capabilityInvariantBundle st)
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        capabilityInvariantBundle stI →
+        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
+          ∀ s, (cn.insert s cap).slotCountBounded)
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase' : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
+        capabilityInvariantBundle stI →
+        ipcTransferSingleCap cap senderSlot receiverRoot slotBase' scanLimit stI
+          = .ok (result, stJ) →
+        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase true st
+             = .ok (summary, st')) :
+    capabilityInvariantBundle st' := by
+  simp [ipcUnwrapCaps] at hStep
+  exact ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
+    msg.caps senderRoot receiverRoot
+    0 slotBase #[] msg.caps.size
+    st st' summary hInv hSlotCap hCdtPost hStep
+
+/-- M3-D3 / V3-E: ipcUnwrapCaps preserves capabilityInvariantBundle when the
+endpoint lacks Grant right (grantRight = false). In this case, all caps are
+silently dropped and the state is unchanged, so the invariant trivially holds.
+See also: `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` for the
+Grant=true case, and `ipcUnwrapCaps_preserves_capabilityInvariantBundle` for
+the unified theorem. -/
 theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
     (st st' : SystemState) (msg : IpcMessage)
     (senderRoot receiverRoot : SeLe4n.ObjId)
@@ -2022,6 +2101,46 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
   simp [ipcUnwrapCaps] at hStep
   obtain ⟨_, rfl⟩ := hStep
   exact hInv
+
+/-- V3-E / M3-D3b: `ipcUnwrapCaps` preserves `capabilityInvariantBundle`
+for any value of `endpointGrantRight`. This is the primary entry point for
+the IPC rendezvous composition chain.
+
+- **Grant=false**: State unchanged (no transfers), trivially preserved.
+- **Grant=true**: Fuel-indexed induction over `ipcUnwrapCapsLoop`, threading
+  slot capacity and CDT postcondition hypotheses per-iteration.
+
+The `hSlotCap` and `hCdtPost` hypotheses are vacuous when Grant=false
+(no `ipcTransferSingleCap` calls occur). -/
+theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
+    (st st' : SystemState) (msg : IpcMessage)
+    (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot)
+    (endpointGrantRight : Bool)
+    (summary : CapTransferSummary)
+    (hInv : capabilityInvariantBundle st)
+    (hSlotCap : ∀ (stI : SystemState) (cap : Capability),
+        capabilityInvariantBundle stI →
+        ∀ cn, stI.objects[receiverRoot]? = some (.cnode cn) →
+          ∀ s, (cn.insert s cap).slotCountBounded)
+    (hCdtPost : ∀ (stI stJ : SystemState) (cap : Capability)
+        (senderSlot : CSpaceAddr) (slotBase' : SeLe4n.Slot)
+        (scanLimit : Nat) (result : CapTransferResult),
+        capabilityInvariantBundle stI →
+        ipcTransferSingleCap cap senderSlot receiverRoot slotBase' scanLimit stI
+          = .ok (result, stJ) →
+        cdtCompleteness stJ ∧ cdtAcyclicity stJ)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase
+             endpointGrantRight st = .ok (summary, st')) :
+    capabilityInvariantBundle st' := by
+  cases endpointGrantRight with
+  | false =>
+    exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant
+      st st' msg senderRoot receiverRoot slotBase summary hInv hStep
+  | true =>
+    exact ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant
+      st st' msg senderRoot receiverRoot slotBase summary
+      hInv hSlotCap hCdtPost hStep
 
 -- ============================================================================
 -- S3-D: cdtMapsConsistent preservation theorems

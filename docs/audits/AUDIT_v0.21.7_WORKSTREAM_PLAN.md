@@ -321,20 +321,22 @@ verifies and strengthens that discharge.
 | V3-D4 | M-PRF-1 | For `cspaceDeleteSlot` and `cspaceRevoke`: verify discharge. Deletion only removes CDT edges/nodes, which trivially preserves acyclicity. Add lemma `removeNode_preserves_acyclicity` if not already present. | `Capability/Invariant/Preservation.lean` | S |
 | V3-D5 | M-PRF-1 | For `ipcTransferSingleCap`: verify the `hCdtPost` hypothesis is discharged at the API dispatch layer when Grant=true cap transfer invokes CDT insertion. | `Capability/Invariant/Preservation.lean`, `API.lean` | S |
 
-**V3-E expanded: ipcUnwrapCaps Grant=true loop composition** (M-PRF-2)
+**V3-E expanded: ipcUnwrapCaps Grant=true loop composition** (M-PRF-2) — **COMPLETE**
 
-The per-step theorem `ipcTransferSingleCap_preserves_capabilityInvariantBundle`
-is fully proved. The gap is composing it across the private `ipcUnwrapCapsLoop`
-recursive helper, which requires fuel-indexed induction threading `hSlotCapacity`
-and `hCdtPost` through each iteration.
+All 5 sub-tasks (V3-E1 through V3-E5) are machine-checked with zero sorry/axiom.
+`ipcUnwrapCapsLoop` exposed (was private) with 8 helper theorems (V3-E1).
+`ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` proved via fuel-indexed
+induction threading `hSlotCap` and `hCdtPost` through each iteration (V3-E2/E3/E4).
+`ipcUnwrapCaps_preserves_capabilityInvariantBundle` unified Bool-parametric theorem
+covers both Grant=true and Grant=false paths (V3-E5). Closes M-PRF-2.
 
-| ID | Finding | Task | Files | Scope |
-|----|---------|------|-------|-------|
-| V3-E1 | M-PRF-2 | Expose `ipcUnwrapCapsLoop` for external reasoning: either remove `private`, add a public wrapper with the same signature, or add a `@[simp]` unfolding lemma that exposes the recursion structure. | `IPC/Operations/CapTransfer.lean` | S |
-| V3-E2 | M-PRF-2 | State the loop invariant formally: define `ipcUnwrapCapsLoop_invariant` as a predicate over `(fuel, idx, nextBase, accResults, st)` asserting `capabilityInvariantBundle st ∧ slotCapacity st receiverRoot nextBase`. | `Capability/Invariant/Preservation.lean` | S |
-| V3-E3 | M-PRF-2 | Prove base case: when `fuel = 0` or `idx ≥ caps.size`, the loop returns unchanged state, trivially preserving the invariant. | `Capability/Invariant/Preservation.lean` | S |
-| V3-E4 | M-PRF-2 | Prove inductive step: given loop invariant holds at step `i`, and `ipcTransferSingleCap` preserves `capabilityInvariantBundle` (the existing per-step theorem), show the invariant holds at step `i+1`. Thread `hCdtPost` through each step. | `Capability/Invariant/Preservation.lean` | M |
-| V3-E5 | M-PRF-2 | Compose: prove `ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant` by applying the induction lemma from V3-E3/E4 to the full loop. | `Capability/Invariant/Preservation.lean` | M |
+| ID | Finding | Task | Files | Scope | Status |
+|----|---------|------|-------|-------|--------|
+| V3-E1 | M-PRF-2 | Expose `ipcUnwrapCapsLoop`: removed `private` from def + 8 helper theorems. | `IPC/Operations/CapTransfer.lean` | S | **DONE** |
+| V3-E2 | M-PRF-2 | Stated loop theorem signature with inline `hSlotCap`/`hCdtPost` hypotheses. | `Capability/Invariant/Preservation.lean` | S | **DONE** |
+| V3-E3 | M-PRF-2 | Proved base cases: fuel=0 and idx out-of-bounds (state unchanged). | `Capability/Invariant/Preservation.lean` | S | **DONE** |
+| V3-E4 | M-PRF-2 | Proved inductive step: error path (IH with original state) + success path (per-step preservation + IH with updated state). | `Capability/Invariant/Preservation.lean` | M | **DONE** |
+| V3-E5 | M-PRF-2 | Composed `_grant` + unified Bool-parametric `ipcUnwrapCaps_preserves_capabilityInvariantBundle`. | `Capability/Invariant/Preservation.lean` | M | **DONE** |
 
 | ID | Finding | Task | Files | Scope |
 |----|---------|------|-------|-------|

@@ -37,7 +37,10 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   eliminating redundant `hSize` (H-RH-1). `uniqueRadixIndices_sufficient` radix
   precondition chain (H-RAD-1). `extractBits_identity` + `buildCNodeRadix_hNoPhantom_auto_discharge`
   closing `hNoPhantom` gap (M-DS-4). CDT acyclicity: `cdtShrinkingOps_preserve_acyclicity`
-  via `edgeWellFounded_sub` edge-removal proof (M-PRF-1). `resolveCapAddress_callers_check_rights`
+  via `edgeWellFounded_sub` edge-removal proof (M-PRF-1).
+  V3-E loop composition: `ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle` (fuel-indexed
+  induction) + `ipcUnwrapCaps_preserves_capabilityInvariantBundle` (unified Bool-parametric)
+  closing M-PRF-2 capability transfer chain gap. `resolveCapAddress_callers_check_rights`
   dispatch chain rights theorem in API.lean (M-PRF-3). `notificationSignal_preserves_waitingThreadsPendingMessageNone`
   via `cases`-based path decomposition (M-PRF-5). `notificationWake_pendingMessage_was_none`
   blocking-state implies `pendingMessage = none` (L-IPC-1). 7 primitive + 7 operation-level

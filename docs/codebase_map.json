@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/implement-proof-chain-hardening-ONYPw",
-      "commit_sha": "9e7e81fb44c83b11ae67812cee9dc24339a8a633",
-      "tree_sha": "71c30508d61413b0365d0cbbda796a4a870b7af4",
-      "committed_at_utc": "2026-03-27T04:04:39+00:00"
+      "branch": "claude/implement-ipc-unwrap-caps-IrNlJ",
+      "commit_sha": "bbb2a974ef5bb8b5e5a4465f9cb110d651e80a1d",
+      "tree_sha": "ff9ec71863cece0ca21cbf68288ddfd1bba836ab",
+      "committed_at_utc": "2026-03-27T00:23:23-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d3cbfcd74b13361a15abd3a23eceb253ae55bf777b0e872987fd393935856ec2"
+    "source_digest": "8c74054509d8d123da0673420cd42fccb8f2c9e0972b9b7556db525792289711"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3572
+    "declaration_count": 3575
   },
   "readme_sync": {
     "version": "0.22.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 69875,
+    "production_loc": 69994,
     "test_files": 10,
     "test_loc": 8315,
-    "proved_theorem_lemma_decls": 2005,
+    "proved_theorem_lemma_decls": 2008,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -5374,7 +5374,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Preservation",
       "path": "SeLe4n/Kernel/Capability/Invariant/Preservation.lean",
-      "declaration_count": 78,
+      "declaration_count": 81,
       "declarations": [
         {
           "kind": "namespace",
@@ -6671,8 +6671,57 @@
         },
         {
           "kind": "theorem",
+          "name": "ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle",
+          "line": 1999,
+          "called": [
+            "CSpaceAddr",
+            "CapTransferResult",
+            "CapTransferSummary",
+            "Capability",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "capabilityInvariantBundle",
+            "cdtAcyclicity",
+            "cdtCompleteness",
+            "insert",
+            "ipcTransferSingleCap",
+            "ipcTransferSingleCap_preserves_capabilityInvariantBundle",
+            "ipcUnwrapCapsLoop",
+            "maxExtraCaps",
+            "none",
+            "ofNat",
+            "slotCountBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant",
+          "line": 2060,
+          "called": [
+            "CSpaceAddr",
+            "CapTransferResult",
+            "CapTransferSummary",
+            "Capability",
+            "IpcMessage",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "capabilityInvariantBundle",
+            "cdtAcyclicity",
+            "cdtCompleteness",
+            "insert",
+            "ipcTransferSingleCap",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle",
+            "size",
+            "slotCountBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant",
-          "line": 2013,
+          "line": 2092,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -6685,8 +6734,32 @@
         },
         {
           "kind": "theorem",
+          "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle",
+          "line": 2115,
+          "called": [
+            "CSpaceAddr",
+            "CapTransferResult",
+            "CapTransferSummary",
+            "Capability",
+            "IpcMessage",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "capabilityInvariantBundle",
+            "cdtAcyclicity",
+            "cdtCompleteness",
+            "insert",
+            "ipcTransferSingleCap",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant",
+            "ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant",
+            "slotCountBounded"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cspaceMint_preserves_cdtMapsConsistent",
-          "line": 2032,
+          "line": 2151,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -6704,7 +6777,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlotCore_preserves_cdtMapsConsistent",
-          "line": 2054,
+          "line": 2173,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -6722,7 +6795,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_cdtMapsConsistent",
-          "line": 2083,
+          "line": 2202,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -6734,7 +6807,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_cdtMapsConsistent",
-          "line": 2096,
+          "line": 2215,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -6745,7 +6818,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_cdtMapsConsistent",
-          "line": 2104,
+          "line": 2223,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -6756,7 +6829,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_cdtMapsConsistent",
-          "line": 2113,
+          "line": 2232,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -6775,7 +6848,7 @@
         {
           "kind": "theorem",
           "name": "cdtExpandingOp_preserves_bundle_with_hypothesis",
-          "line": 2190,
+          "line": 2309,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -6786,7 +6859,7 @@
         {
           "kind": "theorem",
           "name": "cdtShrinkingOps_preserve_acyclicity",
-          "line": 2202,
+          "line": 2321,
           "called": [
             "Kernel",
             "SystemState",
