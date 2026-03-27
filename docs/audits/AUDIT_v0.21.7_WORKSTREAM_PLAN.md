@@ -414,11 +414,11 @@ substantive cases.
 | V4-B | M-HW-1 | Add 4-byte alignment check to `mmioRead32`/`mmioWrite32` and 8-byte alignment check to `mmioRead64`/`mmioWrite64`. Return `MmioError.unaligned` on violation. | `RPi5/MmioAdapter.lean` | M | DONE |
 | V4-C | M-HW-2 | Model write-one-clear (W1C) semantics for GIC registers. Add `MmioWriteKind.writeOneClear` case to `mmioWrite32` that computes `old_val & ~write_val`. | `RPi5/MmioAdapter.lean` | M | DONE |
 | V4-D | M-HW-3 | Parameterize RPi5 RAM region from `PlatformConfig` rather than hardcoding 4GB. Add `ramSize` field to `BCM2712Config`. | `RPi5/Board.lean` | M | DONE |
-| V4-E | M-HW-4 | Make non-flush `vspaceMapPage`/`vspaceUnmapPage` variants `private`. Only flush-inclusive versions remain in public API. | `Architecture/VSpace.lean` | S | DONE |
+| V4-E | M-HW-4 | Document non-flush `vspaceMapPage`/`vspaceUnmapPage` as internal proof helpers with mandatory docstring warnings. Functions remain public because 30+ proof theorems (VSpaceInvariant, TlbModel, InformationFlow) reference them directly; `private` would break the proof surface. Flush-inclusive versions are the only dispatch API. | `Architecture/VSpace.lean` | S | DONE |
 | V4-F | M-HW-5 | Add `MemoryKind` cross-check in `VSpaceMapArgs` decode: device regions cannot receive execute permission. | `Architecture/SyscallArgDecode.lean` | S | DONE |
 | V4-G | M-HW-6 | Add substantive boot precondition checks to simulation `BootContract`. At minimum: non-empty object store validation, IRQ range check. | `Sim/BootContract.lean` | S | DONE |
 | V4-H | M-HW-8 | Add validation for truncated DTB `reg` entries: reject entries with fewer than `address-cells + size-cells` bytes. | `DeviceTree.lean` | S | DONE |
-| V4-I | M-HW-9 | Fix `registerContextStableCheck` to actually use pre-state parameter in comparison, or document why it's intentionally ignored. | `RPi5/RuntimeContract.lean` | S | DONE |
+| V4-I | M-HW-9 | Simplify `registerContextStableCheck`: removed dead conditional (both branches identical). Pre-state parameter renamed to `_st` — accepted for `RuntimeBoundaryContract` signature compatibility; core check is post-state only. | `RPi5/RuntimeContract.lean` | S | DONE |
 | V4-J | M-DEF-8 | Document that internal `vspaceMapPage` default permissions are overridden by all production entry points. Add assertion or comment. | `Architecture/VSpace.lean` | XS | DONE |
 | V4-K | L-FND-2 | Add W^X rejection in `PagePermissions.ofNat`: if both write and execute are set, return `readOnly` or error. | `Object/Structures.lean` | S | DONE |
 | V4-L | L-FND-4 | Document `machineWordBounded` invariant scope. Add `isWord64` predicates to `Badge`, `CPtr`, `Slot` flowing to hardware decode. | `Prelude.lean`, `RegisterDecode.lean` | M | DONE |

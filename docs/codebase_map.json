@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-v4-workstream-pVihD",
-      "commit_sha": "012a0a88368fab94fb07a2696f25110ad1a110dd",
-      "tree_sha": "1bc45d3c424e3d41866b3155048773b17e57b802",
-      "committed_at_utc": "2026-03-27T01:25:57-04:00"
+      "commit_sha": "74fe2e327ac686a3595d0b80bf38ae3e4f784fac",
+      "tree_sha": "bf8c312496f262b39050a1632a2704bb3032e1ef",
+      "committed_at_utc": "2026-03-27T07:38:30+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e1ca6c6bf2bef0bdd086b2c8567f36b1b077c0fa8dd863e08b578e08cb641be4"
+    "source_digest": "9b5d925b44a1c3df47fa8c8f1fe3741261c19d355dfc1f7d0bfbff2e76ed722f"
   },
   "summary": {
     "module_count": 113,
     "declaration_count": 3674
   },
   "readme_sync": {
-    "version": "0.22.3",
+    "version": "0.22.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 71302,
+    "production_loc": 71289,
     "test_files": 10,
     "test_loc": 8315,
     "proved_theorem_lemma_decls": 2088,
@@ -41767,7 +41767,7 @@
         {
           "kind": "def",
           "name": "registerContextStableCheck",
-          "line": 76,
+          "line": 78,
           "called": [
             "SystemState",
             "none",
@@ -41777,7 +41777,7 @@
         {
           "kind": "def",
           "name": "registerContextStablePred",
-          "line": 100,
+          "line": 87,
           "called": [
             "SystemState",
             "registerContextStableCheck"
@@ -41786,7 +41786,7 @@
         {
           "kind": "instance",
           "name": "registerContextStablePred_decidable",
-          "line": 104,
+          "line": 91,
           "called": [
             "SystemState",
             "registerContextStablePred"
@@ -41795,7 +41795,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContract",
-          "line": 108,
+          "line": 95,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -41808,7 +41808,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContractRestrictive",
-          "line": 141,
+          "line": 128,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -41819,7 +41819,7 @@
         {
           "kind": "def",
           "name": "RegisterWriteInvariant",
-          "line": 178,
+          "line": 165,
           "called": [
             "SystemState",
             "none",
@@ -41829,7 +41829,7 @@
         {
           "kind": "theorem",
           "name": "registerWriteInvariant_default",
-          "line": 187,
+          "line": 174,
           "called": [
             "RegisterWriteInvariant",
             "SystemState"
@@ -41838,7 +41838,7 @@
         {
           "kind": "def",
           "name": "mmioAccessAllowed",
-          "line": 203,
+          "line": 190,
           "called": [
             "PAddr",
             "SystemState",
@@ -41848,7 +41848,7 @@
         {
           "kind": "instance",
           "name": "mmioAccessAllowed_decidable",
-          "line": 208,
+          "line": 195,
           "called": [
             "PAddr",
             "SystemState",
@@ -41860,7 +41860,7 @@
         {
           "kind": "theorem",
           "name": "mmioAccess_ram_kind_disjoint",
-          "line": 217,
+          "line": 204,
           "called": [
             "MemoryRegion"
           ]

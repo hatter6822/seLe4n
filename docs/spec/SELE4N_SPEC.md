@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.22.3` (`lakefile.toml`) |
+| **Package version** | `0.22.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 69,994 across 103 Lean files |
 | **Test LoC** | 8,315 across 10 Lean test suites |
 | **Proved declarations** | 2,008 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md) — pre-release audit remediation (5 HIGH, 61 MEDIUM, 29 LOW) |
-| **Active workstream** | **WS-V Phases V1–V3 COMPLETE** — Rust ABI Hardening (v0.22.0), API Surface Completion (v0.22.1), and Proof Chain Hardening (v0.22.2). V3 added `invExtFull` bundle, `uniqueRadixIndices_sufficient`, CDT acyclicity discharge documentation, `waitingThreadsPendingMessageNone`/`ipcStateQueueMembershipConsistent`/`endpointQueueNoDup` IPC invariants. Plan: [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md). Prior: WS-U (all 8 phases, v0.21.0–v0.21.7 COMPLETE), WS-T (v0.20.0–v0.20.7), WS-S–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-V Phases V1–V4 COMPLETE** — Rust ABI Hardening (v0.22.0), API Surface Completion (v0.22.1), Proof Chain Hardening (v0.22.2), Platform & Hardware Fidelity (v0.22.3), and post-audit fixes (v0.22.4). V4 added `bootFromPlatform_proofLayerInvariantBundle_general`, MMIO alignment/W1C, DTB parsing hardening, W^X decode enforcement, parameterized RAM. Plan: [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md). Prior: WS-U (all 8 phases, v0.21.0–v0.21.7 COMPLETE), WS-T (v0.20.0–v0.20.7), WS-S–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

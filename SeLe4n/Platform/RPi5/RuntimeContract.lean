@@ -69,31 +69,18 @@ Device and reserved regions require explicit MMIO adapter calls.
       object represents a malformed scheduler state. The contract must reject
       this to prevent unsound reasoning about register-file consistency.
 
-    V4-I/M-HW-9: The pre-state parameter `st` is now used: when both states have
-    a current thread, we additionally check that either the current thread hasn't
-    changed (register file tracks the same thread), or the new thread's saved
-    context matches the post-state register file (context switch occurred correctly). -/
-def registerContextStableCheck (st st' : SystemState) : Bool :=
+    V4-I/M-HW-9: The pre-state parameter `st` is accepted for signature
+    compatibility with `RuntimeBoundaryContract` (which requires pre/post state
+    pairs). The core check is post-state only: the register file must match the
+    currently scheduled thread's saved context regardless of whether a context
+    switch occurred. Pre-state validation of register save-on-switch is handled
+    at the scheduler transition level, not the runtime contract level. -/
+def registerContextStableCheck (_st st' : SystemState) : Bool :=
   match st'.scheduler.current with
   | none => true
   | some tid =>
     match st'.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
-      -- V4-I: Use pre-state to validate context switch correctness.
-      -- If the same thread was running before and after, the register file
-      -- must match its saved context. If a different thread is now current,
-      -- the register file must match the NEW thread's saved context
-      -- (context switch loaded the correct registers).
-      let regsMatchNewTcb := st'.machine.regs == tcb.registerContext
-      match st.scheduler.current with
-      | none => regsMatchNewTcb
-      | some oldTid =>
-        if oldTid == tid then
-          -- Same thread still running: registers must match saved context
-          regsMatchNewTcb
-        else
-          -- Context switch occurred: new thread's context must be loaded
-          regsMatchNewTcb
+    | some (.tcb tcb) => st'.machine.regs == tcb.registerContext
     | _ => false
 
 /-- U6-C: Prop-level register context stability predicate. -/

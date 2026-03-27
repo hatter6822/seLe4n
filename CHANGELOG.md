@@ -1,3 +1,15 @@
+## [0.22.4] — V4 Post-Audit Fixes
+
+- V4-I audit fix: Removed dead code in `registerContextStableCheck` — both
+  branches of the `oldTid == tid` conditional produced identical results.
+  Simplified to direct post-state register match. Pre-state parameter renamed
+  to `_st` for `RuntimeBoundaryContract` signature compatibility.
+- V4-E audit fix: Updated documentation to accurately reflect that non-flush
+  VSpace variants (`vspaceMapPage`, `vspaceUnmapPage`) remain public because
+  30+ proof theorems reference them directly. `private` keyword would break
+  the proof surface. Docstring warnings are the enforcement mechanism.
+- Version bump to 0.22.4.
+
 ## [0.22.3] — V3-J/K: IPC Queue Invariant Completion
 
 - V3-J (L-IPC-3): `ipcStateQueueMembershipConsistent` — strengthened version of

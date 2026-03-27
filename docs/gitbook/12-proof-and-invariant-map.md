@@ -2143,7 +2143,9 @@ trust boundary specification.
 - Production API dispatch uses `vspaceMapPageCheckedWithFlush` and
   `vspaceUnmapPageWithFlush` exclusively (S6-A).
 - Unflushed variants (`vspaceMapPage`, `vspaceUnmapPage`) documented as
-  internal proof decomposition helpers with explicit warnings (S6-B).
+  internal proof decomposition helpers with explicit warnings (S6-B/V4-E).
+  Remain public (not `private`) because 30+ proof theorems reference them
+  directly; docstring warnings enforce dispatch discipline.
 
 **Device tree abstraction** (`Platform/DeviceTree.lean`):
 - `DeviceTree` structure — platform-independent board configuration.
