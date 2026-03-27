@@ -359,8 +359,8 @@ private theorem handleYield_preserves_queueCurrentConsistent
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_queueCurrentConsistent st st' hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -398,8 +398,8 @@ private theorem handleYield_preserves_runQueueUnique
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_runQueueUnique st st' hUnique hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -429,8 +429,8 @@ private theorem handleYield_preserves_currentThreadValid
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_currentThreadValid st st' hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -452,8 +452,8 @@ private theorem handleYield_preserves_currentThreadInActiveDomain
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_currentThreadInActiveDomain st st' hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -914,8 +914,8 @@ private theorem handleYield_preserves_timeSlicePositive
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_timeSlicePositive st st' hInv hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -1167,8 +1167,8 @@ private theorem handleYield_preserves_currentTimeSlicePositive
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_currentTimeSlicePositive st st' hTS hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -1485,9 +1485,8 @@ theorem handleYield_preserves_runnableThreadsAreTCBs
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-      -- No current thread: handleYield just calls schedule
+      -- V5-F: handleYield now returns .error .invalidArgument when current = none
       simp [hCur] at hStep
-      exact schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep
   | some tid =>
       cases hObj : st.objects[tid.toObjId]? with
       | none => simp [hCur, hObj] at hStep
@@ -1671,21 +1670,205 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
                   (by intro tcb h; rw [hTid] at h; exact absurd h (by simp)) hObjInv
                 simp [hNonTcb, hTid]
 
-/-- WS-H6/WS-H12b/WS-H12e: `switchDomain` preserves the full scheduler invariant bundle. -/
+-- ============================================================================
+-- V5-H: domainTimeRemainingPositive preservation
+-- ============================================================================
+
+/-- V5-H: `saveOutgoingContext` preserves `domainTimeRemaining`.
+    It only modifies `objects`, not `scheduler`. -/
+private theorem saveOutgoingContext_domainTimeRemaining_eq (st : SystemState) :
+    (saveOutgoingContext st).scheduler.domainTimeRemaining =
+    st.scheduler.domainTimeRemaining := by
+  unfold saveOutgoingContext
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+    cases hObj : st.objects[outTid.toObjId]? with
+    | none => simp [hObj]
+    | some obj => cases obj <;> simp [hObj]
+
+/-- V5-H: `restoreIncomingContext` preserves `domainTimeRemaining`.
+    It only modifies `machine`, not `scheduler`. -/
+private theorem restoreIncomingContext_domainTimeRemaining_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContext st tid).scheduler.domainTimeRemaining =
+    st.scheduler.domainTimeRemaining := by
+  unfold restoreIncomingContext
+  cases hObj : st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj => cases obj <;> simp [hObj]
+
+/-- V5-H: `schedule` preserves `domainTimeRemainingPositive`.
+    `schedule` does not modify `domainTimeRemaining`. -/
+theorem schedule_preserves_domainTimeRemainingPositive
+    (st st' : SystemState)
+    (hInv : domainTimeRemainingPositive st)
+    (hObjInv : st.objects.invExt)
+    (hStep : schedule st = .ok ((), st')) :
+    domainTimeRemainingPositive st' := by
+  unfold schedule at hStep
+  cases hChoose : chooseThread st with
+  | error e => simp [hChoose] at hStep
+  | ok pick =>
+    cases pick with
+    | mk next stChoose =>
+      have hState := chooseThread_preserves_state st stChoose next hChoose
+      cases next with
+      | none =>
+        simp only [hChoose] at hStep
+        -- hStep : setCurrentThread none (saveOutgoingContext stChoose) = .ok ((), st')
+        unfold setCurrentThread at hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, rfl⟩ := hStep
+        -- st' = { saveOutgoingContext stChoose with scheduler.current := none }
+        unfold domainTimeRemainingPositive at *
+        -- domainTimeRemaining is in scheduler, current change doesn't affect it
+        show ({ saveOutgoingContext stChoose with scheduler := { (saveOutgoingContext stChoose).scheduler with current := none }}).scheduler.domainTimeRemaining > 0
+        simp only []
+        show (saveOutgoingContext stChoose).scheduler.domainTimeRemaining > 0
+        rw [saveOutgoingContext_domainTimeRemaining_eq, hState]
+        exact hInv
+      | some tid =>
+        cases hObj : stChoose.objects[tid.toObjId]? with
+        | none => simp [hChoose, hObj] at hStep
+        | some obj =>
+          cases obj with
+          | tcb tcb =>
+            by_cases hOk : tid ∈ stChoose.scheduler.runQueue ∧ tcb.domain = stChoose.scheduler.activeDomain
+            · -- schedule path: setCurrentThread ∘ restoreIncomingContext ∘ dequeue ∘ saveOutgoingContext
+              -- None of these modify domainTimeRemaining.
+              simp only [hChoose, hObj, hOk] at hStep
+              -- hStep : setCurrentThread (some tid) (restoreIncomingContext ... tid) = .ok ((), st')
+              -- Extract st' = the result state
+              unfold setCurrentThread at hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              -- Goal: domainTimeRemainingPositive of { restoreIncomingContext ... with scheduler.current := ... }
+              unfold domainTimeRemainingPositive at *
+              -- current doesn't affect domainTimeRemaining
+              show (restoreIncomingContext _ tid).scheduler.domainTimeRemaining > 0
+              rw [restoreIncomingContext_domainTimeRemaining_eq]
+              -- Now goal: { saveOutgoingContext stChoose with scheduler := { ... with runQueue := ... } }.scheduler.domainTimeRemaining > 0
+              show ({ saveOutgoingContext stChoose with scheduler :=
+                { (saveOutgoingContext stChoose).scheduler with
+                  runQueue := (saveOutgoingContext stChoose).scheduler.runQueue.remove tid }
+                }).scheduler.domainTimeRemaining > 0
+              simp only []
+              show (saveOutgoingContext stChoose).scheduler.domainTimeRemaining > 0
+              rw [saveOutgoingContext_domainTimeRemaining_eq, hState]
+              exact hInv
+            · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
+                  tcb.domain = stChoose.scheduler.activeDomain) := by
+                simpa [RunQueue.mem_iff_contains] using hOk
+              simp [hChoose, hObj, hOk'] at hStep
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+            simp [hChoose, hObj] at hStep
+
+/-- V5-H: `handleYield` preserves `domainTimeRemainingPositive`.
+    `handleYield` does not modify `domainTimeRemaining`. -/
+theorem handleYield_preserves_domainTimeRemainingPositive
+    (st st' : SystemState)
+    (hInv : domainTimeRemainingPositive st)
+    (hObjInv : st.objects.invExt)
+    (hStep : handleYield st = .ok ((), st')) :
+    domainTimeRemainingPositive st' := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    -- V5-F: handleYield returns error when current = none
+    simp only [hCur] at hStep; cases hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        apply schedule_preserves_domainTimeRemainingPositive _ st' _ _ hStep
+        · -- domainTimeRemainingPositive of intermediate state
+          unfold domainTimeRemainingPositive at *; simp; exact hInv
+        · exact hObjInv
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
+        simp [hObj] at hStep
+
+/-- V5-H: `timerTick` preserves `domainTimeRemainingPositive`.
+    `timerTick` only modifies `timeSlice`/`machine`, not `domainTimeRemaining`. -/
+theorem timerTick_preserves_domainTimeRemainingPositive
+    (st st' : SystemState)
+    (hInv : domainTimeRemainingPositive st)
+    (hObjInv : st.objects.invExt)
+    (hStep : timerTick st = .ok ((), st')) :
+    domainTimeRemainingPositive st' := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact hInv
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        by_cases hExpire : tcb.timeSlice ≤ 1
+        · -- Time-slice expired: schedule on modified state
+          simp only [hExpire, ite_true] at hStep
+          have hObjInv' := RHTable_insert_preserves_invExt st.objects tid.toObjId
+            (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }) hObjInv
+          apply schedule_preserves_domainTimeRemainingPositive _ st' _ hObjInv' hStep
+          -- domainTimeRemainingPositive of intermediate state: scheduler unchanged
+          unfold domainTimeRemainingPositive at *; simp; exact hInv
+        · -- Time-slice not expired: only objects/machine changed
+          simp only [hExpire, ite_false, Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep; exact hInv
+
+/-- V5-H: `switchDomain` preserves `domainTimeRemainingPositive`.
+    In the active branch, `domainTimeRemaining` is set to `entry.length`.
+    Requires that all domain schedule entries have positive length. -/
+theorem switchDomain_preserves_domainTimeRemainingPositive
+    (st st' : SystemState)
+    (hInv : domainTimeRemainingPositive st)
+    (hEntriesPos : ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0)
+    (hStep : switchDomain st = .ok ((), st')) :
+    domainTimeRemainingPositive st' := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil => simp [hSched] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
+  | cons entry rest =>
+    simp only [hSched] at hStep
+    split at hStep
+    · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
+    · rename_i nextEntry _
+      simp at hStep; obtain ⟨_, rfl⟩ := hStep
+      unfold domainTimeRemainingPositive; simp
+      have hInList : nextEntry ∈ (entry :: rest) := by
+        rename_i hGet
+        exact List.mem_of_getElem? hGet
+      exact hEntriesPos nextEntry (hSched ▸ hInList)
+
+/-- WS-H6/WS-H12b/WS-H12e/V5-H: `switchDomain` preserves the full scheduler invariant bundle.
+    V5-H: Now includes `domainTimeRemainingPositive` as the 8th conjunct.
+    Requires `hEntriesPos` — all domain schedule entries have positive length. -/
 theorem switchDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hObjInv : st.objects.invExt)
+    (hEntriesPos : ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0)
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM, hDTR⟩
   exact ⟨switchDomain_preserves_schedulerInvariantBundle st st' hBase hStep,
          switchDomain_preserves_timeSlicePositive st st' hTS hCurTS hObjInv hStep,
          switchDomain_preserves_currentTimeSlicePositive st st' hCurTS hStep,
          switchDomain_preserves_edfCurrentHasEarliestDeadline st st' hEDF hStep,
          switchDomain_preserves_contextMatchesCurrent st st' hCtx hStep,
          switchDomain_preserves_runnableThreadsAreTCBs st st' hRunnTcb hObjInv hStep,
-         switchDomain_preserves_schedulerPriorityMatch st st' hBase hPM hObjInv hStep⟩
+         switchDomain_preserves_schedulerPriorityMatch st st' hBase hPM hObjInv hStep,
+         switchDomain_preserves_domainTimeRemainingPositive st st' hDTR hEntriesPos hStep⟩
 
 /-- WS-H6: `setCurrentThread (some tid)` preserves EDF when the selected thread
 satisfies the EDF deadline ordering among same-domain/same-priority candidates. -/
@@ -2101,8 +2284,8 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    simp only [hCur] at hStep
-    exact schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some curTid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[curTid.toObjId]? with
@@ -2350,9 +2533,8 @@ private theorem handleYield_preserves_contextMatchesCurrent
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
-    -- No current thread → directly calls schedule
-    simp only [hCur] at hStep
-    exact schedule_preserves_contextMatchesCurrent st st' hObjInv hStep
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
+    simp only [hCur] at hStep; cases hStep
   | some tid =>
     simp only [hCur] at hStep
     cases hObj : st.objects[tid.toObjId]? with
@@ -2599,8 +2781,8 @@ private theorem handleYield_preserves_schedulerPriorityMatch
   unfold handleYield at hStep
   cases hCur : st.scheduler.current with
   | none =>
+    -- V5-F: handleYield now returns .error .invalidArgument when current = none
     simp [hCur] at hStep
-    exact schedule_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep
   | some curTid =>
     cases hObj : st.objects[curTid.toObjId]? with
     | none => simp [hCur, hObj] at hStep
@@ -2760,7 +2942,7 @@ theorem schedule_preserves_schedulerInvariantBundleFull
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM, hDTR⟩
   have hpm := hPM
   exact ⟨schedule_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          schedule_preserves_timeSlicePositive st st' hTS hObjInv hStep,
@@ -2768,7 +2950,8 @@ theorem schedule_preserves_schedulerInvariantBundleFull
          schedule_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hAllTcb hObjInv hStep,
          schedule_preserves_contextMatchesCurrent st st' hObjInv hStep,
          schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
-         schedule_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep⟩
+         schedule_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep,
+         schedule_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep⟩
 
 /-- WS-H6/WS-H12b: `handleYield` preserves the full scheduler invariant bundle.
     R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
@@ -2781,7 +2964,7 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM, hDTR⟩
   have hpm := hPM
   exact ⟨handleYield_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          handleYield_preserves_timeSlicePositive st st' hTS hCurTS hObjInv hStep,
@@ -2789,7 +2972,8 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
          handleYield_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hAllTcb hObjInv hStep,
          handleYield_preserves_contextMatchesCurrent st st' hObjInv hStep,
          handleYield_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
-         handleYield_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep⟩
+         handleYield_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep,
+         handleYield_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep⟩
 
 /-- WS-H6/WS-H12b: `timerTick` preserves the full scheduler invariant bundle.
     R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
@@ -2802,7 +2986,7 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb, hPM⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb, hPM, hDTR⟩
   have hpm := hPM
   exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hObjInv hStep,
          timerTick_preserves_timeSlicePositive st st' hTS hObjInv hStep,
@@ -2810,7 +2994,8 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
          timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hEDF hAllTcb hObjInv hStep,
          timerTick_preserves_contextMatchesCurrent st st' hCtx hObjInv hStep,
          timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
-         timerTick_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep⟩
+         timerTick_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep,
+         timerTick_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep⟩
 
 -- ============================================================================
 -- S3-E: scheduleDomain full bundle preservation
@@ -2847,17 +3032,20 @@ private theorem switchDomain_preserves_runQueueWellFormed
           | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
             exact hwf
 
-/-- S3-E/U-M08: `scheduleDomain` preserves `schedulerInvariantBundleFull`.
+/-- S3-E/U-M08/V5-H: `scheduleDomain` preserves `schedulerInvariantBundleFull`.
 
     Composes `switchDomain_preserves_schedulerInvariantBundleFull` and
     `schedule_preserves_schedulerInvariantBundleFull` for the expire path.
-    In the non-expire path, only `domainTimeRemaining` is decremented,
-    preserving all invariant components trivially. -/
+    In the non-expire path, `domainTimeRemaining` is decremented by 1;
+    V5-H proves the result is still > 0 since the guard ensures > 1.
+    Requires `hEntriesPos` for the expire path (switchDomain sets
+    domainTimeRemaining to an entry's length). -/
 theorem scheduleDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hwf : RunQueue.wellFormed st.scheduler.runQueue)
     (hObjInv : st.objects.invExt)
+    (hEntriesPos : ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0)
     (hStep : scheduleDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
   unfold scheduleDomain at hStep
@@ -2869,9 +3057,9 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
         cases pair with
         | mk _ stSw =>
             have hSched : schedule stSw = .ok ((), st') := by simpa [hSw] using hStep
-            -- switchDomain preserves the full bundle
+            -- switchDomain preserves the full bundle (V5-H: now requires hEntriesPos)
             have hSwInv : schedulerInvariantBundleFull stSw :=
-              switchDomain_preserves_schedulerInvariantBundleFull st stSw hInv hObjInv (by simp [hSw])
+              switchDomain_preserves_schedulerInvariantBundleFull st stSw hInv hObjInv hEntriesPos (by simp [hSw])
             -- switchDomain preserves objects.invExt
             have hSwObjInv : stSw.objects.invExt :=
               switchDomain_preserves_objects_invExt st stSw hObjInv (by simp [hSw])
@@ -2884,6 +3072,19 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
               hSwInv.2.2.2.2.2.1
             exact schedule_preserves_schedulerInvariantBundleFull stSw st'
               hSwInv hSwWf hSwAllTcb hSwObjInv hSched
-  · simp [hExpire] at hStep
+  · -- Non-expire: domainTimeRemaining decremented by 1
+    simp [hExpire] at hStep
     cases hStep
-    exact hInv
+    -- V5-H: All bundle components except domainTimeRemainingPositive are preserved
+    -- trivially (only domainTimeRemaining changed). For domainTimeRemainingPositive,
+    -- ¬(domainTimeRemaining ≤ 1) implies domainTimeRemaining > 1, so - 1 > 0.
+    rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM, hDTR⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · exact hBase
+    · exact hTS
+    · exact hCurTS
+    · exact hEDF
+    · exact hCtx
+    · exact hRunnTcb
+    · exact hPM
+    · unfold domainTimeRemainingPositive at *; simp; omega

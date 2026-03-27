@@ -1582,10 +1582,11 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.withLifecycleObjectType ⟨10⟩ .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.buildChecked)
-  -- handleYield with current=none → schedule on empty queue → current stays none
-  let (_, stYielded) ← expectOkState "chain24: yield empty queue"
+  -- V5-F: handleYield with current=none now returns .error .invalidArgument
+  -- (defensive: yielding requires a current thread to re-enqueue)
+  expectError "chain24: yield empty queue returns invalidArgument"
     (SeLe4n.Kernel.handleYield stEmpty)
-  expect "chain24: no thread after empty yield" (stYielded.scheduler.current == none)
+    .invalidArgument
 
 /-- L-P07: IRQ handler dispatch — register an IRQ handler and verify
 signal is dispatched to the correct notification object. -/
@@ -1644,7 +1645,9 @@ private def chain26BootSequence : IO Unit := do
     initialObjects := [ntfnEntry, epEntry]
   }
   -- Boot
-  let ist := SeLe4n.Platform.Boot.bootFromPlatform config
+  -- V5-C: Use the explicitly-named unchecked variant. New code should prefer
+  -- `bootFromPlatformChecked`; this test exercises the unchecked path directly.
+  let ist := SeLe4n.Platform.Boot.bootFromPlatformUnchecked config
   -- Verify all 4 invariant witnesses are bundled in IntermediateState.
   -- Access each proof field explicitly — if any were `sorry`, this would fail
   -- at compile time (Lean's kernel rejects `sorry` in executable code).
@@ -1663,7 +1666,7 @@ private def chain26BootSequence : IO Unit := do
   -- Verify IRQ handler in booted state
   expect "chain26: IRQ handler registered" (ist.state.irqHandlers[irq]? == some ntfnId)
   -- Determinism: same config → same state
-  let ist2 := SeLe4n.Platform.Boot.bootFromPlatform config
+  let ist2 := SeLe4n.Platform.Boot.bootFromPlatformUnchecked config
   expect "chain26: deterministic boot" (ist.state.objects[ntfnId]? == ist2.state.objects[ntfnId]?)
   IO.println "operation-chain check passed [chain26: boot sequence test (L-P08)]"
 

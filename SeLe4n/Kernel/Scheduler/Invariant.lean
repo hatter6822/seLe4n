@@ -257,15 +257,33 @@ def schedulerPriorityMatch (st : SystemState) : Prop :=
         st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
     | _ => True
 
-/-- R6-D/L-12: Extended full scheduler invariant bundle.
-    7-tuple: base triad + timeSlice + EDF + context + runnableAreTCBs + priorityMatch.
+/-- V5-H (M-HW-7): The scheduler's `domainTimeRemaining` is always positive (> 0).
+
+This invariant ensures that `scheduleDomain`'s decrement operation
+(`domainTimeRemaining - 1`) never underflows to `Nat.zero` in the
+non-expiry branch. It is established at initialization (default value 5)
+and maintained by:
+- `scheduleDomain`: on expiry, `switchDomain` sets `domainTimeRemaining` to
+  the next domain entry's `length` field (which must be positive per
+  `DomainScheduleEntry` well-formedness); on non-expiry, decrements by 1
+  (result ≥ 1 since pre-condition was > 1).
+- `timerTick`: does not modify `domainTimeRemaining`.
+- `schedule`: does not modify `domainTimeRemaining`.
+- `handleYield`: does not modify `domainTimeRemaining`. -/
+def domainTimeRemainingPositive (st : SystemState) : Prop :=
+  st.scheduler.domainTimeRemaining > 0
+
+/-- R6-D/L-12/V5-H: Extended full scheduler invariant bundle.
+    8-tuple: base triad + timeSlice + EDF + context + runnableAreTCBs +
+    priorityMatch + domainTimeRemainingPositive.
     `schedulerPriorityMatch` ensures the RunQueue's priority index stays in sync
-    with the authoritative TCB priority in the object store. -/
+    with the authoritative TCB priority in the object store.
+    `domainTimeRemainingPositive` (V5-H) ensures domain time remaining > 0. -/
 def schedulerInvariantBundleFull (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧ timeSlicePositive st ∧
   currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st ∧
   contextMatchesCurrent st ∧ runnableThreadsAreTCBs st ∧
-  schedulerPriorityMatch st
+  schedulerPriorityMatch st ∧ domainTimeRemainingPositive st
 
 /-- Project the structural triad from the full bundle. -/
 theorem schedulerInvariantBundleFull_to_base {st : SystemState}
@@ -280,7 +298,12 @@ theorem schedulerInvariantBundleFull_to_contextMatchesCurrent {st : SystemState}
 /-- R6-D: Project `schedulerPriorityMatch` from the full scheduler bundle. -/
 theorem schedulerInvariantBundleFull_to_priorityMatch {st : SystemState}
     (h : schedulerInvariantBundleFull st) : schedulerPriorityMatch st :=
-  h.2.2.2.2.2.2
+  h.2.2.2.2.2.2.1
+
+/-- V5-H: Project `domainTimeRemainingPositive` from the full scheduler bundle. -/
+theorem schedulerInvariantBundleFull_to_domainTimeRemainingPositive {st : SystemState}
+    (h : schedulerInvariantBundleFull st) : domainTimeRemainingPositive st :=
+  h.2.2.2.2.2.2.2
 
 /-- R6-D: schedulerPriorityMatch is preserved when both runQueue and objects
     are unchanged. -/
@@ -463,5 +486,23 @@ theorem threadPriority_membership_consistent_remove
       rw [RobinHood.RHTable.getElem?_erase_ne_K rq.threadPriority tid tid' hEq
           rq.threadPrio_invExtK, ← RHTable_getElem?_eq_get?]
       exact hTPMC.2 tid' hMem'
+
+-- ============================================================================
+-- V5-H: Helper theorems for domainTimeRemainingPositive
+-- ============================================================================
+
+/-- V5-H: The default SchedulerState satisfies `domainTimeRemainingPositive`.
+    Default `domainTimeRemaining` is 5, which is > 0. -/
+theorem domainTimeRemainingPositive_default (st : SystemState)
+    (h : st.scheduler.domainTimeRemaining = 5) :
+    domainTimeRemainingPositive st := by
+  unfold domainTimeRemainingPositive; omega
+
+/-- V5-H: `domainTimeRemainingPositive` is preserved when `scheduler` is unchanged. -/
+theorem domainTimeRemainingPositive_of_scheduler_eq
+    (st st' : SystemState) (h : st'.scheduler = st.scheduler)
+    (hInv : domainTimeRemainingPositive st) :
+    domainTimeRemainingPositive st' := by
+  unfold domainTimeRemainingPositive at *; rw [h]; exact hInv
 
 end SeLe4n.Kernel

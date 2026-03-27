@@ -18,9 +18,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phases V1, V2, V3, and V4 are complete. Phases V5–V8 remain.
+WS-V Phases V1, V2, V3, V4, and V5 are complete. Phases V6–V8 remain.
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V4 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V5 COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
@@ -72,6 +72,23 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`. Default state,
   lifecycle, and `advanceTimerState` cascade fixes. Zero sorry/axiom, 182 build
   targets pass, `test_full.sh` green.
+
+- **V5 (Defensive Coding & Robustness) COMPLETE** (v0.22.5): 16 sub-tasks (V5-A
+  through V5-P). Defense-in-depth hardening across all kernel subsystems.
+  Key changes: V5-A replaced panicking `ByteArray.get!` with safe `data[·]?`
+  in all DTB parsing functions; V5-F added explicit error return for `handleYield`
+  with `current = none`; V5-L added configurable `configDefaultTimeSlice` to
+  `SchedulerState`; V5-N removed redundant `detachSlotFromCdt` in
+  `processRevokeNode` and `cspaceRevokeCdtStrict`; V5-O/V5-P added queue
+  membership validation and occupied-slot guard to frozen operations;
+  V5-D/V5-E added checked variants of `saveOutgoingContext`/`restoreIncomingContext`
+  with explicit success indicators and design notes in `schedule`;
+  V5-H `domainTimeRemainingPositive` now integrated as 8th conjunct of
+  `schedulerInvariantBundleFull` with per-operation preservation proofs for
+  `schedule`, `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`;
+  V5-J added `ThreadId.toObjIdVerified` with TCB type verification. All 10
+  affected Preservation.lean proofs updated for V5-F/V5-N changes. V5-C test
+  code migrated to `bootFromPlatformUnchecked` alias. Zero sorry/axiom.
 
 - **V4 (Platform & Hardware Fidelity) COMPLETE** (v0.22.3): 26 sub-tasks (V4-A1
   through V4-N). **V4-A boot-to-runtime invariant bridge**: Complete machine-checked

@@ -438,6 +438,14 @@ which means dangling references may persist and backing memory is not zeroed
 T5-A (M-NEW-4): Marked as internal. All external retype operations must go
 through `lifecycleRetypeWithCleanup` to ensure cleanup + scrubbing.
 
+V5-B (M-DEF-2): **Internal only — do not call from new code.** This function
+bypasses cleanup and memory scrubbing, violating the H-05 safety guarantee
+and S6-C memory scrubbing guarantee. Production callers must use
+`lifecycleRetypeWithCleanup` (CSpaceAddr path) or
+`lifecycleRetypeDirectWithCleanup` (pre-resolved cap path). This definition
+remains public solely because the proof chain (`lifecycleRetypeObject_ok_as_storeObject`,
+`lifecycleRetypeObject_ok_lookup_preserved_ne`, etc.) references it by name.
+
 Deterministic branch contract for M4-A step 2:
 1. target object must exist,
 2. lifecycle metadata for the target id must agree with object-store type (`illegalState` otherwise),
@@ -1346,6 +1354,10 @@ T5-B (M-NEW-4): Marked as internal. This function takes a pre-resolved
 must use `lifecycleRetypeDirectWithCleanup` (for pre-resolved caps) or
 `lifecycleRetypeWithCleanup` (for CSpaceAddr) for the H-05 and S6-C
 guarantees. U-H04: API dispatch now routes through the safe wrapper.
+
+V5-B (M-DEF-2): **Internal only — do not call from new code.** Remains
+public solely for the proof chain (`lifecycleRetypeDirect_eq_lifecycleRetypeObject`,
+etc.). See `lifecycleRetypeObject` for the full rationale.
 
 Deterministic branch contract:
 1. Target object must exist (`objectNotFound` otherwise).

@@ -112,6 +112,14 @@ def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let withIrqs := foldIrqs config.irqTable initial
   foldObjects config.initialObjects withIrqs
 
+/-- V5-C (M-DEF-3): Explicit alias marking `bootFromPlatform` as the unchecked
+    variant. This function silently uses last-wins semantics on duplicate IRQs
+    or object IDs. **New boot code should prefer `bootFromPlatformChecked`**
+    which validates `PlatformConfig.wellFormed` and returns an error on
+    duplicates. This alias exists solely for backward compatibility with
+    existing proofs and test code. -/
+abbrev bootFromPlatformUnchecked := bootFromPlatform
+
 /-- Q3-C: Boot from empty config yields the empty IntermediateState. -/
 theorem bootFromPlatform_empty :
     bootFromPlatform { irqTable := [], initialObjects := [] } =
@@ -168,13 +176,15 @@ theorem PlatformConfig.wellFormed_empty :
 
 /-- U6-E/F: Checked boot — rejects configs with duplicate IRQs or object IDs.
 
-    This is the enforcement variant of `bootFromPlatform`. It validates
-    `PlatformConfig.wellFormed` before proceeding, returning an error if
-    duplicate IRQ registrations or object IDs are detected. This prevents
-    silent last-wins overwrites that could lose kernel objects or IRQ handlers.
+    V5-C (M-DEF-3): **Recommended boot entry point.** This is the enforcement
+    variant of `bootFromPlatform`. It validates `PlatformConfig.wellFormed`
+    before proceeding, returning an error if duplicate IRQ registrations or
+    object IDs are detected. This prevents silent last-wins overwrites that
+    could lose kernel objects or IRQ handlers.
 
-    Use `bootFromPlatform` directly only when the config is known-valid
-    (e.g., constructed programmatically with uniqueness guarantees). -/
+    Use `bootFromPlatformUnchecked` (alias for `bootFromPlatform`) only when
+    the config is known-valid (e.g., constructed programmatically with
+    uniqueness guarantees). All new boot paths should use this function. -/
 def bootFromPlatformChecked (config : PlatformConfig) :
     Except String IntermediateState :=
   if config.wellFormed then
@@ -813,7 +823,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     rw [hSch]; decide
   -- 1. schedulerInvariantBundleFull
   have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
-    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [queueCurrentConsistent, hSch]
     · show (bootFromPlatform config).state.scheduler.runnable.Nodup
       rw [hRun]; exact List.nodup_nil
@@ -826,6 +836,8 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro tid hMem
       have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
       simp [RunQueue.toList, hRQflat] at hInFlat
+    · -- V5-H: domainTimeRemainingPositive — boot scheduler is default, DTR = 5
+      unfold domainTimeRemainingPositive; rw [hSch]; decide
   -- Boot-safe object bridge and shared helpers
   have hBS := bootFromPlatform_objects_bootSafe config hSafe
   have hCdtNS := bootFromPlatform_cdtNodeSlot_eq config

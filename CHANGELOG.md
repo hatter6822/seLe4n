@@ -1,3 +1,48 @@
+## [0.22.5] — V5 Audit: domainTimeRemainingPositive bundle integration
+
+- V5-H (M-HW-7): **Audit fix** — `domainTimeRemainingPositive` is now the 8th
+  conjunct of `schedulerInvariantBundleFull`. Added per-operation preservation
+  proofs for `schedule`, `handleYield`, `timerTick`, `switchDomain`, and
+  `scheduleDomain`. Updated `default_schedulerInvariantBundleFull` (Architecture)
+  and `bootFromPlatform_proofLayerInvariantBundle_general` (Boot). All proofs
+  machine-checked, zero sorry.
+- V5-C (M-DEF-3): Test code updated to use `bootFromPlatformUnchecked` alias.
+- V5-D/E (M-DEF-4/5): Added design note to `schedule` documenting checked vs
+  unchecked context save/restore usage rationale.
+
+## [0.22.4] — V5: Defensive Coding & Robustness
+
+- V5-A (M-DEF-1): Replaced panicking `ByteArray.get!` with safe `data[·]?`
+  in `readBE32` and `readCString` DTB parsing functions.
+- V5-B (M-DEF-2): Added internal-only documentation warnings to
+  `lifecycleRetypeObject` and `lifecycleRetypeDirect`.
+- V5-C (M-DEF-3): Added `bootFromPlatformUnchecked` alias and promoted
+  `bootFromPlatformChecked` as the recommended boot entry point.
+- V5-D (M-DEF-4): Added `saveOutgoingContextChecked` with explicit success
+  indicator and equivalence theorem.
+- V5-E (M-DEF-5): Added `restoreIncomingContextChecked` with explicit success
+  indicator and equivalence theorem.
+- V5-F (M-DEF-6): `handleYield` now returns `.invalidArgument` when
+  `current = none` instead of falling through to `schedule`. Updated 10
+  preservation proofs in Preservation.lean and 1 in Operations.lean.
+- V5-G (M-DEF-7): Added comprehensive revocation routing guide documenting
+  `cspaceRevoke`, `cspaceRevokeCdt`, `cspaceRevokeCdtStrict`, and
+  `cspaceRevokeCdtStreaming` entry points.
+- V5-H (M-HW-7): Added `domainTimeRemainingPositive` invariant with default
+  state theorem and frame preservation lemma.
+- V5-I (H-SVC-1): Added fuel bounds documentation for `serviceHasPathTo` and
+  `maxServiceFuel` constant.
+- V5-J (L-FND-1): Added `ThreadId.toObjIdVerified` with TCB type verification
+  via caller-supplied predicate.
+- V5-K (L-FND-1): Documented `storeObject` infallibility design rationale.
+- V5-L (L-SCH-1): Added configurable `configDefaultTimeSlice` field to
+  `SchedulerState` (default 5).
+- V5-M (L-SCH-2): Documented `timerTick` pre-reset priority correctness.
+- V5-N (L-CAP-1): Removed redundant `detachSlotFromCdt` from `processRevokeNode`
+  and `cspaceRevokeCdtStrict`. Updated Capability Invariant Preservation proofs.
+- V5-O (L-DS-3): Added queue direction consistency check to `frozenQueuePopHead`.
+- V5-P (L-DS-4): Added occupied-slot guard to `frozenCspaceMint`.
+
 ## [0.22.3] — V3-J/K: IPC Queue Invariant Completion
 
 - V3-J (L-IPC-3): `ipcStateQueueMembershipConsistent` — strengthened version of

@@ -177,17 +177,20 @@ structure FdtHeader where
   sizeDtStruct : UInt32
   deriving Repr
 
-/-- T6-M: Read a big-endian UInt32 from a ByteArray at the given offset.
-    Returns `none` if the offset is out of bounds. -/
-def readBE32 (blob : ByteArray) (offset : Nat) : Option UInt32 :=
-  if offset + 4 ≤ blob.size then
-    let b0 := blob.get! offset
-    let b1 := blob.get! (offset + 1)
-    let b2 := blob.get! (offset + 2)
-    let b3 := blob.get! (offset + 3)
-    some ((b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
-          (b2.toUInt32 <<< 8) ||| b3.toUInt32)
-  else none
+/-- T6-M/V5-A: Read a big-endian UInt32 from a ByteArray at the given offset.
+    Returns `none` if the offset is out of bounds.
+
+    V5-A (M-DEF-1): Uses `ByteArray.get?` instead of the panicking `get!`
+    to eliminate partial-function hazards. The bounds guard (`offset + 4 ≤ size`)
+    makes the `get?` calls provably `some`, but using `get?` provides
+    defense-in-depth against future refactoring that might weaken the guard. -/
+def readBE32 (blob : ByteArray) (offset : Nat) : Option UInt32 := do
+  let b0 ← blob.data[offset]?
+  let b1 ← blob.data[offset + 1]?
+  let b2 ← blob.data[offset + 2]?
+  let b3 ← blob.data[offset + 3]?
+  some ((b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
+        (b2.toUInt32 <<< 8) ||| b3.toUInt32)
 
 /-- T6-M: Parse the FDT header from a device tree blob.
     Returns `none` if the blob is too small or has wrong magic. -/
@@ -398,9 +401,11 @@ theorem extractMemoryRegionsGeneral_entrySize_eq :
 -- V4-M1/L-PLAT-1: DTB string reading
 -- ============================================================================
 
-/-- V4-M1/L-PLAT-1: Read a null-terminated C string from a ByteArray at the
+/-- V4-M1/V5-A/L-PLAT-1: Read a null-terminated C string from a ByteArray at the
     given offset. Returns the string and the 4-byte-aligned offset past it.
-    Uses fuel to prevent infinite loops on malformed (non-terminated) strings. -/
+    Uses fuel to prevent infinite loops on malformed (non-terminated) strings.
+
+    V5-A (M-DEF-1): Uses `ByteArray.get?` instead of the panicking `get!`. -/
 def readCString (blob : ByteArray) (offset : Nat) (fuel : Nat := 256)
     : Option (String × Nat) :=
   go blob offset fuel []
@@ -410,8 +415,9 @@ where
     match fuel with
     | 0 => none  -- Fuel exhausted without finding null terminator
     | fuel' + 1 =>
-      if offset < blob.size then
-        let byte := blob.get! offset
+      match blob.data[offset]? with
+      | none => none  -- Out of bounds
+      | some byte =>
         if byte == 0 then
           -- Found null terminator; align to 4-byte boundary
           let nextOffset := offset + 1
@@ -419,7 +425,6 @@ where
           some (String.ofList acc.reverse, aligned)
         else
           go blob (offset + 1) fuel' (Char.ofNat byte.toNat :: acc)
-      else none  -- Out of bounds
 
 /-- V4-M2/L-PLAT-1: Look up a property name in the FDT string table.
     Given the string table offset and a property's `nameoff`, reads the

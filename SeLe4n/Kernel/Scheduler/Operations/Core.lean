@@ -261,7 +261,16 @@ preemptive scheduler matching seL4's classic scheduling model. Starvation
 freedom is NOT a property of this scheduler — a continuously runnable
 high-priority thread will indefinitely preempt lower-priority threads.
 seL4 delegates starvation prevention to user-level policy (e.g., MCS
-scheduling extensions, which are not yet modeled in seLe4n). -/
+scheduling extensions, which are not yet modeled in seLe4n).
+
+**V5-D/V5-E design note:** `schedule` uses the unchecked `saveOutgoingContext` /
+`restoreIncomingContext` internally because all 20+ preservation proofs
+(`schedule_preserves_schedulerInvariantBundle`, etc.) unfold these functions by
+name. The checked variants (`saveOutgoingContextChecked` / `restoreIncomingContextChecked`)
+return `SystemState × Bool` for defense-in-depth at API boundaries; equivalence
+theorems (`saveOutgoingContextChecked_fst_eq`, `restoreIncomingContextChecked_fst_eq`)
+guarantee the state component is identical. Under `currentThreadValid`, the
+`false` branches are unreachable. -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with
@@ -301,7 +310,12 @@ This mirrors seL4's `handleYield` → `tcbSchedDequeue` + `tcbSchedAppend`
 def handleYield : Kernel Unit :=
   fun st =>
     match st.scheduler.current with
-    | none => schedule st
+    | none =>
+        -- V5-F (M-DEF-6): Return `.invalidArgument` when no thread is current
+        -- instead of falling through to `schedule`. Yielding requires a current
+        -- thread to re-enqueue. Without one, the yield is a no-op error —
+        -- callers should check `current` before invoking yield.
+        .error .invalidArgument
     | some tid =>
         match st.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
@@ -315,9 +329,11 @@ def handleYield : Kernel Unit :=
 -- M-04/WS-E6: Time-slice preemption
 -- ============================================================================
 
-/-- M-04/WS-E6: Default time-slice quantum (ticks per scheduling round).
-Factored into a named constant so the reset value in `timerTick` stays
-synchronized with `TCB.timeSlice` default. -/
+/-- M-04/WS-E6/V5-L: Default time-slice quantum (ticks per scheduling round).
+Factored into a named constant for backward compatibility. New code should
+prefer `st.scheduler.configDefaultTimeSlice` which is configurable per
+scheduler instance. This constant remains for use in contexts where no
+`SchedulerState` is available (e.g., frozen operations). -/
 def defaultTimeSlice : Nat := 5
 
 /-- WS-H12b/H-04 + WS-H12c/H-03: Handle a timer tick with dequeue-on-dispatch
@@ -347,9 +363,17 @@ def timerTick : Kernel Unit :=
         | some (.tcb tcb) =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset, re-enqueue, reschedule
+              -- V5-L: Uses `defaultTimeSlice` (= 5) for backward compatibility with
+              -- existing proofs. The configurable `st.scheduler.configDefaultTimeSlice`
+              -- field is available for future use when proof chain is updated.
               let tcb' := { tcb with timeSlice := defaultTimeSlice }
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
-              -- WS-H12b: re-enqueue current thread before schedule
+              -- WS-H12b: re-enqueue current thread before schedule.
+              -- V5-M (L-SCH-2): The re-enqueue uses `tcb.priority` (pre-reset
+              -- value) rather than reading from the updated TCB. This is correct
+              -- because `timerTick` only modifies `timeSlice` — priority is
+              -- immutable during a tick. The pre-reset TCB and post-reset TCB
+              -- have identical `priority` fields, so using either is equivalent.
               let st'' := { st' with scheduler := { st'.scheduler with
                   runQueue := st'.scheduler.runQueue.insert tid tcb.priority } }
               schedule st''

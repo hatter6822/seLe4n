@@ -88,9 +88,30 @@ The traversal does not consume fuel for already-visited nodes, so this bound
 only constrains the number of distinct nodes visited.
 
 Note: the function retains its `Bfs` name for API stability; the underlying
-algorithm was migrated to DFS with HashSet visited set in WS-G8. -/
+algorithm was migrated to DFS with HashSet visited set in WS-G8.
+
+V5-I (H-SVC-1): **Fuel bounds analysis.** The fuel value `objectIndex.length + 256`
+is sufficient because:
+1. Each node is visited at most once (HashSet membership check).
+2. The total number of distinct service IDs ≤ `objectIndex.length` (each
+   service has a corresponding kernel object).
+3. The `+ 256` margin accounts for services with IDs not yet in the object
+   index (e.g., pending registrations) and prevents off-by-one edge cases.
+4. Since fuel is only decremented when expanding a *new* (unvisited) node,
+   and there are at most `objectIndex.length` such nodes, the traversal
+   never exhausts fuel on a well-formed service graph.
+
+See `serviceBfsFuel_adequate` for the formal proof that fuel ≥ objectIndex
+length, and `serviceCountBounded` in `Service/Invariant/Acyclicity.lean` for
+the BFS universe predicate ensuring completeness. -/
 def serviceBfsFuel (st : SystemState) : Nat :=
   st.objectIndex.length + 256
+
+/-- V5-I (H-SVC-1): Named constant for maximum service fuel.
+    This is the static upper bound on `serviceBfsFuel`, assuming the object
+    index is at capacity (`maxObjects`). Used for documentation and
+    compile-time reasoning about worst-case traversal cost. -/
+def maxServiceFuel : Nat := maxObjects + 256
 
 /-- Bounded graph traversal reachability check in the service dependency graph.
 

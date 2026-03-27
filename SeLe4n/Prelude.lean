@@ -120,6 +120,47 @@ theorem toObjIdChecked_eq_some_of_not_reserved (id : ThreadId)
     id.toObjIdChecked = some id.toObjId := by
   simp [toObjIdChecked, hNotRes]
 
+/-- V5-J (L-FND-1): Store-aware checked variant of `toObjId`.
+
+Validates that:
+1. The thread ID is not the reserved sentinel (value 0).
+2. The resulting ObjId maps to an object for which `isTcb` returns `true`.
+
+The `isTcb` predicate is caller-supplied because `Prelude.lean` does not
+import the object model. Callers should instantiate it as:
+```
+fun oid => match st.objects[oid]? with | some (.tcb _) => true | _ => false
+```
+
+Returns `some oid` on success, `none` on any validation failure.
+
+**When to use which variant:**
+- `toObjId` (unchecked): Internal fast path inside scheduler/IPC operations
+  where the caller immediately pattern-matches on `.tcb tcb` after lookup.
+  Suitable when the thread ID comes from a trusted source (e.g., run queue,
+  IPC queue head) and the caller handles the non-TCB case explicitly.
+- `toObjIdChecked` (sentinel-only): When the thread ID comes from an
+  untrusted source but the caller will do its own object-store lookup.
+  Rejects only the sentinel value.
+- `toObjIdVerified` (full verification): When the thread ID comes from an
+  untrusted source AND the caller needs a guaranteed-valid TCB reference
+  without further pattern matching. Suitable for API boundary validation. -/
+@[inline] def toObjIdVerified (id : ThreadId)
+    (isTcb : ObjId → Bool) : Option ObjId :=
+  if id.isReserved then .none
+  else
+    let oid := id.toObjId
+    if isTcb oid then some oid else none
+
+/-- V5-J: `toObjIdVerified` agrees with `toObjIdChecked` when `isTcb` returns
+    true for the target ObjId. -/
+theorem toObjIdVerified_eq_checked_when_isTcb (id : ThreadId)
+    (isTcb : ObjId → Bool)
+    (hNotRes : id.isReserved = false)
+    (hIsTcb : isTcb id.toObjId = true) :
+    id.toObjIdVerified isTcb = id.toObjIdChecked := by
+  simp [toObjIdVerified, toObjIdChecked, hNotRes, hIsTcb]
+
 end ThreadId
 
 /-- H-09/WS-E3: ThreadId → ObjId is injective. Two thread identifiers that

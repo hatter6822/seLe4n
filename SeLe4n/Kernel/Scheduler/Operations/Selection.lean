@@ -224,9 +224,16 @@ def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
 
-/-- WS-H12c/H-03: Save the outgoing (current) thread's machine registers into
+/-- WS-H12c/H-03/V5-D: Save the outgoing (current) thread's machine registers into
 its TCB `registerContext` field. If no thread is current, returns the state
-unchanged. This is an internal helper used inline by `schedule`. -/
+unchanged. This is an internal helper used inline by `schedule`.
+
+V5-D (M-DEF-4): When `current = some tid` but the TCB lookup fails (non-TCB
+object or missing ObjId), the state is returned unchanged — the save is silently
+dropped. Under `currentThreadValid` (part of `schedulerInvariantBundle`), this
+branch is unreachable: the invariant guarantees the current thread resolves to
+a valid TCB. The `saveOutgoingContextChecked` variant below provides an explicit
+success indicator for callers that need to detect this (unreachable) failure. -/
 def saveOutgoingContext (st : SystemState) : SystemState :=
   match st.scheduler.current with
   | none => st
@@ -237,12 +244,67 @@ def saveOutgoingContext (st : SystemState) : SystemState :=
           { st with objects := st.objects.insert outTid.toObjId obj }
       | _ => st
 
-/-- WS-H12c/H-03: Restore the incoming thread's register context into the
+/-- V5-D (M-DEF-4): Checked variant of `saveOutgoingContext` that returns a
+    success indicator. Returns `(state, true)` on successful save (or no current
+    thread), `(state, false)` when the current thread's TCB lookup fails.
+
+    Under `currentThreadValid`, the `false` branch is unreachable. This variant
+    exists for defense-in-depth: callers at API boundaries can assert on the
+    success flag to surface invariant violations early. -/
+def saveOutgoingContextChecked (st : SystemState) : SystemState × Bool :=
+  match st.scheduler.current with
+  | none => (st, true)
+  | some outTid =>
+      match st.objects[outTid.toObjId]? with
+      | some (.tcb outTcb) =>
+          let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
+          ({ st with objects := st.objects.insert outTid.toObjId obj }, true)
+      | _ => (st, false)
+
+/-- V5-D: The checked variant agrees with the unchecked variant on the state component. -/
+theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
+    (saveOutgoingContextChecked st).1 = saveOutgoingContext st := by
+  unfold saveOutgoingContextChecked saveOutgoingContext
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      cases h : st.objects[outTid.toObjId]? with
+      | none => simp_all
+      | some obj =>
+          cases obj <;> simp_all
+
+/-- WS-H12c/H-03/V5-E: Restore the incoming thread's register context into the
 machine register file. If the incoming TCB is not found, returns the state
-unchanged (unreachable under `currentThreadValid`). -/
+unchanged (unreachable under `currentThreadValid`).
+
+V5-E (M-DEF-5): When the TCB lookup fails, the restore is silently skipped.
+Under `currentThreadValid`, this branch is unreachable. The checked variant
+`restoreIncomingContextChecked` provides an explicit success indicator. -/
 def restoreIncomingContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   match st.objects[tid.toObjId]? with
   | some (.tcb inTcb) =>
       { st with machine := { st.machine with regs := inTcb.registerContext } }
   | _ => st
+
+/-- V5-E (M-DEF-5): Checked variant of `restoreIncomingContext` that returns a
+    success indicator. Returns `(state, true)` on successful restore,
+    `(state, false)` when the thread's TCB lookup fails.
+
+    Under `currentThreadValid`, the `false` branch is unreachable. -/
+def restoreIncomingContextChecked (st : SystemState)
+    (tid : SeLe4n.ThreadId) : SystemState × Bool :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb inTcb) =>
+      ({ st with machine := { st.machine with regs := inTcb.registerContext } }, true)
+  | _ => (st, false)
+
+/-- V5-E: The checked variant agrees with the unchecked variant on the state component. -/
+theorem restoreIncomingContextChecked_fst_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContextChecked st tid).1 = restoreIncomingContext st tid := by
+  unfold restoreIncomingContextChecked restoreIncomingContext
+  cases h : st.objects[tid.toObjId]? with
+  | none => simp_all
+  | some obj =>
+      cases obj <;> simp_all
 

@@ -341,7 +341,9 @@ private theorem default_schedulerInvariantBundleFull :
     intro tid hMem
     have hFlat : (default : SystemState).scheduler.runQueue.flat = [] := by decide
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-    simp [RunQueue.toList, hFlat] at hInFlat⟩
+    simp [RunQueue.toList, hFlat] at hInFlat,
+   by  -- V5-H: domainTimeRemainingPositive — default domainTimeRemaining is 5
+    unfold domainTimeRemainingPositive; decide⟩
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
