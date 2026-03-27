@@ -57,28 +57,58 @@ def uart0Base : SeLe4n.PAddr := ⟨0xFE201000⟩
 -- RPi5 memory map
 -- ============================================================================
 
-/-- Standard Raspberry Pi 5 physical memory map (4 GB model).
+/-- V4-D/M-HW-3: BCM2712 board configuration. Parameterizes RAM size
+    to support 1GB, 2GB, 4GB, and 8GB RPi5 variants.
+    Peripheral regions remain fixed (BCM2712-determined). -/
+structure BCM2712Config where
+  /-- Total RAM size in bytes. RPi5 ships in 1GB, 2GB, 4GB, and 8GB variants.
+      The RAM region spans from 0x0000_0000 to `ramSize` minus peripheral offset. -/
+  ramSize : Nat := 4 * 1024 * 1024 * 1024  -- Default: 4 GB
+  deriving Repr, DecidableEq
+
+/-- V4-D: Default BCM2712 configuration (4 GB model). -/
+def bcm2712DefaultConfig : BCM2712Config := {}
+
+/-- V4-D/M-HW-3: Physical memory map parameterized by board RAM size.
 
     Regions are listed from low to high address:
-    1. RAM: 0x0000_0000 – 0xFC00_0000 (4032 MiB usable before peripherals)
+    1. RAM: 0x0000_0000 – 0xFC00_0000 (usable before peripherals, capped at 4032 MiB)
     2. GPU/VideoCore: 0xFC00_0000 – 0xFE00_0000 (32 MiB reserved for GPU firmware)
     3. Low peripherals: 0xFE00_0000 – 0xFF84_FFFF (legacy BCM2712 + GIC-400)
     4. Reserved: 0xFF85_0000 – 0xFFFF_FFFF (above GIC, to 4 GB boundary)
-    5. High peripherals: 0x10_0000_0000+ (BCM2712-specific, not modeled yet) -/
+    5. High peripherals: 0x10_0000_0000+ (BCM2712-specific, not modeled yet)
+
+    For boards with > 4 GB RAM, additional RAM regions above 4 GB are appended.
+    The low RAM region is always capped at 0xFC00_0000 (peripheral boundary). -/
+def rpi5MemoryMapForConfig (config : BCM2712Config) : List SeLe4n.MemoryRegion :=
+  let peripheralBoundary := 0xFC000000
+  let lowRamSize := min config.ramSize peripheralBoundary
+  let baseRegions :=
+    [ { base := ⟨0x00000000⟩
+        size := lowRamSize
+        kind := .ram }
+    , { base := ⟨0xFC000000⟩
+        size := 0x02000000  -- 32 MiB GPU/VideoCore firmware region
+        kind := .reserved }
+    , { base := ⟨0xFE000000⟩
+        size := 0x01850000  -- ~24.3 MiB peripheral window (legacy + GIC-400)
+        kind := .device }
+    , { base := ⟨0xFF850000⟩
+        size := 0x007B0000  -- reserved region above GIC to 4 GB boundary
+        kind := .reserved }
+    ]
+  if config.ramSize > 0x100000000 then
+    -- 8 GB model: additional RAM above 4 GB boundary
+    baseRegions ++ [{ base := ⟨0x100000000⟩
+                      size := config.ramSize - 0x100000000
+                      kind := .ram }]
+  else
+    baseRegions
+
+/-- Standard Raspberry Pi 5 physical memory map (4 GB model).
+    V4-D: Now delegates to `rpi5MemoryMapForConfig` with default config. -/
 def rpi5MemoryMap : List SeLe4n.MemoryRegion :=
-  [ { base := ⟨0x00000000⟩
-      size := 4032 * 1024 * 1024  -- 4032 MiB usable RAM
-      kind := .ram }
-  , { base := ⟨0xFC000000⟩
-      size := 0x02000000  -- 32 MiB GPU/VideoCore firmware region
-      kind := .reserved }
-  , { base := ⟨0xFE000000⟩
-      size := 0x01850000  -- ~24.3 MiB peripheral window (legacy + GIC-400)
-      kind := .device }
-  , { base := ⟨0xFF850000⟩
-      size := 0x007B0000  -- reserved region above GIC to 4 GB boundary
-      kind := .reserved }
-  ]
+  rpi5MemoryMapForConfig bcm2712DefaultConfig
 
 -- ============================================================================
 -- ARM64 architectural constants

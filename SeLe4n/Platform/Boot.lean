@@ -28,6 +28,7 @@ namespace SeLe4n.Platform.Boot
 open SeLe4n.Model
 open SeLe4n.Model.Builder
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel
 
 /-- Q3-C: An IRQ entry for platform boot configuration: an IRQ line and the
 ObjId of its handler notification object. -/
@@ -255,11 +256,819 @@ theorem emptyBoot_freeze_preserves :
 
     For general configs, the bridge requires extending builder operations
     to preserve all 9 components of `proofLayerInvariantBundle` (not just
-    the 4 structural invariants). This is tracked for WS-V. -/
+    the 4 structural invariants). V4-A extends this to general configs. -/
 theorem bootToRuntime_invariantBridge_empty :
     let ist := bootFromPlatform { irqTable := [], initialObjects := [] }
     SeLe4n.Kernel.Architecture.proofLayerInvariantBundle ist.state ∧
     SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
   ⟨emptyBoot_proofLayerInvariantBundle, emptyBoot_freeze_preserves⟩
+
+-- ============================================================================
+-- V4-A1: Builder Operation × Invariant Component Interaction Matrix
+-- ============================================================================
+
+/-! ### V4-A1: Interaction Matrix
+
+The following matrix documents which builder operations affect which
+invariant components of `proofLayerInvariantBundle`. Each cell is either
+"vacuous" (operation doesn't modify fields read by that component) or
+"substantive" (proof of preservation required).
+
+| Component \ Operation       | registerIrq | createObject |
+|-----------------------------|-------------|--------------|
+| 1. schedulerInvariantFull   | vacuous     | vacuous      |
+| 2. capabilityInvariantBundle| vacuous     | vacuous†     |
+| 3. coreIpcInvariantBundle   | vacuous     | vacuous      |
+| 4. ipcSchedCoupling         | vacuous     | vacuous      |
+| 5. lifecycleInvariantBundle | vacuous     | substantive  |
+| 6. serviceLifecycleCapBundle| vacuous     | vacuous†     |
+| 7. vspaceInvariantBundle    | vacuous     | vacuous†     |
+| 8. crossSubsystemInvariant  | vacuous     | vacuous†     |
+| 9. tlbConsistent            | vacuous     | vacuous      |
+
+† The component reads `objects`, which `createObject` modifies. However, the
+  component's predicates are quantified over OTHER state fields (scheduler
+  queues, CDT edges, service registry, ASID table) that are UNCHANGED by
+  `createObject`. Since the quantification domain is unchanged and existing
+  objects are unmodified, preservation is a frame argument. The new object
+  is only reachable through the modified `objects` table and doesn't appear
+  in any quantification domain (no scheduler membership, no CDT parent, no
+  service backing, no ASID mapping).
+
+**Key insight**: `registerIrq` modifies only `irqHandlers`, which no invariant
+component reads. `createObject` modifies `objects`, `objectIndex`,
+`objectIndexSet`, and `lifecycle.objectTypes`. All 9 components are preserved
+because either they don't read the modified fields, or they quantify over
+state structures (queues, CDT, registries) that are unmodified.
+
+Note: `lifecycleInvariantBundle` component 5 is "substantive" because it
+directly relates `objects` to `lifecycle.objectTypes`, both of which are
+modified. The proof shows that the new entry is consistent.
+-/
+
+-- ============================================================================
+-- V4-A2: registerIrq preserves proofLayerInvariantBundle
+-- ============================================================================
+
+/-! ### V4-A2: registerIrq Frame Lemma
+
+`registerIrq` only modifies `st.irqHandlers`. All 9 components of
+`proofLayerInvariantBundle` are independent of `irqHandlers`:
+
+- Components 1–8 read scheduler, objects, CDT, services, serviceRegistry,
+  interfaceRegistry, asidTable, lifecycle, and TLB — none of which include
+  `irqHandlers`.
+- Component 9 (`tlbConsistent`) reads TLB entries and objects/asidTable.
+
+Therefore all 9 components are trivially preserved. -/
+
+/-- V4-A2: The state produced by `registerIrq` has identical fields to the
+    input state, except for `irqHandlers`. This is the core frame lemma. -/
+private theorem registerIrq_state_fields_eq (ist : IntermediateState)
+    (irq : SeLe4n.Irq) (handler : SeLe4n.ObjId) :
+    let st := ist.state
+    let st' := (registerIrq ist irq handler).state
+    st'.scheduler = st.scheduler ∧
+    st'.objects = st.objects ∧
+    st'.cdt = st.cdt ∧
+    st'.services = st.services ∧
+    st'.serviceRegistry = st.serviceRegistry ∧
+    st'.interfaceRegistry = st.interfaceRegistry ∧
+    st'.asidTable = st.asidTable ∧
+    st'.lifecycle = st.lifecycle ∧
+    st'.tlb = st.tlb ∧
+    st'.machine = st.machine ∧
+    st'.objectIndex = st.objectIndex ∧
+    st'.objectIndexSet = st.objectIndexSet := by
+  simp [registerIrq]
+
+-- ============================================================================
+-- V4-A2–A7: Per-operation and boot-state frame lemmas
+-- ============================================================================
+
+/-! ### V4-A2–A8: Boot state invariant proofs
+
+**Strategy**: Rather than proving per-operation frame lemmas that transfer
+`proofLayerInvariantBundle` through each builder operation (which requires
+deep unfolding of 9×N invariant components), we prove the result directly:
+the post-boot state satisfies the full 9-component bundle.
+
+The key insight is that `bootFromPlatform` only modifies 4 fields from
+default: `objects`, `irqHandlers`, `objectIndex`/`objectIndexSet`, and
+`lifecycle.objectTypes`. All other state fields remain at their default
+values. Since:
+
+1. **Scheduler** is default (empty queues, no current thread) →
+   scheduler invariants hold vacuously
+2. **CDT** is default (no edges) → CDT/capability derivation invariants
+   hold vacuously
+3. **Services/serviceRegistry/interfaceRegistry** are default →
+   service invariants hold vacuously
+4. **AsidTable** is default → ASID invariants hold vacuously
+5. **TLB** is default → TLB consistency holds trivially
+6. **IPC state** (endpoint queues, notifications) — fresh objects from
+   boot have no queue membership, no blocking threads → IPC invariants
+   hold vacuously
+
+The proof chains through: (a) boot preserves default on non-modified fields,
+(b) each invariant component depends only on fields that are either default
+or satisfy the boot preconditions.
+-/
+
+-- Step 1: Per-field preservation for registerIrq
+@[simp] private theorem registerIrq_scheduler (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.scheduler = ist.state.scheduler := rfl
+@[simp] private theorem registerIrq_cdt (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.cdt = ist.state.cdt := rfl
+@[simp] private theorem registerIrq_services (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.services = ist.state.services := rfl
+@[simp] private theorem registerIrq_serviceRegistry (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.serviceRegistry = ist.state.serviceRegistry := rfl
+@[simp] private theorem registerIrq_interfaceRegistry (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
+@[simp] private theorem registerIrq_asidTable (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.asidTable = ist.state.asidTable := rfl
+@[simp] private theorem registerIrq_tlb (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.tlb = ist.state.tlb := rfl
+@[simp] private theorem registerIrq_machine (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.machine = ist.state.machine := rfl
+@[simp] private theorem registerIrq_objects (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.objects = ist.state.objects := rfl
+@[simp] private theorem registerIrq_lifecycle (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.lifecycle = ist.state.lifecycle := rfl
+@[simp] private theorem registerIrq_objectIndex (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.objectIndex = ist.state.objectIndex := rfl
+@[simp] private theorem registerIrq_objectIndexSet (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.objectIndexSet = ist.state.objectIndexSet := rfl
+@[simp] private theorem registerIrq_cdtNodeSlot (ist : IntermediateState) irq handler :
+    (registerIrq ist irq handler).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
+
+-- Step 2: Per-field preservation for createObject
+@[simp] private theorem createObject_scheduler (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.scheduler = ist.state.scheduler := rfl
+@[simp] private theorem createObject_cdt (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.cdt = ist.state.cdt := rfl
+@[simp] private theorem createObject_services (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.services = ist.state.services := rfl
+@[simp] private theorem createObject_serviceRegistry (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.serviceRegistry = ist.state.serviceRegistry := rfl
+@[simp] private theorem createObject_interfaceRegistry (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
+@[simp] private theorem createObject_asidTable (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.asidTable = ist.state.asidTable := rfl
+@[simp] private theorem createObject_tlb (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.tlb = ist.state.tlb := rfl
+@[simp] private theorem createObject_machine (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.machine = ist.state.machine := rfl
+@[simp] private theorem createObject_capabilityRefs (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.lifecycle.capabilityRefs =
+    ist.state.lifecycle.capabilityRefs := rfl
+@[simp] private theorem createObject_irqHandlers (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.irqHandlers = ist.state.irqHandlers := rfl
+@[simp] private theorem createObject_cdtNodeSlot (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
+@[simp] private theorem createObject_objects (ist : IntermediateState) id obj hS hM :
+    (createObject ist id obj hS hM).state.objects = ist.state.objects.insert id obj := rfl
+
+-- Step 3: Fold-level field preservation (foldIrqs)
+private theorem foldIrqs_scheduler (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.scheduler = ist.state.scheduler := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons e rest ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_cdt (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.cdt = ist.state.cdt := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_objects (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.objects = ist.state.objects := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_services (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.services = ist.state.services := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_serviceRegistry (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.serviceRegistry = ist.state.serviceRegistry := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_interfaceRegistry (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.interfaceRegistry = ist.state.interfaceRegistry := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_asidTable (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.asidTable = ist.state.asidTable := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_tlb (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.tlb = ist.state.tlb := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_machine (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.machine = ist.state.machine := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_lifecycle (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.lifecycle = ist.state.lifecycle := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_objectIndex (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.objectIndex = ist.state.objectIndex := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_objectIndexSet (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.objectIndexSet = ist.state.objectIndexSet := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldIrqs_cdtNodeSlot (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.cdtNodeSlot = ist.state.cdtNodeSlot := by
+  induction irqs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldIrqs, List.foldl] at ih ⊢; exact ih _
+
+-- Step 4: Fold-level field preservation (foldObjects)
+private theorem foldObjects_scheduler (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.scheduler = ist.state.scheduler := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_cdt (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.cdt = ist.state.cdt := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_services (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.services = ist.state.services := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_serviceRegistry (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.serviceRegistry = ist.state.serviceRegistry := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_interfaceRegistry (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.interfaceRegistry = ist.state.interfaceRegistry := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_asidTable (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.asidTable = ist.state.asidTable := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_tlb (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.tlb = ist.state.tlb := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_machine (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.machine = ist.state.machine := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_capabilityRefs (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.lifecycle.capabilityRefs =
+    ist.state.lifecycle.capabilityRefs := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_irqHandlers (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.irqHandlers = ist.state.irqHandlers := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+private theorem foldObjects_cdtNodeSlot (objs : List ObjectEntry) (ist : IntermediateState) :
+    (foldObjects objs ist).state.cdtNodeSlot = ist.state.cdtNodeSlot := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+
+-- Bridge lemma: mkEmptyIntermediateState.state = default
+private theorem mkEmpty_state_eq_default :
+    mkEmptyIntermediateState.state = (default : SystemState) := rfl
+
+-- Step 5: Boot-level field preservation (compose foldIrqs + foldObjects)
+/-- V4-A2/A4/A7: The post-boot state preserves scheduler from default. -/
+theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.scheduler =
+    (default : SystemState).scheduler := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_scheduler, foldIrqs_scheduler, mkEmpty_state_eq_default]
+
+/-- V4-A2/A4: The post-boot state preserves CDT from default. -/
+theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.cdt =
+    (default : SystemState).cdt := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_cdt, foldIrqs_cdt, mkEmpty_state_eq_default]
+
+/-- V4-A3: The post-boot state preserves services from default. -/
+theorem bootFromPlatform_services_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.services =
+    (default : SystemState).services := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_services, foldIrqs_services, mkEmpty_state_eq_default]
+
+/-- V4-A3: The post-boot state preserves serviceRegistry from default. -/
+theorem bootFromPlatform_serviceRegistry_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.serviceRegistry =
+    (default : SystemState).serviceRegistry := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_serviceRegistry, foldIrqs_serviceRegistry, mkEmpty_state_eq_default]
+
+/-- V4-A3: The post-boot state preserves interfaceRegistry from default. -/
+theorem bootFromPlatform_interfaceRegistry_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.interfaceRegistry =
+    (default : SystemState).interfaceRegistry := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_interfaceRegistry, foldIrqs_interfaceRegistry, mkEmpty_state_eq_default]
+
+/-- V4-A6: The post-boot state preserves asidTable from default. -/
+theorem bootFromPlatform_asidTable_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.asidTable =
+    (default : SystemState).asidTable := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_asidTable, foldIrqs_asidTable, mkEmpty_state_eq_default]
+
+/-- V4-A7: The post-boot state preserves TLB from default. -/
+theorem bootFromPlatform_tlb_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.tlb =
+    (default : SystemState).tlb := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_tlb, foldIrqs_tlb, mkEmpty_state_eq_default]
+
+/-- V4-A7: The post-boot state preserves machine from default. -/
+theorem bootFromPlatform_machine_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.machine =
+    (default : SystemState).machine := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default]
+
+/-- Fold-level: foldIrqs preserves capabilityRefs. -/
+private theorem foldIrqs_capabilityRefs (irqs : List IrqEntry) (ist : IntermediateState) :
+    (foldIrqs irqs ist).state.lifecycle.capabilityRefs =
+    ist.state.lifecycle.capabilityRefs := by
+  have h := foldIrqs_lifecycle irqs ist
+  exact congrArg (·.capabilityRefs) h
+
+/-- V4-A5: The post-boot state preserves capabilityRefs from default. -/
+theorem bootFromPlatform_capabilityRefs_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.lifecycle.capabilityRefs =
+    (default : SystemState).lifecycle.capabilityRefs := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_capabilityRefs, foldIrqs_capabilityRefs]
+  rw [show mkEmptyIntermediateState.state.lifecycle.capabilityRefs =
+        (default : SystemState).lifecycle.capabilityRefs from rfl]
+
+/-- V4-A5b: The post-boot state preserves cdtNodeSlot from default. -/
+theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
+    (bootFromPlatform config).state.cdtNodeSlot =
+    (default : SystemState).cdtNodeSlot := by
+  show _ = _; unfold bootFromPlatform
+  rw [foldObjects_cdtNodeSlot, foldIrqs_cdtNodeSlot, mkEmpty_state_eq_default]
+
+-- ============================================================================
+-- V4-A4/A8: Boot-safe object predicate
+-- ============================================================================
+
+/-- V4-A4: A kernel object is "boot-safe" if it satisfies invariant
+    preconditions for a freshly-booted state. During boot, there are no
+    scheduler queues, no CDT edges, no service registrations, and no
+    ASID mappings. Objects must satisfy IPC, queue, and structural
+    constraints for the full 9-component `proofLayerInvariantBundle`. -/
+def bootSafeObject (obj : KernelObject) : Prop :=
+  -- Endpoints must have empty queues (no thread references)
+  (∀ ep, obj = .endpoint ep →
+    ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
+    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+  -- Notifications must be idle with empty wait lists and no pending badge
+  (∀ notif, obj = .notification notif →
+    notif.state = .idle ∧ notif.waitingThreads = [] ∧ notif.pendingBadge = none) ∧
+  -- CNodes must satisfy slot-count bound, depth consistency, and badge validity
+  (∀ cn, obj = .cnode cn →
+    cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+    (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+    (∀ slot cap badge, cn.lookup slot = some cap →
+      cap.badge = some badge → badge.valid)) ∧
+  -- TCBs must have clean boot state: no pending messages, ready IPC state,
+  -- no queue links (queueNext/queuePrev = none)
+  (∀ tcb, obj = .tcb tcb →
+    tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
+    tcb.queueNext = none ∧ tcb.queuePrev = none) ∧
+  -- VSpaceRoots excluded (require asidTable registration not available at boot)
+  (∀ vs, obj ≠ .vspaceRoot vs)
+
+/-- V4-A4: A PlatformConfig is boot-safe if all initial objects satisfy
+    boot safety constraints. This is the standard precondition for
+    extending the invariant bridge to non-empty configs. -/
+def PlatformConfig.bootSafe (config : PlatformConfig) : Prop :=
+  ∀ entry, entry ∈ config.initialObjects → bootSafeObject entry.obj
+
+-- ============================================================================
+-- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
+-- ============================================================================
+
+/-- V4-A4b: Every object in the fold result is either from the base state or
+    from one of the folded entries. Combined with bootSafe, this shows all
+    post-boot objects satisfy bootSafeObject. -/
+private theorem foldObjects_objects_bootSafe
+    (objs : List ObjectEntry) :
+    ∀ (ist : IntermediateState),
+    (∀ (oid : SeLe4n.ObjId) (obj : KernelObject), ist.state.objects[oid]? = some obj → bootSafeObject obj) →
+    (∀ e, e ∈ objs → bootSafeObject e.obj) →
+    ∀ (oid : SeLe4n.ObjId) (obj : KernelObject), (foldObjects objs ist).state.objects[oid]? = some obj →
+    bootSafeObject obj := by
+  induction objs with
+  | nil => intro ist hBase _; exact hBase
+  | cons e rest ih =>
+    intro ist hBase hObjs
+    have heSafe : bootSafeObject e.obj := hObjs e (List.mem_cons_self ..)
+    have hRestSafe : ∀ e', e' ∈ rest → bootSafeObject e'.obj :=
+      fun e' hMem => hObjs e' (List.mem_cons_of_mem _ hMem)
+    have hNewBase : ∀ (oid : SeLe4n.ObjId) (obj' : KernelObject), (createObject ist e.id e.obj e.hSlots e.hMappings).state.objects[oid]? = some obj' → bootSafeObject obj' := by
+      intro oid₂ obj₂ hLookup₂
+      have hObjInvExt : ist.state.objects.invExt := ist.hAllTables.1.1
+      simp only [createObject_objects, RHTable_getElem?_eq_get?] at hLookup₂
+      by_cases hEq : e.id = oid₂
+      · subst hEq
+        rw [RHTable.getElem?_insert_self ist.state.objects e.id e.obj hObjInvExt] at hLookup₂
+        cases hLookup₂; exact heSafe
+      · have hNe : ¬((e.id == oid₂) = true) := by intro heq; exact hEq (eq_of_beq heq)
+        rw [RHTable.getElem?_insert_ne ist.state.objects e.id oid₂ e.obj hNe hObjInvExt] at hLookup₂
+        exact hBase oid₂ obj₂ (by simp only [RHTable_getElem?_eq_get?]; exact hLookup₂)
+    exact ih (createObject ist e.id e.obj e.hSlots e.hMappings) hNewBase hRestSafe
+
+/-- V4-A4b: Every object in the post-boot state satisfies bootSafeObject. -/
+private theorem bootFromPlatform_objects_bootSafe
+    (config : PlatformConfig) (hSafe : config.bootSafe) :
+    ∀ (oid : SeLe4n.ObjId) (obj : KernelObject), (bootFromPlatform config).state.objects[oid]? = some obj →
+    bootSafeObject obj := by
+  unfold bootFromPlatform
+  apply foldObjects_objects_bootSafe
+  · -- Base: after foldIrqs, objects = mkEmpty objects = empty → vacuous
+    intro oid obj hLookup
+    rw [foldIrqs_objects] at hLookup
+    have hEmpty : mkEmptyIntermediateState.state.objects[oid]? = none := by
+      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+    rw [hEmpty] at hLookup; exact absurd hLookup (by simp)
+  · exact hSafe
+
+-- ============================================================================
+-- V4-A8: Composition — proofLayerInvariantBundle for general configs
+-- ============================================================================
+
+/-! ### V4-A8: General Boot Invariant Bridge
+
+The composition theorem shows that for ANY `PlatformConfig`, the post-boot
+state satisfies all 9 components of `proofLayerInvariantBundle`. The proof
+uses the field preservation theorems to rewrite each component's state
+references back to the default state where the component is already proved.
+
+The key technical mechanism: each invariant component reads only fields that
+are either (a) unchanged from default (scheduler, CDT, services, registries,
+ASID table, TLB, machine, capabilityRefs) or (b) irrelevant to the component.
+By rewriting the post-boot state's fields to default values, we reduce each
+component to the already-proved `default_*` case.
+-/
+
+/-- V4-A8: The post-boot state from any config satisfies
+    `proofLayerInvariantBundle`. This is the general boot invariant bridge.
+
+    All 9 components are proved by showing the post-boot state is equivalent
+    to the default state on the fields each component reads:
+
+    1. schedulerInvariantBundleFull — scheduler is default
+    2. capabilityInvariantBundle — CDT is empty, objects.invExt from builder
+    3. coreIpcInvariantBundle — scheduler+CDT+IPC queues all default
+    4. ipcSchedulerCouplingInvariantBundle — scheduler default, no blocking
+    5. lifecycleInvariantBundle — metadata consistent from builder
+    6. serviceLifecycleCapabilityInvariantBundle — services empty
+    7. vspaceInvariantBundle — asidTable empty, no ASID mappings
+    8. crossSubsystemInvariant — registries empty, no stale refs
+    9. tlbConsistent — TLB is default (empty)
+-/
+theorem bootFromPlatform_proofLayerInvariantBundle_general
+    (config : PlatformConfig) (hSafe : config.bootSafe) :
+    Architecture.proofLayerInvariantBundle
+      (bootFromPlatform config).state := by
+  -- The post-boot state equals default on all fields that the 9 invariant
+  -- components read, so we can transport the default proof.
+  -- Since bootFromPlatform_empty_state shows the empty config case is rfl,
+  -- and the non-empty config only adds objects/irqHandlers (neither of which
+  -- affects the invariant components' relevant fields), the proof is:
+  -- show the post-boot state and default state agree on all invariant-read fields,
+  -- then apply the default bundle proof.
+  -- Field preservation facts
+  have hSch := bootFromPlatform_scheduler_eq config
+  have hCdt := bootFromPlatform_cdt_eq config
+  have hSvc := bootFromPlatform_services_eq config
+  have hSvcR := bootFromPlatform_serviceRegistry_eq config
+  have hIfR := bootFromPlatform_interfaceRegistry_eq config
+  have hAsid := bootFromPlatform_asidTable_eq config
+  have hTlb := bootFromPlatform_tlb_eq config
+  have hMach := bootFromPlatform_machine_eq config
+  -- Builder structural invariants
+  have hSlots := (bootFromPlatform config).hPerObjectSlots
+  have hAllTables := (bootFromPlatform config).hAllTables
+  -- Scheduler sub-field facts
+  have hCur : (bootFromPlatform config).state.scheduler.current = none := by
+    rw [hSch]; decide
+  have hRun : (bootFromPlatform config).state.scheduler.runnable = [] := by
+    rw [hSch]; decide
+  have hRQflat : (bootFromPlatform config).state.scheduler.runQueue.flat = [] := by
+    rw [hSch]; decide
+  -- 1. schedulerInvariantBundleFull
+  have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
+    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp [queueCurrentConsistent, hSch]
+    · show (bootFromPlatform config).state.scheduler.runnable.Nodup
+      rw [hRun]; exact List.nodup_nil
+    · unfold currentThreadValid; rw [hCur]; trivial
+    · intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · unfold currentTimeSlicePositive; rw [hCur]; trivial
+    · unfold edfCurrentHasEarliestDeadline; rw [hCur]; trivial
+    · unfold contextMatchesCurrent; rw [hCur]; trivial
+    · intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · intro tid hMem
+      have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
+      simp [RunQueue.toList, hRQflat] at hInFlat
+  -- Boot-safe object bridge and shared helpers
+  have hBS := bootFromPlatform_objects_bootSafe config hSafe
+  have hCdtNS := bootFromPlatform_cdtNodeSlot_eq config
+  -- No VSpaceRoots in boot state (bootSafe excludes them)
+  have hNoVSpace : ∀ oid vs,
+      (bootFromPlatform config).state.objects[oid]? ≠ some (KernelObject.vspaceRoot vs) :=
+    fun oid vs hObj => (hBS oid _ hObj).2.2.2.2 vs rfl
+  -- lookupService returns none (services empty)
+  have hLookupSvcNone : ∀ sid,
+      lookupService (bootFromPlatform config).state sid = none := by
+    intro sid; unfold lookupService; rw [hSvc]
+    exact RHTable_get?_empty 16 (by omega)
+  -- 2. capabilityInvariantBundle
+  have hCapBundle : capabilityInvariantBundle (bootFromPlatform config).state := by
+    refine ⟨hSlots, ?_, ?_, ?_, ?_, ?_, hAllTables.1.1⟩
+    · -- cspaceLookupSound
+      intro cnodeId cn slot cap hObj hLookupSlot
+      show SystemState.lookupSlotCap _ _ = some cap
+      unfold SystemState.lookupSlotCap SystemState.lookupCNode; rw [hObj]; exact hLookupSlot
+    · -- cspaceSlotCountBounded
+      intro cnodeId cn hObj
+      exact ((hBS cnodeId _ hObj).2.2.1 cn rfl).1
+    · -- cdtCompleteness: cdtNodeSlot is empty
+      intro nodeId ref hLookup; rw [hCdtNS] at hLookup
+      have : (default : SystemState).cdtNodeSlot[nodeId]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [this] at hLookup; exact absurd hLookup (by simp)
+    · -- cdtAcyclicity: CDT is default (empty)
+      show (bootFromPlatform config).state.cdt.edgeWellFounded
+      rw [hCdt]; exact CapDerivationTree.empty_edgeWellFounded
+    · -- cspaceDepthConsistent
+      intro cnodeId cn hObj
+      have hCN := (hBS cnodeId _ hObj).2.2.1 cn rfl
+      exact ⟨hCN.2.1, hCN.2.2.1⟩
+  -- 5. lifecycleInvariantBundle
+  have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
+    lifecycleInvariantBundle_of_metadata_consistent _
+      (bootFromPlatform config).hLifecycleConsistent
+  -- 3. ipcInvariantFull (9 sub-components)
+  have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · -- ipcInvariant: notifications well-formed
+      intro oid ntfn hObj
+      have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
+      show notificationInvariant ntfn
+      unfold notificationInvariant notificationQueueWellFormed
+      rw [hNtfn.1]; exact ⟨hNtfn.2.1, hNtfn.2.2⟩
+    · -- dualQueueSystemInvariant
+      refine ⟨?_, ?_, ?_⟩
+      · -- all endpoints have well-formed queues
+        intro epId ep hObj
+        have hEp := (hBS epId _ hObj).1 ep rfl
+        show dualQueueEndpointWellFormed epId (bootFromPlatform config).state
+        unfold dualQueueEndpointWellFormed; rw [hObj]
+        constructor
+        · -- sendQ well-formed
+          unfold intrusiveQueueWellFormed
+          refine ⟨⟨fun _ => ?_, fun _ => ?_⟩, ?_, ?_⟩
+          · exact hEp.2.1
+          · exact hEp.1
+          · intro hd hH; rw [hEp.1] at hH; exact absurd hH (by simp)
+          · intro tl hT; rw [hEp.2.1] at hT; exact absurd hT (by simp)
+        · -- receiveQ well-formed
+          unfold intrusiveQueueWellFormed
+          refine ⟨⟨fun _ => ?_, fun _ => ?_⟩, ?_, ?_⟩
+          · exact hEp.2.2.2
+          · exact hEp.2.2.1
+          · intro hd hH; rw [hEp.2.2.1] at hH; exact absurd hH (by simp)
+          · intro tl hT; rw [hEp.2.2.2] at hT; exact absurd hT (by simp)
+      · -- tcbQueueLinkIntegrity
+        constructor
+        · intro a tcbA hObj b hNext
+          have hTcb := (hBS a.toObjId _ hObj).2.2.2.1 tcbA rfl
+          rw [hTcb.2.2.1] at hNext; exact absurd hNext (by simp)
+        · intro b tcbB hObj a hPrev
+          have hTcb := (hBS b.toObjId _ hObj).2.2.2.1 tcbB rfl
+          rw [hTcb.2.2.2] at hPrev; exact absurd hPrev (by simp)
+      · -- tcbQueueChainAcyclic: all boot TCBs have queueNext = none
+        exact tcbQueueChainAcyclic_of_allNextNone (fun tid tcb hObj => by
+          exact ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.1)
+    · -- allPendingMessagesBounded
+      intro tid tcb msg hObj hPend
+      have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      rw [hTcb.1] at hPend; exact absurd hPend (by simp)
+    · -- badgeWellFormed
+      constructor
+      · -- notificationBadgesWellFormed
+        intro oid ntfn badge hObj hBadge
+        have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
+        rw [hNtfn.2.2] at hBadge; exact absurd hBadge (by simp)
+      · -- capabilityBadgesWellFormed
+        intro oid cn slot cap badge hObj hSlotLookup hBadge
+        have hCN := (hBS oid _ hObj).2.2.1 cn rfl
+        exact hCN.2.2.2 slot cap badge hSlotLookup hBadge
+    · -- waitingThreadsPendingMessageNone
+      intro tid tcb hObj
+      have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      rw [hTcb.2.1]; trivial
+    · -- endpointQueueNoDup
+      intro oid ep hObj
+      have hEp := (hBS oid _ hObj).1 ep rfl
+      constructor
+      · intro tid tcb hTcbObj
+        have hTcb := (hBS tid.toObjId _ hTcbObj).2.2.2.1 tcb rfl
+        rw [hTcb.2.2.1]; simp
+      · left; exact hEp.1
+    · -- ipcStateQueueMembershipConsistent
+      intro tid tcb hObj
+      have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      rw [hTcb.2.1]; trivial
+    · -- queueNextBlockingConsistent
+      intro a b tcbA tcbB hObjA _ hNext
+      have hTcb := (hBS a.toObjId _ hObjA).2.2.2.1 tcbA rfl
+      rw [hTcb.2.2.1] at hNext; exact absurd hNext (by simp)
+    · -- queueHeadBlockedConsistent
+      intro epId ep hd tcb hObjEp _
+      have hEp := (hBS epId _ hObjEp).1 ep rfl
+      constructor
+      · intro hRecv; rw [hEp.2.2.1] at hRecv; exact absurd hRecv (by simp)
+      · intro hSend; rw [hEp.1] at hSend; exact absurd hSend (by simp)
+  -- 4. ipcSchedulerCouplingInvariantBundle
+  have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
+      (bootFromPlatform config).state := by
+    refine ⟨⟨h1.1, hCapBundle, hIpcFull⟩, ?_, ?_, ?_⟩
+    · -- ipcSchedulerCoherenceComponent (6 predicates, all vacuous: runnable = [])
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+      · -- runnableThreadIpcReady: tid ∈ runnable → ... (runnable = [])
+        intro tid tcb _ hMem; rw [hRun] at hMem; simp at hMem
+      · -- blockedOnSendNotRunnable
+        intro tid tcb _ _ _; rw [hRun]; simp
+      · -- blockedOnReceiveNotRunnable
+        intro tid tcb _ _ _; rw [hRun]; simp
+      · -- blockedOnCallNotRunnable
+        intro tid tcb _ _ _; rw [hRun]; simp
+      · -- blockedOnReplyNotRunnable
+        intro tid tcb _ _ _ _; rw [hRun]; simp
+      · -- blockedOnNotificationNotRunnable
+        intro tid tcb _ _ _; rw [hRun]; simp
+    · -- contextMatchesCurrent
+      unfold contextMatchesCurrent; rw [hCur]; trivial
+    · -- currentThreadDequeueCoherent (current = none → True)
+      refine ⟨?_, ?_, ?_⟩
+      · unfold currentThreadIpcReady; rw [hCur]; trivial
+      · unfold currentNotEndpointQueueHead; rw [hCur]; trivial
+      · unfold currentNotOnNotificationWaitList; rw [hCur]; trivial
+  -- 6. serviceLifecycleCapabilityInvariantBundle
+  have hServiceBundle : serviceLifecycleCapabilityInvariantBundle
+      (bootFromPlatform config).state := by
+    apply serviceLifecycleCapabilityInvariantBundle_of_components
+    · -- servicePolicySurfaceInvariant (services empty → vacuous)
+      intro sid svc hLookupSvc
+      rw [hLookupSvcNone] at hLookupSvc; exact absurd hLookupSvc (by simp)
+    · exact hLifeBundle
+    · exact hCapBundle
+    · -- registryInvariant (serviceRegistry empty → vacuous)
+      constructor <;> {
+        intro sid reg hLookup; rw [hSvcR] at hLookup
+        have : (default : SystemState).serviceRegistry[sid]? = none := by
+          simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+        rw [this] at hLookup; exact absurd hLookup (by simp)
+      }
+  -- 7. vspaceInvariantBundle (no VSpaceRoots → all vacuously true)
+  have hVspaceBundle : Architecture.vspaceInvariantBundle
+      (bootFromPlatform config).state := by
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · intro oid₁ _ _ _ hObj₁; exact absurd hObj₁ (hNoVSpace oid₁ _)
+    · intro oid root hObj; exact absurd hObj (hNoVSpace oid _)
+    · constructor
+      · intro asid oid hLookup; rw [hAsid] at hLookup
+        have : (default : SystemState).asidTable[asid]? = none := by
+          simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+        rw [this] at hLookup; exact absurd hLookup (by simp)
+      · intro oid root hObj; exact absurd hObj (hNoVSpace oid _)
+    · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
+    · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
+    · intro oidA _ _ _ hObjA; exact absurd hObjA (hNoVSpace oidA _)
+    · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
+  -- 8. crossSubsystemInvariant
+  have hCrossBundle : crossSubsystemInvariant (bootFromPlatform config).state := by
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · -- registryEndpointValid
+      intro sid reg hLookup; rw [hSvcR] at hLookup
+      have : (default : SystemState).serviceRegistry[sid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [this] at hLookup; exact absurd hLookup (by simp)
+    · -- registryDependencyConsistent
+      intro sid entry hLookup; rw [hSvc] at hLookup
+      have : (default : SystemState).services[sid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [this] at hLookup; exact absurd hLookup (by simp)
+    · -- noStaleEndpointQueueReferences
+      intro oid ep hObj
+      have hEp := (hBS oid _ hObj).1 ep rfl
+      refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+      · intro tid hH; rw [hEp.1] at hH; exact absurd hH (by simp)
+      · intro tid hH; rw [hEp.2.1] at hH; exact absurd hH (by simp)
+      · intro tid hH; rw [hEp.2.2.1] at hH; exact absurd hH (by simp)
+      · intro tid hH; rw [hEp.2.2.2] at hH; exact absurd hH (by simp)
+      · -- sendQ interior: head = none ⇒ collectQueueMembers returns []
+        intro tid hMem; rw [hEp.1, collectQueueMembers_none] at hMem; simp at hMem
+      · -- receiveQ interior: head = none ⇒ collectQueueMembers returns []
+        intro tid hMem; rw [hEp.2.2.1, collectQueueMembers_none] at hMem; simp at hMem
+    · -- noStaleNotificationWaitReferences
+      intro oid notif hObj tid hMem
+      have hNtfn := (hBS oid _ hObj).2.1 notif rfl
+      rw [hNtfn.2.1] at hMem; simp at hMem
+    · -- serviceGraphInvariant
+      constructor
+      · -- serviceDependencyAcyclic
+        intro sid hPath
+        cases hPath with
+        | single h =>
+          obtain ⟨svc, hL, _⟩ := h
+          rw [hLookupSvcNone] at hL; exact absurd hL (by simp)
+        | cons h _ =>
+          obtain ⟨svc, hL, _⟩ := h
+          rw [hLookupSvcNone] at hL; exact absurd hL (by simp)
+      · -- serviceCountBounded
+        refine ⟨[], ⟨List.nodup_nil, ?_, ?_⟩, ?_⟩
+        · intro sid hLookup; exact absurd (hLookupSvcNone sid) hLookup
+        · intro sid hMem; contradiction
+        · simp [serviceBfsFuel]
+  -- 9. tlbConsistent
+  have hTlbBundle : Architecture.tlbConsistent (bootFromPlatform config).state
+      (bootFromPlatform config).state.tlb := by
+    rw [hTlb]; exact Architecture.tlbConsistent_empty _
+  -- Compose all 9 components
+  exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
+         hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle⟩
+
+-- ============================================================================
+-- V4-A9: End-to-end bridge for general configs
+-- ============================================================================
+
+/-- V4-A9: End-to-end boot-to-runtime invariant bridge for general configs.
+    Composes V4-A8 (boot → proofLayerInvariantBundle) with freeze_preserves. -/
+theorem bootToRuntime_invariantBridge_general (config : PlatformConfig)
+    (hSafe : config.bootSafe) :
+    let ist := bootFromPlatform config
+    Architecture.proofLayerInvariantBundle ist.state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
+  ⟨bootFromPlatform_proofLayerInvariantBundle_general config hSafe,
+   SeLe4n.Model.freeze_preserves_invariants _
+     (bootFromPlatform_proofLayerInvariantBundle_general config hSafe)⟩
 
 end SeLe4n.Platform.Boot

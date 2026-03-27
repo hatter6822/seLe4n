@@ -18,9 +18,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phases V1, V2, and V3 are complete. Phases V4–V8 remain.
+WS-V Phases V1, V2, V3, and V4 are complete. Phases V5–V8 remain.
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V3 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V4 COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
@@ -72,6 +72,25 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`. Default state,
   lifecycle, and `advanceTimerState` cascade fixes. Zero sorry/axiom, 182 build
   targets pass, `test_full.sh` green.
+
+- **V4 (Platform & Hardware Fidelity) COMPLETE** (v0.22.3): 26 sub-tasks (V4-A1
+  through V4-N). **V4-A boot-to-runtime invariant bridge**: Complete machine-checked
+  proof that `bootFromPlatform` with ANY well-formed `PlatformConfig` satisfying
+  `bootSafe` produces a state satisfying all 9 components of
+  `proofLayerInvariantBundle`. Key contributions: `bootSafeObject` predicate
+  (5-conjunct: empty endpoint queues, idle notifications, CNode slot/depth/badge
+  validity, TCB clean boot state, no VSpaceRoots), `foldObjects_objects_bootSafe`
+  bridge lemma connecting config entries to post-boot objects via RHTable insert
+  correctness, `tcbQueueChainAcyclic_of_allNextNone` eliminating cyclic queue paths
+  from boot state, `collectQueueMembers_none` public bridge for interior queue
+  member discharge. Per-field preservation chain: 11 `@[simp]` operation lemmas,
+  11 fold-level lemmas, 11 boot-level theorems. `bootToRuntime_invariantBridge_general`
+  composes with `freeze_preserves_invariants` for the end-to-end bridge.
+  V4-B through V4-N: MMIO alignment checks, W1C semantics, parameterized RAM,
+  private VSpace variants, W^X enforcement in decode and permissions, DTB parsing
+  pipeline (readCString, lookupFdtString, findMemoryRegProperty, full fromDtb),
+  generalized extractMemoryRegions for 32/64-bit address cells. Fixed unused simp
+  args in SyscallArgDecode.lean. Zero sorry/axiom, `test_full.sh` green.
 
 - **V2 (API Surface Completion) COMPLETE** (v0.22.1): 9 sub-tasks (V2-A through V2-I).
   `SyscallId` count grew from 14 to 17: added `notificationSignal` (discriminant 14),

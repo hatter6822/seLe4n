@@ -153,6 +153,23 @@ theorem QueueNextPath_trans {st : SystemState} {a b c : SeLe4n.ThreadId}
   | single src dst tcb hObj hNext => exact .cons src dst c tcb hObj hNext hbc
   | cons src mid _ tcb hObj hNext _ ih => exact .cons src mid c tcb hObj hNext (ih hbc)
 
+/-- V4-A: Every `QueueNextPath` starts with a queueNext edge from the source. -/
+theorem QueueNextPath.firstEdge {st : SystemState} {a b : SeLe4n.ThreadId}
+    (h : QueueNextPath st a b) :
+    ∃ mid tcb, st.objects[a.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = some mid := by
+  cases h with
+  | single _ _ tcb hObj hNext => exact ⟨_, tcb, hObj, hNext⟩
+  | cons _ _ _ tcb hObj hNext _ => exact ⟨_, tcb, hObj, hNext⟩
+
+/-- V4-A: If no TCB has a non-none queueNext, then tcbQueueChainAcyclic holds. -/
+theorem tcbQueueChainAcyclic_of_allNextNone {st : SystemState}
+    (h : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.queueNext = none) :
+    tcbQueueChainAcyclic st := by
+  intro tid hPath
+  obtain ⟨mid, tcb, hObj, hNext⟩ := hPath.firstEdge
+  rw [h tid tcb hObj] at hNext; exact absurd hNext (by simp)
+
 /-- Acyclicity implies no self-loop: a thread's queueNext cannot point to itself. -/
 theorem tcbQueueChainAcyclic_no_self_loop {st : SystemState}
     (hAcyclic : tcbQueueChainAcyclic st)

@@ -57,6 +57,7 @@ inductive KernelError where
   | allocationMisaligned  -- S5-G: allocation base not page-aligned for VSpace-bound objects
   | revocationRequired    -- U-H03: delete attempted on slot with CDT children (must revoke first)
   | invalidArgument      -- U5-E/U-M07: syscall argument decode failed (e.g., invalid permission bits)
+  | mmioUnaligned        -- V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard

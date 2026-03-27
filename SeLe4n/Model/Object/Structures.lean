@@ -73,19 +73,41 @@ def PagePermissions.toNat (p : PagePermissions) : Nat :=
 
 /-- T6-C/M-ARCH-1: Validating decode — returns `none` for permission values outside the
 5-bit valid range (bits 0–4: read, write, execute, user, cacheable). Values ≥ 32 contain
-undefined permission bits and are rejected at the ABI decode boundary. -/
-def PagePermissions.ofNat? (n : Nat) : Option PagePermissions :=
-  if n < 32 then some (PagePermissions.ofNat n) else none
+undefined permission bits and are rejected at the ABI decode boundary.
 
-/-- T6-C: `ofNat?` returns `some` for all valid permission values (0–31). -/
-theorem PagePermissions.ofNat?_valid (n : Nat) (h : n < 32) :
+V4-K/L-FND-2: Also rejects W^X-violating inputs (both write and execute set).
+This moves W^X enforcement to the earliest possible decode point, preventing
+W^X-violating `PagePermissions` values from ever being constructed via `ofNat?`. -/
+def PagePermissions.ofNat? (n : Nat) : Option PagePermissions :=
+  if n < 32 then
+    let p := PagePermissions.ofNat n
+    if p.wxCompliant then some p else none
+  else none
+
+/-- T6-C/V4-K: `ofNat?` returns `some` for valid, W^X-compliant permission values. -/
+theorem PagePermissions.ofNat?_valid (n : Nat) (h : n < 32)
+    (hWx : (PagePermissions.ofNat n).wxCompliant = true) :
     PagePermissions.ofNat? n = some (PagePermissions.ofNat n) := by
-  simp [PagePermissions.ofNat?, h]
+  simp [PagePermissions.ofNat?, h, hWx]
 
 /-- T6-C: `ofNat?` returns `none` for values outside the valid range. -/
 theorem PagePermissions.ofNat?_invalid (n : Nat) (h : ¬(n < 32)) :
     PagePermissions.ofNat? n = none := by
   simp [PagePermissions.ofNat?, h]
+
+/-- V4-K: `ofNat?` returns `none` for W^X-violating values (both write and execute). -/
+theorem PagePermissions.ofNat?_wxViolation (n : Nat) (h : n < 32)
+    (hWx : (PagePermissions.ofNat n).wxCompliant = false) :
+    PagePermissions.ofNat? n = none := by
+  simp [PagePermissions.ofNat?, h, hWx]
+
+/-- V4-K: Any `PagePermissions` returned by `ofNat?` is guaranteed W^X compliant. -/
+theorem PagePermissions.ofNat?_wxSafe (n : Nat) (p : PagePermissions)
+    (h : PagePermissions.ofNat? n = some p) :
+    p.wxCompliant = true := by
+  simp [PagePermissions.ofNat?] at h
+  obtain ⟨_, hWx, hEq⟩ := h
+  rw [← hEq]; exact hWx
 
 /-- WS-K-D: Round-trip: encoding then decoding recovers the original. -/
 theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :

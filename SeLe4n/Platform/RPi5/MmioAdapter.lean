@@ -221,17 +221,19 @@ def mmioWrite (addr : PAddr) (val : UInt8) : Kernel Unit :=
 -- U6-H (U-M10): 32-bit and 64-bit MMIO write operations
 -- ============================================================================
 
-/-- U6-H: MMIO 32-bit write for ARM64 GIC register access.
+/-- V4-B/M-HW-1: Check whether a physical address is N-byte aligned. -/
+def isAligned (addr : PAddr) (alignment : Nat) : Bool :=
+  addr.toNat % alignment == 0
+
+/-- U6-H/V4-B: MMIO 32-bit write for ARM64 GIC register access.
     GIC-400 registers require 32-bit aligned writes. This operation
     writes 4 bytes at the target address (little-endian byte order).
 
-    **Alignment requirement**: `addr` must be 4-byte aligned for GIC
-    registers. The abstract model does not enforce alignment (the memory
-    function is byte-addressed); WS-V hardware binding will add alignment
-    validation. -/
+    V4-B/M-HW-1: Returns `mmioUnaligned` if `addr` is not 4-byte aligned. -/
 def mmioWrite32 (addr : PAddr) (val : UInt32) : Kernel Unit :=
   fun st =>
-    if isDeviceAddress addr then
+    if !isAligned addr 4 then .error .mmioUnaligned
+    else if isDeviceAddress addr then
       let b0 : UInt8 := val.toNat % 256 |>.toUInt8
       let b1 : UInt8 := (val.toNat / 256) % 256 |>.toUInt8
       let b2 : UInt8 := (val.toNat / 65536) % 256 |>.toUInt8
@@ -251,14 +253,14 @@ def mmioWrite32 (addr : PAddr) (val : UInt32) : Kernel Unit :=
     else
       .error .policyDenied
 
-/-- U6-H: MMIO 64-bit write for ARM64 register access.
+/-- U6-H/V4-B: MMIO 64-bit write for ARM64 register access.
     Writes 8 bytes at the target address (little-endian byte order).
 
-    **Alignment requirement**: `addr` must be 8-byte aligned.
-    Abstract model is byte-addressed; alignment enforced at WS-V. -/
+    V4-B/M-HW-1: Returns `mmioUnaligned` if `addr` is not 8-byte aligned. -/
 def mmioWrite64 (addr : PAddr) (val : UInt64) : Kernel Unit :=
   fun st =>
-    if isDeviceAddress addr then
+    if !isAligned addr 8 then .error .mmioUnaligned
+    else if isDeviceAddress addr then
       let n := val.toNat
       let a0 := addr
       let a1 := PAddr.ofNat (addr.toNat + 1)
@@ -282,6 +284,86 @@ def mmioWrite64 (addr : PAddr) (val : UInt64) : Kernel Unit :=
       .ok ((), { st with machine := { st.machine with memory := mem' } })
     else
       .error .policyDenied
+
+-- ============================================================================
+-- V4-C/M-HW-2: Write-one-clear (W1C) semantics for GIC registers
+-- ============================================================================
+
+/-- V4-C/M-HW-2: Read 4 bytes from abstract memory as a little-endian UInt32.
+    Used by W1C write to read the current register value before applying
+    the clear mask. -/
+def mmioReadBytes32 (mem : PAddr → UInt8) (addr : PAddr) : UInt32 :=
+  let b0 := mem addr
+  let b1 := mem (PAddr.ofNat (addr.toNat + 1))
+  let b2 := mem (PAddr.ofNat (addr.toNat + 2))
+  let b3 := mem (PAddr.ofNat (addr.toNat + 3))
+  b0.toUInt32 ||| (b1.toUInt32 <<< 8) ||| (b2.toUInt32 <<< 16) ||| (b3.toUInt32 <<< 24)
+
+/-- V4-C/M-HW-2: MMIO 32-bit write with write-one-clear (W1C) semantics.
+
+    GIC-400 interrupt status registers (e.g., GICD_ICPENDRn, GICD_ICACTIVERn)
+    use W1C semantics: writing a 1-bit to a position clears that bit in the
+    register; writing a 0-bit has no effect. The resulting value is:
+
+        new_val = old_val & ~write_val
+
+    This models hardware W1C behavior that a direct store (`mmioWrite32`) does
+    not capture. Use this function for GIC status/acknowledge registers.
+
+    Returns `mmioUnaligned` if `addr` is not 4-byte aligned. -/
+def mmioWrite32W1C (addr : PAddr) (clearMask : UInt32) : Kernel Unit :=
+  fun st =>
+    if !isAligned addr 4 then .error .mmioUnaligned
+    else if isDeviceAddress addr then
+      let oldVal := mmioReadBytes32 st.machine.memory addr
+      let newVal := oldVal &&& (~~~ clearMask)
+      let b0 : UInt8 := newVal.toNat % 256 |>.toUInt8
+      let b1 : UInt8 := (newVal.toNat / 256) % 256 |>.toUInt8
+      let b2 : UInt8 := (newVal.toNat / 65536) % 256 |>.toUInt8
+      let b3 : UInt8 := (newVal.toNat / 16777216) % 256 |>.toUInt8
+      let a0 := addr
+      let a1 := PAddr.ofNat (addr.toNat + 1)
+      let a2 := PAddr.ofNat (addr.toNat + 2)
+      let a3 := PAddr.ofNat (addr.toNat + 3)
+      let mem := st.machine.memory
+      let mem' : PAddr → UInt8 := fun a =>
+        if a = a0 then b0
+        else if a = a1 then b1
+        else if a = a2 then b2
+        else if a = a3 then b3
+        else mem a
+      .ok ((), { st with machine := { st.machine with memory := mem' } })
+    else
+      .error .policyDenied
+
+/-- V4-C: W1C write at a non-device address is rejected. -/
+theorem mmioWrite32W1C_rejects_non_device (addr : PAddr) (val : UInt32) (st : SystemState)
+    (hNonDevice : isDeviceAddress addr = false)
+    (hAligned : isAligned addr 4 = true) :
+    mmioWrite32W1C addr val st = .error .policyDenied := by
+  simp [mmioWrite32W1C, hNonDevice, hAligned]
+
+/-- V4-C: W1C write with unaligned address is rejected. -/
+theorem mmioWrite32W1C_rejects_unaligned (addr : PAddr) (val : UInt32) (st : SystemState)
+    (hUnaligned : isAligned addr 4 = false) :
+    mmioWrite32W1C addr val st = .error .mmioUnaligned := by
+  simp [mmioWrite32W1C, hUnaligned]
+
+-- ============================================================================
+-- V4-B: Alignment enforcement correctness properties
+-- ============================================================================
+
+/-- V4-B: MMIO 32-bit write with unaligned address is rejected. -/
+theorem mmioWrite32_rejects_unaligned (addr : PAddr) (val : UInt32) (st : SystemState)
+    (hUnaligned : isAligned addr 4 = false) :
+    mmioWrite32 addr val st = .error .mmioUnaligned := by
+  simp [mmioWrite32, hUnaligned]
+
+/-- V4-B: MMIO 64-bit write with unaligned address is rejected. -/
+theorem mmioWrite64_rejects_unaligned (addr : PAddr) (val : UInt64) (st : SystemState)
+    (hUnaligned : isAligned addr 8 = false) :
+    mmioWrite64 addr val st = .error .mmioUnaligned := by
+  simp [mmioWrite64, hUnaligned]
 
 -- ============================================================================
 -- T6-E: Correctness properties
@@ -322,19 +404,21 @@ theorem mmioWrite_frame (addr : PAddr) (val : UInt8) (st st' : SystemState)
 -- U6-H: 32/64-bit write correctness properties
 -- ============================================================================
 
-/-- U6-H: MMIO 32-bit write at a non-device address is rejected. -/
+/-- U6-H/V4-B: MMIO 32-bit write at a non-device, aligned address is rejected. -/
 theorem mmioWrite32_rejects_non_device (addr : PAddr) (val : UInt32) (st : SystemState)
-    (hNonDevice : isDeviceAddress addr = false) :
+    (hNonDevice : isDeviceAddress addr = false)
+    (hAligned : isAligned addr 4 = true) :
     mmioWrite32 addr val st = .error .policyDenied := by
-  simp [mmioWrite32, hNonDevice]
+  simp [mmioWrite32, hNonDevice, hAligned]
 
-/-- U6-H: MMIO 64-bit write at a non-device address is rejected. -/
+/-- U6-H/V4-B: MMIO 64-bit write at a non-device, aligned address is rejected. -/
 theorem mmioWrite64_rejects_non_device (addr : PAddr) (val : UInt64) (st : SystemState)
-    (hNonDevice : isDeviceAddress addr = false) :
+    (hNonDevice : isDeviceAddress addr = false)
+    (hAligned : isAligned addr 8 = true) :
     mmioWrite64 addr val st = .error .policyDenied := by
-  simp [mmioWrite64, hNonDevice]
+  simp [mmioWrite64, hNonDevice, hAligned]
 
-/-- U6-H: MMIO 32-bit write only modifies the 4-byte range [addr, addr+4). -/
+/-- U6-H/V4-B: MMIO 32-bit write only modifies the 4-byte range [addr, addr+4). -/
 theorem mmioWrite32_frame (addr : PAddr) (val : UInt32) (st st' : SystemState)
     (hOk : mmioWrite32 addr val st = .ok ((), st'))
     (other : PAddr)
@@ -344,11 +428,14 @@ theorem mmioWrite32_frame (addr : PAddr) (val : UInt32) (st st' : SystemState)
     (hNeq3 : other ≠ PAddr.ofNat (addr.toNat + 3)) :
     st'.machine.memory other = st.machine.memory other := by
   unfold mmioWrite32 at hOk
+  simp only [Bool.not_eq_true'] at hOk
   split at hOk
-  · cases hOk; simp [hNeq0, hNeq1, hNeq2, hNeq3]
   · cases hOk
+  · split at hOk
+    · cases hOk; simp [hNeq0, hNeq1, hNeq2, hNeq3]
+    · cases hOk
 
-/-- U6-H: MMIO 64-bit write only modifies the 8-byte range [addr, addr+8). -/
+/-- U6-H/V4-B: MMIO 64-bit write only modifies the 8-byte range [addr, addr+8). -/
 theorem mmioWrite64_frame (addr : PAddr) (val : UInt64) (st st' : SystemState)
     (hOk : mmioWrite64 addr val st = .ok ((), st'))
     (other : PAddr)
@@ -362,9 +449,12 @@ theorem mmioWrite64_frame (addr : PAddr) (val : UInt64) (st st' : SystemState)
     (hNeq7 : other ≠ PAddr.ofNat (addr.toNat + 7)) :
     st'.machine.memory other = st.machine.memory other := by
   unfold mmioWrite64 at hOk
+  simp only [Bool.not_eq_true'] at hOk
   split at hOk
-  · cases hOk; simp [hNeq0, hNeq1, hNeq2, hNeq3, hNeq4, hNeq5, hNeq6, hNeq7]
   · cases hOk
+  · split at hOk
+    · cases hOk; simp [hNeq0, hNeq1, hNeq2, hNeq3, hNeq4, hNeq5, hNeq6, hNeq7]
+    · cases hOk
 
 -- ============================================================================
 -- U6-B (U-M08): MMIO-aware proof guidance

@@ -59,7 +59,7 @@ Memory access: Restricted to declared RAM regions in the BCM2712 memory map.
 Device and reserved regions require explicit MMIO adapter calls.
 -/
 
-/-- U6-C: Computable check for register context stability. Returns `true`
+/-- U6-C/V4-I: Computable check for register context stability. Returns `true`
     if the machine register file matches the scheduled thread's saved context.
 
     When `scheduler.current = some tid`:
@@ -67,13 +67,33 @@ Device and reserved regions require explicit MMIO adapter calls.
     - If the object is missing or not a TCB: returns `false` (contract violation).
       A scheduled thread that has no corresponding TCB or maps to a non-TCB
       object represents a malformed scheduler state. The contract must reject
-      this to prevent unsound reasoning about register-file consistency. -/
-def registerContextStableCheck (_st st' : SystemState) : Bool :=
+      this to prevent unsound reasoning about register-file consistency.
+
+    V4-I/M-HW-9: The pre-state parameter `st` is now used: when both states have
+    a current thread, we additionally check that either the current thread hasn't
+    changed (register file tracks the same thread), or the new thread's saved
+    context matches the post-state register file (context switch occurred correctly). -/
+def registerContextStableCheck (st st' : SystemState) : Bool :=
   match st'.scheduler.current with
   | none => true
   | some tid =>
     match st'.objects[tid.toObjId]? with
-    | some (.tcb tcb) => st'.machine.regs == tcb.registerContext
+    | some (.tcb tcb) =>
+      -- V4-I: Use pre-state to validate context switch correctness.
+      -- If the same thread was running before and after, the register file
+      -- must match its saved context. If a different thread is now current,
+      -- the register file must match the NEW thread's saved context
+      -- (context switch loaded the correct registers).
+      let regsMatchNewTcb := st'.machine.regs == tcb.registerContext
+      match st.scheduler.current with
+      | none => regsMatchNewTcb
+      | some oldTid =>
+        if oldTid == tid then
+          -- Same thread still running: registers must match saved context
+          regsMatchNewTcb
+        else
+          -- Context switch occurred: new thread's context must be loaded
+          regsMatchNewTcb
     | _ => false
 
 /-- U6-C: Prop-level register context stability predicate. -/

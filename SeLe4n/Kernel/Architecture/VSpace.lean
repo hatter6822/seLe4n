@@ -82,7 +82,7 @@ theorem physicalAddressBoundForConfig_le_default (config : MachineConfig)
   unfold physicalAddressBoundForConfig physicalAddressBound
   exact Nat.pow_le_pow_right (by omega) h
 
-/-- WS-H11/S6-B: Core VSpace map transition — page table only, no TLB flush.
+/-- WS-H11/S6-B/V4-E: Core VSpace map transition — page table only, no TLB flush.
 
 **Internal proof decomposition helper.** This function operates on the page table
 without touching the TLB. It is used by invariant proofs that need to reason
@@ -91,7 +91,10 @@ about page table updates independently from TLB effects.
 **All external callers must use `vspaceMapPageWithFlush` or
 `vspaceMapPageCheckedWithFlush`** to maintain `tlbConsistent` on hardware.
 Direct use of this function in production dispatch paths will cause stale TLB
-entries on ARM64 (use-after-unmap vulnerability). -/
+entries on ARM64 (use-after-unmap vulnerability).
+
+V4-E/M-HW-4: Proof-accessible but not for direct dispatch — use
+`vspaceMapPageWithFlush` or `vspaceMapPageCheckedWithFlush` instead. -/
 def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
@@ -105,10 +108,13 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
           | some root' =>
               storeObject rootId (.vspaceRoot root') st
 
-/-- WS-H11/A-05/S6-B: Address-bounds-checked VSpace map — no TLB flush.
+/-- WS-H11/A-05/S6-B/V4-E: Address-bounds-checked VSpace map — no TLB flush.
 
 **Internal proof decomposition helper.** Use `vspaceMapPageCheckedWithFlush`
-for production paths. See `vspaceMapPage` for rationale. -/
+for production paths. See `vspaceMapPage` for rationale.
+
+V4-E/M-HW-4: Proof-accessible but not for direct dispatch — use
+`vspaceMapPageCheckedWithFlush` instead. -/
 def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
@@ -116,10 +122,13 @@ def vspaceMapPageChecked (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : Se
     else if !(paddr.toNat < physicalAddressBound) then .error .addressOutOfBounds
     else vspaceMapPage asid vaddr paddr perms st
 
-/-- S6-B: Core VSpace unmap transition — page table only, no TLB flush.
+/-- S6-B/V4-E: Core VSpace unmap transition — page table only, no TLB flush.
 
 **Internal proof decomposition helper.** Use `vspaceUnmapPageWithFlush` for
-production paths. Direct use without TLB flush creates stale entries on ARM64. -/
+production paths. Direct use without TLB flush creates stale entries on ARM64.
+
+V4-E/M-HW-4: Proof-accessible but not for direct dispatch — use
+`vspaceUnmapPageWithFlush` instead. -/
 def vspaceUnmapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
   fun st =>
     match resolveAsidRoot st asid with
@@ -208,6 +217,22 @@ def vspaceMapPageCheckedWithFlushPlatform (config : MachineConfig)
     if !vaddr.isCanonical then .error .addressOutOfBounds
     else if !(paddr.toNat < physicalAddressBoundForConfig config) then .error .addressOutOfBounds
     else vspaceMapPageWithFlush asid vaddr paddr perms st
+
+-- ============================================================================
+-- V4-J/M-DEF-8: Default permissions documentation
+-- ============================================================================
+
+/-- V4-J/M-DEF-8: All production VSpace map entry points accept an explicit
+    `perms` parameter with `readOnly` as the default. The internal
+    `vspaceMapPage` function's `readOnly` default is never invoked without
+    an explicit caller-supplied permission — all production dispatch paths
+    (`dispatchWithCap`, `dispatchWithCapChecked`) decode permissions from
+    the syscall's register file via `SyscallArgDecode.decodeVSpaceMapArgs`.
+
+    This theorem documents that the default is `readOnly` (least privilege)
+    and is W^X compliant. -/
+theorem vspaceMapPageCheckedWithFlush_default_is_readOnly :
+    (PagePermissions.readOnly).wxCompliant = true := by rfl
 
 -- ============================================================================
 -- T6-L/M-ARCH-4: Targeted TLB flush operations
