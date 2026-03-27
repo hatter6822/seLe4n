@@ -296,4 +296,101 @@ theorem storeTcbIpcStateAndMessage_nolinks_preserves_queueNextBlockingConsistent
     (fun _ tcbTid _ hTid hQN _ => absurd (hNoNext tcbTid hTid ▸ hQN) (by simp))
     (fun a tcbA _ hA hQN _ => absurd hQN (hNoPrev a tcbA hA))
 
+-- ============================================================================
+-- Section: queueHeadBlockedConsistent primitive preservation
+-- ============================================================================
+
+/-- ensureRunnable preserves queueHeadBlockedConsistent (doesn't change objects). -/
+theorem ensureRunnable_preserves_queueHeadBlockedConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent (ensureRunnable st tid) := by
+  intro epId ep hd tcb hEp hTcb
+  rw [show (ensureRunnable st tid).objects = st.objects from
+    ensureRunnable_preserves_objects st tid] at hEp hTcb
+  exact hInv epId ep hd tcb hEp hTcb
+
+/-- removeRunnable preserves queueHeadBlockedConsistent (doesn't change objects). -/
+theorem removeRunnable_preserves_queueHeadBlockedConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent (removeRunnable st tid) := by
+  intro epId ep hd tcb hEp hTcb
+  rw [show (removeRunnable st tid).objects = st.objects from
+    removeRunnable_preserves_objects st tid] at hEp hTcb
+  exact hInv epId ep hd tcb hEp hTcb
+
+/-- storeTcbIpcStateAndMessage preserves queueHeadBlockedConsistent when the
+thread is not a queue head. The precondition hNotHead ensures that tid is not
+the head of any endpoint queue. -/
+theorem storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
+    (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
+    queueHeadBlockedConsistent st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep hd hdTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hHdEq : hd.toObjId = tid.toObjId
+      · -- hd = tid: but hNotHead says tid is not a queue head — contradiction
+        have hTidEq := ThreadId.toObjId_injective hd tid hHdEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotHead epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame hd.toObjId hHdEq] at hTcb
+        exact hInv epId ep hd hdTcb hEp hTcb
+
+/-- storeTcbPendingMessage preserves queueHeadBlockedConsistent. -/
+theorem storeTcbPendingMessage_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st') :
+    queueHeadBlockedConsistent st' := by
+  unfold storeTcbPendingMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb { tcb with pendingMessage := msg }) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro epId ep hd hdTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hHdEq : hd.toObjId = tid.toObjId
+      · -- hd = tid: pendingMessage changed but ipcState preserved
+        rw [hHdEq, hEqAt] at hTcb
+        simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb
+        subst hTcb
+        exact hInv epId ep hd tcb hEp (by rw [hHdEq]; exact hTcbObj)
+      · rw [hFrame hd.toObjId hHdEq] at hTcb
+        exact hInv epId ep hd hdTcb hEp hTcb
+
 end SeLe4n.Kernel

@@ -840,7 +840,10 @@ def endpointQueueNoDup (st : SystemState) : Prop :=
 /-- Helper: the blocking-compatibility condition for two IPC states linked by queueNext.
     Compatible queue types: blockedOnSend and blockedOnCall both map to sendQ,
     so they are mutually compatible. blockedOnReceive maps to receiveQ and is
-    only compatible with itself. Non-blocking states are unconstrained. -/
+    only compatible with itself. Cross-queue blocking pairs (receive↔send/call)
+    are explicitly rejected (False) to ensure queueNext chains are strictly
+    intra-queue, which is required for PopHead V3-J preservation.
+    Non-blocking states are unconstrained (True). -/
 def queueNextBlockingMatch (s1 s2 : ThreadIpcState) : Prop :=
   match s1, s2 with
   | .blockedOnSend epA, .blockedOnSend epB => epA = epB
@@ -848,6 +851,10 @@ def queueNextBlockingMatch (s1 s2 : ThreadIpcState) : Prop :=
   | .blockedOnCall epA, .blockedOnSend epB => epA = epB
   | .blockedOnCall epA, .blockedOnCall epB => epA = epB
   | .blockedOnReceive epA, .blockedOnReceive epB => epA = epB
+  | .blockedOnSend _, .blockedOnReceive _ => False
+  | .blockedOnReceive _, .blockedOnSend _ => False
+  | .blockedOnCall _, .blockedOnReceive _ => False
+  | .blockedOnReceive _, .blockedOnCall _ => False
   | _, _ => True
 
 /-- V3-J-cross: If a.queueNext = some b, then a and b are blocked on the same
@@ -862,14 +869,31 @@ def queueNextBlockingConsistent (st : SystemState) : Prop :=
     queueNextBlockingMatch tcbA.ipcState tcbB.ipcState
 
 -- ============================================================================
--- Full IPC invariant bundle (8 conjuncts)
+-- V3-J-head: Queue head blocking state consistency
 -- ============================================================================
 
-/-- Full IPC invariant: conjunction of all eight IPC sub-invariants. -/
+/-- V3-J-head: Queue heads are blocked on the correct endpoint/queue.
+    If a thread is the head of an endpoint's receiveQ, it must be
+    blockedOnReceive on that endpoint. If it's the head of sendQ, it must
+    be blockedOnSend or blockedOnCall on that endpoint. This property is
+    needed to discharge hHeadBlocked in PopHead-based V3-J preservation. -/
+def queueHeadBlockedConsistent (st : SystemState) : Prop :=
+  ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (hd : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[epId]? = some (.endpoint ep) →
+    st.objects[hd.toObjId]? = some (.tcb tcb) →
+    (ep.receiveQ.head = some hd → tcb.ipcState = .blockedOnReceive epId) ∧
+    (ep.sendQ.head = some hd →
+      tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
+
+-- ============================================================================
+-- Full IPC invariant bundle (9 conjuncts)
+-- ============================================================================
+
+/-- Full IPC invariant: conjunction of all nine IPC sub-invariants. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
   endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
-  queueNextBlockingConsistent st
+  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st
 
 end SeLe4n.Kernel

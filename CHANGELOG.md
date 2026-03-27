@@ -56,11 +56,27 @@
   `storeObject_endpoint`, `storeObject_non_ep_non_tcb`, `storeTcbQueueLinks`
   (conditional), `storeTcbIpcStateAndMessage` (general + `.ready` + no-links
   variants). Resolves cross-endpoint PopHead frame gap in V3-J-op-2d.
-- V3-J/K/J-cross bundle integration: `ipcInvariantFull` expanded from 5 to 8
+  QHBC primitive preservation proofs: `ensureRunnable`, `removeRunnable`,
+  `storeTcbIpcStateAndMessage` (with `hNotHead` precondition),
+  `storeTcbPendingMessage`.
+- V3-J compound proofs: `queueHeadBlockedConsistent` (QHBC) invariant added —
+  queue heads must be in correct blocking state (`blockedOnReceive` for receiveQ
+  heads, `blockedOnSend ∨ blockedOnCall` for sendQ heads). Integrated as 9th
+  conjunct of `ipcInvariantFull` (was 8). `storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent`
+  added — general variant allowing blocking states with reachability callbacks.
+  4 compound V3-J preservation proofs in `Structural.lean`:
+  `endpointSendDual_preserves_ipcStateQueueMembershipConsistent`,
+  `endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent`,
+  `endpointCall_preserves_ipcStateQueueMembershipConsistent`,
+  `endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent`.
+  Uses `tcbQueueChainAcyclic_no_self_loop` for prev≠sender derivation
+  and QHBC for `.blockedOnReply` hNotHead derivation.
+- V3-J/K/J-cross bundle integration: `ipcInvariantFull` expanded from 5 to 9
   conjuncts. All 10 `_preserves_ipcInvariantFull` theorems updated. New
   extractors: `coreIpcInvariantBundle_to_endpointQueueNoDup`,
   `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`,
-  `coreIpcInvariantBundle_to_queueNextBlockingConsistent`. Default state
+  `coreIpcInvariantBundle_to_queueNextBlockingConsistent`,
+  `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`. Default state
   proofs, lifecycle integration, and `advanceTimerState` preservation updated.
 - Zero `sorry`, zero `axiom`. All 182 build targets pass. `test_full.sh` green.
 
