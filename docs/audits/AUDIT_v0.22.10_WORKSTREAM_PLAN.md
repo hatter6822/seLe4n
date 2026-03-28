@@ -182,22 +182,50 @@ conformance tests
 
 **Files**: `rust/sele4n-sys/src/ipc.rs:127-135` + Lean `SyscallArgDecode.lean:869-872`
 **Problem**: The Lean `decodeNotificationSignalArgs` reads badge from `MR[0]`
-via `requireMsgReg decoded.msgRegs 0`. The Rust `notification_signal()` passes
-`msg_regs: [0; 4]` (all zeros), so badge is always 0.
+via `requireMsgReg decoded.msgRegs 0`, then passes `args.badge` to
+`notificationSignal notifId args.badge st` (API.lean:549). The Rust
+`notification_signal()` passes `msg_regs: [0; 4]` (all zeros), so badge is
+always 0 — notification signals from Rust always accumulate a zero badge.
 **Design decision required**: Two options:
-- **Option A (match Lean)**: Update `notification_signal(ntfn, badge)` to accept
-  a `Badge` parameter and place `badge.0` in `msg_regs[0]`. This matches the
-  current Lean model.
-- **Option B (match seL4)**: Update Lean to use the resolved capability's badge
-  (seL4 convention where `seL4_Signal(dest)` accumulates the cap's badge).
-  This requires changing `decodeNotificationSignalArgs` and `dispatchWithCap`.
-**Recommendation**: Option A — match the Lean model. The Lean model's design
-choice to pass badge via MR[0] is deliberate and allows user-controlled badge
-values. Update the Rust function signature to:
+- **Option A (match Lean)**: Update Rust to pass badge via `msg_regs[0]`
+- **Option B (match seL4)**: Update Lean to use capability badge
+**Recommendation**: Option A — the Lean model's MR[0] design is deliberate.
+
+**Sub-steps**:
+
+**W1-C-1**: Update function signature in `rust/sele4n-sys/src/ipc.rs`:
 ```rust
-pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<SyscallResponse>
+pub fn notification_signal(ntfn: CPtr, badge: Badge) -> KernelResult<SyscallResponse> {
+    let msg_info = MessageInfo::new_const(1, 0, 0);  // length=1 (one MR used)
+    invoke_syscall(SyscallRequest {
+        cap_addr: ntfn,
+        msg_info,
+        msg_regs: [badge.into(), 0, 0, 0],  // badge in MR[0]
+        syscall_id: SyscallId::NotificationSignal,  // also fixes CRIT-1
+    })
+}
 ```
-And place `badge.into(): u64` in `msg_regs[0]`.
+Note: `MessageInfo` length must be 1 (not 0) to indicate one message register
+is populated. Verify `decodeNotificationSignalArgs` checks `msgRegs` length.
+
+**W1-C-2**: Verify `MessageInfo::new_const(1, 0, 0)` is valid. Check that the
+Lean decode path does not reject length=1 for notification signal. Read
+`SyscallArgDecode.lean:869-872` — `requireMsgReg` checks that the register
+index is within `msgRegs.size`, which depends on `MessageInfo.length`. Confirm
+length=1 allows MR[0] access.
+
+**W1-C-3**: Add `use sele4n_types::Badge;` import to `ipc.rs` if not present.
+Verify `Badge` has `Into<u64>` impl in `identifiers.rs` (confirmed: `Badge`
+is `#[repr(transparent)]` over `u64` with `From<u64>` conversions).
+
+**W1-C-4**: Update Rust doc comment on `notification_signal` to explain badge
+semantics: "The badge value is passed via message register 0. The kernel
+accumulates it into the notification object's badge word via bitwise OR."
+
+**W1-C-5**: Verify no existing callers of `notification_signal()` in the Rust
+test suite or sele4n-sys examples need updating for the new signature. Search
+for `notification_signal(` across all Rust files.
+
 **Verification**: New test `test_notification_signal_badge_passthrough`
 **Risk**: API-breaking change for Rust consumers — requires version bump note
 
@@ -216,22 +244,57 @@ And place `badge.into(): u64` in `msg_regs[0]`.
 #### W1-E: Add `endpoint_reply_recv` wrapper (MED-03)
 
 **File**: `rust/sele4n-sys/src/ipc.rs`
-**Change**: Add new function:
+**Lean reference**: `API.lean:566-576` dispatches `.replyRecv` to
+`endpointReplyRecv`. `decodeReplyRecvArgs` (SyscallArgDecode.lean:881-884)
+reads `MR[0]` as `replyTarget : ThreadId`.
+
+**Sub-steps**:
+
+**W1-E-1**: Verify full argument decode chain. Read `decodeReplyRecvArgs`:
+```lean
+def decodeReplyRecvArgs (decoded : SyscallDecodeResult) := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { replyTarget := ThreadId.ofNat r0.val }
+```
+The wrapper needs: `cap_addr` = endpoint capability for receive,
+`msg_regs[0]` = reply target thread ID, `MessageInfo.length` >= 1.
+
+**W1-E-2**: Determine how the reply message is passed. Check if `dispatchWithCap`
+for `.replyRecv` uses `decoded.msgRegs` for the reply payload or only for
+argument decoding. If the reply uses the same message registers as
+`endpoint_reply`, the wrapper must populate msg_regs with both the reply
+target ID and any reply data.
+
+**W1-E-3**: Implement the wrapper function:
 ```rust
 pub fn endpoint_reply_recv(
     recv_cap: CPtr,
     reply_target: ThreadId,
     msg: &IpcMessage,
-) -> KernelResult<SyscallResponse> { ... }
+) -> KernelResult<SyscallResponse> {
+    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+        .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
+    invoke_syscall(SyscallRequest {
+        cap_addr: recv_cap,
+        msg_info,
+        msg_regs: [reply_target.into(), msg.regs[1], msg.regs[2], msg.regs[3]],
+        syscall_id: SyscallId::ReplyRecv,
+    })
+}
 ```
-This wraps `SyscallId::ReplyRecv` (discriminant 16), matching the Lean
-`endpointReplyRecv` in `API.lean:566-576`. Per `decodeReplyRecvArgs` in
-`SyscallArgDecode.lean:881-884`, `MR[0]` contains `replyTarget` (ThreadId).
-The `recv_cap` goes in `cap_addr` (the capability used for the receive side).
-**Verification**: New test `test_endpoint_reply_recv_syscall_id`
+Note: `msg_regs[0]` is occupied by `reply_target`, so reply data starts at
+`msg_regs[1]`. Verify this is consistent with how `endpoint_reply` works.
+
+**W1-E-4**: Add `use sele4n_types::ThreadId;` import if not present.
+
+**W1-E-5**: Add doc comment explaining the compound operation: "Atomically
+replies to `reply_target` with the message payload and then blocks waiting
+for a new message on the endpoint identified by `recv_cap`."
+
+**Verification**: New test `test_endpoint_reply_recv_syscall_id` verifying
+SyscallId::ReplyRecv (16) is encoded, and `test_endpoint_reply_recv_args`
+verifying reply_target in MR[0].
 **Risk**: Additive — new function, no breaking changes
-**Note**: Must verify argument layout matches `decodeReplyRecvArgs` in
-`SyscallArgDecode.lean`.
 
 #### W1-F: Add notification wrapper tests
 
@@ -305,23 +368,80 @@ ongoing drift detection for all ABI-critical constants.
 #### W2-A: Close V6-A field-disjointness formalism (H-2)
 
 **File**: `SeLe4n/Kernel/CrossSubsystem.lean:205-302`
-**Problem**: `StateField` enum and `fieldsDisjoint` produce decidable equality
-facts, but no theorem proves that field disjointness implies operation-wise
-frame independence. The vocabulary exists without closing the proof.
-**Change**: Add a frame theorem of the form:
+**Problem**: The `StateField` enum (16 variants), `fieldsDisjoint` function,
+and 10 pairwise disjointness/overlap witnesses exist. But no theorem connects
+field disjointness to operational frame independence. The existing field-read
+sets are:
+- `registryEndpointValid_fields` = `[.serviceRegistry, .objects]`
+- `registryDependencyConsistent_fields` = `[.services]`
+- `noStaleEndpointQueueReferences_fields` = `[.objects]`
+- `noStaleNotificationWaitReferences_fields` = `[.objects]`
+- `serviceGraphInvariant_fields` = `[.services, .objectIndex]`
+
+6 pairs are proven disjoint, 4 pairs share fields (both read `.objects` or
+`.services`). The gap is: disjointness of read-sets does not automatically
+imply that an operation modifying only the fields of one predicate preserves
+another predicate.
+
+**Sub-steps**:
+
+**W2-A-1**: Define `modifiedFields` for each cross-subsystem-relevant
+operation. For each kernel operation that appears in cross-subsystem
+preservation proofs, declare which `StateField` values it writes:
+```lean
+def serviceRegisterDependency_modifiedFields : List StateField := [.services]
+def storeObject_modifiedFields : List StateField := [.objects, .objectIndex, .objectIndexSet]
+def lifecycleRetypeObject_modifiedFields : List StateField :=
+  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
+```
+
+**W2-A-2**: Attempt the general frame theorem. The ideal form is:
 ```lean
 theorem fieldsDisjoint_implies_preservation
-    (hDisj : fieldsDisjoint (predicateFields p₁) (predicateFields p₂) = true)
-    (hOp : modifiedFields op ⊆ predicateFields p₁)
-    (hPres : p₁ st → p₁ st') :
-    p₂ st → p₂ st'
+    (pred : SystemState → Prop)
+    (predFields : List StateField)
+    (opFields : List StateField)
+    (hDisj : fieldsDisjoint predFields opFields = true)
+    (hPred : pred st)
+    (hFrame : ∀ f ∈ predFields, getField st f = getField st' f) :
+    pred st'
 ```
-If this general form is not achievable (the `modifiedFields` abstraction may
-be too coarse for some operations), document precisely why and add a targeted
-comment explaining the assurance boundary.
+This requires a `getField : SystemState → StateField → _` accessor, which is
+problematic because different fields have different types. The general theorem
+may not be expressible in this form.
+
+**W2-A-3 (fallback if W2-A-2 fails)**: Instead of the general theorem, prove
+**per-predicate frame lemmas** for each of the 5 predicates:
+```lean
+theorem registryDependencyConsistent_frame
+    (hServices : st'.services = st.services) :
+    registryDependencyConsistent st → registryDependencyConsistent st'
+
+theorem noStaleEndpointQueueReferences_frame
+    (hObjects : st'.objects = st.objects) :
+    noStaleEndpointQueueReferences st → noStaleEndpointQueueReferences st'
+```
+Then add a documentation comment explaining that field disjointness + per-
+predicate frame lemmas together establish frame independence.
+
+**W2-A-4**: For each of the 6 disjoint pairs, verify that the existing per-
+predicate frame lemmas (if they exist in `CrossSubsystem.lean`) are sufficient.
+Check for `registryDependencyConsistent_frame`, `serviceGraphInvariant_frame`,
+`serviceGraphInvariant_monotone` (all known to exist at lines 337-389).
+
+**W2-A-5**: Document the formalism boundary. Add a comment block:
+```lean
+/-- V6-A Formalism Closure: Field disjointness implies frame independence
+    via per-predicate frame lemmas. For each disjoint pair (P₁, P₂), if
+    an operation only modifies fields in P₁'s read-set, the corresponding
+    P₂ frame lemma proves P₂ is preserved. The 4 sharing pairs (which read
+    overlapping fields) require operation-specific preservation proofs. -/
+```
+
 **Build**: `lake build SeLe4n.Kernel.CrossSubsystem`
-**Risk**: Medium — may require significant proof engineering. If the general
-theorem is infeasible, the fallback is documentation (W2-A-alt).
+**Risk**: Medium — W2-A-2 (general theorem) likely infeasible due to
+heterogeneous field types. W2-A-3 (per-predicate frames) is achievable and
+may already be partially done.
 
 #### W2-B: Document crossSubsystemInvariant composition gap (H-1)
 
@@ -365,23 +485,68 @@ mechanisms, making the wildcard arm dead code.
 #### W2-D: Add fuel sufficiency assertion for `collectQueueMembers` (M-6)
 
 **File**: `SeLe4n/Kernel/CrossSubsystem.lean:40-80`
-**Problem**: `collectQueueMembers` uses bounded fuel (`st.objects.size`) but
-returns `[]` silently on exhaustion. The traversal may silently stop if the
-queue is longer than the object table (impossible by invariant, but unproven).
-**Change**: Add a theorem proving fuel sufficiency:
+**Problem**: `collectQueueMembers` traverses the intrusive linked list of TCBs
+in a queue using `st.objects.size` as fuel. On fuel exhaustion (fuel=0), it
+returns `[]`, silently truncating the traversal. The IPC invariant
+`tcbQueueChainAcyclic` ensures no cycles, so queue length <= object count,
+making fuel sufficient — but this is unproven.
+
+The function definition (lines 40-50):
 ```lean
-theorem collectQueueMembers_fuel_sufficient
-    (hInv : ipcInvariantFull st)
-    (hHead : head = some tid) :
+private def collectQueueMembers (objects) (start) (fuel) :=
+  match fuel, start with
+  | 0, _ => []                  -- Silent truncation
+  | _, none => []               -- Natural termination
+  | fuel + 1, some tid =>
+    match objects[tid.toObjId]? with
+    | some (.tcb tcb) => tid :: collectQueueMembers objects tcb.queueNext fuel
+    | _ => [tid]                -- Non-TCB termination
+```
+
+**Sub-steps**:
+
+**W2-D-1**: Prove a length bound lemma. The key insight: `tcbQueueChainAcyclic`
+(from `dualQueueSystemInvariant`) implies every thread appears at most once
+in any queue traversal. Since all threads are in `st.objects`, the traversal
+visits at most `st.objects.size` distinct threads.
+```lean
+theorem collectQueueMembers_length_le_objects_size
+    (hAcyclic : tcbQueueChainAcyclic st) :
     (collectQueueMembers st.objects head st.objects.size).length
     ≤ st.objects.size
 ```
-Or alternatively, change `noStaleEndpointQueueReferences` to return a `Bool`
-witness that includes fuel sufficiency.
+
+**W2-D-2**: Prove a no-truncation lemma. This is the core fuel sufficiency
+result — when acyclicity holds, fuel is never exhausted:
+```lean
+theorem collectQueueMembers_no_truncation
+    (hAcyclic : tcbQueueChainAcyclic st)
+    (hFuel : fuel ≥ st.objects.size) :
+    collectQueueMembers st.objects head fuel
+    = collectQueueMembers st.objects head (fuel + 1)
+```
+This shows increasing fuel beyond `objects.size` does not change the result.
+
+**W2-D-3**: If W2-D-1/W2-D-2 prove difficult (the acyclicity invariant
+operates on `QueueNextPath` which is an inductive predicate, not a direct
+list length bound), fall back to a weaker but useful statement:
+```lean
+/-- Fuel sufficiency argument: `tcbQueueChainAcyclic` prevents cycles in
+    queue traversal. Each step consumes 1 fuel and visits 1 unique thread.
+    With fuel = objects.size and at most objects.size threads, exhaustion
+    implies all threads visited. -/
+theorem collectQueueMembers_fuel_sufficiency_documented :
+    True := trivial  -- See inline argument above
+```
+Plus strengthen the comment at the `| 0, _ => []` arm.
+
+**W2-D-4**: Add a comment to `noStaleEndpointQueueReferences` documenting
+the fuel adequacy argument and citing the `tcbQueueChainAcyclic` invariant.
+
 **Build**: `lake build SeLe4n.Kernel.CrossSubsystem`
-**Risk**: Medium — the proof requires connecting queue length to object table
-size via the IPC invariant. May require a helper lemma about queue acyclicity
-implying bounded length.
+**Risk**: Medium — W2-D-1 is the ideal proof but may require substantial
+infrastructure connecting `QueueNextPath` to list length. W2-D-3 is the
+safe fallback.
 
 #### W2-E: Document `serviceHasPathTo` fuel exhaustion semantics (M-4)
 
@@ -404,19 +569,66 @@ all realistic service graphs. Document the worst-case graph size.
 #### W2-F: Strengthen `serviceCountBounded` maintenance documentation (M-5)
 
 **File**: `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean`
-**Problem**: `serviceCountBounded` assumes a NoDup list of all services but no
-mechanism verifies this across all operations.
-**Change**: Add preservation theorems for the key service operations:
+**Problem**: `serviceCountBounded` requires `∃ ns, bfsUniverse st ns ∧
+ns.length ≤ serviceBfsFuel st`. The invariant is bundled as part of
+`serviceGraphInvariant` (conjunction with `serviceDependencyAcyclic`).
+Existing preservation theorems:
+- `serviceCountBounded_of_storeServiceState_sameDeps` (same deps → preserved)
+- `serviceCountBounded_of_eq` (frame: services + objectIndex unchanged)
+- `serviceCountBounded_monotone` (objectIndex grows → fuel grows → preserved)
+
+The gap: `serviceRegisterDependency` *changes* dependencies (appends a new
+dep), so the `_sameDeps` theorem does not directly apply. And `revokeService`
+calls `removeDependenciesOf` which modifies the `services` table.
+
+**Sub-steps**:
+
+**W2-F-1**: Verify that `serviceRegisterDependency` preservation is already
+covered. Check `serviceRegisterDependency_preserves_acyclicity` in
+Acyclicity.lean (~line 550) — it requires `serviceCountBounded` as a
+hypothesis and returns preservation of `serviceDependencyAcyclic`. But does
+it also return `serviceCountBounded`? If not, that's the gap.
+
+**W2-F-2**: If `serviceRegisterDependency` does NOT preserve
+`serviceCountBounded`, add the theorem:
 ```lean
-theorem serviceRegisterDependency_preserves_serviceCountBounded ...
-theorem serviceRegisterInterface_preserves_serviceCountBounded ...
-theorem revokeService_preserves_serviceCountBounded ...
+theorem serviceRegisterDependency_preserves_serviceCountBounded
+    (hBound : serviceCountBounded st)
+    (hOk : serviceRegisterDependency svcId depId st = .ok ((), st')) :
+    serviceCountBounded st'
 ```
-Or document which operations preserve this predicate with a comment block
-listing the chain.
+The proof strategy: `serviceRegisterDependency` only appends `depId` to
+`svc.dependencies`. The BFS universe doesn't change (both `svcId` and `depId`
+already exist in `services`). The fuel doesn't change (objectIndex unchanged).
+So the existing witness `ns` still satisfies `bfsUniverse st' ns`.
+
+**W2-F-3**: Verify `revokeService` preservation. `revokeService` calls
+`removeDependenciesOf` which erases dependency edges. Removing edges from a
+graph cannot increase the BFS universe (it can only shrink it). Prove:
+```lean
+theorem revokeService_preserves_serviceCountBounded
+    (hBound : serviceCountBounded st)
+    (hOk : revokeService sid st = .ok ((), st')) :
+    serviceCountBounded st'
+```
+
+**W2-F-4**: Add a documentation block listing the complete preservation chain:
+```lean
+/-- serviceCountBounded preservation chain:
+    - storeObject (objects only): preserved via _monotone (objectIndex grows)
+    - registerInterface: preserved via _of_eq (services unchanged)
+    - registerService: preserved via _of_eq (services unchanged)
+    - serviceRegisterDependency: preserved (universe unchanged, fuel unchanged)
+    - revokeService: preserved (universe shrinks, fuel unchanged)
+    - All other kernel ops: preserved via _of_eq (services/objectIndex unchanged)
+-/
+```
+
 **Build**: `lake build SeLe4n.Kernel.Service.Invariant.Acyclicity`
-**Risk**: Medium — preservation proofs may require threading the NoDup
-hypothesis through service registry operations
+**Risk**: Low-Medium — the preservation arguments are straightforward since
+adding edges doesn't grow the universe and removing edges shrinks it. The
+main risk is the `bfsUniverse` predicate requiring careful reasoning about
+the universe witness.
 
 #### W2-G: Unify enforcement boundary tables (M-3)
 
@@ -494,41 +706,106 @@ larger counts. This phase uses a **verification-first** approach:
 #### W3-A: Build verified dead code inventory
 
 **Scope**: Entire `SeLe4n/` directory
-**Method**: For each `def`/`theorem`/`lemma`/`abbrev` in the codebase:
-1. Grep for the identifier name across all `.lean` files
-2. Exclude the definition site itself
-3. If zero external references, classify as:
-   - **Category A (remove)**: Internal helper with no specification value
-   - **Category B (keep)**: Specification-surface theorem (security property,
-     invariant characterization, lattice proof, authority reduction)
-   - **Category C (defer)**: Platform scaffolding for future hardware binding
-**Output**: A categorized list in a scratch file, used by W3-B through W3-F
-**Risk**: Low — read-only analysis
+**Output**: A categorized list used by W3-B through W3-F
+
+**Sub-steps**:
+
+**W3-A-1**: Extract all definition names. Run a script that greps for
+`def `, `theorem `, `lemma `, `abbrev `, `instance ` declarations across
+all `SeLe4n/*.lean` files and extracts the identifier name + file + line.
+Expected output: ~2,000+ definitions.
+
+**W3-A-2**: For each definition, count external references. For each
+identifier from W3-A-1, grep across all `.lean` files (`SeLe4n/`, `tests/`,
+`Main.lean`) for that identifier. Exclude matches in the definition file
+itself. Record the reference count.
+
+**W3-A-3**: Filter to zero-external-reference candidates. This is the
+"potentially dead" list. Expected size: 200-400 based on sample rates.
+
+**W3-A-4**: Classify each candidate into categories:
+- **Category A (remove)**: Internal helper lemma, intermediate proof step,
+  superseded definition, or duplicate. Criteria: name suggests helper purpose
+  (e.g., `_aux`, `_go`, `_step`), or proof is intermediate (feeds no other
+  theorem), or a duplicate exists (e.g., `maxLength` vs `maxMessageRegisters`).
+- **Category B (keep as spec-surface)**: Characterizes a security property,
+  invariant, or correctness condition. Criteria: name suggests specification
+  (e.g., `_refl`, `_trans`, `_antisymm` for lattice; `_preserves_` for
+  invariant; `_sound`, `_complete` for correctness). Keep even if unused.
+- **Category C (defer — platform scaffolding)**: Definitions in Platform/,
+  RPi5/, Boot.lean, DeviceTree.lean that are scaffolding for future hardware
+  binding. Keep until H3 integration determines their fate.
+
+**W3-A-5**: For Category A candidates, do a final deep-check: verify the
+definition is not referenced via typeclass resolution, `@[simp]` lemma
+application, or `open` namespace imports that make the grep miss. Run
+`lake build <Module>` after a trial removal of 2-3 candidates to validate
+the methodology.
+
+**W3-A-6**: Write the inventory to `docs/audits/DEAD_CODE_INVENTORY_v0.22.10.md`
+organized by file, with each entry showing: definition name, file:line,
+category (A/B/C), and rationale.
+
+**Risk**: Low — read-only analysis. W3-A-5 catches false negatives.
 
 #### W3-B: Remove confirmed dead helpers — Foundation layer
 
 **Files**: `Prelude.lean`, `Machine.lean`, `Model/Object/Types.lean`,
 `Model/Object/Structures.lean`, `Model/State.lean`
-**Candidates** (verified dead from audit + sample check):
-- `Prelude.lean`: Monad law proofs (`pure_bind_law`, `bind_pure_law`,
-  `bind_assoc_law`, `get_returns_state`, `set_replaces_state`,
-  `modify_applies_function`, `liftExcept_ok`, `liftExcept_error`,
-  `throw_errors`) — these are orphaned. If a `LawfulMonad` instance is
-  desired, wire them in (W3-B-alt); otherwise remove.
-- `Machine.lean`: Unused alignment definitions (`wordAligned`, `pageAligned`
-  and associated proofs), unused RAM model (`totalRAM`, `addressInMap`),
-  unused config helpers — verify each before removal
-- `Types.lean`: Duplicate constants (`maxLength`, `maxExtraCaps'`), unused
-  `UntypedObject` proofs — verify each
-- `Structures.lean`: Unused CDT navigation helpers (`isChildOf`, `isParentOf`,
-  `parentOf`, `removeAsChild`, `removeAsParent`, `isAncestor`), unused
-  `makeObjectCap` — verify each
-- `State.lean`: Unused type aliases (`CSpaceOwner` — verify internal use first),
-  unused observation helpers (`observedCdtEdges`, `ownerOfSlot`, `ownedSlots`)
-**Process**: Remove in batches of ~10 definitions per file. After each batch:
-`lake build <Module.Path>`. If build fails, restore and investigate.
-**Build**: `lake build SeLe4n.Prelude`, `lake build SeLe4n.Machine`, etc.
-**Risk**: Low — each removal is individually verified
+
+**Sub-steps** (one per file, each independently buildable):
+
+**W3-B-1**: `Prelude.lean` — monad law proofs decision.
+Decision: Remove `pure_bind_law`, `bind_pure_law`, `bind_assoc_law`,
+`get_returns_state`, `set_replaces_state`, `modify_applies_function`,
+`liftExcept_ok`, `liftExcept_error`, `throw_errors` (9 definitions).
+Rationale: No `LawfulMonad` instance exists and no downstream proof uses
+them. If a `LawfulMonad` instance is desired in the future, re-derive from
+the monad definition.
+Alternative (W3-B-1-alt): Wire into `instance : LawfulMonad KernelM` instead
+of removing. This creates a consumer, making the proofs non-dead. Choose this
+only if downstream proofs would benefit from `LawfulMonad` lemmas.
+Build: `lake build SeLe4n.Prelude`
+
+**W3-B-2**: `Prelude.lean` — RHTable bridge lemmas.
+From W3-A inventory, identify which of the ~29 RHTable theorems (lines
+916-1049) are Category A vs B. Bridge lemmas like `RHTable_contains_iff_get_some`
+characterize hash table behavior — classify as Category B (spec-surface) and
+keep. Internal helpers like `RHTable_size_insert_bound` that feed no proof
+chain — classify as Category A and remove.
+Build: `lake build SeLe4n.Prelude`
+
+**W3-B-3**: `Machine.lean` — remove unused config/alignment helpers.
+Candidates: `wordAligned`, `pageAligned`, `pageAligned_implies_wordAligned`,
+`wordAligned_zero`, `pageAligned_zero`, `totalRAM`, `addressInMap`,
+`isPowerOfTwo_spec`. Verify each with grep first. Keep
+`zeroMemoryRange_*` proofs only if `zeroMemoryRange` itself is used.
+Build: `lake build SeLe4n.Machine`
+
+**W3-B-4**: `Types.lean` — remove duplicates and unused UntypedObject proofs.
+Remove `maxLength` (duplicate of `maxMessageRegisters`), `maxExtraCaps'`
+(duplicate of `maxExtraCaps`). For UntypedObject proofs (`allocate_*`,
+`reset_*`, `empty_*`): classify as Category B (specification of memory
+allocator correctness) — keep unless they are clearly intermediate.
+Build: `lake build SeLe4n.Model.Object.Types`
+
+**W3-B-5**: `Structures.lean` — remove unused CDT navigation helpers.
+Candidates: `isChildOf`, `isParentOf`, `parentOf`, `removeAsChild`,
+`removeAsParent`, `isAncestor`, `makeObjectCap`. These are unused because
+the kernel uses hypothesis-carrying CDT operations instead. Verify no test
+file references them. Remove. Keep `addEdge_*` theorems as Category B
+(specification surface for CDT correctness).
+Build: `lake build SeLe4n.Model.Object.Structures`
+
+**W3-B-6**: `State.lean` — audit internal-use aliases.
+`CSpaceOwner` is used internally by `ownerOfSlot`, `ownsSlot`, `ownedSlots`.
+If all three consumers are themselves unused externally, remove the entire
+cluster. If any has external consumers, keep. For `observedCdtEdges`,
+`observedCdtEdges_eq_projection`: check if these are CDT observation
+spec-surface (Category B) or dead helpers (Category A).
+Build: `lake build SeLe4n.Model.State`
+
+**Risk**: Low — each sub-step targets one file with individual build gate
 
 #### W3-C: Remove confirmed dead helpers — Kernel subsystems
 
@@ -770,16 +1047,49 @@ encoding, it can be re-introduced when there's a consumer.
 
 **Files**: `tests/NegativeStateSuite.lean:129`, `tests/OperationChainSuite.lean:48`,
 `SeLe4n/Testing/Helpers.lean:31`
-**Problem**: Three separate `expectError` implementations create inconsistency
-risk. The canonical version exists in `Helpers.lean`.
-**Change**:
-1. Remove `private def expectError` from `NegativeStateSuite.lean`
-2. Remove `private def expectError` from `OperationChainSuite.lean`
-3. Ensure both suites import `SeLe4n.Testing.Helpers` and use the canonical version
-4. Verify all call sites produce identical behavior (check error message format)
-**Build**: `lake build negative_state_suite && lake build operation_chain_suite`
-**Risk**: Low — may need minor signature adjustments if the private versions
-had slightly different behavior
+**Problem**: Three `expectError` implementations with identical signatures:
+```lean
+def expectError (label : String) (actual : Except KernelError α)
+    (expected : KernelError) : IO Unit
+```
+All three have the same logic but differ only in the success message prefix:
+- `Helpers.lean`: `"check passed [{label}]: {toString err}"`
+- `NegativeStateSuite.lean`: `"negative check passed [{label}]: {toString err}"`
+- `OperationChainSuite.lean`: `"operation-chain check passed [{label}]"` (no error string)
+
+**Sub-steps**:
+
+**W5-A-1**: Add an optional `prefix` parameter to the canonical `Helpers.lean`
+version to support suite-specific message formatting:
+```lean
+def expectError (label : String) (actual : Except KernelError α)
+    (expected : KernelError) (prefix : String := "check") : IO Unit :=
+  match actual with
+  | .ok _ => throw <| IO.userError s!"{label}: expected error {toString expected}, got success"
+  | .error err =>
+      if err = expected then
+        IO.println s!"{prefix} passed [{label}]: {toString err}"
+      else
+        throw <| IO.userError s!"{label}: expected {toString expected}, got {toString err}"
+```
+
+**W5-A-2**: Update `NegativeStateSuite.lean` — remove `private def expectError`,
+add `import SeLe4n.Testing.Helpers` if not present, replace all call sites
+with `expectError label actual expected (prefix := "negative check")`.
+
+**W5-A-3**: Update `OperationChainSuite.lean` — remove `private def expectError`,
+add `import SeLe4n.Testing.Helpers` if not present, replace all call sites
+with `expectError label actual expected (prefix := "operation-chain check")`.
+Note: This suite's version omits `{toString err}` from success message — the
+unified version will include it, which is a minor behavioral change (more
+informative output, not a correctness issue).
+
+**W5-A-4**: Also check for duplicate `expectOkState` and `expectOk` — the
+NegativeStateSuite defines private versions of these too. If duplicates exist,
+consolidate following the same pattern.
+
+**W5-A-5**: Verify: `lake build negative_state_suite && lake build operation_chain_suite && lake build information_flow_suite`
+**Risk**: Low — signatures are identical, only message format changes
 
 #### W5-B: Document test fixture OID ranges (L-17)
 
@@ -801,18 +1111,48 @@ reserved OID range, and add a summary table to `SeLe4n/Testing/Helpers.lean`:
 
 #### W5-C: Add service lifecycle tests (L-18)
 
-**File**: `tests/OperationChainSuite.lean` (extend) or new `tests/ServiceSuite.lean`
-**Problem**: Service lifecycle operations (start/stop/restart/dependency chains)
-are completely absent from testing.
-**Change**: Add test scenarios covering:
-1. Service registration success path
-2. Service registration with duplicate rejection
-3. Service dependency registration (acyclic)
-4. Service dependency registration (cyclic — should reject)
-5. Service revocation and cleanup
-6. Service query by capability
-**Build**: `lake build operation_chain_suite` (or new suite)
-**Risk**: Low — additive tests
+**File**: `tests/OperationChainSuite.lean` (extend)
+**Problem**: Service lifecycle operations are completely absent from testing.
+The service subsystem has 3 operations (`registerInterface`, `registerService`,
+`revokeService`) in Registry.lean and 1 (`serviceRegisterDependency`) in
+Operations.lean, plus `serviceQuery` via the API layer.
+
+**Sub-steps**:
+
+**W5-C-1**: Build test state with service infrastructure. Using `StateBuilder`,
+create a state with: 2+ threads, 2+ endpoint objects (for service binding),
+2+ interface specs, appropriate CSpace capabilities with `.write` rights.
+
+**W5-C-2**: Test `registerInterface` success path. Register an interface spec
+and verify `st.interfaceRegistry[ifaceId]?` contains the spec.
+
+**W5-C-3**: Test `registerInterface` duplicate rejection. Register the same
+interface spec twice — second call should return `.error .illegalState`.
+
+**W5-C-4**: Test `registerService` success path. After registering an
+interface, register a service with a valid endpoint capability. Verify
+`st.serviceRegistry[sid]?` contains the registration.
+
+**W5-C-5**: Test `registerService` error paths:
+- Missing interface → `.error .objectNotFound`
+- Invalid capability (non-endpoint target) → `.error .invalidCapability`
+- Missing write right → `.error .illegalAuthority`
+- Duplicate service ID → `.error .illegalState`
+
+**W5-C-6**: Test `serviceRegisterDependency` acyclic path. Register services
+A and B, add dependency A→B. Verify success.
+
+**W5-C-7**: Test `serviceRegisterDependency` cycle rejection. After A→B,
+attempt B→A. Should return `.error .cyclicDependency`.
+
+**W5-C-8**: Test `revokeService` success path. Register a service, revoke it,
+verify `st.serviceRegistry[sid]?` is `none` and dependency edges are cleaned.
+
+**W5-C-9**: Run `stateInvariantChecksFor` after each operation to verify
+invariant preservation.
+
+**Build**: `lake build operation_chain_suite`
+**Risk**: Low — additive tests, but requires careful state setup
 
 #### W5-D: Improve `buildChecked` error reporting (M-11)
 
@@ -921,18 +1261,48 @@ If appropriate, change the fallback to return an error instead of `(none, none)`
 #### W6-B: Factor redundant lifecycle preservation proofs (L-4)
 
 **File**: `SeLe4n/Kernel/Lifecycle/Operations.lean:127-203`
-**Problem**: 77 lines of redundant preservation proofs (3 cleanup ops × 3+
-fields) with identical proof structure.
-**Change**: Extract a parameterized lemma:
+**Problem**: 77 lines of redundant preservation proofs. The pattern is:
+3 cleanup operations (`cleanupTcbReferences`, `detachCNodeSlots`,
+`lifecyclePreRetypeCleanup`) × multiple state fields (`scheduler`,
+`irqHandlers`, `asidTable`, etc.) = ~12 near-identical theorems, each
+proving `field st' = field st` after the cleanup operation succeeds.
+
+**Sub-steps**:
+
+**W6-B-1**: Read lines 127-203 to catalog all redundant proofs. Identify the
+exact pattern: does each proof use `simp [cleanupOp]` or `unfold; split; simp`?
+Record the proof tactic used.
+
+**W6-B-2**: Determine if a generic frame lemma is feasible. The ideal form:
 ```lean
-theorem cleanup_preserves_field (op : SystemState → Except KernelError SystemState)
+theorem cleanup_frame {α} (op : SystemState → Except KernelError SystemState)
     (field : SystemState → α)
-    (hEq : ∀ st st', op st = .ok st' → field st' = field st) :
-    ...
+    (hFrame : ∀ st st', op st = .ok st' → field st' = field st)
+    (hOp : op st = .ok st') : field st' = field st :=
+  hFrame st st' hOp
 ```
-Then instantiate for each cleanup/field combination.
+This is trivially true — the real work is proving each `hFrame` instance.
+If all cleanup operations share the pattern "only modify `objects`/`cdt`
+fields," a single lemma per cleanup op listing all preserved fields would
+be more effective than one-per-field.
+
+**W6-B-3**: If the per-op approach works, create:
+```lean
+theorem cleanupTcbReferences_preserves (st st' : SystemState)
+    (hOk : cleanupTcbReferences tid st = .ok st') :
+    st'.scheduler = st.scheduler ∧ st'.irqHandlers = st.irqHandlers ∧
+    st'.asidTable = st.asidTable ∧ st'.serviceRegistry = st.serviceRegistry ∧
+    st'.interfaceRegistry = st.interfaceRegistry
+```
+Then delete the 5 individual theorems it replaces.
+
+**W6-B-4**: Repeat for `detachCNodeSlots` and `lifecyclePreRetypeCleanup`.
+
+**W6-B-5**: Update any consumers of the individual theorems to use the
+bundled version with `.1`, `.2.1`, etc. projections.
+
 **Build**: `lake build SeLe4n.Kernel.Lifecycle.Operations`
-**Risk**: Medium — proof refactoring may be more complex than expected
+**Risk**: Medium — consumers may use the individual theorem names explicitly
 
 #### W6-C: Simplify redundant CrossSubsystem triple (L-6)
 
@@ -1258,15 +1628,19 @@ workstream plan.
 
 ## Appendix B: Sub-task Count Summary
 
-| Phase | Sub-tasks | Est. Files Modified | Risk Level |
-|-------|-----------|-------------------|------------|
-| W1 | 9 | ~8 Rust files | Low (mostly single-line fixes) |
-| W2 | 8 | ~6 Lean files | Medium (proof engineering) |
-| W3 | 8 | ~30+ Lean files | Low (verified removals) |
-| W4 | 7 | ~5 Lean files | Low (documentation + hardening) |
-| W5 | 8 | ~8 files (Lean + Rust) | Low-Medium |
-| W6 | 12 | ~12 files (Lean + Rust + docs) | Low |
-| **Total** | **52** | **~60+ files** | |
+| Phase | Sub-tasks | Atomic Steps | Est. Files Modified | Risk Level |
+|-------|-----------|-------------|-------------------|------------|
+| W1 | 9 | 23 | ~8 Rust files | Low (mostly single-line fixes) |
+| W2 | 8 | 24 | ~6 Lean files | Medium (proof engineering) |
+| W3 | 8 | 18 | ~30+ Lean files | Low (verified removals) |
+| W4 | 7 | 7 | ~5 Lean files | Low (documentation + hardening) |
+| W5 | 8 | 20 | ~8 files (Lean + Rust) | Low-Medium |
+| W6 | 12 | 17 | ~12 files (Lean + Rust + docs) | Low |
+| **Total** | **52** | **109** | **~60+ files** | |
+
+**Note**: "Sub-tasks" are the top-level work items (W1-A through W6-L).
+"Atomic Steps" are the detailed internal steps (e.g., W1-C-1 through W1-C-5)
+within complex sub-tasks. Simple sub-tasks have 1 atomic step each.
 
 ---
 
