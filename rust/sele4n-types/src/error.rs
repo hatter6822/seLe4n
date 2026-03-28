@@ -196,6 +196,7 @@ mod tests {
         assert_eq!(KernelError::AllocationMisaligned as u32, 37);
         assert_eq!(KernelError::RevocationRequired as u32, 38);
         assert_eq!(KernelError::InvalidArgument as u32, 39);
+        assert_eq!(KernelError::MmioUnaligned as u32, 40);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence

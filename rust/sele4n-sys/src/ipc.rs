@@ -164,8 +164,10 @@ pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
 ///
 /// Lean: `endpointReplyRecv` (API.lean:566-576) — `decodeReplyRecvArgs`
 /// (SyscallArgDecode.lean:881-884) reads MR\[0\] as `replyTarget : ThreadId`.
-/// Message registers carry both the reply target ID (MR\[0\]) and the reply
-/// data (MR\[1..3\]).
+/// The kernel extracts reply body via `extractMessageRegisters` over all
+/// MRs, so MR\[0\] = reply\_target and user data occupies MR\[1..3\].
+/// `MessageInfo.length` includes the reply\_target slot (user length + 1).
+/// Maximum 3 inline reply data registers (MR\[1\], MR\[2\], MR\[3\]).
 ///
 /// Returns the received badge and response registers from the new message.
 #[inline]
@@ -174,12 +176,16 @@ pub fn endpoint_reply_recv(
     reply_target: ThreadId,
     msg: &IpcMessage,
 ) -> KernelResult<(Badge, SyscallResponse)> {
-    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+    // MR[0] = reply_target, user data in MR[1..3]. Cap at 3 user regs.
+    let user_len = if msg.length > 3 { 3 } else { msg.length };
+    // Kernel length includes MR[0] (reply_target) + user data registers
+    let kernel_len = user_len + 1;
+    let msg_info = MessageInfo::new(kernel_len, 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     let resp = invoke_syscall(SyscallRequest {
         cap_addr: recv_cap,
         msg_info,
-        msg_regs: [reply_target.into(), msg.regs[1], msg.regs[2], msg.regs[3]],
+        msg_regs: [reply_target.into(), msg.regs[0], msg.regs[1], msg.regs[2]],
         syscall_id: SyscallId::ReplyRecv,
     })?;
     Ok((resp.badge(), resp))

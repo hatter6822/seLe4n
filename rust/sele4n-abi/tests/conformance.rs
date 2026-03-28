@@ -1003,3 +1003,26 @@ fn w1d_mmio_unaligned_variant() {
     assert_eq!(err, KernelError::MmioUnaligned);
     assert_eq!(err as u32, 40);
 }
+
+/// W1-E audit: endpoint_reply_recv places reply_target in MR[0] and user
+/// data in MR[1..3]. MessageInfo.length = user_length + 1 (for reply_target).
+#[test]
+fn w1e_endpoint_reply_recv_register_layout() {
+    // Simulate: user wants 2 registers of reply data + reply_target
+    let reply_target: u64 = 7;
+    let user_data_0: u64 = 0xAAAA;
+    let user_data_1: u64 = 0xBBBB;
+    // Kernel should encode: MR[0]=reply_target, MR[1]=user_data_0, MR[2]=user_data_1
+    // MessageInfo.length = 2 + 1 = 3
+    let req = SyscallRequest {
+        cap_addr: CPtr::from(200u64),
+        msg_info: MessageInfo::new(3, 0, 0).unwrap(), // 2 user regs + 1 reply_target
+        msg_regs: [reply_target, user_data_0, user_data_1, 0],
+        syscall_id: SyscallId::ReplyRecv,
+    };
+    let regs = encode_syscall(&req).unwrap();
+    assert_eq!(regs[2], reply_target, "x2=MR[0] must be reply_target");
+    assert_eq!(regs[3], user_data_0, "x3=MR[1] must be user data[0]");
+    assert_eq!(regs[4], user_data_1, "x4=MR[2] must be user data[1]");
+    assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv");
+}

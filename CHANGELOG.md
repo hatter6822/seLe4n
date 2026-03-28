@@ -18,7 +18,15 @@
   SyscallId=17), ABI constant assertions, encoding verification for all three
   new/fixed wrappers.
 - Fixed `decode_unknown_error_code` test boundary (40→41).
-- 167 Rust tests pass, zero `cargo doc` warnings.
+- **Audit fix**: `endpoint_reply_recv` had two bugs — (a) user `msg.regs[0]`
+  was silently dropped (MR layout started at `regs[1]` instead of `regs[0]`),
+  (b) `MessageInfo.length` did not account for the reply\_target slot in MR\[0\]
+  (must be `user_len + 1`). Both corrected. Added
+  `w1e_endpoint_reply_recv_register_layout` conformance test.
+- Added `MmioUnaligned` to `new_variants_discriminants` test for explicit
+  discriminant cross-validation.
+- Bumped Lean project version to 0.22.11, Rust workspace version to 0.22.11.
+- 168 Rust tests pass, zero `cargo doc` warnings.
 - Zero `sorry`, zero `axiom`.
 
 ## [0.22.10] — V8 Audit: Semantic Correctness & Fixture Hardening
