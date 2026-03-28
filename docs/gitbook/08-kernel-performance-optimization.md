@@ -265,6 +265,6 @@ audit:
 
 - Audit: [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md)
 - Workstream plan: [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
-- V7 workstream plan: [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md)
+- V7 workstream plan: [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md)
 - Changelog: [`CHANGELOG.md`](../../CHANGELOG.md) (v0.12.6–v0.12.15, v0.22.8)
 
