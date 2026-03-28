@@ -24,7 +24,7 @@ WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
-[`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md).
 
 - **V3 (Proof Chain Hardening) COMPLETE** (v0.22.2): 26 sub-tasks (V3-A through V3-M).
   All 8 `True := trivial` documentation theorems replaced with real machine-checked

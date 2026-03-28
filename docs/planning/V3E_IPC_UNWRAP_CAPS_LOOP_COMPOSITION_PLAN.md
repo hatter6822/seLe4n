@@ -1701,7 +1701,7 @@ After V3-E5, verify that:
 
 | File | Update Required |
 |------|----------------|
-| `docs/audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` | Mark V3-E as COMPLETE with version |
+| `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` | Mark V3-E as COMPLETE with version |
 | `docs/WORKSTREAM_HISTORY.md` | Record V3-E completion |
 | `docs/CLAIM_EVIDENCE_INDEX.md` | Add V3-E theorem as evidence for capability preservation claim |
 | `docs/gitbook/12-proof-and-invariant-map.md` | Add `ipcUnwrapCaps_preserves_capabilityInvariantBundle` to theorem index |
