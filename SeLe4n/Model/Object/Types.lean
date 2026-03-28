@@ -349,7 +349,7 @@ Previously, thread state was inferred from queue membership and `ThreadIpcState`
 This enum makes the state machine explicit, improving debuggability and
 enabling the `threadState_consistent` invariant predicate.
 
-The 7 states correspond to the seL4 thread model:
+The 8 states correspond to the seL4 thread model:
 - `Running`: Currently dispatched (is `scheduler.current`)
 - `Ready`: In the run queue, eligible for scheduling
 - `BlockedSend`: Blocked on endpoint send queue
