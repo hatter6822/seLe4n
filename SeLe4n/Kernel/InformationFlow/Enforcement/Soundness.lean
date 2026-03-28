@@ -302,64 +302,27 @@ theorem enforcementSoundness_registerServiceChecked
 -- WS-H8/Q1: Updated enforcement boundary classification
 -- ============================================================================
 
-/-- WS-H8/Q1/V6-L: Updated enforcement boundary — 11 policy-gated operations.
-
-V6-L (L-IF-3): Updated from 18 to 22 entries to match the canonical
-`enforcementBoundary` in Wrappers.lean. Added 4 missing policy-gated
-operations: `endpointCallChecked` (U5-B), `endpointReplyChecked` (U5-C),
-`notificationWaitChecked` (V2-A), `endpointReplyRecvChecked` (V2-C).
-
-Policy-gated wrappers (11):
-- `endpointSendDualChecked` — sender→endpoint flow
-- `cspaceMintChecked` — source CNode→destination CNode flow
-- `registerServiceChecked` — thread→service flow
-- `notificationSignalChecked` — signaler→notification flow
-- `cspaceCopyChecked` — source CNode→destination CNode flow
-- `cspaceMoveChecked` — source CNode→destination CNode flow
-- `endpointReceiveDualChecked` — endpoint→receiver flow
-- `endpointCallChecked` — caller→endpoint flow
-- `endpointReplyChecked` — replier→target flow
-- `notificationWaitChecked` — notification→waiter flow
-- `endpointReplyRecvChecked` — reply+receive compound flow -/
-def enforcementBoundaryExtended : List EnforcementClass :=
-  [ -- Policy-gated: cross-domain operations checked via securityFlowsTo
-    .policyGated "endpointSendDualChecked"
-  , .policyGated "cspaceMintChecked"
-  , .policyGated "registerServiceChecked"
-  , .policyGated "notificationSignalChecked"
-  , .policyGated "cspaceCopyChecked"
-  , .policyGated "cspaceMoveChecked"
-  , .policyGated "endpointReceiveDualChecked"
-  , .policyGated "endpointCallChecked"           -- U5-B
-  , .policyGated "endpointReplyChecked"          -- U5-C
-  , .policyGated "notificationWaitChecked"        -- V2-A
-  , .policyGated "endpointReplyRecvChecked"       -- V2-C
-  -- Capability-only: authority derived from capability possession
-  , .capabilityOnly "cspaceLookupSlot"
-  , .capabilityOnly "cspaceInsertSlot"
-  , .capabilityOnly "cspaceDeleteSlot"
-  , .capabilityOnly "cspaceRevoke"
-  -- Read-only: no state mutation
-  , .readOnly "chooseThread"
-  , .readOnly "lookupObject"
-  , .readOnly "lookupService"
-  , .readOnly "cspaceResolvePath"
-  -- Internal/lifecycle: building blocks used under capability-guarded contexts
-  , .capabilityOnly "lifecycleRetypeObject"
-  , .capabilityOnly "lifecycleRevokeDeleteRetype"
-  , .capabilityOnly "storeObject"
-  ]
+/-- W2-G (M-3) / WS-H8/Q1/V6-L: `enforcementBoundaryExtended` is now a definitional alias for
+    `enforcementBoundary`, eliminating the maintenance debt of keeping two
+    identical 22-entry lists in sync. Previously, the two lists contained the
+    same operations in different order with only a cardinality correspondence
+    proof. Now they are definitionally equal, making element-wise correspondence
+    trivial by `rfl`. -/
+abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
     has exactly 22 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
     enforcementBoundaryExtended.length = 22 := by rfl
 
-/-- V6-L (L-IF-3): `enforcementBoundaryExtended` and `enforcementBoundary`
-    have the same length, ensuring neither list is stale relative to the other.
-    Note: This proves cardinality equivalence, not element-wise correspondence;
-    both lists are defined as literals in the same file so visual inspection
-    confirms they classify the same 22 operations. -/
+/-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
+    `enforcementBoundary` are definitionally equal. This closes the M-3 finding
+    from the full kernel audit: previously only cardinality correspondence was
+    proven, now full structural equality holds by definition. -/
+theorem enforcementBoundaryExtended_eq_canonical :
+    enforcementBoundaryExtended = enforcementBoundary := rfl
+
+/-- V6-L (L-IF-3): Backward-compatible length match theorem. -/
 theorem enforcementBoundaryExtended_matches_canonical :
     enforcementBoundaryExtended.length = enforcementBoundary.length := by rfl
 

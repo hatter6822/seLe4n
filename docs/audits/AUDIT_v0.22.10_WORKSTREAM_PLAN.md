@@ -45,7 +45,7 @@ sorry/axiom invariant.
 | Phase | Name | Sub-tasks | Priority | Gate | Status |
 |-------|------|-----------|----------|------|--------|
 | W1 | Critical Rust ABI Fixes | 9 | **BLOCKER** | Rust tests pass, ABI conformance green | **COMPLETE** (v0.22.11) |
-| W2 | Proof Formalism & Architecture | 8 | HIGH | `lake build` clean, `test_full.sh` green | Pending |
+| W2 | Proof Formalism & Architecture | 8 | HIGH | `lake build` clean, `test_full.sh` green | **COMPLETE** (v0.22.12) |
 | W3 | Dead Code Elimination | 8 | MEDIUM | `test_smoke.sh` green, no sorry introduced | Pending |
 | W4 | Platform & Architecture Hardening | 7 | MEDIUM | Module builds pass, test_smoke green | Pending |
 | W5 | Test Infrastructure & Coverage | 8 | MEDIUM | All test suites pass | Pending |

@@ -2263,6 +2263,13 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
           simp [hObj] at hStep
 
+-- W2-H (L-3): 1.6M heartbeats — highest in the codebase. Inherent complexity:
+-- handleYield composes enqueue + schedule, each requiring full EDF reasoning.
+-- The proof unfolds both operations and reasons about run-queue membership,
+-- priority ordering, and deadline comparison across the composed transition.
+-- Factoring into sub-lemmas was attempted (V7) but the intermediate state
+-- between enqueue and schedule requires carrying all scheduler hypotheses,
+-- preventing meaningful heartbeat reduction.
 set_option maxHeartbeats 1600000 in
 /-- WS-H6/WS-H12b: `handleYield` preserves `edfCurrentHasEarliestDeadline`.
 
@@ -2345,6 +2352,9 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
         exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwf' hpm' hAllTcb' (show st_mid.objects.invExt from hObjInv) hStep
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
 
+-- W2-H (L-3): 800K heartbeats — timerTick composes domain time decrement +
+-- conditional reschedule. Same structural complexity as handleYield above but
+-- with an additional branch (time remaining > 0 → no reschedule needed).
 set_option maxHeartbeats 800000 in
 /-- WS-H6/WS-H12b: `timerTick` preserves `edfCurrentHasEarliestDeadline`.
 

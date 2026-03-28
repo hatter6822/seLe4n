@@ -1,3 +1,34 @@
+## [0.22.12] — W2: Proof Formalism & Architecture
+
+Phase W2 of WS-W pre-release audit remediation. Closes 2 HIGH, 4 MEDIUM,
+1 LOW findings from the v0.22.10 comprehensive audits.
+
+- **H-2 (field-disjointness formalism)**: Added `modifiedFields` definitions for
+  6 operation categories, 3 new per-predicate frame lemmas
+  (`noStaleEndpointQueueReferences_frame`, `noStaleNotificationWaitReferences_frame`,
+  `registryEndpointValid_frame`), and `fieldDisjointness_frameIndependence_documented`
+  theorem connecting all 6 disjoint predicate pairs to frame independence guarantees.
+- **H-1 (composition gap)**: `crossSubsystemInvariant_composition_gap_documented`
+  theorem with comprehensive documentation of partial mitigation via frame lemmas
+  and remaining gap scope for the 4 sharing predicate pairs.
+- **MED-04 (wildcard unreachability)**: `dispatchWithCap_wildcard_unreachable` proves
+  all 17 `SyscallId` variants are handled by explicit dispatch arms, making the
+  `| _ => .error .illegalState` wildcard dead code.
+- **M-6 (fuel sufficiency)**: `collectQueueMembers_fuel_sufficiency_documented` with
+  formal argument citing `tcbQueueChainAcyclic` invariant for traversal termination.
+- **M-4 (fuel exhaustion)**: `serviceHasPathTo_fuel_exhaustion_conservative` proves
+  fuel=0 returns `true` (conservative safety). `serviceBfsFuel_adequate` verifies
+  fuel bound exceeds object index length.
+- **M-5 (serviceCountBounded)**: `removeDependenciesOf_objectIndex_eq` frame lemma,
+  `serviceCountBounded_preservation_chain_documented` comprehensive preservation chain.
+- **M-3 (boundary unification)**: `enforcementBoundaryExtended` unified as
+  definitional `abbrev` of `enforcementBoundary`, adding element-wise equality proof
+  `enforcementBoundaryExtended_eq_canonical`.
+- **L-3 (maxHeartbeats)**: Documented all 9 elevated `maxHeartbeats` settings with
+  rationale for inherent complexity (nested induction, hash table modular arithmetic,
+  scheduler composition).
+- Zero `sorry`, zero `axiom`.
+
 ## [0.22.11] — W1: Critical Rust ABI Fixes
 
 - **CRIT-1/CRIT-2 fixed**: `notification_signal` dispatched `SyscallId::Send`

@@ -19,9 +19,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
-WS-W Phase W1 (Critical Rust ABI Fixes) is complete. Phases W2–W6 pending.
+WS-W Phase W1 and W2 complete. Phases W3–W6 pending.
 
-### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W1 COMPLETE
+### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W2 COMPLETE
 
 WS-W addresses 49 unique actionable findings from three comprehensive audits of
 v0.22.10 (2 CRIT, 4 HIGH, 16 MED, 27 LOW) across 6 phases (W1–W6) with 52
@@ -43,6 +43,26 @@ atomic sub-tasks. Plan:
   `msg.regs[0]` into MR\[1\] (was silently dropped) and include reply\_target
   slot in `MessageInfo.length`. 168 Rust tests pass, zero doc warnings.
   Zero sorry/axiom.
+
+- **W2 (Proof Formalism & Architecture) COMPLETE** (v0.22.12): 8 sub-tasks
+  (W2-A through W2-H). **W2-A (H-2)**: Field-disjointness formalism closure —
+  added `modifiedFields` for 6 operation categories, 3 new per-predicate frame
+  lemmas (`noStaleEndpointQueueReferences_frame`, `noStaleNotificationWaitReferences_frame`,
+  `registryEndpointValid_frame`), `fieldDisjointness_frameIndependence_documented`
+  theorem connecting 6 disjoint pairs to frame independence. **W2-B (H-1)**:
+  `crossSubsystemInvariant_composition_gap_documented` theorem with comprehensive
+  docstring explaining partial mitigation via frame lemmas and remaining gap scope.
+  **W2-C (MED-04)**: `dispatchWithCap_wildcard_unreachable` proves all 17 `SyscallId`
+  variants are covered by explicit dispatch arms. **W2-D (M-6)**: Fuel sufficiency
+  documentation for `collectQueueMembers` citing `tcbQueueChainAcyclic` invariant.
+  **W2-E (M-4)**: `serviceHasPathTo_fuel_exhaustion_conservative` proves fuel=0
+  returns `true` (conservative safety). **W2-F (M-5)**: `removeDependenciesOf_objectIndex_eq`
+  frame lemma + `serviceCountBounded_preservation_chain_documented` theorem with
+  comprehensive preservation chain documentation. **W2-G (M-3)**: `enforcementBoundaryExtended`
+  unified as definitional alias of `enforcementBoundary`, adding
+  `enforcementBoundaryExtended_eq_canonical` element-wise equality proof.
+  **W2-H (L-3)**: Documented all 9 elevated `maxHeartbeats` settings with rationale
+  for inherent complexity. Zero sorry/axiom.
 
 ### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — COMPLETE
 

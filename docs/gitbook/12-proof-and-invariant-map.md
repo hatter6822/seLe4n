@@ -928,7 +928,8 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
 - `enforcementBoundary` — exhaustive 22-entry classification table (11 policy-gated, 7 capability-only, 4 read-only),
-- `enforcementBoundaryExtended` — extended table (11 policy-gated, V6-L),
+- `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
+- `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
 - `enforcementBoundaryComplete_counts` — compile-time count witness (11+7+4=22, V6-F),
 - `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
 - `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
