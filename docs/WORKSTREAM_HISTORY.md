@@ -19,6 +19,30 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
+WS-W Phase W1 (Critical Rust ABI Fixes) is complete. Phases W2–W6 pending.
+
+### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W1 COMPLETE
+
+WS-W addresses 49 unique actionable findings from three comprehensive audits of
+v0.22.10 (2 CRIT, 4 HIGH, 16 MED, 27 LOW) across 6 phases (W1–W6) with 52
+atomic sub-tasks. Plan:
+[`AUDIT_v0.22.10_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md).
+
+- **W1 (Critical Rust ABI Fixes) COMPLETE** (v0.22.11): 9 sub-tasks (W1-A through W1-I).
+  **CRIT-1/CRIT-2 fixed**: `notification_signal` and `notification_wait` SyscallId
+  corrected from `Send`/`Receive` to `NotificationSignal`/`NotificationWait`.
+  **HIGH-02 fixed**: `notification_signal` now accepts `Badge` parameter and passes
+  it via MR\[0\], matching Lean `decodeNotificationSignalArgs` which reads badge from
+  `requireMsgReg msgRegs 0`. **HIGH-1 fixed**: `MmioUnaligned` error variant added
+  (discriminant 40), matching Lean `KernelError.mmioUnaligned`. **MED-03 fixed**: new
+  `endpoint_reply_recv` wrapper for compound reply+receive operation. **MED-05 fixed**:
+  lib.rs updated from "14 syscalls" to "17 syscalls". XVAL-015 conformance test
+  corrected from asserting zero badge to asserting badge passthrough. 8 new W1
+  conformance tests added (variant counts, ABI constants, encoding verification,
+  register layout). Audit fix: `endpoint_reply_recv` corrected to map user
+  `msg.regs[0]` into MR\[1\] (was silently dropped) and include reply\_target
+  slot in `MessageInfo.length`. 168 Rust tests pass, zero doc warnings.
+  Zero sorry/axiom.
 
 ### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — COMPLETE
 

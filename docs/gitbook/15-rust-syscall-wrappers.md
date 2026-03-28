@@ -3,7 +3,7 @@
 ## Overview
 
 `libsele4n` is a `no_std` Rust userspace library providing safe, typed wrappers
-around all 14 seLe4n syscalls. It mirrors the verified Lean ABI surface exactly,
+around all 17 seLe4n syscalls. It mirrors the verified Lean ABI surface exactly,
 enabling Rust userspace programs to invoke kernel operations with compile-time
 type safety and zero `unsafe` code outside the syscall trap instruction.
 
@@ -23,8 +23,8 @@ Core type definitions with zero `unsafe` and zero external dependencies:
   `Priority`, `Deadline`, `Irq`, `ServiceId`, `InterfaceId`, `Badge`, `Asid`,
   `VAddr`, `PAddr`, `RegValue` — inner fields are `pub(crate)` with `.raw()`
   accessors (R8-E/L-11 encapsulation)
-- **`KernelError`**: 38-variant `#[non_exhaustive]` enum (1:1 with Lean
-  `KernelError`; U3-F)
+- **`KernelError`**: 41-variant `#[non_exhaustive]` enum (1:1 with Lean
+  `KernelError`; U3-F, W1-D: +MmioUnaligned)
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
@@ -56,7 +56,7 @@ Safe high-level wrappers for all 17 syscalls:
 
 | Subsystem | Operations |
 |-----------|-----------|
-| IPC | `endpoint_send`, `endpoint_receive`, `endpoint_call`, `endpoint_reply`, `notification_signal`, `notification_wait` |
+| IPC | `endpoint_send`, `endpoint_receive`, `endpoint_call`, `endpoint_reply`, `notification_signal`, `notification_wait`, `endpoint_reply_recv` |
 | CSpace | `cspace_mint`, `cspace_copy`, `cspace_move`, `cspace_delete` |
 | Lifecycle | `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
 | VSpace | `vspace_map` (W^X pre-check), `vspace_unmap` |
@@ -93,10 +93,13 @@ x7  → Syscall number (SyscallId)
 
 ## Testing
 
-- **64 unit tests** across 3 crates
-- **25 conformance tests** (RUST-XVAL-001..019 + property tests)
+- **168 unit tests** across 3 crates (68 abi + 55 conformance + 12 sys + 33 types)
+- **25+ conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2)
+- W1 ABI drift detection: variant count assertions for KernelError (41) and
+  SyscallId (17), compile-time constant checks for MAX_LABEL, MAX_MSG_LENGTH,
+  MAX_EXTRA_CAPS
 
 ## Canonical Sources
 

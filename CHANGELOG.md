@@ -1,3 +1,35 @@
+## [0.22.11] — W1: Critical Rust ABI Fixes
+
+- **CRIT-1/CRIT-2 fixed**: `notification_signal` dispatched `SyscallId::Send`
+  instead of `SyscallId::NotificationSignal`; `notification_wait` dispatched
+  `SyscallId::Receive` instead of `SyscallId::NotificationWait`. Both corrected.
+- **HIGH-02 fixed**: `notification_signal` now accepts a `Badge` parameter and
+  passes it via message register 0, matching the Lean kernel's
+  `decodeNotificationSignalArgs` which reads badge from `MR[0]`.
+- **HIGH-1 fixed**: Added `MmioUnaligned` error variant (discriminant 40) to
+  Rust `KernelError`, matching Lean `KernelError.mmioUnaligned`.
+- **MED-03 fixed**: New `endpoint_reply_recv` wrapper implementing the compound
+  reply+receive syscall (`SyscallId::ReplyRecv`).
+- **MED-05 fixed**: Updated `sele4n-sys` crate documentation from "14 syscalls"
+  to "17 syscalls" and listed all 7 IPC wrappers.
+- Fixed XVAL-015 conformance test which was validating the bug (asserting badge
+  comes from capability, contradicting the Lean decode layer).
+- Added 8 new W1 conformance tests: variant count assertions (KernelError=41,
+  SyscallId=17), ABI constant assertions, encoding verification for all three
+  new/fixed wrappers, MmioUnaligned discriminant, endpoint\_reply\_recv register
+  layout validation.
+- Fixed `decode_unknown_error_code` test boundary (40→41).
+- **Audit fix**: `endpoint_reply_recv` had two bugs — (a) user `msg.regs[0]`
+  was silently dropped (MR layout started at `regs[1]` instead of `regs[0]`),
+  (b) `MessageInfo.length` did not account for the reply\_target slot in MR\[0\]
+  (must be `user_len + 1`). Both corrected.
+- Added `MmioUnaligned` to `new_variants_discriminants` test for explicit
+  discriminant cross-validation.
+- Fixed stale comment in `decode.rs` referencing old 0–39 error range (now 0–40).
+- Bumped Lean project version to 0.22.11, Rust workspace version to 0.22.11.
+- 168 Rust tests pass, zero `cargo doc` warnings.
+- Zero `sorry`, zero `axiom`.
+
 ## [0.22.10] — V8 Audit: Semantic Correctness & Fixture Hardening
 
 - **AUDIT-1**: Added `BlockedReply` as 8th `ThreadState` variant — `blockedOnReply`
