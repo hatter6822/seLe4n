@@ -20,10 +20,14 @@ Current stage context: **All prior workstreams completed through WS-U Phase U8 (
   - R8-D (I-M04): frozen/radix correctness suites (`radix_tree_suite`, `frozen_state_suite`, `freeze_proof_suite`, `frozen_ops_suite`) now execute in Tier 2 negative tests (67 scenarios),
   - fixture lines use pipe-delimited format with scenario IDs (`SCENARIO_ID | SUBSYSTEM | expected_trace_fragment`) for audit traceability (WS-I1/R-03),
   - all 121 trace output lines tagged with unique scenario IDs across 15 prefix families (ENT, CAT, SST, LEP, CIC, IMT, IMB, DDT, ICS, BME, STD, UMT, SGT, RCF, ITR, PTY),
-  - 17 inter-transition invariant assertions (WS-I1/R-01) check 17 invariant families after every major transition group,
+  - 38 inter-transition invariant assertions (WS-I1/R-01, V8-C) check invariant families after every major transition group including post-mutation checks,
   - fixtures include WS-A4 scale scenarios for deep CNode radix, large runnable queues, multi-endpoint IPC, depth-5 service dependencies, and boundary memory addresses.
   - WS-B11 scenario metadata is maintained in `tests/scenarios/scenario_catalog.json` and validated by `scripts/scenario_catalog.py` in smoke/nightly gates.
-  - scenario registry (`tests/fixtures/scenario_registry.yaml`) maps all 121 IDs to source functions; validated bidirectionally in Tier 0 hygiene.
+  - scenario registry (`tests/fixtures/scenario_registry.yaml`) maps all scenario IDs to source functions; validated bidirectionally in Tier 0 hygiene,
+  - V8-F: SHA-256 fixture drift detection (`main_trace_smoke.expected.sha256`) verified in Tier 2 trace,
+  - V8-A: end-to-end `syscallEntryChecked` pipeline test (PIP-001..006) covering register decode → checked dispatch → invariant preservation → trace equivalence,
+  - V8-B: `cspaceMove` end-to-end test (MOV-001..004) covering decode → move → source/dest verification,
+  - V8-G: `ThreadState` consistency check (`threadStateConsistentChecks`) validates TCB `threadState` field matches inferred state from queue membership and IPC blocking state.
 - **Tier 3 (invariant surface anchors + type-correctness #check gate)**
   - validates critical theorem/bundle/trace anchors expected for active milestone slices,
   - includes executable-trace anchor checks for milestone-critical lifecycle fragments.

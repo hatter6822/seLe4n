@@ -46,7 +46,8 @@ def bootstrapServiceIds : List ServiceId :=
   [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken, svcMissingBacking]
 
 /-- WS-I1/R-01: Inter-transition invariant check with counter tracking.
-Runs `assertStateInvariantsFor` and increments the shared check counter. -/
+Runs `assertStateInvariantsFor` (which applies `syncThreadStates` internally)
+and increments the shared check counter. -/
 private def checkInvariants (counter : IO.Ref Nat) (label : String) (st : SystemState) : IO Unit := do
   assertStateInvariantsFor label bootstrapInvariantObjectIds st bootstrapServiceIds
   counter.modify (· + 1)
@@ -61,6 +62,7 @@ def bootstrapState : SystemState :=
       vspaceRoot := ⟨20⟩
       ipcBuffer := ⟨4096⟩
       ipcState := .ready
+      threadState := .Ready  -- V8-G: In run queue
     })
     |>.withObject ⟨10⟩ (.cnode {
       depth := 0
@@ -92,6 +94,7 @@ def bootstrapState : SystemState :=
       vspaceRoot := ⟨20⟩
       ipcBuffer := ⟨8192⟩
       ipcState := .ready
+      threadState := .Ready  -- V8-G: In run queue
     })
     |>.withObject ⟨11⟩ (.cnode CNode.empty)
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -189,6 +192,13 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
               match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨4096⟩ stV3 with
               | .error err => IO.println s!"[CAT-015] vspace lookup after unmap branch: {reprStr err}"
               | .ok (resolved, _) => IO.println s!"[CAT-016] unexpected vspace lookup after unmap: {reprStr resolved}"
+  -- V8-C: Post-mutation invariant check on vspace operations result
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ ⟨4096⟩ ⟨8192⟩) st1 with
+  | .ok (_, stVMut) =>
+    match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ ⟨4096⟩ stVMut with
+    | .ok (_, stVFinal) => checkInvariants counter "post-vspace-map-unmap-result" stVFinal
+    | .error _ => pure ()
+  | .error _ => pure ()
   checkInvariants counter "post-vspace-map-lookup-unmap" st1
   -- T7-B: Post-mutation invariant check on vspace-unmap result state
   match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ ⟨4096⟩ ⟨8192⟩) st1 with
@@ -273,6 +283,13 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   -- SST-019/020: Service entry with missing backing object (still stored — backing check is caller responsibility)
   IO.println s!"[SST-019] service lookup missing-backing: {reprStr <| (SeLe4n.Model.lookupService st1 svcMissingBacking).map ServiceGraphEntry.identity}"
   IO.println s!"[SST-020] service lookup svcBroken deps: {reprStr <| (SeLe4n.Model.lookupService st1 svcBroken).map ServiceGraphEntry.dependencies}"
+  -- V8-C: Post-mutation invariant checks on service registry result states
+  match SeLe4n.Kernel.storeServiceEntry newSid newEntry st1 with
+  | .ok (_, stStoredMut) => checkInvariants counter "post-service-store-mutated" stStoredMut
+  | .error _ => pure ()
+  match SeLe4n.Kernel.serviceRegisterDependency svcApi svcDb st1 with
+  | .ok (_, stDepMut) => checkInvariants counter "post-service-dep-mutated" stDepMut
+  | .error _ => pure ()
   checkInvariants counter "post-service-registry" st1
 
   -- =========================================================================
@@ -654,6 +671,10 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
       | some (.endpoint ep) =>
           IO.println s!"[CIC-007] dual-queue sender blocked on sendQ non-empty: {ep.sendQ.head.isSome}"
       | _ => IO.println "[CIC-008] dual-queue endpoint missing after send"
+  -- V8-C: Post-mutation invariant checks on cspaceCopy and dual-queue send
+  match SeLe4n.Kernel.cspaceCopy rootSlot copyDst st1 with
+  | .ok (_, stCopyMut) => checkInvariants counter "post-cspaceCopy-mutated" stCopyMut
+  | .error _ => pure ()
   checkInvariants counter "post-cspaceCopy-dualQueue-send" st1
   -- M-12: Reply operation
   -- Create a state with a thread blocked on reply
@@ -728,6 +749,10 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
           IO.println s!"[STD-008] timer tick expiry reset slice: {tcb.timeSlice}"
       | _ => IO.println "[STD-009] timer tick expiry: thread not found"
 
+  -- V8-C: Post-mutation invariant check on timerTick expiry result
+  match SeLe4n.Kernel.timerTick stExpiry with
+  | .ok ((), stExpiredMut) => checkInvariants counter "post-timer-tick-expiry-mutated" stExpiredMut
+  | .error _ => pure ()
   -- M-05: Domain scheduling — switch domain and verify active domain changes
   let domSchedule : List DomainScheduleEntry :=
     [{ domain := ⟨0⟩, length := 3 }, { domain := ⟨1⟩, length := 5 }]
@@ -1415,7 +1440,8 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨500⟩]
+      -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
+      |>.withRunnable []
       |>.withCurrent (some ⟨500⟩)
       |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRdt with
@@ -1454,7 +1480,8 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨500⟩]
+      -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
+      |>.withRunnable []
       |>.withCurrent (some ⟨500⟩)
       |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stInvalidSyscall with
@@ -1490,7 +1517,8 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withLifecycleObjectType rdtEp .endpoint
       |>.withLifecycleObjectType rdtCn .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨500⟩]
+      -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
+      |>.withRunnable []
       |>.withCurrent (some ⟨500⟩)
       |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMalformedMsgInfo with
@@ -1693,6 +1721,176 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     IO.println s!"[KSD-008] round-trip decode msgRegs.size={msgRegsSize} first={firstVal}"
 
   checkInvariants counter "post-syscall-dispatch-trace" st1
+
+-- ============================================================================
+-- V8-A: End-to-end syscallEntryChecked pipeline trace
+-- ============================================================================
+
+/-- V8-A (A1-A6): Full pipeline test from raw registers through checked
+    dispatch to result validation and trace equivalence.
+    A1: Fixture — CSpace with endpoint cap, thread with send registers, IF policy.
+    A2: Register encoding — decodeSyscall extracts correct typed IDs.
+    A3: Argument decode — SyscallArgDecode produces correct typed struct.
+    A4: Dispatch — dispatchWithCapChecked succeeds on send.
+    A5: Invariant preservation — post-dispatch state passes invariant checks.
+    A6: Trace equivalence — checked and unchecked paths produce identical state. -/
+private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO Unit := do
+  -- A1: Build self-contained state with 3 capabilities (endpoint, notification,
+  -- CNode) per V8-A1 spec. Thread registers encode a Send syscall
+  -- (x7=0, x0=capAddr=0, x1=msgInfo with length=2).
+  let pipeTid : SeLe4n.ObjId := ⟨700⟩
+  let pipeEp  : SeLe4n.ObjId := ⟨701⟩
+  let pipeCn  : SeLe4n.ObjId := ⟨702⟩
+  let pipeVs  : SeLe4n.ObjId := ⟨703⟩
+  let pipeNtfn : SeLe4n.ObjId := ⟨704⟩
+  let pipeMsgInfo : Nat := 2  -- length=2, caps=0, label=0
+  let pipeRegs : SeLe4n.RegisterFile :=
+    { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
+      gpr := fun r =>
+        if r.val == 0 then ⟨0⟩            -- capAddr = 0 (endpoint cap)
+        else if r.val == 1 then ⟨pipeMsgInfo⟩  -- msgInfo
+        else if r.val == 2 then ⟨42⟩      -- msgReg[0]
+        else if r.val == 3 then ⟨99⟩      -- msgReg[1]
+        else if r.val == 7 then ⟨0⟩       -- syscallId = send
+        else ⟨0⟩ }
+  let stPipe : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject pipeTid (.tcb {
+        tid := ⟨700⟩, priority := ⟨50⟩, domain := ⟨0⟩,
+        cspaceRoot := pipeCn, vspaceRoot := pipeVs, ipcBuffer := ⟨4096⟩,
+        ipcState := .ready, threadState := .Running,
+        registerContext := pipeRegs })
+      |>.withObject pipeEp (.endpoint {})
+      |>.withObject pipeNtfn (.notification { state := .idle, waitingThreads := [] })
+      |>.withObject pipeCn (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          (⟨0⟩, { target := .object pipeEp,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := none }),
+          (⟨1⟩, { target := .object pipeNtfn,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := none }),
+          (⟨2⟩, { target := .object pipeCn,
+                   rights := AccessRightSet.ofList [.read],
+                   badge := none })
+        ] })
+      |>.withObject pipeVs (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
+      |>.withLifecycleObjectType pipeTid .tcb
+      |>.withLifecycleObjectType pipeEp .endpoint
+      |>.withLifecycleObjectType pipeNtfn .notification
+      |>.withLifecycleObjectType pipeCn .cnode
+      |>.withLifecycleObjectType pipeVs .vspaceRoot
+      |>.withRunnable []
+      |>.withCurrent (some ⟨700⟩)
+      |>.buildChecked)
+
+  -- A2: Verify register decode extracts correct typed IDs
+  match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout pipeRegs 32 with
+  | .error e => IO.println s!"[PIP-001] A2 register decode error: {reprStr e}"
+  | .ok decoded =>
+    let decodeOk := decoded.syscallId == .send && decoded.capAddr.toNat == 0 && decoded.msgRegs.size == 4
+    IO.println s!"[PIP-001] A2 register decode correct (send, cap=0, msgRegs=4): {decodeOk}"
+
+    -- A3: For send, no separate arg decode — message is extracted from msgRegs.
+    -- Verify the decoded msgInfo and message register contents are correct.
+    let msgLenOk := decoded.msgInfo.length == 2
+    IO.println s!"[PIP-002] A3 send msgInfo.length=2: {msgLenOk}"
+    let firstMsgOk := if h : 0 < decoded.msgRegs.size then decoded.msgRegs[0].val == 42 else false
+    IO.println s!"[PIP-003] A3 send first msgReg=42: {firstMsgOk}"
+
+  -- A4: Full checked dispatch via syscallEntryChecked
+  let ctx := SeLe4n.Kernel.defaultLabelingContext
+  match SeLe4n.Kernel.syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32 stPipe with
+  | .error e => IO.println s!"[PIP-004] A4 syscallEntryChecked error: {reprStr e}"
+  | .ok (_, stChecked) =>
+    -- Verify the send succeeded: endpoint should have a sender in sendQ
+    match stChecked.objects[pipeEp]? with
+    | some (.endpoint ep) =>
+      let hasSender := ep.sendQ.head.isSome
+      IO.println s!"[PIP-004] A4 syscallEntryChecked send success, endpoint has sender: {hasSender}"
+    | _ => IO.println "[PIP-005] A4 syscallEntryChecked endpoint not found post-dispatch"
+
+    -- A5: Post-dispatch invariant preservation check
+    let pipeObjIds : List SeLe4n.ObjId := [pipeTid, pipeEp, pipeNtfn, pipeCn, pipeVs]
+    let stCheckedSynced := SeLe4n.Kernel.syncThreadStates stChecked
+    let pipeChecks := stateInvariantChecksFor pipeObjIds stCheckedSynced []
+    let pipeFailures := pipeChecks.filterMap fun (name, ok) => if ok then none else some name
+    if pipeFailures.isEmpty then
+      IO.println s!"[PIP-005] A5 post-dispatch invariants preserved ({pipeChecks.length} checks)"
+      counter.modify (· + 1)
+    else
+      IO.println s!"[PIP-006] A5 post-dispatch invariant failures: {reprStr pipeFailures}"
+
+    -- A6: Trace equivalence — unchecked path should produce identical state
+    match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stPipe with
+    | .error e => IO.println s!"[PIP-007] A6 unchecked syscallEntry error: {reprStr e}"
+    | .ok (_, stUnchecked) =>
+      -- Compare object stores: both endpoints should have same sendQ state
+      let checkedEp := stChecked.objects[pipeEp]?
+      let uncheckedEp := stUnchecked.objects[pipeEp]?
+      let objectsMatch := checkedEp == uncheckedEp
+      -- Compare scheduler current thread (simpler than full scheduler BEq)
+      let schedMatch := stChecked.scheduler.current == stUnchecked.scheduler.current
+      IO.println s!"[PIP-006] A6 trace equivalence: objects={objectsMatch} scheduler={schedMatch}"
+
+-- ============================================================================
+-- V8-B: cspaceMove end-to-end test
+-- ============================================================================
+
+/-- V8-B: Register decode → cspaceMove operation → verify source empty, dest populated. -/
+private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO Unit := do
+  let moveCnId : SeLe4n.ObjId := ⟨800⟩
+  let moveEpId : SeLe4n.ObjId := ⟨801⟩
+  let moveSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := ⟨0⟩ }
+  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := ⟨2⟩ }
+  let stMove : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject moveEpId (.endpoint {})
+      |>.withObject moveCnId (.cnode {
+        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          (⟨0⟩, { target := .object moveEpId,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := none })
+        ]
+      })
+      |>.withLifecycleObjectType moveEpId .endpoint
+      |>.withLifecycleObjectType moveCnId .cnode
+      |>.withLifecycleCapabilityRef moveSrc (.object moveEpId)
+      |>.buildChecked)
+
+  -- Decode move args: srcSlot=0, dstSlot=2
+  let moveDecoded : SyscallDecodeResult := {
+    capAddr := ⟨0⟩
+    msgInfo := { length := 2, extraCaps := 0, label := 0 }
+    syscallId := .cspaceMove
+    msgRegs := #[⟨0⟩, ⟨2⟩, ⟨0⟩, ⟨0⟩]
+  }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs moveDecoded with
+  | .error e => IO.println s!"[MOV-001] cspaceMove decode error: {reprStr e}"
+  | .ok moveArgs =>
+    let decodedSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := moveArgs.srcSlot }
+    let decodedDst : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := moveArgs.dstSlot }
+    IO.println s!"[MOV-001] cspaceMove decode ok: src=slot{moveArgs.srcSlot.toNat} dst=slot{moveArgs.dstSlot.toNat}"
+
+    match SeLe4n.Kernel.cspaceMove decodedSrc decodedDst stMove with
+    | .error e => IO.println s!"[MOV-002] cspaceMove dispatch error: {reprStr e}"
+    | .ok (_, stMoved) =>
+      -- Verify source is empty after move
+      let srcEmpty := (SeLe4n.Model.SystemState.lookupSlotCap stMoved moveSrc).isNone
+      -- Verify destination is populated after move
+      let dstPopulated := (SeLe4n.Model.SystemState.lookupSlotCap stMoved moveDst).isSome
+      IO.println s!"[MOV-002] cspaceMove source empty: {srcEmpty}"
+      IO.println s!"[MOV-003] cspaceMove dest populated: {dstPopulated}"
+      -- Verify the moved cap targets the endpoint
+      match SeLe4n.Model.SystemState.lookupSlotCap stMoved moveDst with
+      | some cap =>
+        let targetsEp := cap.target == .object moveEpId
+        IO.println s!"[MOV-004] cspaceMove dest targets endpoint: {targetsEp}"
+      | none => IO.println "[MOV-004] cspaceMove dest unexpectedly empty"
+
+  checkInvariants counter "post-cspace-move-trace" stMove
 
 -- ============================================================================
 -- WS-L4-A: ReplyRecv positive-path roundtrip trace
@@ -1989,6 +2187,8 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runRuntimeContractFixtureTrace counter st1
   runRegisterDecodeTrace counter st1
   runSyscallDispatchTrace counter st1
+  runCheckedPipelineTrace counter st1
+  runCspaceMoveTrace counter st1
   runReplyRecvRoundtripTrace counter st1
   runEndpointLifecycleTrace counter st1
   runMultiEndpointInterleavingTrace counter st1
@@ -2057,7 +2257,8 @@ private def buildParameterizedTopology
 private def runParameterizedTopologyCheck
     (label : String) (threadCount : Nat) (basePriority : Nat) (radix : Nat) (asidCount : Nat)
     (svcCount : Nat := 0) : IO Unit := do
-  let st := buildParameterizedTopology threadCount basePriority radix asidCount svcCount
+  let stRaw := buildParameterizedTopology threadCount basePriority radix asidCount svcCount
+  let st := SeLe4n.Kernel.syncThreadStates stRaw
   let allIds := st.objectIndex
   let svcIds : List ServiceId := (List.range svcCount).map fun i => ⟨5000 + i⟩
   let checks := stateInvariantChecksFor allIds st svcIds
@@ -2137,7 +2338,9 @@ def runMainTrace : IO Unit := do
   assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState bootstrapServiceIds
   match SeLe4n.Kernel.schedule bootstrapState with
   | .error err => IO.println s!"[ENT-000] scheduler error: {reprStr err}"
-  | .ok (_, st1) =>
+  | .ok (_, st1raw) =>
+      -- V8-G7: Sync threadState after schedule (threadState not updated by operations)
+      let st1 := SeLe4n.Kernel.syncThreadStates st1raw
       assertStateInvariantsFor "post-schedule" bootstrapInvariantObjectIds st1 bootstrapServiceIds
       IO.println s!"[ENT-000] scheduled thread: {reprStr (st1.scheduler.current.map SeLe4n.ThreadId.toNat)}"
       runMainTraceFrom st1

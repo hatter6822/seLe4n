@@ -156,11 +156,14 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
     let uniqueAsids := asids.eraseDups
     if asids.length ≠ uniqueAsids.length then
       .error "BuilderTestState: duplicate ASIDs across VSpaceRoot objects"
-    -- Check 8: Current thread in runnable list
+    -- Check 8: Dequeue-on-dispatch (WS-H12b) — current thread must NOT be in
+    -- the runnable list. The scheduler removes the dispatched thread from the
+    -- run queue before setting it as current. If current is set AND also in
+    -- runnable, the state violates queueCurrentConsistent.
     else match builder.current with
     | some tid =>
-      if !builder.runnable.any (fun t => t.toNat == tid.toNat) then
-        .error "BuilderTestState: current thread is not in the runnable list"
+      if builder.runnable.any (fun t => t.toNat == tid.toNat) then
+        .error "BuilderTestState: current thread must not be in runnable list (dequeue-on-dispatch, WS-H12b)"
       else .ok st
     | none => .ok st
 

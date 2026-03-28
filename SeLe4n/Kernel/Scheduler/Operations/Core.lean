@@ -467,3 +467,48 @@ def scheduleDomain : Kernel Unit :=
         domainTimeRemaining := st.scheduler.domainTimeRemaining - 1
       }
       .ok ((), { st with scheduler := sched' })
+
+-- ============================================================================
+-- V8-G3: ThreadState synchronization
+-- ============================================================================
+
+/-- V8-G3: Infer the `ThreadState` for a thread based on observable system state.
+This is the canonical definition of what each `ThreadState` value means:
+- `Running`: thread is `scheduler.current`
+- `Ready`: thread is in the run queue
+- `BlockedSend`/`BlockedRecv`/`BlockedCall`/`BlockedReply`/`BlockedNotif`: matches `ipcState`
+- `Inactive`: none of the above (ipcState.ready but not queued/current) -/
+def inferThreadState (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) : ThreadState :=
+  if st.scheduler.current == some tid then .Running
+  else if tid ∈ st.scheduler.runQueue then .Ready
+  else match tcb.ipcState with
+  | .blockedOnSend _ => .BlockedSend
+  | .blockedOnReceive _ => .BlockedRecv
+  | .blockedOnCall _ => .BlockedCall
+  | .blockedOnNotification _ => .BlockedNotif
+  | .blockedOnReply _ _ => .BlockedReply
+  | .ready => .Inactive
+
+/-- V8-G3: Synchronize all TCB `threadState` fields to match observable state.
+Idempotent: calling this twice produces the same result.
+This function is called after kernel operations to maintain the `threadState`
+field without modifying the operations themselves (preserving all existing proofs). -/
+def syncThreadStates (st : SystemState) : SystemState :=
+  let objs := st.objects.fold (init := st.objects) fun acc oid obj =>
+    match obj with
+    | .tcb tcb =>
+      let expected := inferThreadState st ⟨oid.toNat⟩ tcb
+      if tcb.threadState == expected then acc
+      else acc.insert oid (.tcb { tcb with threadState := expected })
+    | _ => acc
+  { st with objects := objs }
+
+/-- V8-G2: ThreadState consistency predicate — the `threadState` field of every
+TCB matches the state inferred from queue membership and IPC state. -/
+def threadStateConsistent (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
+    st.objects[oid]? = some (.tcb tcb) →
+    tcb.threadState = inferThreadState st ⟨oid.toNat⟩ tcb
+
+end SeLe4n.Kernel
+

@@ -336,6 +336,85 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
         | none => acc
         | some cap => acc.push cap) #[]
 
+/-- V8-H: Shared dispatch for capability-only syscalls — these 6 arms derive
+authority entirely from capability possession and require no information-flow
+checks. Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to this
+helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`, `.vspaceUnmap`,
+`.serviceRevoke`, `.serviceQuery`.
+
+Returns `none` if the syscall ID is not a capability-only arm (i.e., it
+requires IPC/cross-domain handling). -/
+private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
+    (cap : Capability) : Option (Kernel Unit) :=
+  match decoded.syscallId with
+  | .cspaceDelete =>
+    some <| match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceDeleteArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+            cspaceDeleteSlot addr st
+    | _ => fun _ => .error .invalidCapability
+  | .lifecycleRetype =>
+    some <| match cap.target with
+    | .object _ =>
+        fun st => match decodeLifecycleRetypeArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let newObj := objectOfKernelType args.newType args.size
+            lifecycleRetypeDirectWithCleanup cap args.targetObj newObj st
+    | _ => fun _ => .error .invalidCapability
+  | .vspaceMap =>
+    some <| match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceMapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
+              args.perms st
+    | _ => fun _ => .error .invalidCapability
+  | .vspaceUnmap =>
+    some <| match cap.target with
+    | .object _ =>
+        fun st => match decodeVSpaceUnmapArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st
+    | _ => fun _ => .error .invalidCapability
+  | .serviceRevoke =>
+    some <| match cap.target with
+    | .object _ =>
+      fun st => match decodeServiceRevokeArgs decoded with
+      | .error e => .error e
+      | .ok args => revokeService args.targetService st
+    | _ => fun _ => .error .invalidCapability
+  | .serviceQuery =>
+    some <| match cap.target with
+    | .object epId =>
+      fun st =>
+        match lookupServiceByCap epId st with
+        | .ok (_, st') => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  | _ => none
+
+/-- V8-H: Structural equivalence — `dispatchCapabilityOnly` returns `some k`
+iff the syscall is one of the 6 capability-only arms, and in that case the
+returned kernel action `k` is identical regardless of whether the caller is
+the checked or unchecked dispatch path. -/
+theorem dispatchCapabilityOnly_some_iff
+    (decoded : SyscallDecodeResult) (cap : Capability)
+    (hCapOnly : decoded.syscallId = .cspaceDelete ∨
+                decoded.syscallId = .lifecycleRetype ∨
+                decoded.syscallId = .vspaceMap ∨
+                decoded.syscallId = .vspaceUnmap ∨
+                decoded.syscallId = .serviceRevoke ∨
+                decoded.syscallId = .serviceQuery) :
+    (dispatchCapabilityOnly decoded cap).isSome = true := by
+  rcases hCapOnly with h | h | h | h | h | h <;>
+    simp [dispatchCapabilityOnly, h]
+
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
 kernel operation using the resolved capability's target. Called after cap
 resolution succeeds inside `syscallInvoke`.
@@ -346,9 +425,14 @@ in `SyscallArgDecode`.
 
 WS-K-D: Lifecycle and VSpace stubs replaced with full dispatch. All 13
 syscalls now route to real kernel operations — zero `.illegalState` stubs
-remain. -/
+remain.
+
+V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`. -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
+  match dispatchCapabilityOnly decoded cap with
+  | some k => k
+  | none =>
   match decoded.syscallId with
   -- WS-K-E/M-D01: IPC send — message body + extra caps from decoded message registers.
   | .send =>
@@ -430,50 +514,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMove src dst st
     | _ => fun _ => .error .invalidCapability
-  | .cspaceDelete =>
-    match cap.target with
-    | .object cnodeId =>
-        fun st => match decodeCSpaceDeleteArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-            cspaceDeleteSlot addr st
-    | _ => fun _ => .error .invalidCapability
-  -- U-H04: Lifecycle retype — cap targets the authority object, message
-  -- registers carry target ObjId, type tag, and size hint.
-  -- Routes through safe wrapper that performs pre-retype cleanup (H-05)
-  -- and memory scrubbing (S6-C) before the actual retype.
-  | .lifecycleRetype =>
-    match cap.target with
-    | .object _ =>
-        fun st => match decodeLifecycleRetypeArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            let newObj := objectOfKernelType args.newType args.size
-            lifecycleRetypeDirectWithCleanup cap args.targetObj newObj st
-    | _ => fun _ => .error .invalidCapability
-  -- WS-K-D/S6-A: VSpace map — ASID, vaddr, paddr, perms from message registers.
-  -- Uses bounds-checked + TLB-flushing variant for user-space entry.
-  -- Production paths must use WithFlush to maintain tlbConsistent (R7-A.3/M-17).
-  | .vspaceMap =>
-    match cap.target with
-    | .object _ =>
-        fun st => match decodeVSpaceMapArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
-              args.perms st
-    | _ => fun _ => .error .invalidCapability
-  -- WS-K-D/S6-A: VSpace unmap — ASID and vaddr from message registers.
-  -- Uses TLB-flushing variant to prevent use-after-unmap on hardware (R7-A.3/M-17).
-  | .vspaceUnmap =>
-    match cap.target with
-    | .object _ =>
-        fun st => match decodeVSpaceUnmapArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st
-    | _ => fun _ => .error .invalidCapability
+  -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
+  -- serviceQuery are all handled by dispatchCapabilityOnly above.
   -- WS-Q1-D: Service register — decode interface spec from message registers,
   -- construct ServiceRegistration, and register the service.
   | .serviceRegister =>
@@ -495,24 +537,6 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             endpointCap := cap
           }
           registerService reg st
-    | _ => fun _ => .error .invalidCapability
-  -- WS-Q1-D: Service revoke — decode service ID from message registers.
-  | .serviceRevoke =>
-    match cap.target with
-    | .object _ =>
-      fun st => match decodeServiceRevokeArgs decoded with
-      | .error e => .error e
-      | .ok args => revokeService args.targetService st
-    | _ => fun _ => .error .invalidCapability
-  -- WS-Q1-D: Service query — lookup by endpoint capability target.
-  -- The endpoint object ID comes from the capability target (no MR decode needed).
-  | .serviceQuery =>
-    match cap.target with
-    | .object epId =>
-      fun st =>
-        match lookupServiceByCap epId st with
-        | .ok (_, st') => .ok ((), st')
-        | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A: Notification signal — badge merge or wake a waiter.
   -- The notification object comes from the capability target, badge from MR[0].
@@ -551,6 +575,11 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           | .error e => .error e
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
+  -- V8-H: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
+  -- serviceRevoke, serviceQuery) are unreachable here — handled by
+  -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
+  -- Lean's exhaustiveness checker.
+  | _ => fun _ => .error .illegalState
 
 -- ============================================================================
 -- T6-I/M-IF-1: Information-flow-checked dispatch
@@ -574,10 +603,15 @@ because they derive authority entirely from capability possession.
 V2-A/V2-C: `notificationSignal`, `notificationWait`, and `replyRecv` are now
 in the `SyscallId` enum and wired into both dispatch paths. The checked variants
 `notificationSignalChecked`, `notificationWaitChecked`, and
-`endpointReplyRecvChecked` gate cross-domain flows. -/
+`endpointReplyRecvChecked` gate cross-domain flows.
+
+V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`. -/
 private def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
+  match dispatchCapabilityOnly decoded cap with
+  | some k => k
+  | none =>
   match decoded.syscallId with
   -- T6-I: IPC send — checked for sender→endpoint flow
   | .send =>
@@ -663,46 +697,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMoveChecked ctx src dst st
     | _ => fun _ => .error .invalidCapability
-  -- T6-I: CSpace delete — capability-only, no cross-domain flow
-  | .cspaceDelete =>
-    match cap.target with
-    | .object cnodeId =>
-        fun st => match decodeCSpaceDeleteArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
-            cspaceDeleteSlot addr st
-    | _ => fun _ => .error .invalidCapability
-  -- U-H04/T6-I: Lifecycle retype — capability-only, no cross-domain flow.
-  -- Routes through safe wrapper with cleanup (H-05) and scrubbing (S6-C).
-  | .lifecycleRetype =>
-    match cap.target with
-    | .object _ =>
-        fun st => match decodeLifecycleRetypeArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            let newObj := objectOfKernelType args.newType args.size
-            lifecycleRetypeDirectWithCleanup cap args.targetObj newObj st
-    | _ => fun _ => .error .invalidCapability
-  -- T6-I: VSpace map — no cross-domain flow (address-space-local operation)
-  | .vspaceMap =>
-    match cap.target with
-    | .object _ =>
-        fun st => match decodeVSpaceMapArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
-              args.perms st
-    | _ => fun _ => .error .invalidCapability
-  -- T6-I: VSpace unmap — no cross-domain flow
-  | .vspaceUnmap =>
-    match cap.target with
-    | .object _ =>
-        fun st => match decodeVSpaceUnmapArgs decoded with
-        | .error e => .error e
-        | .ok args =>
-            Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st
-    | _ => fun _ => .error .invalidCapability
+  -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
+  -- serviceQuery are all handled by dispatchCapabilityOnly above.
   -- T6-I: Service register — checked for thread→service flow
   | .serviceRegister =>
     match cap.target with
@@ -723,23 +719,6 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             endpointCap := cap
           }
           registerServiceChecked ctx tid reg st
-    | _ => fun _ => .error .invalidCapability
-  -- T6-I: Service revoke — capability-only
-  | .serviceRevoke =>
-    match cap.target with
-    | .object _ =>
-      fun st => match decodeServiceRevokeArgs decoded with
-      | .error e => .error e
-      | .ok args => revokeService args.targetService st
-    | _ => fun _ => .error .invalidCapability
-  -- T6-I: Service query — read-only
-  | .serviceQuery =>
-    match cap.target with
-    | .object epId =>
-      fun st =>
-        match lookupServiceByCap epId st with
-        | .ok (_, st') => .ok ((), st')
-        | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A/T6-I: Notification signal — checked for signaler→notification flow
   | .notificationSignal =>
@@ -774,6 +753,9 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           | .error e => .error e
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
+  -- V8-H: Remaining capability-only arms are unreachable — handled by
+  -- dispatchCapabilityOnly returning `some` above.
+  | _ => fun _ => .error .illegalState
 
 /-- T6-I: Policy-checked dispatch variant. Routes syscalls through
     information-flow-checked wrappers when a `LabelingContext` is provided. -/
@@ -823,72 +805,75 @@ def syscallEntryChecked (ctx : LabelingContext)
 -- U5-A/U5-D: Dispatch structural equivalence theorems
 -- ============================================================================
 
-/-- U5-A/U-M02: The 6 capability-only syscalls are handled identically by
-both checked and unchecked dispatch paths. These arms derive authority
-entirely from capability possession and do not cross security domains.
+/-- U5-A/U-M02/V8-H: The 6 capability-only syscalls are handled identically by
+both checked and unchecked dispatch paths, since both delegate to
+`dispatchCapabilityOnly`. These arms derive authority entirely from
+capability possession and do not cross security domains.
 
 The shared arms are: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`.
 
-This theorem proves structural equivalence for `.cspaceDelete`. -/
+V8-H: With the shared helper extraction, each per-arm theorem follows
+directly from the shared `dispatchCapabilityOnly` delegation. -/
 theorem checkedDispatch_cspaceDelete_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .cspaceDelete) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-A: Structural equivalence for `.lifecycleRetype`. -/
+/-- U5-A/V8-H: Structural equivalence for `.lifecycleRetype`. -/
 theorem checkedDispatch_lifecycleRetype_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .lifecycleRetype) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-A: Structural equivalence for `.vspaceMap`. -/
+/-- U5-A/V8-H: Structural equivalence for `.vspaceMap`. -/
 theorem checkedDispatch_vspaceMap_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .vspaceMap) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-A: Structural equivalence for `.vspaceUnmap`. -/
+/-- U5-A/V8-H: Structural equivalence for `.vspaceUnmap`. -/
 theorem checkedDispatch_vspaceUnmap_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .vspaceUnmap) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-A: Structural equivalence for `.serviceRevoke`. -/
+/-- U5-A/V8-H: Structural equivalence for `.serviceRevoke`. -/
 theorem checkedDispatch_serviceRevoke_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .serviceRevoke) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-A: Structural equivalence for `.serviceQuery`. -/
+/-- U5-A/V8-H: Structural equivalence for `.serviceQuery`. -/
 theorem checkedDispatch_serviceQuery_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .serviceQuery) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  simp [dispatchWithCapChecked, dispatchWithCap, hSyscall]
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-D/U-L20: Complete dispatch equivalence — for ALL capability-only
+/-- U5-D/U-L20/V8-H: Complete dispatch equivalence — for ALL capability-only
 syscalls, the checked and unchecked dispatch paths produce identical results.
 
-This replaces the former trivial `True` placeholder theorem with a
-machine-checked proof that the 6 shared arms are structurally identical.
+Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to the shared
+`dispatchCapabilityOnly` helper for these 6 arms, making structural identity
+trivial.
 
 **Production recommendation**: Use `syscallEntryChecked` for user-space entry.
 The unchecked `syscallEntry` is retained for backward compatibility with
@@ -905,7 +890,7 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
   rcases hCapOnly with h | h | h | h | h | h <;>
-    simp [dispatchWithCapChecked, dispatchWithCap, h]
+    simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
 kernel operation. Looks up the caller's TCB and CSpace root, constructs a
@@ -1102,7 +1087,7 @@ theorem dispatchWithCap_cspaceMint_delegates
       let badge : Option SeLe4n.Badge :=
         if args.badge.val = 0 then none else some args.badge
       cspaceMint src dst args.rights badge := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceCopy dispatch succeeds, the kernel-level `cspaceCopy`
 is invoked with the decoded source and destination slots. -/
@@ -1117,7 +1102,7 @@ theorem dispatchWithCap_cspaceCopy_delegates
       let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       cspaceCopy src dst := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceMove dispatch succeeds, the kernel-level `cspaceMove`
 is invoked with the decoded source and destination slots. -/
@@ -1132,7 +1117,7 @@ theorem dispatchWithCap_cspaceMove_delegates
       let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       cspaceMove src dst := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceDelete dispatch succeeds, the kernel-level
 `cspaceDeleteSlot` is invoked with the decoded target slot. -/
@@ -1146,7 +1131,7 @@ theorem dispatchWithCap_cspaceDelete_delegates
     dispatchWithCap decoded tid gate cap =
       let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
       cspaceDeleteSlot addr := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
 -- WS-K-D: Lifecycle and VSpace dispatch delegation theorems
@@ -1164,7 +1149,7 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     (hDecode : decodeLifecycleRetypeArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
       lifecycleRetypeDirectWithCleanup cap args.targetObj (objectOfKernelType args.newType args.size) := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A/T6-C: When vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithFlush` is
 invoked with the decoded ASID, vaddr, paddr, and validated permissions.
@@ -1180,7 +1165,7 @@ theorem dispatchWithCap_vspaceMap_delegates
     dispatchWithCap decoded tid gate cap =
       Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
         args.perms := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A: When vspaceUnmap dispatch succeeds, `vspaceUnmapPageWithFlush` is
 invoked with the decoded ASID and vaddr.
@@ -1194,7 +1179,7 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     (hDecode : decodeVSpaceUnmapArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
       Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr := by
-  simp [dispatchWithCap, hSyscall, hTarget, hDecode]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
 -- WS-K-E: Service policy and IPC message population delegation theorems
@@ -1217,7 +1202,7 @@ theorem dispatchWithCap_send_uses_withCaps
             decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st') := by
-  simp [dispatchWithCap, hSyscall, hTarget]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01: When call dispatch is invoked, the IPC message includes
 resolved extra capabilities and uses the WithCaps call path. -/
@@ -1236,7 +1221,7 @@ theorem dispatchWithCap_call_uses_withCaps
             decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st') := by
-  simp [dispatchWithCap, hSyscall, hTarget]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E: When reply dispatch is invoked, the IPC message body is populated
 from decoded message registers via `extractMessageRegisters`. -/
@@ -1248,7 +1233,7 @@ theorem dispatchWithCap_reply_populates_msg
     dispatchWithCap decoded tid gate cap =
       let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
       endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge } := by
-  simp [dispatchWithCap, hSyscall, hTarget]
+  simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
 -- WS-J1-D: Invariant preservation for syscall entry

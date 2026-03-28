@@ -139,6 +139,16 @@
 [KSD-006] service registry lookup present: true
 [KSD-007] IPC message body from registers: #[111, 222, 333, 444]
 [KSD-008] round-trip decode msgRegs.size=4 first=10
+[PIP-001] A2 register decode correct (send, cap=0, msgRegs=4): true
+[PIP-002] A3 send msgInfo.length=2: true
+[PIP-003] A3 send first msgReg=42: true
+[PIP-004] A4 syscallEntryChecked send success, endpoint has sender: true
+[PIP-005] A5 post-dispatch invariants preserved (25 checks)
+[PIP-006] A6 trace equivalence: objects=true scheduler=true
+[MOV-001] cspaceMove decode ok: src=slot0 dst=slot2
+[MOV-002] cspaceMove source empty: true
+[MOV-003] cspaceMove dest populated: true
+[MOV-004] cspaceMove dest targets endpoint: true
 [RRC-001] replyRecv caller state after receive: blockedOnReply
 [RRC-003] replyRecv caller unblocked: true
 [RRC-004] replyRecv caller reply registers: some [100, 200, 300]
@@ -155,7 +165,7 @@
 [MEI-004] multi-ep ep3 out-of-order recv registers: some [55, 66]
 [MEI-005] multi-ep ep1 FIFO second recv registers: some [77, 88]
 [MEI-006] multi-ep all 3 endpoints drained: true
-[ITR-001] inter-transition invariant checks: 31 passed
+[ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 [PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)

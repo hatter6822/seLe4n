@@ -1,3 +1,48 @@
+## [0.22.10] — V8 Audit: Semantic Correctness & Fixture Hardening
+
+- **AUDIT-1**: Added `BlockedReply` as 8th `ThreadState` variant — `blockedOnReply`
+  was incorrectly mapped to `.BlockedRecv`, collapsing two semantically distinct
+  IPC states (server-side reply wait vs client-side receive wait).
+- **AUDIT-2**: V8-A1 pipeline fixture expanded from 1 capability to 3 (endpoint,
+  notification, CNode) per V8 spec. Notification object added with idle state.
+- **AUDIT-3**: Fixed remaining dequeue-on-dispatch violations in
+  `InformationFlowSuite.lean` — threads that are `current` must not appear in
+  the runnable list.
+- **AUDIT-4**: Added design-note documentation to `threadStateConsistentChecks`
+  clarifying that it validates inference-logic consistency after `syncThreadStates`,
+  not operational drift detection.
+- Updated `ThreadState` enum from 7 to 8 variants in CHANGELOG V8-G entry.
+- Fixture and SHA-256 hash regenerated for expanded pipeline output.
+- Zero `sorry`, zero `axiom`. All smoke and full tests pass.
+
+## [0.22.9] — V8: Test Coverage & Documentation
+
+- **V8-A** (M-TST-1): End-to-end `syscallEntryChecked` pipeline test covering
+  register decode (A2), argument extraction (A3), checked dispatch (A4),
+  invariant preservation (A5), and trace equivalence vs unchecked path (A6).
+- **V8-B** (M-TST-2): `cspaceMove` end-to-end test: register decode →
+  move operation → verify source empty, dest populated, target preserved.
+- **V8-C** (M-TST-3): Post-mutation invariant checks added for 5 operations
+  (vspace map/unmap, service store/dep, cspace copy, timer tick expiry).
+  Removed raw `lifecycleRetypeObject` check (use cleanup variant instead).
+- **V8-D** (M-TST-4): `buildValidated` Check 8 fixed for dequeue-on-dispatch
+  semantics — current thread must NOT be in run queue. Propagated to 7 test
+  states across MainTraceHarness and OperationChainSuite.
+- **V8-E** (M-TST-5): `partial` removed from `intrusiveQueueReachable` — uses
+  fuel-based termination instead.
+- **V8-F** (M-TST-6): Fixture drift detection via SHA-256 hash companion file.
+  Verified in `test_tier2_trace.sh` before fixture comparison.
+- **V8-G** (M-TST-9): `ThreadState` enum (8 variants) added to model:
+  - G1: `ThreadState` inductive + `threadState` field on `TCB`.
+  - G3: `inferThreadState`, `syncThreadStates`, `threadStateConsistent` —
+    non-invasive design that preserves all existing operational proofs.
+  - G7: `threadStateConsistentChecks` in `InvariantChecks.lean`;
+    `assertStateInvariantsFor` auto-syncs before checking.
+- **V8-H** (M-API-4): Shared `dispatchCapabilityOnly` extracts 6 capability-only
+  syscall arms used by both checked and unchecked dispatch. ~120 lines of
+  duplication removed. `dispatchCapabilityOnly_some_iff` theorem added.
+- Zero `sorry`, zero `axiom`. All 38 inter-transition invariant checks pass.
+
 ## [0.22.8] — V7: Performance & Data Structure Optimization
 
 - **V7-C** (M-DS-3): `LawfulBEq` made explicit API-level requirement for all

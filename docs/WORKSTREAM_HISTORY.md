@@ -18,9 +18,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phases V1, V2, V3, V4, V5, V6, and V7 are complete. Phase V8 remains.
+WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V7 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
@@ -119,6 +119,18 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   warnings (V6-K). `enforcementBoundaryExtended` updated to 22 entries with
   `enforcementBoundaryExtended_count` and `enforcementBoundaryExtended_matches_canonical`
   (V6-L). 26 V6 test cases in InformationFlowSuite. Zero sorry/axiom.
+
+- **V8 (Test Coverage & Documentation) COMPLETE** (v0.22.9, audit v0.22.10): 19 sub-tasks
+  (V8-A through V8-H). V8-A: End-to-end `syscallEntryChecked` pipeline test
+  (register decode → arg extraction → checked dispatch → invariant preservation
+  → trace equivalence). V8-B: `cspaceMove` end-to-end test. V8-C: Post-mutation
+  invariant checks for 5 additional operations. V8-D: dequeue-on-dispatch Check 8
+  fix propagated to 7 test states. V8-E: `partial` removed from
+  `intrusiveQueueReachable`. V8-F: Fixture drift detection via SHA-256 hash
+  companion. V8-G: `ThreadState` enum (8 variants, incl. `BlockedReply`) with non-invasive
+  `syncThreadStates` design preserving all operational proofs.
+  V8-H: `dispatchCapabilityOnly` shared helper eliminating ~120 lines of dispatch
+  duplication. 38 inter-transition invariant checks. Zero sorry/axiom.
 
 - **V7 (Performance & Data Structure Optimization) COMPLETE** (v0.22.8): 19
   sub-tasks (V7-A through V7-J). V7-C: `LawfulBEq` made explicit API-level
