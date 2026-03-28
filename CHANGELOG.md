@@ -9,7 +9,8 @@
   `filter_fold_present_step` helper. Heartbeat budget reduced from 3.2M to 400K.
 - **V7-B** (M-DS-2): `insertLoop_preserves_noDupKeys` and
   `insertLoop_preserves_pcd` proofs refactored with `noDupKeys_after_set` and
-  `distCorrect_after_set` helpers. Heartbeat budgets reduced from 800K to 420K.
+  `distCorrect_after_set` helpers. Heartbeat budgets reduced from 800K to
+  420K (noDupKeys) and 400K (pcd).
 - **V7-G** (L-DS-1): `CNodeRadix.toList` refactored from O(n²) to O(n)
   cons+reverse with updated `toList_eq_collectEntries` proof.
 - **V7-I** (L-PLAT-2): `irqKeysNoDup`/`objIdKeysNoDup` replaced with O(n)

@@ -254,8 +254,8 @@ audit:
   fixes across 18 files including FrozenState, FreezeProofs, and FrozenOps.
 - **Heartbeat reduction** (V7-A/B): `filter_fold_present` reduced from 3.2M to
   400K heartbeats via `filter_fold_present_step` extraction. `insertLoop`
-  preservation proofs reduced from 800K to 420K via `noDupKeys_after_set` and
-  `distCorrect_after_set` helpers.
+  preservation proofs reduced from 800K to 420K/400K via `noDupKeys_after_set`
+  and `distCorrect_after_set` helpers.
 - **Algorithmic improvements** (V7-G/I): `CNodeRadix.toList` from O(n²) to O(n).
   Boot-time key uniqueness checks from O(n²) to O(n) via `Std.HashSet`.
 - **`native_decide` elimination** (V7-E): `RegisterFile.not_lawfulBEq` now uses
