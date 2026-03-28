@@ -92,7 +92,14 @@ private def currentThreadValidB (st : SystemState) : Bool :=
       | _ => false
 
 /-- V8-G7: ThreadState consistency check — every TCB's `threadState` field
-matches the inferred state from queue membership, IPC state, and scheduler.current. -/
+matches the inferred state from queue membership, IPC state, and scheduler.current.
+
+**Design note**: `assertStateInvariantsFor` calls `syncThreadStates` before
+running these checks.  This means the check validates the *inference logic*
+(i.e., `inferThreadState` is self-consistent and the sync round-trip is
+idempotent) rather than detecting operational drift between threadState and
+runtime queues.  The check is intentionally a design-consistency assertion,
+not a divergence detector. -/
 private def threadStateConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
     match (st.objects[oid]? : Option KernelObject) with

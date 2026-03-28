@@ -53,7 +53,7 @@ private def sampleState : SystemState :=
     |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
-    |>.withRunnable [⟨1⟩, ⟨2⟩]
+    |>.withRunnable [⟨1⟩]
     |>.withCurrent (some ⟨2⟩)
     |>.build)
 
@@ -216,7 +216,7 @@ def runInformationFlowChecks : IO Unit := do
   let publicEndpointState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨10⟩ (.endpoint {})
-      |>.withRunnable [⟨1⟩]
+      |>.withRunnable []
       |>.withCurrent (some ⟨1⟩)
       |>.build)
 

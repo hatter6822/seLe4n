@@ -143,7 +143,7 @@
 [PIP-002] A3 send msgInfo.length=2: true
 [PIP-003] A3 send first msgReg=42: true
 [PIP-004] A4 syscallEntryChecked send success, endpoint has sender: true
-[PIP-005] A5 post-dispatch invariants preserved (19 checks)
+[PIP-005] A5 post-dispatch invariants preserved (25 checks)
 [PIP-006] A6 trace equivalence: objects=true scheduler=true
 [MOV-001] cspaceMove decode ok: src=slot0 dst=slot2
 [MOV-002] cspaceMove source empty: true

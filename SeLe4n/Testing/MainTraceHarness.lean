@@ -1735,17 +1735,19 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     A5: Invariant preservation — post-dispatch state passes invariant checks.
     A6: Trace equivalence — checked and unchecked paths produce identical state. -/
 private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO Unit := do
-  -- A1: Build self-contained state with endpoint, CNode, thread registers
-  -- encoding a Send syscall (x7=0, x0=capAddr=0, x1=msgInfo with length=2).
+  -- A1: Build self-contained state with 3 capabilities (endpoint, notification,
+  -- CNode) per V8-A1 spec. Thread registers encode a Send syscall
+  -- (x7=0, x0=capAddr=0, x1=msgInfo with length=2).
   let pipeTid : SeLe4n.ObjId := ⟨700⟩
   let pipeEp  : SeLe4n.ObjId := ⟨701⟩
   let pipeCn  : SeLe4n.ObjId := ⟨702⟩
   let pipeVs  : SeLe4n.ObjId := ⟨703⟩
+  let pipeNtfn : SeLe4n.ObjId := ⟨704⟩
   let pipeMsgInfo : Nat := 2  -- length=2, caps=0, label=0
   let pipeRegs : SeLe4n.RegisterFile :=
     { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
       gpr := fun r =>
-        if r.val == 0 then ⟨0⟩            -- capAddr = 0
+        if r.val == 0 then ⟨0⟩            -- capAddr = 0 (endpoint cap)
         else if r.val == 1 then ⟨pipeMsgInfo⟩  -- msgInfo
         else if r.val == 2 then ⟨42⟩      -- msgReg[0]
         else if r.val == 3 then ⟨99⟩      -- msgReg[1]
@@ -1759,16 +1761,24 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
         ipcState := .ready, threadState := .Running,
         registerContext := pipeRegs })
       |>.withObject pipeEp (.endpoint {})
+      |>.withObject pipeNtfn (.notification { state := .idle, waitingThreads := [] })
       |>.withObject pipeCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
           (⟨0⟩, { target := .object pipeEp,
                    rights := AccessRightSet.ofList [.read, .write],
+                   badge := none }),
+          (⟨1⟩, { target := .object pipeNtfn,
+                   rights := AccessRightSet.ofList [.read, .write],
+                   badge := none }),
+          (⟨2⟩, { target := .object pipeCn,
+                   rights := AccessRightSet.ofList [.read],
                    badge := none })
         ] })
       |>.withObject pipeVs (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType pipeTid .tcb
       |>.withLifecycleObjectType pipeEp .endpoint
+      |>.withLifecycleObjectType pipeNtfn .notification
       |>.withLifecycleObjectType pipeCn .cnode
       |>.withLifecycleObjectType pipeVs .vspaceRoot
       |>.withRunnable []
@@ -1802,7 +1812,7 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
     | _ => IO.println "[PIP-005] A4 syscallEntryChecked endpoint not found post-dispatch"
 
     -- A5: Post-dispatch invariant preservation check
-    let pipeObjIds : List SeLe4n.ObjId := [pipeTid, pipeEp, pipeCn, pipeVs]
+    let pipeObjIds : List SeLe4n.ObjId := [pipeTid, pipeEp, pipeNtfn, pipeCn, pipeVs]
     let stCheckedSynced := SeLe4n.Kernel.syncThreadStates stChecked
     let pipeChecks := stateInvariantChecksFor pipeObjIds stCheckedSynced []
     let pipeFailures := pipeChecks.filterMap fun (name, ok) => if ok then none else some name

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-test-coverage-docs-ojHII",
-      "commit_sha": "95eddf2639f6caf193e64f081e845eeb143daa87",
-      "tree_sha": "4b4e912298050f1f7b29a4c810e56a0b2f9a8166",
-      "committed_at_utc": "2026-03-27T23:52:15-04:00"
+      "commit_sha": "85a54df001af59b53b5d39cc5e022d3b73986b28",
+      "tree_sha": "fd4efdff494f3e8cc5847547f94205339453762c",
+      "committed_at_utc": "2026-03-28T05:05:49+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "15494c01923ef22dfef99a7568cf65256eae9ab5a8c9eb6c26435df7cb328584"
+    "source_digest": "b01b43fc1c326e83a80bdc5ecc25f208d8e82a63598db3425d9f9a14bdc2bbf8"
   },
   "summary": {
     "module_count": 113,
     "declaration_count": 3757
   },
   "readme_sync": {
-    "version": "0.22.8",
+    "version": "0.22.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 72924,
+    "production_loc": 72943,
     "test_files": 10,
     "test_loc": 8441,
     "proved_theorem_lemma_decls": 2142,
@@ -38403,13 +38403,13 @@
         {
           "kind": "inductive",
           "name": "ThreadState",
-          "line": 360,
+          "line": 361,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 375,
+          "line": 377,
           "called": [
             "ThreadId"
           ]
@@ -38417,7 +38417,7 @@
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 380,
+          "line": 382,
           "called": [
             "CPtr",
             "Deadline",
@@ -38436,8 +38436,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:437>",
-          "line": 437,
+          "name": "<anonymous:instance:439>",
+          "line": 439,
           "called": [
             "TCB"
           ]
@@ -38445,7 +38445,7 @@
         {
           "kind": "theorem",
           "name": "TCB.not_lawfulBEq",
-          "line": 454,
+          "line": 456,
           "called": [
             "ObjId",
             "RegName",
@@ -38458,7 +38458,7 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 479,
+          "line": 481,
           "called": [
             "ThreadId",
             "none"
@@ -38467,7 +38467,7 @@
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 490,
+          "line": 492,
           "called": [
             "IntrusiveQueue"
           ]
@@ -38475,13 +38475,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 495,
+          "line": 497,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 530,
+          "line": 532,
           "called": [
             "Badge",
             "NotificationState",
@@ -38492,7 +38492,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 554,
+          "line": 556,
           "called": [
             "Capability",
             "RHTable",
@@ -38502,13 +38502,13 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 563,
+          "line": 565,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 568,
+          "line": 570,
           "called": [
             "ObjId",
             "size"
@@ -38517,7 +38517,7 @@
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 583,
+          "line": 585,
           "called": [
             "PAddr",
             "UntypedChild"
@@ -38526,13 +38526,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 599,
+          "line": 601,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 602,
+          "line": 604,
           "called": [
             "UntypedObject"
           ]
@@ -38540,7 +38540,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 606,
+          "line": 608,
           "called": [
             "UntypedObject",
             "size"
@@ -38549,7 +38549,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 617,
+          "line": 619,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38561,7 +38561,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 629,
+          "line": 631,
           "called": [
             "UntypedObject"
           ]
@@ -38569,7 +38569,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 633,
+          "line": 635,
           "called": [
             "UntypedObject"
           ]
@@ -38577,7 +38577,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 637,
+          "line": 639,
           "called": [
             "UntypedObject",
             "size"
@@ -38586,7 +38586,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 641,
+          "line": 643,
           "called": [
             "UntypedObject",
             "size"
@@ -38595,7 +38595,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 646,
+          "line": 648,
           "called": [
             "UntypedObject"
           ]
@@ -38603,7 +38603,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 651,
+          "line": 653,
           "called": [
             "UntypedObject",
             "childrenNonOverlap",
@@ -38615,7 +38615,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 655,
+          "line": 657,
           "called": [
             "PAddr",
             "size",
@@ -38625,7 +38625,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 659,
+          "line": 661,
           "called": [
             "PAddr",
             "childrenWithinWatermark",
@@ -38635,7 +38635,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 664,
+          "line": 666,
           "called": [
             "PAddr",
             "childrenNonOverlap",
@@ -38645,7 +38645,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 669,
+          "line": 671,
           "called": [
             "PAddr",
             "childrenUniqueIds",
@@ -38655,7 +38655,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 674,
+          "line": 676,
           "called": [
             "PAddr",
             "empty_childrenNonOverlap",
@@ -38669,7 +38669,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 680,
+          "line": 682,
           "called": [
             "UntypedObject",
             "canAllocate",
@@ -38679,7 +38679,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 687,
+          "line": 689,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38691,7 +38691,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 706,
+          "line": 708,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38703,7 +38703,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 715,
+          "line": 717,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38715,7 +38715,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 722,
+          "line": 724,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38727,7 +38727,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 729,
+          "line": 731,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38741,7 +38741,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 740,
+          "line": 742,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38753,7 +38753,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 751,
+          "line": 753,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38766,7 +38766,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 769,
+          "line": 771,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38780,7 +38780,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 791,
+          "line": 793,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -38793,7 +38793,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 810,
+          "line": 812,
           "called": [
             "UntypedObject",
             "reset",
@@ -38803,7 +38803,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 814,
+          "line": 816,
           "called": [
             "UntypedObject",
             "reset",
@@ -38814,7 +38814,7 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 829,
+          "line": 831,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -38826,13 +38826,13 @@
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 849,
+          "line": 851,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 853,
+          "line": 855,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -38845,13 +38845,13 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 873,
+          "line": 875,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 877,
+          "line": 879,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -38864,8 +38864,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:897>",
-          "line": 897,
+          "name": "<anonymous:instance:899>",
+          "line": 899,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -38878,7 +38878,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 918,
+          "line": 920,
           "called": [
             "SyscallId",
             "ofNat",
@@ -38888,7 +38888,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 930,
+          "line": 932,
           "called": [
             "SyscallId",
             "ofNat",
@@ -38898,7 +38898,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 941,
+          "line": 943,
           "called": [
             "SyscallId",
             "ofNat_toNat",
@@ -38908,19 +38908,19 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 955,
+          "line": 957,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 961,
+          "line": 963,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLength",
-          "line": 964,
+          "line": 966,
           "called": [
             "maxMessageRegisters"
           ]
@@ -38928,7 +38928,7 @@
         {
           "kind": "def",
           "name": "maxExtraCaps'",
-          "line": 967,
+          "line": 969,
           "called": [
             "maxExtraCaps"
           ]
@@ -38936,13 +38936,13 @@
         {
           "kind": "def",
           "name": "maxLabel",
-          "line": 972,
+          "line": 974,
           "called": []
         },
         {
           "kind": "def",
           "name": "encode",
-          "line": 980,
+          "line": 982,
           "called": [
             "MessageInfo"
           ]
@@ -38950,7 +38950,7 @@
         {
           "kind": "def",
           "name": "decode",
-          "line": 986,
+          "line": 988,
           "called": [
             "MessageInfo",
             "maxExtraCaps",
@@ -38961,8 +38961,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:995>",
-          "line": 995,
+          "name": "<anonymous:instance:997>",
+          "line": 997,
           "called": [
             "MessageInfo"
           ]
@@ -38970,25 +38970,25 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 1004,
+          "line": 1006,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 1029,
+          "line": 1031,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 1061,
+          "line": 1063,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 1090,
+          "line": 1092,
           "called": [
             "MessageInfo",
             "and_mask_127",
@@ -39004,7 +39004,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 1115,
+          "line": 1117,
           "called": [
             "CPtr",
             "MessageInfo",
@@ -45663,7 +45663,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistentChecks",
-          "line": 96,
+          "line": 103,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45675,7 +45675,7 @@
         {
           "kind": "def",
           "name": "cspaceSlotCoherencyChecks",
-          "line": 107,
+          "line": 114,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45687,7 +45687,7 @@
         {
           "kind": "def",
           "name": "capabilityRightsStructuralChecks",
-          "line": 123,
+          "line": 130,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45700,7 +45700,7 @@
         {
           "kind": "def",
           "name": "lifecycleMetadataChecks",
-          "line": 136,
+          "line": 143,
           "called": [
             "ObjId",
             "SystemState",
@@ -45710,7 +45710,7 @@
         {
           "kind": "def",
           "name": "serviceGraphAcyclicityChecks",
-          "line": 145,
+          "line": 152,
           "called": [
             "ServiceId",
             "SystemState",
@@ -45723,7 +45723,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidUniquenessChecks",
-          "line": 155,
+          "line": 162,
           "called": [
             "ASID",
             "KernelObject",
@@ -45737,7 +45737,7 @@
         {
           "kind": "def",
           "name": "asidTableConsistencyChecks",
-          "line": 166,
+          "line": 173,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45749,7 +45749,7 @@
         {
           "kind": "def",
           "name": "untypedWatermarkChecks",
-          "line": 189,
+          "line": 196,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45762,7 +45762,7 @@
         {
           "kind": "def",
           "name": "notificationWaiterConsistentChecks",
-          "line": 201,
+          "line": 208,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45774,7 +45774,7 @@
         {
           "kind": "def",
           "name": "runQueueThreadPriorityConsistentB",
-          "line": 216,
+          "line": 223,
           "called": [
             "SystemState",
             "all"
@@ -45783,7 +45783,7 @@
         {
           "kind": "def",
           "name": "blockedOnSendNotRunnableChecks",
-          "line": 223,
+          "line": 230,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45795,7 +45795,7 @@
         {
           "kind": "def",
           "name": "blockedOnReceiveNotRunnableChecks",
-          "line": 239,
+          "line": 246,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45807,7 +45807,7 @@
         {
           "kind": "def",
           "name": "currentThreadInActiveDomainB",
-          "line": 258,
+          "line": 265,
           "called": [
             "SystemState",
             "none",
@@ -45817,7 +45817,7 @@
         {
           "kind": "def",
           "name": "uniqueWaitersCheck",
-          "line": 269,
+          "line": 276,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45828,7 +45828,7 @@
         {
           "kind": "def",
           "name": "cdtChildMapConsistentCheck",
-          "line": 283,
+          "line": 290,
           "called": [
             "SystemState",
             "none"
@@ -45837,7 +45837,7 @@
         {
           "kind": "def",
           "name": "cdtParentMapConsistentCheck",
-          "line": 300,
+          "line": 307,
           "called": [
             "SystemState",
             "none"
@@ -45846,7 +45846,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecksFor",
-          "line": 314,
+          "line": 321,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45884,7 +45884,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecks",
-          "line": 364,
+          "line": 371,
           "called": [
             "SystemState",
             "stateInvariantChecksFor"
@@ -45893,7 +45893,7 @@
         {
           "kind": "def",
           "name": "failedChecks",
-          "line": 367,
+          "line": 374,
           "called": [
             "none"
           ]
@@ -45901,7 +45901,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsFor",
-          "line": 370,
+          "line": 377,
           "called": [
             "ObjId",
             "ServiceId",
@@ -45917,7 +45917,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariants",
-          "line": 381,
+          "line": 388,
           "called": [
             "SystemState",
             "assertStateInvariantsFor"
@@ -46598,7 +46598,7 @@
         {
           "kind": "def",
           "name": "runCspaceMoveTrace",
-          "line": 1832,
+          "line": 1842,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -46623,7 +46623,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1889,
+          "line": 1899,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -46642,7 +46642,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 1973,
+          "line": 1983,
           "called": [
             "CSpaceAddr",
             "IpcMessage",
@@ -46668,7 +46668,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 2071,
+          "line": 2081,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -46689,7 +46689,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 2151,
+          "line": 2161,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -46729,7 +46729,7 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 2196,
+          "line": 2206,
           "called": [
             "Capability",
             "KernelObject",
@@ -46754,7 +46754,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 2247,
+          "line": 2257,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -46768,7 +46768,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2262,
+          "line": 2272,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -46776,7 +46776,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2273,
+          "line": 2283,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -46801,7 +46801,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2327,
+          "line": 2337,
           "called": [
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",

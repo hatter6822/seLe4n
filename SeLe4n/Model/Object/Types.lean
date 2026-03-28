@@ -355,6 +355,7 @@ The 7 states correspond to the seL4 thread model:
 - `BlockedSend`: Blocked on endpoint send queue
 - `BlockedRecv`: Blocked on endpoint receive queue
 - `BlockedCall`: Blocked on endpoint call (send then wait for reply)
+- `BlockedReply`: Blocked waiting for a reply after ReplyRecv (server-side)
 - `BlockedNotif`: Blocked waiting for notification
 - `Inactive`: Freshly created or cleaned up, not yet scheduled -/
 inductive ThreadState where
@@ -363,6 +364,7 @@ inductive ThreadState where
   | BlockedSend
   | BlockedRecv
   | BlockedCall
+  | BlockedReply
   | BlockedNotif
   | Inactive
   deriving Repr, DecidableEq, Inhabited

@@ -120,14 +120,14 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   `enforcementBoundaryExtended_count` and `enforcementBoundaryExtended_matches_canonical`
   (V6-L). 26 V6 test cases in InformationFlowSuite. Zero sorry/axiom.
 
-- **V8 (Test Coverage & Documentation) COMPLETE** (v0.22.9): 19 sub-tasks
+- **V8 (Test Coverage & Documentation) COMPLETE** (v0.22.9, audit v0.22.10): 19 sub-tasks
   (V8-A through V8-H). V8-A: End-to-end `syscallEntryChecked` pipeline test
   (register decode → arg extraction → checked dispatch → invariant preservation
   → trace equivalence). V8-B: `cspaceMove` end-to-end test. V8-C: Post-mutation
   invariant checks for 5 additional operations. V8-D: dequeue-on-dispatch Check 8
   fix propagated to 7 test states. V8-E: `partial` removed from
   `intrusiveQueueReachable`. V8-F: Fixture drift detection via SHA-256 hash
-  companion. V8-G: `ThreadState` enum (7 variants) with non-invasive
+  companion. V8-G: `ThreadState` enum (8 variants, incl. `BlockedReply`) with non-invasive
   `syncThreadStates` design preserving all operational proofs.
   V8-H: `dispatchCapabilityOnly` shared helper eliminating ~120 lines of dispatch
   duplication. 38 inter-transition invariant checks. Zero sorry/axiom.

@@ -476,8 +476,8 @@ def scheduleDomain : Kernel Unit :=
 This is the canonical definition of what each `ThreadState` value means:
 - `Running`: thread is `scheduler.current`
 - `Ready`: thread is in the run queue
-- `BlockedSend`/`BlockedRecv`/`BlockedCall`/`BlockedNotif`: matches `ipcState`
-- `Inactive`: none of the above -/
+- `BlockedSend`/`BlockedRecv`/`BlockedCall`/`BlockedReply`/`BlockedNotif`: matches `ipcState`
+- `Inactive`: none of the above (ipcState.ready but not queued/current) -/
 def inferThreadState (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) : ThreadState :=
   if st.scheduler.current == some tid then .Running
   else if tid ∈ st.scheduler.runQueue then .Ready
@@ -486,8 +486,8 @@ def inferThreadState (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) : Th
   | .blockedOnReceive _ => .BlockedRecv
   | .blockedOnCall _ => .BlockedCall
   | .blockedOnNotification _ => .BlockedNotif
-  | .blockedOnReply _ _ => .BlockedRecv  -- blockedOnReply maps to BlockedRecv
-  | .ready => .Inactive  -- ready but not in queue and not current → inactive
+  | .blockedOnReply _ _ => .BlockedReply
+  | .ready => .Inactive
 
 /-- V8-G3: Synchronize all TCB `threadState` fields to match observable state.
 Idempotent: calling this twice produces the same result.
