@@ -98,7 +98,7 @@ theorem countOccupied_set_some_to_none
 -- ============================================================================
 
 /-- N2-A2: `insertLoop` changes `countOccupied` by exactly `isNew ? 1 : 0`. -/
-theorem insertLoop_countOccupied [BEq α] [Hashable α]
+theorem insertLoop_countOccupied [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (k : α) (v : β) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity) :
@@ -210,7 +210,7 @@ theorem countOccupied_le_size (slots : Array (Option (RHEntry α β))) :
 -- ============================================================================
 
 /-- N2-A3: `insertNoResize` preserves well-formedness. -/
-theorem RHTable.insertNoResize_preserves_wf [BEq α] [Hashable α]
+theorem RHTable.insertNoResize_preserves_wf [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hwf : t.WF) :
     (t.insertNoResize k v).WF where
   slotsLen := by
@@ -242,7 +242,7 @@ theorem RHTable.insertNoResize_preserves_wf [BEq α] [Hashable α]
     · exact hwf.sizeBound
 
 /-- N2-A3: `insert` preserves well-formedness. -/
-theorem RHTable.insert_preserves_wf [BEq α] [Hashable α]
+theorem RHTable.insert_preserves_wf [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hwf : t.WF) :
     (t.insert k v).WF := by
   unfold RHTable.insert
@@ -262,7 +262,7 @@ theorem RHTable.insert_preserves_wf [BEq α] [Hashable α]
     exact t.insertNoResize_preserves_wf k v hwf
 
 /-- N2-A5: `resize` preserves well-formedness. -/
-theorem RHTable.resize_preserves_wf [BEq α] [Hashable α]
+theorem RHTable.resize_preserves_wf [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) : (t.resize).WF := by
   unfold RHTable.resize RHTable.fold
   exact Array.foldl_induction
@@ -278,7 +278,7 @@ theorem RHTable.resize_preserves_wf [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- `findLoop` returns a position < capacity when it succeeds. -/
-theorem findLoop_lt [BEq α] [Hashable α]
+theorem findLoop_lt [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (k : α) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
@@ -299,7 +299,7 @@ theorem findLoop_lt [BEq α] [Hashable α]
         · exact ih (idx % capacity + 1) (d + 1) hFound
 
 /-- `findLoop` returns a position where the key exists. -/
-theorem findLoop_correct [BEq α] [Hashable α]
+theorem findLoop_correct [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (k : α) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
@@ -328,7 +328,7 @@ theorem findLoop_correct [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- N2-A4: `erase` preserves well-formedness. -/
-theorem RHTable.erase_preserves_wf [BEq α] [Hashable α]
+theorem RHTable.erase_preserves_wf [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (hwf : t.WF) :
     (t.erase k).WF := by
   simp only [RHTable.erase]
@@ -444,11 +444,11 @@ theorem RHTable.empty_probeChainDominant [Hashable α] (cap : Nat) (hPos : 0 < c
 
     This is the primary invariant bundle for reasoning about sequences
     of operations. -/
-def RHTable.invExt [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
+def RHTable.invExt [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : Prop :=
   t.WF ∧ t.distCorrect ∧ t.noDupKeys ∧ t.probeChainDominant
 
 /-- Empty tables satisfy the extended invariant. -/
-theorem RHTable.empty_invExt [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
+theorem RHTable.empty_invExt [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).invExt :=
   ⟨RHTable.empty_wf cap hPos,
    RHTable.empty_distCorrect cap hPos,
@@ -466,13 +466,13 @@ theorem RHTable.empty_invExt [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap)
     The key benefit: `invExtFull` implies `size < capacity`, so
     `erase_preserves_invExtFull` no longer needs a separate `hSize`
     hypothesis (addressing H-RH-1). -/
-def RHTable.invExtFull [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
+def RHTable.invExtFull [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : Prop :=
   t.invExt ∧ t.loadFactorBounded
 
 /-- V3-A: Load factor bound + positive capacity implies strict size bound.
     Proof: if `size ≥ capacity`, then `size * 4 ≥ capacity * 4 > capacity * 3`,
     contradicting `loadFactorBounded`. -/
-theorem RHTable.invExtFull_implies_size_lt_capacity [BEq α] [Hashable α]
+theorem RHTable.invExtFull_implies_size_lt_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (h : t.invExtFull) : t.size < t.capacity := by
   have hWF := h.1.1
   have hLF := h.2
@@ -481,7 +481,7 @@ theorem RHTable.invExtFull_implies_size_lt_capacity [BEq α] [Hashable α]
   omega
 
 /-- V3-A: The empty table satisfies `invExtFull` (size = 0, load = 0%). -/
-theorem RHTable.empty_invExtFull [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
+theorem RHTable.empty_invExtFull [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).invExtFull :=
   ⟨RHTable.empty_invExt cap hPos, RHTable.empty_loadFactorBounded cap hPos⟩
 
@@ -552,7 +552,7 @@ private theorem same_displacement_eq
 -- ============================================================================
 
 /-- N2-B2: `insertLoop` preserves distance correctness at all slots. -/
-theorem insertLoop_preserves_distCorrect [BEq α] [Hashable α]
+theorem insertLoop_preserves_distCorrect [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (k : α) (v : β) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
@@ -737,10 +737,66 @@ theorem carried_key_absent [BEq α] [Hashable α] [LawfulBEq α]
       · rw [he''] at he'Pos; cases he'Pos; omega
 
 -- ============================================================================
+-- Section 10b-pre: noDupKeys / distCorrect / PCD after Array.set helpers
+-- ============================================================================
+
+/-- V7-B3: noDupKeys is preserved when overwriting slot `pos` with entry `entry`,
+    provided the key of `entry` is absent from all other slots. -/
+private theorem noDupKeys_after_set [BEq α] [Hashable α] [LawfulBEq α]
+    (slots : Array (Option (RHEntry α β))) (capacity : Nat)
+    (hLen : slots.size = capacity) (_hCapPos : 0 < capacity)
+    (pos : Nat) (hPos : pos < slots.size) (entry : RHEntry α β)
+    (hNoDup : ∀ i j (hi : i < capacity) (hj : j < capacity)
+      (ei ej : RHEntry α β),
+      slots[i]'(by rw [hLen]; exact hi) = some ei →
+      slots[j]'(by rw [hLen]; exact hj) = some ej →
+      (ei.key == ej.key) = true → i = j)
+    (hAbsent : ∀ j (hj : j < capacity) (e : RHEntry α β),
+      slots[j]'(by rw [hLen]; exact hj) = some e →
+      (e.key == entry.key) = false) :
+    ∀ i j (hi : i < capacity) (hj : j < capacity)
+      (ei ej : RHEntry α β),
+      (slots.set pos entry hPos)[i]'(by rw [Array.size_set, hLen]; exact hi) = some ei →
+      (slots.set pos entry hPos)[j]'(by rw [Array.size_set, hLen]; exact hj) = some ej →
+      (ei.key == ej.key) = true → i = j := by
+  intro i' j' hi' hj' ei' ej' hI' hJ' hKE'
+  simp only [Array.getElem_set] at hI' hJ'
+  split at hI' <;> split at hJ'
+  · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
+  · rename_i h1 hbN; cases hI'
+    exact absurd (hAbsent j' hj' ej' hJ') (by
+      have := eq_of_beq hKE'; simp [this.symm])
+  · rename_i haN h2; cases hJ'
+    exact absurd (hAbsent i' hi' ei' hI') (by
+      have := eq_of_beq hKE'; simp [this])
+  · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
+
+/-- V7-B3: distCorrect is preserved when overwriting slot `pos` with entry `entry`
+    whose dist matches its position displacement. -/
+private theorem distCorrect_after_set [BEq α] [Hashable α] [LawfulBEq α]
+    (slots : Array (Option (RHEntry α β))) (capacity : Nat)
+    (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (pos : Nat) (hPos : pos < slots.size) (entry : RHEntry α β)
+    (hDist : ∀ j (hj : j < capacity) (e : RHEntry α β),
+      slots[j]'(by rw [hLen]; exact hj) = some e →
+      e.dist = (j + capacity - idealIndex e.key capacity hCapPos) % capacity)
+    (hEntryDist : entry.dist = (pos + capacity - idealIndex entry.key capacity hCapPos) % capacity)
+    (_hPosCap : pos < capacity) :
+    ∀ j (hj : j < capacity) (e' : RHEntry α β),
+      (slots.set pos (some entry) hPos)[j]'(by rw [Array.size_set, hLen]; exact hj) = some e' →
+      e'.dist = (j + capacity - idealIndex e'.key capacity hCapPos) % capacity := by
+  intro j' hj' e' hSlot'
+  simp only [Array.getElem_set] at hSlot'
+  if h : pos = j' then
+    subst h; simp at hSlot'; obtain rfl := hSlot'
+    exact hEntryDist
+  else simp [h] at hSlot'; exact hDist j' hj' e' hSlot'
+
+-- ============================================================================
 -- Section 10b: insertLoop preserves noDupKeys and PCD (combined induction)
 -- ============================================================================
 
-set_option maxHeartbeats 800000 in
+set_option maxHeartbeats 420000 in
 /-- Combined induction: `insertLoop` preserves both noDupKeys and
     probeChainDominant. The preconditions `hChainOK` and `hNotFound`
     capture the progress of the probe: all chain positions up to
@@ -844,36 +900,12 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
           have hSmall : e.dist + 1 < capacity := by omega
           have hD' := dist_step_mod _ _ _ hCapPos hIdxCap
             (idealIndex_lt e.key capacity hCapPos) e.dist hEdist hSmall
-          -- noDupKeys for intermediate slots'
-          have hNoDup' : ∀ i j (hi : i < capacity) (hj : j < capacity)
-              (ei ej : RHEntry α β),
-              (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[i]'(by
-                rw [hLen']; exact hi) = some ei →
-              (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[j]'(by
-                rw [hLen']; exact hj) = some ej →
-              (ei.key == ej.key) = true → i = j := by
-            intro i' j' hi' hj' ei' ej' hI' hJ' hKE'
-            simp only [Array.getElem_set] at hI' hJ'
-            split at hI' <;> split at hJ'
-            · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
-            · rename_i h1 hbN; cases hI'
-              exact absurd (hKAbs j' hj' ej' hJ') (by
-                have := eq_of_beq hKE'; simp [this.symm])
-            · rename_i haN h2; cases hJ'
-              exact absurd (hKAbs i' hi' ei' hI') (by
-                have := eq_of_beq hKE'; simp [this])
-            · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
-          -- distCorrect for intermediate slots'
-          have hDist' : ∀ j (hj : j < capacity) (e' : RHEntry α β),
-              (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[j]'(by
-                rw [hLen']; exact hj) = some e' →
-              e'.dist = (j + capacity - idealIndex e'.key capacity hCapPos) %
-                capacity := by
-            intro j' hj' e' hSlot'
-            simp only [Array.getElem_set] at hSlot'
-            if h : idx % capacity = j' then
-              subst h; simp at hSlot'; obtain rfl := hSlot'; exact hD
-            else simp [h] at hSlot'; exact hDist j' hj' e' hSlot'
+          -- noDupKeys for intermediate slots' (via extracted helper)
+          have hNoDup' := noDupKeys_after_set slots capacity hLen hCapPos
+            (idx % capacity) hIdx ⟨k, v, d⟩ hNoDup hKAbs
+          -- distCorrect for intermediate slots' (via extracted helper)
+          have hDist' := distCorrect_after_set slots capacity hLen hCapPos
+            (idx % capacity) hIdx ⟨k, v, d⟩ hDist hD hIdxCap
           -- PCD for intermediate slots' (set increases dist: d > e.dist)
           have hPCD' : probeChainDominant
               (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx) capacity
@@ -1013,7 +1045,7 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
 -- Section 10c: insertLoop preserves probeChainDominant
 -- ============================================================================
 
-set_option maxHeartbeats 800000 in
+set_option maxHeartbeats 420000 in
 /-- `insertLoop` preserves `probeChainDominant`. Same case structure as
     `insertLoop_preserves_noDupKeys`, proving PCD for the result array. -/
 private theorem insertLoop_preserves_pcd [BEq α] [Hashable α] [LawfulBEq α]
@@ -1296,7 +1328,7 @@ private theorem insertLoop_preserves_pcd [BEq α] [Hashable α] [LawfulBEq α]
 -- ============================================================================
 
 /-- N2-B: `insertNoResize` preserves distance correctness. -/
-theorem RHTable.insertNoResize_preserves_distCorrect [BEq α] [Hashable α]
+theorem RHTable.insertNoResize_preserves_distCorrect [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hDist : t.distCorrect) :
     (t.insertNoResize k v).distCorrect := by
   intro j hj e hSlot
@@ -1306,7 +1338,7 @@ theorem RHTable.insertNoResize_preserves_distCorrect [BEq α] [Hashable α]
   exact this j hj e hSlot
 
 /-- N2-B: `resize` preserves distance correctness. -/
-theorem RHTable.resize_preserves_distCorrect [BEq α] [Hashable α]
+theorem RHTable.resize_preserves_distCorrect [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) :
     (t.resize).distCorrect := by
   unfold RHTable.resize RHTable.fold
@@ -1319,7 +1351,7 @@ theorem RHTable.resize_preserves_distCorrect [BEq α] [Hashable α]
       · exact acc.insertNoResize_preserves_distCorrect _ _ hAcc)
 
 /-- N2-B: `insert` preserves distance correctness. -/
-theorem RHTable.insert_preserves_distCorrect [BEq α] [Hashable α]
+theorem RHTable.insert_preserves_distCorrect [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hDist : t.distCorrect) :
     (t.insert k v).distCorrect := by
   unfold RHTable.insert; split
@@ -2456,7 +2488,7 @@ theorem RHTable.resize_preserves_invariant [BEq α] [Hashable α] [LawfulBEq α]
 
 /-- V3-B: Erase preserves load factor bound (size can only decrease,
     capacity unchanged). -/
-theorem RHTable.erase_preserves_loadFactorBounded [BEq α] [Hashable α]
+theorem RHTable.erase_preserves_loadFactorBounded [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (hLF : t.loadFactorBounded) :
     (t.erase k).loadFactorBounded := by
   unfold loadFactorBounded at *
@@ -2479,10 +2511,10 @@ theorem RHTable.erase_preserves_invExtFull [BEq α] [Hashable α] [LawfulBEq α]
    t.erase_preserves_loadFactorBounded k hFull.2⟩
 
 /-- V3-B: `invExtFull` extraction helpers for call site migration. -/
-theorem RHTable.invExt_of_invExtFull [BEq α] [Hashable α]
+theorem RHTable.invExt_of_invExtFull [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (h : t.invExtFull) : t.invExt := h.1
 
-theorem RHTable.loadFactorBounded_of_invExtFull [BEq α] [Hashable α]
+theorem RHTable.loadFactorBounded_of_invExtFull [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (h : t.invExtFull) : t.loadFactorBounded := h.2
 
 end SeLe4n.Kernel.RobinHood

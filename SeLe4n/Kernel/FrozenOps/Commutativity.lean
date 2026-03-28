@@ -44,7 +44,7 @@ open SeLe4n.Kernel.RobinHood
 
 /-- Q7-D: After `FrozenMap.set` succeeds, reading the same key returns the
 new value. This is the foundation for commutativity proofs. -/
-theorem frozenMap_set_get?_same [BEq κ] [Hashable κ] [LawfulBEq κ]
+theorem frozenMap_set_get?_same [BEq κ] [Hashable κ] [LawfulBEq κ] [LawfulBEq κ]
     (fm fm' : FrozenMap κ ν) (k : κ) (v : ν)
     (hSet : fm.set k v = some fm') :
     fm'.get? k = some v := by
@@ -63,7 +63,7 @@ theorem frozenMap_set_get?_same [BEq κ] [Hashable κ] [LawfulBEq κ]
     · simp at hSet  -- idx ≥ data.size → set returns none, contradiction
 
 /-- Q7-D: `FrozenMap.set` preserves the index map (keys are unchanged). -/
-theorem FrozenMap.set_indexMap_eq [BEq κ] [Hashable κ]
+theorem FrozenMap.set_indexMap_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm fm' : FrozenMap κ ν) (k : κ) (v : ν)
     (hSet : fm.set k v = some fm') :
     fm'.indexMap = fm.indexMap := by
@@ -117,7 +117,7 @@ theorem frozenStoreObject_preserves_serviceRegistry
 -- ============================================================================
 
 /-- Q7-D: `FrozenMap.set` preserves the data array size. -/
-theorem FrozenMap.set_data_size [BEq κ] [Hashable κ]
+theorem FrozenMap.set_data_size [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm fm' : FrozenMap κ ν) (k : κ) (v : ν)
     (hSet : fm.set k v = some fm') :
     fm'.data.size = fm.data.size := by
@@ -131,7 +131,7 @@ theorem FrozenMap.set_data_size [BEq κ] [Hashable κ]
     · simp at hSet
 
 /-- Q7-D: `FrozenMap.set` does not change containment for any key. -/
-theorem FrozenMap.set_contains_eq [BEq κ] [Hashable κ]
+theorem FrozenMap.set_contains_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm fm' : FrozenMap κ ν) (k : κ) (v : ν) (k' : κ)
     (hSet : fm.set k v = some fm') :
     fm'.contains k' = fm.contains k' := by

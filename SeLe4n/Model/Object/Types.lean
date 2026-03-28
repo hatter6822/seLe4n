@@ -401,7 +401,12 @@ structure TCB where
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
 `RegisterFile` contains a function field (`gpr : Nat → Nat`). Field-wise
-comparison uses the `BEq RegisterFile` instance from `Machine.lean`. -/
+comparison uses the `BEq RegisterFile` instance from `Machine.lean`.
+
+**V7-F: WARNING — non-lawful BEq instance.** Inherits non-lawfulness from
+`BEq RegisterFile` via the `registerContext` field comparison. Safe for
+runtime testing but do NOT rely on `==` for propositional equality in proofs.
+See `TCB.not_lawfulBEq` and `RegisterFile.not_lawfulBEq`. -/
 instance : BEq TCB where
   beq a b :=
     a.tid == b.tid && a.priority == b.priority && a.domain == b.domain &&

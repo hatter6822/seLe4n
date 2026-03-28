@@ -148,9 +148,10 @@ def CNodeRadix.fold (tree : CNodeRadix) (init : β)
 -- Q4-B6: toList — O(2^radixWidth)
 -- ============================================================================
 
-/-- Collect all occupied slots as a list of `(Slot, Capability)` pairs. -/
+/-- Collect all occupied slots as a list of `(Slot, Capability)` pairs.
+V7-G: O(n) via cons-accumulate + reverse, replacing O(n²) append. -/
 def CNodeRadix.toList (tree : CNodeRadix) : List (SeLe4n.Slot × Capability) :=
-  tree.fold [] (fun acc slot cap => acc ++ [(slot, cap)])
+  (tree.fold [] (fun acc slot cap => (slot, cap) :: acc)).reverse
 
 -- ============================================================================
 -- Q4-B7: Size — O(2^radixWidth)

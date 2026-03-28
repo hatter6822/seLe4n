@@ -823,7 +823,7 @@ instance : LawfulBEq PAddr where
 -- ============================================================================
 
 /-- WS-G2: Bridge lemma for `HashSet.contains` on empty. -/
-theorem HashSet_contains_empty {α : Type} [BEq α] [Hashable α]
+theorem HashSet_contains_empty {α : Type} [BEq α] [Hashable α] [LawfulBEq α]
     {a : α} : (∅ : Std.HashSet α).contains a = false :=
   Std.DHashMap.contains_empty
 
@@ -871,7 +871,7 @@ theorem HashSet_contains_insert_self {α : Type} [BEq α] [Hashable α] [LawfulB
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Lookup in empty RHTable returns none. -/
-theorem RHTable_get?_empty {α β : Type} [BEq α] [Hashable α]
+theorem RHTable_get?_empty {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (cap : Nat) (hPos : 0 < cap) {a : α} :
     (RHTable.empty cap hPos : RHTable α β).get? a = none :=
   RHTable.getElem?_empty cap hPos a
@@ -913,14 +913,14 @@ theorem RHTable_getElem?_insert {α β : Type} [BEq α] [Hashable α] [LawfulBEq
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Membership is equivalent to `get?` returning `some`. -/
-theorem RHTable_contains_iff_get_some {α β : Type} [BEq α] [Hashable α]
+theorem RHTable_contains_iff_get_some {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) :
     t.contains k = true ↔ (t.get? k).isSome = true := by
   simp [RHTable.contains]
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Not contained iff get? returns none. -/
-theorem RHTable_not_contains_iff_get_none {α β : Type} [BEq α] [Hashable α]
+theorem RHTable_not_contains_iff_get_none {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) :
     t.contains k = false ↔ t.get? k = none := by
   simp [RHTable.contains]
@@ -929,7 +929,7 @@ open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Bracket notation `t[k]?` is definitionally `t.get? k` for RHTable.
     This simp lemma allows rewrite lemmas stated in terms of `.get?` to fire
     on goals containing bracket notation. -/
-theorem RHTable_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α]
+theorem RHTable_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) : t[k]? = t.get? k := rfl
 
 open SeLe4n.Kernel.RobinHood in
@@ -955,7 +955,7 @@ theorem RHTable_insert_preserves_invExt {α β : Type} [BEq α] [Hashable α] [L
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Empty table satisfies invExt. -/
-theorem RHTable_empty_invExt {α β : Type} [BEq α] [Hashable α]
+theorem RHTable_empty_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).invExt :=
   RHTable.empty_invExt cap hPos
@@ -1023,21 +1023,21 @@ theorem RHTable_filter_filter_getElem? {α β : Type} [BEq α] [Hashable α] [La
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Inserting a key increases table size by at most 1. -/
-theorem RHTable_size_insert_bound {α β : Type} [BEq α] [Hashable α]
+theorem RHTable_size_insert_bound {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hwf : t.WF) :
     (t.insert k v).size ≤ t.size + 1 :=
   RHTable.size_insert_le t k v hwf
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Erasing a key does not increase table size. -/
-theorem RHTable_size_erase_bound {α β : Type} [BEq α] [Hashable α]
+theorem RHTable_size_erase_bound {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) :
     (t.erase k).size ≤ t.size :=
   RHTable.size_erase_le t k
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Fold preserves a property through all entries. -/
-theorem RHTable_fold_preserves {α β γ : Type} [BEq α] [Hashable α]
+theorem RHTable_fold_preserves {α β γ : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (init : γ) (f : γ → α → β → γ)
     (P : γ → Prop) (hInit : P init)
     (hStep : ∀ acc k v, P acc → P (f acc k v)) :

@@ -40,7 +40,7 @@ instance [BEq α] [Hashable α] : Inhabited (RHTable α β) where
 /-- Two RHTables are equal if they have the same size and every entry in each
     table exists with the same value in the other. The reverse fold ensures
     symmetry: `(a == b) = (b == a)` for well-formed tables with unique keys. -/
-instance [BEq α] [Hashable α] [BEq β] : BEq (RHTable α β) where
+instance [BEq α] [Hashable α] [LawfulBEq α] [BEq β] : BEq (RHTable α β) where
   beq a b :=
     a.size == b.size &&
     a.fold (init := true) (fun acc k v =>
@@ -58,7 +58,7 @@ The proof follows from the structure of the instance: both directions fold over
 their respective tables checking the other. Swapping `a` and `b` swaps the two
 fold conjuncts, which commute under `Bool.and_comm`. The size check `a.size ==
 b.size` is symmetric by BEq on Nat. -/
-theorem RHTable.beq_symmetric [BEq α] [Hashable α] [BEq β]
+theorem RHTable.beq_symmetric [BEq α] [Hashable α] [LawfulBEq α] [BEq β]
     (a b : RHTable α β) : (a == b) = (b == a) := by
   show (a.size == b.size &&
     a.fold true (fun acc k v => acc && match b.get? k with | some v' => v == v' | none => false) &&
@@ -77,7 +77,7 @@ theorem RHTable.beq_symmetric [BEq α] [Hashable α] [BEq β]
 -- ============================================================================
 
 /-- N3-B5: Looking up any key in an empty table returns `none`. -/
-theorem RHTable.getElem?_empty [BEq α] [Hashable α]
+theorem RHTable.getElem?_empty [BEq α] [Hashable α] [LawfulBEq α]
     (cap : Nat) (hPos : 0 < cap) (k : α) :
     (RHTable.empty cap hPos : RHTable α β).get? k = none := by
   unfold RHTable.get?
@@ -142,7 +142,7 @@ theorem RHTable.getElem?_erase_ne [BEq α] [Hashable α] [LawfulBEq α]
 -- ============================================================================
 
 /-- N3-B6: Erasing a key does not increase the table size. -/
-theorem RHTable.size_erase_le [BEq α] [Hashable α]
+theorem RHTable.size_erase_le [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) :
     (t.erase k).size ≤ t.size := by
   unfold RHTable.erase
@@ -157,7 +157,7 @@ theorem RHTable.size_erase_le [BEq α] [Hashable α]
 
 /-- Folding `insertNoResize` over a list of option entries increases size by
     at most the count of `some` entries. -/
-private theorem list_fold_insertNoResize_size_le [BEq α] [Hashable α]
+private theorem list_fold_insertNoResize_size_le [BEq α] [Hashable α] [LawfulBEq α]
     (l : List (Option (RHEntry α β))) (acc : RHTable α β) :
     (List.foldl (fun acc slot =>
       match slot with
@@ -185,7 +185,7 @@ private theorem list_fold_insertNoResize_size_le [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- Resizing a well-formed table does not increase its size. -/
-private theorem resize_size_le [BEq α] [Hashable α]
+private theorem resize_size_le [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (hwf : t.WF) :
     t.resize.size ≤ t.size := by
   show (t.slots.foldl (fun acc slot =>
@@ -209,7 +209,7 @@ private theorem resize_size_le [BEq α] [Hashable α]
     Requires well-formedness because the resize path must preserve the size
     bound (resize rebuilds all entries via fold, adding at most `countOccupied`
     = `t.size` entries). -/
-theorem RHTable.size_insert_le [BEq α] [Hashable α]
+theorem RHTable.size_insert_le [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hwf : t.WF) :
     (t.insert k v).size ≤ t.size + 1 := by
   unfold RHTable.insert
@@ -223,7 +223,7 @@ theorem RHTable.size_insert_le [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- N3-B8: Membership is equivalent to `get?` returning `some`. -/
-theorem RHTable.mem_iff_isSome_getElem? [BEq α] [Hashable α]
+theorem RHTable.mem_iff_isSome_getElem? [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) :
     (k ∈ t) ↔ (t.get? k).isSome = true := by
   simp [Membership.mem, RHTable.contains]
@@ -233,7 +233,7 @@ theorem RHTable.mem_iff_isSome_getElem? [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- N3-B9: If `get?` returns `some v`, then `get` returns `v`. -/
-theorem RHTable.getElem?_eq_some_getElem [BEq α] [Hashable α]
+theorem RHTable.getElem?_eq_some_getElem [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β)
     (h : t.get? k = some v) :
     (t.get? k).get (by rw [h]; rfl) = v := by
@@ -244,7 +244,7 @@ theorem RHTable.getElem?_eq_some_getElem [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- N3-B10: `fold` is equivalent to `foldl` over the slot array. -/
-theorem RHTable.fold_eq_slots_foldl [BEq α] [Hashable α]
+theorem RHTable.fold_eq_slots_foldl [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (init : γ) (f : γ → α → β → γ) :
     t.fold init f = t.slots.foldl (fun acc slot =>
       match slot with
@@ -257,7 +257,7 @@ theorem RHTable.fold_eq_slots_foldl [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- N3-C1: Filter entries by a predicate, rebuilding via fold + insert. -/
-def RHTable.filter [BEq α] [Hashable α] (t : RHTable α β) (f : α → β → Bool)
+def RHTable.filter [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (f : α → β → Bool)
     : RHTable α β :=
   t.fold (RHTable.empty t.capacity t.hCapPos) fun acc k v =>
     if f k v then acc.insertNoResize k v else acc
@@ -268,7 +268,7 @@ def RHTable.filter [BEq α] [Hashable α] (t : RHTable α β) (f : α → β →
 
 /-- Folding a filter step over a list of option entries increases size by at most
     the count of `some` entries (regardless of predicate). -/
-private theorem list_fold_filter_size_le [BEq α] [Hashable α]
+private theorem list_fold_filter_size_le [BEq α] [Hashable α] [LawfulBEq α]
     (l : List (Option (RHEntry α β))) (acc : RHTable α β)
     (f : α → β → Bool) :
     (List.foldl (fun acc slot =>
@@ -304,7 +304,7 @@ private theorem list_fold_filter_size_le [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- N3-B12 (weak): Filtering never exceeds original capacity. -/
-theorem RHTable.size_filter_le_capacity [BEq α] [Hashable α]
+theorem RHTable.size_filter_le_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (f : α → β → Bool) :
     (t.filter f).size ≤ t.capacity := by
   show (t.slots.foldl (fun acc slot =>
@@ -324,7 +324,7 @@ theorem RHTable.size_filter_le_capacity [BEq α] [Hashable α]
   exact Nat.le_trans h hCount
 
 /-- N3-B12 (tight): Filtering preserves size bound ≤ `t.size`. -/
-theorem RHTable.size_filter_le_size [BEq α] [Hashable α]
+theorem RHTable.size_filter_le_size [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (f : α → β → Bool) (hWF : t.WF) :
     (t.filter f).size ≤ t.size := by
   show (t.slots.foldl (fun acc slot =>
@@ -365,7 +365,7 @@ theorem RHTable.size_filter_le_size [BEq α] [Hashable α]
 
 /-- Construct an `RHTable` from a list of key-value pairs.
     Later entries override earlier ones for duplicate keys. -/
-def RHTable.ofList [BEq α] [Hashable α]
+def RHTable.ofList [BEq α] [Hashable α] [LawfulBEq α]
     (entries : List (α × β)) (cap : Nat := 16) (hPos : 0 < cap := by omega)
     : RHTable α β :=
   entries.foldl (fun acc ⟨k, v⟩ => acc.insert k v) (RHTable.empty cap hPos)
@@ -375,7 +375,7 @@ def RHTable.ofList [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- The empty table satisfies the extended invariant. -/
-theorem RHTable.empty_invExt' [BEq α] [Hashable α]
+theorem RHTable.empty_invExt' [BEq α] [Hashable α] [LawfulBEq α]
     (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).invExt :=
   RHTable.empty_invExt cap hPos
@@ -422,7 +422,7 @@ theorem RHTable.insert_size_lt_capacity [BEq α] [Hashable α] [LawfulBEq α]
 -- ============================================================================
 
 /-- After `erase`, `size < capacity` is preserved (size can only decrease). -/
-theorem RHTable.erase_size_lt_capacity [BEq α] [Hashable α]
+theorem RHTable.erase_size_lt_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (hSizeLt : t.size < t.capacity) :
     (t.erase k).size < (t.erase k).capacity := by
   have hSizeLE := RHTable.size_erase_le t k
@@ -466,7 +466,7 @@ theorem RHTable.filter_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
 
 /-- `filter` preserves `size < capacity` because the filtered table has the same
     capacity as the original and at most as many entries. -/
-theorem RHTable.filter_size_lt_capacity [BEq α] [Hashable α]
+theorem RHTable.filter_size_lt_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (f : α → β → Bool)
     (hSizeLt : t.size < t.capacity) (hWF : t.WF) :
     (t.filter f).size < (t.filter f).capacity := by
@@ -581,8 +581,109 @@ private theorem filter_fold_absent [BEq α] [Hashable α] [LawfulBEq α]
           simp only [hfF]
           exact ⟨hAccExt, Nat.le_succ_of_le hAccSizeI, hAccCap, hAccNone⟩)).2.2.2
 
+-- V7-A: Extracted fold-step lemma for filter_fold_present to reduce heartbeat budget
+private theorem filter_fold_present_step [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (k : α) (v : β)
+    (p : Nat) (hp : p < t.capacity) (e : RHEntry α β)
+    (hSlotP : t.slots[p]'(t.hSlotsLen ▸ hp) = some e)
+    (hKeyE : (e.key == k) = true) (hValE : e.value = v)
+    (hfTrue : f e.key e.value = true)
+    (hNoDup : ∀ i j (hi : i < t.capacity) (hj : j < t.capacity)
+      (ei ej : RHEntry α β),
+      t.slots[i]'(t.hSlotsLen ▸ hi) = some ei →
+      t.slots[j]'(t.hSlotsLen ▸ hj) = some ej →
+      (ei.key == ej.key) = true → i = j)
+    (i : Fin t.slots.size) (acc : RHTable α β)
+    (hAccExt : acc.invExt) (hAccSizeI : acc.size ≤ i.val)
+    (hAccCap : acc.capacity = t.capacity)
+    (hAccIf : if p < i.val then acc.get? k = some v else acc.get? k = none) :
+    let step := match t.slots[i.val]'(i.isLt) with
+      | none => acc
+      | some entry => if f entry.key entry.value then acc.insertNoResize entry.key entry.value
+                      else acc
+    step.invExt ∧ step.size ≤ i.val + 1 ∧ step.capacity = t.capacity ∧
+      (if p < i.val + 1 then step.get? k = some v else step.get? k = none) := by
+  have hpSlots : p < t.slots.size := t.hSlotsLen ▸ hp
+  have hAccSizeLt : acc.size < acc.capacity := by
+    have := i.isLt; have := t.hSlotsLen; omega
+  simp only []
+  generalize hSlot : t.slots[i.val]'(i.isLt) = slot
+  cases slot with
+  | none =>
+    refine ⟨hAccExt, Nat.le_succ_of_le hAccSizeI, hAccCap, ?_⟩
+    by_cases hpi : p < i.val
+    · simp only [show p < i.val + 1 from Nat.lt_succ_of_lt hpi, ite_true]
+      simp only [hpi, ite_true] at hAccIf; exact hAccIf
+    · by_cases hpiS : p < i.val + 1
+      · have hiP : i.val = p := by omega
+        exfalso
+        have : t.slots[p]'hpSlots = none := hiP ▸ hSlot
+        rw [hSlotP] at this; exact absurd this (by simp)
+      · simp only [hpiS, ite_false]; simp only [hpi, ite_false] at hAccIf
+        exact hAccIf
+  | some entry =>
+    by_cases hEntK : (entry.key == k) = true
+    · have hiP : i.val = p := by
+        have hI : i.val < t.capacity := by
+          have := i.isLt; have := t.hSlotsLen; omega
+        exact hNoDup i.val p hI hp entry e hSlot hSlotP
+          (by rw [eq_of_beq hEntK, eq_of_beq hKeyE]; exact BEq.refl k)
+      have hEntEq : entry = e := by
+        have : t.slots[p]'hpSlots = some entry := hiP ▸ hSlot
+        rw [hSlotP] at this; exact (Option.some.inj this).symm
+      have hfEnt : f entry.key entry.value = true := hEntEq ▸ hfTrue
+      simp only [hfEnt, ite_true]
+      refine ⟨acc.insertNoResize_preserves_invExt entry.key entry.value hAccExt,
+        Nat.le_of_lt_succ (Nat.lt_succ_of_le
+          (Nat.le_trans (acc.insertNoResize_size_le entry.key entry.value)
+            (Nat.succ_le_succ hAccSizeI))),
+        (RHTable.insertNoResize_capacity acc entry.key entry.value).trans hAccCap,
+        ?_⟩
+      simp only [show p < i.val + 1 from Nat.lt_succ_of_le (Nat.le_of_eq hiP.symm),
+                  ite_true]
+      have hKeyEq : entry.key = k := hEntEq ▸ eq_of_beq hKeyE
+      have hValEq : entry.value = v := hEntEq ▸ hValE
+      rw [← hKeyEq, ← hValEq]
+      exact RHTable.insertNoResize_get_eq acc entry.key entry.value
+        hAccExt hAccSizeLt
+    · by_cases hf : f entry.key entry.value
+      · simp only [hf, ite_true]
+        have hPres := RHTable.insertNoResize_get_ne acc k entry.key entry.value
+          hEntK hAccExt hAccSizeLt
+        refine ⟨acc.insertNoResize_preserves_invExt entry.key entry.value hAccExt,
+          Nat.le_of_lt_succ (Nat.lt_succ_of_le
+            (Nat.le_trans (acc.insertNoResize_size_le entry.key entry.value)
+              (Nat.succ_le_succ hAccSizeI))),
+          (RHTable.insertNoResize_capacity acc entry.key entry.value).trans hAccCap,
+          ?_⟩
+        have hNeP : i.val ≠ p := by
+          intro heq
+          have hSame : t.slots[p]'hpSlots = some entry := heq ▸ hSlot
+          rw [hSlotP] at hSame
+          have hEqE : entry = e := (Option.some.inj hSame).symm
+          exact absurd (hEqE ▸ hKeyE) hEntK
+        by_cases hpi : p < i.val
+        · simp only [show p < i.val + 1 from Nat.lt_succ_of_lt hpi, ite_true]
+          simp only [hpi, ite_true] at hAccIf; rw [hPres]; exact hAccIf
+        · simp only [show ¬(p < i.val + 1) from by omega, ite_false]
+          simp only [hpi, ite_false] at hAccIf; rw [hPres]; exact hAccIf
+      · have hfF : f entry.key entry.value = false := Bool.eq_false_iff.mpr hf
+        simp only [hfF]
+        have hNeP : i.val ≠ p := by
+          intro heq
+          have hSame : t.slots[p]'hpSlots = some entry := heq ▸ hSlot
+          rw [hSlotP] at hSame
+          have hEqE : entry = e := (Option.some.inj hSame).symm
+          exact absurd (hEqE ▸ hKeyE) hEntK
+        refine ⟨hAccExt, Nat.le_succ_of_le hAccSizeI, hAccCap, ?_⟩
+        by_cases hpi : p < i.val
+        · simp only [show p < i.val + 1 from Nat.lt_succ_of_lt hpi, ite_true]
+          simp only [hpi, ite_true] at hAccIf; exact hAccIf
+        · simp only [show ¬(p < i.val + 1) from by omega, ite_false]
+          simp only [hpi, ite_false] at hAccIf; exact hAccIf
+
 -- Helper: fold induction for filter when key is present
-set_option maxHeartbeats 3200000 in
+set_option maxHeartbeats 400000 in
 private theorem filter_fold_present [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (f : α → β → Bool) (k : α) (v : β)
     (_hExt : t.invExt)
@@ -612,92 +713,9 @@ private theorem filter_fold_present [BEq α] [Hashable α] [LawfulBEq α]
       | none => acc
       | some entry => if f entry.key entry.value then acc.insertNoResize entry.key entry.value
                       else acc)
-    (fun i acc ⟨hAccExt, hAccSizeI, hAccCap, hAccIf⟩ => by
-      have hAccSizeLt : acc.size < acc.capacity := by
-        have := i.isLt; have := t.hSlotsLen; omega
-      simp only []
-      -- Use generalize + cases to get equation hypotheses for the match
-      generalize hSlot : t.slots[i.val]'(i.isLt) = slot
-      cases slot with
-      | none =>
-        -- None branch: step returns acc unchanged
-        refine ⟨hAccExt, Nat.le_succ_of_le hAccSizeI, hAccCap, ?_⟩
-        by_cases hpi : p < i.val
-        · simp only [show p < i.val + 1 from Nat.lt_succ_of_lt hpi, ite_true]
-          simp only [hpi, ite_true] at hAccIf; exact hAccIf
-        · by_cases hpiS : p < i.val + 1
-          · have hiP : i.val = p := by omega
-            exfalso
-            have : t.slots[p]'hpSlots = none := hiP ▸ hSlot
-            rw [hSlotP] at this; exact absurd this (by simp)
-          · simp only [hpiS, ite_false]; simp only [hpi, ite_false] at hAccIf
-            exact hAccIf
-      | some entry =>
-        -- Some entry branch
-        by_cases hEntK : (entry.key == k) = true
-        · -- Entry matches key k → must be slot p
-          have hiP : i.val = p := by
-            have hI : i.val < t.capacity := by
-              have := i.isLt; have := t.hSlotsLen; omega
-            exact hNoDup i.val p hI hp entry e hSlot hSlotP
-              (by rw [eq_of_beq hEntK, eq_of_beq hKeyE]; exact BEq.refl k)
-          have hEntEq : entry = e := by
-            have : t.slots[p]'hpSlots = some entry := hiP ▸ hSlot
-            rw [hSlotP] at this; exact (Option.some.inj this).symm
-          -- Use entry = e to derive f entry.key entry.value = true
-          have hfEnt : f entry.key entry.value = true := hEntEq ▸ hfTrue
-          simp only [hfEnt, ite_true]
-          refine ⟨acc.insertNoResize_preserves_invExt entry.key entry.value hAccExt,
-            Nat.le_of_lt_succ (Nat.lt_succ_of_le
-              (Nat.le_trans (acc.insertNoResize_size_le entry.key entry.value)
-                (Nat.succ_le_succ hAccSizeI))),
-            (RHTable.insertNoResize_capacity acc entry.key entry.value).trans hAccCap,
-            ?_⟩
-          simp only [show p < i.val + 1 from Nat.lt_succ_of_le (Nat.le_of_eq hiP.symm),
-                      ite_true]
-          -- Goal: (acc.insertNoResize entry.key entry.value).get? k = some v
-          -- We know entry = e, e.key == k (LawfulBEq → e.key = k), e.value = v
-          have hKeyEq : entry.key = k := hEntEq ▸ eq_of_beq hKeyE
-          have hValEq : entry.value = v := hEntEq ▸ hValE
-          rw [← hKeyEq, ← hValEq]
-          exact RHTable.insertNoResize_get_eq acc entry.key entry.value
-            hAccExt hAccSizeLt
-        · -- Entry has key ≠ k
-          by_cases hf : f entry.key entry.value
-          · simp only [hf, ite_true]
-            have hPres := RHTable.insertNoResize_get_ne acc k entry.key entry.value
-              hEntK hAccExt hAccSizeLt
-            refine ⟨acc.insertNoResize_preserves_invExt entry.key entry.value hAccExt,
-              Nat.le_of_lt_succ (Nat.lt_succ_of_le
-                (Nat.le_trans (acc.insertNoResize_size_le entry.key entry.value)
-                  (Nat.succ_le_succ hAccSizeI))),
-              (RHTable.insertNoResize_capacity acc entry.key entry.value).trans hAccCap,
-              ?_⟩
-            have hNeP : i.val ≠ p := by
-              intro heq
-              have hSame : t.slots[p]'hpSlots = some entry := heq ▸ hSlot
-              rw [hSlotP] at hSame
-              have hEqE : entry = e := (Option.some.inj hSame).symm
-              exact absurd (hEqE ▸ hKeyE) hEntK
-            by_cases hpi : p < i.val
-            · simp only [show p < i.val + 1 from Nat.lt_succ_of_lt hpi, ite_true]
-              simp only [hpi, ite_true] at hAccIf; rw [hPres]; exact hAccIf
-            · simp only [show ¬(p < i.val + 1) from by omega, ite_false]
-              simp only [hpi, ite_false] at hAccIf; rw [hPres]; exact hAccIf
-          · have hfF : f entry.key entry.value = false := Bool.eq_false_iff.mpr hf
-            simp only [hfF]
-            have hNeP : i.val ≠ p := by
-              intro heq
-              have hSame : t.slots[p]'hpSlots = some entry := heq ▸ hSlot
-              rw [hSlotP] at hSame
-              have hEqE : entry = e := (Option.some.inj hSame).symm
-              exact absurd (hEqE ▸ hKeyE) hEntK
-            refine ⟨hAccExt, Nat.le_succ_of_le hAccSizeI, hAccCap, ?_⟩
-            by_cases hpi : p < i.val
-            · simp only [show p < i.val + 1 from Nat.lt_succ_of_lt hpi, ite_true]
-              simp only [hpi, ite_true] at hAccIf; exact hAccIf
-            · simp only [show ¬(p < i.val + 1) from by omega, ite_false]
-              simp only [hpi, ite_false] at hAccIf; exact hAccIf)
+    (fun i acc ⟨hAccExt, hAccSizeI, hAccCap, hAccIf⟩ =>
+      filter_fold_present_step t f k v p hp e hSlotP hKeyE hValE hfTrue hNoDup
+        i acc hAccExt hAccSizeI hAccCap hAccIf)
   -- hResult has type (fun i acc => ...) t.slots.size (Array.foldl ...) — beta-reduce it
   let result := Array.foldl
     (fun acc slot =>
@@ -786,7 +804,7 @@ private theorem filter_fold_absent_by_pred [BEq α] [Hashable α] [LawfulBEq α]
           simp only [hfF]
           exact ⟨hAccExt, Nat.le_succ_of_le hAccSizeI, hAccCap, hAccNone⟩)).2.2.2
 
-set_option maxHeartbeats 800000 in
+set_option maxHeartbeats 400000 in
 /-- If `(t.filter f).get? k = some v`, then `t.get? k = some v`.
     Filter only retains entries from the original table without modification. -/
 theorem RHTable.filter_get_subset [BEq α] [Hashable α] [LawfulBEq α]
@@ -901,21 +919,21 @@ instance [BEq α] [Hashable α] : EmptyCollection (RHTable α β) where
     - `invExt`: data-structure invariant (WF ∧ distCorrect ∧ noDupKeys ∧ probeChainDominant)
     - `size < capacity`: erase lookup correctness prerequisite
     - `4 ≤ capacity`: insert size bound prerequisite -/
-def RHTable.invExtK [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
+def RHTable.invExtK [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : Prop :=
   t.invExt ∧ t.size < t.capacity ∧ 4 ≤ t.capacity
 
 -- Projection lemmas
-theorem RHTable.invExtK_invExt [BEq α] [Hashable α] {t : RHTable α β}
+theorem RHTable.invExtK_invExt [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β}
     (h : t.invExtK) : t.invExt := h.1
 
-theorem RHTable.invExtK_size_lt_capacity [BEq α] [Hashable α] {t : RHTable α β}
+theorem RHTable.invExtK_size_lt_capacity [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β}
     (h : t.invExtK) : t.size < t.capacity := h.2.1
 
-theorem RHTable.invExtK_capacity_ge4 [BEq α] [Hashable α] {t : RHTable α β}
+theorem RHTable.invExtK_capacity_ge4 [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β}
     (h : t.invExtK) : 4 ≤ t.capacity := h.2.2
 
 -- Constructor lemma
-theorem RHTable.mk_invExtK [BEq α] [Hashable α] {t : RHTable α β}
+theorem RHTable.mk_invExtK [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β}
     (hExt : t.invExt) (hSize : t.size < t.capacity)
     (hCap : 4 ≤ t.capacity) : t.invExtK := ⟨hExt, hSize, hCap⟩
 
@@ -924,7 +942,7 @@ theorem RHTable.mk_invExtK [BEq α] [Hashable α] {t : RHTable α β}
 -- ============================================================================
 
 /-- The empty table satisfies `invExtK` when `4 ≤ cap`. -/
-theorem RHTable.empty_invExtK [BEq α] [Hashable α]
+theorem RHTable.empty_invExtK [BEq α] [Hashable α] [LawfulBEq α]
     (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
     (RHTable.empty cap hPos : RHTable α β).invExtK :=
   ⟨RHTable.empty_invExt cap hPos,
@@ -936,7 +954,7 @@ theorem RHTable.empty_invExtK [BEq α] [Hashable α]
 -- ============================================================================
 
 /-- Erase preserves capacity (erase does not change capacity). -/
-private theorem RHTable.erase_capacity_eq [BEq α] [Hashable α]
+private theorem RHTable.erase_capacity_eq [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) :
     (t.erase k).capacity = t.capacity := by
   unfold RHTable.erase; simp only []; split <;> rfl
@@ -955,7 +973,7 @@ theorem RHTable.erase_preserves_invExtK [BEq α] [Hashable α] [LawfulBEq α]
 -- ============================================================================
 
 /-- Insert preserves capacity ≥ 4 (insert either keeps capacity or doubles it). -/
-private theorem RHTable.insert_capacity_ge4 [BEq α] [Hashable α]
+private theorem RHTable.insert_capacity_ge4 [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hCap : 4 ≤ t.capacity) :
     4 ≤ (t.insert k v).capacity := by
   unfold RHTable.insert; split
@@ -988,7 +1006,7 @@ theorem RHTable.getElem?_erase_ne_K [BEq α] [Hashable α] [LawfulBEq α]
 -- ============================================================================
 
 /-- Filter preserves capacity (filter rebuilds from `empty t.capacity`). -/
-private theorem RHTable.filter_capacity_eq [BEq α] [Hashable α]
+private theorem RHTable.filter_capacity_eq [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (f : α → β → Bool) :
     (t.filter f).capacity = t.capacity := by
   unfold RHTable.filter RHTable.fold

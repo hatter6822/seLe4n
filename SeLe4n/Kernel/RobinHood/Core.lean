@@ -6,6 +6,18 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
+/-!
+# Robin Hood Hash Table — Core Types and Operations
+
+V7-C: All public `RHTable` operations (`get?`, `contains`, `insert`, `erase`,
+`filter`, `resize`, `ofList`, `toList`) require `[LawfulBEq α]` as an explicit
+API-level constraint. This ensures that key equality is propositionally sound
+(i.e., `a == b = true → a = b`), which is necessary for the correctness proofs
+in `Invariant/` and `Bridge.lean`. All kernel identifier types (`ObjId`,
+`ThreadId`, `Priority`, `Slot`, `CPtr`, `Irq`, etc.) satisfy `LawfulBEq`
+via their `Nat`-wrapper `BEq` instances.
+-/
+
 namespace SeLe4n.Kernel.RobinHood
 
 -- ============================================================================
@@ -175,12 +187,12 @@ def getLoop [BEq α] [Hashable α]
       else getLoop fuel' (i + 1) k (d + 1) slots capacity hLen hCapPos
 
 /-- N1-E2: Top-level lookup returning the value associated with a key. -/
-def RHTable.get? [BEq α] [Hashable α] (t : RHTable α β) (k : α) : Option β :=
+def RHTable.get? [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α) : Option β :=
   let start := idealIndex k t.capacity t.hCapPos
   getLoop t.capacity start k 0 t.slots t.capacity t.hSlotsLen t.hCapPos
 
 /-- N1-E3: Membership test. -/
-def RHTable.contains [BEq α] [Hashable α] (t : RHTable α β) (k : α) : Bool :=
+def RHTable.contains [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α) : Bool :=
   (t.get? k).isSome
 
 -- ============================================================================
@@ -252,8 +264,17 @@ theorem backshiftLoop_preserves_len
       · rfl
       · rw [ih]; simp [Array.size_set]
 
-/-- N1-F3: Top-level erase.  Two-phase: find the key, then backshift. -/
-def RHTable.erase [BEq α] [Hashable α] (t : RHTable α β) (k : α) : RHTable α β :=
+/-- N1-F3: Top-level erase.  Two-phase: find the key, then backshift.
+
+**V7-H: Size decrement safety.** The `size - 1` in the `some` branch is safe
+(never underflows to wrap-around) because this branch is only reached when
+`findLoop` locates the key in the table. Under `invExt` (specifically the `WF`
+sub-invariant), `size = countOccupied slots`, which guarantees `size > 0` when
+at least one entry is present. The `none` branch returns the table unchanged,
+so `size - 1` is never applied to an empty table. Nat subtraction in Lean
+saturates at 0, so even without `invExt` there is no arithmetic panic — but
+the invariant ensures the decrement is semantically correct. -/
+def RHTable.erase [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α) : RHTable α β :=
   let start := idealIndex k t.capacity t.hCapPos
   match findLoop t.capacity start k 0 t.slots t.capacity t.hSlotsLen t.hCapPos with
   | none => t
@@ -282,12 +303,12 @@ def RHTable.fold (t : RHTable α β) (init : γ) (f : γ → α → β → γ) :
     | some e => f acc e.key e.value) init
 
 /-- N1-G2: Collect all key-value pairs into a list. -/
-def RHTable.toList [BEq α] [Hashable α] (t : RHTable α β) : List (α × β) :=
+def RHTable.toList [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : List (α × β) :=
   t.fold [] (fun acc k v => (k, v) :: acc)
 
 /-- Internal insert without resize check — used by `resize` to avoid circularity.
     Composes `insertLoop` with table metadata bookkeeping. -/
-protected def RHTable.insertNoResize [BEq α] [Hashable α]
+protected def RHTable.insertNoResize [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) : RHTable α β :=
   let start := idealIndex k t.capacity t.hCapPos
   let result := insertLoop t.capacity start k v 0
@@ -302,12 +323,12 @@ protected def RHTable.insertNoResize [BEq α] [Hashable α]
       rw [insertLoop_preserves_len]; exact t.hSlotsLen }
 
 /-- `insertNoResize` preserves capacity (definitional). -/
-protected theorem RHTable.insertNoResize_capacity [BEq α] [Hashable α]
+protected theorem RHTable.insertNoResize_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) :
     (t.insertNoResize k v).capacity = t.capacity := rfl
 
 /-- N1-G3: Resize the table by doubling capacity and re-inserting all entries. -/
-def RHTable.resize [BEq α] [Hashable α] (t : RHTable α β) : RHTable α β :=
+def RHTable.resize [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : RHTable α β :=
   let newCap := t.capacity * 2
   have hNewPos : 0 < newCap := Nat.mul_pos t.hCapPos (by omega)
   let empty : RHTable α β := RHTable.empty newCap hNewPos
@@ -315,7 +336,7 @@ def RHTable.resize [BEq α] [Hashable α] (t : RHTable α β) : RHTable α β :=
 
 /-- The fold step used by resize preserves capacity.
     Proved via `Array.foldl_induction`. -/
-protected theorem RHTable.resize_fold_capacity [BEq α] [Hashable α]
+protected theorem RHTable.resize_fold_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) :
     (t.resize).capacity = t.capacity * 2 := by
   unfold resize fold
@@ -334,7 +355,7 @@ protected theorem RHTable.resize_fold_capacity [BEq α] [Hashable α]
     hStep
 
 /-- N1-G4: After resize, slots array has the doubled capacity. -/
-theorem RHTable.resize_preserves_len [BEq α] [Hashable α] (t : RHTable α β) :
+theorem RHTable.resize_preserves_len [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) :
     (t.resize).slots.size = t.capacity * 2 := by
   rw [← t.resize_fold_capacity]; exact (t.resize).hSlotsLen
 
@@ -344,13 +365,13 @@ theorem RHTable.resize_preserves_len [BEq α] [Hashable α] (t : RHTable α β) 
 
 /-- N1-D1: Top-level insert — checks load factor (75%) and resizes if needed,
     then delegates to `insertLoop`. -/
-def RHTable.insert [BEq α] [Hashable α] (t : RHTable α β) (k : α) (v : β)
+def RHTable.insert [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α) (v : β)
     : RHTable α β :=
   let t' := if t.size * 4 ≥ t.capacity * 3 then t.resize else t
   t'.insertNoResize k v
 
 /-- N1-D3: `insertNoResize` increases size by at most 1. -/
-theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α]
+theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) :
     (t.insertNoResize k v).size ≤ t.size + 1 := by
   unfold RHTable.insertNoResize
@@ -361,17 +382,20 @@ theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α]
 -- N1-G (continued): Instances
 -- ============================================================================
 
-instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] :
+instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] [LawfulBEq κ] :
     Membership κ (RHTable κ ν) where
   mem t k := t.contains k = true
 
 /-- GetElem instance for proof-bounded access (required by GetElem?). -/
-instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] :
+instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] [LawfulBEq κ] :
     GetElem (RHTable κ ν) κ ν (fun t k => (t.get? k).isSome) where
   getElem t k h := (t.get? k).get h
 
-/-- GetElem? instance enabling `t[k]?` bracket notation. -/
-instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] :
+/-- GetElem? instance enabling `t[k]?` bracket notation.
+V7-C: `LawfulBEq` is an explicit API-level requirement — all kernel
+identifier types (`ObjId`, `ThreadId`, `Priority`, `Slot`, etc.) satisfy
+`LawfulBEq` via their `Nat`-based `BEq` instances. -/
+instance {κ : Type} {ν : Type} [BEq κ] [Hashable κ] [LawfulBEq κ] :
     GetElem? (RHTable κ ν) κ ν (fun t k => (t.get? k).isSome) where
   getElem? t k := t.get? k
   getElem! t k := (t.get? k).getD default

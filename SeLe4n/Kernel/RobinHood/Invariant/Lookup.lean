@@ -30,7 +30,7 @@ private theorem mod_add_mod_eq (a b n : Nat) :
     The argument is simple: at each step, the slot is either `none` (return none),
     has a different key (continue or early-terminate with none), or fuel exhausts
     (return none). Key `k` is never found. -/
-private theorem getLoop_none_of_absent [BEq α] [Hashable α]
+private theorem getLoop_none_of_absent [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (k : α) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
@@ -258,7 +258,7 @@ private theorem backshiftLoop_preserves_key_absence [BEq α]
 
 /-- If `findLoop` returns `some idx`, then `slots[idx%cap]` has an entry
     with `key == k`. Proved by fuel induction. -/
-private theorem findLoop_some_has_key [BEq α] [Hashable α]
+private theorem findLoop_some_has_key [BEq α] [Hashable α] [LawfulBEq α]
     (fuel idx : Nat) (k : α) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
@@ -530,7 +530,7 @@ private theorem getLoop_finds_present [BEq α] [Hashable α] [LawfulBEq α]
 /-- `insertLoop` never modifies slots unreachable within its fuel window.
     If position `j` cannot be reached from `idx` in fewer than `fuel` steps
     (modular), then `slots'[j] = slots[j]`. -/
-private theorem insertLoop_preserves_slot [BEq α] [Hashable α]
+private theorem insertLoop_preserves_slot [BEq α] [Hashable α] [LawfulBEq α]
     (fuel : Nat) (idx : Nat) (k : α) (v : β) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
@@ -774,7 +774,7 @@ private theorem position_reachable
       omega
 
 /-- Resize size is bounded by the number of slots processed (≤ t.capacity). -/
-private theorem resize_size_le_capacity [BEq α] [Hashable α]
+private theorem resize_size_le_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) : t.resize.size ≤ t.capacity :=
   t.hSlotsLen ▸ (show t.resize.size ≤ t.slots.size from by
     unfold RHTable.resize RHTable.fold
@@ -961,7 +961,7 @@ private theorem insertLoop_absent_ne_key [BEq α] [Hashable α] [LawfulBEq α]
           hNeIns hAbsent j hj e hSlot
 
 /-- If `getLoop` returns `some val`, there is a slot with a matching entry. -/
-private theorem getLoop_some_implies_entry [BEq α] [Hashable α]
+private theorem getLoop_some_implies_entry [BEq α] [Hashable α] [LawfulBEq α]
     (fuel idx : Nat) (k : α) (d : Nat)
     (slots : Array (Option (RHEntry α β)))
     (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
@@ -2040,7 +2040,7 @@ theorem RHTable.get_none_no_matching_entry [BEq α] [Hashable α] [LawfulBEq α]
   get_none_implies_absent t k hExt hNone
 
 -- If get? returns some, there is a slot with a matching entry.
-theorem RHTable.get_some_slot_entry [BEq α] [Hashable α]
+theorem RHTable.get_some_slot_entry [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hGet : t.get? k = some v) :
     ∃ p, ∃ hp : p < t.capacity, ∃ e : RHEntry α β,
       t.slots[p]'(t.hSlotsLen ▸ hp) = some e ∧ (e.key == k) = true ∧ e.value = v := by

@@ -55,27 +55,33 @@ structure PlatformConfig where
   irqTable : List IrqEntry
   initialObjects : List ObjectEntry
 
+-- V7-I: O(n) duplicate detection via HashSet accumulation.
+-- Replaces the O(n²) per-element `List.any` scan with a single-pass fold.
+-- Note: `Std.HashSet` is opaque so proofs about these functions use
+-- `native_decide` rather than `decide`.
+private def natKeysNoDup (keys : List Nat) : Bool :=
+  let rec go : List Nat → Std.HashSet Nat → Bool
+    | [], _ => true
+    | k :: rest, seen =>
+      if seen.contains k then false
+      else go rest (seen.insert k)
+  go keys {}
+
 -- U6-E (U-M12): Duplicate IRQ detection.
 -- `registerIrq` uses `RHTable.insert` (last-wins on duplicate keys).
 -- `irqsUnique` detects duplicates so callers can validate boot configs.
-
-private def irqKeysNoDup : List SeLe4n.Irq → Bool
-  | [] => true
-  | k :: rest => !rest.any (· == k) && irqKeysNoDup rest
+-- V7-I: O(n) via HashSet, replacing O(n²) naive scan.
 
 def irqsUnique (irqs : List IrqEntry) : Bool :=
-  irqKeysNoDup (irqs.map (·.irq))
+  natKeysNoDup (irqs.map (·.irq.toNat))
 
 -- U6-F (U-M13): Duplicate object ID detection.
 -- `createObject` uses `RHTable.insert` (last-wins, losing earlier objects).
 -- `objectIdsUnique` detects duplicates to prevent silent data loss.
-
-private def objIdKeysNoDup : List SeLe4n.ObjId → Bool
-  | [] => true
-  | k :: rest => !rest.any (· == k) && objIdKeysNoDup rest
+-- V7-I: O(n) via HashSet, replacing O(n²) naive scan.
 
 def objectIdsUnique (objs : List ObjectEntry) : Bool :=
-  objIdKeysNoDup (objs.map (·.id))
+  natKeysNoDup (objs.map (·.id.toNat))
 
 /-- Q3-C: Fold IRQ entries into the builder state.
 
@@ -157,22 +163,25 @@ theorem bootFromPlatform_valid (config : PlatformConfig) :
    bootFromPlatform_perObjectMappings config,
    bootFromPlatform_lifecycleConsistent config⟩
 
-/-- U6-E: Empty IRQ list has no duplicates. -/
+/-- U6-E: Empty IRQ list has no duplicates.
+V7-I: Uses `native_decide` because `Std.HashSet` is opaque to the kernel. -/
 theorem irqsUnique_empty : irqsUnique [] = true := by
-  decide
+  native_decide
 
-/-- U6-F: Empty object list has no duplicates. -/
+/-- U6-F: Empty object list has no duplicates.
+V7-I: Uses `native_decide` because `Std.HashSet` is opaque to the kernel. -/
 theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
-  decide
+  native_decide
 
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs and unique object IDs. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects
 
-/-- U6-E/F: Empty config is well-formed. -/
+/-- U6-E/F: Empty config is well-formed.
+V7-I: Uses `native_decide` because `Std.HashSet` is opaque to the kernel. -/
 theorem PlatformConfig.wellFormed_empty :
     PlatformConfig.wellFormed { irqTable := [], initialObjects := [] } = true := by
-  decide
+  native_decide
 
 /-- U6-E/F: Checked boot — rejects configs with duplicate IRQs or object IDs.
 
