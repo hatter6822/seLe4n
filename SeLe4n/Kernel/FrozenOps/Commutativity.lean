@@ -44,7 +44,7 @@ open SeLe4n.Kernel.RobinHood
 
 /-- Q7-D: After `FrozenMap.set` succeeds, reading the same key returns the
 new value. This is the foundation for commutativity proofs. -/
-theorem frozenMap_set_get?_same [BEq κ] [Hashable κ] [LawfulBEq κ] [LawfulBEq κ]
+theorem frozenMap_set_get?_same [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm fm' : FrozenMap κ ν) (k : κ) (v : ν)
     (hSet : fm.set k v = some fm') :
     fm'.get? k = some v := by

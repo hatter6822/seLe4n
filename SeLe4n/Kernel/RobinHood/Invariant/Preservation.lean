@@ -1045,7 +1045,7 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
 -- Section 10c: insertLoop preserves probeChainDominant
 -- ============================================================================
 
-set_option maxHeartbeats 420000 in
+set_option maxHeartbeats 400000 in
 /-- `insertLoop` preserves `probeChainDominant`. Same case structure as
     `insertLoop_preserves_noDupKeys`, proving PCD for the result array. -/
 private theorem insertLoop_preserves_pcd [BEq α] [Hashable α] [LawfulBEq α]
@@ -1173,35 +1173,12 @@ private theorem insertLoop_preserves_pcd [BEq α] [Hashable α] [LawfulBEq α]
           have hSmall : e.dist + 1 < capacity := by omega
           have hD' := dist_step_mod _ _ _ hCapPos hIdxCap
             (idealIndex_lt e.key capacity hCapPos) e.dist hEdist hSmall
-          -- All intermediate invariants (same as in D1 proof)
-          have hNoDup' : ∀ i j (hi : i < capacity) (hj : j < capacity)
-              (ei ej : RHEntry α β),
-              (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[i]'(by
-                rw [hLen']; exact hi) = some ei →
-              (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[j]'(by
-                rw [hLen']; exact hj) = some ej →
-              (ei.key == ej.key) = true → i = j := by
-            intro i' j' hi' hj' ei' ej' hI' hJ' hKE'
-            simp only [Array.getElem_set] at hI' hJ'
-            split at hI' <;> split at hJ'
-            · rename_i h1 h2; exact h1 ▸ h2 ▸ rfl
-            · rename_i h1 hbN; cases hI'
-              exact absurd (hKAbs j' hj' ej' hJ') (by
-                have := eq_of_beq hKE'; simp [this.symm])
-            · rename_i haN h2; cases hJ'
-              exact absurd (hKAbs i' hi' ei' hI') (by
-                have := eq_of_beq hKE'; simp [this])
-            · exact hNoDup i' j' hi' hj' ei' ej' hI' hJ' hKE'
-          have hDist' : ∀ j (hj : j < capacity) (e' : RHEntry α β),
-              (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx)[j]'(by
-                rw [hLen']; exact hj) = some e' →
-              e'.dist = (j + capacity - idealIndex e'.key capacity hCapPos) %
-                capacity := by
-            intro j' hj' e' hSlot'
-            simp only [Array.getElem_set] at hSlot'
-            if h : idx % capacity = j' then
-              subst h; simp at hSlot'; obtain rfl := hSlot'; exact hD
-            else simp [h] at hSlot'; exact hDist j' hj' e' hSlot'
+          -- noDupKeys for intermediate slots' (via extracted helper)
+          have hNoDup' := noDupKeys_after_set slots capacity hLen hCapPos
+            (idx % capacity) hIdx ⟨k, v, d⟩ hNoDup hKAbs
+          -- distCorrect for intermediate slots' (via extracted helper)
+          have hDist' := distCorrect_after_set slots capacity hLen hCapPos
+            (idx % capacity) hIdx ⟨k, v, d⟩ hDist hD hIdxCap
           have hPCD' : probeChainDominant
               (slots.set (idx % capacity) (some ⟨k, v, d⟩) hIdx) capacity
               hLen' hCapPos := by

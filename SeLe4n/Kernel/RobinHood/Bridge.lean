@@ -344,20 +344,10 @@ theorem RHTable.size_filter_le_size [BEq α] [Hashable α] [LawfulBEq α]
 -- N3-B11: filter_preserves_key
 -- ============================================================================
 
--- N3-B11 and N3-C3 (filter_preserves_key, filter_getElem?) require complex
--- fold invariant proofs that chain insert_preserves_invExt +
--- get_after_insert_eq/ne through every fold step. These proofs will be
--- provided inline at the Phase N4 integration site (CNode.Structures.lean)
--- where the specific filter predicates are known, enabling simpler
--- case-specific proofs rather than the fully general statement.
---
--- The general statement is:
---   If ∀ k' v, (k' == k) = true → f k' v = true and t.invExt, then
---   (t.filter f).get? k = t.get? k
---
--- This is not provided here as a fully-proved theorem because the proof
--- requires ~120 lines of fold invariant tracking. Phase N4 will prove
--- the specific instances needed (revoke filter preserving source caps).
+-- N3-B11 and N3-C3 (filter_preserves_key, filter_getElem?) — now fully proved.
+-- The general `filter_preserves_key` theorem (see below, line ~732) was proved
+-- in V7-D via the `filter_fold_present` / `filter_fold_absent` proof infrastructure.
+-- Phase-specific instances are no longer needed.
 
 -- ============================================================================
 -- N3-A4 supplement: ofList constructor
