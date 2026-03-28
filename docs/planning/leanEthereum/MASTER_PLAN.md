@@ -40,21 +40,21 @@ consensus network with cryptographic assurance of correctness.
 
 | Phase | Name | Version | Sub-tasks | Critical Path |
 |-------|------|---------|-----------|---------------|
-| [X1](./PHASE_X1_FOUNDATION_TYPES.md) | Foundation Types & Prelude | v0.1.0 | 23 | Yes |
-| [X2](./PHASE_X2_SSZ_MERKLEIZATION.md) | SSZ Merkleization & Hash Tree Root | v0.2.0 | 16 | Yes |
-| [X3](./PHASE_X3_KOALABEAR_POSEIDON2.md) | KoalaBear Field & Poseidon2 Hash | v0.3.0 | 14 | Parallel |
-| [X4](./PHASE_X4_XMSS_SIGNATURES.md) | XMSS Signature Scheme | v0.4.0 | 22 | Parallel |
-| [X5](./PHASE_X5_CONSENSUS_CONTAINERS.md) | Consensus Containers | v0.5.0 | 20 | Yes |
-| [X6](./PHASE_X6_STATE_TRANSITION.md) | State Transition — Core Operations | v0.6.0 | 18 | Yes |
-| [X7](./PHASE_X7_CONSENSUS_SAFETY.md) | Consensus Safety Proofs (KEYSTONE) | v0.7.0 | 16 | Yes |
-| [X8](./PHASE_X8_FORK_CHOICE.md) | Fork Choice (LMD GHOST) | v0.8.0 | 14 | No |
-| [X9](./PHASE_X9_SNAPPY_NETWORKING.md) | Snappy Compression & Networking Types | v0.9.0 | 12 | Parallel |
-| [X10](./PHASE_X10_NODE_SERVICES.md) | Node Services — Chain, Validator, Sync | v0.10.0 | 18 | No |
-| [X11](./PHASE_X11_RUST_ABI.md) | Rust ABI Safety Layer | v0.11.0 | 16 | Parallel |
-| [X12](./PHASE_X12_TESTING.md) | Testing Infrastructure & Trace Harness | v0.12.0 | 14 | No |
-| [X13](./PHASE_X13_SELE4N_BRIDGE.md) | seLe4n Integration Bridge | v0.13.0 | 12 | No |
-| [X14](./PHASE_X14_DOCUMENTATION.md) | Documentation, Audit, & Closure | v1.0.0 | 14 | No |
-| **Total** | | | **229** | |
+| [X1](./PHASE_X1_FOUNDATION_TYPES.md) | Foundation Types & Prelude | v0.1.0 | 30 | Yes |
+| [X2](./PHASE_X2_SSZ_MERKLEIZATION.md) | SSZ Merkleization & Hash Tree Root | v0.2.0 | 22 | Yes |
+| [X3](./PHASE_X3_KOALABEAR_POSEIDON2.md) | KoalaBear Field & Poseidon2 Hash | v0.3.0 | 20 | Parallel |
+| [X4](./PHASE_X4_XMSS_SIGNATURES.md) | XMSS Signature Scheme | v0.4.0 | 34 | Parallel |
+| [X5](./PHASE_X5_CONSENSUS_CONTAINERS.md) | Consensus Containers | v0.5.0 | 26 | Yes |
+| [X6](./PHASE_X6_STATE_TRANSITION.md) | State Transition — Core Operations | v0.6.0 | 38 | Yes |
+| [X7](./PHASE_X7_CONSENSUS_SAFETY.md) | Consensus Safety Proofs (KEYSTONE) | v0.7.0 | 30 | Yes |
+| [X8](./PHASE_X8_FORK_CHOICE.md) | Fork Choice (LMD GHOST) | v0.8.0 | 20 | No |
+| [X9](./PHASE_X9_SNAPPY_NETWORKING.md) | Snappy Compression & Networking Types | v0.9.0 | 24 | Parallel |
+| [X10](./PHASE_X10_NODE_SERVICES.md) | Node Services — Chain, Validator, Sync | v0.10.0 | 30 | No |
+| [X11](./PHASE_X11_RUST_ABI.md) | Rust ABI Safety Layer | v0.11.0 | 28 | Parallel |
+| [X12](./PHASE_X12_TESTING.md) | Testing Infrastructure & Trace Harness | v0.12.0 | 26 | No |
+| [X13](./PHASE_X13_SELE4N_BRIDGE.md) | seLe4n Integration Bridge | v0.13.0 | 22 | No |
+| [X14](./PHASE_X14_DOCUMENTATION.md) | Documentation, Audit, & Closure | v1.0.0 | 22 | No |
+| **Total** | | | **372** | |
 
 ## Dependency Graph
 
@@ -207,16 +207,19 @@ X1 (Types) ───────────────────────
 
 | Metric | Target |
 |--------|--------|
+| Total sub-tasks | 372 |
 | Lean production LoC | ~15,000–20,000 |
 | Lean proof LoC | ~8,000–12,000 |
-| Rust LoC | ~3,000–5,000 |
-| Test LoC | ~2,000–3,000 |
-| Theorems/lemmas | ~300–400 |
+| Rust LoC | ~4,000–5,500 |
+| Test LoC | ~2,500–3,500 |
+| Theorems/lemmas | ~350–450 |
 | Sorry count | 0 |
 | Axiom count | 3 |
-| Rust unsafe blocks | ≤ 3 |
-| XVAL cross-validation cases | ≥ 20 |
-| Test tiers | 4 (hygiene, build, functional, invariant) |
+| Rust unsafe blocks | ≤ 2 (FFI boundary only) |
+| XVAL cross-validation cases | ≥ 25 |
+| Test tiers | 4 (hygiene, build, functional, invariant) + nightly |
+| Negative-state tests | ≥ 17 |
+| Determinism assertions | ≥ 50 |
 | Consensus-critical spec coverage | 100% |
 
 ## Glossary
@@ -242,32 +245,48 @@ X1 (Types) ───────────────────────
 
 | Python Function | Lean Definition | Phase | Proof |
 |----------------|-----------------|-------|-------|
-| `BaseUint.__new__` | `BaseUint.ofNat` | X1-B2 | X1-B5: overflow |
-| `BaseUint.encode_bytes` | `BaseUint.serialize` | X1-B4 | X1-B5: roundtrip |
+| `BaseUint.__new__` | `BaseUint.ofNat` | X1-B2 | X1-B5: arithmetic |
+| `BaseUint.encode_bytes` | `BaseUint.serialize` | X1-B4 | X1-B6: roundtrip |
 | `BaseBitlist.encode_bytes` | `BaseBitlist.serialize` | X1-E3 | X1-E4: roundtrip |
+| `BaseBitlist.shift_window` | `BaseBitlist.shiftWindow` | X1-E2 | X1-E5: correctness |
 | `Container.serialize` | `containerSerialize` | X1-G1 | X1-G2: roundtrip |
-| `merkleize` | `merkleize` | X2-B3 | X2-D1: properties |
-| `hash_tree_root` | `hashTreeRoot` | X2-C1/C2 | X2-D2: collision |
-| `mix_in_length` | `mixInLength` | X2-B4 | X2-D3: injectivity |
-| `Fp.__init__` | `Fp.mk` | X3-A1 | X3-A4: field laws |
-| `Poseidon2.permute` | `permute` | X3-B3 | X3-B5: bijectivity |
-| `GeneralizedXmssScheme.key_gen` | `keyGen` | X4-D2 | X4-F1: soundness |
-| `GeneralizedXmssScheme.sign` | `sign` | X4-D3 | X4-F1: roundtrip |
-| `GeneralizedXmssScheme.verify` | `verify` | X4-D4 | X4-F1: roundtrip |
+| `merkleize` | `merkleize` | X2-B3 | X2-B5: properties |
+| `hash_tree_root` (basic) | `hashTreeRoot` | X2-C1 | X2-D1: collision |
+| `hash_tree_root` (list) | `hashTreeRoot` | X2-C2 | X2-D2: injectivity |
+| `hash_tree_root` (container) | `containerHashTreeRoot` | X2-C4 | X2-D1: collision |
+| `mix_in_length` | `mixInLength` | X2-B4 | X2-D2: injectivity |
+| `mix_in_selector` | `mixInSelector` | X2-B4 | X2-D3: injectivity |
+| `Fp.__init__` | `Fp.mk` | X3-A1 | X3-A4/A5: field laws |
+| `Fp.__mul__` | `Fp.mul` | X3-A3 | X3-A5: mul_comm/assoc |
+| `Fp.inverse` | `Fp.inv` | X3-A3 | X3-A6: inv_correct |
+| `Poseidon2.permute` | `permute` | X3-B5 | X3-B6: bijectivity |
+| `Poseidon2.hash` | `poseidon2Hash` | X3-B7 | X3-B8: test vectors |
+| `target_sum_encode` | `targetSumEncode` | X4-B3 | X4-B4: constant sum |
+| `GeneralizedXmssScheme.key_gen` | `keyGen` | X4-D3 | X4-H1: soundness |
+| `GeneralizedXmssScheme.sign` | `sign` | X4-E3 | X4-H1: roundtrip |
+| `GeneralizedXmssScheme.verify` | `verify` | X4-F1 | X4-H1: roundtrip |
+| `aggregate_signatures` | `aggregateSignatures` | X4-G1 | X4-G3: correctness |
 | `Slot.is_justifiable_after` | `isJustifiableAfter` | X5-A2 | X5-A3: properties |
-| `State.generate_genesis` | `generateGenesis` | X5-E5 | X5-E5: invariants |
-| `State.process_slots` | `processSlots` | X6-A1 | X6-A2: preservation |
-| `State.process_block_header` | `processBlockHeader` | X6-B1 | X6-B4: validation |
-| `State.process_attestations` | `processAttestations` | X6-C5 | X7: safety |
-| `State.state_transition` | `stateTransition` | X6-D2 | X7-B5: bundle |
-| `State.build_block` | `buildBlock` | X6-D3 | — |
-| `Store.from_anchor` | `Store.fromAnchor` | X8-A2 | X8-C2: consistency |
-| `Store.validate_attestation` | `validateAttestation` | X8-B2 | X8-C2: consistency |
-| `compress` | `compress` | X9-A1 | X9-A4: roundtrip |
-| `decompress` | `decompress` | X9-A2 | X9-A4: roundtrip |
-| — (novel) | `threeSFMiniSafety` | X7-D1 | **KEYSTONE** |
-| — (novel) | `consensusSafety` | X7-D3 | Top-level |
-| — (novel) | `consensusLiveness` | X7-E1 | Conditional |
+| `State.generate_genesis` | `generateGenesis` | X5-D5 | X5-D5: invariants |
+| `State.process_slots` | `processSlots` | X6-A1 | X6-A4: composition |
+| `State.process_block_header` | `processBlockHeader` | X6-B5 | X6-B6: 4 proofs |
+| `State.process_attestations` | `processAttestations` | X6-C16 | X7: safety |
+| `filter_valid_attestations` | `filterValidAttestations` | X6-C5 | X6-C6: guarantees |
+| `has_continuous_chain` | `hasContinuousChain` | X6-C11 | X6-C13: properties |
+| `advance_finalization` | `advanceFinalization` | X6-C12 | X6-C13: monotone |
+| `State.state_transition` | `stateTransition` | X6-D2 | X6-D3: composition |
+| `State.build_block` | `buildBlock` | X6-E4 | X6-E5: convergence |
+| `Store.from_anchor` | `Store.fromAnchor` | X8-A2 | X8-D2: consistency |
+| `Store.validate_attestation` | `validateAttestation` | X8-C1 | X8-D2: consistency |
+| `lmd_ghost` | `lmdGhost` | X8-B3 | X8-D1/D3: validity |
+| `compress` | `compress` | X9-A3 | X9-A8: roundtrip |
+| `decompress` | `decompress` | X9-A5 | X9-A8: roundtrip |
+| `frame_compress` | `frameCompress` | X9-A7 | X9-A8: roundtrip |
+| — (novel) | `threeSFMiniSafety` | X7-D3 | **KEYSTONE** |
+| — (novel) | `consensusSafety` | X7-D5 | Top-level |
+| — (novel) | `consensusLiveness` | X7-E3 | Conditional |
+| — (bridge) | `bridge_preserves_kernel_invariants` | X13-D1 | Kernel safety |
+| — (bridge) | `bridge_preserves_consensus_invariants` | X13-D2 | Consensus safety |
 
 ## Source Layout (Full)
 
@@ -283,7 +302,11 @@ LeanEth/
 │   ├── Collections.lean                SSZVector, SSZList
 │   ├── Container.lean                  Container serialization framework
 │   ├── RLP.lean                        RLP encode/decode
-│   └── Proofs.lean                     All roundtrip proofs
+│   └── Proofs/
+│       ├── UintProofs.lean             Uint roundtrip + arithmetic
+│       ├── ByteProofs.lean             Byte roundtrip
+│       ├── BitFieldProofs.lean         Bitfield roundtrip + ops
+│       └── CollectionProofs.lean       Collection roundtrip + props
 ├── SSZ/
 │   ├── Pack.lean                       packBytes, packBits
 │   ├── Merkle.lean                     merkleize, mixIn*, zeroHashes
@@ -307,10 +330,11 @@ LeanEth/
 │   │   ├── Aggregation.lean            Signature aggregation
 │   │   └── Proofs.lean                 Soundness proofs
 │   ├── Snappy/
-│   │   ├── Compress.lean               Compression
-│   │   ├── Decompress.lean             Decompression
-│   │   ├── Framing.lean                Streaming format
-│   │   └── Proofs.lean                 Roundtrip
+│   │   ├── Types.lean                  SnappyOp, SnappyError, constants
+│   │   ├── Compress.lean               Greedy matching, op serialization
+│   │   ├── Decompress.lean             Tag parsing, backreference resolution
+│   │   ├── Framing.lean                CRC32C, frame encode/decode
+│   │   └── Proofs.lean                 Roundtrip, length bounds
 │   └── Hash.lean                       Hash dispatch
 ├── Consensus/
 │   ├── Containers/
@@ -332,15 +356,17 @@ LeanEth/
 │   │       ├── Genesis.lean            generateGenesis
 │   │       └── Proofs.lean             Field well-formedness
 │   ├── StateTransition/
-│   │   ├── ProcessSlots.lean           Slot advancement
-│   │   ├── ProcessBlockHeader.lean     Header validation + history
+│   │   ├── ProcessSlots.lean           Slot advancement, state root caching
+│   │   ├── ProcessBlockHeader.lean     Header validation + history + genesis
 │   │   ├── ProcessAttestations/
-│   │   │   ├── Filter.lean             Attestation filtering
-│   │   │   ├── Voting.lean             Supermajority voting
-│   │   │   ├── Finalization.lean       Finalization advancement
-│   │   │   └── Compose.lean            Full composition
-│   │   ├── StateTransition.lean        Top-level function
-│   │   ├── BuildBlock.lean             Block production
+│   │   │   ├── Tracker.lean            JustificationTracker reconstruction
+│   │   │   ├── Filter.lean             7 named predicates + composite filter
+│   │   │   ├── Voting.lean             recordVote, supermajority detection
+│   │   │   ├── Finalization.lean       Continuous chain, advancement, rebasing
+│   │   │   ├── Pruning.lean            Rebase after finalization
+│   │   │   └── Compose.lean            8-step processAttestations orchestration
+│   │   ├── StateTransition.lean        processBlock + stateTransition
+│   │   ├── BuildBlock.lean             Greedy selection, fixed-point loop
 │   │   └── Proofs/
 │   │       ├── SlotMonotonicity.lean
 │   │       ├── HistoryAppendOnly.lean
@@ -364,28 +390,63 @@ LeanEth/
 │       ├── Safety.lean                 Top-level safety
 │       └── Liveness.lean               Conditional liveness
 ├── Node/
-│   ├── Chain/ (SlotClock, Config, Service)
-│   ├── Validator/ (Registry, Service)
-│   ├── Sync/ (Checkpoint, Head, Backfill, BlockCache, PeerManager)
-│   ├── Storage/ (Interface, Namespaces)
-│   ├── API/ (Endpoints)
-│   ├── Networking/ (Transport, ENR, Gossipsub, ReqResp, Discovery, Config)
-│   └── Node.lean
+│   ├── Chain/
+│   │   ├── SlotClock.lean              Slot clock + monotonicity proofs
+│   │   ├── Config.lean                 Chain configuration + errors
+│   │   ├── Service.lean                ChainState, transitions, queries
+│   │   └── Proofs.lean                 Chain service preservation
+│   ├── Validator/
+│   │   ├── Duties.lean                 Duty types, scheduling logic
+│   │   ├── Registry.lean               Key management, signing
+│   │   ├── Service.lean                Validator state machine
+│   │   └── Proofs.lean                 Duty scheduling correctness
+│   ├── Sync/
+│   │   ├── StateMachine.lean           Sync phases + transitions
+│   │   ├── CheckpointSync.lean         Checkpoint sync logic
+│   │   ├── HeadSync.lean               Head sync + backfill
+│   │   ├── BlockCache.lean             Pending block management
+│   │   └── PeerManager.lean            Peer tracking, scoring
+│   ├── Storage/
+│   │   ├── Interface.lean              Database typeclass
+│   │   └── Schema.lean                 Namespace defs, key encoding
+│   ├── API/
+│   │   └── Endpoints.lean              REST API type definitions
+│   ├── Networking/
+│   │   ├── Transport.lean              PeerId, NetworkMessage
+│   │   ├── ENR.lean                    ENR structure, RLP encode/decode
+│   │   ├── Gossipsub.lean              Topics, GossipsubAction
+│   │   ├── ReqResp.lean                Request-response protocol
+│   │   ├── Discovery.lean              discv5 abstractions
+│   │   └── Config.lean                 Network configuration
+│   └── Node.lean                       Top-level orchestrator
 ├── Bridge/
-│   ├── SharedPrelude.lean
-│   ├── PlatformContract.lean
-│   ├── SeLe4nIntegration.lean
-│   ├── RPi5Extension.lean
-│   └── Proofs.lean
-├── Testing/ (TraceHarness, StateBuilder, Fixtures)
+│   ├── SharedPrelude.lean              Shared identifiers, conversions
+│   ├── PlatformContract.lean           EthNodePlatformBinding typeclass
+│   ├── ResourceMapping.lean            Capabilities → kernel resources
+│   ├── IPCProtocol.lean                Message format, encode/decode
+│   ├── EventTranslation.lean           Kernel ↔ consensus event mapping
+│   ├── Lifecycle.lean                  Node init, main loop, shutdown
+│   ├── RPi5Extension.lean              BCM2712 Ethernet/SD abstractions
+│   └── Proofs.lean                     Safety preservation (5 theorems)
+├── Testing/
+│   ├── TraceHarness.lean               Executable trace harness
+│   ├── StateBuilder.lean               Test state construction helpers
+│   ├── Fixtures.lean                   Fixture comparison framework
+│   ├── Scenarios.lean                  Reusable test scenario definitions
+│   └── Determinism.lean                Determinism checking utilities
 └── Main.lean
 
 rust/
-├── leaneth-types/ (SSZ codec, types, snappy)
-├── leaneth-net/ (libp2p, gossipsub, discv5, reqresp, FFI)
-├── leaneth-storage/ (SQLite persistence)
-├── Cargo.toml (workspace)
-└── SAFETY_AUDIT.md
+├── Cargo.toml                          Workspace root
+├── rust-toolchain.toml                 Pinned stable channel
+├── SAFETY_AUDIT.md                     Unsafe block documentation
+├── leaneth-types/
+│   └── src/ (primitives, containers, errors, ssz/, merkle, snappy, crypto)
+├── leaneth-net/
+│   └── src/ (gossipsub, reqresp, discovery, ffi)
+├── leaneth-storage/
+│   └── src/ (schema, ops)
+└── tests/ (xval.rs, integration.rs)
 
 tests/
 ├── fixtures/ (golden outputs, scenario registry)
