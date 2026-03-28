@@ -38,6 +38,22 @@ if [[ ! -f "${TRACE_FIXTURE}" ]]; then
   finalize_report
 fi
 
+# V8-F: Fixture drift detection — verify the expected fixture hasn't been
+# modified without updating its companion hash file.
+FIXTURE_HASH_FILE="${TRACE_FIXTURE}.sha256"
+if [[ -f "${FIXTURE_HASH_FILE}" ]]; then
+  FIXTURE_DIR="$(dirname "${TRACE_FIXTURE}")"
+  if ! (cd "${FIXTURE_DIR}" && sha256sum -c "$(basename "${FIXTURE_HASH_FILE}")" > /dev/null 2>&1); then
+    record_failure "TRACE" "Fixture drift detected: ${TRACE_FIXTURE} hash does not match ${FIXTURE_HASH_FILE}. Regenerate with: sha256sum ${TRACE_FIXTURE} | awk '{print \$1 \"  \" FILENAME}' FILENAME=$(basename "${TRACE_FIXTURE}") > ${FIXTURE_HASH_FILE}"
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      write_trace_artifacts
+      finalize_report
+    fi
+  else
+    log_section "TRACE" "Fixture hash verified: ${TRACE_FIXTURE}"
+  fi
+fi
+
 run_check "TRACE" bash -lc "lake exe sele4n > '${TRACE_OUTPUT}'"
 
 expected_count=0

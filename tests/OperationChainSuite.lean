@@ -558,7 +558,8 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨300⟩, ⟨301⟩]
+      -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
+      |>.withRunnable [⟨301⟩]
       |>.withCurrent (some ⟨300⟩)
       |>.buildChecked)
 
@@ -630,7 +631,8 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-      |>.withRunnable [⟨400⟩]
+      -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
+      |>.withRunnable []
       |>.withCurrent (some ⟨400⟩)
       |>.buildChecked)
 
@@ -1712,7 +1714,8 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     |>.withLifecycleObjectType tid.toObjId .tcb
     |>.withLifecycleObjectType cnodeId .cnode
     |>.withLifecycleObjectType vsId .vspaceRoot
-    |>.withRunnable [tid]
+    -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
+    |>.withRunnable []
     |>.withCurrent (some tid)
   -- Add remaining extra objects (skip first which was added as target)
   for (oid, obj) in extraObjects.tail do
@@ -1938,7 +1941,8 @@ private def chain31SyscallReply : IO Unit := do
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType vsId .vspaceRoot
-      |>.withRunnable [tid]
+      -- V8-D: Dequeue-on-dispatch — current thread removed from runnable
+      |>.withRunnable []
       |>.withCurrent (some tid)
       |>.buildChecked)
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 st0 with

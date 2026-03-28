@@ -1548,7 +1548,8 @@ Determinism & error exclusivity:
 Functions:
 - `lookupThreadRegisterContext` — extracts saved register context from current thread's TCB
 - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight` (13 cases)
-- `dispatchWithCap` — per-syscall routing: IPC send/receive/call/reply and service start/stop extract targets from resolved capability's `CapTarget`; CSpace mint/copy/move/delete, lifecycle retype, and VSpace map/unmap return `illegalState` (MR-dependent args, deferred to WS-K-C/K-D)
+- `dispatchCapabilityOnly` — shared helper for 6 capability-only syscall arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke, serviceQuery) used by both checked and unchecked dispatch paths (V8-H)
+- `dispatchWithCap` — per-syscall routing: IPC send/receive/call/reply and service start/stop extract targets from resolved capability's `CapTarget`; delegates capability-only arms to `dispatchCapabilityOnly`
 - `dispatchSyscall` — constructs `SyscallGate` from caller's TCB and CSpace root CNode, routes through `syscallInvoke`
 - `syscallEntry` — top-level register-sourced entry point: reads `scheduler.current`, extracts registers, decodes (with configurable `regCount`, default 32), dispatches
 - `MachineConfig.registerCount` — promoted from computed def to configurable structure field (default 32)
@@ -1559,6 +1560,7 @@ Soundness theorems:
 - `dispatchSyscall_requires_right` — dispatch success implies capability with required access right was held (threads through `syscallInvoke_requires_right`)
 - `lookupThreadRegisterContext_state_unchanged` — register context lookup is read-only
 - `syscallRequiredRight_total` — every `SyscallId` maps to exactly one `AccessRight`
+- `dispatchCapabilityOnly_some_iff` — characterizes the 6 syscall IDs handled by the shared capability-only dispatch path (V8-H)
 
 **Completed invariant and information-flow integration (WS-J1-D, v0.15.8):**
 

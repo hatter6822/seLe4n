@@ -31,7 +31,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | README/spec/GitBook metrics synchronized from single script | `./scripts/report_current_state.py` |
 | Root docs and GitBook mirrors stay synchronized | `./scripts/test_docs_sync.sh` |
 | Executable behavior is fixture-backed and malformed-state safe | `./scripts/test_tier2_trace.sh` + `test_tier2_negative.sh` |
-| 17 inter-transition invariant assertions across all trace functions (WS-I1/R-01) | `./scripts/test_smoke.sh` |
+| 38 inter-transition invariant assertions across all trace functions (WS-I1/R-01, V8-C) | `./scripts/test_smoke.sh` |
 | Mandatory determinism: trace output identical across runs (WS-I1/R-02) | `./scripts/test_tier2_determinism.sh` |
 | 121 trace lines tagged with unique scenario IDs; registry validated bidirectionally (WS-I1/R-03) | `./scripts/test_tier0_hygiene.sh` + `test_tier2_trace.sh` |
 | WS-I3 operations coverage expansion: six operation-chain tests + scheduler stress + declassification runtime checks (including distinct `declassificationDenied` policy-denial path) | `./scripts/test_tier2_negative.sh` |

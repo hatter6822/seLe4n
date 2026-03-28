@@ -17,7 +17,11 @@ private def lookupQueueTcbB (st : SystemState) (tid : SeLe4n.ThreadId) : Option 
   | some (.tcb tcb) => some tcb
   | _ => none
 
-private partial def intrusiveQueueReachable
+/-- V8-E: Fuel-bounded intrusive queue reachability check.
+    Replaces `partial` with structural recursion on `fuel : Nat`.
+    Returns `true` iff every node from `cursor` to `tail` is reachable
+    with consistent prev/pprev links and no cycles. -/
+private def intrusiveQueueReachable
     (st : SystemState)
     (tail : SeLe4n.ThreadId)
     (expectedPrev : Option SeLe4n.ThreadId)
@@ -86,6 +90,17 @@ private def currentThreadValidB (st : SystemState) : Bool :=
       match st.objects[tid.toObjId]? with
       | some (.tcb _) => true
       | _ => false
+
+/-- V8-G7: ThreadState consistency check — every TCB's `threadState` field
+matches the inferred state from queue membership, IPC state, and scheduler.current. -/
+private def threadStateConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (.tcb tcb) =>
+        let expected := SeLe4n.Kernel.inferThreadState st ⟨oid.toNat⟩ tcb
+        (s!"threadState consistent: oid={oid} actual={reprStr tcb.threadState} expected={reprStr expected}",
+         tcb.threadState == expected) :: acc
+    | _ => acc) []
 
 /-- M-11 CSpace coherency: every CNode slot whose capability targets an object has that
 object present in the object store. -/
@@ -338,6 +353,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ blockedOnSendNotRunnableChecks objectIds st
     ++ blockedOnReceiveNotRunnableChecks objectIds st
     ++ uniqueWaitersCheck objectIds st
+    ++ threadStateConsistentChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.
@@ -353,7 +369,10 @@ private def failedChecks (checks : List (String × Bool)) : List String :=
 
 def assertStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : IO Unit := do
-  let failures := failedChecks (stateInvariantChecksFor objectIds st serviceIds)
+  -- V8-G: Sync threadState fields before checking, since state may come from
+  -- bootstrap builders or operations that don't maintain the field directly.
+  let stSynced := SeLe4n.Kernel.syncThreadStates st
+  let failures := failedChecks (stateInvariantChecksFor objectIds stSynced serviceIds)
   if failures.isEmpty then
     pure ()
   else

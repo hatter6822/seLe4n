@@ -708,6 +708,56 @@ scenarios:
     function: runSyscallDispatchTrace
     subsystem: Architecture
     description: "round-trip decode msgRegs.size=4 first=10"
+  PIP-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCheckedPipelineTrace
+    subsystem: Architecture
+    description: "V8-A2 register decode correct (send, cap=0, msgRegs=4)"
+  PIP-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCheckedPipelineTrace
+    subsystem: Architecture
+    description: "V8-A3 send msgInfo.length=2"
+  PIP-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCheckedPipelineTrace
+    subsystem: Architecture
+    description: "V8-A3 send first msgReg=42"
+  PIP-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCheckedPipelineTrace
+    subsystem: InformationFlow
+    description: "V8-A4 syscallEntryChecked send success"
+  PIP-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCheckedPipelineTrace
+    subsystem: InformationFlow
+    description: "V8-A5 post-dispatch invariants preserved"
+  PIP-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCheckedPipelineTrace
+    subsystem: InformationFlow
+    description: "V8-A6 trace equivalence: checked vs unchecked"
+  MOV-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCspaceMoveTrace
+    subsystem: Capability
+    description: "V8-B cspaceMove decode ok"
+  MOV-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCspaceMoveTrace
+    subsystem: Capability
+    description: "V8-B cspaceMove source empty after move"
+  MOV-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCspaceMoveTrace
+    subsystem: Capability
+    description: "V8-B cspaceMove dest populated after move"
+  MOV-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runCspaceMoveTrace
+    subsystem: Capability
+    description: "V8-B cspaceMove dest targets endpoint"
   RRC-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runReplyRecvRoundtripTrace

@@ -344,10 +344,34 @@ inductive ThreadIpcState where
   | blockedOnCall (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
+/-- V8-G1: Explicit thread lifecycle state.
+Previously, thread state was inferred from queue membership and `ThreadIpcState`.
+This enum makes the state machine explicit, improving debuggability and
+enabling the `threadState_consistent` invariant predicate.
+
+The 7 states correspond to the seL4 thread model:
+- `Running`: Currently dispatched (is `scheduler.current`)
+- `Ready`: In the run queue, eligible for scheduling
+- `BlockedSend`: Blocked on endpoint send queue
+- `BlockedRecv`: Blocked on endpoint receive queue
+- `BlockedCall`: Blocked on endpoint call (send then wait for reply)
+- `BlockedNotif`: Blocked waiting for notification
+- `Inactive`: Freshly created or cleaned up, not yet scheduled -/
+inductive ThreadState where
+  | Running
+  | Ready
+  | BlockedSend
+  | BlockedRecv
+  | BlockedCall
+  | BlockedNotif
+  | Inactive
+  deriving Repr, DecidableEq, Inhabited
+
 /-- Thread Control Block.
 
 M-03/WS-E6: `deadline` field for EDF tie-breaking. Default 0 = no deadline.
-M-04/WS-E6: `timeSlice` field for preemption. Default 5 ticks per quantum. -/
+M-04/WS-E6: `timeSlice` field for preemption. Default 5 ticks per quantum.
+V8-G1: `threadState` field for explicit lifecycle state machine. -/
 inductive QueuePPrev where
   | endpointHead
   | tcbNext (tid : SeLe4n.ThreadId)
@@ -361,6 +385,9 @@ structure TCB where
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
   ipcState : ThreadIpcState := .ready
+  /-- V8-G1: Explicit lifecycle state. Default `.Inactive` for freshly created
+      threads; set to `.Ready` when enqueued, `.Running` when dispatched. -/
+  threadState : ThreadState := .Inactive
   /-- M-04/WS-E6: Remaining time-slice ticks before preemption. Reset to
       `defaultTimeSlice` on expiry. Default value matches seL4's
       CONFIG_TIMER_TICK_MS-based quantum. -/
@@ -412,6 +439,7 @@ instance : BEq TCB where
     a.tid == b.tid && a.priority == b.priority && a.domain == b.domain &&
     a.cspaceRoot == b.cspaceRoot && a.vspaceRoot == b.vspaceRoot &&
     a.ipcBuffer == b.ipcBuffer && a.ipcState == b.ipcState &&
+    a.threadState == b.threadState &&
     a.timeSlice == b.timeSlice && a.deadline == b.deadline &&
     a.queuePrev == b.queuePrev && a.queuePPrev == b.queuePPrev &&
     a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
