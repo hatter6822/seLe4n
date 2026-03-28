@@ -3,9 +3,9 @@
 **Created**: 2026-03-25
 **Baseline version**: 0.21.7
 **Baseline audits**:
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.21.7_PRE_BENCHMARK.md` (4 HIGH, 29 MEDIUM, 41 LOW)
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.21.7_LEAN_RUST_KERNEL.md` (1 HIGH, 39 MEDIUM, 28 LOW)
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.21.7_KERNEL_IMPLEMENTATION.md` (0 HIGH, 20 MEDIUM, 55 LOW)
+- `docs/dev_history/AUDIT_COMPREHENSIVE_v0.21.7_PRE_BENCHMARK.md` (4 HIGH, 29 MEDIUM, 41 LOW)
+- `docs/dev_history/AUDIT_COMPREHENSIVE_v0.21.7_LEAN_RUST_KERNEL.md` (1 HIGH, 39 MEDIUM, 28 LOW)
+- `docs/dev_history/AUDIT_COMPREHENSIVE_v0.21.7_KERNEL_IMPLEMENTATION.md` (0 HIGH, 20 MEDIUM, 55 LOW)
 **Prior portfolios**: WS-B through WS-U (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 

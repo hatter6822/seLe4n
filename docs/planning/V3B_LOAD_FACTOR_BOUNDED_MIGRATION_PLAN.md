@@ -1340,7 +1340,7 @@ needed; optionally add a doc comment.
 2. **6.3b**: Update `docs/spec/SELE4N_SPEC.md` — update RobinHood invariant
    description to mention `invExtK` as the kernel-facing bundle
 3. **6.3c**: Update `docs/WORKSTREAM_HISTORY.md` — mark V3-B as complete
-4. **6.3d**: Update `docs/audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` — update
+4. **6.3d**: Update `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` — update
    V3-B status
 5. **6.3e**: Update `docs/gitbook/12-proof-and-invariant-map.md` — add
    `invExtK` to the proof chain map
