@@ -1,3 +1,26 @@
+## [0.22.11] — W1: Critical Rust ABI Fixes
+
+- **CRIT-1/CRIT-2 fixed**: `notification_signal` dispatched `SyscallId::Send`
+  instead of `SyscallId::NotificationSignal`; `notification_wait` dispatched
+  `SyscallId::Receive` instead of `SyscallId::NotificationWait`. Both corrected.
+- **HIGH-02 fixed**: `notification_signal` now accepts a `Badge` parameter and
+  passes it via message register 0, matching the Lean kernel's
+  `decodeNotificationSignalArgs` which reads badge from `MR[0]`.
+- **HIGH-1 fixed**: Added `MmioUnaligned` error variant (discriminant 40) to
+  Rust `KernelError`, matching Lean `KernelError.mmioUnaligned`.
+- **MED-03 fixed**: New `endpoint_reply_recv` wrapper implementing the compound
+  reply+receive syscall (`SyscallId::ReplyRecv`).
+- **MED-05 fixed**: Updated `sele4n-sys` crate documentation from "14 syscalls"
+  to "17 syscalls" and listed all 7 IPC wrappers.
+- Fixed XVAL-015 conformance test which was validating the bug (asserting badge
+  comes from capability, contradicting the Lean decode layer).
+- Added 10 new W1 conformance tests: variant count assertions (KernelError=41,
+  SyscallId=17), ABI constant assertions, encoding verification for all three
+  new/fixed wrappers.
+- Fixed `decode_unknown_error_code` test boundary (40→41).
+- 167 Rust tests pass, zero `cargo doc` warnings.
+- Zero `sorry`, zero `axiom`.
+
 ## [0.22.10] — V8 Audit: Semantic Correctness & Fixture Hardening
 
 - **AUDIT-1**: Added `BlockedReply` as 8th `ThreadState` variant — `blockedOnReply`

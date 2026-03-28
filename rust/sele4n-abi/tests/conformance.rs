@@ -326,23 +326,23 @@ fn xval_014_service_query() {
 
 /// RUST-XVAL-015: Notification signal register layout.
 ///
-/// Badge is NOT passed by the caller — it comes from the resolved capability.
-/// msg_regs must be zeroed (no payload for notification signal).
-/// Lean: `notificationSignal` (Endpoint.lean) — badge from capability.
-/// seL4 equivalent: `seL4_Signal(dest)`.
+/// Badge is passed via MR[0] (x2), per Lean `decodeNotificationSignalArgs`
+/// (SyscallArgDecode.lean:869-872) which reads `badge := Badge.ofNatMasked
+/// (requireMsgReg msgRegs 0).val`. MessageInfo.length=1 to indicate one
+/// message register is populated.
 #[test]
 fn xval_015_notification_signal() {
+    let badge_val: u64 = 0xDEAD_BEEF;
     let req = SyscallRequest {
         cap_addr: CPtr::from(500u64),
-        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
-        msg_regs: [0; 4],
+        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
+        msg_regs: [badge_val, 0, 0, 0],
         syscall_id: SyscallId::NotificationSignal,
     };
     let regs = encode_syscall(&req).unwrap();
-    // Verify no payload: all msg_regs must be zero
     assert_eq!(regs[0], 500, "x0=CPtr(notification)");
-    assert_eq!(regs[1], 0, "x1=MessageInfo(empty)");
-    assert_eq!(regs[2], 0, "x2=msg_regs[0] must be zero (badge comes from capability)");
+    assert_eq!(regs[1], 1, "x1=MessageInfo(length=1)");
+    assert_eq!(regs[2], badge_val, "x2=msg_regs[0] carries badge value");
     assert_eq!(regs[3], 0, "x3=msg_regs[1] must be zero");
     assert_eq!(regs[4], 0, "x4=msg_regs[2] must be zero");
     assert_eq!(regs[5], 0, "x5=msg_regs[3] must be zero");
@@ -458,14 +458,14 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(17).is_none());
 }
 
-/// Verify KernelError roundtrip for all 40 variants (U5-E: 2 new at 38-39).
+/// Verify KernelError roundtrip for all 41 variants (W1-D: MmioUnaligned at 40).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=39u32 {
+    for i in 0..=40u32 {
         let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(40).is_none());
+    assert!(KernelError::from_u32(41).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 6 variants.
@@ -723,13 +723,13 @@ fn u3de_access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn u3f_kernel_error_non_exhaustive() {
-    // All 40 variants (0–39) roundtrip (U5-E: +RevocationRequired, +InvalidArgument)
-    for i in 0..=39u32 {
+    // All 41 variants (0–40) roundtrip (W1-D: +MmioUnaligned)
+    for i in 0..=40u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(40).is_none());
+    assert!(KernelError::from_u32(41).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -900,4 +900,106 @@ fn v1h_identifier_validation() {
 
     assert!(Priority::from(255u64).is_valid());
     assert!(!Priority::from(256u64).is_valid());
+}
+
+// ============================================================================
+// W1 — Critical Rust ABI Fix conformance tests
+// ============================================================================
+
+/// W1-H: KernelError variant count matches Lean (41 variants, 0-40).
+/// Detects Lean-Rust enum divergence automatically.
+#[test]
+fn w1h_kernel_error_variant_count() {
+    const KERNEL_ERROR_COUNT: u32 = 41;
+    // All expected variants exist
+    for i in 0..KERNEL_ERROR_COUNT {
+        assert!(
+            KernelError::from_u32(i).is_some(),
+            "KernelError variant missing at discriminant {i}"
+        );
+    }
+    // Next discriminant is out of range
+    assert!(
+        KernelError::from_u32(KERNEL_ERROR_COUNT).is_none(),
+        "Unexpected KernelError variant at discriminant {KERNEL_ERROR_COUNT}"
+    );
+}
+
+/// W1-H: SyscallId variant count matches Lean (17 variants, 0-16).
+#[test]
+fn w1h_syscall_id_variant_count() {
+    const SYSCALL_COUNT: u64 = 17;
+    assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
+    for i in 0..SYSCALL_COUNT {
+        assert!(
+            SyscallId::from_u64(i).is_some(),
+            "SyscallId variant missing at discriminant {i}"
+        );
+    }
+    assert!(
+        SyscallId::from_u64(SYSCALL_COUNT).is_none(),
+        "Unexpected SyscallId variant at discriminant {SYSCALL_COUNT}"
+    );
+}
+
+/// W1-H: Compile-time ABI constant assertions.
+#[test]
+fn w1h_abi_constants_match_lean() {
+    use sele4n_abi::message_info::{MAX_LABEL, MAX_MSG_LENGTH, MAX_EXTRA_CAPS};
+    assert_eq!(MAX_LABEL, 1_048_575, "MAX_LABEL must be 2^20 - 1");
+    assert_eq!(MAX_MSG_LENGTH, 120, "MAX_MSG_LENGTH must be 120");
+    assert_eq!(MAX_EXTRA_CAPS, 3, "MAX_EXTRA_CAPS must be 3");
+}
+
+/// W1-F-1: notification_signal encodes SyscallId::NotificationSignal (14)
+/// and places badge in msg_regs[0].
+#[test]
+fn w1f_notification_signal_encoding() {
+    let badge_val: u64 = 0xCAFE_BABE;
+    let req = SyscallRequest {
+        cap_addr: CPtr::from(42u64),
+        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
+        msg_regs: [badge_val, 0, 0, 0],
+        syscall_id: SyscallId::NotificationSignal,
+    };
+    let regs = encode_syscall(&req).unwrap();
+    assert_eq!(regs[6], 14, "x7=SyscallId::NotificationSignal must be 14");
+    assert_eq!(regs[2], badge_val, "x2=msg_regs[0] must carry badge");
+}
+
+/// W1-F-1: notification_wait encodes SyscallId::NotificationWait (15).
+#[test]
+fn w1f_notification_wait_encoding() {
+    let req = SyscallRequest {
+        cap_addr: CPtr::from(99u64),
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::NotificationWait,
+    };
+    let regs = encode_syscall(&req).unwrap();
+    assert_eq!(regs[6], 15, "x7=SyscallId::NotificationWait must be 15");
+}
+
+/// W1-F-1: endpoint_reply_recv encodes SyscallId::ReplyRecv (16)
+/// and places reply_target in msg_regs[0].
+#[test]
+fn w1f_endpoint_reply_recv_encoding() {
+    let reply_target: u64 = 7;
+    let req = SyscallRequest {
+        cap_addr: CPtr::from(200u64),
+        msg_info: MessageInfo::new(1, 0, 0).unwrap(),
+        msg_regs: [reply_target, 0, 0, 0],
+        syscall_id: SyscallId::ReplyRecv,
+    };
+    let regs = encode_syscall(&req).unwrap();
+    assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv must be 16");
+    assert_eq!(regs[2], reply_target, "x2=msg_regs[0] must carry reply_target");
+}
+
+/// W1-D: MmioUnaligned variant exists at discriminant 40.
+#[test]
+fn w1d_mmio_unaligned_variant() {
+    let err = KernelError::from_u32(40).unwrap();
+    assert_eq!(err, KernelError::MmioUnaligned);
+    assert_eq!(err as u32, 40);
 }

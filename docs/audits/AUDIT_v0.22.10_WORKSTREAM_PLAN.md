@@ -42,14 +42,14 @@ sorry/axiom invariant.
 
 ### Phase Overview
 
-| Phase | Name | Sub-tasks | Priority | Gate |
-|-------|------|-----------|----------|------|
-| W1 | Critical Rust ABI Fixes | 9 | **BLOCKER** | Rust tests pass, ABI conformance green |
-| W2 | Proof Formalism & Architecture | 8 | HIGH | `lake build` clean, `test_full.sh` green |
-| W3 | Dead Code Elimination | 8 | MEDIUM | `test_smoke.sh` green, no sorry introduced |
-| W4 | Platform & Architecture Hardening | 7 | MEDIUM | Module builds pass, test_smoke green |
-| W5 | Test Infrastructure & Coverage | 8 | MEDIUM | All test suites pass |
-| W6 | Code Quality & Documentation | 12 | LOW | `test_fast.sh` green, docs consistent |
+| Phase | Name | Sub-tasks | Priority | Gate | Status |
+|-------|------|-----------|----------|------|--------|
+| W1 | Critical Rust ABI Fixes | 9 | **BLOCKER** | Rust tests pass, ABI conformance green | **COMPLETE** (v0.22.11) |
+| W2 | Proof Formalism & Architecture | 8 | HIGH | `lake build` clean, `test_full.sh` green | Pending |
+| W3 | Dead Code Elimination | 8 | MEDIUM | `test_smoke.sh` green, no sorry introduced | Pending |
+| W4 | Platform & Architecture Hardening | 7 | MEDIUM | Module builds pass, test_smoke green | Pending |
+| W5 | Test Infrastructure & Coverage | 8 | MEDIUM | All test suites pass | Pending |
+| W6 | Code Quality & Documentation | 12 | LOW | `test_fast.sh` green, docs consistent | Pending |
 
 **Dependencies**: W1 is independent and must complete first. W2-W4 can proceed
 in parallel after W1. W5 depends on W1 (new wrappers need tests). W6 depends

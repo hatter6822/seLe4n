@@ -101,8 +101,8 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // error code 40 is beyond the 0-39 range
-        let regs = [40, 0, 0, 0, 0, 0, 0];
+        // error code 41 is beyond the 0-40 range (W1-D: MmioUnaligned added at 40)
+        let regs = [41, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
     }
 
