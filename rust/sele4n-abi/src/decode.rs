@@ -36,8 +36,8 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
         if regs[0] > u32::MAX as u64 {
             return Err(KernelError::InvalidSyscallNumber);
         }
-        // Kernel error codes are 0–39 (T1-G, V1-B fix).
-        // Unrecognized codes (≥40) map to InvalidSyscallNumber (protocol violation).
+        // Kernel error codes are 0–40 (T1-G, V1-B fix, W1-D: +MmioUnaligned).
+        // Unrecognized codes (≥41) map to InvalidSyscallNumber (protocol violation).
         let err = KernelError::from_u32(regs[0] as u32)
             .unwrap_or(KernelError::InvalidSyscallNumber);
         return Err(err);

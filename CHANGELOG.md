@@ -14,17 +14,18 @@
   to "17 syscalls" and listed all 7 IPC wrappers.
 - Fixed XVAL-015 conformance test which was validating the bug (asserting badge
   comes from capability, contradicting the Lean decode layer).
-- Added 10 new W1 conformance tests: variant count assertions (KernelError=41,
+- Added 8 new W1 conformance tests: variant count assertions (KernelError=41,
   SyscallId=17), ABI constant assertions, encoding verification for all three
-  new/fixed wrappers.
+  new/fixed wrappers, MmioUnaligned discriminant, endpoint\_reply\_recv register
+  layout validation.
 - Fixed `decode_unknown_error_code` test boundary (40→41).
 - **Audit fix**: `endpoint_reply_recv` had two bugs — (a) user `msg.regs[0]`
   was silently dropped (MR layout started at `regs[1]` instead of `regs[0]`),
   (b) `MessageInfo.length` did not account for the reply\_target slot in MR\[0\]
-  (must be `user_len + 1`). Both corrected. Added
-  `w1e_endpoint_reply_recv_register_layout` conformance test.
+  (must be `user_len + 1`). Both corrected.
 - Added `MmioUnaligned` to `new_variants_discriminants` test for explicit
   discriminant cross-validation.
+- Fixed stale comment in `decode.rs` referencing old 0–39 error range (now 0–40).
 - Bumped Lean project version to 0.22.11, Rust workspace version to 0.22.11.
 - 168 Rust tests pass, zero `cargo doc` warnings.
 - Zero `sorry`, zero `axiom`.

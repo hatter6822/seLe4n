@@ -37,7 +37,7 @@ atomic sub-tasks. Plan:
   (discriminant 40), matching Lean `KernelError.mmioUnaligned`. **MED-03 fixed**: new
   `endpoint_reply_recv` wrapper for compound reply+receive operation. **MED-05 fixed**:
   lib.rs updated from "14 syscalls" to "17 syscalls". XVAL-015 conformance test
-  corrected from asserting zero badge to asserting badge passthrough. 11 new W1
+  corrected from asserting zero badge to asserting badge passthrough. 8 new W1
   conformance tests added (variant counts, ABI constants, encoding verification,
   register layout). Audit fix: `endpoint_reply_recv` corrected to map user
   `msg.regs[0]` into MR\[1\] (was silently dropped) and include reply\_target
