@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.22.3` (`lakefile.toml`) |
+| **Package version** | `0.22.12` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 69,994 across 103 Lean files |
-| **Test LoC** | 8,315 across 10 Lean test suites |
-| **Proved declarations** | 2,008 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 73,246 across 103 Lean files |
+| **Test LoC** | 8,441 across 10 Lean test suites |
+| **Proved declarations** | 2,153 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md) — pre-release audit remediation (5 HIGH, 61 MEDIUM, 29 LOW) |
 | **Active workstream** | **WS-W Phases W1–W2 COMPLETE** — W1 Critical Rust ABI Fixes (v0.22.11), W2 Proof Formalism & Architecture (v0.22.12). W2 closed 2 HIGH (field-disjointness formalism, composition gap), 4 MEDIUM (wildcard unreachability, fuel sufficiency, serviceCountBounded, enforcement unification), 1 LOW (maxHeartbeats documentation). Plan: [`AUDIT_v0.22.10_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md). Prior: WS-V (all 8 phases, v0.22.0–v0.22.10 COMPLETE), WS-U–WS-B — all COMPLETE. |

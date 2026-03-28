@@ -377,10 +377,10 @@ theorem regDepConsistent_shares_serviceGraph :
 -- W2-A (H-2): Operation modified-field sets
 -- ============================================================================
 
-/-- W2-A1: Fields modified by `storeObject`. Updates the object table and
-    associated indices. -/
+/-- W2-A1: Fields modified by `storeObject`. Updates the object table,
+    associated indices, and lifecycle metadata (objectTypes + capabilityRefs). -/
 def storeObject_modifiedFields : List StateField :=
-  [.objects, .objectIndex, .objectIndexSet]
+  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
 
 /-- W2-A1: Fields modified by `serviceRegisterDependency`. Only appends to a
     service entry's dependency list. -/
@@ -393,19 +393,24 @@ def lifecycleRetypeObject_modifiedFields : List StateField :=
   [.objects, .objectIndex, .objectIndexSet, .lifecycle]
 
 /-- W2-A1: Fields modified by IPC endpoint operations (`endpointSendDual`,
-    `endpointReceiveDual`, etc.). Only modify TCB state within objects. -/
+    `endpointReceiveDual`, etc.). Modify TCB/endpoint state within objects
+    via `storeObject`, which also updates lifecycle metadata. For in-place
+    mutations of existing objects, `objectIndex`/`objectIndexSet` are unchanged. -/
 def ipcEndpointOp_modifiedFields : List StateField :=
-  [.objects]
+  [.objects, .lifecycle]
 
 /-- W2-A1: Fields modified by capability operations (`cspaceMint`, `cspaceCopy`,
-    etc.). Only modify CNode slots within objects. -/
+    etc.). Modify CNode slots within objects via `storeObject`, which also
+    updates lifecycle metadata. For in-place CNode mutations, `objectIndex`/
+    `objectIndexSet` are unchanged. -/
 def capabilityOp_modifiedFields : List StateField :=
-  [.objects]
+  [.objects, .lifecycle]
 
 /-- W2-A1: Fields modified by `revokeService` / `removeDependenciesOf`.
-    Only modifies the service dependency graph. -/
+    `revokeService` erases from `serviceRegistry`, then `removeDependenciesOf`
+    modifies the service dependency graph (`services`). -/
 def revokeService_modifiedFields : List StateField :=
-  [.services]
+  [.services, .serviceRegistry]
 
 -- ============================================================================
 -- W2-A2/A3: Per-predicate frame lemmas connecting field disjointness

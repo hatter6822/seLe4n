@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-w2-workstream-FScZA",
-      "commit_sha": "2de472705f9cec898ffffdf0698867c957217dbd",
-      "tree_sha": "db980e98ad5eb0de0220380f406faeb9c2a8f61f",
-      "committed_at_utc": "2026-03-28T18:03:19-04:00"
+      "commit_sha": "d0992f1439f07e15c61bf55bc0305f7a86c55737",
+      "tree_sha": "89ce9a6ce2675a119d254e15a7493cb5e6b9ebbf",
+      "committed_at_utc": "2026-03-28T22:26:22+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6794843421ffda4719e25cc8cd536b694077ab33f4939779cbe3c1b132c650f1"
+    "source_digest": "1f6f9f9f75a0e5cce2350ce9d7aec12546424ad64fc8ab538c139e59e616faa9"
   },
   "summary": {
     "module_count": 113,
@@ -27,7 +27,7 @@
     "version": "0.22.12",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 73241,
+    "production_loc": 73246,
     "test_files": 10,
     "test_loc": 8441,
     "proved_theorem_lemma_decls": 2153,
@@ -8143,7 +8143,7 @@
         {
           "kind": "def",
           "name": "ipcEndpointOp_modifiedFields",
-          "line": 397,
+          "line": 399,
           "called": [
             "StateField"
           ]
@@ -8151,7 +8151,7 @@
         {
           "kind": "def",
           "name": "capabilityOp_modifiedFields",
-          "line": 402,
+          "line": 406,
           "called": [
             "StateField"
           ]
@@ -8159,7 +8159,7 @@
         {
           "kind": "def",
           "name": "revokeService_modifiedFields",
-          "line": 407,
+          "line": 412,
           "called": [
             "StateField"
           ]
@@ -8167,7 +8167,7 @@
         {
           "kind": "theorem",
           "name": "noStaleEndpointQueueReferences_frame",
-          "line": 417,
+          "line": 422,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences"
@@ -8176,7 +8176,7 @@
         {
           "kind": "theorem",
           "name": "noStaleNotificationWaitReferences_frame",
-          "line": 439,
+          "line": 444,
           "called": [
             "SystemState",
             "noStaleNotificationWaitReferences"
@@ -8185,7 +8185,7 @@
         {
           "kind": "theorem",
           "name": "registryEndpointValid_frame",
-          "line": 451,
+          "line": 456,
           "called": [
             "SystemState",
             "registryEndpointValid"
@@ -8194,7 +8194,7 @@
         {
           "kind": "theorem",
           "name": "fieldDisjointness_frameIndependence_documented",
-          "line": 503,
+          "line": 508,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -8207,7 +8207,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemFieldSets",
-          "line": 520,
+          "line": 525,
           "called": [
             "StateField",
             "noStaleEndpointQueueReferences_fields",
@@ -8220,13 +8220,13 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemFieldSets_count",
-          "line": 528,
+          "line": 533,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "registryDependencyConsistent_frame",
-          "line": 534,
+          "line": 539,
           "called": [
             "SystemState",
             "registryDependencyConsistent"
@@ -8235,7 +8235,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_frame",
-          "line": 552,
+          "line": 557,
           "called": [
             "SystemState",
             "lookupService",
@@ -8248,7 +8248,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_monotone",
-          "line": 585,
+          "line": 590,
           "called": [
             "Kernel",
             "SystemState",
