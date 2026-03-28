@@ -218,13 +218,20 @@ length=1 allows MR[0] access.
 Verify `Badge` has `Into<u64>` impl in `identifiers.rs` (confirmed: `Badge`
 is `#[repr(transparent)]` over `u64` with `From<u64>` conversions).
 
-**W1-C-4**: Update Rust doc comment on `notification_signal` to explain badge
-semantics: "The badge value is passed via message register 0. The kernel
-accumulates it into the notification object's badge word via bitwise OR."
+**W1-C-4**: **Replace the misleading doc comment** on `notification_signal`
+(ipc.rs:116-125). The current comment says "badge comes from the resolved
+capability, not from message registers" — this is **wrong** for the Lean
+model. Replace with: "The badge value is passed via message register 0 (x2).
+The kernel's `decodeNotificationSignalArgs` reads MR[0] and accumulates
+it into the notification object's badge word via bitwise OR (`Badge.bor`)."
+Also remove the incorrect "seL4 equivalent: `seL4_Signal(dest)`" comparison,
+as seLe4n's badge-via-MR[0] design deliberately differs from seL4's
+capability-embedded badge.
 
 **W1-C-5**: Verify no existing callers of `notification_signal()` in the Rust
 test suite or sele4n-sys examples need updating for the new signature. Search
-for `notification_signal(` across all Rust files.
+for `notification_signal(` across all Rust files. Note: the conformance test
+XVAL-015 also needs updating (handled in W1-F-2).
 
 **Verification**: New test `test_notification_signal_badge_passthrough`
 **Risk**: API-breaking change for Rust consumers — requires version bump note
@@ -296,16 +303,44 @@ SyscallId::ReplyRecv (16) is encoded, and `test_endpoint_reply_recv_args`
 verifying reply_target in MR[0].
 **Risk**: Additive — new function, no breaking changes
 
-#### W1-F: Add notification wrapper tests
+#### W1-F: Add notification wrapper tests and fix conformance test
 
-**File**: New tests in `rust/sele4n-sys/tests/` or inline in `ipc.rs`
-**Changes**: Add tests that verify:
-1. `notification_signal()` encodes `SyscallId::NotificationSignal` (14)
-2. `notification_wait()` encodes `SyscallId::NotificationWait` (15)
-3. `endpoint_reply_recv()` encodes `SyscallId::ReplyRecv` (16)
-4. `notification_signal()` passes badge in `msg_regs[0]`
-**Rationale**: These tests would have caught CRIT-1 and CRIT-2 at development
-time. They prevent regression.
+**Files**: `rust/sele4n-sys/tests/` or inline in `ipc.rs`,
+`rust/sele4n-abi/tests/conformance.rs`
+
+**Sub-steps**:
+
+**W1-F-1**: Add new `sele4n-sys` tests verifying:
+1. `notification_signal(ntfn, badge)` encodes `SyscallId::NotificationSignal` (14)
+2. `notification_signal(ntfn, badge)` places `badge.raw()` in `msg_regs[0]`
+3. `notification_wait(ntfn)` encodes `SyscallId::NotificationWait` (15)
+4. `endpoint_reply_recv(cap, target, msg)` encodes `SyscallId::ReplyRecv` (16)
+
+**W1-F-2**: **Fix existing conformance test XVAL-015** (`conformance.rs:334-350`).
+The current test is **wrong** — it asserts `x2=0` with comment "badge comes
+from capability", contradicting the Lean kernel which reads badge from MR[0]
+(`decodeNotificationSignalArgs` reads `msgRegs[0]`). Update the test:
+```rust
+fn xval_015_notification_signal() {
+    let badge_val: u64 = 0xDEAD_BEEF;
+    let req = SyscallRequest {
+        cap_addr: CPtr::from(500u64),
+        msg_info: MessageInfo::new(1, 0, 0).unwrap(), // length=1 for badge
+        msg_regs: [badge_val, 0, 0, 0],               // badge in MR[0]
+        syscall_id: SyscallId::NotificationSignal,
+    };
+    let regs = encode_syscall(&req).unwrap();
+    assert_eq!(regs[2], badge_val, "x2=msg_regs[0] carries badge value");
+    // ...
+}
+```
+
+**W1-F-3**: Update conformance test XVAL-015 comment from "badge comes from
+capability" to "badge passed via MR[0], per Lean decodeNotificationSignalArgs".
+
+**Rationale**: XVAL-015 in its current form *validates the bug*. Fixing it
+alongside the wrapper ensures the conformance suite correctly represents the
+Lean ABI contract.
 **Risk**: None — test-only
 
 #### W1-G: Update Rust documentation and syscall count (MED-05)
