@@ -229,6 +229,11 @@ def atPriority (rq : RunQueue) (prio : Priority) : List ThreadId := (rq.byPriori
   | none => []
   | some prio => rq.atPriority prio
 
+/-- V7-J: Validated constructor — builds a `RunQueue` from a list of
+`(ThreadId, Priority)` pairs via the `insert` API. All structural invariants
+(flat↔membership consistency, `invExtK` bundles, priority-bucket coherence)
+are maintained by construction since each `insert` call preserves them.
+Duplicate thread IDs are handled by `insert`'s last-wins semantics. -/
 def ofList (entries : List (ThreadId × Priority)) : RunQueue :=
   entries.foldl (fun rq (tid, prio) => rq.insert tid prio) empty
 
@@ -511,7 +516,20 @@ insert/remove/rotate API (see RunQueue structure comment, lines 18-24).
 
 - **Forward**: every thread in a priority bucket is a run-queue member whose
   recorded priority matches the bucket's priority.
-- **Reverse**: every run-queue member appears in its recorded-priority bucket. -/
+- **Reverse**: every run-queue member appears in its recorded-priority bucket.
+
+**V7-J: External predicate design rationale.** `wellFormed` is defined as an
+external predicate rather than a structure-level proof obligation for two
+reasons: (1) embedding a `Prop` conjunct in the `RunQueue` structure would
+force every mutation to carry proof terms through all intermediate states,
+bloating the `insert`/`remove`/`rotateToBack` implementations; (2) the
+priority-bucket↔membership consistency is an *emergent* property of the API —
+it holds by construction through `insert` (adds to both maps) and `remove`
+(erases from both), so proving it at each structure constructor site adds
+complexity without formal value. The `wellFormed` predicate is proved preserved
+by each API operation separately (`insert_preserves_wellFormed`,
+`remove_preserves_wellFormed`, `rotateToBack_preserves_wellFormed`), which
+gives the same formal guarantee with cleaner code. -/
 def wellFormed (rq : RunQueue) : Prop :=
   (∀ prio tid, tid ∈ ((rq.byPriority[prio]?).getD []) →
      rq.membership.contains tid = true ∧ rq.threadPriority[tid]? = some prio) ∧

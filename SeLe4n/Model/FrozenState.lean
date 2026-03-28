@@ -73,7 +73,7 @@ Safety: `get?` performs a bounds check on the retrieved index, ensuring
 memory safety without carrying proof fields in the structure. Structural
 properties (all indices in-bounds, injection) are proven as separate
 theorems about the `freezeMap` constructor. -/
-structure FrozenMap (κ : Type) (ν : Type) [BEq κ] [Hashable κ] where
+structure FrozenMap (κ : Type) (ν : Type) [BEq κ] [Hashable κ] [LawfulBEq κ] where
   data     : Array ν
   indexMap  : RHTable κ Nat
 
@@ -81,7 +81,7 @@ structure FrozenMap (κ : Type) (ν : Type) [BEq κ] [Hashable κ] where
 access. One hash computation (in `indexMap.get?`) + one O(1) array access.
 Returns `none` if the key is not in the map or if the index is out of
 bounds (the latter cannot happen for well-constructed frozen maps). -/
-@[inline] def FrozenMap.get? [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (k : κ) : Option ν :=
+@[inline] def FrozenMap.get? [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) (k : κ) : Option ν :=
   match fm.indexMap.get? k with
   | none => none
   | some idx =>
@@ -91,7 +91,7 @@ bounds (the latter cannot happen for well-constructed frozen maps). -/
 /-- Q5-A: Runtime mutation: in-place array update at an existing index.
 Returns `none` if the key has no index (key not in frozen map).
 Does NOT add new keys — frozen maps have a fixed key set. -/
-def FrozenMap.set [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (k : κ) (v : ν)
+def FrozenMap.set [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) (k : κ) (v : ν)
     : Option (FrozenMap κ ν) :=
   match fm.indexMap.get? k with
   | none => none
@@ -101,16 +101,16 @@ def FrozenMap.set [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (k : κ) (v : ν
     else none
 
 /-- Q5-A: Number of entries in a frozen map. -/
-@[inline] def FrozenMap.size [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) : Nat :=
+@[inline] def FrozenMap.size [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) : Nat :=
   fm.data.size
 
 /-- Q5-A: Check if a key exists in a frozen map. -/
-@[inline] def FrozenMap.contains [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (k : κ) : Bool :=
+@[inline] def FrozenMap.contains [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) (k : κ) : Bool :=
   (fm.indexMap.get? k).isSome
 
 /-- Q5-A: Fold over all key-value pairs in a frozen map. Uses the index map
 to iterate keys and resolves each to its data array slot. -/
-def FrozenMap.fold [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (init : γ)
+def FrozenMap.fold [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) (init : γ)
     (f : γ → κ → ν → γ) : γ :=
   fm.indexMap.fold init (fun acc k idx =>
     if h : idx < fm.data.size then f acc k fm.data[idx]
@@ -118,14 +118,14 @@ def FrozenMap.fold [BEq κ] [Hashable κ] (fm : FrozenMap κ ν) (init : γ)
 
 /-- Q5-A: A frozen set: membership-only via FrozenMap's index.
 Defined as a unit-valued FrozenMap. -/
-def FrozenSet (κ : Type) [BEq κ] [Hashable κ] := FrozenMap κ Unit
+def FrozenSet (κ : Type) [BEq κ] [Hashable κ] [LawfulBEq κ] := FrozenMap κ Unit
 
 -- ============================================================================
 -- Q5-A Proofs
 -- ============================================================================
 
 /-- Q5-A: `get?` returns `none` for keys not in the index map. -/
-theorem FrozenMap.get?_none [BEq κ] [Hashable κ]
+theorem FrozenMap.get?_none [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm : FrozenMap κ ν) (k : κ) (h : fm.indexMap.get? k = none) :
     fm.get? k = none := by
   unfold FrozenMap.get?
@@ -134,7 +134,7 @@ theorem FrozenMap.get?_none [BEq κ] [Hashable κ]
   · rename_i idx hGet; rw [h] at hGet; cases hGet
 
 /-- Q5-A: `set` returns `none` for keys not in the frozen map. -/
-theorem FrozenMap.set_none [BEq κ] [Hashable κ]
+theorem FrozenMap.set_none [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm : FrozenMap κ ν) (k : κ) (v : ν) (h : fm.indexMap.get? k = none) :
     fm.set k v = none := by
   unfold FrozenMap.set; simp [h]
@@ -274,7 +274,7 @@ value, so the frozen map is memory-safe by construction. The structural
 property `freezeMap_data_size` proves the data array size equals the
 number of source entries, and `freezeMap_foldl_counter` establishes the
 index counter invariant. -/
-def freezeMap [BEq κ] [Hashable κ] (rt : RHTable κ ν) : FrozenMap κ ν :=
+def freezeMap [BEq κ] [Hashable κ] [LawfulBEq κ] (rt : RHTable κ ν) : FrozenMap κ ν :=
   let entries := rt.toList
   let data := (entries.map (·.2)).toArray
   let indexMap := (entries.foldl (fun (acc, i) (k, _) =>
@@ -405,7 +405,7 @@ theorem freeze_preserves_domainSchedule (ist : IntermediateState) :
 
 /-- Q5-C helper: folding over an array of `none` values with the toList accumulator
 returns the initial accumulator unchanged. -/
-private theorem fold_none_replicate [BEq κ] [Hashable κ]
+private theorem fold_none_replicate [BEq κ] [Hashable κ] [LawfulBEq κ]
     (n : Nat) (init : List (κ × ν)) :
     (List.replicate n (none : Option (RHEntry κ ν))).foldl
       (fun acc slot => match slot with | none => acc | some e => (e.key, e.value) :: acc)
@@ -415,7 +415,7 @@ private theorem fold_none_replicate [BEq κ] [Hashable κ]
   | succ k ih => simp [List.replicate_succ, List.foldl_cons]; exact ih init
 
 /-- Q5-C: `freezeMap` data size equals the number of entries in the source. -/
-theorem freezeMap_data_size [BEq κ] [Hashable κ] (rt : RHTable κ ν) :
+theorem freezeMap_data_size [BEq κ] [Hashable κ] [LawfulBEq κ] (rt : RHTable κ ν) :
     (freezeMap rt).data.size = rt.toList.length := by
   simp [freezeMap, List.size_toArray, List.length_map]
 
@@ -424,7 +424,7 @@ theorem freezeMap_data_size [BEq κ] [Hashable κ] (rt : RHTable κ ν) :
 -- ============================================================================
 
 /-- Q5-C helper: the foldl counter in freezeMap equals the list length. -/
-private theorem freezeMap_foldl_counter [BEq κ] [Hashable κ]
+private theorem freezeMap_foldl_counter [BEq κ] [Hashable κ] [LawfulBEq κ]
     (entries : List (κ × ν)) :
     ∀ (init : RHTable κ Nat) (n : Nat),
       (entries.foldl (fun (acc, i) (k, _) => (acc.insert k i, i + 1))
@@ -441,7 +441,7 @@ private theorem freezeMap_foldl_counter [BEq κ] [Hashable κ]
 -- ============================================================================
 
 /-- Q5-C helper: `toList` on an empty RHTable yields `[]`. -/
-private theorem toList_empty [BEq κ] [Hashable κ] (cap : Nat) (hPos : 0 < cap) :
+private theorem toList_empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable κ ν).toList = [] := by
   unfold RHTable.toList RHTable.fold
   simp only [RHTable.empty]
@@ -449,7 +449,7 @@ private theorem toList_empty [BEq κ] [Hashable κ] (cap : Nat) (hPos : 0 < cap)
   exact fold_none_replicate cap []
 
 /-- Q5-C: Freezing an empty RHTable produces a FrozenMap with empty data. -/
-theorem freezeMap_empty [BEq κ] [Hashable κ] (cap : Nat) (hPos : 0 < cap := by omega) :
+theorem freezeMap_empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat) (hPos : 0 < cap := by omega) :
     (freezeMap (RHTable.empty cap hPos : RHTable κ ν)).data.size = 0 := by
   rw [freezeMap_data_size, toList_empty]; simp
 
@@ -470,7 +470,7 @@ theorem freezeObject_untyped_passthrough (u : UntypedObject) :
     freezeObject (.untyped u) = .untyped u := rfl
 
 /-- Q5-C: `FrozenMap.set` preserves `data.size`. -/
-theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ]
+theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm : FrozenMap κ ν) (k : κ) (v : ν) (fm' : FrozenMap κ ν)
     (h : fm.set k v = some fm') :
     fm'.data.size = fm.data.size := by

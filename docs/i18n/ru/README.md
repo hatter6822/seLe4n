@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.7-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -48,7 +48,7 @@ security model), при этом вводя ряд архитектурных н
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.22.7` |
+| **Версия** | `0.22.8` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовый код (Lean LoC)** | 72 569 строк в 103 файлах |
 | **Тестовый код (Lean LoC)** | 8 437 строк в 10 тест-сьютах (test suites) |

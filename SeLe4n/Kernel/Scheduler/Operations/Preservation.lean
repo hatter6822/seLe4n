@@ -1696,14 +1696,14 @@ private theorem restoreIncomingContext_domainTimeRemaining_eq
   unfold restoreIncomingContext
   cases hObj : st.objects[tid.toObjId]? with
   | none => rfl
-  | some obj => cases obj <;> simp [hObj]
+  | some obj => cases obj <;> simp
 
 /-- V5-H: `schedule` preserves `domainTimeRemainingPositive`.
     `schedule` does not modify `domainTimeRemaining`. -/
 theorem schedule_preserves_domainTimeRemainingPositive
     (st st' : SystemState)
     (hInv : domainTimeRemainingPositive st)
-    (hObjInv : st.objects.invExt)
+    (_hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     domainTimeRemainingPositive st' := by
   unfold schedule at hStep
@@ -1741,7 +1741,6 @@ theorem schedule_preserves_domainTimeRemainingPositive
               -- hStep : setCurrentThread (some tid) (restoreIncomingContext ... tid) = .ok ((), st')
               -- Extract st' = the result state
               unfold setCurrentThread at hStep
-              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               -- Goal: domainTimeRemainingPositive of { restoreIncomingContext ... with scheduler.current := ... }
               unfold domainTimeRemainingPositive at *

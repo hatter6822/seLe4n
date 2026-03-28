@@ -244,9 +244,27 @@ Major structural changes concentrated in:
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` — priority-bucketed RunQueue
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` — fast projection path
 
-## 8. Canonical references
+## 8. WS-V Phase V7: Data Structure & Proof Optimization (v0.22.8)
+
+V7 addresses performance and correctness findings from the v0.21.7 pre-release
+audit:
+
+- **LawfulBEq enforcement** (V7-C): All `RHTable` public operations now require
+  `[LawfulBEq α]`, ensuring propositional soundness of equality checks. Ripple
+  fixes across 18 files including FrozenState, FreezeProofs, and FrozenOps.
+- **Heartbeat reduction** (V7-A/B): `filter_fold_present` reduced from 3.2M to
+  400K heartbeats via `filter_fold_present_step` extraction. `insertLoop`
+  preservation proofs reduced from 800K to 420K/400K via `noDupKeys_after_set`
+  and `distCorrect_after_set` helpers.
+- **Algorithmic improvements** (V7-G/I): `CNodeRadix.toList` from O(n²) to O(n).
+  Boot-time key uniqueness checks from O(n²) to O(n) via `Std.HashSet`.
+- **`native_decide` elimination** (V7-E): `RegisterFile.not_lawfulBEq` now uses
+  kernel-reducible `decide` instead of `native_decide`.
+
+## 9. Canonical references
 
 - Audit: [`KERNEL_PERFORMANCE_AUDIT_v0.12.5.md`](../dev_history/audits/KERNEL_PERFORMANCE_AUDIT_v0.12.5.md)
 - Workstream plan: [`KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md`](../dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md)
-- Changelog: [`CHANGELOG.md`](../../CHANGELOG.md) (v0.12.6–v0.12.15)
+- V7 workstream plan: [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.21.7_WORKSTREAM_PLAN.md)
+- Changelog: [`CHANGELOG.md`](../../CHANGELOG.md) (v0.12.6–v0.12.15, v0.22.8)
 

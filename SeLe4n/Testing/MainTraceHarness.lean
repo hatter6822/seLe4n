@@ -429,6 +429,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   match SeLe4n.Kernel.schedule stCtx with
   | .error err => IO.println s!"[SST-031] context switch schedule error: {reprStr err}"
   | .ok (_, stCtxSched) =>
+      -- V7-F: RegisterFile == is non-lawful BEq (checks 32 GPR indices, not extensional)
       let regsMatch := stCtxSched.machine.regs == ctxRegFile
       IO.println s!"[SST-032] context switch regs match incoming: {regsMatch}"
 
@@ -1184,6 +1185,7 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
   match SeLe4n.Kernel.handleYield stCtx with
   | .error err => IO.println s!"[ICS-001] H12f context switch yield error: {reprStr err}"
   | .ok (_, stSwitched) =>
+      -- V7-F: RegisterFile/TCB == is non-lawful BEq (checks 32 GPR indices, not extensional)
       -- Verify machine.regs now matches incoming thread's registerContext
       let regsMatchIncoming := stSwitched.machine.regs == incomingRegs
       IO.println s!"[ICS-002] H12f context switch regs match incoming: {regsMatchIncoming}"

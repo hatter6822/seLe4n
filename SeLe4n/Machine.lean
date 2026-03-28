@@ -199,7 +199,12 @@ undecidable in general; this instance checks equality at all 32 valid
 GPR indices (0..31), which is sound for the ARM64 register model since
 `RegName.isValid` restricts valid names to this range. For proofs that
 require propositional equality of register files, use `RegisterFile.ext`
-(which requires pointwise equality of the `gpr` function). -/
+(which requires pointwise equality of the `gpr` function).
+
+**V7-F: WARNING — non-lawful BEq instance.** Safe for runtime testing and trace
+validation. Do NOT use `==` on `RegisterFile` in proof contexts that require
+propositional equality — use `RegisterFile.ext` instead. See
+`RegisterFile.not_lawfulBEq` for the formal negative witness. -/
 instance : BEq RegisterFile where
   beq a b := a.pc == b.pc && a.sp == b.sp &&
     (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
@@ -217,9 +222,9 @@ theorem RegisterFile.not_lawfulBEq : ¬ LawfulBEq RegisterFile := by
   let f₂ : RegName → RegValue := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩
   let r₁ : RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
   let r₂ : RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
-  have hBeq : (r₁ == r₂) = true := by native_decide
+  have hBeq : (r₁ == r₂) = true := by decide
   have hPropEq : r₁ = r₂ := @LawfulBEq.eq_of_beq _ _ h r₁ r₂ hBeq
-  have hEval : r₁.gpr ⟨32⟩ ≠ r₂.gpr ⟨32⟩ := by native_decide
+  have hEval : r₁.gpr ⟨32⟩ ≠ r₂.gpr ⟨32⟩ := by decide
   exact hEval (by rw [hPropEq])
 
 /-- S1-J: Extensionality lemma for `RegisterFile`. Two register files are equal

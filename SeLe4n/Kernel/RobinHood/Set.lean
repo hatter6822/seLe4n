@@ -22,41 +22,41 @@ Algorithm-local `Std.HashSet` usage (BFS visited sets) is retained.
 namespace SeLe4n.Kernel.RobinHood
 
 /-- A verified hash set backed by `RHTable κ Unit`. -/
-structure RHSet (κ : Type) [BEq κ] [Hashable κ] where
+structure RHSet (κ : Type) [BEq κ] [Hashable κ] [LawfulBEq κ] where
   table : RHTable κ Unit
 
 /-- Create an empty `RHSet` with the given capacity. -/
-def RHSet.empty [BEq κ] [Hashable κ] (cap : Nat := 16) (h : 0 < cap := by omega) : RHSet κ :=
+def RHSet.empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat := 16) (h : 0 < cap := by omega) : RHSet κ :=
   ⟨RHTable.empty cap h⟩
 
 /-- Check if the set contains the given key. -/
-def RHSet.contains [BEq κ] [Hashable κ] (s : RHSet κ) (k : κ) : Bool :=
+def RHSet.contains [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (k : κ) : Bool :=
   s.table.contains k
 
 /-- Insert a key into the set. -/
-def RHSet.insert [BEq κ] [Hashable κ] (s : RHSet κ) (k : κ) : RHSet κ :=
+def RHSet.insert [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (k : κ) : RHSet κ :=
   ⟨s.table.insert k ()⟩
 
 /-- Remove a key from the set. -/
-def RHSet.erase [BEq κ] [Hashable κ] (s : RHSet κ) (k : κ) : RHSet κ :=
+def RHSet.erase [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (k : κ) : RHSet κ :=
   ⟨s.table.erase k⟩
 
 /-- Convert the set to a list of keys. -/
-def RHSet.toList [BEq κ] [Hashable κ] (s : RHSet κ) : List κ :=
+def RHSet.toList [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : List κ :=
   s.table.toList.map (·.1)
 
 /-- Fold over all keys in the set. -/
-def RHSet.fold [BEq κ] [Hashable κ] (s : RHSet κ) (init : β) (f : β → κ → β) : β :=
+def RHSet.fold [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (init : β) (f : β → κ → β) : β :=
   s.table.fold init (fun acc k _ => f acc k)
 
 /-- The size of the set. -/
-def RHSet.size [BEq κ] [Hashable κ] (s : RHSet κ) : Nat := s.table.size
+def RHSet.size [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : Nat := s.table.size
 
 /-- The capacity of the set. -/
-def RHSet.capacity [BEq κ] [Hashable κ] (s : RHSet κ) : Nat := s.table.capacity
+def RHSet.capacity [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : Nat := s.table.capacity
 
 /-- Build a set from a list of keys. -/
-def RHSet.ofList [BEq κ] [Hashable κ] (keys : List κ)
+def RHSet.ofList [BEq κ] [Hashable κ] [LawfulBEq κ] (keys : List κ)
     (cap : Nat := 16) (hPos : 0 < cap := by omega) : RHSet κ :=
   ⟨RHTable.ofList (keys.map fun k => (k, ())) cap hPos⟩
 
@@ -64,16 +64,16 @@ def RHSet.ofList [BEq κ] [Hashable κ] (keys : List κ)
 -- Instances
 -- ============================================================================
 
-instance [BEq κ] [Hashable κ] : Inhabited (RHSet κ) where
+instance [BEq κ] [Hashable κ] [LawfulBEq κ] : Inhabited (RHSet κ) where
   default := RHSet.empty
 
-instance [BEq κ] [Hashable κ] : BEq (RHSet κ) where
+instance [BEq κ] [Hashable κ] [LawfulBEq κ] : BEq (RHSet κ) where
   beq a b := a.table == b.table
 
-instance [BEq κ] [Hashable κ] : Membership κ (RHSet κ) where
+instance [BEq κ] [Hashable κ] [LawfulBEq κ] : Membership κ (RHSet κ) where
   mem s k := s.contains k = true
 
-instance [BEq κ] [Hashable κ] : EmptyCollection (RHSet κ) where
+instance [BEq κ] [Hashable κ] [LawfulBEq κ] : EmptyCollection (RHSet κ) where
   emptyCollection := RHSet.empty
 
 -- ============================================================================
@@ -81,7 +81,7 @@ instance [BEq κ] [Hashable κ] : EmptyCollection (RHSet κ) where
 -- ============================================================================
 
 /-- Q2-B: Empty set contains nothing. -/
-theorem RHSet.contains_empty [BEq κ] [Hashable κ] (k : κ) :
+theorem RHSet.contains_empty [BEq κ] [Hashable κ] [LawfulBEq κ] (k : κ) :
     (RHSet.empty : RHSet κ).contains k = false := by
   simp [RHSet.contains, RHSet.empty, RHTable.contains,
         RHTable.getElem?_empty]
@@ -130,7 +130,7 @@ theorem RHSet.erase_preserves_invExt [BEq κ] [Hashable κ] [LawfulBEq κ]
   s.table.erase_preserves_invExt k hExt hSize
 
 /-- Q2-B: Empty set satisfies invExt. -/
-theorem RHSet.empty_invExt [BEq κ] [Hashable κ] :
+theorem RHSet.empty_invExt [BEq κ] [Hashable κ] [LawfulBEq κ] :
     (RHSet.empty : RHSet κ).table.invExt :=
   RHTable.empty_invExt' 16 (by omega)
 
@@ -155,7 +155,7 @@ theorem RHSet.erase_absent_noop [BEq κ] [Hashable κ] [LawfulBEq κ]
   · exact RHSet.contains_erase_ne s k k' h hExt hSize
 
 /-- Q2-B: Membership via toList is equivalent to contains. -/
-theorem RHSet.mem_iff_contains [BEq κ] [Hashable κ]
+theorem RHSet.mem_iff_contains [BEq κ] [Hashable κ] [LawfulBEq κ]
     (s : RHSet κ) (k : κ) :
     k ∈ s ↔ s.contains k = true := by
   rfl
@@ -165,10 +165,10 @@ theorem RHSet.mem_iff_contains [BEq κ] [Hashable κ]
 -- ============================================================================
 
 /-- Kernel-level extended invariant for RHSet (delegates to RHTable.invExtK). -/
-def RHSet.invExtK [BEq κ] [Hashable κ] (s : RHSet κ) : Prop := s.table.invExtK
+def RHSet.invExtK [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : Prop := s.table.invExtK
 
 /-- Empty set satisfies invExtK. -/
-theorem RHSet.empty_invExtK [BEq κ] [Hashable κ] :
+theorem RHSet.empty_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ] :
     (RHSet.empty : RHSet κ).table.invExtK :=
   RHTable.empty_invExtK 16 (by omega) (by omega)
 

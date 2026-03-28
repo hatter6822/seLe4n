@@ -18,9 +18,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
-WS-V Phases V1, V2, V3, V4, V5, and V6 are complete. Phases V7–V8 remain.
+WS-V Phases V1, V2, V3, V4, V5, V6, and V7 are complete. Phase V8 remains.
 
-### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V6 COMPLETE
+### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — Phases V1–V7 COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
 61 MEDIUM, 29 LOW) across 8 phases (V1–V8) with 147 atomic sub-tasks. Plan:
@@ -119,6 +119,26 @@ WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,
   warnings (V6-K). `enforcementBoundaryExtended` updated to 22 entries with
   `enforcementBoundaryExtended_count` and `enforcementBoundaryExtended_matches_canonical`
   (V6-L). 26 V6 test cases in InformationFlowSuite. Zero sorry/axiom.
+
+- **V7 (Performance & Data Structure Optimization) COMPLETE** (v0.22.8): 19
+  sub-tasks (V7-A through V7-J). V7-C: `LawfulBEq` made explicit API-level
+  requirement for all `RHTable` public operations (get?, contains, erase, insert,
+  toList, filter, insertNoResize, resize) with ripple fixes across 18 files
+  including Bridge.lean, Preservation.lean, Lookup.lean, Prelude.lean,
+  FrozenState.lean, FreezeProofs.lean, Commutativity.lean. V7-D: General
+  `filter_preserves_key` theorem for arbitrary predicates proved via
+  `filter_fold_present` / `filter_fold_absent_by_pred`. V7-A: `filter_fold_present`
+  proof refactored with `filter_fold_present_step` helper; heartbeat budget reduced
+  from 3.2M to 400K. V7-B: `insertLoop_preserves_noDupKeys` and
+  `insertLoop_preserves_pcd` proofs refactored with `noDupKeys_after_set` and
+  `distCorrect_after_set` extracted helpers; heartbeat budgets reduced from 800K
+  to 420K. V7-G: `CNodeRadix.toList` refactored from O(n²) append to O(n)
+  cons+reverse with updated proof chain. V7-I: `irqKeysNoDup`/`objIdKeysNoDup`
+  replaced with O(n) `natKeysNoDup` using `Std.HashSet`. V7-E: `native_decide`
+  replaced with `decide` in `RegisterFile.not_lawfulBEq`. V7-F: Non-lawful
+  `BEq RegisterFile` documented in Machine.lean and test code. V7-H: Robin Hood
+  `erase` size decrement safety documented under `invExt`. V7-J: `RunQueue.wellFormed`
+  design rationale and `ofList` validated constructor documented. Zero sorry/axiom.
 
 - **V4 (Platform & Hardware Fidelity) COMPLETE** (v0.22.3): 26 sub-tasks (V4-A1
   through V4-N). **V4-A boot-to-runtime invariant bridge**: Complete machine-checked

@@ -332,15 +332,16 @@ private def collectEntries (slots : List (Option Capability)) (startIdx : Nat)
   | none :: rest => collectEntries rest (startIdx + 1)
   | some cap :: rest => (SeLe4n.Slot.ofNat startIdx, cap) :: collectEntries rest (startIdx + 1)
 
-/-- The foldl-based toList equals `acc ++ collectEntries` (generalized). -/
+/-- V7-G: The foldl-based toList (cons-accumulate) produces the reverse of
+`collectEntries` prepended to the accumulator. Generalized induction. -/
 private theorem foldl_collect_eq (slots : List (Option Capability)) (startIdx : Nat)
     (acc : List (SeLe4n.Slot × Capability)) :
     (List.foldl (fun (x : List (SeLe4n.Slot × Capability) × Nat)
       (entry : Option Capability) =>
       match entry with
       | none => (x.fst, x.snd + 1)
-      | some cap => (x.fst ++ [(SeLe4n.Slot.ofNat x.snd, cap)], x.snd + 1))
-      (acc, startIdx) slots).fst = acc ++ collectEntries slots startIdx := by
+      | some cap => ((SeLe4n.Slot.ofNat x.snd, cap) :: x.fst, x.snd + 1))
+      (acc, startIdx) slots).fst = (collectEntries slots startIdx).reverse ++ acc := by
   induction slots generalizing startIdx acc with
   | nil => simp [collectEntries]
   | cons hd tl ih =>
@@ -350,16 +351,17 @@ private theorem foldl_collect_eq (slots : List (Option Capability)) (startIdx : 
       exact ih (startIdx + 1) acc
     | some cap =>
       simp only [List.foldl_cons, collectEntries]
-      rw [ih (startIdx + 1) (acc ++ [(SeLe4n.Slot.ofNat startIdx, cap)])]
-      simp [List.append_assoc]
+      rw [ih (startIdx + 1) ((SeLe4n.Slot.ofNat startIdx, cap) :: acc)]
+      simp [List.reverse_cons, List.append_assoc]
 
 /-- `CNodeRadix.toList` equals `collectEntries` of the slot list. -/
 private theorem toList_eq_collectEntries (tree : CNodeRadix) :
     tree.toList = collectEntries tree.slots.toList 0 := by
   unfold CNodeRadix.toList CNodeRadix.fold
   simp only [← Array.foldl_toList]
-  have := foldl_collect_eq tree.slots.toList 0 []
-  simpa using this
+  have h := foldl_collect_eq tree.slots.toList 0 []
+  simp only [List.append_nil] at h
+  exact (congrArg List.reverse h).trans (List.reverse_reverse _)
 
 -- ============================================================================
 -- Q4-C16: toList_complete

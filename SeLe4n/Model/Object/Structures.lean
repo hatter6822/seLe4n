@@ -1855,7 +1855,7 @@ def cdtMapsConsistent (cdt : CapDerivationTree) : Prop :=
     ∃ e ∈ cdt.edges, e.parent = p ∧ e.child = c)
 
 /-- Helper: default RHTable lookup returns none. -/
-private theorem rhtable_default_get?_none [BEq α] [Hashable α] (k : α) :
+private theorem rhtable_default_get?_none [BEq α] [Hashable α] [LawfulBEq α] (k : α) :
     (default : SeLe4n.Kernel.RobinHood.RHTable α β).get? k = none :=
   SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) k
 

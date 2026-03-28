@@ -57,7 +57,7 @@ theorem RHTable.empty_loadFactorBounded (cap : Nat) (hPos : 0 < cap) :
     This theorem witnesses that `insert` prevents unbounded load by checking
     `size * 4 ≥ capacity * 3` before insertion. After resize, the load factor
     is approximately halved, maintaining the 75% bound. -/
-theorem RHTable.insert_resizes_at_capacity [BEq α] [Hashable α]
+theorem RHTable.insert_resizes_at_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β)
     (hLoad : t.size * 4 ≥ t.capacity * 3) :
     (t.insert k v) = (t.resize).insertNoResize k v := by
@@ -70,7 +70,7 @@ theorem RHTable.insert_resizes_at_capacity [BEq α] [Hashable α]
     when the load threshold is reached. The theorem name is retained from the
     workstream spec for traceability, but the semantics reflect the actual
     (superior) auto-resize behavior. -/
-theorem RHTable.insert_fails_at_capacity [BEq α] [Hashable α]
+theorem RHTable.insert_fails_at_capacity [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β)
     (hLoad : t.size * 4 ≥ t.capacity * 3) :
     (t.insert k v) = (t.resize).insertNoResize k v :=
@@ -78,7 +78,7 @@ theorem RHTable.insert_fails_at_capacity [BEq α] [Hashable α]
 
 /-- Composite invariant bundle: well-formedness ∧ distance correctness ∧
     no duplicate keys ∧ Robin Hood ordering. -/
-def RHTable.invariant [BEq α] [Hashable α] (t : RHTable α β) : Prop :=
+def RHTable.invariant [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : Prop :=
   t.WF ∧ t.distCorrect ∧ t.noDupKeys ∧ t.robinHoodOrdered
 
 -- ============================================================================
@@ -107,7 +107,7 @@ theorem RHTable.empty_robinHoodOrdered (cap : Nat) (hPos : 0 < cap) :
   simp [RHTable.empty] at hSlotI
 
 /-- N2-A1 + B1 + C1 + D1: The empty table satisfies the full invariant bundle. -/
-theorem RHTable.empty_invariant [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
+theorem RHTable.empty_invariant [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hPos : 0 < cap) :
     (RHTable.empty cap hPos : RHTable α β).invariant :=
   ⟨RHTable.empty_wf cap hPos,
    RHTable.empty_distCorrect cap hPos,

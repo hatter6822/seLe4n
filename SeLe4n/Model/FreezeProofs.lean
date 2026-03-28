@@ -55,7 +55,7 @@ array holds the corresponding values.
 /-- Q6-A helper: The fold that builds `toList` collects exactly the occupied
 slot entries. Membership in the fold result iff in the initial accumulator or
 from an occupied slot in the list. -/
-private theorem foldl_toList_mem_forward [BEq κ] [Hashable κ]
+private theorem foldl_toList_mem_forward [BEq κ] [Hashable κ] [LawfulBEq κ]
     (slots : List (Option (RHEntry κ ν))) (acc : List (κ × ν)) (k : κ) (v : ν)
     (h : (k, v) ∈ slots.foldl (fun acc slot =>
       match slot with | none => acc | some e => (e.key, e.value) :: acc) acc) :
@@ -85,7 +85,7 @@ private theorem foldl_toList_mem_forward [BEq κ] [Hashable κ]
 
 /-- Q6-A helper: If an occupied slot entry is in the list, its key-value pair
 is in the fold result. -/
-private theorem foldl_toList_mem_backward [BEq κ] [Hashable κ]
+private theorem foldl_toList_mem_backward [BEq κ] [Hashable κ] [LawfulBEq κ]
     (slots : List (Option (RHEntry κ ν))) (acc : List (κ × ν))
     (entry : RHEntry κ ν) (hE : some entry ∈ slots) :
     (entry.key, entry.value) ∈ slots.foldl (fun acc slot =>
@@ -107,7 +107,7 @@ private theorem foldl_toList_mem_backward [BEq κ] [Hashable κ]
       | some e => exact ih ((e.key, e.value) :: acc) h
 where
   /-- Accumulator monotonicity: if `x ∈ acc`, then `x` is in the fold result. -/
-  foldl_toList_acc_subset [BEq κ] [Hashable κ]
+  foldl_toList_acc_subset [BEq κ] [Hashable κ] [LawfulBEq κ]
       (slots : List (Option (RHEntry κ ν))) (acc : List (κ × ν))
       (x : κ × ν) (hx : x ∈ acc) :
       x ∈ slots.foldl (fun acc slot =>
@@ -524,7 +524,7 @@ theorem freezeMap_get?_eq [BEq κ] [Hashable κ] [LawfulBEq κ]
 Mapping values through an arbitrary function `f` does not change the resulting
 indexMap. This enables the `lookup_freeze_objects` proof where values are
 transformed by `freezeObject` before constructing the frozen map. -/
-private theorem foldl_indexMap_map_values [BEq κ] [Hashable κ]
+private theorem foldl_indexMap_map_values [BEq κ] [Hashable κ] [LawfulBEq κ]
     (entries : List (κ × α)) (f : α → β)
     (init : RHTable κ Nat) (n : Nat) :
     ((entries.map (fun (k, v) => (k, f v))).foldl
@@ -539,7 +539,7 @@ private theorem foldl_indexMap_map_values [BEq κ] [Hashable κ]
 
 /-- Q6-A helper: Extracting `.2` after mapping a pair function that transforms
 only values is equivalent to mapping the value function then applying it. -/
-private theorem map_snd_map_pair [BEq κ] [Hashable κ]
+private theorem map_snd_map_pair [BEq κ] [Hashable κ] [LawfulBEq κ]
     (entries : List (κ × α)) (f : α → β) :
     (entries.map (fun (k, v) => (k, f v))).map (·.2) =
     (entries.map (·.2)).map f := by
@@ -550,7 +550,7 @@ private theorem map_snd_map_pair [BEq κ] [Hashable κ]
 /-- Q6-A helper: Freeze a map with a value transformation. Mirrors the custom
 object freeze path in `freeze` but expressed as a general combinator, enabling
 reuse of the `freezeMap_get?_eq` machinery. -/
-private def freezeMapWith [BEq κ] [Hashable κ]
+private def freezeMapWith [BEq κ] [Hashable κ] [LawfulBEq κ]
     (rt : RHTable κ α) (f : α → β) : FrozenMap κ β :=
   let entries := rt.toList
   let mapped := entries.map (fun (k, v) => (k, f v))
@@ -961,7 +961,7 @@ key structural invariants beyond just lookup semantics. -/
 
 /-- Q6-C2: `freezeMap` preserves entry count. The number of data entries
 in the frozen map equals the length of the source table's `toList`. -/
-theorem freezeMap_preserves_size [BEq κ] [Hashable κ]
+theorem freezeMap_preserves_size [BEq κ] [Hashable κ] [LawfulBEq κ]
     (rt : RHTable κ ν) :
     (freezeMap rt).size = rt.toList.length := by
   unfold FrozenMap.size freezeMap
