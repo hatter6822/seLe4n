@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-v7-pZZMF",
-      "commit_sha": "a70163f7b44638d17e45febb7d22628fba9edefc",
-      "tree_sha": "5cba82238725d345d16026191a513344809ecacc",
-      "committed_at_utc": "2026-03-28T03:05:03+00:00"
+      "commit_sha": "0e84f54e2796d1f4cf3b67afee93576d0585103f",
+      "tree_sha": "90b48819f6963efc043274debb844d7e94ac17ab",
+      "committed_at_utc": "2026-03-28T03:16:44+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "74eab70ac050400ed971a553c9535ccbdf577f57b8c30364b64c9c42298c4de8"
+    "source_digest": "f16b5f8e9a82be0f3960e398be8b5419a23a23ca4da85325a86b6940cf5d8e09"
   },
   "summary": {
     "module_count": 113,
@@ -27,7 +27,7 @@
     "version": "0.22.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 72652,
+    "production_loc": 72651,
     "test_files": 10,
     "test_loc": 8437,
     "proved_theorem_lemma_decls": 2141,
@@ -30231,7 +30231,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_domainTimeRemainingPositive",
-          "line": 1769,
+          "line": 1768,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -30245,7 +30245,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_domainTimeRemainingPositive",
-          "line": 1797,
+          "line": 1796,
           "called": [
             "RHTable_insert_preserves_invExt",
             "SystemState",
@@ -30261,7 +30261,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_domainTimeRemainingPositive",
-          "line": 1832,
+          "line": 1831,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -30271,7 +30271,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundleFull",
-          "line": 1856,
+          "line": 1855,
           "called": [
             "SystemState",
             "invExt",
@@ -30290,7 +30290,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1875,
+          "line": 1874,
           "called": [
             "SystemState",
             "TCB",
@@ -30305,7 +30305,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_fields",
-          "line": 1898,
+          "line": 1897,
           "called": [
             "Deadline",
             "KernelObject",
@@ -30323,7 +30323,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem_aux",
-          "line": 1954,
+          "line": 1953,
           "called": [
             "Deadline",
             "KernelObject",
@@ -30340,7 +30340,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem",
-          "line": 2011,
+          "line": 2010,
           "called": [
             "Deadline",
             "KernelObject",
@@ -30357,7 +30357,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_edf_bridge",
-          "line": 2036,
+          "line": 2035,
           "called": [
             "Deadline",
             "Priority",
@@ -30393,7 +30393,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2183,
+          "line": 2182,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -30421,7 +30421,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2274,
+          "line": 2273,
           "called": [
             "RHTable_getElem",
             "SchedulerState.runnable",
@@ -30452,7 +30452,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2358,
+          "line": 2357,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -30484,7 +30484,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_contextMatchesCurrent",
-          "line": 2478,
+          "line": 2477,
           "called": [
             "SystemState",
             "chooseThread",
@@ -30505,7 +30505,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_contextMatchesCurrent",
-          "line": 2528,
+          "line": 2527,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -30519,7 +30519,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_contextMatchesCurrent",
-          "line": 2556,
+          "line": 2555,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -30537,7 +30537,7 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrent_frame",
-          "line": 2600,
+          "line": 2599,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -30548,7 +30548,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerPriorityMatch",
-          "line": 2643,
+          "line": 2642,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -30578,7 +30578,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerPriorityMatch",
-          "line": 2772,
+          "line": 2771,
           "called": [
             "RHTable_getElem",
             "SchedulerState.runnable",
@@ -30603,7 +30603,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerPriorityMatch",
-          "line": 2838,
+          "line": 2837,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -30628,7 +30628,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundleFull",
-          "line": 2936,
+          "line": 2935,
           "called": [
             "SystemState",
             "invExt",
@@ -30650,7 +30650,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundleFull",
-          "line": 2958,
+          "line": 2957,
           "called": [
             "SystemState",
             "handleYield",
@@ -30672,7 +30672,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundleFull",
-          "line": 2980,
+          "line": 2979,
           "called": [
             "SystemState",
             "invExt",
@@ -30694,7 +30694,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_runQueueWellFormed",
-          "line": 3007,
+          "line": 3006,
           "called": [
             "SystemState",
             "insert_preserves_wellFormed",
@@ -30707,7 +30707,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_preserves_schedulerInvariantBundleFull",
-          "line": 3043,
+          "line": 3042,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
