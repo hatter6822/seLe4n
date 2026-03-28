@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-test-coverage-docs-ojHII",
-      "commit_sha": "85a54df001af59b53b5d39cc5e022d3b73986b28",
-      "tree_sha": "fd4efdff494f3e8cc5847547f94205339453762c",
-      "committed_at_utc": "2026-03-28T05:05:49+00:00"
+      "commit_sha": "bb3938a2e75e84fa4f9f358249a1baa538492fa3",
+      "tree_sha": "e0dc573c98872055b6d9b595701aeab4af7d8f08",
+      "committed_at_utc": "2026-03-28T05:36:15+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b01b43fc1c326e83a80bdc5ecc25f208d8e82a63598db3425d9f9a14bdc2bbf8"
+    "source_digest": "fcec02d83dbfebee71a650646da866e15b2a17f7be2a7ebc7e3c39d97ebb1d93"
   },
   "summary": {
     "module_count": 113,
