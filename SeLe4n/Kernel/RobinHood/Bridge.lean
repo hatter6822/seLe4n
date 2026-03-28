@@ -672,6 +672,8 @@ private theorem filter_fold_present_step [BEq α] [Hashable α] [LawfulBEq α]
         · simp only [show ¬(p < i.val + 1) from by omega, ite_false]
           simp only [hpi, ite_false] at hAccIf; exact hAccIf
 
+-- W2-H (L-3): 400K heartbeats — fold induction over the full slot array with
+-- per-slot case analysis on filter predicate, key equality, and entry presence.
 -- Helper: fold induction for filter when key is present
 set_option maxHeartbeats 400000 in
 private theorem filter_fold_present [BEq α] [Hashable α] [LawfulBEq α]
@@ -794,6 +796,8 @@ private theorem filter_fold_absent_by_pred [BEq α] [Hashable α] [LawfulBEq α]
           simp only [hfF]
           exact ⟨hAccExt, Nat.le_succ_of_le hAccSizeI, hAccCap, hAccNone⟩)).2.2.2
 
+-- W2-H (L-3): 400K heartbeats — filter subset proof requires full fold induction
+-- with get?/filter interaction reasoning across slot boundaries.
 set_option maxHeartbeats 400000 in
 /-- If `(t.filter f).get? k = some v`, then `t.get? k = some v`.
     Filter only retains entries from the original table without modification. -/

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-w2-workstream-FScZA",
-      "commit_sha": "d0992f1439f07e15c61bf55bc0305f7a86c55737",
-      "tree_sha": "89ce9a6ce2675a119d254e15a7493cb5e6b9ebbf",
-      "committed_at_utc": "2026-03-28T22:26:22+00:00"
+      "commit_sha": "b9dd117926d4e16b14947b45e1bf15fa24653b8d",
+      "tree_sha": "51dfc7813b10a93cc0e511feaa296ff44b38be7e",
+      "committed_at_utc": "2026-03-28T22:39:37+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1f6f9f9f75a0e5cce2350ce9d7aec12546424ad64fc8ab538c139e59e616faa9"
+    "source_digest": "a20a189f45cf24918422f5aee9640615d37c0313db844a4cce1eeb3817dd8df0"
   },
   "summary": {
     "module_count": 113,
     "declaration_count": 3774
   },
   "readme_sync": {
-    "version": "0.22.12",
+    "version": "0.22.13",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 73246,
+    "production_loc": 73260,
     "test_files": 10,
     "test_loc": 8441,
     "proved_theorem_lemma_decls": 2153,
@@ -24903,7 +24903,7 @@
         {
           "kind": "theorem",
           "name": "buildCNodeRadix_lookup_equiv",
-          "line": 314,
+          "line": 317,
           "called": [
             "CNodeConfig",
             "CNodeRadix",
@@ -24936,7 +24936,7 @@
         {
           "kind": "theorem",
           "name": "uniqueRadixIndices_sufficient",
-          "line": 417,
+          "line": 420,
           "called": [
             "Capability",
             "RHTable",
@@ -24950,7 +24950,7 @@
         {
           "kind": "theorem",
           "name": "buildCNodeRadix_hNoPhantom_auto_discharge",
-          "line": 440,
+          "line": 443,
           "called": [
             "Capability",
             "RHTable",
@@ -24966,7 +24966,7 @@
         {
           "kind": "def",
           "name": "freezeCNodeSlots",
-          "line": 457,
+          "line": 460,
           "called": [
             "CNode",
             "CNodeRadix",
@@ -24976,7 +24976,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardWidth",
-          "line": 461,
+          "line": 464,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -24987,7 +24987,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardValue",
-          "line": 466,
+          "line": 469,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -24998,7 +24998,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_radixWidth",
-          "line": 471,
+          "line": 474,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -25009,7 +25009,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_wf",
-          "line": 476,
+          "line": 479,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -26067,7 +26067,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_present",
-          "line": 677,
+          "line": 679,
           "called": [
             "RHEntry",
             "RHTable",
@@ -26089,7 +26089,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_key",
-          "line": 722,
+          "line": 724,
           "called": [
             "RHTable",
             "RHTable.get_none_no_matching_entry",
@@ -26105,7 +26105,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.fold_preserves",
-          "line": 743,
+          "line": 745,
           "called": [
             "RHTable",
             "RHTable.fold",
@@ -26115,7 +26115,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_absent_by_pred",
-          "line": 759,
+          "line": 761,
           "called": [
             "RHEntry",
             "RHTable",
@@ -26139,7 +26139,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_subset",
-          "line": 800,
+          "line": 804,
           "called": [
             "RHEntry",
             "RHTable",
@@ -26158,7 +26158,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_pred",
-          "line": 842,
+          "line": 846,
           "called": [
             "RHEntry",
             "RHTable",
@@ -26174,7 +26174,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_filter_getElem",
-          "line": 873,
+          "line": 877,
           "called": [
             "RHTable",
             "RHTable.filter_get_pred",
@@ -26191,8 +26191,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:898>",
-          "line": 898,
+          "name": "<anonymous:instance:902>",
+          "line": 902,
           "called": [
             "RHTable",
             "RHTable.empty"
@@ -26201,7 +26201,7 @@
         {
           "kind": "def",
           "name": "RHTable.invExtK",
-          "line": 912,
+          "line": 916,
           "called": [
             "RHTable",
             "capacity",
@@ -26212,7 +26212,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_invExt",
-          "line": 916,
+          "line": 920,
           "called": [
             "RHTable",
             "invExt",
@@ -26222,7 +26222,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_size_lt_capacity",
-          "line": 919,
+          "line": 923,
           "called": [
             "RHTable",
             "capacity",
@@ -26233,7 +26233,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_capacity_ge4",
-          "line": 922,
+          "line": 926,
           "called": [
             "RHTable",
             "capacity",
@@ -26243,7 +26243,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.mk_invExtK",
-          "line": 926,
+          "line": 930,
           "called": [
             "RHTable",
             "capacity",
@@ -26255,7 +26255,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExtK",
-          "line": 935,
+          "line": 939,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -26266,7 +26266,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_capacity_eq",
-          "line": 947,
+          "line": 951,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -26277,7 +26277,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExtK",
-          "line": 954,
+          "line": 958,
           "called": [
             "RHTable",
             "erase",
@@ -26290,7 +26290,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_capacity_ge4",
-          "line": 966,
+          "line": 970,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -26303,7 +26303,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExtK",
-          "line": 975,
+          "line": 979,
           "called": [
             "RHTable",
             "insert",
@@ -26316,7 +26316,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 988,
+          "line": 992,
           "called": [
             "RHTable",
             "erase",
@@ -26327,7 +26327,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_capacity_eq",
-          "line": 999,
+          "line": 1003,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -26341,7 +26341,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_invExtK",
-          "line": 1019,
+          "line": 1023,
           "called": [
             "RHTable",
             "filter",
@@ -26354,7 +26354,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.ofList_capacity_ge4",
-          "line": 1031,
+          "line": 1035,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -26367,7 +26367,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.ofList_invExtK",
-          "line": 1045,
+          "line": 1049,
           "called": [
             "RHTable.ofList",
             "RHTable.ofList_capacity_ge4",
@@ -27935,7 +27935,7 @@
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_noDupKeys",
-          "line": 805,
+          "line": 808,
           "called": [
             "RHEntry",
             "capacity",
@@ -27959,7 +27959,7 @@
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_pcd",
-          "line": 1055,
+          "line": 1058,
           "called": [
             "RHEntry",
             "capacity",
@@ -27983,7 +27983,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_distCorrect",
-          "line": 1312,
+          "line": 1315,
           "called": [
             "RHTable",
             "capacity",
@@ -27997,7 +27997,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_distCorrect",
-          "line": 1322,
+          "line": 1325,
           "called": [
             "RHTable",
             "RHTable.empty_distCorrect",
@@ -28011,7 +28011,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_distCorrect",
-          "line": 1335,
+          "line": 1338,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -28025,7 +28025,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_noDupKeys",
-          "line": 1346,
+          "line": 1349,
           "called": [
             "RHTable",
             "capacity",
@@ -28040,7 +28040,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_probeChainDominant",
-          "line": 1362,
+          "line": 1365,
           "called": [
             "RHTable",
             "capacity",
@@ -28055,7 +28055,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_preserves_invExt",
-          "line": 1376,
+          "line": 1379,
           "called": [
             "RHTable",
             "insertNoResize",
@@ -28069,7 +28069,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_noDupKeys",
-          "line": 1385,
+          "line": 1388,
           "called": [
             "RHTable",
             "RHTable.empty_invExt",
@@ -28085,7 +28085,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_probeChainDominant",
-          "line": 1398,
+          "line": 1401,
           "called": [
             "RHTable",
             "RHTable.empty_invExt",
@@ -28101,7 +28101,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invExt",
-          "line": 1411,
+          "line": 1414,
           "called": [
             "RHTable",
             "invExt",
@@ -28115,7 +28115,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_noDupKeys",
-          "line": 1418,
+          "line": 1421,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -28130,7 +28130,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_probeChainDominant",
-          "line": 1426,
+          "line": 1429,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -28145,7 +28145,7 @@
         {
           "kind": "theorem",
           "name": "noDupKeys_after_clear",
-          "line": 1438,
+          "line": 1441,
           "called": [
             "RHEntry",
             "capacity",
@@ -28157,7 +28157,7 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_noDupKeys",
-          "line": 1461,
+          "line": 1464,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -28171,7 +28171,7 @@
         {
           "kind": "theorem",
           "name": "displacement_backward",
-          "line": 1563,
+          "line": 1566,
           "called": [
             "dist_step_mod",
             "idealIndex",
@@ -28181,7 +28181,7 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_distCorrect",
-          "line": 1632,
+          "line": 1635,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -28197,7 +28197,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_distCorrect",
-          "line": 1714,
+          "line": 1717,
           "called": [
             "RHEntry",
             "RHTable",
@@ -28216,7 +28216,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_noDupKeys",
-          "line": 1743,
+          "line": 1746,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -28235,7 +28235,7 @@
         {
           "kind": "def",
           "name": "relaxedPCD",
-          "line": 1769,
+          "line": 1772,
           "called": [
             "RHEntry",
             "capacity",
@@ -28246,7 +28246,7 @@
         {
           "kind": "theorem",
           "name": "relaxedPCD_to_pcd_at_termination",
-          "line": 1783,
+          "line": 1786,
           "called": [
             "RHEntry",
             "capacity",
@@ -28262,7 +28262,7 @@
         {
           "kind": "theorem",
           "name": "pcd_to_relaxedPCD_after_clear",
-          "line": 1892,
+          "line": 1895,
           "called": [
             "RHEntry",
             "capacity",
@@ -28277,7 +28277,7 @@
         {
           "kind": "theorem",
           "name": "backshiftStep_relaxedPCD",
-          "line": 1918,
+          "line": 1921,
           "called": [
             "RHEntry",
             "capacity",
@@ -28293,13 +28293,13 @@
         {
           "kind": "theorem",
           "name": "mod_add_mod",
-          "line": 2099,
+          "line": 2102,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_pcd",
-          "line": 2107,
+          "line": 2110,
           "called": [
             "RHEntry",
             "backshiftLoop",
@@ -28320,7 +28320,7 @@
         {
           "kind": "theorem",
           "name": "List.exists_none_of_countP_lt",
-          "line": 2305,
+          "line": 2308,
           "called": [
             "none"
           ]
@@ -28328,7 +28328,7 @@
         {
           "kind": "theorem",
           "name": "exists_none_of_countOccupied_lt",
-          "line": 2322,
+          "line": 2325,
           "called": [
             "List.exists_none_of_countP_lt",
             "RHEntry",
@@ -28341,7 +28341,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_probeChainDominant",
-          "line": 2337,
+          "line": 2340,
           "called": [
             "RHEntry",
             "RHTable",
@@ -28367,7 +28367,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExt",
-          "line": 2437,
+          "line": 2440,
           "called": [
             "RHTable",
             "insert",
@@ -28381,7 +28381,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExt",
-          "line": 2449,
+          "line": 2452,
           "called": [
             "RHTable",
             "capacity",
@@ -28397,7 +28397,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_invariant",
-          "line": 2458,
+          "line": 2461,
           "called": [
             "RHTable",
             "invExt",
@@ -28411,7 +28411,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_loadFactorBounded",
-          "line": 2472,
+          "line": 2475,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -28422,7 +28422,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExtFull",
-          "line": 2487,
+          "line": 2490,
           "called": [
             "RHTable",
             "erase",
@@ -28435,7 +28435,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExt_of_invExtFull",
-          "line": 2495,
+          "line": 2498,
           "called": [
             "RHTable",
             "invExt",
@@ -28445,7 +28445,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.loadFactorBounded_of_invExtFull",
-          "line": 2498,
+          "line": 2501,
           "called": [
             "RHTable",
             "invExtFull",
@@ -37687,7 +37687,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_preserves_edgeWellFounded_noParent",
-          "line": 1714,
+          "line": 1718,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37700,7 +37700,7 @@
         {
           "kind": "def",
           "name": "cdtMapsConsistent",
-          "line": 1846,
+          "line": 1850,
           "called": [
             "CapDerivationTree",
             "get"
@@ -37709,7 +37709,7 @@
         {
           "kind": "theorem",
           "name": "rhtable_default_get",
-          "line": 1858,
+          "line": 1862,
           "called": [
             "RHTable",
             "RHTable.getElem",
@@ -37720,7 +37720,7 @@
         {
           "kind": "theorem",
           "name": "empty_cdtMapsConsistent",
-          "line": 1865,
+          "line": 1869,
           "called": [
             "CdtNodeId",
             "RHTable",
@@ -37734,7 +37734,7 @@
         {
           "kind": "def",
           "name": "removeEdge",
-          "line": 1887,
+          "line": 1891,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37747,7 +37747,7 @@
         {
           "kind": "theorem",
           "name": "removeEdge_surviving_child_ne",
-          "line": 1899,
+          "line": 1903,
           "called": [
             "CapDerivationEdge",
             "CapDerivationTree",
@@ -37757,7 +37757,7 @@
         {
           "kind": "theorem",
           "name": "removeEdge_preserves_cdtMapsConsistent",
-          "line": 1916,
+          "line": 1920,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37769,7 +37769,7 @@
         {
           "kind": "def",
           "name": "revokeDerivationEdge",
-          "line": 1934,
+          "line": 1938,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37779,7 +37779,7 @@
         {
           "kind": "def",
           "name": "mk_checked",
-          "line": 1946,
+          "line": 1950,
           "called": [
             "CapDerivationEdge",
             "CapDerivationTree",
@@ -37791,7 +37791,7 @@
         {
           "kind": "theorem",
           "name": "mk_checked_cdtMapsConsistent",
-          "line": 1955,
+          "line": 1959,
           "called": [
             "CapDerivationEdge",
             "CdtNodeId",
@@ -37803,7 +37803,7 @@
         {
           "kind": "inductive",
           "name": "CdtChildReachable",
-          "line": 1969,
+          "line": 1973,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37813,7 +37813,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_go_cons",
-          "line": 1975,
+          "line": 1979,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37824,7 +37824,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_go_nil",
-          "line": 1984,
+          "line": 1988,
           "called": [
             "CapDerivationTree",
             "CdtNodeId"
@@ -37833,7 +37833,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_go_acc_subset",
-          "line": 1991,
+          "line": 1995,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37846,7 +37846,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_go_children_found",
-          "line": 2008,
+          "line": 2012,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37859,7 +37859,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_children_subset",
-          "line": 2024,
+          "line": 2028,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37871,7 +37871,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_go_fuel_mono",
-          "line": 2036,
+          "line": 2040,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37883,7 +37883,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_go_head_children_found",
-          "line": 2061,
+          "line": 2065,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37896,7 +37896,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_fuel_bound",
-          "line": 2078,
+          "line": 2082,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37907,7 +37907,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_fuel_sufficiency",
-          "line": 2106,
+          "line": 2110,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37919,7 +37919,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_go_queue_pos_children_found",
-          "line": 2122,
+          "line": 2126,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37932,13 +37932,13 @@
         {
           "kind": "theorem",
           "name": "list_mem_split",
-          "line": 2146,
+          "line": 2150,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "descendantsOf_go_mem_children_found",
-          "line": 2161,
+          "line": 2165,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -37950,7 +37950,7 @@
         {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 2177,
+          "line": 2181,
           "called": [
             "CNode",
             "Endpoint",
@@ -37962,8 +37962,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2188>",
-          "line": 2188,
+          "name": "<anonymous:instance:2192>",
+          "line": 2192,
           "called": [
             "KernelObject"
           ]
@@ -37971,19 +37971,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 2198,
+          "line": 2202,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 2207,
+          "line": 2211,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 2211,
+          "line": 2215,
           "called": [
             "KernelObjectType"
           ]
@@ -37991,7 +37991,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 2221,
+          "line": 2225,
           "called": [
             "KernelObjectType",
             "none"
@@ -38000,7 +38000,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 2231,
+          "line": 2235,
           "called": [
             "KernelObjectType",
             "ofNat",
@@ -38010,7 +38010,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 2235,
+          "line": 2239,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -38019,13 +38019,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 2240,
+          "line": 2244,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 2242,
+          "line": 2246,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -38034,7 +38034,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 2262,
+          "line": 2266,
           "called": [
             "KernelObject",
             "ObjId",
@@ -38045,8 +38045,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2275>",
-          "line": 2275,
+          "name": "<anonymous:instance:2279>",
+          "line": 2279,
           "called": [
             "KernelObject",
             "ObjId",
@@ -38057,7 +38057,7 @@
         {
           "kind": "def",
           "name": "makeObjectCap",
-          "line": 2289,
+          "line": 2293,
           "called": [
             "AccessRight",
             "Capability",

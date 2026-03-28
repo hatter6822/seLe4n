@@ -302,6 +302,9 @@ private theorem foldl_establishes_some
           (fun e1 e2 h1 h2 => hRadixUniq e1 e2 (List.mem_cons_of_mem _ h1)
             (List.mem_cons_of_mem _ h2))
 
+-- W2-H (L-3): 800K heartbeats — bidirectional lookup equivalence proof requires
+-- list induction over RHTable entries with per-entry extractBits/radix reasoning.
+-- Each step unfolds buildCNodeRadix fold and matches against radix array updates.
 set_option maxHeartbeats 800000 in
 /-- T4-I (M-DS-3): Bidirectional lookup equivalence for `buildCNodeRadix`.
 After constructing a `CNodeRadix` from an `RHTable`, lookups in the radix

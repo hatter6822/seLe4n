@@ -796,6 +796,9 @@ private theorem distCorrect_after_set [BEq α] [Hashable α] [LawfulBEq α]
 -- Section 10b: insertLoop preserves noDupKeys and PCD (combined induction)
 -- ============================================================================
 
+-- W2-H (L-3): 420K heartbeats — combined noDupKeys + PCD preservation in a single
+-- induction. Three cases (swap/place/advance) each require array set reasoning
+-- and probe chain distance calculations. V7-D helpers reduced this from 800K.
 set_option maxHeartbeats 420000 in
 /-- Combined induction: `insertLoop` preserves both noDupKeys and
     probeChainDominant. The preconditions `hChainOK` and `hNotFound`

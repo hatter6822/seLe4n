@@ -44,7 +44,7 @@ atomic sub-tasks. Plan:
   slot in `MessageInfo.length`. 168 Rust tests pass, zero doc warnings.
   Zero sorry/axiom.
 
-- **W2 (Proof Formalism & Architecture) COMPLETE** (v0.22.12): 8 sub-tasks
+- **W2 (Proof Formalism & Architecture) COMPLETE** (v0.22.12, audit v0.22.13): 8 sub-tasks
   (W2-A through W2-H). **W2-A (H-2)**: Field-disjointness formalism closure —
   added `modifiedFields` for 6 operation categories, 3 new per-predicate frame
   lemmas (`noStaleEndpointQueueReferences_frame`, `noStaleNotificationWaitReferences_frame`,

@@ -1,3 +1,23 @@
+## [0.22.13] — W2 audit: completeness and accuracy fixes
+
+Post-implementation audit of Phase W2. Ensures all deliverables are complete
+and documentation accurately reflects code.
+
+- **W2-H completeness**: Documented all 9 elevated `maxHeartbeats` settings
+  (previously only 4 of 9 were documented). Newly documented: CDT acyclicity
+  (2M, Structures.lean), filter fold induction (2×400K, RobinHood/Bridge.lean),
+  combined insertLoop preservation (420K, RobinHood/Invariant/Preservation.lean),
+  buildCNodeRadix lookup equivalence (800K, RadixTree/Bridge.lean).
+- **W2-A accuracy**: Fixed `storeObject_modifiedFields` (added `.lifecycle`),
+  `revokeService_modifiedFields` (added `.serviceRegistry`),
+  `ipcEndpointOp_modifiedFields` and `capabilityOp_modifiedFields` (added
+  `.lifecycle`). All four `modifiedFields` definitions now accurately reflect
+  the fields each operation writes via `storeObject`.
+- **Documentation sync**: Updated stale metrics in SELE4N_SPEC.md (v0.22.3
+  → v0.22.13, 69,994 → 73,246 LoC, 2,008 → 2,153 proved declarations),
+  README.md, and CLAUDE.md.
+- Zero `sorry`, zero `axiom`.
+
 ## [0.22.12] — W2: Proof Formalism & Architecture
 
 Phase W2 of WS-W pre-release audit remediation. Closes 2 HIGH, 4 MEDIUM,
