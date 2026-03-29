@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.21.7` |
+| Version | `0.22.18` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 64,229 across 100 Lean files |
-| Test LoC | 8,316 across 10 suites |
-| Proved declarations | 1,878 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical) |
-| Active workstream | **WS-V PORTFOLIO COMPLETE** (v0.22.0–v0.22.10, 8 phases, 147 sub-tasks). Prior: **WS-U PORTFOLIO COMPLETE** (v0.21.0–v0.21.7), **WS-T COMPLETE** (v0.20.0–v0.20.7), WS-S through WS-B — all COMPLETE. |
+| Production LoC | 72,385 across 103 Lean files |
+| Test LoC | 8,552 across 10 suites |
+| Proved declarations | 2,087 theorem/lemma declarations (zero sorry/axiom) |
+| Latest audit | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
+| Active workstream | **WS-X Phase X1 COMPLETE** (v0.22.18). Prior: **WS-W PORTFOLIO COMPLETE** (v0.22.11–v0.22.17), **WS-V PORTFOLIO COMPLETE** (v0.22.0–v0.22.10), WS-U through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

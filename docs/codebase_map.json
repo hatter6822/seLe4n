@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-code-quality-docs-8gEaD",
-      "commit_sha": "bcacf6dbcf6ea76a0da7207ae2f4287cad929f8a",
-      "tree_sha": "b1dfec08fe338fdb366a4d7942ff0377fa81c7f3",
-      "committed_at_utc": "2026-03-29T05:40:59+00:00"
+      "branch": "claude/optimize-hardware-binding-proofs-GX80s",
+      "commit_sha": "ef02016031ef7e1e413663afdb8c9ab9c10421b9",
+      "tree_sha": "da36ef6280fdc064e783be19fbe5a5966bc63b81",
+      "committed_at_utc": "2026-03-29T18:31:00+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6057021a3e54369db665250b4ac4e832a324c3ef061e89ef5aa884ac87dbba07"
+    "source_digest": "5e4e07a759c521dbaf1eb22a952a35e06334693c99c2b65a461efa935b095c64"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3659
+    "declaration_count": 3678
   },
   "readme_sync": {
-    "version": "0.22.17",
+    "version": "0.22.18",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 72139,
+    "production_loc": 72398,
     "test_files": 10,
     "test_loc": 8552,
-    "proved_theorem_lemma_decls": 2077,
+    "proved_theorem_lemma_decls": 2087,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -916,7 +916,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Adapter",
       "path": "SeLe4n/Kernel/Architecture/Adapter.lean",
-      "declaration_count": 13,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -1044,9 +1044,46 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "contextSwitchState",
+          "line": 136,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "adapterContextSwitch",
+          "line": 149,
+          "called": [
+            "Kernel",
+            "RegisterFile",
+            "RuntimeBoundaryContract",
+            "ThreadId",
+            "contextSwitchState",
+            "mapAdapterError"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterContextSwitch_error_unsupportedBinding",
+          "line": 162,
+          "called": [
+            "RegisterFile",
+            "RuntimeBoundaryContract",
+            "SystemState",
+            "ThreadId",
+            "adapterContextSwitch",
+            "contextSwitchState",
+            "mapAdapterError"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "adapterReadMemory_ok_returns_machine_byte",
-          "line": 105,
+          "line": 171,
           "called": [
             "PAddr",
             "RuntimeBoundaryContract",
@@ -1150,7 +1187,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Invariant",
       "path": "SeLe4n/Kernel/Architecture/Invariant.lean",
-      "declaration_count": 46,
+      "declaration_count": 51,
       "declarations": [
         {
           "kind": "namespace",
@@ -1182,6 +1219,7 @@
           "called": [
             "RuntimeBoundaryContract",
             "advanceTimerState",
+            "contextSwitchState",
             "proofLayerInvariantBundle",
             "writeRegisterState"
           ]
@@ -1189,7 +1227,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle",
-          "line": 88,
+          "line": 93,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -1204,7 +1242,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_ok_preserves_proofLayerInvariantBundle",
-          "line": 110,
+          "line": 115,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -1220,7 +1258,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_ok_preserves_proofLayerInvariantBundle",
-          "line": 128,
+          "line": 133,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -1234,8 +1272,39 @@
         },
         {
           "kind": "theorem",
+          "name": "adapterContextSwitch_ok_preserves_proofLayerInvariantBundle",
+          "line": 152,
+          "called": [
+            "AdapterProofHooks",
+            "RegisterFile",
+            "RuntimeBoundaryContract",
+            "SystemState",
+            "ThreadId",
+            "adapterContextSwitch",
+            "adapterContextSwitch_error_unsupportedBinding",
+            "contextSwitchState",
+            "proofLayerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterContextSwitch_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
+          "line": 169,
+          "called": [
+            "RegisterFile",
+            "RuntimeBoundaryContract",
+            "SystemState",
+            "ThreadId",
+            "adapterContextSwitch",
+            "contextSwitchState",
+            "mapAdapterError",
+            "proofLayerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle",
-          "line": 147,
+          "line": 180,
           "called": [
             "RuntimeBoundaryContract",
             "SystemState",
@@ -1247,7 +1316,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 155,
+          "line": 188,
           "called": [
             "RuntimeBoundaryContract",
             "SystemState",
@@ -1260,7 +1329,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 166,
+          "line": 199,
           "called": [
             "RegName",
             "RegValue",
@@ -1275,7 +1344,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 177,
+          "line": 210,
           "called": [
             "PAddr",
             "RuntimeBoundaryContract",
@@ -1288,7 +1357,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_vspaceInvariantBundle",
-          "line": 189,
+          "line": 222,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -1298,7 +1367,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_vspaceInvariantBundle",
-          "line": 198,
+          "line": 231,
           "called": [
             "RegName",
             "RegValue",
@@ -1309,8 +1378,48 @@
         },
         {
           "kind": "theorem",
+          "name": "contextSwitchState_preserves_vspaceInvariantBundle",
+          "line": 245,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "ThreadId",
+            "contextSwitchState",
+            "vspaceInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contextSwitchState_preserves_contextMatchesCurrent",
+          "line": 259,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "contextMatchesCurrent",
+            "contextSwitchState",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contextSwitchState_preserves_currentThreadValid",
+          "line": 269,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "contextSwitchState",
+            "currentThreadValid",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "default_objects_none",
-          "line": 214,
+          "line": 286,
           "called": [
             "ObjId",
             "RHTable_get",
@@ -1321,7 +1430,7 @@
         {
           "kind": "theorem",
           "name": "default_objects_absurd",
-          "line": 221,
+          "line": 293,
           "called": [
             "KernelObject",
             "ObjId",
@@ -1332,7 +1441,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantBundle",
-          "line": 230,
+          "line": 302,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -1343,7 +1452,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariant",
-          "line": 242,
+          "line": 314,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1353,7 +1462,7 @@
         {
           "kind": "theorem",
           "name": "default_lifecycleInvariantBundle",
-          "line": 246,
+          "line": 318,
           "called": [
             "SystemState",
             "default_systemState_lifecycleConsistent",
@@ -1364,7 +1473,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcSchedulerContractPredicates",
-          "line": 250,
+          "line": 322,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1374,7 +1483,7 @@
         {
           "kind": "theorem",
           "name": "default_capabilityInvariantBundle",
-          "line": 264,
+          "line": 336,
           "called": [
             "RHTable_empty_invExt",
             "RHTable_get",
@@ -1390,7 +1499,7 @@
         {
           "kind": "theorem",
           "name": "default_dualQueueSystemInvariant",
-          "line": 280,
+          "line": 352,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1400,7 +1509,7 @@
         {
           "kind": "theorem",
           "name": "default_allPendingMessagesBounded",
-          "line": 292,
+          "line": 364,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -1410,7 +1519,7 @@
         {
           "kind": "theorem",
           "name": "default_badgeWellFormed",
-          "line": 296,
+          "line": 368,
           "called": [
             "SystemState",
             "badgeWellFormed",
@@ -1420,7 +1529,7 @@
         {
           "kind": "theorem",
           "name": "default_waitingThreadsPendingMessageNone",
-          "line": 301,
+          "line": 373,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1430,7 +1539,7 @@
         {
           "kind": "theorem",
           "name": "default_endpointQueueNoDup",
-          "line": 305,
+          "line": 377,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1440,7 +1549,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcStateQueueMembershipConsistent",
-          "line": 309,
+          "line": 381,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1450,7 +1559,7 @@
         {
           "kind": "theorem",
           "name": "default_queueNextBlockingConsistent",
-          "line": 313,
+          "line": 385,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1460,7 +1569,7 @@
         {
           "kind": "theorem",
           "name": "default_queueHeadBlockedConsistent",
-          "line": 317,
+          "line": 389,
           "called": [
             "SystemState",
             "default_objects_absurd",
@@ -1470,7 +1579,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariantFull",
-          "line": 321,
+          "line": 393,
           "called": [
             "SystemState",
             "default_allPendingMessagesBounded",
@@ -1488,7 +1597,7 @@
         {
           "kind": "theorem",
           "name": "default_contextMatchesCurrent",
-          "line": 328,
+          "line": 400,
           "called": [
             "SystemState",
             "contextMatchesCurrent"
@@ -1497,7 +1606,7 @@
         {
           "kind": "theorem",
           "name": "default_currentThreadDequeueCoherent",
-          "line": 332,
+          "line": 404,
           "called": [
             "SystemState",
             "currentNotEndpointQueueHead",
@@ -1509,7 +1618,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantBundleFull",
-          "line": 342,
+          "line": 414,
           "called": [
             "SystemState",
             "currentTimeSlicePositive",
@@ -1528,7 +1637,7 @@
         {
           "kind": "theorem",
           "name": "default_system_state_proofLayerInvariantBundle",
-          "line": 362,
+          "line": 434,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -1553,7 +1662,7 @@
         {
           "kind": "theorem",
           "name": "deterministicTimerProgress_consumed_by_advanceTimer",
-          "line": 432,
+          "line": 504,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -1565,7 +1674,7 @@
         {
           "kind": "theorem",
           "name": "deterministicRegisterContext_consumed_by_writeRegister",
-          "line": 445,
+          "line": 517,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -1579,7 +1688,7 @@
         {
           "kind": "theorem",
           "name": "memoryAccessSafety_consumed_by_readMemory",
-          "line": 458,
+          "line": 530,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -1591,7 +1700,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_capabilityInvariantBundle",
-          "line": 500,
+          "line": 572,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -1601,7 +1710,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_ipcInvariantFull",
-          "line": 508,
+          "line": 580,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -1616,7 +1725,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_of_services_eq",
-          "line": 547,
+          "line": 619,
           "called": [
             "ServiceId",
             "SystemState",
@@ -1627,7 +1736,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_services_eq",
-          "line": 554,
+          "line": 626,
           "called": [
             "ServiceId",
             "SystemState",
@@ -1638,7 +1747,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_serviceGraphInvariant",
-          "line": 563,
+          "line": 635,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -1649,7 +1758,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
-          "line": 578,
+          "line": 650,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -1663,7 +1772,7 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 638,
+          "line": 710,
           "called": [
             "SystemState",
             "toObjId"
@@ -1672,7 +1781,7 @@
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 644,
+          "line": 716,
           "called": [
             "SystemState",
             "registerDecodeConsistent"
@@ -1681,7 +1790,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 651,
+          "line": 723,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -1692,7 +1801,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 665,
+          "line": 737,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -1702,7 +1811,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 673,
+          "line": 745,
           "called": [
             "RegName",
             "RegValue",
@@ -3216,13 +3325,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 20,
+          "line": 29,
           "called": []
         },
         {
           "kind": "def",
           "name": "asidBoundToRoot",
-          "line": 25,
+          "line": 34,
           "called": [
             "ASID",
             "ObjId",
@@ -3232,7 +3341,7 @@
         {
           "kind": "def",
           "name": "resolveAsidRoot",
-          "line": 33,
+          "line": 42,
           "called": [
             "ASID",
             "ObjId",
@@ -3244,13 +3353,13 @@
         {
           "kind": "def",
           "name": "physicalAddressBound",
-          "line": 44,
+          "line": 53,
           "called": []
         },
         {
           "kind": "def",
           "name": "physicalAddressBoundForConfig",
-          "line": 49,
+          "line": 58,
           "called": [
             "MachineConfig",
             "config"
@@ -3259,7 +3368,7 @@
         {
           "kind": "theorem",
           "name": "physicalAddressBoundForConfig_le_default",
-          "line": 53,
+          "line": 62,
           "called": [
             "MachineConfig",
             "config",
@@ -3270,7 +3379,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPage",
-          "line": 72,
+          "line": 81,
           "called": [
             "ASID",
             "Kernel",
@@ -3288,7 +3397,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageChecked",
-          "line": 92,
+          "line": 101,
           "called": [
             "ASID",
             "Kernel",
@@ -3305,7 +3414,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPage",
-          "line": 106,
+          "line": 115,
           "called": [
             "ASID",
             "Kernel",
@@ -3319,7 +3428,7 @@
         {
           "kind": "def",
           "name": "vspaceLookupFull",
-          "line": 117,
+          "line": 126,
           "called": [
             "ASID",
             "Kernel",
@@ -3334,7 +3443,7 @@
         {
           "kind": "def",
           "name": "vspaceLookup",
-          "line": 129,
+          "line": 138,
           "called": [
             "ASID",
             "Kernel",
@@ -3348,7 +3457,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageWithFlush",
-          "line": 151,
+          "line": 160,
           "called": [
             "ASID",
             "Kernel",
@@ -3363,7 +3472,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithFlush",
-          "line": 166,
+          "line": 175,
           "called": [
             "ASID",
             "Kernel",
@@ -3375,7 +3484,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlush",
-          "line": 175,
+          "line": 184,
           "called": [
             "ASID",
             "Kernel",
@@ -3392,7 +3501,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushPlatform",
-          "line": 187,
+          "line": 196,
           "called": [
             "ASID",
             "Kernel",
@@ -3411,7 +3520,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlush_default_is_readOnly",
-          "line": 208,
+          "line": 217,
           "called": [
             "PagePermissions.readOnly",
             "wxCompliant"
@@ -3420,7 +3529,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByASID",
-          "line": 219,
+          "line": 228,
           "called": [
             "ASID",
             "Kernel",
@@ -3430,7 +3539,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByPage",
-          "line": 226,
+          "line": 235,
           "called": [
             "ASID",
             "Kernel",
@@ -3441,7 +3550,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByASID_state_frame",
-          "line": 230,
+          "line": 239,
           "called": [
             "ASID",
             "SystemState",
@@ -3451,7 +3560,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPage_state_frame",
-          "line": 238,
+          "line": 247,
           "called": [
             "ASID",
             "SystemState",
@@ -3462,7 +3571,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidRootsUnique",
-          "line": 251,
+          "line": 260,
           "called": [
             "ObjId",
             "SystemState",
@@ -3472,7 +3581,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_implies_obj",
-          "line": 260,
+          "line": 269,
           "called": [
             "ASID",
             "ObjId",
@@ -3485,7 +3594,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_of_asidTable_entry",
-          "line": 297,
+          "line": 306,
           "called": [
             "ASID",
             "ObjId",
@@ -3532,13 +3641,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 41,
+          "line": 51,
           "called": []
         },
         {
           "kind": "def",
           "name": "vspaceRootNonOverlap",
-          "line": 46,
+          "line": 56,
           "called": [
             "ObjId",
             "SystemState",
@@ -3549,7 +3658,7 @@
         {
           "kind": "def",
           "name": "asidTableConsistent",
-          "line": 56,
+          "line": 66,
           "called": [
             "SystemState"
           ]
@@ -3557,7 +3666,7 @@
         {
           "kind": "def",
           "name": "boundedAddressTranslation",
-          "line": 66,
+          "line": 76,
           "called": [
             "ObjId",
             "PAddr",
@@ -3571,7 +3680,7 @@
         {
           "kind": "def",
           "name": "wxExclusiveInvariant",
-          "line": 74,
+          "line": 84,
           "called": [
             "ObjId",
             "PAddr",
@@ -3585,7 +3694,7 @@
         {
           "kind": "def",
           "name": "canonicalAddressInvariant",
-          "line": 85,
+          "line": 95,
           "called": [
             "ObjId",
             "PAddr",
@@ -3599,7 +3708,7 @@
         {
           "kind": "def",
           "name": "vspaceCrossAsidIsolation",
-          "line": 100,
+          "line": 110,
           "called": [
             "ObjId",
             "SystemState",
@@ -3609,7 +3718,7 @@
         {
           "kind": "def",
           "name": "vspaceInvariantBundle",
-          "line": 112,
+          "line": 122,
           "called": [
             "SystemState",
             "asidTableConsistent",
@@ -3624,7 +3733,7 @@
         {
           "kind": "theorem",
           "name": "asidTableConsistent_of_storeObject_vspaceRoot",
-          "line": 128,
+          "line": 138,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -3643,7 +3752,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_error_asidNotBound_preserves_vspaceInvariantBundle",
-          "line": 206,
+          "line": 216,
           "called": [
             "ASID",
             "PAddr",
@@ -3657,7 +3766,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_error_translationFault_preserves_vspaceInvariantBundle",
-          "line": 217,
+          "line": 227,
           "called": [
             "ASID",
             "SystemState",
@@ -3669,7 +3778,7 @@
         {
           "kind": "theorem",
           "name": "VSpaceRoot.mapPage_mappings_insert",
-          "line": 232,
+          "line": 242,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -3683,7 +3792,7 @@
         {
           "kind": "theorem",
           "name": "VSpaceRoot.unmapPage_mappings_erase",
-          "line": 244,
+          "line": 254,
           "called": [
             "VAddr",
             "VSpaceRoot",
@@ -3695,7 +3804,7 @@
         {
           "kind": "theorem",
           "name": "RHTable_lookup_of_erase_lookup",
-          "line": 254,
+          "line": 264,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -3710,7 +3819,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_success_preserves_vspaceInvariantBundle",
-          "line": 283,
+          "line": 293,
           "called": [
             "ASID",
             "ObjId",
@@ -3745,7 +3854,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_success_preserves_vspaceInvariantBundle",
-          "line": 443,
+          "line": 453,
           "called": [
             "ASID",
             "ObjId",
@@ -3774,7 +3883,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_after_map",
-          "line": 571,
+          "line": 581,
           "called": [
             "ASID",
             "ObjId",
@@ -3805,7 +3914,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_map_other",
-          "line": 620,
+          "line": 630,
           "called": [
             "ASID",
             "ObjId",
@@ -3836,7 +3945,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_after_unmap",
-          "line": 673,
+          "line": 683,
           "called": [
             "ASID",
             "ObjId",
@@ -3865,7 +3974,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookup_unmap_other",
-          "line": 717,
+          "line": 727,
           "called": [
             "ASID",
             "ObjId",
@@ -3894,7 +4003,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageChecked_success_preserves_vspaceInvariantBundle",
-          "line": 767,
+          "line": 777,
           "called": [
             "ASID",
             "ObjId",
@@ -3917,7 +4026,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageChecked_error_preserves_vspaceInvariantBundle",
-          "line": 797,
+          "line": 807,
           "called": [
             "ASID",
             "PAddr",
@@ -3931,7 +4040,7 @@
         {
           "kind": "theorem",
           "name": "vspaceLookupFull_after_map",
-          "line": 812,
+          "line": 822,
           "called": [
             "ASID",
             "ObjId",
@@ -3962,7 +4071,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_resolveAsidRoot_agreement",
-          "line": 866,
+          "line": 876,
           "called": [
             "ASID",
             "ObjId",
@@ -3988,7 +4097,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_resolveAsidRoot_agreement",
-          "line": 907,
+          "line": 917,
           "called": [
             "ASID",
             "ObjId",
@@ -41059,7 +41168,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.MmioAdapter",
       "path": "SeLe4n/Platform/RPi5/MmioAdapter.lean",
-      "declaration_count": 36,
+      "declaration_count": 46,
       "declarations": [
         {
           "kind": "namespace",
@@ -41169,19 +41278,131 @@
           ]
         },
         {
+          "kind": "inductive",
+          "name": "MmioReadOutcome",
+          "line": 152,
+          "called": [
+            "MmioReadKind",
+            "MmioRegionDesc",
+            "PAddr"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "MmioSafe",
-          "line": 158,
+          "line": 178,
           "called": [
+            "MmioReadKind",
+            "MmioReadOutcome",
             "MmioRegionDesc",
             "PAddr",
+            "contains",
             "inMmioRegion"
           ]
         },
         {
           "kind": "def",
+          "name": "uartRegion",
+          "line": 198,
+          "called": [
+            "MmioRegionDesc",
+            "size",
+            "uart0Base"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "gicDistRegion",
+          "line": 200,
+          "called": [
+            "MmioRegionDesc",
+            "gicDistributorBase",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "gicCpuRegion",
+          "line": 202,
+          "called": [
+            "MmioRegionDesc",
+            "gicCpuInterfaceBase",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "uartRegion_mem",
+          "line": 205,
+          "called": [
+            "rpi5MmioRegionDescs",
+            "uartRegion"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "gicDistRegion_mem",
+          "line": 207,
+          "called": [
+            "gicDistRegion",
+            "rpi5MmioRegionDescs"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "gicCpuRegion_mem",
+          "line": 209,
+          "called": [
+            "gicCpuRegion",
+            "rpi5MmioRegionDescs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkMmioSafe_uart",
+          "line": 215,
+          "called": [
+            "MmioSafe",
+            "PAddr",
+            "contains",
+            "inMmioRegion",
+            "rpi5MmioRegionDescs",
+            "uartRegion",
+            "uartRegion_mem"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkMmioSafe_gicDist",
+          "line": 227,
+          "called": [
+            "MmioSafe",
+            "PAddr",
+            "contains",
+            "gicDistRegion",
+            "gicDistRegion_mem",
+            "inMmioRegion",
+            "rpi5MmioRegionDescs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkMmioSafe_gicCpu",
+          "line": 239,
+          "called": [
+            "MmioSafe",
+            "PAddr",
+            "contains",
+            "gicCpuRegion",
+            "gicCpuRegion_mem",
+            "inMmioRegion",
+            "rpi5MmioRegionDescs"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "isDeviceAddress",
-          "line": 243,
+          "line": 326,
           "called": [
             "PAddr",
             "contains"
@@ -41190,7 +41411,7 @@
         {
           "kind": "def",
           "name": "mmioRead",
-          "line": 266,
+          "line": 349,
           "called": [
             "Kernel",
             "PAddr",
@@ -41200,7 +41421,7 @@
         {
           "kind": "def",
           "name": "mmioWrite",
-          "line": 283,
+          "line": 366,
           "called": [
             "Kernel",
             "PAddr",
@@ -41210,7 +41431,7 @@
         {
           "kind": "def",
           "name": "isAligned",
-          "line": 296,
+          "line": 379,
           "called": [
             "PAddr",
             "toNat"
@@ -41219,7 +41440,7 @@
         {
           "kind": "def",
           "name": "mmioWrite32",
-          "line": 304,
+          "line": 387,
           "called": [
             "Kernel",
             "PAddr",
@@ -41233,7 +41454,7 @@
         {
           "kind": "def",
           "name": "mmioWrite64",
-          "line": 331,
+          "line": 414,
           "called": [
             "Kernel",
             "PAddr",
@@ -41247,7 +41468,7 @@
         {
           "kind": "def",
           "name": "mmioReadBytes32",
-          "line": 366,
+          "line": 449,
           "called": [
             "PAddr",
             "mem",
@@ -41258,7 +41479,7 @@
         {
           "kind": "def",
           "name": "mmioWrite32W1C",
-          "line": 385,
+          "line": 468,
           "called": [
             "Kernel",
             "PAddr",
@@ -41273,7 +41494,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32W1C_rejects_non_device",
-          "line": 411,
+          "line": 494,
           "called": [
             "PAddr",
             "SystemState",
@@ -41285,7 +41506,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32W1C_rejects_unaligned",
-          "line": 418,
+          "line": 501,
           "called": [
             "PAddr",
             "SystemState",
@@ -41296,7 +41517,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_unaligned",
-          "line": 428,
+          "line": 511,
           "called": [
             "PAddr",
             "SystemState",
@@ -41307,7 +41528,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_rejects_unaligned",
-          "line": 434,
+          "line": 517,
           "called": [
             "PAddr",
             "SystemState",
@@ -41318,7 +41539,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_rejects_non_device",
-          "line": 444,
+          "line": 527,
           "called": [
             "PAddr",
             "SystemState",
@@ -41329,7 +41550,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_rejects_non_device",
-          "line": 450,
+          "line": 533,
           "called": [
             "PAddr",
             "SystemState",
@@ -41340,7 +41561,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_preserves_state",
-          "line": 456,
+          "line": 539,
           "called": [
             "PAddr",
             "SystemState",
@@ -41350,7 +41571,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_frame",
-          "line": 465,
+          "line": 548,
           "called": [
             "PAddr",
             "SystemState",
@@ -41360,7 +41581,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_non_device",
-          "line": 479,
+          "line": 562,
           "called": [
             "PAddr",
             "SystemState",
@@ -41372,7 +41593,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_rejects_non_device",
-          "line": 486,
+          "line": 569,
           "called": [
             "PAddr",
             "SystemState",
@@ -41384,7 +41605,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_frame",
-          "line": 493,
+          "line": 576,
           "called": [
             "PAddr",
             "SystemState",
@@ -41396,7 +41617,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_frame",
-          "line": 510,
+          "line": 593,
           "called": [
             "PAddr",
             "SystemState",
@@ -41408,7 +41629,7 @@
         {
           "kind": "def",
           "name": "notInMmioRegion",
-          "line": 537,
+          "line": 620,
           "called": [
             "PAddr",
             "inMmioRegion",
@@ -41418,7 +41639,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_nonMmio_safe",
-          "line": 542,
+          "line": 625,
           "called": [
             "PAddr",
             "SystemState",
@@ -41430,7 +41651,7 @@
         {
           "kind": "theorem",
           "name": "memoryRead_idempotent_nonMmio",
-          "line": 552,
+          "line": 635,
           "called": [
             "PAddr",
             "SystemState",
@@ -41442,7 +41663,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.ProofHooks",
       "path": "SeLe4n/Platform/RPi5/ProofHooks.lean",
-      "declaration_count": 5,
+      "declaration_count": 6,
       "declarations": [
         {
           "kind": "namespace",
@@ -41463,7 +41684,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Restrictive_adapterAdvanceTimer_preserves",
-          "line": 67,
+          "line": 69,
           "called": [
             "SystemState",
             "adapterAdvanceTimer",
@@ -41476,7 +41697,7 @@
         {
           "kind": "theorem",
           "name": "rpi5Restrictive_adapterWriteRegister_preserves",
-          "line": 79,
+          "line": 81,
           "called": [
             "RegName",
             "RegValue",
@@ -41491,12 +41712,27 @@
         {
           "kind": "theorem",
           "name": "rpi5Restrictive_adapterReadMemory_preserves",
-          "line": 91,
+          "line": 93,
           "called": [
             "PAddr",
             "SystemState",
             "adapterReadMemory",
             "adapterReadMemory_ok_preserves_proofLayerInvariantBundle",
+            "proofLayerInvariantBundle",
+            "rpi5RestrictiveAdapterProofHooks",
+            "rpi5RuntimeContractRestrictive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Restrictive_adapterContextSwitch_preserves",
+          "line": 105,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "ThreadId",
+            "adapterContextSwitch",
+            "adapterContextSwitch_ok_preserves_proofLayerInvariantBundle",
             "proofLayerInvariantBundle",
             "rpi5RestrictiveAdapterProofHooks",
             "rpi5RuntimeContractRestrictive"
@@ -41559,7 +41795,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContractRestrictive",
-          "line": 141,
+          "line": 142,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -41570,7 +41806,7 @@
         {
           "kind": "def",
           "name": "mmioAccessAllowed",
-          "line": 167,
+          "line": 168,
           "called": [
             "PAddr",
             "SystemState",
@@ -41580,7 +41816,7 @@
         {
           "kind": "instance",
           "name": "mmioAccessAllowed_decidable",
-          "line": 172,
+          "line": 173,
           "called": [
             "PAddr",
             "SystemState",
@@ -41592,7 +41828,7 @@
         {
           "kind": "theorem",
           "name": "mmioAccess_ram_kind_disjoint",
-          "line": 181,
+          "line": 182,
           "called": [
             "MemoryRegion"
           ]
@@ -41721,7 +41957,7 @@
         {
           "kind": "theorem",
           "name": "simRestrictive_adapterAdvanceTimer_preserves",
-          "line": 47,
+          "line": 49,
           "called": [
             "SystemState",
             "adapterAdvanceTimer",
@@ -41734,7 +41970,7 @@
         {
           "kind": "theorem",
           "name": "simRestrictive_adapterWriteRegister_preserves",
-          "line": 58,
+          "line": 60,
           "called": [
             "RegName",
             "RegValue",
@@ -41749,7 +41985,7 @@
         {
           "kind": "theorem",
           "name": "simRestrictive_adapterReadMemory_preserves",
-          "line": 69,
+          "line": 71,
           "called": [
             "PAddr",
             "SystemState",
@@ -41763,7 +41999,7 @@
         {
           "kind": "def",
           "name": "simSubstantiveAdapterProofHooks",
-          "line": 86,
+          "line": 88,
           "called": [
             "AdapterProofHooks",
             "advanceTimerState_preserves_proofLayerInvariantBundle",
@@ -41773,7 +42009,7 @@
         {
           "kind": "theorem",
           "name": "simSubstantive_adapterAdvanceTimer_preserves",
-          "line": 98,
+          "line": 102,
           "called": [
             "SystemState",
             "adapterAdvanceTimer",
@@ -41786,7 +42022,7 @@
         {
           "kind": "theorem",
           "name": "simSubstantive_adapterWriteRegister_preserves",
-          "line": 109,
+          "line": 113,
           "called": [
             "RegName",
             "RegValue",
@@ -41801,7 +42037,7 @@
         {
           "kind": "theorem",
           "name": "simSubstantive_adapterReadMemory_preserves",
-          "line": 120,
+          "line": 124,
           "called": [
             "PAddr",
             "SystemState",

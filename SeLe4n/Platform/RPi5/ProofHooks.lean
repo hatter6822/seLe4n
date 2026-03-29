@@ -58,6 +58,8 @@ def rpi5RestrictiveAdapterProofHooks :
   preserveWriteRegister := fun _ _ _ _ hStable =>
     absurd hStable (by simp [rpi5RuntimeContractRestrictive])
   preserveReadMemory := fun _ st hInv _ => hInv
+  preserveContextSwitch := fun _ _ _ _ hStable =>
+    absurd hStable (by simp [rpi5RuntimeContractRestrictive])
 
 /-- WS-H15d/A-33: End-to-end timer advancement preservation for RPi5.
 Composes the restrictive proof hooks with the generic adapter preservation
@@ -96,5 +98,17 @@ theorem rpi5Restrictive_adapterReadMemory_preserves
   adapterReadMemory_ok_preserves_proofLayerInvariantBundle
     rpi5RuntimeContractRestrictive rpi5RestrictiveAdapterProofHooks
     addr st st' byte hInv hOk
+
+/-- X1-F: End-to-end context-switch preservation for RPi5 (vacuous).
+The restrictive contract rejects all register-context transitions, so
+`adapterContextSwitch` always fails — the theorem is vacuously true. -/
+theorem rpi5Restrictive_adapterContextSwitch_preserves
+    (st st' : SystemState) (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
+    (hInv : proofLayerInvariantBundle st)
+    (hOk : adapterContextSwitch rpi5RuntimeContractRestrictive newTid newRegs st = .ok ((), st')) :
+    proofLayerInvariantBundle st' :=
+  adapterContextSwitch_ok_preserves_proofLayerInvariantBundle
+    rpi5RuntimeContractRestrictive rpi5RestrictiveAdapterProofHooks
+    newTid newRegs st st' hInv hOk
 
 end SeLe4n.Platform.RPi5

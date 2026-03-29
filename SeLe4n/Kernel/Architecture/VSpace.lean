@@ -11,9 +11,18 @@ import SeLe4n.Model.State
 /-!
 WS-C3 proof-surface note:
 
-Determinism of pure Lean definitions is a meta-property of evaluation, so object-level
-tautologies of the form `f x = f x` are not accepted as semantic evidence in this model.
-VSpace semantic obligations are tracked via TPI-001 in
+TPI-001 — CLOSED (X1-K). VSpace determinism is established by four round-trip
+functional-correctness theorems in `VSpaceInvariant.lean`:
+  - `vspaceLookup_after_map`: map then lookup returns the mapped address
+  - `vspaceLookup_map_other`: map at vaddr does not affect other lookups
+  - `vspaceLookup_after_unmap`: unmap then lookup returns translationFault
+  - `vspaceLookup_unmap_other`: unmap at vaddr does not affect other lookups
+
+Object-level tautologies (`f x = f x` via `rfl`) are NOT accepted as semantic
+evidence. The four round-trip theorems above provide genuine semantic contracts
+that establish determinism through functional correctness.
+
+Historical: Originally tracked via TPI-001 in
 `docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
 -/
 

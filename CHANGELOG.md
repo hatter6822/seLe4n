@@ -1,3 +1,38 @@
+## [0.22.18] — X1: Hardware-Binding Critical Proofs
+
+Phase X1 of WS-X pre-release audit remediation. Resolves all 4 CRITICAL
+findings from the v0.22.17 comprehensive audit.
+
+- **X1-D (C-2)**: `MmioReadOutcome` inductive replacing `hOutcome : True`
+  placeholder in `MmioSafe`. Four constructors encode read-kind constraints:
+  `ramIdempotent` (idempotent), `volatileAny` (unconstrained), `w1cStatus`
+  (current status), `fifoConsume` (queue entry consumed). Prevents proofs from
+  assuming idempotent reads for volatile device registers.
+- **X1-E (C-2)**: Device-specific `MmioSafe` witness generators for RPi5:
+  `mkMmioSafe_uart` (UART PL011 volatile), `mkMmioSafe_gicDist` (GIC-400
+  distributor volatile), `mkMmioSafe_gicCpu` (GIC-400 CPU interface volatile).
+  Private region definitions with `List.Mem` membership proofs.
+- **X1-F (C-3)**: `contextSwitchState` atomic context-switch operation that
+  simultaneously updates `machine.regs` and `scheduler.current`, eliminating
+  the window where individual register writes violate `contextMatchesCurrent`.
+  `adapterContextSwitch` kernel wrapper with contract guard.
+- **X1-G (C-3)**: `AdapterProofHooks.preserveContextSwitch` field added to
+  proof-carrying adapter hooks structure.
+  `adapterContextSwitch_ok_preserves_proofLayerInvariantBundle` composition
+  theorem and `adapterContextSwitch_error_unsupportedBinding_preserves_*`
+  error-case theorem. Component preservation:
+  `contextSwitchState_preserves_vspaceInvariantBundle`,
+  `contextSwitchState_preserves_contextMatchesCurrent`,
+  `contextSwitchState_preserves_currentThreadValid`. All platform ProofHooks
+  (RPi5 restrictive, Sim restrictive, Sim substantive) updated.
+  End-to-end `rpi5Restrictive_adapterContextSwitch_preserves` theorem.
+- **X1-K (C-4)**: TPI-001 (VSpace determinism) closed. Documentation updated
+  in VSpace.lean and VSpaceInvariant.lean referencing 4 round-trip theorems.
+- **X1-A/B/C (C-1)**: Verified as pre-existing from V4-A2–A9 workstream.
+- **X1-H/I/J (C-4)**: Verified as pre-existing from WS-D3/F-08 workstream.
+
+Zero sorry/axiom. All tests pass. 2,087 proved declarations.
+
 ## [0.22.17] — W6: Code Quality & Documentation
 
 Phase W6 of WS-W pre-release audit remediation. Addresses M-7, LOW-1, LOW-2,
