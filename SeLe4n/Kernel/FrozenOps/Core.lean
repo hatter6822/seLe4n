@@ -12,6 +12,21 @@ import SeLe4n.Model.FreezeProofs
 /-!
 # Q7-A: Frozen Kernel Monad and Core Primitives
 
+**Subsystem status (W3-G):** FrozenOps has zero production consumers — the
+kernel API (`API.lean`) does not reference it. Only `FrozenOpsSuite.lean` and
+`TwoPhaseArchSuite.lean` import it. This subsystem is retained as **architectural
+validation infrastructure** for the two-phase (builder→frozen) state model:
+
+- `FrozenKernel` monad validates that `FrozenMap` lookups/mutations are
+  expressible as pure functions with `FrozenSystemState`.
+- Commutativity proofs (`Commutativity.lean`) validate `FrozenMap.set`/`get?`
+  round-trip correctness, supporting the `FreezeProofs` module's argument.
+- `Operations.lean` demonstrates that all 12 per-subsystem operations can be
+  expressed purely over the frozen representation.
+
+When the H3 hardware binding integrates runtime execution, FrozenOps is the
+intended runtime monad. Until then, it serves as proof-of-concept infrastructure.
+
 Defines the execution-phase monad for operating on `FrozenSystemState`.
 All lookups use `FrozenMap.get?` (index lookup + array access) and all
 mutations use `FrozenMap.set` (in-place array update at existing index).

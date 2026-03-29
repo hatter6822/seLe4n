@@ -359,52 +359,6 @@ theorem default_timer_zero :
     (default : MachineState).timer = 0 := rfl
 
 -- ============================================================================
--- S4-E: Memory alignment predicates (hardware-binding readiness)
--- ============================================================================
-
-/-- S4-E: Word alignment predicate — a physical address is word-aligned when
-    it is a multiple of 8 (64-bit word size on ARM64).
-
-    **Model gap:** The abstract `Memory := PAddr → UInt8` type is byte-addressable
-    and accepts any address. Real ARM64 hardware requires word-aligned access for
-    register-width loads/stores (LDR/STR instructions with 64-bit operands).
-    Misaligned access generates an alignment fault (unless SCTLR_EL1.A is clear
-    and the access is to Normal memory).
-
-    This predicate documents the alignment requirement. The hardware binding
-    (WS-T) must enforce it via `RuntimeBoundaryContract.memoryAccessAllowed`
-    or an equivalent platform-level precondition. -/
-def wordAligned (addr : PAddr) : Prop :=
-  addr.toNat % 8 = 0
-
-instance (addr : PAddr) : Decidable (wordAligned addr) :=
-  inferInstanceAs (Decidable (_ = _))
-
-/-- S4-E: Page alignment predicate — a physical address is page-aligned when
-    it is a multiple of 4096 (standard 4KB page on ARM64). -/
-def pageAligned (addr : PAddr) : Prop :=
-  addr.toNat % 4096 = 0
-
-instance (addr : PAddr) : Decidable (pageAligned addr) :=
-  inferInstanceAs (Decidable (_ = _))
-
-/-- S4-E: Page-aligned addresses are also word-aligned. -/
-theorem pageAligned_implies_wordAligned (addr : PAddr)
-    (h : pageAligned addr) : wordAligned addr := by
-  unfold wordAligned pageAligned at *
-  omega
-
-/-- S4-E: Zero address is word-aligned. -/
-theorem wordAligned_zero : wordAligned ⟨0⟩ := by
-  unfold wordAligned PAddr.toNat
-  simp
-
-/-- S4-E: Zero address is page-aligned. -/
-theorem pageAligned_zero : pageAligned ⟨0⟩ := by
-  unfold pageAligned PAddr.toNat
-  simp
-
--- ============================================================================
 -- S6-C: Memory scrubbing primitives (hardware-binding readiness)
 -- ============================================================================
 
@@ -574,13 +528,6 @@ theorem registerFileGPRCount_eq_registerCount_default :
 
 namespace MachineConfig
 
-/-- Total RAM capacity: sum of sizes of all RAM-kind regions. -/
-def totalRAM (cfg : MachineConfig) : Nat :=
-  cfg.memoryMap.filter (·.kind == .ram) |>.map (·.size) |>.foldl (· + ·) 0
-
-/-- Check whether a physical address falls within any declared region. -/
-def addressInMap (cfg : MachineConfig) (addr : PAddr) : Bool :=
-  cfg.memoryMap.any (·.contains addr)
 
 /-- A pairwise non-overlap check over the memory map regions.
     S5-J: Complexity is O(n²) where n = memoryMap.length. Acceptable because
@@ -594,32 +541,6 @@ private def noOverlapAux : List MemoryRegion → Bool
 @[inline] private def isPowerOfTwo (n : Nat) : Bool :=
   n > 0 && (n &&& (n - 1)) == 0
 
-/-- WS-H14c: Definitional unfolding of `isPowerOfTwo` for downstream use. -/
-theorem isPowerOfTwo_spec {n : Nat} (h : isPowerOfTwo n = true) :
-    n > 0 ∧ n &&& (n - 1) = 0 := by
-  simp [isPowerOfTwo, Bool.and_eq_true] at h
-  exact h
-
-/-- WS-H14c: `isPowerOfTwo` implies positivity. -/
-theorem isPowerOfTwo_pos {n : Nat} (h : isPowerOfTwo n = true) : n > 0 :=
-  (isPowerOfTwo_spec h).1
-
-/-- WS-H14c: Every power of two passes the `isPowerOfTwo` check.
-S1-I: Migrated from `native_decide` to `decide` to eliminate TCB dependency
-on compiled Lean code. The `decide` tactic uses the verified kernel evaluator,
-keeping these proofs within the trusted proof checker. The bitwise identity
-`2^k &&& (2^k - 1) = 0` holds for all `k` by the binary representation
-of powers of two: `2^k` is a single 1-bit, and `2^k - 1` is all 1-bits
-below that position, so their AND is zero. -/
-theorem isPowerOfTwo_of_pow2_0 : isPowerOfTwo (2 ^ 0) = true := by decide
-theorem isPowerOfTwo_of_pow2_1 : isPowerOfTwo (2 ^ 1) = true := by decide
-theorem isPowerOfTwo_of_pow2_2 : isPowerOfTwo (2 ^ 2) = true := by decide
-theorem isPowerOfTwo_of_pow2_3 : isPowerOfTwo (2 ^ 3) = true := by decide
-theorem isPowerOfTwo_of_pow2_4 : isPowerOfTwo (2 ^ 4) = true := by decide
-theorem isPowerOfTwo_of_pow2_5 : isPowerOfTwo (2 ^ 5) = true := by decide
-theorem isPowerOfTwo_of_pow2_12 : isPowerOfTwo (2 ^ 12) = true := by decide
-theorem isPowerOfTwo_of_pow2_16 : isPowerOfTwo (2 ^ 16) = true := by decide
-theorem isPowerOfTwo_of_pow2_21 : isPowerOfTwo (2 ^ 21) = true := by decide
 
 /-- A machine configuration is well-formed when:
     1. All regions have nonzero size.

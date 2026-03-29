@@ -237,31 +237,6 @@ def crossSubsystemPredicates : List (SystemState → Prop) :=
   [registryEndpointValid, registryDependencyConsistent, noStaleEndpointQueueReferences,
    noStaleNotificationWaitReferences, serviceGraphInvariant]
 
-/-- S3-J: Folded composition — the cross-subsystem invariant is equivalent to
-    every predicate in the list holding on the state. -/
-def crossSubsystemInvariantFolded (st : SystemState) : Prop :=
-  ∀ p, p ∈ crossSubsystemPredicates → p st
-
-/-- S3-J: The folded composition is equivalent to the fixed conjunction.
-    This theorem ensures backward compatibility: callers can use either form. -/
-theorem crossSubsystemInvariant_iff_folded (st : SystemState) :
-    crossSubsystemInvariant st ↔ crossSubsystemInvariantFolded st := by
-  constructor
-  · intro ⟨h₁, h₂, h₃, h₄, h₅⟩ p hMem
-    simp [crossSubsystemPredicates] at hMem
-    rcases hMem with rfl | rfl | rfl | rfl | rfl
-    · exact h₁
-    · exact h₂
-    · exact h₃
-    · exact h₄
-    · exact h₅
-  · intro hAll
-    exact ⟨hAll _ (by simp [crossSubsystemPredicates]),
-           hAll _ (by simp [crossSubsystemPredicates]),
-           hAll _ (by simp [crossSubsystemPredicates]),
-           hAll _ (by simp [crossSubsystemPredicates]),
-           hAll _ (by simp [crossSubsystemPredicates])⟩
-
 /-- S3-J + T5-J + U4-G: Predicate count witness — compile-time assertion that the
     predicate list has exactly 5 entries (extended from 4 by U4-G serviceGraphInvariant).
     If a new subsystem invariant is added to the list but not to

@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (1,878 theorem/lemma declarations),
+2. machine-checked invariant preservation (2,048 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.22.13` (`lakefile.toml`) |
+| **Package version** | `0.22.14` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 73,260 across 103 Lean files |
+| **Production LoC** | 71,881 across 102 Lean files |
 | **Test LoC** | 8,441 across 10 Lean test suites |
-| **Proved declarations** | 2,153 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,048 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md) — pre-release audit remediation (5 HIGH, 61 MEDIUM, 29 LOW) |
-| **Active workstream** | **WS-W Phases W1–W2 COMPLETE** — W1 Critical Rust ABI Fixes (v0.22.11), W2 Proof Formalism & Architecture (v0.22.12). W2 closed 2 HIGH (field-disjointness formalism, composition gap), 4 MEDIUM (wildcard unreachability, fuel sufficiency, serviceCountBounded, enforcement unification), 1 LOW (maxHeartbeats documentation). Plan: [`AUDIT_v0.22.10_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md). Prior: WS-V (all 8 phases, v0.22.0–v0.22.10 COMPLETE), WS-U–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-W Phases W1–W3 COMPLETE** — W1 Critical Rust ABI Fixes (v0.22.11), W2 Proof Formalism & Architecture (v0.22.12), W3 Dead Code Elimination (v0.22.14). W3 removed ~90 dead definitions across 20+ files using verification-first methodology (Category A/B/C classification). FrozenOps retained with architectural documentation. Plan: [`AUDIT_v0.22.10_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md). Prior: WS-V (all 8 phases, v0.22.0–v0.22.10 COMPLETE), WS-U–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

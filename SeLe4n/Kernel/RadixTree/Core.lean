@@ -38,11 +38,6 @@ theorem extractBits_lt (n offset width : Nat) :
   unfold extractBits
   exact Nat.mod_lt _ (Nat.two_pow_pos width)
 
-/-- `extractBits` with width 0 always returns 0. -/
-theorem extractBits_zero_width (n offset : Nat) :
-    extractBits n offset 0 = 0 := by
-  simp [extractBits, Nat.mod_one]
-
 /-- V3-H: `extractBits n 0 w = n` when `n < 2^w`. The zero-offset extraction
     is the identity on bounded values. This closes the hNoPhantom discharge
     chain: bounded slot keys have identity radix indices, so distinct keys

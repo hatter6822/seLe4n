@@ -909,38 +909,6 @@ def childrenOf (cdt : CapDerivationTree) (node : CdtNodeId)
     : List CdtNodeId :=
   cdt.childMap.get? node |>.getD []
 
-/-- Find the parent of a given node, if any.
-M-P02: O(1) lookup via `parentMap` instead of O(E) edge scan. -/
-def parentOf (cdt : CapDerivationTree) (node : CdtNodeId)
-    : Option CdtNodeId :=
-  cdt.parentMap[node]?
-
-/-- Remove all edges referencing a given node as child (detach from parent).
-M-P03: Uses targeted `parentMap.erase` + `childMap` splice instead of
-full edge-list filter + childMap rebuild. -/
-def removeAsChild (cdt : CapDerivationTree) (node : CdtNodeId)
-    : CapDerivationTree :=
-  let parentNode? := cdt.parentMap[node]?
-  let childMap' := match parentNode? with
-    | some p =>
-      let siblings := (cdt.childMap.get? p).getD []
-      let filtered := siblings.filter (· != node)
-      if filtered.isEmpty then cdt.childMap.erase p else cdt.childMap.insert p filtered
-    | none => cdt.childMap
-  { edges := cdt.edges.filter (fun e => ¬e.isChildOf node),
-    childMap := childMap',
-    parentMap := cdt.parentMap.erase node }
-
-/-- Remove all edges referencing a given node as parent (detach all children).
-M-P03: Erases the parent's `childMap` entry and all children's `parentMap` entries. -/
-def removeAsParent (cdt : CapDerivationTree) (node : CdtNodeId)
-    : CapDerivationTree :=
-  let children := (cdt.childMap.get? node).getD []
-  let parentMap' := children.foldl (fun m c => m.erase c) cdt.parentMap
-  { edges := cdt.edges.filter (fun e => ¬e.isParentOf node),
-    childMap := cdt.childMap.erase node,
-    parentMap := parentMap' }
-
 /-- Remove all edges where the given node appears as parent or child.
 M-P03: Targeted `parentMap`/`childMap` updates instead of full rebuild. -/
 def removeNode (cdt : CapDerivationTree) (node : CdtNodeId)
@@ -1686,19 +1654,6 @@ def projectObservedEdges
     | some p, some c => some { parent := p, child := c, op := e.op }
     | _, _ => none)
 
-/-- R2-D/M-08: Decidable ancestor check — returns `true` if `ancestor` is
-reachable from `start` by following parent edges upward through the CDT.
-Uses `parentMap` for O(depth) lookup. Fuel = edges.length for termination. -/
-def isAncestor (cdt : CapDerivationTree) (ancestor start : CdtNodeId) : Bool :=
-  go cdt.edges.length start
-where
-  go : Nat → CdtNodeId → Bool
-    | 0, _ => false
-    | n + 1, current =>
-      if current == ancestor then true
-      else match cdt.parentMap[current]? with
-        | none => false
-        | some par => go n par
 
 -- W2-H (L-3): 2M heartbeats — highest in the codebase. Inherent complexity from
 -- CDT acyclicity reasoning: the proof projects each cycle edge onto old CDT edges,
@@ -2287,10 +2242,5 @@ instance (obj : KernelObject)
     exact instDecidableTrue
 
 end KernelObject
-
-/-- Construct a capability that names an object directly.
-    WS-F5/D2b: Accepts list for ergonomics, converts to AccessRightSet internally. -/
-def makeObjectCap (id : SeLe4n.ObjId) (rights : List AccessRight) : Capability :=
-  { target := .object id, rights := AccessRightSet.ofList rights }
 
 end SeLe4n.Model

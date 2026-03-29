@@ -214,14 +214,6 @@ theorem syscallLookupCap_implies_capability_held
         exact ⟨ref, hResolve, by rw [hCap.symm]; exact hLookup, by rw [hCap.symm]; exact hRight, hSt.symm⟩
       · simp at hOk
 
-/-- WS-H15c/A-42: The capability lookup does not modify kernel state. -/
-theorem syscallLookupCap_state_unchanged
-    (gate : SyscallGate) (st : SystemState) (cap : Capability) (st' : SystemState)
-    (hOk : syscallLookupCap gate st = .ok (cap, st')) :
-    st' = st := by
-  obtain ⟨_, _, _, _, hSt⟩ := syscallLookupCap_implies_capability_held gate st cap st' hOk
-  exact hSt
-
 /-- WS-H15c/A-42: If `syscallInvoke` succeeds, the caller held the required
 capability. -/
 theorem syscallInvoke_requires_right
@@ -398,22 +390,6 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   | _ => none
-
-/-- V8-H: Structural equivalence — `dispatchCapabilityOnly` returns `some k`
-iff the syscall is one of the 6 capability-only arms, and in that case the
-returned kernel action `k` is identical regardless of whether the caller is
-the checked or unchecked dispatch path. -/
-theorem dispatchCapabilityOnly_some_iff
-    (decoded : SyscallDecodeResult) (cap : Capability)
-    (hCapOnly : decoded.syscallId = .cspaceDelete ∨
-                decoded.syscallId = .lifecycleRetype ∨
-                decoded.syscallId = .vspaceMap ∨
-                decoded.syscallId = .vspaceUnmap ∨
-                decoded.syscallId = .serviceRevoke ∨
-                decoded.syscallId = .serviceQuery) :
-    (dispatchCapabilityOnly decoded cap).isSome = true := by
-  rcases hCapOnly with h | h | h | h | h | h <;>
-    simp [dispatchCapabilityOnly, h]
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
 kernel operation using the resolved capability's target. Called after cap

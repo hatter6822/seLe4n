@@ -166,7 +166,8 @@ run_check "INVARIANT" rg -n '^structure SyscallGate' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallLookupCap' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallInvoke' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallLookupCap_state_unchanged' SeLe4n/Kernel/API.lean
+# W3: syscallLookupCap_state_unchanged removed as dead code (trivially follows from
+# syscallLookupCap_implies_capability_held which provides the same state-unchanged guarantee).
 run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right' SeLe4n/Kernel/API.lean
 # S5-A: Deprecated api* wrappers removed in v0.19.4. Verify removal and
 # presence of production syscall dispatch path.
@@ -756,11 +757,8 @@ run_check "INVARIANT" rg -n '^theorem objectIndexLive_default' SeLe4n/Model/Stat
 # WS-H16/A-13: objectIndexLive preservation theorem for storeObject exists.
 run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectIndexLive' SeLe4n/Model/State.lean
 
-# WS-H16/A-19: runQueueThreadPriorityConsistent predicate defined.
-run_check "INVARIANT" rg -n '^def runQueueThreadPriorityConsistent' SeLe4n/Kernel/Scheduler/Invariant.lean
-
-# WS-H16/A-19: runQueueThreadPriorityConsistent default theorem exists.
-run_check "INVARIANT" rg -n '^theorem runQueueThreadPriorityConsistent_default' SeLe4n/Kernel/Scheduler/Invariant.lean
+# W3: runQueueThreadPriorityConsistent removed as dead code (superseded by
+# schedulerPriorityMatch in schedulerInvariantBundleFull with full preservation proofs).
 
 # WS-H16/M-18: Lifecycle negative test function exists in NegativeStateSuite.
 run_check "INVARIANT" rg -n '^def runWSH16LifecycleChecks' tests/NegativeStateSuite.lean
@@ -782,7 +780,7 @@ run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedNotificationComponent' SeLe
 # WS-F6/D3: runnableThreadsAreTCBs predicate and preservation theorems.
 run_check "INVARIANT" rg -n '^def runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem default_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem runnableThreadsAreTCBs_of_scheduler_objects_eq' SeLe4n/Kernel/Scheduler/Invariant.lean
+# W3: runnableThreadsAreTCBs_of_scheduler_objects_eq removed (dead frame lemma).
 run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem handleYield_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
@@ -832,8 +830,8 @@ run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_roundtrip' SeLe4n/Kernel/Arc
 run_check "INVARIANT" rg -n '^theorem decode_components_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 
 # WS-K-A: Message register extraction definitions and theorems.
-run_check "INVARIANT" rg -n 'def encodeMsgRegs' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeMsgRegs_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+# W3: encodeMsgRegs (identity function) and decodeMsgRegs_roundtrip removed as dead code.
+# Message registers need no encode/decode round-trip — identity in the abstract model.
 run_check "INVARIANT" rg -n '^theorem decodeMsgRegs_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n 'msgRegs.*Array.*RegValue' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^theorem encode_decode_roundtrip' SeLe4n/Model/Object/Types.lean
@@ -930,8 +928,7 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.syscallEntry_error_yields_NI_step
 #check @SeLe4n.Kernel.syscallEntry_success_yields_NI_step
 -- WS-K-A: Message register extraction theorems
-#check @SeLe4n.Kernel.Architecture.RegisterDecode.encodeMsgRegs
-#check @SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_roundtrip
+-- W3: encodeMsgRegs and decodeMsgRegs_roundtrip removed (dead code — identity function)
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgRegs_length
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.decode_components_roundtrip
 -- WS-K-B: Per-syscall argument decode structures, functions, and theorems
@@ -963,16 +960,11 @@ import SeLe4n.Kernel.API
 
 -- WS-K-D: Lifecycle and VSpace dispatch helpers
 #check @SeLe4n.Kernel.objectOfTypeTag
-#check @SeLe4n.Kernel.objectOfTypeTag_type
-#check @SeLe4n.Kernel.objectOfTypeTag_error_iff
+-- W3: objectOfTypeTag_type and objectOfTypeTag_error_iff removed (dead code)
 #check @SeLe4n.Model.PagePermissions.ofNat
 #check @SeLe4n.Model.PagePermissions.toNat
 #check @SeLe4n.Model.PagePermissions.ofNat_toNat_roundtrip
 #check @SeLe4n.Kernel.lifecycleRetypeDirect
-#check @SeLe4n.Kernel.lifecycleRetypeDirect_eq_lifecycleRetypeObject
-#check @SeLe4n.Kernel.lifecycleRetypeDirect_error_objectNotFound
-#check @SeLe4n.Kernel.lifecycleRetypeDirect_error_illegalState
-#check @SeLe4n.Kernel.lifecycleRetypeDirect_error_illegalAuthority
 #check @SeLe4n.Kernel.dispatchWithCap_lifecycleRetype_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCap_vspaceUnmap_delegates

@@ -113,11 +113,6 @@ the BFS universe predicate ensuring completeness. -/
 def serviceBfsFuel (st : SystemState) : Nat :=
   st.objectIndex.length + 256
 
-/-- V5-I (H-SVC-1): Named constant for maximum service fuel.
-    This is the static upper bound on `serviceBfsFuel`, assuming the object
-    index is at capacity (`maxObjects`). Used for documentation and
-    compile-time reasoning about worst-case traversal cost. -/
-def maxServiceFuel : Nat := maxObjects + 256
 
 /-- Bounded graph traversal reachability check in the service dependency graph.
 

@@ -45,16 +45,6 @@ def RHSet.erase [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (k : κ) : 
 def RHSet.toList [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : List κ :=
   s.table.toList.map (·.1)
 
-/-- Fold over all keys in the set. -/
-def RHSet.fold [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (init : β) (f : β → κ → β) : β :=
-  s.table.fold init (fun acc k _ => f acc k)
-
-/-- The size of the set. -/
-def RHSet.size [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : Nat := s.table.size
-
-/-- The capacity of the set. -/
-def RHSet.capacity [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : Nat := s.table.capacity
-
 /-- Build a set from a list of keys. -/
 def RHSet.ofList [BEq κ] [Hashable κ] [LawfulBEq κ] (keys : List κ)
     (cap : Nat := 16) (hPos : 0 < cap := by omega) : RHSet κ :=
@@ -133,32 +123,6 @@ theorem RHSet.erase_preserves_invExt [BEq κ] [Hashable κ] [LawfulBEq κ]
 theorem RHSet.empty_invExt [BEq κ] [Hashable κ] [LawfulBEq κ] :
     (RHSet.empty : RHSet κ).table.invExt :=
   RHTable.empty_invExt' 16 (by omega)
-
-/-- Q2-B: Inserting same key twice is idempotent for containment. -/
-theorem RHSet.insert_idempotent [BEq κ] [Hashable κ] [LawfulBEq κ]
-    (s : RHSet κ) (k : κ) (hExt : s.table.invExt) :
-    ((s.insert k).insert k).contains k = true := by
-  exact RHSet.contains_insert_self (s.insert k) k
-    (RHSet.insert_preserves_invExt s k hExt)
-
-/-- Q2-B: Erasing an absent key is a no-op for containment. -/
-theorem RHSet.erase_absent_noop [BEq κ] [Hashable κ] [LawfulBEq κ]
-    (s : RHSet κ) (k k' : κ) (hExt : s.table.invExt)
-    (hAbsent : s.contains k = false)
-    (hSize : s.table.size < s.table.capacity) :
-    (s.erase k).contains k' = s.contains k' := by
-  by_cases h : (k == k') = true
-  · -- k == k': both sides are false
-    have hEq : k = k' := eq_of_beq h
-    subst hEq
-    rw [RHSet.contains_erase_self s k hExt, hAbsent]
-  · exact RHSet.contains_erase_ne s k k' h hExt hSize
-
-/-- Q2-B: Membership via toList is equivalent to contains. -/
-theorem RHSet.mem_iff_contains [BEq κ] [Hashable κ] [LawfulBEq κ]
-    (s : RHSet κ) (k : κ) :
-    k ∈ s ↔ s.contains k = true := by
-  rfl
 
 -- ============================================================================
 -- V3-B Phase 2: invExtK wrappers for RHSet

@@ -19,9 +19,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
-WS-W Phase W1 and W2 complete. Phases W3–W6 pending.
+WS-W Phase W1, W2, and W3 complete. Phases W4–W6 pending.
 
-### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W2 COMPLETE
+### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W3 COMPLETE
 
 WS-W addresses 49 unique actionable findings from three comprehensive audits of
 v0.22.10 (2 CRIT, 4 HIGH, 16 MED, 27 LOW) across 6 phases (W1–W6) with 52
@@ -63,6 +63,21 @@ atomic sub-tasks. Plan:
   `enforcementBoundaryExtended_eq_canonical` element-wise equality proof.
   **W2-H (L-3)**: Documented all 9 elevated `maxHeartbeats` settings with rationale
   for inherent complexity. Zero sorry/axiom.
+
+- **W3 (Dead Code Elimination) COMPLETE** (v0.22.14): 8 sub-tasks (W3-A through W3-H).
+  Verification-first methodology: each candidate grep-verified across entire codebase
+  before removal, with Category A/B/C classification. **W3-B**: Removed 7 dead
+  KernelM helper theorems, 8 alignment predicates/proofs, 9 `isPowerOfTwo_of_pow2_*`
+  witnesses, duplicate `maxLength`/`maxExtraCaps'`, 4 dead CDT helpers, 2 dead CDT
+  observation functions from foundation layer. **W3-C**: Removed `resolveCapAddressK`,
+  `severDerivationEdge`, `lookupUntyped`, `maxServiceFuel` from kernel subsystems.
+  **W3-D**: Removed entire fast-projection cluster (~200 lines) from Projection.lean,
+  3 dead enforcement boundary items from Wrappers.lean, 3 orphaned HashSet bridge
+  lemmas from Prelude.lean. **W3-E**: Removed `deleteObject`, `addServiceGraph` from
+  Builder.lean. **W3-F**: Removed `listLookup`, `withMachine` from StateBuilder.lean.
+  **W3-G**: FrozenOps retained with architectural status documentation (zero production
+  consumers, H3 integration target). **W3-H**: Removed `encodeMsgRegs` (identity),
+  `RegisterWriteInvariant` (stub). Zero sorry/axiom.
 
 ### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — COMPLETE
 
