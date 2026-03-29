@@ -80,14 +80,16 @@ an actual slot capability carrying that same object target.
 
 **W6-K (H-3 downgraded to LOW): Enforcement chain for metadata backing.**
 This invariant is maintained by contract discipline, not automatic enforcement:
-1. `lifecyclePreRetypeCleanup` calls `revokeAndClearRefsState` which clears
-   all metadata references for the target object before any retype occurs.
+1. `lifecyclePreRetypeCleanup` orchestrates three cleanup steps —
+   `cleanupTcbReferences`, `cleanupEndpointServiceRegistrations`, and
+   `detachCNodeSlots` — clearing all scheduler/service/CDT references for the
+   target object before any retype occurs.
 2. `lifecycleRetypeObject` only creates new metadata after cleanup completes.
 3. All retype paths go through `lifecycleRetypeDirectWithCleanup` which
    calls cleanup before retyping — there is no path that bypasses cleanup.
-4. The `lifecyclePreRetypeCleanup_preserves_capabilityRefInvariant` theorem
-   proves cleanup preserves this invariant, and `lifecycleRetypeObject`
-   re-establishes it for the new object.
+4. The `lifecycleRetypeObject_preserves_lifecycleInvariantBundle` theorem
+   proves retype preserves the full invariant bundle (including this predicate),
+   and the cleanup-before-retype ordering ensures no stale references remain.
 The alternative (automatic enforcement via a runtime check before every metadata
 write) was considered and rejected: it would add O(n) overhead per operation
 with no additional safety, since the proof chain already guarantees correctness. -/

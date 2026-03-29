@@ -241,7 +241,7 @@ private theorem default_schedulerInvariantBundle :
 
 private theorem default_ipcInvariant :
     ipcInvariant (default : SystemState) := by
-  intro oid ntfn hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  intro oid ntfn hObj; exact default_objects_absurd hObj
 
 private theorem default_lifecycleInvariantBundle :
     lifecycleInvariantBundle (default : SystemState) :=
@@ -250,12 +250,12 @@ private theorem default_lifecycleInvariantBundle :
 private theorem default_ipcSchedulerContractPredicates :
     ipcSchedulerContractPredicates (default : SystemState) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb eid rt hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-  · intro tid tcb nid hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro tid tcb hObj; exact default_objects_absurd hObj
+  · intro tid tcb eid hObj; exact default_objects_absurd hObj
+  · intro tid tcb eid hObj; exact default_objects_absurd hObj
+  · intro tid tcb eid hObj; exact default_objects_absurd hObj
+  · intro tid tcb eid rt hObj; exact default_objects_absurd hObj
+  · intro tid tcb nid hObj; exact default_objects_absurd hObj
 
 /-- WS-H4 refactor: Extract default-state capabilityInvariantBundle construction
 to eliminate 4x duplication in `default_system_state_proofLayerInvariantBundle`.
@@ -263,16 +263,16 @@ All components are vacuously true (empty objects/cdtNodeSlot) or use
 `CapDerivationTree.empty_edgeWellFounded`. -/
 private theorem default_capabilityInvariantBundle :
     capabilityInvariantBundle (default : SystemState) :=
-  ⟨by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
-   by intro oid cn s c hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
-   by intro oid cn hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
+  ⟨by intro oid cn hObj; exact default_objects_absurd hObj,
+   by intro oid cn s c hObj; exact default_objects_absurd hObj,
+   by intro oid cn hObj; exact default_objects_absurd hObj,
    by
     intro nodeId _ h
     have hempty : (default : SystemState).cdtNodeSlot[nodeId]? = none := by
       simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
     rw [hempty] at h; exact absurd h (by simp),
    by exact CapDerivationTree.empty_edgeWellFounded,
-   by intro cnodeId cn hObj; have h : (default : SystemState).objects[cnodeId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp),
+   by intro cnodeId cn hObj; exact default_objects_absurd hObj,
    by exact RHTable_empty_invExt 16 (by omega)⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
@@ -280,45 +280,43 @@ private theorem default_capabilityInvariantBundle :
 private theorem default_dualQueueSystemInvariant :
     dualQueueSystemInvariant (default : SystemState) := by
   refine ⟨?_, ?_, ?_⟩
-  · intro epId ep hObj; have h : (default : SystemState).objects[epId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  · intro epId ep hObj; exact default_objects_absurd hObj
   · constructor
-    · intro a tcbA hObj; have h : (default : SystemState).objects[a.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-    · intro b tcbB hObj; have h : (default : SystemState).objects[b.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+    · intro a tcbA hObj; exact default_objects_absurd hObj
+    · intro b tcbB hObj; exact default_objects_absurd hObj
   · intro tid hp
-    have hEmpty : ∀ (oid : SeLe4n.ObjId), (default : SystemState).objects[oid]? = none :=
-      fun oid => RHTable_get?_empty 16 (by omega)
     exact match hp with
-    | .single _ _ tcb hObj _ => by rw [hEmpty] at hObj; exact absurd hObj (by simp)
-    | .cons _ _ _ tcb hObj _ _ => by rw [hEmpty] at hObj; exact absurd hObj (by simp)
+    | .single _ _ tcb hObj _ => by exact default_objects_absurd hObj
+    | .cons _ _ _ tcb hObj _ _ => by exact default_objects_absurd hObj
 
 private theorem default_allPendingMessagesBounded :
     allPendingMessagesBounded (default : SystemState) := by
-  intro tid tcb msg hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  intro tid tcb msg hObj; exact default_objects_absurd hObj
 
 private theorem default_badgeWellFormed :
     badgeWellFormed (default : SystemState) := by
   refine ⟨fun oid _ _ hObj => ?_, fun oid _ _ _ _ hObj => ?_⟩
-  all_goals (have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp))
+  all_goals exact default_objects_absurd hObj
 
 private theorem default_waitingThreadsPendingMessageNone :
     waitingThreadsPendingMessageNone (default : SystemState) := by
-  intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  intro tid tcb hObj; exact default_objects_absurd hObj
 
 private theorem default_endpointQueueNoDup :
     endpointQueueNoDup (default : SystemState) := by
-  intro oid ep hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  intro oid ep hObj; exact default_objects_absurd hObj
 
 private theorem default_ipcStateQueueMembershipConsistent :
     ipcStateQueueMembershipConsistent (default : SystemState) := by
-  intro tid tcb hObj; have h : (default : SystemState).objects[tid.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+  intro tid tcb hObj; exact default_objects_absurd hObj
 
 private theorem default_queueNextBlockingConsistent :
     queueNextBlockingConsistent (default : SystemState) := by
-  intro a b tcbA tcbB hA; have h : (default : SystemState).objects[a.toObjId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hA; exact absurd hA (by simp)
+  intro a b tcbA tcbB hA; exact default_objects_absurd hA
 
 private theorem default_queueHeadBlockedConsistent :
     queueHeadBlockedConsistent (default : SystemState) := by
-  intro epId ep hd tcb hEp; have h : (default : SystemState).objects[epId]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hEp; exact absurd hEp (by simp)
+  intro epId ep hd tcb hEp; exact default_objects_absurd hEp
 
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
@@ -390,15 +388,15 @@ theorem default_system_state_proofLayerInvariantBundle :
       default_registryInvariant
   -- 7. vspaceInvariantBundle (7-conjunct: uniqueness ∧ nonOverlap ∧ asidTableConsistent ∧ wxExclusive ∧ boundedAddr ∧ crossAsidIsolation ∧ canonicalAddr)
   · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · intro oid₁ oid₂ r₁ r₂ hObj₁; have h : (default : SystemState).objects[oid₁]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj₁; exact absurd hObj₁ (by simp)
-    · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+    · intro oid₁ oid₂ r₁ r₂ hObj₁; exact default_objects_absurd hObj₁
+    · intro oid root hObj; exact default_objects_absurd hObj
     · constructor
       · intro asid oid hLookup; have h : (default : SystemState).asidTable[asid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hLookup; exact absurd hLookup (by simp)
-      · intro oid root hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
-    · intro oidA oidB rA rB hObjA; have h : (default : SystemState).objects[oidA]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObjA; exact absurd hObjA (by simp)
-    · intro oid root v p perms hObj; have h : (default : SystemState).objects[oid]? = none := RHTable_get?_empty 16 (by omega); rw [h] at hObj; exact absurd hObj (by simp)
+      · intro oid root hObj; exact default_objects_absurd hObj
+    · intro oid root v p perms hObj; exact default_objects_absurd hObj
+    · intro oid root v p perms hObj; exact default_objects_absurd hObj
+    · intro oidA oidB rA rB hObjA; exact default_objects_absurd hObjA
+    · intro oid root v p perms hObj; exact default_objects_absurd hObj
   -- 8. crossSubsystemInvariant (R4-E + T5-J: registry ∧ dependency ∧ queue refs ∧ notification refs)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)

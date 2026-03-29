@@ -18,8 +18,9 @@ audits. **WS-W PORTFOLIO COMPLETE.**
   `dispatchCapabilityOnly` + explicit match split, wildcard unreachability (W2-C),
   and shared checked/unchecked implementation (V8-H).
 - **W6-E (L-11)**: Extracted `default_objects_none` and `default_objects_absurd`
-  helper lemmas in Architecture/Invariant.lean, eliminating 24+ identical
-  `RHTable_get?_empty 16 (by omega)` calls across default-state proofs.
+  helper lemmas in Architecture/Invariant.lean and applied them across 24+
+  default-state proofs, replacing verbose `RHTable_get?_empty 16 (by omega)`
+  patterns with single `default_objects_absurd hObj` calls.
 - **W6-F (L-13)**: Added `RHSet.insert_invExtK`, `RHSet.erase_invExtK`,
   `RHSet.empty_invExtK'` public API wrappers using `RHSet.invExtK` abstraction.
 - **W6-G (LOW-1)**: Added compile-time `const_assert` block in `message_info.rs`
@@ -30,11 +31,16 @@ audits. **WS-W PORTFOLIO COMPLETE.**
   `get_mr(0..3)` returns `Err(InvalidArgument)`.
 - **W6-I (LOW-04)**: Documented CDT edge theorem suite as specification surface
   in Model/Object/Structures.lean.
-- **W6-J (LOW-01)**: Documented RHTable specification surface theorems (29
+- **W6-J (LOW-01)**: Documented RHTable specification surface theorems (14
   theorems) in Prelude.lean with cross-reference to RobinHood/Invariant/.
 - **W6-K (H-3 downgraded)**: Documented lifecycle metadata enforcement chain
   for `lifecycleCapabilityRefObjectTargetBacked`. 4-step contract discipline
-  via `lifecyclePreRetypeCleanup` → `revokeAndClearRefsState`.
+  via `lifecyclePreRetypeCleanup` (`cleanupTcbReferences`,
+  `cleanupEndpointServiceRegistrations`, `detachCNodeSlots`) with
+  `lifecycleRetypeObject_preserves_lifecycleInvariantBundle` proof.
+- **W6-L**: Synchronized documentation across README.md, CHANGELOG.md,
+  WORKSTREAM_HISTORY.md, CLAUDE.md, codebase_map.json, and GitBook chapters.
+  Version bump to 0.22.17.
 - Zero sorry/axiom. All test suites pass.
 
 ## [0.22.16] — W5: Test Infrastructure & Coverage

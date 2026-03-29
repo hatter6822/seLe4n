@@ -124,8 +124,9 @@ atomic sub-tasks. Plan:
   replaced with documentation comment directing to `crossSubsystemInvariant`.
   **W6-D (L-8)**: Documented two-tier dispatch design rationale in API.lean
   (capability-only tier + argument-decoding tier). **W6-E (L-11)**: Extracted
-  `default_objects_none` and `default_objects_absurd` helpers for default-state
-  proofs, eliminating 24+ repeated `RHTable_get?_empty` patterns. **W6-F (L-13)**:
+  `default_objects_none` and `default_objects_absurd` helpers and applied them
+  across 24+ default-state proofs, replacing verbose `RHTable_get?_empty`
+  patterns with single-call absurdity discharge. **W6-F (L-13)**:
   Added `RHSet.insert_invExtK`, `RHSet.erase_invExtK`, `RHSet.empty_invExtK'`
   public API wrappers using `RHSet.invExtK` abstraction. **W6-G (LOW-1)**:
   Added compile-time `const_assert` block in `message_info.rs` validating
@@ -133,10 +134,12 @@ atomic sub-tasks. Plan:
   **W6-H (LOW-2)**: Documented `set_mr`/`get_mr` API asymmetry in
   `ipc_buffer.rs` — intentional design (write hint vs. read refusal).
   **W6-I (LOW-04)**: Documented CDT edge theorem suite as specification
-  surface in Structures.lean. **W6-J (LOW-01)**: Documented RHTable
+  surface in Structures.lean. **W6-J (LOW-01)**: Documented 14 RHTable
   specification surface theorems in Prelude.lean. **W6-K (H-3 downgraded)**:
   Documented lifecycle metadata enforcement chain — 4-step contract discipline
-  via `lifecyclePreRetypeCleanup` → `revokeAndClearRefsState` → `lifecycleRetypeObject`.
+  via `lifecyclePreRetypeCleanup` (`cleanupTcbReferences`,
+  `cleanupEndpointServiceRegistrations`, `detachCNodeSlots`) with
+  `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`.
   **W6-L**: Documentation sync across CHANGELOG, WORKSTREAM_HISTORY, codebase_map,
   README, and GitBook. Zero sorry/axiom. **WS-W PORTFOLIO COMPLETE.**
 
