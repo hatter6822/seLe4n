@@ -20,7 +20,7 @@ GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
-WS-X Phase X1 complete. Phases X2–X5 in progress.
+WS-X Phases X1–X3 complete. Phases X4–X5 in progress.
 
 ### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — IN PROGRESS
 
@@ -56,6 +56,19 @@ audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
   → `decide`.
   **M-4**: `revokeService_preserves_noStaleNotificationWaitReferences` frame lemma.
   **M-6**: 4 checked scheduler wrappers with `saveOutgoingContextChecked`.
+  Zero sorry/axiom. `test_full.sh` green.
+
+- **X3 (Information Flow & Composition Closure) COMPLETE** (v0.22.20): 5 sub-tasks
+  (X3-A through X3-E). 4 findings resolved (H-3, H-4, H-5, M-1):
+  **H-3**: `serviceOrchestrationOutsideNiBoundary` exclusion boundary theorem.
+  `serviceRegistryAffectsProjection` predicate. NI boundary formally documented.
+  **H-4**: 4 sharing predicate pair frame theorems. `crossSubsystemInvariant_composition_complete`
+  10-conjunct tightness theorem covering all 10 predicate interaction pairs
+  (6 disjoint + 4 sharing).
+  **H-5**: `enforcementBridge_to_NonInterferenceStep` unified 6-conjunct bridge
+  connecting enforcement soundness to NI composition framework.
+  **M-1**: `integrityFlowsTo_prevents_escalation` privilege escalation prevention.
+  `securityFlowsTo_prevents_label_escalation` label-level denial.
   Zero sorry/axiom. `test_full.sh` green.
 
 ### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — COMPLETE

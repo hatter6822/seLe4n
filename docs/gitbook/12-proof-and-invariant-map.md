@@ -483,6 +483,9 @@ Message-bounded theorems:
 Information-flow:
 
 - `endpointSendDualChecked` — bounds checks precede flow checks; `enforcement_sufficiency_endpointSendDual` expanded to 4-way disjunction.
+- **X3-A (v0.22.20)**: `serviceOrchestrationOutsideNiBoundary` — formal exclusion boundary documenting that service orchestration internals are outside NI scope. `serviceRegistryAffectsProjection` predicate.
+- **X3-B (v0.22.20)**: `enforcementBridge_to_NonInterferenceStep` — unified 6-conjunct bridge theorem connecting enforcement soundness (6 checked wrappers) to NI composition framework.
+- **X3-E (v0.22.20)**: `integrityFlowsTo_prevents_escalation` — privilege escalation prevention theorem for the non-BIBA integrity direction. `securityFlowsTo_prevents_label_escalation` — label-level denial.
 
 ## 5. IPC-scheduler coherence (M3.5)
 
@@ -597,7 +600,12 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - `noStaleEndpointQueueReferences` — every endpoint queue head/tail and interior member has a live TCB (T5-I: extended from head/tail-only to full `collectQueueMembers` traversal)
   - `noStaleNotificationWaitReferences` — every ThreadId in notification `waitingThreads` has a live TCB (T5-H)
   - `registryDependencyConsistent` — every dependency edge references a registered service
-  - `crossSubsystemInvariant` — composed 4-tuple bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple)
+  - `crossSubsystemInvariant` — composed 5-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added)
+  - **X3-C/X3-D (v0.22.20)**: 10 predicate interaction pairs fully covered:
+    - 6 disjoint pairs with field-disjointness witnesses (V6-A3)
+    - 4 sharing pairs with frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`)
+    - `crossSubsystemInvariant_composition_complete` — 10-conjunct tightness witness
+    - `crossSubsystemInvariant_objects_frame` / `crossSubsystemInvariant_services_change` — composite preservation
 
 ## 9.2 S5-G/H: Page-alignment check for VSpace-bound retype (S5 complete)
 

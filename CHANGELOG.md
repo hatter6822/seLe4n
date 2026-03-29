@@ -1,3 +1,28 @@
+## [0.22.20] — X3: Information Flow & Composition Closure
+
+Phase X3 of WS-X pre-release audit remediation. Resolves 4 findings (H-3, H-4,
+H-5, M-1) from the v0.22.17 comprehensive audit.
+
+- **X3-A (H-3)**: `serviceOrchestrationOutsideNiBoundary` exclusion boundary
+  theorem formally documenting that service orchestration internals (dependency
+  graphs, lifecycle transitions, restart policies) are outside the NI boundary.
+  `serviceRegistryAffectsProjection` predicate. `serviceOrchestration_boundary_disjunction`.
+- **X3-B (H-5)**: `enforcementBridge_to_NonInterferenceStep` unified 6-conjunct
+  bridge theorem connecting all enforcement soundness theorems
+  (`endpointSendDualChecked`, `notificationSignalChecked`, `cspaceCopyChecked`,
+  `cspaceMoveChecked`, `endpointReceiveDualChecked`, `registerServiceChecked`)
+  to the NI composition framework.
+- **X3-C (H-4 part 1)**: 4 sharing predicate pair frame theorems covering all
+  10 cross-subsystem predicate interaction pairs. `sharingPair1_objects_frame`,
+  `sharingPair23_objects_frame`, `sharingPair4_services_frame`.
+  `crossSubsystemInvariant_objects_frame` and `crossSubsystemInvariant_services_change`
+  composite preservation.
+- **X3-D (H-4 part 2)**: `crossSubsystemInvariant_composition_complete` 10-conjunct
+  tightness theorem witnessing all 6 disjoint + 4 sharing pairs.
+- **X3-E (M-1)**: `integrityFlowsTo_prevents_escalation` 4-conjunct privilege
+  escalation prevention theorem. `securityFlowsTo_prevents_label_escalation`
+  label-level confidentiality denial and authority receipt permission.
+
 ## [0.22.19] — X2: Runtime Invariant Enforcement
 
 Phase X2 of WS-X pre-release audit remediation. Resolves 5 findings (H-2, H-6,
