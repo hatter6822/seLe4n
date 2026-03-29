@@ -19,9 +19,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
-WS-W Phase W1, W2, W3, and W4 complete. Phases W5–W6 pending.
+WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 
-### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W4 COMPLETE
+### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — COMPLETE
 
 WS-W addresses 49 unique actionable findings from three comprehensive audits of
 v0.22.10 (2 CRIT, 4 HIGH, 16 MED, 27 LOW) across 6 phases (W1–W6) with 52
@@ -111,6 +111,37 @@ atomic sub-tasks. Plan:
   `policyOwnerAuthoritySlotPresent_of_capabilityLookup`. **W5-G (L-7)**:
   Documented `resolveExtraCaps` silent-drop behavior (seL4-matching design).
   Zero sorry/axiom.
+
+- **W6 (Code Quality & Documentation) COMPLETE** (v0.22.17): 12 sub-tasks
+  (W6-A through W6-L). **W6-A (M-7)**: `removeThreadFromQueue` TCB existence
+  invariant documented — explains defensive `(none, none)` fallback is safe,
+  citing `tcbQueueChainAcyclic` and cleanup-before-retype ordering. **W6-B (L-4)**:
+  Factored redundant lifecycle preservation proofs — created bundled
+  `spliceOutMidQueueNode_preserves`, `removeFromAllEndpointQueues_preserves`,
+  `removeFromAllNotificationWaitLists_preserves` theorems; individual accessors
+  now project from bundles. **W6-C (L-6)**: Removed unused
+  `crossSubsystemPredicates` list and `crossSubsystemPredicates_count` witness;
+  replaced with documentation comment directing to `crossSubsystemInvariant`.
+  **W6-D (L-8)**: Documented two-tier dispatch design rationale in API.lean
+  (capability-only tier + argument-decoding tier). **W6-E (L-11)**: Extracted
+  `default_objects_none` and `default_objects_absurd` helpers and applied them
+  across 24+ default-state proofs, replacing verbose `RHTable_get?_empty`
+  patterns with single-call absurdity discharge. **W6-F (L-13)**:
+  Added `RHSet.insert_invExtK`, `RHSet.erase_invExtK`, `RHSet.empty_invExtK'`
+  public API wrappers using `RHSet.invExtK` abstraction. **W6-G (LOW-1)**:
+  Added compile-time `const_assert` block in `message_info.rs` validating
+  `MAX_LABEL`, `MAX_MSG_LENGTH`, `MAX_EXTRA_CAPS` against Lean values.
+  **W6-H (LOW-2)**: Documented `set_mr`/`get_mr` API asymmetry in
+  `ipc_buffer.rs` — intentional design (write hint vs. read refusal).
+  **W6-I (LOW-04)**: Documented CDT edge theorem suite as specification
+  surface in Structures.lean. **W6-J (LOW-01)**: Documented 14 RHTable
+  specification surface theorems in Prelude.lean. **W6-K (H-3 downgraded)**:
+  Documented lifecycle metadata enforcement chain — 4-step contract discipline
+  via `lifecyclePreRetypeCleanup` (`cleanupTcbReferences`,
+  `cleanupEndpointServiceRegistrations`, `detachCNodeSlots`) with
+  `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`.
+  **W6-L**: Documentation sync across CHANGELOG, WORKSTREAM_HISTORY, codebase_map,
+  README, and GitBook. Zero sorry/axiom. **WS-W PORTFOLIO COMPLETE.**
 
 ### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — COMPLETE
 

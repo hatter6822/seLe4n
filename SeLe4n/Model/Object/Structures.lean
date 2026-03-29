@@ -890,6 +890,19 @@ structure CapDerivationTree where
 
 namespace CapDerivationTree
 
+/- W6-I (LOW-04): CDT edge theorems — complete proof suite.
+   The following CDT section provides machine-checked proofs for capability
+   derivation tree edge operations (`addEdge`, `removeNode`, `removeEdge`):
+   - `addEdge_preserves_edgeWellFounded_fresh` / `_noParent`: Acyclicity preservation
+   - `addEdge_childMapConsistent` / `parentMapConsistent`: Index consistency
+   - `addEdge_preserves_cdtMapsConsistent`: Composite preservation
+   - `removeNode_edges_sub`, `removeNode_parentMapConsistent`, `removeNode_childMapConsistent`
+   - `removeEdge_surviving_child_ne`, `removeEdge_preserves_cdtMapsConsistent`
+   Most are specification surface — not directly composed into the kernel proof
+   chain. Exception: `removeNode_edges_sub` is actively used by capability
+   invariant preservation proofs (Capability/Invariant/Preservation.lean).
+   Retained as machine-checked documentation of CDT correctness properties. -/
+
 /-- T2-C (H-2): The canonical empty CDT with no edges and empty index maps.
     Satisfies all CDT invariants by construction (vacuously). -/
 def empty : CapDerivationTree := CapDerivationTree.mk [] {} {}

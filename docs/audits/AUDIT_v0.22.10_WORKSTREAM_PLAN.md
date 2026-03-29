@@ -49,7 +49,7 @@ sorry/axiom invariant.
 | W3 | Dead Code Elimination | 8 | MEDIUM | `test_smoke.sh` green, no sorry introduced | **COMPLETE** (v0.22.14) |
 | W4 | Platform & Architecture Hardening | 7 | MEDIUM | Module builds pass, test_smoke green | **COMPLETE** (v0.22.15) |
 | W5 | Test Infrastructure & Coverage | 8 | MEDIUM | All test suites pass | **COMPLETE** (v0.22.16) |
-| W6 | Code Quality & Documentation | 12 | LOW | `test_fast.sh` green, docs consistent | Pending |
+| W6 | Code Quality & Documentation | 12 | LOW | `test_fast.sh` green, docs consistent | **COMPLETE** (v0.22.17) |
 
 **Dependencies**: W1 is independent and must complete first. W2-W4 can proceed
 in parallel after W1. W5 depends on W1 (new wrappers need tests). W6 depends

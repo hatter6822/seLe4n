@@ -1,3 +1,48 @@
+## [0.22.17] — W6: Code Quality & Documentation
+
+Phase W6 of WS-W pre-release audit remediation. Addresses M-7, LOW-1, LOW-2,
+L-4, L-6, L-8, L-11, L-13, LOW-01, LOW-04, H-3 (downgraded) from v0.22.10
+audits. **WS-W PORTFOLIO COMPLETE.**
+
+- **W6-A (M-7)**: Documented `removeThreadFromQueue` TCB existence invariant.
+  Defensive `(none, none)` fallback explained — safe due to cleanup-before-retype
+  ordering and `tcbQueueChainAcyclic` invariant.
+- **W6-B (L-4)**: Factored redundant lifecycle preservation proofs into bundled
+  theorems (`spliceOutMidQueueNode_preserves`, `removeFromAllEndpointQueues_preserves`,
+  `removeFromAllNotificationWaitLists_preserves`). Individual accessors project
+  from bundles, reducing 77 lines of near-identical proofs.
+- **W6-C (L-6)**: Removed unused `crossSubsystemPredicates` list and
+  `crossSubsystemPredicates_count` count witness. Replaced with documentation
+  comment directing to canonical `crossSubsystemInvariant` definition.
+- **W6-D (L-8)**: Documented two-tier dispatch design in API.lean. Explains
+  `dispatchCapabilityOnly` + explicit match split, wildcard unreachability (W2-C),
+  and shared checked/unchecked implementation (V8-H).
+- **W6-E (L-11)**: Extracted `default_objects_none` and `default_objects_absurd`
+  helper lemmas in Architecture/Invariant.lean and applied them across 24+
+  default-state proofs, replacing verbose `RHTable_get?_empty 16 (by omega)`
+  patterns with single `default_objects_absurd hObj` calls.
+- **W6-F (L-13)**: Added `RHSet.insert_invExtK`, `RHSet.erase_invExtK`,
+  `RHSet.empty_invExtK'` public API wrappers using `RHSet.invExtK` abstraction.
+- **W6-G (LOW-1)**: Added compile-time `const_assert` block in `message_info.rs`
+  ensuring `MAX_LABEL`, `MAX_MSG_LENGTH`, `MAX_EXTRA_CAPS` stay synchronized
+  with Lean model values.
+- **W6-H (LOW-2)**: Documented `set_mr`/`get_mr` API asymmetry in `ipc_buffer.rs`.
+  Intentional design: `set_mr(0..3)` returns informational `Ok(false)`, while
+  `get_mr(0..3)` returns `Err(InvalidArgument)`.
+- **W6-I (LOW-04)**: Documented CDT edge theorem suite as specification surface
+  in Model/Object/Structures.lean.
+- **W6-J (LOW-01)**: Documented RHTable specification surface theorems (14
+  theorems) in Prelude.lean with cross-reference to RobinHood/Invariant/.
+- **W6-K (H-3 downgraded)**: Documented lifecycle metadata enforcement chain
+  for `lifecycleCapabilityRefObjectTargetBacked`. 4-step contract discipline
+  via `lifecyclePreRetypeCleanup` (`cleanupTcbReferences`,
+  `cleanupEndpointServiceRegistrations`, `detachCNodeSlots`) with
+  `lifecycleRetypeObject_preserves_lifecycleInvariantBundle` proof.
+- **W6-L**: Synchronized documentation across README.md, CHANGELOG.md,
+  WORKSTREAM_HISTORY.md, CLAUDE.md, codebase_map.json, and GitBook chapters.
+  Version bump to 0.22.17.
+- Zero sorry/axiom. All test suites pass.
+
 ## [0.22.16] — W5: Test Infrastructure & Coverage
 
 Phase W5 of WS-W pre-release audit remediation. Addresses M-10, M-11,

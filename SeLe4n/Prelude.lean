@@ -908,6 +908,23 @@ open SeLe4n.Kernel.RobinHood in
 theorem RHTable_getElem?_eq_get? {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) : t[k]? = t.get? k := rfl
 
+/- W6-J (LOW-01): RHTable specification surface theorems (14 theorems).
+   The following 14 theorems (through `RHTable_fold_preserves`) characterize
+   RHTable behavior for external reasoning. They are not currently composed
+   into the kernel proof chain but serve as machine-checked documentation of
+   hash table properties:
+   - `RHTable_contains_insert_self` / `_erase_self`: containment after mutation
+   - `RHTable_insert_preserves_invExt`: insert preserves base invariant
+   - `RHTable_empty_invExt`: empty table satisfies base invariant
+   - `RHTable_erase_preserves_invExtK`: erase preserves kernel invariant
+   - `RHTable_get?_erase_ne_K` / `RHTable_getElem?_erase_K`: lookup after erase
+   - `RHTable_insert_preserves_invExtK`: insert preserves kernel invariant
+   - `RHTable_filter_preserves_invExtK` / `_key` / `_filter_getElem?`: filter properties
+   - `RHTable_size_insert_bound` / `_erase_bound`: size bounds
+   - `RHTable_fold_preserves`: fold induction principle
+   See `SeLe4n/Kernel/RobinHood/Invariant/` for the actively-used proof
+   infrastructure that these theorems document. -/
+
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Contains after insert self. -/
 theorem RHTable_contains_insert_self {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]

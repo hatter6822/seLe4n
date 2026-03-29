@@ -842,7 +842,7 @@ theorem default_serviceGraphInvariant : serviceGraphInvariant default := by
 --   Scheduler, Capability, IPC, Lifecycle, Service, InformationFlow
 --
 -- When adding a 7th subsystem: update `subsystemModules`, the count witness
--- (which will fail to compile), and `crossSubsystemPredicates` in CrossSubsystem.lean.
+-- (which will fail to compile), and `crossSubsystemInvariant` in CrossSubsystem.lean.
 -- ============================================================================
 
 /-- S3-N: Subsystem module registry — compile-time list of all subsystem

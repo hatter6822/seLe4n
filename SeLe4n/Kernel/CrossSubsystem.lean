@@ -225,24 +225,16 @@ theorem crossSubsystemInvariant_composition_gap_documented
     serviceGraphInvariant st := id
 
 -- ============================================================================
--- S3-J/U-M26: Parameterized cross-subsystem invariant composition
+-- W6-C: Cross-subsystem invariant composition note
 -- ============================================================================
 
-/-- S3-J: List of cross-subsystem invariant predicates. Adding a new subsystem
-    invariant requires only extending this list rather than editing a fixed
-    conjunction. The `crossSubsystemInvariant` definition above remains the
-    canonical form for backward compatibility; this list provides the
-    parameterized composition used by extensibility checks. -/
-def crossSubsystemPredicates : List (SystemState → Prop) :=
-  [registryEndpointValid, registryDependencyConsistent, noStaleEndpointQueueReferences,
-   noStaleNotificationWaitReferences, serviceGraphInvariant]
-
-/-- S3-J + T5-J + U4-G: Predicate count witness — compile-time assertion that the
-    predicate list has exactly 5 entries (extended from 4 by U4-G serviceGraphInvariant).
-    If a new subsystem invariant is added to the list but not to
-    `crossSubsystemInvariant`, the count check will fail. -/
-theorem crossSubsystemPredicates_count :
-    crossSubsystemPredicates.length = 5 := by rfl
+/- W6-C (L-6): The canonical cross-subsystem invariant is the 5-predicate
+   conjunction `crossSubsystemInvariant` above. The previous parameterized
+   predicate list (`crossSubsystemPredicates`) and its count witness have
+   been removed — they duplicated the conjunction without adding consumers
+   or extensibility. To add a new cross-subsystem predicate, extend the
+   `crossSubsystemInvariant` definition directly and update
+   `default_crossSubsystemInvariant` and all preservation proofs. -/
 
 -- ============================================================================
 -- V6-A (A1-A5): Cross-Subsystem Field-Disjointness Formalization
