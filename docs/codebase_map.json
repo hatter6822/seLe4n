@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-dead-code-elimination-06r3U",
-      "commit_sha": "d5056136ecc94c4ef98fb8b94a4146ae38c78f52",
-      "tree_sha": "c2a4b0e0d6dc51aa8cc93bc52b7921780408aeac",
-      "committed_at_utc": "2026-03-28T20:04:00-04:00"
+      "commit_sha": "0cb72212cb12f060ab7c587d22e2f9e28b1160d6",
+      "tree_sha": "63e8a78e35c242b89e382a1ddcda4f5b787432ff",
+      "committed_at_utc": "2026-03-29T00:59:06+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a1de2a1d668640ff2b4979f3285a1b49c2effe53808435b6824f6cee1d4b054e"
+    "source_digest": "86722ba42531a5d800eb02e8876fd63f3775e2126ad607fcb14970191e8cb58c"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3708
+    "declaration_count": 3688
   },
   "readme_sync": {
     "version": "0.22.14",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 72586,
+    "production_loc": 72406,
     "test_files": 10,
     "test_loc": 8441,
-    "proved_theorem_lemma_decls": 2117,
+    "proved_theorem_lemma_decls": 2105,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -3226,7 +3226,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpace",
       "path": "SeLe4n/Kernel/Architecture/VSpace.lean",
-      "declaration_count": 31,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -3258,56 +3258,14 @@
         },
         {
           "kind": "def",
-          "name": "asidBound",
+          "name": "physicalAddressBound",
           "line": 44,
           "called": []
         },
         {
           "kind": "def",
-          "name": "asidBoundForConfig",
-          "line": 47,
-          "called": [
-            "MachineConfig",
-            "config"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "resolveAsidRootChecked",
-          "line": 55,
-          "called": [
-            "ASID",
-            "ObjId",
-            "SystemState",
-            "VSpaceRoot",
-            "asidBound",
-            "isValidForConfig",
-            "none",
-            "resolveAsidRoot"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "resolveAsidRootChecked_eq_of_valid",
-          "line": 61,
-          "called": [
-            "ASID",
-            "SystemState",
-            "isValidForConfig",
-            "resolveAsidRoot",
-            "resolveAsidRootChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "physicalAddressBound",
-          "line": 70,
-          "called": []
-        },
-        {
-          "kind": "def",
           "name": "physicalAddressBoundForConfig",
-          "line": 75,
+          "line": 49,
           "called": [
             "MachineConfig",
             "config"
@@ -3316,7 +3274,7 @@
         {
           "kind": "theorem",
           "name": "physicalAddressBoundForConfig_le_default",
-          "line": 79,
+          "line": 53,
           "called": [
             "MachineConfig",
             "config",
@@ -3327,7 +3285,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPage",
-          "line": 98,
+          "line": 72,
           "called": [
             "ASID",
             "Kernel",
@@ -3345,7 +3303,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageChecked",
-          "line": 118,
+          "line": 92,
           "called": [
             "ASID",
             "Kernel",
@@ -3362,7 +3320,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPage",
-          "line": 132,
+          "line": 106,
           "called": [
             "ASID",
             "Kernel",
@@ -3376,7 +3334,7 @@
         {
           "kind": "def",
           "name": "vspaceLookupFull",
-          "line": 143,
+          "line": 117,
           "called": [
             "ASID",
             "Kernel",
@@ -3391,7 +3349,7 @@
         {
           "kind": "def",
           "name": "vspaceLookup",
-          "line": 155,
+          "line": 129,
           "called": [
             "ASID",
             "Kernel",
@@ -3405,7 +3363,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageWithFlush",
-          "line": 177,
+          "line": 151,
           "called": [
             "ASID",
             "Kernel",
@@ -3420,7 +3378,7 @@
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithFlush",
-          "line": 192,
+          "line": 166,
           "called": [
             "ASID",
             "Kernel",
@@ -3432,7 +3390,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlush",
-          "line": 201,
+          "line": 175,
           "called": [
             "ASID",
             "Kernel",
@@ -3449,7 +3407,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushPlatform",
-          "line": 213,
+          "line": 187,
           "called": [
             "ASID",
             "Kernel",
@@ -3468,7 +3426,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlush_default_is_readOnly",
-          "line": 234,
+          "line": 208,
           "called": [
             "PagePermissions.readOnly",
             "wxCompliant"
@@ -3477,7 +3435,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByASID",
-          "line": 245,
+          "line": 219,
           "called": [
             "ASID",
             "Kernel",
@@ -3487,7 +3445,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByPage",
-          "line": 252,
+          "line": 226,
           "called": [
             "ASID",
             "Kernel",
@@ -3496,36 +3454,9 @@
           ]
         },
         {
-          "kind": "abbrev",
-          "name": "tlbFlushByASIDPage",
-          "line": 258,
-          "called": [
-            "tlbFlushByPage"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "tlbFlushAll",
-          "line": 264,
-          "called": [
-            "Kernel",
-            "adapterFlushTlb"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "tlbFlushAll_empty",
-          "line": 268,
-          "called": [
-            "SystemState",
-            "TlbState.empty",
-            "adapterFlushTlb"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "tlbFlushByASID_state_frame",
-          "line": 273,
+          "line": 230,
           "called": [
             "ASID",
             "SystemState",
@@ -3535,7 +3466,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPage_state_frame",
-          "line": 281,
+          "line": 238,
           "called": [
             "ASID",
             "SystemState",
@@ -3546,7 +3477,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidRootsUnique",
-          "line": 294,
+          "line": 251,
           "called": [
             "ObjId",
             "SystemState",
@@ -3556,7 +3487,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_implies_obj",
-          "line": 303,
+          "line": 260,
           "called": [
             "ASID",
             "ObjId",
@@ -3569,25 +3500,13 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_of_asidTable_entry",
-          "line": 340,
+          "line": 297,
           "called": [
             "ASID",
             "ObjId",
             "SystemState",
             "VSpaceRoot",
             "resolveAsidRoot"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "storeObject_objectIndex_eq_of_mem",
-          "line": 356,
-          "called": [
-            "KernelObject",
-            "ObjId",
-            "SystemState",
-            "contains",
-            "storeObject"
           ]
         }
       ]
@@ -24569,7 +24488,6 @@
             "RHTable",
             "RHTable.get_none_no_matching_entry",
             "Slot",
-            "capacity",
             "get",
             "invExt",
             "none"
@@ -24649,7 +24567,6 @@
             "Slot",
             "UniqueRadixIndices",
             "buildCNodeRadix",
-            "capacity",
             "config",
             "extractBits",
             "foldl_establishes_some",
@@ -24755,7 +24672,7 @@
     {
       "module": "SeLe4n.Kernel.RadixTree.Core",
       "path": "SeLe4n/Kernel/RadixTree/Core.lean",
-      "declaration_count": 15,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -24779,16 +24696,8 @@
         },
         {
           "kind": "theorem",
-          "name": "extractBits_zero_width",
-          "line": 42,
-          "called": [
-            "extractBits"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "extractBits_identity",
-          "line": 50,
+          "line": 45,
           "called": [
             "extractBits"
           ]
@@ -24796,7 +24705,7 @@
         {
           "kind": "structure",
           "name": "CNodeRadix",
-          "line": 71,
+          "line": 66,
           "called": [
             "Capability",
             "size"
@@ -24804,8 +24713,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:78>",
-          "line": 78,
+          "name": "<anonymous:instance:73>",
+          "line": 73,
           "called": [
             "CNodeRadix",
             "size"
@@ -24814,7 +24723,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.empty",
-          "line": 88,
+          "line": 83,
           "called": [
             "CNodeRadix",
             "none",
@@ -24824,7 +24733,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.lookup",
-          "line": 101,
+          "line": 96,
           "called": [
             "CNodeRadix",
             "Capability",
@@ -24838,7 +24747,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.insert",
-          "line": 112,
+          "line": 107,
           "called": [
             "CNodeRadix",
             "Capability",
@@ -24853,7 +24762,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.erase",
-          "line": 126,
+          "line": 121,
           "called": [
             "CNodeRadix",
             "Slot",
@@ -24868,7 +24777,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.fold",
-          "line": 140,
+          "line": 135,
           "called": [
             "CNodeRadix",
             "Capability",
@@ -24880,7 +24789,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.toList",
-          "line": 153,
+          "line": 148,
           "called": [
             "CNodeRadix",
             "Capability",
@@ -24891,7 +24800,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.size",
-          "line": 161,
+          "line": 156,
           "called": [
             "CNodeRadix",
             "none"
@@ -24900,7 +24809,7 @@
         {
           "kind": "def",
           "name": "CNodeRadix.fanout",
-          "line": 172,
+          "line": 167,
           "called": [
             "CNodeRadix"
           ]
@@ -25383,7 +25292,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Bridge",
       "path": "SeLe4n/Kernel/RobinHood/Bridge.lean",
-      "declaration_count": 53,
+      "declaration_count": 48,
       "declarations": [
         {
           "kind": "namespace",
@@ -25414,20 +25323,8 @@
         },
         {
           "kind": "theorem",
-          "name": "RHTable.beq_symmetric",
-          "line": 61,
-          "called": [
-            "RHTable",
-            "fold",
-            "get",
-            "none",
-            "size"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 80,
+          "line": 60,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -25441,7 +25338,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 103,
+          "line": 83,
           "called": [
             "RHTable",
             "get",
@@ -25453,7 +25350,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 113,
+          "line": 93,
           "called": [
             "RHTable",
             "get",
@@ -25465,7 +25362,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 124,
+          "line": 104,
           "called": [
             "RHTable",
             "erase",
@@ -25478,10 +25375,9 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 134,
+          "line": 114,
           "called": [
             "RHTable",
-            "capacity",
             "erase",
             "get",
             "get_after_erase_ne",
@@ -25492,7 +25388,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_erase_le",
-          "line": 145,
+          "line": 125,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -25503,7 +25399,7 @@
         {
           "kind": "theorem",
           "name": "list_fold_insertNoResize_size_le",
-          "line": 160,
+          "line": 140,
           "called": [
             "RHEntry",
             "RHTable",
@@ -25516,12 +25412,11 @@
         {
           "kind": "theorem",
           "name": "resize_size_le",
-          "line": 188,
+          "line": 168,
           "called": [
             "RHTable",
             "RHTable.empty",
             "WF",
-            "capacity",
             "countOccupied",
             "insertNoResize",
             "list_fold_insertNoResize_size_le",
@@ -25533,7 +25428,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_insert_le",
-          "line": 212,
+          "line": 192,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -25547,7 +25442,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.mem_iff_isSome_getElem",
-          "line": 226,
+          "line": 206,
           "called": [
             "RHTable",
             "RHTable.contains",
@@ -25558,7 +25453,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 236,
+          "line": 216,
           "called": [
             "RHTable",
             "get"
@@ -25567,7 +25462,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.fold_eq_slots_foldl",
-          "line": 247,
+          "line": 227,
           "called": [
             "RHTable",
             "fold",
@@ -25577,11 +25472,10 @@
         {
           "kind": "def",
           "name": "RHTable.filter",
-          "line": 260,
+          "line": 240,
           "called": [
             "RHTable",
             "RHTable.empty",
-            "capacity",
             "fold",
             "insertNoResize"
           ]
@@ -25589,7 +25483,7 @@
         {
           "kind": "theorem",
           "name": "list_fold_filter_size_le",
-          "line": 271,
+          "line": 251,
           "called": [
             "RHEntry",
             "RHTable",
@@ -25602,11 +25496,10 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_filter_le_capacity",
-          "line": 307,
+          "line": 287,
           "called": [
             "RHTable",
             "RHTable.empty",
-            "capacity",
             "filter",
             "insertNoResize",
             "list_fold_filter_size_le",
@@ -25618,12 +25511,11 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_filter_le_size",
-          "line": 327,
+          "line": 307,
           "called": [
             "RHTable",
             "RHTable.empty",
             "WF",
-            "capacity",
             "countOccupied",
             "filter",
             "insertNoResize",
@@ -25636,7 +25528,7 @@
         {
           "kind": "def",
           "name": "RHTable.ofList",
-          "line": 358,
+          "line": 338,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -25646,7 +25538,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExt'",
-          "line": 368,
+          "line": 348,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -25657,13 +25549,12 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_size_lt_capacity",
-          "line": 381,
+          "line": 361,
           "called": [
             "RHTable",
             "RHTable.insert",
             "RHTable.insertNoResize_capacity",
             "RHTable.insertNoResize_size_le",
-            "capacity",
             "insert",
             "insertNoResize",
             "invExt",
@@ -25676,12 +25567,11 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_size_lt_capacity",
-          "line": 415,
+          "line": 395,
           "called": [
             "RHTable",
             "RHTable.erase",
             "RHTable.size_erase_le",
-            "capacity",
             "erase",
             "size"
           ]
@@ -25689,14 +25579,13 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_invExt",
-          "line": 433,
+          "line": 413,
           "called": [
             "RHTable",
             "RHTable.empty",
             "RHTable.empty_invExt",
             "RHTable.filter",
             "RHTable.fold",
-            "capacity",
             "filter",
             "insertNoResize_preserves_invExt",
             "invExt"
@@ -25705,7 +25594,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_size_lt_capacity",
-          "line": 459,
+          "line": 439,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -25714,48 +25603,14 @@
             "RHTable.insertNoResize_capacity",
             "RHTable.size_filter_le_size",
             "WF",
-            "capacity",
             "filter",
             "size"
           ]
         },
         {
           "kind": "theorem",
-          "name": "RHTable.ofList_invExt",
-          "line": 486,
-          "called": [
-            "RHTable",
-            "RHTable.empty_invExt",
-            "RHTable.ofList",
-            "insert",
-            "insert_preserves_invExt",
-            "invExt"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.ofList_size_lt_capacity",
-          "line": 501,
-          "called": [
-            "RHTable",
-            "RHTable.empty",
-            "RHTable.empty_invExt",
-            "RHTable.insert",
-            "RHTable.insertNoResize_capacity",
-            "RHTable.ofList",
-            "capacity",
-            "insert",
-            "insert_preserves_invExt",
-            "insert_size_lt_capacity",
-            "invExt",
-            "resize_fold_capacity",
-            "size"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "filter_fold_absent",
-          "line": 537,
+          "line": 479,
           "called": [
             "RHEntry",
             "RHTable",
@@ -25766,7 +25621,6 @@
             "RHTable.getElem",
             "RHTable.insertNoResize_capacity",
             "RHTable.insertNoResize_get_ne",
-            "capacity",
             "filter",
             "get",
             "insertNoResize_preserves_invExt",
@@ -25779,14 +25633,13 @@
         {
           "kind": "theorem",
           "name": "filter_fold_present_step",
-          "line": 575,
+          "line": 517,
           "called": [
             "RHEntry",
             "RHTable",
             "RHTable.insertNoResize_capacity",
             "RHTable.insertNoResize_get_eq",
             "RHTable.insertNoResize_get_ne",
-            "capacity",
             "get",
             "insertNoResize",
             "insertNoResize_preserves_invExt",
@@ -25799,7 +25652,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_present",
-          "line": 679,
+          "line": 621,
           "called": [
             "RHEntry",
             "RHTable",
@@ -25808,7 +25661,6 @@
             "RHTable.filter",
             "RHTable.fold",
             "RHTable.getElem",
-            "capacity",
             "filter",
             "filter_fold_present_step",
             "get",
@@ -25821,7 +25673,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_key",
-          "line": 724,
+          "line": 666,
           "called": [
             "RHTable",
             "RHTable.get_none_no_matching_entry",
@@ -25837,7 +25689,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.fold_preserves",
-          "line": 745,
+          "line": 687,
           "called": [
             "RHTable",
             "RHTable.fold",
@@ -25847,7 +25699,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_absent_by_pred",
-          "line": 761,
+          "line": 703,
           "called": [
             "RHEntry",
             "RHTable",
@@ -25858,7 +25710,6 @@
             "RHTable.getElem",
             "RHTable.insertNoResize_capacity",
             "RHTable.insertNoResize_get_ne",
-            "capacity",
             "filter",
             "get",
             "insertNoResize_preserves_invExt",
@@ -25871,13 +25722,12 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_subset",
-          "line": 804,
+          "line": 746,
           "called": [
             "RHEntry",
             "RHTable",
             "RHTable.get_none_no_matching_entry",
             "RHTable.get_some_slot_entry",
-            "capacity",
             "filter",
             "filter_fold_absent",
             "filter_fold_absent_by_pred",
@@ -25890,13 +25740,12 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_pred",
-          "line": 846,
+          "line": 788,
           "called": [
             "RHEntry",
             "RHTable",
             "RHTable.filter_get_subset",
             "RHTable.get_some_slot_entry",
-            "capacity",
             "filter",
             "filter_fold_absent_by_pred",
             "get",
@@ -25906,7 +25755,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_filter_getElem",
-          "line": 877,
+          "line": 819,
           "called": [
             "RHTable",
             "RHTable.filter_get_pred",
@@ -25923,8 +25772,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:902>",
-          "line": 902,
+          "name": "<anonymous:instance:844>",
+          "line": 844,
           "called": [
             "RHTable",
             "RHTable.empty"
@@ -25933,10 +25782,9 @@
         {
           "kind": "def",
           "name": "RHTable.invExtK",
-          "line": 916,
+          "line": 858,
           "called": [
             "RHTable",
-            "capacity",
             "invExt",
             "size"
           ]
@@ -25944,7 +25792,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_invExt",
-          "line": 920,
+          "line": 862,
           "called": [
             "RHTable",
             "invExt",
@@ -25954,10 +25802,9 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_size_lt_capacity",
-          "line": 923,
+          "line": 865,
           "called": [
             "RHTable",
-            "capacity",
             "invExtK",
             "size"
           ]
@@ -25965,20 +25812,18 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_capacity_ge4",
-          "line": 926,
+          "line": 868,
           "called": [
             "RHTable",
-            "capacity",
             "invExtK"
           ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.mk_invExtK",
-          "line": 930,
+          "line": 872,
           "called": [
             "RHTable",
-            "capacity",
             "invExt",
             "invExtK",
             "size"
@@ -25987,7 +25832,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExtK",
-          "line": 939,
+          "line": 881,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -25998,18 +25843,17 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_capacity_eq",
-          "line": 951,
+          "line": 893,
           "called": [
             "RHTable",
             "RHTable.erase",
-            "capacity",
             "erase"
           ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExtK",
-          "line": 958,
+          "line": 900,
           "called": [
             "RHTable",
             "erase",
@@ -26022,12 +25866,11 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_capacity_ge4",
-          "line": 970,
+          "line": 912,
           "called": [
             "RHTable",
             "RHTable.insert",
             "RHTable.insertNoResize_capacity",
-            "capacity",
             "insert",
             "resize_fold_capacity"
           ]
@@ -26035,7 +25878,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExtK",
-          "line": 979,
+          "line": 921,
           "called": [
             "RHTable",
             "insert",
@@ -26048,7 +25891,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 992,
+          "line": 934,
           "called": [
             "RHTable",
             "erase",
@@ -26059,52 +25902,26 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_capacity_eq",
-          "line": 1003,
+          "line": 945,
           "called": [
             "RHTable",
             "RHTable.empty",
             "RHTable.filter",
             "RHTable.fold",
             "RHTable.insertNoResize_capacity",
-            "capacity",
             "filter"
           ]
         },
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_invExtK",
-          "line": 1023,
+          "line": 965,
           "called": [
             "RHTable",
             "filter",
             "filter_capacity_eq",
             "filter_preserves_invExt",
             "filter_size_lt_capacity",
-            "invExtK"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.ofList_capacity_ge4",
-          "line": 1035,
-          "called": [
-            "RHTable",
-            "RHTable.empty",
-            "RHTable.ofList",
-            "capacity",
-            "insert",
-            "insert_capacity_ge4"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RHTable.ofList_invExtK",
-          "line": 1049,
-          "called": [
-            "RHTable.ofList",
-            "RHTable.ofList_capacity_ge4",
-            "RHTable.ofList_invExt",
-            "RHTable.ofList_size_lt_capacity",
             "invExtK"
           ]
         }
@@ -26133,7 +25950,6 @@
           "line": 38,
           "called": [
             "RHEntry",
-            "capacity",
             "size"
           ]
         },
@@ -26143,7 +25959,6 @@
           "line": 45,
           "called": [
             "RHTable",
-            "capacity",
             "size"
           ]
         },
@@ -26152,7 +25967,6 @@
           "name": "idealIndex",
           "line": 54,
           "called": [
-            "capacity",
             "toNat"
           ]
         },
@@ -26160,16 +25974,13 @@
           "kind": "def",
           "name": "nextIndex",
           "line": 59,
-          "called": [
-            "capacity"
-          ]
+          "called": []
         },
         {
           "kind": "theorem",
           "name": "idealIndex_lt",
           "line": 66,
           "called": [
-            "capacity",
             "idealIndex"
           ]
         },
@@ -26178,7 +25989,6 @@
           "name": "nextIndex_lt",
           "line": 71,
           "called": [
-            "capacity",
             "nextIndex"
           ]
         },
@@ -26196,7 +26006,6 @@
           "line": 84,
           "called": [
             "RHTable",
-            "capacity",
             "countOccupied",
             "size"
           ]
@@ -26207,7 +26016,6 @@
           "line": 91,
           "called": [
             "RHTable",
-            "capacity",
             "none",
             "size"
           ]
@@ -26230,7 +26038,6 @@
           "line": 119,
           "called": [
             "RHEntry",
-            "capacity",
             "none",
             "set",
             "size"
@@ -26242,7 +26049,6 @@
           "line": 144,
           "called": [
             "RHEntry",
-            "capacity",
             "insertLoop",
             "size"
           ]
@@ -26253,7 +26059,6 @@
           "line": 171,
           "called": [
             "RHEntry",
-            "capacity",
             "none",
             "size"
           ]
@@ -26264,7 +26069,6 @@
           "line": 190,
           "called": [
             "RHTable",
-            "capacity",
             "getLoop",
             "idealIndex"
           ]
@@ -26284,7 +26088,6 @@
           "line": 204,
           "called": [
             "RHEntry",
-            "capacity",
             "none",
             "size"
           ]
@@ -26295,7 +26098,6 @@
           "line": 225,
           "called": [
             "RHEntry",
-            "capacity",
             "none",
             "set",
             "size"
@@ -26308,7 +26110,6 @@
           "called": [
             "RHEntry",
             "backshiftLoop",
-            "capacity",
             "size"
           ]
         },
@@ -26320,7 +26121,6 @@
             "RHTable",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
-            "capacity",
             "findLoop",
             "idealIndex",
             "none",
@@ -26352,7 +26152,6 @@
           "line": 311,
           "called": [
             "RHTable",
-            "capacity",
             "idealIndex",
             "insertLoop",
             "insertLoop_preserves_len",
@@ -26365,7 +26164,6 @@
           "line": 326,
           "called": [
             "RHTable",
-            "capacity",
             "insertNoResize"
           ]
         },
@@ -26376,7 +26174,6 @@
           "called": [
             "RHTable",
             "RHTable.empty",
-            "capacity",
             "empty",
             "fold",
             "insertNoResize"
@@ -26390,7 +26187,6 @@
             "RHTable",
             "RHTable.empty",
             "RHTable.insertNoResize_capacity",
-            "capacity",
             "fold",
             "insertNoResize",
             "none",
@@ -26404,7 +26200,6 @@
           "line": 358,
           "called": [
             "RHTable",
-            "capacity",
             "resize",
             "resize_fold_capacity",
             "size"
@@ -26416,7 +26211,6 @@
           "line": 368,
           "called": [
             "RHTable",
-            "capacity",
             "insertNoResize",
             "resize",
             "size"
@@ -26483,7 +26277,6 @@
           "called": [
             "RHEntry",
             "RHTable",
-            "capacity",
             "idealIndex"
           ]
         },
@@ -26493,8 +26286,7 @@
           "line": 25,
           "called": [
             "RHEntry",
-            "RHTable",
-            "capacity"
+            "RHTable"
           ]
         },
         {
@@ -26503,8 +26295,7 @@
           "line": 35,
           "called": [
             "RHEntry",
-            "RHTable",
-            "capacity"
+            "RHTable"
           ]
         },
         {
@@ -26513,7 +26304,6 @@
           "line": 48,
           "called": [
             "RHTable",
-            "capacity",
             "size"
           ]
         },
@@ -26534,7 +26324,6 @@
           "called": [
             "RHTable",
             "RHTable.insert",
-            "capacity",
             "insert",
             "insertNoResize",
             "resize",
@@ -26548,7 +26337,6 @@
           "called": [
             "RHTable",
             "RHTable.insert_resizes_at_capacity",
-            "capacity",
             "insert",
             "insertNoResize",
             "resize",
@@ -26645,7 +26433,6 @@
           "line": 33,
           "called": [
             "RHEntry",
-            "capacity",
             "getLoop",
             "none",
             "size"
@@ -26657,7 +26444,6 @@
           "line": 61,
           "called": [
             "RHEntry",
-            "capacity",
             "carried_key_absent",
             "displacement_roundtrip",
             "dist_step_mod",
@@ -26677,7 +26463,6 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
-            "capacity",
             "none",
             "set",
             "size"
@@ -26689,7 +26474,6 @@
           "line": 261,
           "called": [
             "RHEntry",
-            "capacity",
             "findLoop",
             "getElem_idx_eq",
             "size"
@@ -26704,7 +26488,6 @@
             "RHTable",
             "RHTable.erase",
             "backshiftLoop_preserves_key_absence",
-            "capacity",
             "erase",
             "findLoop",
             "findLoop_none_implies_absent",
@@ -26742,7 +26525,6 @@
           "line": 446,
           "called": [
             "RHEntry",
-            "capacity",
             "disp_step'",
             "displacement_roundtrip'",
             "getElem_idx_eq",
@@ -26759,7 +26541,6 @@
           "line": 533,
           "called": [
             "RHEntry",
-            "capacity",
             "insertLoop",
             "insertLoop_preserves_len",
             "mod_add_mod_eq",
@@ -26774,7 +26555,6 @@
           "line": 580,
           "called": [
             "RHEntry",
-            "capacity",
             "getElem_idx_eq",
             "insertLoop",
             "insertLoop_preserves_len",
@@ -26832,7 +26612,6 @@
             "RHTable",
             "RHTable.fold",
             "RHTable.resize",
-            "capacity",
             "insertNoResize_size_le",
             "size"
           ]
@@ -26846,7 +26625,6 @@
             "RHTable",
             "RHTable.insert",
             "RHTable.insertNoResize",
-            "capacity",
             "exists_empty_slot",
             "idealIndex",
             "insert",
@@ -26868,7 +26646,6 @@
           "called": [
             "RHTable",
             "RHTable.get",
-            "capacity",
             "get",
             "getLoop_finds_present",
             "idealIndex",
@@ -26885,7 +26662,6 @@
           "line": 901,
           "called": [
             "RHEntry",
-            "capacity",
             "insertLoop",
             "insertLoop_preserves_len",
             "none",
@@ -26899,7 +26675,6 @@
           "line": 964,
           "called": [
             "RHEntry",
-            "capacity",
             "getLoop",
             "size"
           ]
@@ -26915,7 +26690,6 @@
             "RHTable.fold",
             "RHTable.insertNoResize",
             "RHTable.resize",
-            "capacity",
             "idealIndex",
             "insertLoop_absent_ne_key",
             "none",
@@ -26928,7 +26702,6 @@
           "line": 1023,
           "called": [
             "RHEntry",
-            "capacity",
             "insertLoop",
             "insertLoop_preserves_len",
             "none",
@@ -26944,7 +26717,6 @@
             "RHEntry",
             "RHTable",
             "RHTable.get",
-            "capacity",
             "get",
             "getLoop_finds_present",
             "idealIndex",
@@ -26961,7 +26733,6 @@
             "RHEntry",
             "RHTable",
             "RHTable.insertNoResize",
-            "capacity",
             "idealIndex",
             "insertLoop_absent_ne_key",
             "insertNoResize"
@@ -26975,7 +26746,6 @@
             "RHEntry",
             "RHTable",
             "RHTable.insert",
-            "capacity",
             "insert",
             "insertNoResize_absent_ne_key",
             "resize",
@@ -26988,7 +26758,6 @@
           "line": 1138,
           "called": [
             "RHEntry",
-            "capacity",
             "carried_key_absent",
             "disp_step'",
             "displacement_roundtrip'",
@@ -27019,7 +26788,6 @@
             "RHTable.insertNoResize",
             "RHTable.insertNoResize_capacity",
             "RHTable.resize",
-            "capacity",
             "exists_empty_slot",
             "getElem_idx_eq",
             "idealIndex",
@@ -27044,7 +26812,6 @@
             "RHTable",
             "RHTable.insert",
             "RHTable.insertNoResize",
-            "capacity",
             "exists_empty_slot",
             "idealIndex",
             "idealIndex_lt",
@@ -27069,7 +26836,6 @@
           "called": [
             "RHTable",
             "RHTable.get",
-            "capacity",
             "get",
             "getLoop_finds_present",
             "getLoop_none_of_absent",
@@ -27108,7 +26874,6 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
-            "capacity",
             "none",
             "set",
             "size"
@@ -27122,7 +26887,6 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
-            "capacity",
             "getElem_idx_eq",
             "none",
             "set",
@@ -27139,7 +26903,6 @@
             "RHTable.erase",
             "backshiftLoop",
             "backshiftLoop_preserves_entry_presence",
-            "capacity",
             "erase",
             "findLoop",
             "findLoop_some_has_key",
@@ -27161,7 +26924,6 @@
             "RHTable.erase",
             "RHTable.get",
             "backshiftLoop_output_has_input_key_value",
-            "capacity",
             "erase",
             "erase_preserves_invExt",
             "erase_preserves_ne_entry",
@@ -27186,7 +26948,6 @@
           "called": [
             "RHEntry",
             "RHTable",
-            "capacity",
             "get",
             "get_none_implies_absent",
             "invExt",
@@ -27201,7 +26962,6 @@
             "RHEntry",
             "RHTable",
             "RHTable.get",
-            "capacity",
             "get",
             "getLoop_some_implies_entry",
             "idealIndex"
@@ -27216,7 +26976,6 @@
             "RHTable",
             "RHTable.get",
             "RHTable.insertNoResize",
-            "capacity",
             "exists_empty_slot",
             "get",
             "getLoop_finds_present",
@@ -27240,7 +26999,6 @@
             "RHTable",
             "RHTable.get",
             "RHTable.insertNoResize",
-            "capacity",
             "exists_empty_slot",
             "get",
             "getLoop_finds_present",
@@ -27340,7 +27098,6 @@
           "line": 101,
           "called": [
             "RHEntry",
-            "capacity",
             "countOccupied",
             "countOccupied_set_none_to_some",
             "countOccupied_set_some_to_some",
@@ -27356,7 +27113,6 @@
           "called": [
             "RHEntry",
             "backshiftLoop",
-            "capacity",
             "countOccupied",
             "countOccupied_set_none_to_some",
             "countOccupied_set_some_to_none",
@@ -27390,7 +27146,6 @@
           "called": [
             "RHTable",
             "WF",
-            "capacity",
             "countOccupied",
             "countOccupied_le_size",
             "idealIndex",
@@ -27437,7 +27192,6 @@
           "line": 281,
           "called": [
             "RHEntry",
-            "capacity",
             "findLoop",
             "size"
           ]
@@ -27448,7 +27202,6 @@
           "line": 302,
           "called": [
             "RHEntry",
-            "capacity",
             "findLoop",
             "findLoop_lt",
             "size"
@@ -27465,7 +27218,6 @@
             "backshiftLoop",
             "backshiftLoop_countOccupied",
             "backshiftLoop_preserves_len",
-            "capacity",
             "countOccupied",
             "countOccupied_set_some_to_none",
             "erase",
@@ -27496,7 +27248,6 @@
           "line": 421,
           "called": [
             "RHEntry",
-            "capacity",
             "idealIndex",
             "size"
           ]
@@ -27506,8 +27257,7 @@
           "name": "RHTable.probeChainDominant",
           "line": 432,
           "called": [
-            "RHTable",
-            "capacity"
+            "RHTable"
           ]
         },
         {
@@ -27562,7 +27312,6 @@
           "line": 475,
           "called": [
             "RHTable",
-            "capacity",
             "invExtFull",
             "loadFactorBounded",
             "size"
@@ -27598,7 +27347,6 @@
           "line": 555,
           "called": [
             "RHEntry",
-            "capacity",
             "dist_step_mod",
             "idealIndex",
             "idealIndex_lt",
@@ -27630,7 +27378,6 @@
           "line": 667,
           "called": [
             "RHEntry",
-            "capacity",
             "displacement_roundtrip",
             "getElem_idx_eq",
             "idealIndex",
@@ -27647,7 +27394,6 @@
           "line": 745,
           "called": [
             "RHEntry",
-            "capacity",
             "set",
             "size"
           ]
@@ -27658,7 +27404,6 @@
           "line": 776,
           "called": [
             "RHEntry",
-            "capacity",
             "idealIndex",
             "set",
             "size"
@@ -27670,7 +27415,6 @@
           "line": 808,
           "called": [
             "RHEntry",
-            "capacity",
             "carried_key_absent",
             "displacement_roundtrip",
             "distCorrect_after_set",
@@ -27694,7 +27438,6 @@
           "line": 1058,
           "called": [
             "RHEntry",
-            "capacity",
             "carried_key_absent",
             "displacement_roundtrip",
             "distCorrect_after_set",
@@ -27718,7 +27461,6 @@
           "line": 1315,
           "called": [
             "RHTable",
-            "capacity",
             "distCorrect",
             "idealIndex",
             "idealIndex_lt",
@@ -27760,7 +27502,6 @@
           "line": 1349,
           "called": [
             "RHTable",
-            "capacity",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_preserves_noDupKeys",
@@ -27775,7 +27516,6 @@
           "line": 1365,
           "called": [
             "RHTable",
-            "capacity",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_preserves_pcd",
@@ -27880,7 +27620,6 @@
           "line": 1441,
           "called": [
             "RHEntry",
-            "capacity",
             "none",
             "set",
             "size"
@@ -27894,7 +27633,6 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
-            "capacity",
             "none",
             "set",
             "size"
@@ -27918,7 +27656,6 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
-            "capacity",
             "displacement_backward",
             "idealIndex",
             "none",
@@ -27935,7 +27672,6 @@
             "RHTable",
             "RHTable.erase",
             "backshiftLoop_preserves_distCorrect",
-            "capacity",
             "distCorrect",
             "erase",
             "idealIndex",
@@ -27953,7 +27689,6 @@
             "RHTable",
             "RHTable.erase",
             "backshiftLoop_preserves_noDupKeys",
-            "capacity",
             "erase",
             "findLoop_lt",
             "invExt",
@@ -27970,7 +27705,6 @@
           "line": 1772,
           "called": [
             "RHEntry",
-            "capacity",
             "idealIndex",
             "size"
           ]
@@ -27981,7 +27715,6 @@
           "line": 1786,
           "called": [
             "RHEntry",
-            "capacity",
             "displacement_roundtrip",
             "idealIndex",
             "idealIndex_lt",
@@ -27997,7 +27730,6 @@
           "line": 1895,
           "called": [
             "RHEntry",
-            "capacity",
             "idealIndex",
             "none",
             "probeChainDominant",
@@ -28012,7 +27744,6 @@
           "line": 1921,
           "called": [
             "RHEntry",
-            "capacity",
             "displacement_roundtrip",
             "idealIndex",
             "idealIndex_lt",
@@ -28037,7 +27768,6 @@
             "backshiftLoop",
             "backshiftLoop_preserves_len",
             "backshiftStep_relaxedPCD",
-            "capacity",
             "displacement_backward",
             "idealIndex",
             "mod_add_mod",
@@ -28079,7 +27809,6 @@
             "RHTable",
             "RHTable.erase",
             "backshiftLoop_preserves_pcd",
-            "capacity",
             "countOccupied",
             "erase",
             "exists_none_of_countOccupied_lt",
@@ -28116,7 +27845,6 @@
           "line": 2452,
           "called": [
             "RHTable",
-            "capacity",
             "erase",
             "erase_preserves_distCorrect",
             "erase_preserves_noDupKeys",
@@ -28195,7 +27923,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Set",
       "path": "SeLe4n/Kernel/RobinHood/Set.lean",
-      "declaration_count": 31,
+      "declaration_count": 25,
       "declarations": [
         {
           "kind": "namespace",
@@ -28254,32 +27982,8 @@
         },
         {
           "kind": "def",
-          "name": "RHSet.fold",
-          "line": 49,
-          "called": [
-            "RHSet"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "RHSet.size",
-          "line": 53,
-          "called": [
-            "RHSet"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "RHSet.capacity",
-          "line": 56,
-          "called": [
-            "RHSet"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "RHSet.ofList",
-          "line": 59,
+          "line": 49,
           "called": [
             "RHSet",
             "RHTable.ofList"
@@ -28287,8 +27991,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:67>",
-          "line": 67,
+          "name": "<anonymous:instance:57>",
+          "line": 57,
           "called": [
             "RHSet",
             "RHSet.empty"
@@ -28296,16 +28000,16 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:70>",
-          "line": 70,
+          "name": "<anonymous:instance:60>",
+          "line": 60,
           "called": [
             "RHSet"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:73>",
-          "line": 73,
+          "name": "<anonymous:instance:63>",
+          "line": 63,
           "called": [
             "RHSet",
             "contains",
@@ -28314,8 +28018,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:76>",
-          "line": 76,
+          "name": "<anonymous:instance:66>",
+          "line": 66,
           "called": [
             "RHSet",
             "RHSet.empty"
@@ -28324,7 +28028,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.contains_empty",
-          "line": 84,
+          "line": 74,
           "called": [
             "RHSet",
             "RHSet.contains",
@@ -28337,7 +28041,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.contains_insert_self",
-          "line": 90,
+          "line": 80,
           "called": [
             "RHSet",
             "RHSet.contains",
@@ -28352,7 +28056,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.contains_insert_ne",
-          "line": 97,
+          "line": 87,
           "called": [
             "RHSet",
             "RHSet.contains",
@@ -28367,7 +28071,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.contains_erase_self",
-          "line": 105,
+          "line": 95,
           "called": [
             "RHSet",
             "RHSet.contains",
@@ -28382,14 +28086,13 @@
         {
           "kind": "theorem",
           "name": "RHSet.contains_erase_ne",
-          "line": 112,
+          "line": 102,
           "called": [
             "RHSet",
             "RHSet.contains",
             "RHSet.erase",
             "RHTable.contains",
             "RHTable.getElem",
-            "capacity",
             "contains",
             "erase",
             "invExt",
@@ -28399,7 +28102,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.insert_preserves_invExt",
-          "line": 120,
+          "line": 110,
           "called": [
             "RHSet",
             "insert",
@@ -28409,10 +28112,9 @@
         {
           "kind": "theorem",
           "name": "RHSet.erase_preserves_invExt",
-          "line": 126,
+          "line": 116,
           "called": [
             "RHSet",
-            "capacity",
             "erase",
             "invExt",
             "size"
@@ -28421,7 +28123,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.empty_invExt",
-          "line": 133,
+          "line": 123,
           "called": [
             "RHSet",
             "RHSet.empty",
@@ -28430,46 +28132,9 @@
           ]
         },
         {
-          "kind": "theorem",
-          "name": "RHSet.insert_idempotent",
-          "line": 138,
-          "called": [
-            "RHSet",
-            "RHSet.contains_insert_self",
-            "RHSet.insert_preserves_invExt",
-            "contains",
-            "insert",
-            "invExt"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RHSet.erase_absent_noop",
-          "line": 145,
-          "called": [
-            "RHSet",
-            "RHSet.contains_erase_ne",
-            "RHSet.contains_erase_self",
-            "capacity",
-            "contains",
-            "erase",
-            "invExt",
-            "size"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "RHSet.mem_iff_contains",
-          "line": 158,
-          "called": [
-            "RHSet",
-            "contains"
-          ]
-        },
-        {
           "kind": "def",
           "name": "RHSet.invExtK",
-          "line": 168,
+          "line": 132,
           "called": [
             "RHSet"
           ]
@@ -28477,7 +28142,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.empty_invExtK",
-          "line": 171,
+          "line": 135,
           "called": [
             "RHSet",
             "RHSet.empty",
@@ -28488,7 +28153,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.insert_preserves_invExtK",
-          "line": 176,
+          "line": 140,
           "called": [
             "RHSet",
             "insert",
@@ -28498,7 +28163,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.erase_preserves_invExtK",
-          "line": 182,
+          "line": 146,
           "called": [
             "RHSet",
             "erase",
@@ -28508,7 +28173,7 @@
         {
           "kind": "theorem",
           "name": "RHSet.contains_erase_ne_K",
-          "line": 188,
+          "line": 152,
           "called": [
             "RHSet",
             "RHSet.contains",
@@ -34461,7 +34126,6 @@
             "RHTable.fold",
             "RHTable.get_none_no_matching_entry",
             "RHTable.toList",
-            "capacity",
             "foldl_toList_mem_forward",
             "get",
             "invExt",
@@ -34487,7 +34151,6 @@
             "RHTable",
             "RHTable.fold",
             "RHTable.toList",
-            "capacity",
             "foldl_noDupKeys_inv",
             "invExt",
             "size",
@@ -34773,7 +34436,6 @@
             "RHTable",
             "RHTable.fold",
             "RHTable.toList",
-            "capacity",
             "foldl_toList_mem_backward",
             "get",
             "invExt",
@@ -34853,7 +34515,6 @@
             "Slot",
             "UniqueRadixIndices",
             "buildCNodeRadix",
-            "capacity",
             "extractBits",
             "foldl_generic_establishes_lookup",
             "freezeCNodeSlots",
@@ -34879,7 +34540,6 @@
             "RHTable.fold",
             "Slot",
             "buildCNodeRadix",
-            "capacity",
             "extractBits",
             "foldl_generic_preserves_none",
             "freezeCNodeSlots",
@@ -46494,7 +46154,6 @@
             "BootstrapBuilder",
             "SystemState",
             "build",
-            "capacity",
             "contains",
             "none",
             "objectType",
@@ -49880,7 +49539,6 @@
           "called": [
             "RHTable",
             "RHTable.empty",
-            "capacity",
             "expect",
             "insert",
             "size"
@@ -49893,7 +49551,6 @@
           "called": [
             "RHTable",
             "RHTable.empty",
-            "capacity",
             "expect",
             "get",
             "insert",
@@ -49978,7 +49635,6 @@
           "line": 234,
           "called": [
             "Capability",
-            "capacity",
             "empty",
             "expect",
             "insert",

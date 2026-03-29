@@ -52,26 +52,6 @@ instance [BEq α] [Hashable α] [LawfulBEq α] [BEq β] : BEq (RHTable α β) wh
         | some v' => v == v'
         | none => false)
 
-/-- U7-H: The updated symmetric `BEq` instance satisfies `(a == b) = (b == a)`.
-
-The proof follows from the structure of the instance: both directions fold over
-their respective tables checking the other. Swapping `a` and `b` swaps the two
-fold conjuncts, which commute under `Bool.and_comm`. The size check `a.size ==
-b.size` is symmetric by BEq on Nat. -/
-theorem RHTable.beq_symmetric [BEq α] [Hashable α] [LawfulBEq α] [BEq β]
-    (a b : RHTable α β) : (a == b) = (b == a) := by
-  show (a.size == b.size &&
-    a.fold true (fun acc k v => acc && match b.get? k with | some v' => v == v' | none => false) &&
-    b.fold true (fun acc k v => acc && match a.get? k with | some v' => v == v' | none => false)) =
-   (b.size == a.size &&
-    b.fold true (fun acc k v => acc && match a.get? k with | some v' => v == v' | none => false) &&
-    a.fold true (fun acc k v => acc && match b.get? k with | some v' => v == v' | none => false))
-  have hSizeComm : (a.size == b.size) = (b.size == a.size) := by
-    cases ha : (a.size == b.size) <;> cases hb : (b.size == a.size) <;>
-      simp_all [beq_iff_eq]
-  rw [hSizeComm]
-  cases (b.size == a.size) <;> simp [Bool.and_comm]
-
 -- ============================================================================
 -- N3-B5: getElem?_empty
 -- ============================================================================
@@ -481,44 +461,6 @@ theorem RHTable.filter_size_lt_capacity [BEq α] [Hashable α] [LawfulBEq α]
 -- ============================================================================
 -- N4 bridge: ofList preserves invExt and size < capacity
 -- ============================================================================
-
-/-- `ofList` produces a table satisfying `invExt`. -/
-theorem RHTable.ofList_invExt [BEq α] [Hashable α] [LawfulBEq α]
-    (entries : List (α × β)) (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.ofList entries cap hPos).invExt := by
-  suffices ∀ (init : RHTable α β), init.invExt →
-      (entries.foldl (fun acc (x : α × β) => acc.insert x.1 x.2) init).invExt from
-    this _ (RHTable.empty_invExt cap hPos)
-  intro init hInit
-  induction entries generalizing init with
-  | nil => exact hInit
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    exact ih _ (init.insert_preserves_invExt hd.1 hd.2 hInit)
-
-/-- `ofList` produces a table with `size < capacity`.
-    Requires `cap ≥ 4` (all CNode tables use cap=16). -/
-theorem RHTable.ofList_size_lt_capacity [BEq α] [Hashable α] [LawfulBEq α]
-    (entries : List (α × β)) (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
-    (RHTable.ofList entries cap hPos).size < (RHTable.ofList entries cap hPos).capacity := by
-  suffices ∀ (init : RHTable α β), init.invExt → init.size < init.capacity →
-      4 ≤ init.capacity →
-      (entries.foldl (fun acc (x : α × β) => acc.insert x.1 x.2) init).size <
-      (entries.foldl (fun acc (x : α × β) => acc.insert x.1 x.2) init).capacity from
-    this _ (RHTable.empty_invExt cap hPos) (by simp [RHTable.empty]; exact hPos)
-      (by simp [RHTable.empty]; exact hCapGe4)
-  intro init hInit hSizeLt hCapGe
-  induction entries generalizing init with
-  | nil => exact hSizeLt
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    have hInsExt := init.insert_preserves_invExt hd.1 hd.2 hInit
-    have hInsSizeLt := init.insert_size_lt_capacity hd.1 hd.2 hInit hSizeLt hCapGe
-    have hInsCapGe : 4 ≤ (init.insert hd.1 hd.2).capacity := by
-      unfold RHTable.insert; split
-      · rw [RHTable.insertNoResize_capacity, init.resize_fold_capacity]; omega
-      · rw [RHTable.insertNoResize_capacity]; exact hCapGe
-    exact ih _ hInsExt hInsSizeLt hInsCapGe
 
 -- ============================================================================
 -- N4 bridge: filter lookup for source-preserving predicates
@@ -1026,31 +968,5 @@ theorem RHTable.filter_preserves_invExtK [BEq α] [Hashable α] [LawfulBEq α]
   ⟨t.filter_preserves_invExt f hK.1,
    t.filter_size_lt_capacity f hK.2.1 hK.1.1,
    by rw [t.filter_capacity_eq f]; exact hK.2.2⟩
-
--- ============================================================================
--- V3-B Phase 1: ofList_invExtK
--- ============================================================================
-
-/-- `ofList` produces a table with capacity ≥ 4 when `4 ≤ cap`. -/
-private theorem RHTable.ofList_capacity_ge4 [BEq α] [Hashable α] [LawfulBEq α]
-    (entries : List (α × β)) (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
-    4 ≤ (RHTable.ofList entries cap hPos).capacity := by
-  suffices ∀ (init : RHTable α β), 4 ≤ init.capacity →
-      4 ≤ (entries.foldl (fun acc (x : α × β) => acc.insert x.1 x.2) init).capacity from
-    this _ (by simp [RHTable.empty]; exact hCapGe4)
-  intro init hInit
-  induction entries generalizing init with
-  | nil => exact hInit
-  | cons hd tl ih =>
-    simp only [List.foldl_cons]
-    exact ih _ (init.insert_capacity_ge4 hd.1 hd.2 hInit)
-
-/-- `ofList` produces a table satisfying `invExtK` when `4 ≤ cap`. -/
-theorem RHTable.ofList_invExtK [BEq α] [Hashable α] [LawfulBEq α]
-    (entries : List (α × β)) (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
-    (RHTable.ofList entries cap hPos).invExtK :=
-  ⟨RHTable.ofList_invExt entries cap hPos,
-   RHTable.ofList_size_lt_capacity entries cap hPos hCapGe4,
-   RHTable.ofList_capacity_ge4 entries cap hPos hCapGe4⟩
 
 end SeLe4n.Kernel.RobinHood

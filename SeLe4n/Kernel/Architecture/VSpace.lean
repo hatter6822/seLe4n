@@ -38,32 +38,6 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     | _ => none
   | none => none
 
-/-- U2-H: Default ASID space bound (ARM64 16-bit ASID field in TTBR1_EL1).
-    Used as the upper bound for model-level reasoning. Platform-specific bounds
-    are enforced via `asidBoundForConfig`. -/
-def asidBound : Nat := 65536
-
-/-- U2-H: Platform-specific ASID bound derived from `MachineConfig`. -/
-def asidBoundForConfig (config : MachineConfig) : Nat := config.maxASID
-
-/-- U2-H: ASID-bounds-checked VSpace root resolution.
-    Defense-in-depth: rejects ASIDs ≥ `asidBound` (65536 on ARM64) before table
-    lookup. Invalid ASIDs cannot appear in the ASID table by construction, but
-    the guard makes this explicit at the production call boundary.
-    Invariant proofs use `resolveAsidRoot` directly (no guard needed for
-    inductive reasoning over well-formed states). -/
-def resolveAsidRootChecked (st : SystemState) (asid : SeLe4n.ASID)
-    (maxASID : Nat := asidBound) : Option (SeLe4n.ObjId × VSpaceRoot) :=
-  if !asid.isValidForConfig maxASID then none
-  else resolveAsidRoot st asid
-
-/-- U2-H: Checked resolution agrees with unchecked when ASID is valid. -/
-theorem resolveAsidRootChecked_eq_of_valid (st : SystemState) (asid : SeLe4n.ASID)
-    (maxASID : Nat) (hValid : asid.isValidForConfig maxASID = true) :
-    resolveAsidRootChecked st asid maxASID = resolveAsidRoot st asid := by
-  unfold resolveAsidRootChecked
-  simp [hValid]
-
 /-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
     Used as the upper bound for model-level reasoning. Platform-specific bounds
     (e.g., 44-bit for BCM2712) are enforced via `physicalAddressBoundForConfig`. -/
@@ -252,23 +226,6 @@ def tlbFlushByASID (asid : SeLe4n.ASID) : Kernel Unit :=
 def tlbFlushByPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
   fun st => .ok ((), { st with tlb := adapterFlushTlbByVAddr st.tlb asid vaddr })
 
-/-- T6-L/M-ARCH-4: Combined ASID+page flush — a convenience alias for the
-    most common targeted flush pattern (invalidate one page in one address space).
-    Equivalent to `tlbFlushByPage`. -/
-abbrev tlbFlushByASIDPage := tlbFlushByPage
-
-/-- T6-L: Full TLB flush as a kernel operation. Conservative fallback when
-    the ASID or VAddr of the affected mapping is unknown.
-    Marked as the fallback — callers should prefer targeted flushes when the
-    ASID and VAddr are available. -/
-def tlbFlushAll : Kernel Unit :=
-  fun st => .ok ((), { st with tlb := adapterFlushTlb st.tlb })
-
-/-- T6-L: Full flush removes all entries. -/
-theorem tlbFlushAll_empty (st : SystemState) :
-    (adapterFlushTlb st.tlb).entries = [] := by
-  simp [adapterFlushTlb, TlbState.empty]
-
 /-- T6-L: Per-ASID flush does not affect the non-TLB state. -/
 theorem tlbFlushByASID_state_frame (asid : SeLe4n.ASID) (st st' : SystemState)
     (hStep : tlbFlushByASID asid st = .ok ((), st')) :
@@ -350,17 +307,5 @@ theorem resolveAsidRoot_of_asidTable_entry
 -- ============================================================================
 -- storeObject preservation lemmas for VSpace operations
 -- ============================================================================
-
-/-- After `storeObject` at a rootId that was already in objectIndex, the objectIndex is unchanged.
-    Requires objectIndexSet to be consistent (contains id ↔ id ∈ objectIndex). -/
-theorem storeObject_objectIndex_eq_of_mem
-    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (_hMem : id ∈ st.objectIndex)
-    (hSync : st.objectIndexSet.contains id = true)
-    (hStore : storeObject id obj st = .ok ((), st')) :
-    st'.objectIndex = st.objectIndex := by
-  unfold storeObject at hStore
-  cases hStore
-  simp [hSync]
 
 end SeLe4n.Kernel.Architecture
