@@ -75,6 +75,12 @@ theorem removeDependenciesOf_serviceRegistry_eq
     (removeDependenciesOf st sid).serviceRegistry = st.serviceRegistry := by
   unfold removeDependenciesOf; rfl
 
+/-- W2-F: removeDependenciesOf preserves objectIndex. -/
+theorem removeDependenciesOf_objectIndex_eq
+    (st : SystemState) (sid : ServiceId) :
+    (removeDependenciesOf st sid).objectIndex = st.objectIndex := by
+  unfold removeDependenciesOf; rfl
+
 -- ============================================================================
 -- F-07: Service dependency registration with cycle detection (WS-D4)
 -- ============================================================================
@@ -156,6 +162,31 @@ where
             -- instead of O(|rest|) for append.
             let newFrontier := deps.filter (fun d => !visited.contains d) ++ rest
             go newFrontier (visited.insert node) fuel
+
+-- ============================================================================
+-- W2-E (M-4): serviceHasPathTo fuel exhaustion semantics
+-- ============================================================================
+
+/-- W2-E (M-4): Fuel exhaustion conservatively assumes path exists, preventing
+    registration of potentially cyclic dependencies. When fuel reaches 0 before
+    the traversal completes, `serviceHasPathTo.go` returns `true` — this is
+    sound for cycle-detection callers because a false positive only rejects a
+    valid edge registration, while a false negative would silently allow a cycle.
+
+    The fuel bound `serviceBfsFuel st = st.objectIndex.length + 256` is adequate
+    because:
+    1. Each *new* node expansion decrements fuel by 1.
+    2. Already-visited nodes are skipped without consuming fuel.
+    3. Total distinct services ≤ `objectIndex.length` (each has a kernel object).
+    4. The `+ 256` margin handles services with IDs not yet in the object index.
+
+    Worst-case graph: `objectIndex.length` services forming a single chain.
+    The traversal visits each service once, consuming `objectIndex.length` fuel.
+    With `objectIndex.length + 256` available, there is a margin of 256. -/
+theorem serviceHasPathTo_fuel_exhaustion_conservative
+    (st : SystemState) (src target : ServiceId) :
+    serviceHasPathTo.go st target [src] {} 0 = true := by
+  simp [serviceHasPathTo.go]
 
 /-- Register a dependency edge from service `svcId` to service `depId`.
 

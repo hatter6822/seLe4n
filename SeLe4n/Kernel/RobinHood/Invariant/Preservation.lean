@@ -796,6 +796,9 @@ private theorem distCorrect_after_set [BEq α] [Hashable α] [LawfulBEq α]
 -- Section 10b: insertLoop preserves noDupKeys and PCD (combined induction)
 -- ============================================================================
 
+-- W2-H (L-3): 420K heartbeats — combined noDupKeys + PCD preservation in a single
+-- induction. Three cases (swap/place/advance) each require array set reasoning
+-- and probe chain distance calculations. V7-D helpers reduced this from 800K.
 set_option maxHeartbeats 420000 in
 /-- Combined induction: `insertLoop` preserves both noDupKeys and
     probeChainDominant. The preconditions `hChainOK` and `hNotFound`
@@ -1045,6 +1048,10 @@ private theorem insertLoop_preserves_noDupKeys [BEq α] [Hashable α] [LawfulBEq
 -- Section 10c: insertLoop preserves probeChainDominant
 -- ============================================================================
 
+-- W2-H (L-3): 400K heartbeats — inherent to Robin Hood hash table PCD preservation.
+-- The proof mirrors `insertLoop_preserves_noDupKeys` case structure (swap/place/advance)
+-- with additional modular arithmetic reasoning for probe chain distances. Helper lemmas
+-- `noDupKeys_after_set` and `distCorrect_after_set` (V7-D) reduced this from 800K.
 set_option maxHeartbeats 400000 in
 /-- `insertLoop` preserves `probeChainDominant`. Same case structure as
     `insertLoop_preserves_noDupKeys`, proving PCD for the result array. -/

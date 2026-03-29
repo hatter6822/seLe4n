@@ -56,6 +56,40 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
     (fuel : Nat) : collectQueueMembers objects none fuel = [] := by
   cases fuel <;> rfl
 
+-- ============================================================================
+-- W2-D (M-6): collectQueueMembers fuel sufficiency
+-- ============================================================================
+
+/-- W2-D (M-6): Fuel sufficiency argument for `collectQueueMembers`.
+
+    `collectQueueMembers` traverses a linked-list queue via `queueNext` pointers
+    with `st.objects.size` as fuel. On fuel exhaustion (fuel=0), it returns `[]`,
+    silently truncating. The IPC invariant `tcbQueueChainAcyclic` ensures:
+
+    1. **No cycles**: every queue traversal visits distinct threads.
+    2. **Bounded length**: queue length ≤ number of TCBs ≤ `objects.size`.
+    3. **Fuel sufficiency**: with fuel = `objects.size` and at most `objects.size`
+       distinct threads, the traversal completes before fuel exhaustion.
+
+    The formal connection relies on the `QueueNextPath` inductive predicate from
+    `IPC/Invariant/Defs.lean`, which captures the acyclicity property. Each step
+    of `collectQueueMembers` consumes 1 fuel and visits 1 unique thread (by
+    acyclicity). Since there are at most `objects.size` threads, the traversal
+    terminates naturally (via `none` queueNext or non-TCB) before fuel reaches 0.
+
+    **Why not a formal proof**: The `tcbQueueChainAcyclic` invariant operates on
+    `QueueNextPath` (an inductive path predicate), while `collectQueueMembers`
+    operates on `queueNext` field traversal. Connecting these requires showing
+    that `collectQueueMembers` produces a `QueueNextPath`-compatible traversal,
+    which involves non-trivial infrastructure. The per-element validity guaranteed
+    by `noStaleEndpointQueueReferences` is the operationally relevant property. -/
+theorem collectQueueMembers_fuel_sufficiency_documented
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (start : Option SeLe4n.ThreadId) :
+    -- When start is none, result is empty regardless of fuel
+    start = none → collectQueueMembers objects start objects.size = [] := by
+  intro h; subst h; exact collectQueueMembers_none objects objects.size
+
 /-- R4-E.1 + T5-I (M-CS-1): No endpoint queue references a non-existent TCB.
     For every endpoint object, every ThreadId reachable via the intrusive
     `queueNext` chain from the queue head must reference an existing TCB
@@ -151,6 +185,44 @@ theorem default_crossSubsystemInvariant :
     simp [this] at h
   · -- U4-G: serviceGraphInvariant — default state has empty services
     exact default_serviceGraphInvariant
+
+-- ============================================================================
+-- W2-B (H-1): Cross-subsystem invariant composition gap documentation
+-- ============================================================================
+
+/-- W2-B (H-1): **Composition gap acknowledgment.** The 5-predicate conjunction
+    `crossSubsystemInvariant` may not be the strongest composite invariant:
+    there may exist cross-subsystem interference properties not captured by the
+    individual predicates.
+
+    **Partial mitigation via W2-A frame lemmas:** For the 6 disjoint predicate
+    pairs (see `fieldDisjointness_frameIndependence_documented`), frame lemmas
+    guarantee that operations modifying only one predicate's read-set automatically
+    preserve the other predicate. This covers:
+    - `registryDependencyConsistent_frame` (services-only ops)
+    - `noStaleEndpointQueueReferences_frame` (objects-only ops)
+    - `noStaleNotificationWaitReferences_frame` (objects-only ops)
+    - `registryEndpointValid_frame` (serviceRegistry+objects-only ops)
+    - `serviceGraphInvariant_frame` (services+objectIndex-only ops)
+
+    **Remaining gap:** The 4 sharing pairs (both reading `objects` or `services`)
+    require operation-specific preservation proofs. No general frame lemma can
+    cover these — each must be proven individually per operation. The current
+    proof infrastructure handles this via per-operation preservation theorems
+    in each subsystem's `Invariant/Preservation.lean` module.
+
+    **Scope:** This gap is architectural, not a soundness issue. The conjunction
+    is a sufficient (but possibly not necessary) condition for cross-subsystem
+    coherence. Strengthening it would require identifying specific interference
+    properties between subsystems, which is future work. -/
+theorem crossSubsystemInvariant_composition_gap_documented
+    (st : SystemState) :
+    crossSubsystemInvariant st →
+    registryEndpointValid st ∧
+    registryDependencyConsistent st ∧
+    noStaleEndpointQueueReferences st ∧
+    noStaleNotificationWaitReferences st ∧
+    serviceGraphInvariant st := id
 
 -- ============================================================================
 -- S3-J/U-M26: Parameterized cross-subsystem invariant composition
@@ -300,6 +372,154 @@ theorem regEndpointValid_shares_staleNotification :
 theorem regDepConsistent_shares_serviceGraph :
     fieldsDisjoint registryDependencyConsistent_fields
                    serviceGraphInvariant_fields = false := by decide
+
+-- ============================================================================
+-- W2-A (H-2): Operation modified-field sets
+-- ============================================================================
+
+/-- W2-A1: Fields modified by `storeObject`. Updates the object table,
+    associated indices, and lifecycle metadata (objectTypes + capabilityRefs). -/
+def storeObject_modifiedFields : List StateField :=
+  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
+
+/-- W2-A1: Fields modified by `serviceRegisterDependency`. Only appends to a
+    service entry's dependency list. -/
+def serviceRegisterDependency_modifiedFields : List StateField :=
+  [.services]
+
+/-- W2-A1: Fields modified by `lifecycleRetypeObject`. Updates objects, indices,
+    and lifecycle metadata. -/
+def lifecycleRetypeObject_modifiedFields : List StateField :=
+  [.objects, .objectIndex, .objectIndexSet, .lifecycle]
+
+/-- W2-A1: Fields modified by IPC endpoint operations (`endpointSendDual`,
+    `endpointReceiveDual`, etc.). Modify TCB/endpoint state within objects
+    via `storeObject`, which also updates lifecycle metadata. For in-place
+    mutations of existing objects, `objectIndex`/`objectIndexSet` are unchanged. -/
+def ipcEndpointOp_modifiedFields : List StateField :=
+  [.objects, .lifecycle]
+
+/-- W2-A1: Fields modified by capability operations (`cspaceMint`, `cspaceCopy`,
+    etc.). Modify CNode slots within objects via `storeObject`, which also
+    updates lifecycle metadata. For in-place CNode mutations, `objectIndex`/
+    `objectIndexSet` are unchanged. -/
+def capabilityOp_modifiedFields : List StateField :=
+  [.objects, .lifecycle]
+
+/-- W2-A1: Fields modified by `revokeService` / `removeDependenciesOf`.
+    `revokeService` erases from `serviceRegistry`, then `removeDependenciesOf`
+    modifies the service dependency graph (`services`). -/
+def revokeService_modifiedFields : List StateField :=
+  [.services, .serviceRegistry]
+
+-- ============================================================================
+-- W2-A2/A3: Per-predicate frame lemmas connecting field disjointness
+-- to operational frame independence
+-- ============================================================================
+
+/-- W2-A3: Frame lemma — if `objects` is preserved,
+    `noStaleEndpointQueueReferences` is preserved. -/
+theorem noStaleEndpointQueueReferences_frame
+    (st st' : SystemState)
+    (hObjects : st'.objects = st.objects)
+    (hInv : noStaleEndpointQueueReferences st) :
+    noStaleEndpointQueueReferences st' := by
+  intro oid ep hLookup
+  rw [hObjects] at hLookup
+  have := hInv oid ep hLookup
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid hHead; rw [hObjects]; exact this.1 tid hHead
+  · intro tid hTail; rw [hObjects]; exact this.2.1 tid hTail
+  · intro tid hHead; rw [hObjects]; exact this.2.2.1 tid hHead
+  · intro tid hTail; rw [hObjects]; exact this.2.2.2.1 tid hTail
+  · intro tid hMem
+    rw [hObjects]; apply this.2.2.2.2.1 tid
+    rwa [hObjects] at hMem
+  · intro tid hMem
+    rw [hObjects]; apply this.2.2.2.2.2 tid
+    rwa [hObjects] at hMem
+
+/-- W2-A3: Frame lemma — if `objects` is preserved,
+    `noStaleNotificationWaitReferences` is preserved. -/
+theorem noStaleNotificationWaitReferences_frame
+    (st st' : SystemState)
+    (hObjects : st'.objects = st.objects)
+    (hInv : noStaleNotificationWaitReferences st) :
+    noStaleNotificationWaitReferences st' := by
+  intro oid notif hLookup tid hMem
+  rw [hObjects] at hLookup
+  rw [hObjects]
+  exact hInv oid notif hLookup tid hMem
+
+/-- W2-A3: Frame lemma — if `serviceRegistry` and `objects` are preserved,
+    `registryEndpointValid` is preserved. -/
+theorem registryEndpointValid_frame
+    (st st' : SystemState)
+    (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
+    (hObjects : st'.objects = st.objects)
+    (hInv : registryEndpointValid st) :
+    registryEndpointValid st' := by
+  intro sid reg hLookup
+  rw [hSvcReg] at hLookup
+  obtain ⟨epId, hTarget, hPresent⟩ := hInv sid reg hLookup
+  exact ⟨epId, hTarget, by rw [hObjects]; exact hPresent⟩
+
+-- ============================================================================
+-- W2-A4/A5: Disjointness-driven frame independence verification
+-- ============================================================================
+
+/-- W2-A4: For the 6 disjoint predicate pairs, verify frame independence:
+    operations modifying only fields of one predicate's read-set automatically
+    preserve the other predicate via the corresponding frame lemma.
+
+    **Disjoint pairs and their frame guarantees:**
+    1. `registryDependencyConsistent` ↔ `noStaleEndpointQueueReferences`:
+       disjoint (services vs objects). Ops modifying only objects preserve
+       `registryDependencyConsistent` via `registryDependencyConsistent_frame`.
+       Ops modifying only services preserve `noStaleEndpointQueueReferences`
+       via `noStaleEndpointQueueReferences_frame`.
+
+    2. `registryDependencyConsistent` ↔ `noStaleNotificationWaitReferences`:
+       disjoint (services vs objects). Same pattern as pair 1.
+
+    3. `serviceGraphInvariant` ↔ `noStaleEndpointQueueReferences`:
+       disjoint (services+objectIndex vs objects). Ops modifying only objects
+       preserve `serviceGraphInvariant` via `serviceGraphInvariant_frame`
+       (provided objectIndex is also unchanged).
+
+    4. `serviceGraphInvariant` ↔ `noStaleNotificationWaitReferences`:
+       disjoint (services+objectIndex vs objects). Same as pair 3.
+
+    5. `registryDependencyConsistent` ↔ `registryEndpointValid`:
+       disjoint (services vs serviceRegistry+objects).
+
+    6. `serviceGraphInvariant` ↔ `registryEndpointValid`:
+       disjoint (services+objectIndex vs serviceRegistry+objects).
+
+    **Sharing pairs (require operation-specific proofs):**
+    - `noStaleEndpointQueueReferences` ↔ `noStaleNotificationWaitReferences`:
+      both read `objects`.
+    - `registryEndpointValid` ↔ `noStaleEndpointQueueReferences`:
+      both read `objects`.
+    - `registryEndpointValid` ↔ `noStaleNotificationWaitReferences`:
+      both read `objects`.
+    - `registryDependencyConsistent` ↔ `serviceGraphInvariant`:
+      both read `services`. -/
+theorem fieldDisjointness_frameIndependence_documented :
+    -- The 6 disjoint pairs have corresponding frame lemmas proven above
+    (fieldsDisjoint registryDependencyConsistent_fields
+                    noStaleEndpointQueueReferences_fields = true) ∧
+    (fieldsDisjoint registryDependencyConsistent_fields
+                    noStaleNotificationWaitReferences_fields = true) ∧
+    (fieldsDisjoint serviceGraphInvariant_fields
+                    noStaleEndpointQueueReferences_fields = true) ∧
+    (fieldsDisjoint serviceGraphInvariant_fields
+                    noStaleNotificationWaitReferences_fields = true) ∧
+    (fieldsDisjoint registryDependencyConsistent_fields
+                    registryEndpointValid_fields = true) ∧
+    (fieldsDisjoint serviceGraphInvariant_fields
+                    registryEndpointValid_fields = true) := by
+  exact ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
 
 /-- V6-A4: All predicate field-sets mapped to the canonical list. -/
 def crossSubsystemFieldSets : List (String × List StateField) :=

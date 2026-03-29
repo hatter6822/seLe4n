@@ -1700,6 +1700,10 @@ where
         | none => false
         | some par => go n par
 
+-- W2-H (L-3): 2M heartbeats — highest in the codebase. Inherent complexity from
+-- CDT acyclicity reasoning: the proof projects each cycle edge onto old CDT edges,
+-- constructs a rotated sub-path from child to parent, and derives a contradiction.
+-- Nested well-founded recursion over the CDT parent map makes this irreducible.
 set_option maxHeartbeats 2000000 in
 /-- R2-D/M-08: `addEdge` preserves `edgeWellFounded` when:
 1. `parent ≠ child`

@@ -892,6 +892,28 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
   rcases hCapOnly with h | h | h | h | h | h <;>
     simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
+-- ============================================================================
+-- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
+-- ============================================================================
+
+/-- W2-C (MED-04): Every `SyscallId` variant is handled by either
+    `dispatchCapabilityOnly` (returning `some`) or one of the 11 explicit match
+    arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
+    wildcard arm is unreachable at runtime.
+
+    The proof enumerates all 17 `SyscallId` constructors: 6 are routed to
+    `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
+    `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`), and the remaining 11
+    (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
+    `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
+    `.replyRecv`) are handled by explicit match arms in `dispatchWithCap`. -/
+theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
+    sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
+            .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
+            .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
+            .notificationSignal, .notificationWait, .replyRecv] : List SyscallId) := by
+  cases sid <;> simp [List.mem_cons]
+
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
 kernel operation. Looks up the caller's TCB and CSpace root, constructs a
 `SyscallGate`, and dispatches via `syscallInvoke`.

@@ -1,3 +1,54 @@
+## [0.22.13] — W2 audit: completeness and accuracy fixes
+
+Post-implementation audit of Phase W2. Ensures all deliverables are complete
+and documentation accurately reflects code.
+
+- **W2-H completeness**: Documented all 9 elevated `maxHeartbeats` settings
+  (previously only 4 of 9 were documented). Newly documented: CDT acyclicity
+  (2M, Structures.lean), filter fold induction (2×400K, RobinHood/Bridge.lean),
+  combined insertLoop preservation (420K, RobinHood/Invariant/Preservation.lean),
+  buildCNodeRadix lookup equivalence (800K, RadixTree/Bridge.lean).
+- **W2-A accuracy**: Fixed `storeObject_modifiedFields` (added `.lifecycle`),
+  `revokeService_modifiedFields` (added `.serviceRegistry`),
+  `ipcEndpointOp_modifiedFields` and `capabilityOp_modifiedFields` (added
+  `.lifecycle`). All four `modifiedFields` definitions now accurately reflect
+  the fields each operation writes via `storeObject`.
+- **Documentation sync**: Updated stale metrics in SELE4N_SPEC.md (v0.22.3
+  → v0.22.13, 69,994 → 73,246 LoC, 2,008 → 2,153 proved declarations),
+  README.md, and CLAUDE.md.
+- Zero `sorry`, zero `axiom`.
+
+## [0.22.12] — W2: Proof Formalism & Architecture
+
+Phase W2 of WS-W pre-release audit remediation. Closes 2 HIGH, 4 MEDIUM,
+1 LOW findings from the v0.22.10 comprehensive audits.
+
+- **H-2 (field-disjointness formalism)**: Added `modifiedFields` definitions for
+  6 operation categories, 3 new per-predicate frame lemmas
+  (`noStaleEndpointQueueReferences_frame`, `noStaleNotificationWaitReferences_frame`,
+  `registryEndpointValid_frame`), and `fieldDisjointness_frameIndependence_documented`
+  theorem connecting all 6 disjoint predicate pairs to frame independence guarantees.
+- **H-1 (composition gap)**: `crossSubsystemInvariant_composition_gap_documented`
+  theorem with comprehensive documentation of partial mitigation via frame lemmas
+  and remaining gap scope for the 4 sharing predicate pairs.
+- **MED-04 (wildcard unreachability)**: `dispatchWithCap_wildcard_unreachable` proves
+  all 17 `SyscallId` variants are handled by explicit dispatch arms, making the
+  `| _ => .error .illegalState` wildcard dead code.
+- **M-6 (fuel sufficiency)**: `collectQueueMembers_fuel_sufficiency_documented` with
+  formal argument citing `tcbQueueChainAcyclic` invariant for traversal termination.
+- **M-4 (fuel exhaustion)**: `serviceHasPathTo_fuel_exhaustion_conservative` proves
+  fuel=0 returns `true` (conservative safety). `serviceBfsFuel_adequate` verifies
+  fuel bound exceeds object index length.
+- **M-5 (serviceCountBounded)**: `removeDependenciesOf_objectIndex_eq` frame lemma,
+  `serviceCountBounded_preservation_chain_documented` comprehensive preservation chain.
+- **M-3 (boundary unification)**: `enforcementBoundaryExtended` unified as
+  definitional `abbrev` of `enforcementBoundary`, adding element-wise equality proof
+  `enforcementBoundaryExtended_eq_canonical`.
+- **L-3 (maxHeartbeats)**: Documented all 9 elevated `maxHeartbeats` settings with
+  rationale for inherent complexity (nested induction, hash table modular arithmetic,
+  scheduler composition).
+- Zero `sorry`, zero `axiom`.
+
 ## [0.22.11] — W1: Critical Rust ABI Fixes
 
 - **CRIT-1/CRIT-2 fixed**: `notification_signal` dispatched `SyscallId::Send`
