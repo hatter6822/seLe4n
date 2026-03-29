@@ -79,6 +79,7 @@ in Projection.lean) is intentionally retained.
 - `mkMmioSafe_uart`/`mkMmioSafe_gicDist`/`mkMmioSafe_gicCpu` witness generators (X1-E).
 - `tlbFlushByASID`/`tlbFlushByPage`/`tlbFlushAll` with state frame proofs (M-ARCH-4).
 - `contextSwitchState` atomic operation preserving `contextMatchesCurrent` (X1-F/G).
+- `AdapterProofHooks.preserveContextSwitch` + `adapterContextSwitch_ok_preserves_proofLayerInvariantBundle` (X1-F/G).
 - `RegisterWriteInvariant` predicate for context-switch awareness (H-3).
 
 **WS-T/T7 additions (v0.20.6) — Test & Build Infrastructure:**

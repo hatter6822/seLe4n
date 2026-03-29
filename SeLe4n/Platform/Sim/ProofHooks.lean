@@ -39,6 +39,8 @@ def simRestrictiveAdapterProofHooks :
   preserveWriteRegister := fun _ _ _ _ hStable =>
     absurd hStable (by simp [simRuntimeContractRestrictive])
   preserveReadMemory := fun _ st hInv _ => hInv
+  preserveContextSwitch := fun _ _ _ _ hStable =>
+    absurd hStable (by simp [simRuntimeContractRestrictive])
 
 /-- WS-H15d/A-33: End-to-end timer advancement preservation for Sim.
 The restrictive contract rejects all timer operations, so the theorem is
@@ -90,6 +92,8 @@ def simSubstantiveAdapterProofHooks :
   preserveWriteRegister := fun _ _ _ _ hStable =>
     absurd hStable (by simp [simRuntimeContractSubstantive])
   preserveReadMemory := fun _ st hInv _ => hInv
+  preserveContextSwitch := fun _ _ _ _ hStable =>
+    absurd hStable (by simp [simRuntimeContractSubstantive])
 
 /-- S5-D: End-to-end timer advancement preservation for Sim (substantive).
 The substantive contract accepts timer operations when timer is monotonically

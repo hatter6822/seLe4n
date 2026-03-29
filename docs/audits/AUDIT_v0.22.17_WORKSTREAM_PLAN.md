@@ -123,7 +123,8 @@ tracked in Phase X5 for documentation confirmation only.
 **Priority**: BLOCKER — must complete before hardware deployment claims
 **Status**: **COMPLETE** (v0.22.18)
 **Scope**: `Platform/Boot.lean`, `Platform/RPi5/MmioAdapter.lean`,
-`Platform/RPi5/RuntimeContract.lean`, `Architecture/Invariant.lean`,
+`Platform/RPi5/RuntimeContract.lean`, `Platform/RPi5/ProofHooks.lean`,
+`Platform/Sim/ProofHooks.lean`, `Architecture/Invariant.lean`,
 `Architecture/VSpace.lean`, `Architecture/VSpaceInvariant.lean`,
 `Model/Builder.lean`, `Architecture/Adapter.lean`
 **Gate**: `lake build` clean, all 9 `proofLayerInvariantBundle` components
@@ -134,7 +135,10 @@ proven for general boot configs, TPI-001 closed — **ALL GATES MET**
 **Completion summary**: X1-A/B/C were already implemented by V4-A2–A9 prior
 to this workstream. X1-D/E implemented `MmioReadOutcome` inductive replacing
 `hOutcome : True` placeholder with parametric read-kind constraints. X1-F/G
-defined `contextSwitchState` atomic operation and preservation theorems.
+defined `contextSwitchState` atomic operation, `AdapterProofHooks.preserveContextSwitch`,
+`adapterContextSwitch_ok_preserves_proofLayerInvariantBundle` composition theorem,
+and 3 component preservation theorems (vspace, contextMatchesCurrent, currentThreadValid).
+All platform ProofHooks (RPi5 restrictive, Sim restrictive, Sim substantive) updated.
 X1-H/I/J were already closed by 4 round-trip theorems. X1-K updated TPI-001
 documentation. Zero sorry/axiom.
 

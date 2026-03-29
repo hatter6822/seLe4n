@@ -49,13 +49,13 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.22.16` (`lakefile.toml`) |
+| **Package version** | `0.22.18` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 72,047 across 103 Lean files |
+| **Production LoC** | 72,385 across 103 Lean files |
 | **Test LoC** | 8,552 across 10 Lean test suites |
-| **Proved declarations** | 2,070 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,087 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.21.7_WORKSTREAM_PLAN.md`](../dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md) — pre-release audit remediation (5 HIGH, 61 MEDIUM, 29 LOW) |
+| **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
 | **Active workstream** | **WS-X Phase X1 COMPLETE** — Hardware-Binding Critical Proofs: MmioReadOutcome volatile semantics (C-2), contextSwitchState atomic operation (C-3), MMIO witness generators (C-4), context-switch invariant preservation suite, TPI-001 CLOSED. Plan: [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md). Prior: WS-W (all 6 phases, v0.22.11–v0.22.17 COMPLETE), WS-V–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |

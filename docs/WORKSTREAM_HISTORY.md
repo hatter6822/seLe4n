@@ -38,7 +38,9 @@ audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
   `mkMmioSafe_gicCpu`) added.
   **C-3**: `contextSwitchState` atomic operation defined — atomically loads
   register context and updates `scheduler.current`, preserving
-  `contextMatchesCurrent` by construction. Preservation theorems proven.
+  `contextMatchesCurrent` by construction. `AdapterProofHooks.preserveContextSwitch`
+  added with `adapterContextSwitch_ok_preserves_proofLayerInvariantBundle`
+  composition theorem. All platform ProofHooks updated.
   **C-4**: TPI-001 closed — 4 round-trip theorems (pre-existing) establish
   VSpace determinism through functional correctness. Documentation updated.
   Zero sorry/axiom. `test_full.sh` green.

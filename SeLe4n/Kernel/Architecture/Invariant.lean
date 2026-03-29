@@ -29,8 +29,8 @@ invariant modules for per-theorem classification.
 
 | Category | Theorems |
 |---|---|
-| **Substantive preservation** | `adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`, `adapterWriteRegister_ok_preserves_proofLayerInvariantBundle`, `adapterReadMemory_ok_preserves_proofLayerInvariantBundle` |
-| **Error-case preservation** | `adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle`, `adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle` |
+| **Substantive preservation** | `adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle`, `adapterWriteRegister_ok_preserves_proofLayerInvariantBundle`, `adapterReadMemory_ok_preserves_proofLayerInvariantBundle`, `adapterContextSwitch_ok_preserves_proofLayerInvariantBundle` |
+| **Error-case preservation** | `adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle`, `adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle`, `adapterContextSwitch_error_unsupportedBinding_preserves_proofLayerInvariantBundle` |
 
 The error-case preservation theorems are trivially true (the state is unchanged on
 error). The success-path theorems are substantive: they prove that adapter transitions
@@ -84,6 +84,11 @@ structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
       proofLayerInvariantBundle st →
       contract.memoryAccessAllowed st addr →
       proofLayerInvariantBundle st
+  preserveContextSwitch :
+    ∀ newTid newRegs st,
+      proofLayerInvariantBundle st →
+      contract.registerContextStable st (contextSwitchState newTid newRegs st) →
+      proofLayerInvariantBundle (contextSwitchState newTid newRegs st)
 
 theorem adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle
     (contract : RuntimeBoundaryContract)
@@ -143,6 +148,34 @@ theorem adapterReadMemory_ok_preserves_proofLayerInvariantBundle
       rw [hErr] at hStep
       simp at hStep
   exact hooks.preserveReadMemory addr st hInv hAllow
+
+theorem adapterContextSwitch_ok_preserves_proofLayerInvariantBundle
+    (contract : RuntimeBoundaryContract)
+    (hooks : AdapterProofHooks contract)
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
+    (st st' : SystemState)
+    (hInv : proofLayerInvariantBundle st)
+    (hStep : adapterContextSwitch contract newTid newRegs st = .ok ((), st')) :
+    proofLayerInvariantBundle st' := by
+  by_cases hStable : contract.registerContextStable st (contextSwitchState newTid newRegs st)
+  · simp [adapterContextSwitch, hStable] at hStep
+    cases hStep
+    exact hooks.preserveContextSwitch newTid newRegs st hInv hStable
+  · have hErr :=
+      adapterContextSwitch_error_unsupportedBinding contract newTid newRegs st hStable
+    rw [hErr] at hStep
+    simp at hStep
+
+theorem adapterContextSwitch_error_unsupportedBinding_preserves_proofLayerInvariantBundle
+    (contract : RuntimeBoundaryContract)
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
+    (st : SystemState)
+    (hInv : proofLayerInvariantBundle st)
+    (_hReject : ¬ contract.registerContextStable st (contextSwitchState newTid newRegs st))
+    (_hErr : adapterContextSwitch contract newTid newRegs st =
+      .error (mapAdapterError .unsupportedBinding)) :
+    proofLayerInvariantBundle st :=
+  hInv
 
 theorem adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle
     (contract : RuntimeBoundaryContract)
