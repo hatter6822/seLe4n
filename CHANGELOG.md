@@ -11,11 +11,13 @@ L-17, L-18, L-7, L-2 from v0.22.10 audits.
 - **W5-B (L-17)**: Documented test fixture OID ranges in `Helpers.lean`.
   11-suite range table prevents accidental collisions between test suites.
 - **W5-C (L-18)**: Added comprehensive service lifecycle tests (chain33).
-  17 assertions covering `registerInterface` (success + duplicate rejection),
-  `registerService` (success + 4 error paths: missing interface, non-endpoint
-  target, missing write right, duplicate), `serviceRegisterDependency` (acyclic
-  success + cycle rejection + nonexistent service), `revokeService` (success +
-  dependency cleanup verification + nonexistent error).
+  25 assertions covering `registerInterface` (success + duplicate rejection),
+  `registerService` (success + 5 error paths: missing interface, non-endpoint
+  target, missing write right, duplicate, non-existent endpoint),
+  `serviceRegisterDependency` (acyclic success + cycle rejection + nonexistent
+  source + nonexistent target), `revokeService` (success + registry removal +
+  services graph removal + dependency cleanup + nonexistent error).
+  3 `assertInvariants` calls after state-mutating operations.
 - **W5-D (M-11)**: Improved `buildChecked` error reporting. All 8 validation
   checks now include their check number and failing entity details (e.g.,
   specific ObjId, ThreadId) for immediate debuggability.

@@ -100,10 +100,11 @@ atomic sub-tasks. Plan:
   (W5-A through W5-H). **W5-A (M-10)**: Consolidated 3 duplicate `expectError`
   implementations into shared `Helpers.lean` with `msgPrefix` parameter.
   **W5-B (L-17)**: Documented test fixture OID ranges (11-suite table in
-  `Helpers.lean`). **W5-C (L-18)**: Added chain33 service lifecycle tests — 17
+  `Helpers.lean`). **W5-C (L-18)**: Added chain33 service lifecycle tests — 25
   assertions covering `registerInterface`, `registerService` (5 error paths),
-  `serviceRegisterDependency` (acyclic + cycle + nonexistent),
-  `revokeService` (success + cleanup + nonexistent). **W5-D (M-11)**: Improved
+  `serviceRegisterDependency` (acyclic + cycle + nonexistent source/target),
+  `revokeService` (success + registry/graph removal + cleanup + nonexistent).
+  3 `assertInvariants` calls after state-mutating operations. **W5-D (M-11)**: Improved
   `buildChecked` error reporting with check numbers and entity details.
   **W5-E**: Added mutation testing assertions to chain1 and chain5 verifying
   actual state changes. **W5-F (L-2)**: Removed unused `_hCap` parameter from
