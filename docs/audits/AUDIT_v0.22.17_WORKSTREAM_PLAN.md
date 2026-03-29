@@ -568,7 +568,7 @@ unreachable. This change provides defense-in-depth at the API boundary.
 | X2-A | H-2 | COMPLETE | `domainScheduleEntriesPositive` predicate, 9th conjunct of `schedulerInvariantBundleFull` |
 | X2-B | H-2 | COMPLETE | `setDomainScheduleChecked` builder validation in `State.lean` |
 | X2-C | H-2 | COMPLETE | 7 frame lemmas (`domainSchedule` immutable at runtime), 4 bundle preservation updates |
-| X2-D | H-6 | COMPLETE | `physicalAddressWidth : Nat := 52` field added to `MachineState` |
+| X2-D | H-6 | COMPLETE | `physicalAddressWidth : Nat := 52` field added to `MachineState`; `applyMachineConfig` propagates from `MachineConfig` post-boot |
 | X2-E | H-6 | COMPLETE | `vspaceMapPageCheckedWithFlushFromState` reads PA width from `SystemState.machine` |
 | X2-F | H-8 | COMPLETE | `listAllDistinct` transparent O(n²) predicate, 3 `native_decide` → `decide` |
 | X2-G | M-4 | COMPLETE | `revokeService_preserves_noStaleNotificationWaitReferences` frame lemma |

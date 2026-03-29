@@ -11,6 +11,8 @@ H-8, M-4, M-6) from the v0.22.17 comprehensive audit.
 - **X2-D/E (H-6)**: `physicalAddressWidth : Nat := 52` field added to
   `MachineState`. `vspaceMapPageCheckedWithFlushFromState` reads PA width from
   live machine state. API dispatch updated to use state-aware PA bounds.
+  `applyMachineConfig` post-boot function propagates platform `MachineConfig`
+  (including PA width) to booted state. 3 correctness theorems.
 - **X2-F (H-8)**: `listAllDistinct` transparent O(n²) duplicate detection
   function. `irqsUniqueTransparent`/`objectIdsUniqueTransparent` variants.
   3 `native_decide` proofs replaced with `decide` for kernel-evaluable
@@ -22,6 +24,9 @@ H-8, M-4, M-6) from the v0.22.17 comprehensive audit.
   `handleYieldChecked`, `timerTickChecked`, `switchDomainChecked`) using
   `saveOutgoingContextChecked` with `schedulerInvariantViolation` error
   propagation. Defense-in-depth at API boundary.
+
+Audit: `applyMachineConfig` boot-to-runtime PA width propagation, X2 test
+coverage (6 assertions: X2-B-01/02, X2-D-01/02, X2-I-01/02).
 
 Zero sorry/axiom. All tests pass.
 

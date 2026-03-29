@@ -50,7 +50,9 @@ structure ObjectEntry where
 
 This is the minimal configuration needed to construct a valid
 `IntermediateState` during boot. Platform-specific details (memory layout,
-device tree, etc.) are handled by `PlatformBinding` instances. -/
+device tree, etc.) are handled by `PlatformBinding` instances. Machine
+hardware parameters (PA width, register width, etc.) are configured
+separately via `applyMachineConfig` after boot. -/
 structure PlatformConfig where
   irqTable : List IrqEntry
   initialObjects : List ObjectEntry
@@ -244,6 +246,41 @@ theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
     (bootFromPlatformChecked config).isOk = false := by
   simp [bootFromPlatformChecked, hNotWf]
   split <;> rfl
+
+-- ============================================================================
+-- X2-D: Post-boot machine configuration
+-- ============================================================================
+
+/-- X2-D: Apply platform-specific machine configuration to a booted state.
+    Sets `physicalAddressWidth` from the platform's `MachineConfig`, ensuring
+    runtime PA bounds checks use the correct hardware limit.
+
+    This is a pure machine-state update: it modifies only `state.machine` and
+    preserves all kernel-object, scheduler, capability, and CDT state. All
+    IntermediateState invariant witnesses carry forward because they do not
+    depend on `MachineState` fields. -/
+def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
+    IntermediateState where
+  state := { ist.state with
+    machine := { ist.state.machine with
+      physicalAddressWidth := config.physicalAddressWidth } }
+  hAllTables := ist.hAllTables
+  hPerObjectSlots := ist.hPerObjectSlots
+  hPerObjectMappings := ist.hPerObjectMappings
+  hLifecycleConsistent := ist.hLifecycleConsistent
+
+/-- X2-D: `applyMachineConfig` preserves the scheduler state unchanged. -/
+theorem applyMachineConfig_scheduler_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.scheduler = ist.state.scheduler := rfl
+
+/-- X2-D: `applyMachineConfig` preserves the object store unchanged. -/
+theorem applyMachineConfig_objects_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.objects = ist.state.objects := rfl
+
+/-- X2-D: `applyMachineConfig` sets `physicalAddressWidth` from config. -/
+theorem applyMachineConfig_physicalAddressWidth (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.physicalAddressWidth =
+    config.physicalAddressWidth := rfl
 
 -- ============================================================================
 -- U6-G (U-M15): Boot-to-Runtime Invariant Bridge
