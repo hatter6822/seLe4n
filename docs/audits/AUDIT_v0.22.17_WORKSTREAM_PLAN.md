@@ -50,7 +50,7 @@ changes is **24 findings** organized into **40 sub-tasks**.
 
 | Phase | Name | Sub-tasks | Priority | Gate | Status |
 |-------|------|-----------|----------|------|--------|
-| X1 | Hardware-Binding Critical Proofs | 11 | **BLOCKER** | `lake build` clean, all 9 invariant components proven | PLANNED |
+| X1 | Hardware-Binding Critical Proofs | 11 | **BLOCKER** | `lake build` clean, all 9 invariant components proven | **COMPLETE** |
 | X2 | Runtime Invariant Enforcement | 9 | HIGH | `test_full.sh` green, zero sorry | PLANNED |
 | X3 | Information Flow & Composition Closure | 5 | HIGH | `test_full.sh` green, NI theorems compile | PLANNED |
 | X4 | Platform & Architecture Completion | 6 | MEDIUM | Module builds pass, `test_smoke.sh` green | PLANNED |
@@ -118,17 +118,25 @@ tracked in Phase X5 for documentation confirmation only.
 
 ---
 
-## 3. Phase X1 — Hardware-Binding Critical Proofs (BLOCKER)
+## 3. Phase X1 — Hardware-Binding Critical Proofs (COMPLETE)
 
 **Priority**: BLOCKER — must complete before hardware deployment claims
+**Status**: **COMPLETE** (v0.22.18)
 **Scope**: `Platform/Boot.lean`, `Platform/RPi5/MmioAdapter.lean`,
 `Platform/RPi5/RuntimeContract.lean`, `Architecture/Invariant.lean`,
 `Architecture/VSpace.lean`, `Architecture/VSpaceInvariant.lean`,
-`Model/Builder.lean`
+`Model/Builder.lean`, `Architecture/Adapter.lean`
 **Gate**: `lake build` clean, all 9 `proofLayerInvariantBundle` components
-proven for general boot configs, TPI-001 closed
-**Estimated sub-tasks**: 11
+proven for general boot configs, TPI-001 closed — **ALL GATES MET**
+**Sub-tasks**: 11 (all complete)
 **Dependencies**: None (critical path)
+
+**Completion summary**: X1-A/B/C were already implemented by V4-A2–A9 prior
+to this workstream. X1-D/E implemented `MmioReadOutcome` inductive replacing
+`hOutcome : True` placeholder with parametric read-kind constraints. X1-F/G
+defined `contextSwitchState` atomic operation and preservation theorems.
+X1-H/I/J were already closed by 4 round-trip theorems. X1-K updated TPI-001
+documentation. Zero sorry/axiom.
 
 ### Findings Addressed
 
@@ -1111,10 +1119,10 @@ Each version bumps the patch number. All versions maintain zero sorry/axiom.
 
 | Finding | Severity | Phase | Sub-task(s) | Status |
 |---------|----------|-------|-------------|--------|
-| C-1 | CRITICAL | X1 | X1-A, X1-B, X1-C | PLANNED |
-| C-2 | CRITICAL | X1 | X1-D, X1-E | PLANNED |
-| C-3 | CRITICAL | X1 | X1-F, X1-G | PLANNED |
-| C-4 | CRITICAL | X1 | X1-H, X1-I, X1-J, X1-K | PLANNED |
+| C-1 | CRITICAL | X1 | X1-A, X1-B, X1-C | **COMPLETE** (V4-A2–A9 pre-existing) |
+| C-2 | CRITICAL | X1 | X1-D, X1-E | **COMPLETE** (MmioReadOutcome + witnesses) |
+| C-3 | CRITICAL | X1 | X1-F, X1-G | **COMPLETE** (contextSwitchState atomic op) |
+| C-4 | CRITICAL | X1 | X1-H, X1-I, X1-J, X1-K | **COMPLETE** (round-trip theorems pre-existing, TPI-001 closed) |
 | H-1 | HIGH | X5 | X5-A | PLANNED (doc only) |
 | H-2 | HIGH | X2 | X2-A, X2-B, X2-C | PLANNED |
 | H-3 | HIGH | X3 | X3-A | PLANNED |

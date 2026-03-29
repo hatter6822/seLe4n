@@ -141,7 +141,26 @@ def rpi5MmioRegionDescs : List MmioRegionDesc :=
       readSemantics := .volatile, writeSemantics := .normal }
   ]
 
-/-- U6-A: `MmioSafe` hypothesis type. Proofs that need to reason about
+/-- X1-D: MMIO read outcome specification. Encodes what can be proven about
+    the result of reading a device register, parameterized by the region's
+    `MmioReadKind`:
+    - `ram`: The outcome equals `st.machine.memory addr` (idempotent).
+    - `volatile`/`fifo`: The outcome is existentially quantified — proofs
+      cannot assume any particular value, only that *some* value was returned.
+    - `writeOneClear`: The outcome equals the current memory content (the
+      hardware returns the current status register value on read). -/
+inductive MmioReadOutcome (regions : List MmioRegionDesc) (addr : PAddr) (outcome : Nat)
+    (memoryAt : Nat) : MmioReadKind → Prop where
+  /-- RAM region: read is idempotent, outcome equals memory content. -/
+  | ramIdempotent : outcome = memoryAt → MmioReadOutcome regions addr outcome memoryAt .ram
+  /-- Volatile region: outcome is unconstrained (any value is possible). -/
+  | volatileAny : MmioReadOutcome regions addr outcome memoryAt .volatile
+  /-- Write-one-clear region: read returns current status register value. -/
+  | w1cStatus : outcome = memoryAt → MmioReadOutcome regions addr outcome memoryAt .writeOneClear
+  /-- FIFO region: read consumes a queue entry, outcome is unconstrained. -/
+  | fifoConsume : MmioReadOutcome regions addr outcome memoryAt .fifo
+
+/-- U6-A/X1-D: `MmioSafe` hypothesis type. Proofs that need to reason about
     the outcome of an MMIO operation on a non-RAM region must carry an
     `MmioSafe` witness. The caller must supply platform-specific
     justification that the MMIO access produces the expected result.
@@ -153,14 +172,78 @@ def rpi5MmioRegionDescs : List MmioRegionDesc :=
     2. Carry an `MmioSafe` hypothesis with platform-specific justification.
 
     The `outcome` field captures what the caller asserts about the read
-    result. The `justification` field is a proof obligation that the
-    platform binding guarantees this outcome. -/
-structure MmioSafe (regions : List MmioRegionDesc) (addr : PAddr) (outcome : Nat) where
+    result. The `hOutcome` field is a proof obligation encoding read-kind
+    constraints: RAM reads are idempotent, volatile/FIFO reads are
+    existentially quantified, and W1C reads return current status. -/
+structure MmioSafe (regions : List MmioRegionDesc) (addr : PAddr) (outcome : Nat)
+    (memoryAt : Nat) where
   /-- The address is within a declared MMIO region. -/
   hInRegion : inMmioRegion regions addr = true
-  /-- Platform-specific justification that this MMIO access produces
-      the declared outcome. Opaque — cannot be discharged by computation. -/
-  hOutcome : True  -- Placeholder: WS-V will refine with device state model
+  /-- The region's declared read semantics for this address. -/
+  readKind : MmioReadKind
+  /-- The region containing this address has the declared read semantics. -/
+  hReadKind : ∃ r, r ∈ regions ∧ r.contains addr = true ∧ r.readSemantics = readKind
+  /-- Platform-specific justification that this MMIO access produces the
+      declared outcome, parameterized by the read kind. Prevents proofs from
+      assuming idempotent reads for volatile/FIFO registers. -/
+  hOutcome : MmioReadOutcome regions addr outcome memoryAt readKind
+
+-- ============================================================================
+-- X1-E: Device-specific MmioSafe witness generators for RPi5 peripherals
+-- ============================================================================
+
+/-- X1-E: Construct an `MmioSafe` witness for UART PL011 (volatile reads).
+    The UART data/status registers are volatile — each read may return a
+    different value. The witness uses `MmioReadOutcome.volatileAny`. -/
+private def uartRegion : MmioRegionDesc :=
+  { base := uart0Base, size := 0x1000, readSemantics := .volatile, writeSemantics := .normal }
+private def gicDistRegion : MmioRegionDesc :=
+  { base := gicDistributorBase, size := 0x1000, readSemantics := .volatile, writeSemantics := .writeOneClear }
+private def gicCpuRegion : MmioRegionDesc :=
+  { base := gicCpuInterfaceBase, size := 0x2000, readSemantics := .volatile, writeSemantics := .normal }
+
+private theorem uartRegion_mem : uartRegion ∈ rpi5MmioRegionDescs := by
+  unfold rpi5MmioRegionDescs uartRegion; exact List.Mem.head _
+private theorem gicDistRegion_mem : gicDistRegion ∈ rpi5MmioRegionDescs := by
+  unfold rpi5MmioRegionDescs gicDistRegion; exact List.Mem.tail _ (List.Mem.head _)
+private theorem gicCpuRegion_mem : gicCpuRegion ∈ rpi5MmioRegionDescs := by
+  unfold rpi5MmioRegionDescs gicCpuRegion; exact List.Mem.tail _ (List.Mem.tail _ (List.Mem.head _))
+
+/-- X1-E: Construct an `MmioSafe` witness for UART PL011 (volatile reads).
+    The UART data/status registers are volatile — each read may return a
+    different value. The witness uses `MmioReadOutcome.volatileAny`. -/
+def mkMmioSafe_uart (addr : PAddr) (outcome memoryAt : Nat)
+    (hInRegion : inMmioRegion rpi5MmioRegionDescs addr = true)
+    (hContains : uartRegion.contains addr = true) :
+    MmioSafe rpi5MmioRegionDescs addr outcome memoryAt :=
+  { hInRegion := hInRegion
+    readKind := .volatile
+    hReadKind := ⟨uartRegion, uartRegion_mem, hContains, rfl⟩
+    hOutcome := .volatileAny }
+
+/-- X1-E: Construct an `MmioSafe` witness for GIC-400 distributor (volatile reads).
+    The GIC distributor status registers are volatile — interrupt state changes
+    between reads. The witness uses `MmioReadOutcome.volatileAny`. -/
+def mkMmioSafe_gicDist (addr : PAddr) (outcome memoryAt : Nat)
+    (hInRegion : inMmioRegion rpi5MmioRegionDescs addr = true)
+    (hContains : gicDistRegion.contains addr = true) :
+    MmioSafe rpi5MmioRegionDescs addr outcome memoryAt :=
+  { hInRegion := hInRegion
+    readKind := .volatile
+    hReadKind := ⟨gicDistRegion, gicDistRegion_mem, hContains, rfl⟩
+    hOutcome := .volatileAny }
+
+/-- X1-E: Construct an `MmioSafe` witness for GIC-400 CPU interface (volatile reads).
+    The GIC CPU interface registers (interrupt acknowledge, priority, etc.) are
+    volatile. The witness uses `MmioReadOutcome.volatileAny`. -/
+def mkMmioSafe_gicCpu (addr : PAddr) (outcome memoryAt : Nat)
+    (hInRegion : inMmioRegion rpi5MmioRegionDescs addr = true)
+    (hContains : gicCpuRegion.contains addr = true) :
+    MmioSafe rpi5MmioRegionDescs addr outcome memoryAt :=
+  { hInRegion := hInRegion
+    readKind := .volatile
+    hReadKind := ⟨gicCpuRegion, gicCpuRegion_mem, hContains, rfl⟩
+    hOutcome := .volatileAny }
 
 -- ============================================================================
 -- W4-F (L-16): MMIO Formalization Boundary Documentation

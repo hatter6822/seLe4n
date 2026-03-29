@@ -20,6 +20,28 @@ GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
+WS-X Phase X1 complete. Phases X2–X5 in progress.
+
+### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — IN PROGRESS
+
+WS-X addresses 24 unique actionable findings from a comprehensive pre-release
+audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
+40 atomic sub-tasks. Plan:
+[`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md).
+
+- **X1 (Hardware-Binding Critical Proofs) COMPLETE** (v0.22.18): 11 sub-tasks
+  (X1-A through X1-K). All 4 CRITICAL findings resolved:
+  **C-1**: Boot invariant bridge proven for general configs (V4-A2–A9 pre-existing).
+  **C-2**: MMIO `hOutcome : True` placeholder replaced with `MmioReadOutcome`
+  inductive encoding read-kind constraints (ram/volatile/w1c/fifo). Three RPi5
+  device-specific witness generators (`mkMmioSafe_uart`, `mkMmioSafe_gicDist`,
+  `mkMmioSafe_gicCpu`) added.
+  **C-3**: `contextSwitchState` atomic operation defined — atomically loads
+  register context and updates `scheduler.current`, preserving
+  `contextMatchesCurrent` by construction. Preservation theorems proven.
+  **C-4**: TPI-001 closed — 4 round-trip theorems (pre-existing) establish
+  VSpace determinism through functional correctness. Documentation updated.
+  Zero sorry/axiom. `test_full.sh` green.
 
 ### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — COMPLETE
 

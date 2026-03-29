@@ -102,6 +102,59 @@ theorem adapterReadMemory_error_unsupportedBinding
     adapterReadMemory contract addr st = .error (mapAdapterError .unsupportedBinding) := by
   simp [adapterReadMemory, hDeny]
 
+-- ============================================================================
+-- X1-F: Context-switch atomic operation
+-- ============================================================================
+
+/-- X1-F: Atomic context-switch state transformation. Atomically:
+    1. Loads `newRegs` (the incoming thread's saved register context) into
+       the machine register file
+    2. Updates `scheduler.current` to `newTid`
+
+    By performing both updates in a single operation, `contextMatchesCurrent`
+    is preserved by construction: the register file and scheduler state are
+    updated together, so the post-state always satisfies
+    `st'.machine.regs = tcb.registerContext` for the new current thread.
+
+    **Design note**: This replaces the individual `writeRegisterState` approach
+    for context switches. Individual register writes break `contextMatchesCurrent`
+    because the register file is partially updated while `scheduler.current`
+    still points to the old thread. The atomic operation eliminates this window. -/
+def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
+    (st : SystemState) : SystemState :=
+  { st with
+      machine := { st.machine with regs := newRegs }
+      scheduler := { st.scheduler with current := some newTid } }
+
+/-- X1-F: Context-switch adapter operation. Performs an atomic context switch
+    guarded by the runtime contract's `registerContextStable` predicate.
+
+    The contract validates that the combined register-file load + scheduler
+    update is admissible. For the RPi5 production contract, this succeeds
+    when the loaded registers match the new thread's TCB context
+    (`registerContextStablePred`). -/
+def adapterContextSwitch
+    (contract : RuntimeBoundaryContract)
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) : Kernel Unit :=
+  fun st =>
+    let st' := contextSwitchState newTid newRegs st
+    letI : Decidable (contract.registerContextStable st st') :=
+      contract.registerContextStableDecidable st st'
+    if contract.registerContextStable st st' then
+      .ok ((), st')
+    else
+      .error (mapAdapterError .unsupportedBinding)
+
+/-- X1-F: Context-switch error when contract rejects the transition. -/
+theorem adapterContextSwitch_error_unsupportedBinding
+    (contract : RuntimeBoundaryContract)
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
+    (st : SystemState)
+    (hReject : ¬ contract.registerContextStable st (contextSwitchState newTid newRegs st)) :
+    adapterContextSwitch contract newTid newRegs st =
+      .error (mapAdapterError .unsupportedBinding) := by
+  simp [adapterContextSwitch, hReject]
+
 theorem adapterReadMemory_ok_returns_machine_byte
     (contract : RuntimeBoundaryContract)
     (addr : SeLe4n.PAddr)

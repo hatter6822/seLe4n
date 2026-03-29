@@ -203,6 +203,45 @@ private theorem writeRegisterState_preserves_vspaceInvariantBundle
   exact ⟨by exact hUniq, by exact hNonOverlap, by exact hConsist, by exact hWx, by exact hBound, by exact hCrossAsid, by exact hCanonical⟩
 
 -- ============================================================================
+-- X1-F/G: Context-switch atomic operation preserves proofLayerInvariantBundle
+-- ============================================================================
+
+/-- X1-G: Context-switch state preserves VSpace invariant bundle.
+    Context switch only modifies `machine.regs` and `scheduler.current`,
+    neither of which affects object store or ASID table. -/
+private theorem contextSwitchState_preserves_vspaceInvariantBundle
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SystemState)
+    (hInv : vspaceInvariantBundle st) :
+    vspaceInvariantBundle (contextSwitchState newTid newRegs st) := by
+  rcases hInv with ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
+  exact ⟨hUniq, hNonOverlap, hConsist, hWx, hBound, hCrossAsid, hCanonical⟩
+
+/-- X1-G: Context-switch preserves `contextMatchesCurrent` when the loaded
+    registers match the new thread's saved context.
+
+    This is the core theorem that makes the atomic context-switch sound: by
+    loading `tcb.registerContext` into `machine.regs` and setting
+    `scheduler.current := some newTid` simultaneously, the register file
+    equality `st'.machine.regs = tcb.registerContext` holds by construction. -/
+theorem contextSwitchState_preserves_contextMatchesCurrent
+    (st : SystemState) (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
+    (tcb : TCB)
+    (hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb))
+    (hRegs : newRegs = tcb.registerContext) :
+    contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
+  simp [contextMatchesCurrent, contextSwitchState, hLookup, hRegs]
+
+/-- X1-G: Context-switch preserves `currentThreadValid` when the target
+    thread has a valid TCB in the object store. -/
+theorem contextSwitchState_preserves_currentThreadValid
+    (st : SystemState) (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
+    (tcb : TCB)
+    (hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb)) :
+    currentThreadValid (contextSwitchState newTid newRegs st) := by
+  show currentThreadValid { st with machine := _, scheduler := _ }
+  unfold currentThreadValid; simp; exact ⟨tcb, hLookup⟩
+
+-- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proofs
 -- ============================================================================
 

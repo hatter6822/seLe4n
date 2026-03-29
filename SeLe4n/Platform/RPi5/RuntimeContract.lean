@@ -120,24 +120,25 @@ def rpi5RuntimeContract : RuntimeBoundaryContract :=
       infer_instance
   }
 
-/-- WS-H15d/A-33: Restrictive RPi5 runtime contract for `AdapterProofHooks`
-instantiation. The production contract (`rpi5RuntimeContract`) admits all
-register writes because `writeReg` never modifies `sp`, making
-`registerContextStable` trivially `True` for every write. Since
-`contextMatchesCurrent` requires full register-file equality, the production
-contract cannot prove invariant preservation for arbitrary register writes.
+/-- WS-H15d/A-33, X1-F: Restrictive RPi5 runtime contract for `AdapterProofHooks`
+instantiation. The production contract (`rpi5RuntimeContract`) uses a substantive
+`registerContextStablePred` that checks TCB context match. However, individual
+register writes (`adapterWriteRegister`) can break `contextMatchesCurrent`
+because the register file is partially updated while `scheduler.current` still
+points to the old thread.
 
-This restrictive contract preserves the RPi5 timer monotonicity and memory
-access predicates (substantive, hardware-aligned) but denies all register
-writes. Adapter timer and memory-read operations are accepted with the same
-validation as the production contract; register writes are rejected, making
-the `preserveWriteRegister` proof obligation vacuously satisfiable.
+This restrictive contract denies all register writes, making the
+`preserveWriteRegister` proof obligation vacuously satisfiable. Timer and
+memory-read operations use the same substantive predicates as production.
 
-**Design note**: when a future workstream introduces a context-switch-aware
-adapter (combining register-file load with `scheduler.current` update in a
-single atomic operation), the production contract can instantiate
-`AdapterProofHooks` directly because the combined operation preserves
-`contextMatchesCurrent` by construction. -/
+**X1-F context-switch resolution**: The `adapterContextSwitch` operation
+(Adapter.lean) atomically loads a new thread's saved register context AND
+updates `scheduler.current` in a single step. This atomic operation preserves
+`contextMatchesCurrent` by construction (proven in
+`contextSwitchState_preserves_contextMatchesCurrent`), eliminating the
+register-context paradox without requiring individual register writes.
+The restrictive contract remains correct: individual writes are still denied,
+but context switches use the dedicated atomic path. -/
 def rpi5RuntimeContractRestrictive : RuntimeBoundaryContract :=
   {
     timerMonotonic := fun st st' => st.machine.timer ≤ st'.machine.timer

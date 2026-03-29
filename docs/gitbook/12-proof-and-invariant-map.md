@@ -75,7 +75,10 @@ in Projection.lean) is intentionally retained.
 - `checkedDispatch_flowDenied_preserves_state` — proves all 3 policy-gated
   wrappers preserve state on flow denial (M-IF-1).
 - `mmioRead`/`mmioWrite` with 4 correctness theorems (M-NEW-7/8).
+- `MmioReadOutcome` inductive encoding volatile/ram/w1c/fifo read-kind constraints (X1-D).
+- `mkMmioSafe_uart`/`mkMmioSafe_gicDist`/`mkMmioSafe_gicCpu` witness generators (X1-E).
 - `tlbFlushByASID`/`tlbFlushByPage`/`tlbFlushAll` with state frame proofs (M-ARCH-4).
+- `contextSwitchState` atomic operation preserving `contextMatchesCurrent` (X1-F/G).
 - `RegisterWriteInvariant` predicate for context-switch awareness (H-3).
 
 **WS-T/T7 additions (v0.20.6) — Test & Build Infrastructure:**
@@ -610,7 +613,7 @@ that require it:
   updated to account for the new error branch (trivially preserving — error returns
   unchanged state).
 
-## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 complete; WS-G3 / F-P06; WS-G6 / F-P05 updated)
+## 10. VSpace proof completion (WS-D3 / F-08 / TPI-001 CLOSED X1-K; WS-G3 / F-P06; WS-G6 / F-P05 updated)
 
 VSpace invariant bundle preservation is now proven for both success and error paths:
 

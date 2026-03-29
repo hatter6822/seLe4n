@@ -11,9 +11,19 @@ import SeLe4n.Kernel.Architecture.VSpace
 /-!
 # VSpace Invariant Bundle (WS-B1 / F-08 / TPI-D05)
 
-This module defines the VSpace invariant components (ASID-root uniqueness, non-overlap)
-and the composed bundle entrypoint. It contains both error-case and success-path
-preservation theorems, as well as round-trip theorems closing TPI-001 from WS-C.
+TPI-001 — CLOSED (X1-K). This module defines the VSpace invariant components
+(ASID-root uniqueness, non-overlap) and the composed bundle entrypoint. It
+contains both error-case and success-path preservation theorems, as well as
+four round-trip functional-correctness theorems that close TPI-001:
+
+  - `vspaceLookup_after_map` (X1-H #1)
+  - `vspaceLookup_map_other` (X1-H #2)
+  - `vspaceLookup_after_unmap` (X1-I #3)
+  - `vspaceLookup_unmap_other` (X1-I #4)
+
+These theorems establish VSpace determinism through genuine semantic contracts
+(not `rfl` tautologies), proving that map/unmap operations produce predictable,
+unique effects on the address translation surface.
 
 ## Proof scope qualification (F-16)
 
