@@ -408,7 +408,17 @@ WS-K-D: Lifecycle and VSpace stubs replaced with full dispatch. All 13
 syscalls now route to real kernel operations — zero `.illegalState` stubs
 remain.
 
-V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`. -/
+V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`.
+
+**W6-D (L-8): Two-tier dispatch design rationale.** The dispatch is split into
+`dispatchCapabilityOnly` (handles syscalls needing only the resolved capability
+and no additional decoded arguments) and this explicit match (handles syscalls
+requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
+1. Shares a single checked/unchecked dispatch implementation (V8-H)
+2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
+   showing all 17 `SyscallId` variants are handled by one of the two tiers
+3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
+The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
   match dispatchCapabilityOnly decoded cap with

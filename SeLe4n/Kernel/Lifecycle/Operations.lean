@@ -31,13 +31,22 @@ def lifecycleRetypeAuthority (cap : Capability) (target : SeLe4n.ObjId) : Bool :
 /-- R4-A.1: Remove a ThreadId from an intrusive queue's head/tail pointers.
     If the head points to `tid`, advances to the TCB's `queueNext` successor
     (preserving queue accessibility for remaining threads). If `tid` is the
-    tail, retreats to the TCB's `queuePrev` predecessor. Falls back to `none`
-    if the TCB cannot be looked up (defensive — the TCB should still exist at
-    cleanup time since cleanup runs before retype). -/
+    tail, retreats to the TCB's `queuePrev` predecessor.
+
+    **W6-A (M-7): TCB existence invariant.** The `none` branch of `lookupTcb`
+    should never be taken during normal cleanup: `lifecyclePreRetypeCleanup`
+    calls `cleanupTcbReferences` *before* the TCB is retyped, so the TCB
+    is still present in `st.objects`. The `(none, none)` fallback is
+    defensive-safe — it clears both head and tail pointers for this endpoint
+    when `tid` matches, which is sound (no dangling pointers remain) but
+    loses queue structure. If this branch is reached, it indicates a
+    programming error in the cleanup call order, not a data corruption risk.
+    The `tcbQueueChainAcyclic` invariant (from `dualQueueSystemInvariant`)
+    guarantees that queued threads have valid TCB entries. -/
 private def removeThreadFromQueue (st : SystemState) (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) : IntrusiveQueue :=
   let advance := match lookupTcb st tid with
     | some tcb => (tcb.queueNext, tcb.queuePrev)
-    | none => (none, none)
+    | none => (none, none)  -- defensive: see W6-A doc above
   { head := if q.head = some tid then advance.1 else q.head,
     tail := if q.tail = some tid then advance.2 else q.tail }
 
@@ -122,114 +131,116 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 -- R4-A: Cleanup preservation theorems
 -- ============================================================================
 
-/-- T5-E: spliceOutMidQueueNode preserves the scheduler. The splice only
-    modifies `objects`, so `{ st with objects := ... }.scheduler = st.scheduler`. -/
+/-- W6-B: spliceOutMidQueueNode only modifies `objects`, preserving all other
+    state fields. Bundles the scheduler, lifecycle, and serviceRegistry
+    preservation proofs into a single conjunction. -/
+private theorem spliceOutMidQueueNode_preserves
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (spliceOutMidQueueNode st tid).scheduler = st.scheduler ∧
+    (spliceOutMidQueueNode st tid).lifecycle = st.lifecycle ∧
+    (spliceOutMidQueueNode st tid).serviceRegistry = st.serviceRegistry := by
+  refine ⟨?_, ?_, ?_⟩ <;> (unfold spliceOutMidQueueNode; split <;> rfl)
+
+/-- T5-E: spliceOutMidQueueNode preserves the scheduler. -/
 private theorem spliceOutMidQueueNode_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (spliceOutMidQueueNode st tid).scheduler = st.scheduler := by
-  unfold spliceOutMidQueueNode; split <;> rfl
+    (spliceOutMidQueueNode st tid).scheduler = st.scheduler :=
+  (spliceOutMidQueueNode_preserves st tid).1
 
 /-- T5-E: spliceOutMidQueueNode preserves lifecycle metadata. -/
 private theorem spliceOutMidQueueNode_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (spliceOutMidQueueNode st tid).lifecycle = st.lifecycle := by
-  unfold spliceOutMidQueueNode; split <;> rfl
+    (spliceOutMidQueueNode st tid).lifecycle = st.lifecycle :=
+  (spliceOutMidQueueNode_preserves st tid).2.1
 
 /-- T5-E: spliceOutMidQueueNode preserves serviceRegistry. -/
 private theorem spliceOutMidQueueNode_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (spliceOutMidQueueNode st tid).serviceRegistry = st.serviceRegistry := by
-  unfold spliceOutMidQueueNode; split <;> rfl
+    (spliceOutMidQueueNode st tid).serviceRegistry = st.serviceRegistry :=
+  (spliceOutMidQueueNode_preserves st tid).2.2
+
+/-- W6-B: removeFromAllEndpointQueues only modifies `objects`, preserving
+    scheduler, lifecycle, and serviceRegistry simultaneously. Reduces
+    redundancy from 3 near-identical proofs to a single bundled theorem. -/
+private theorem removeFromAllEndpointQueues_preserves
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllEndpointQueues st tid).scheduler = st.scheduler ∧
+    (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle ∧
+    (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry := by
+  have hSplice := spliceOutMidQueueNode_preserves st tid
+  have epFold : ∀ (s : SystemState),
+      let r := s.objects.fold s (fun acc oid obj =>
+        match obj with
+        | .endpoint ep =>
+          let ep' : Endpoint := {
+            sendQ := removeThreadFromQueue s ep.sendQ tid,
+            receiveQ := removeThreadFromQueue s ep.receiveQ tid }
+          { acc with objects := acc.objects.insert oid (.endpoint ep') }
+        | _ => acc)
+      r.scheduler = s.scheduler ∧ r.lifecycle = s.lifecycle ∧ r.serviceRegistry = s.serviceRegistry :=
+    fun s => SeLe4n.Kernel.RobinHood.RHTable.fold_preserves s.objects s _
+      (fun acc => acc.scheduler = s.scheduler ∧ acc.lifecycle = s.lifecycle ∧
+                  acc.serviceRegistry = s.serviceRegistry)
+      ⟨rfl, rfl, rfl⟩
+      (fun acc _ _ hAcc => by split <;> exact hAcc)
+  constructor
+  · show (removeFromAllEndpointQueues st tid).scheduler = st.scheduler
+    unfold removeFromAllEndpointQueues; rw [(epFold _).1]; exact hSplice.1
+  constructor
+  · show (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle
+    unfold removeFromAllEndpointQueues; rw [(epFold _).2.1]; exact hSplice.2.1
+  · show (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry
+    unfold removeFromAllEndpointQueues; rw [(epFold _).2.2]; exact hSplice.2.2
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves the scheduler. -/
 private theorem removeFromAllEndpointQueues_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllEndpointQueues st tid).scheduler = st.scheduler := by
-  have hSplice := spliceOutMidQueueNode_scheduler_eq st tid
-  have key : ∀ (s : SystemState),
-      (s.objects.fold s (fun acc oid obj =>
-        match obj with
-        | .endpoint ep =>
-          let ep' : Endpoint := {
-            sendQ := removeThreadFromQueue s ep.sendQ tid,
-            receiveQ := removeThreadFromQueue s ep.receiveQ tid }
-          { acc with objects := acc.objects.insert oid (.endpoint ep') }
-        | _ => acc)).scheduler = s.scheduler :=
-    fun s => SeLe4n.Kernel.RobinHood.RHTable.fold_preserves s.objects s _
-      (fun acc => acc.scheduler = s.scheduler) rfl
-      (fun acc _ _ hAcc => by split <;> exact hAcc)
-  show (removeFromAllEndpointQueues st tid).scheduler = st.scheduler
-  unfold removeFromAllEndpointQueues
-  rw [key, hSplice]
-
-/-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
-private theorem removeFromAllNotificationWaitLists_scheduler_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.scheduler = st.scheduler) rfl
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+    (removeFromAllEndpointQueues st tid).scheduler = st.scheduler :=
+  (removeFromAllEndpointQueues_preserves st tid).1
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves lifecycle metadata. -/
 private theorem removeFromAllEndpointQueues_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle := by
-  have hSplice := spliceOutMidQueueNode_lifecycle_eq st tid
-  have key : ∀ (s : SystemState),
-      (s.objects.fold s (fun acc oid obj =>
-        match obj with
-        | .endpoint ep =>
-          let ep' : Endpoint := {
-            sendQ := removeThreadFromQueue s ep.sendQ tid,
-            receiveQ := removeThreadFromQueue s ep.receiveQ tid }
-          { acc with objects := acc.objects.insert oid (.endpoint ep') }
-        | _ => acc)).lifecycle = s.lifecycle :=
-    fun s => SeLe4n.Kernel.RobinHood.RHTable.fold_preserves s.objects s _
-      (fun acc => acc.lifecycle = s.lifecycle) rfl
-      (fun acc _ _ hAcc => by split <;> exact hAcc)
-  show (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle
-  unfold removeFromAllEndpointQueues
-  rw [key, hSplice]
-
-/-- R4-A.2: removeFromAllNotificationWaitLists preserves lifecycle metadata. -/
-private theorem removeFromAllNotificationWaitLists_lifecycle_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.lifecycle = st.lifecycle) rfl
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+    (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle :=
+  (removeFromAllEndpointQueues_preserves st tid).2.1
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves serviceRegistry. -/
 private theorem removeFromAllEndpointQueues_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry := by
-  have hSplice := spliceOutMidQueueNode_serviceRegistry_eq st tid
-  have key : ∀ (s : SystemState),
-      (s.objects.fold s (fun acc oid obj =>
-        match obj with
-        | .endpoint ep =>
-          let ep' : Endpoint := {
-            sendQ := removeThreadFromQueue s ep.sendQ tid,
-            receiveQ := removeThreadFromQueue s ep.receiveQ tid }
-          { acc with objects := acc.objects.insert oid (.endpoint ep') }
-        | _ => acc)).serviceRegistry = s.serviceRegistry :=
-    fun s => SeLe4n.Kernel.RobinHood.RHTable.fold_preserves s.objects s _
-      (fun acc => acc.serviceRegistry = s.serviceRegistry) rfl
-      (fun acc _ _ hAcc => by split <;> exact hAcc)
-  show (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry
-  unfold removeFromAllEndpointQueues
-  rw [key, hSplice]
+    (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry :=
+  (removeFromAllEndpointQueues_preserves st tid).2.2
+
+/-- W6-B: removeFromAllNotificationWaitLists only modifies `objects`, preserving
+    scheduler, lifecycle, and serviceRegistry simultaneously. -/
+private theorem removeFromAllNotificationWaitLists_preserves
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler ∧
+    (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle ∧
+    (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry := by
+  unfold removeFromAllNotificationWaitLists
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
+                acc.serviceRegistry = st.serviceRegistry)
+    ⟨rfl, rfl, rfl⟩
+    (fun acc _ _ hAcc => by split <;> exact hAcc)
+
+/-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
+private theorem removeFromAllNotificationWaitLists_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler :=
+  (removeFromAllNotificationWaitLists_preserves st tid).1
+
+/-- R4-A.2: removeFromAllNotificationWaitLists preserves lifecycle metadata. -/
+private theorem removeFromAllNotificationWaitLists_lifecycle_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle :=
+  (removeFromAllNotificationWaitLists_preserves st tid).2.1
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves serviceRegistry. -/
 private theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.serviceRegistry = st.serviceRegistry) rfl
-    (fun acc _ _ hAcc => by split <;> exact hAcc)
+    (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry :=
+  (removeFromAllNotificationWaitLists_preserves st tid).2.2
 
 /-- After cleanup, the cleaned thread is not in the run queue. -/
 theorem cleanupTcbReferences_removes_from_runnable

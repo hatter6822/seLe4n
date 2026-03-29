@@ -206,6 +206,22 @@ private theorem writeRegisterState_preserves_vspaceInvariantBundle
 -- L-06/WS-E3: Default SystemState initialization proofs
 -- ============================================================================
 
+/-- W6-E (L-11): Helper — the default state's objects table has no entries.
+    Extracted to eliminate 24+ identical `RHTable_get?_empty 16 (by omega)` calls
+    across the default-state proof section. All default-state proofs for
+    object-quantified predicates follow the same pattern: assume an object exists,
+    derive a contradiction from `default_objects_none`. -/
+private theorem default_objects_none (oid : SeLe4n.ObjId) :
+    (default : SystemState).objects[oid]? = none :=
+  RHTable_get?_empty 16 (by omega)
+
+/-- W6-E: Helper — vacuous discharge for default-state proofs. When a hypothesis
+    `hObj : (default : SystemState).objects[oid]? = some _` is present, this
+    derives a contradiction since the empty state has no objects. -/
+private theorem default_objects_absurd {α : Prop} {oid : SeLe4n.ObjId} {v : KernelObject}
+    (hObj : (default : SystemState).objects[oid]? = some v) : α := by
+  rw [default_objects_none] at hObj; exact absurd hObj (by simp)
+
 /-- L-06/WS-E3: The default (empty) `SystemState` satisfies the full composed
 `proofLayerInvariantBundle`. This provides the base case for invariant induction:
 the system starts in a valid state. All invariant components hold vacuously

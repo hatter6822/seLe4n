@@ -79,9 +79,17 @@ impl IpcBuffer {
     /// Set a message register by absolute index (0..120).
     ///
     /// - Indices 0–3: returns `Ok(false)` — caller must place these in
-    ///   `SyscallRequest.msg_regs` (inline ARM64 registers).
+    ///   `SyscallRequest.msg_regs` (inline ARM64 registers x2–x5).
     /// - Indices 4–119: writes to the overflow buffer, returns `Ok(true)`.
     /// - Index ≥ 120: returns `Err(IpcMessageTooLarge)`.
+    ///
+    /// **W6-H (LOW-2): API asymmetry note.** `set_mr(0..3)` returns `Ok(false)`
+    /// (informational no-op) while [`get_mr`](Self::get_mr)`(0..3)` returns
+    /// `Err(InvalidArgument)`. This is intentional: `set_mr` is a *write*
+    /// hint telling the caller "use `SyscallRequest.msg_regs` instead" without
+    /// failing, while `get_mr` is a *read* that cannot return a value (those
+    /// registers are not stored in the buffer). Both are safe — no data is
+    /// lost or corrupted in either case.
     #[inline]
     pub fn set_mr(&mut self, index: usize, value: u64) -> Result<bool, KernelError> {
         if index < INLINE_REGS {

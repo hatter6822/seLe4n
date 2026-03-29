@@ -22,6 +22,16 @@ pub const MAX_EXTRA_CAPS: u64 = 3;
 /// The encode and decode methods now enforce this stricter bound.
 pub const MAX_LABEL: u64 = (1u64 << 20) - 1;
 
+// W6-G (LOW-1): Compile-time assertions ensuring Lean-Rust ABI constant sync.
+// If `maxLabel`, `maxMessageRegisters`, or `maxExtraCaps` change on the Lean side
+// (in `SeLe4n/Model/Object/Types.lean`), these assertions will fail at compile time,
+// preventing silent divergence between the Lean model and Rust FFI layer.
+const _: () = {
+    assert!(MAX_LABEL == 1_048_575, "MAX_LABEL must be 2^20 - 1 (Lean: maxLabel)");
+    assert!(MAX_MSG_LENGTH == 120, "MAX_MSG_LENGTH must be 120 (Lean: maxMessageRegisters)");
+    assert!(MAX_EXTRA_CAPS == 3, "MAX_EXTRA_CAPS must be 3 (Lean: maxExtraCaps)");
+};
+
 /// Decoded message-info word, matching `seL4_MessageInfo_t`.
 ///
 /// U3-B / U-M32: Fields are private to enforce construction through

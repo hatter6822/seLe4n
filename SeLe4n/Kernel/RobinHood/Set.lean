@@ -155,4 +155,23 @@ theorem RHSet.contains_erase_ne_K [BEq κ] [Hashable κ] [LawfulBEq κ]
   simp [RHSet.contains, RHSet.erase, RHTable.contains,
         RHTable.getElem?_erase_ne_K s.table k k' hNe hK]
 
+-- ============================================================================
+-- W6-F (L-13): Public invExtK API — preservation theorems using RHSet.invExtK
+-- ============================================================================
+
+/-- W6-F: Insert preserves `RHSet.invExtK` (public API form). -/
+theorem RHSet.insert_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (s : RHSet κ) (k : κ) (h : s.invExtK) : (s.insert k).invExtK :=
+  RHSet.insert_preserves_invExtK s k h
+
+/-- W6-F: Erase preserves `RHSet.invExtK` (public API form). -/
+theorem RHSet.erase_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (s : RHSet κ) (k : κ) (h : s.invExtK) : (s.erase k).invExtK :=
+  RHSet.erase_preserves_invExtK s k h
+
+/-- W6-F: Empty set satisfies `RHSet.invExtK` (public API form). -/
+theorem RHSet.empty_invExtK' [BEq κ] [Hashable κ] [LawfulBEq κ] :
+    (RHSet.empty : RHSet κ).invExtK :=
+  RHSet.empty_invExtK
+
 end SeLe4n.Kernel.RobinHood
