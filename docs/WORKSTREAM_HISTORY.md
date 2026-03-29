@@ -19,9 +19,9 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
-WS-W Phase W1, W2, and W3 complete. Phases W4–W6 pending.
+WS-W Phase W1, W2, W3, and W4 complete. Phases W5–W6 pending.
 
-### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W3 COMPLETE
+### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — Phase W4 COMPLETE
 
 WS-W addresses 49 unique actionable findings from three comprehensive audits of
 v0.22.10 (2 CRIT, 4 HIGH, 16 MED, 27 LOW) across 6 phases (W1–W6) with 52
@@ -78,6 +78,23 @@ atomic sub-tasks. Plan:
   **W3-G**: FrozenOps retained with architectural status documentation (zero production
   consumers, H3 integration target). **W3-H**: Removed `encodeMsgRegs` (identity),
   `RegisterWriteInvariant` (stub). Zero sorry/axiom.
+
+- **W4 (Platform & Architecture Hardening) COMPLETE** (v0.22.15): 7 sub-tasks
+  (W4-A through W4-G). **W4-A (M-8)**: BCM2712 datasheet validation checklist
+  completed — all 14 S5-F address constants cross-referenced with S6-G citations,
+  marked **Validated** with datasheet section and date. **W4-B (M-9)**: FDT parsing
+  hardened — explicit bounds checks added to `readBE32`, `readCString`, `readCells`
+  to prevent integer overflow on malformed DTB input. **W4-C (MED-02)**: All 3
+  `native_decide` instances in Board.lean replaced with `decide`, eliminating TCB
+  expansion (`mmioRegionDisjoint_holds`, `rpi5MachineConfig_wellFormed`,
+  `rpi5DeviceTree_valid`). **W4-D (LOW-02)**: Stale `@[implemented_by]` comment
+  fixed in DeviceTree.lean — `fromDtb` stub now documents `fromDtbFull` as separate
+  function. **W4-E (L-15)**: `bootFromPlatformUnchecked` deprecated via docstring
+  directing to `bootFromPlatformChecked`. **W4-F (L-16)**: MMIO formalization gap
+  documented — comprehensive boundary description (modeled: address validation,
+  alignment, bounds, frame, W1C; deferred: volatile non-determinism, barriers,
+  device-specific semantics, interrupt effects, cache coherency). **W4-G (L-12)**:
+  `encodeMsgRegs` already removed in W3-H. Zero sorry/axiom.
 
 ### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — COMPLETE
 

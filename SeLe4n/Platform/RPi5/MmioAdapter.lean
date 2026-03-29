@@ -163,6 +163,77 @@ structure MmioSafe (regions : List MmioRegionDesc) (addr : PAddr) (outcome : Nat
   hOutcome : True  -- Placeholder: WS-V will refine with device state model
 
 -- ============================================================================
+-- W4-F (L-16): MMIO Formalization Boundary Documentation
+-- ============================================================================
+
+/-!
+## W4-F: MMIO Formalization Gap — What Is and Is Not Modeled
+
+### Modeled (formal guarantees hold)
+
+1. **Address validation**: All MMIO operations check `isDeviceAddress` and reject
+   non-device addresses with `.policyDenied`. Proven: `mmioRead_rejects_non_device`,
+   `mmioWrite_rejects_non_device`, `mmioWrite32_rejects_non_device`,
+   `mmioWrite64_rejects_non_device`.
+
+2. **Alignment enforcement**: 32-bit and 64-bit writes check alignment (4-byte and
+   8-byte respectively) and reject unaligned access with `.mmioUnaligned`. Proven:
+   `mmioWrite32_rejects_unaligned`, `mmioWrite64_rejects_unaligned`.
+
+3. **Region bounds**: MMIO regions are declared with base/size and disjointness
+   from RAM is proven (`mmioRegionDisjoint_holds`). The `MmioRegionDesc` type
+   tracks read/write semantics per region.
+
+4. **Frame properties**: MMIO writes only modify target bytes; all other addresses
+   are preserved. Proven: `mmioWrite_frame`, `mmioWrite32_frame`, `mmioWrite64_frame`.
+
+5. **Read preservation**: `mmioRead` does not modify state. Proven:
+   `mmioRead_preserves_state`.
+
+6. **Write-one-clear modeling**: `mmioWrite32W1C` models GIC-400 W1C semantics
+   (`new = old & ~mask`), distinct from direct-store `mmioWrite32`.
+
+### Not modeled (deferred to H3 hardware bring-up)
+
+1. **Volatile read non-determinism**: The abstract model returns `st.machine.memory addr`
+   for all reads, including volatile device registers. Real hardware may return
+   different values on each read (e.g., status registers, FIFO data registers).
+   **Mitigation**: `MmioSafe` hypothesis type prevents proofs from assuming
+   idempotent reads for MMIO addresses.
+
+2. **Memory ordering / barriers**: ARM64 MMIO requires DMB/DSB/ISB barriers for
+   correct ordering with respect to normal memory. The abstract model uses
+   instantaneous memory updates with no ordering constraints. Barrier annotations
+   exist in the type system but are not enforced.
+
+3. **Device-specific register semantics**: Beyond the W1C model, device registers
+   may have set-only, read-clear, or FIFO semantics. These are *declared* via
+   `MmioReadKind`/`MmioWriteKind` but the abstract model uses direct memory
+   store for writes and direct memory read for reads. The gap between declared
+   semantics and modeled behavior is intentional: it constrains proof reasoning
+   (via `MmioSafe`) without requiring a full device state machine.
+
+4. **Interrupt side effects**: MMIO writes to GIC registers (enable/disable/acknowledge)
+   trigger hardware interrupt controller state changes not captured in the memory
+   model. The interrupt contract in `RPi5/BootContract.lean` handles this at a
+   higher abstraction level.
+
+5. **Cache coherency**: The model assumes coherent memory. Real ARM64 MMIO to
+   device memory (strongly-ordered/device memory type) has different cache
+   behavior than normal memory. This is handled by MMU page table attributes
+   in the hardware binding, not in this abstract model.
+
+### Accepted gaps rationale
+
+The formalization boundary is drawn at address validation + alignment enforcement
+because these are the safety-critical properties that prevent kernel memory
+corruption. Volatile semantics, ordering, and device-specific behavior are
+platform-specific hardware concerns that will be refined during the H3 hardware
+binding workstream with actual device testing. The `MmioSafe` hypothesis type
+ensures that proofs cannot unsoundly reason about device register values.
+-/
+
+-- ============================================================================
 -- T6-E: Device-region validation
 -- ============================================================================
 

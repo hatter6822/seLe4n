@@ -1,3 +1,35 @@
+## [0.22.15] — W4: Platform & Architecture Hardening
+
+Phase W4 of WS-W pre-release audit remediation. Addresses M-8, M-9, MED-02,
+LOW-02, L-15, L-16, L-12 from v0.22.10 audits.
+
+- **W4-A (M-8)**: BCM2712 datasheet validation checklist completed. All 14
+  address constants in S5-F table cross-referenced with S6-G citations and
+  marked **Validated** with datasheet document, section, and date references.
+- **W4-B (M-9)**: FDT parsing hardened against integer overflow. Added explicit
+  bounds checks to `readBE32` (`offset + 4 > blob.size` guard), `readCString`
+  (`offset ≥ blob.size` initial guard), and `readCells` (`offset + cells * 4`
+  guard). All parsing functions now reject out-of-bounds input before any
+  arithmetic.
+- **W4-C (MED-02)**: Eliminated all 3 `native_decide` instances in Board.lean.
+  `mmioRegionDisjoint_holds`, `rpi5MachineConfig_wellFormed`, and
+  `rpi5DeviceTree_valid` now use `decide`, reducing TCB expansion. All
+  `DecidableEq` instances properly derived for involved types.
+- **W4-D (LOW-02)**: Fixed stale `@[implemented_by]` comment in DeviceTree.lean.
+  `fromDtb` stub now correctly documents that `fromDtbFull` is a separate
+  function, not an `@[implemented_by]` override.
+- **W4-E (L-15)**: `bootFromPlatformUnchecked` deprecated via comprehensive
+  docstring directing users to `bootFromPlatformChecked`. Retained as alias
+  for backward compatibility with test code.
+- **W4-F (L-16)**: Comprehensive MMIO formalization boundary documentation
+  added to MmioAdapter.lean. Documents what is modeled (address validation,
+  alignment enforcement, region bounds, frame properties, W1C semantics) vs.
+  what is deferred to H3 (volatile non-determinism, memory ordering/barriers,
+  device-specific register semantics, interrupt side effects, cache coherency).
+- **W4-G (L-12)**: `encodeMsgRegs` already removed in W3-H (v0.22.14). No
+  action needed.
+- Zero sorry/axiom. All module builds pass. `test_fast.sh` (Tier 0+1) green.
+
 ## [0.22.14] — W3: Dead Code Elimination
 
 Phase W3 of WS-W pre-release audit remediation. Addresses MED-1/MED-01
