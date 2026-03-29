@@ -166,7 +166,8 @@ run_check "INVARIANT" rg -n '^structure SyscallGate' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallLookupCap' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallInvoke' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallLookupCap_state_unchanged' SeLe4n/Kernel/API.lean
+# W3: syscallLookupCap_state_unchanged removed as dead code (trivially follows from
+# syscallLookupCap_implies_capability_held which provides the same state-unchanged guarantee).
 run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right' SeLe4n/Kernel/API.lean
 # S5-A: Deprecated api* wrappers removed in v0.19.4. Verify removal and
 # presence of production syscall dispatch path.
@@ -756,11 +757,8 @@ run_check "INVARIANT" rg -n '^theorem objectIndexLive_default' SeLe4n/Model/Stat
 # WS-H16/A-13: objectIndexLive preservation theorem for storeObject exists.
 run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectIndexLive' SeLe4n/Model/State.lean
 
-# WS-H16/A-19: runQueueThreadPriorityConsistent predicate defined.
-run_check "INVARIANT" rg -n '^def runQueueThreadPriorityConsistent' SeLe4n/Kernel/Scheduler/Invariant.lean
-
-# WS-H16/A-19: runQueueThreadPriorityConsistent default theorem exists.
-run_check "INVARIANT" rg -n '^theorem runQueueThreadPriorityConsistent_default' SeLe4n/Kernel/Scheduler/Invariant.lean
+# W3: runQueueThreadPriorityConsistent removed as dead code (superseded by
+# schedulerPriorityMatch in schedulerInvariantBundleFull with full preservation proofs).
 
 # WS-H16/M-18: Lifecycle negative test function exists in NegativeStateSuite.
 run_check "INVARIANT" rg -n '^def runWSH16LifecycleChecks' tests/NegativeStateSuite.lean
@@ -782,7 +780,7 @@ run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedNotificationComponent' SeLe
 # WS-F6/D3: runnableThreadsAreTCBs predicate and preservation theorems.
 run_check "INVARIANT" rg -n '^def runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n '^theorem default_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem runnableThreadsAreTCBs_of_scheduler_objects_eq' SeLe4n/Kernel/Scheduler/Invariant.lean
+# W3: runnableThreadsAreTCBs_of_scheduler_objects_eq removed (dead frame lemma).
 run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 run_check "INVARIANT" rg -n '^theorem handleYield_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
@@ -962,8 +960,7 @@ import SeLe4n.Kernel.API
 
 -- WS-K-D: Lifecycle and VSpace dispatch helpers
 #check @SeLe4n.Kernel.objectOfTypeTag
-#check @SeLe4n.Kernel.objectOfTypeTag_type
-#check @SeLe4n.Kernel.objectOfTypeTag_error_iff
+-- W3: objectOfTypeTag_type and objectOfTypeTag_error_iff removed (dead code)
 #check @SeLe4n.Model.PagePermissions.ofNat
 #check @SeLe4n.Model.PagePermissions.toNat
 #check @SeLe4n.Model.PagePermissions.ofNat_toNat_roundtrip

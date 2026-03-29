@@ -34,6 +34,21 @@ Phase W3 of WS-W pre-release audit remediation. Addresses MED-1/MED-01
   from RegisterDecode.lean (simplified `decode_components_roundtrip` to
   3-component version); `RegisterWriteInvariant` + proof from
   RPi5/RuntimeContract.lean.
+- **Additional Architecture (W3-D)**: Removed `asidBound`, `asidBoundForConfig`,
+  `resolveAsidRootChecked` + proof, `tlbFlushByASIDPage`, `tlbFlushAll` + proof,
+  `storeObject_objectIndex_eq_of_mem` from VSpace.lean.
+- **Additional Kernel (W3-C)**: Removed 11 superseded scheduler invariant
+  definitions from Invariant.lean (`runQueueThreadPriorityConsistent` chain,
+  `threadPriority_membership_consistent` chain, `domainTimeRemainingPositive`
+  dead lemmas, `runnableThreadsAreTCBs_of_scheduler_objects_eq`); 8 dead
+  RunQueue rotation/membership theorems; 4 `lifecycleRetypeDirect_*` error
+  theorems from Lifecycle/Operations.lean; `syscallLookupCap_state_unchanged`
+  and `dispatchCapabilityOnly_some_iff` from API.lean;
+  `crossSubsystemInvariantFolded` + `iff_folded` from CrossSubsystem.lean.
+- **Additional Data structures (W3-E)**: Removed `beq_symmetric`,
+  `ofList_invExt`/`ofList_size_lt_capacity`/`ofList_invExtK` chain from
+  RobinHood/Bridge.lean; `fold`, `size`, `capacity`, 3 proof theorems from
+  RobinHood/Set.lean; `extractBits_zero_width` from RadixTree/Core.lean.
 - Zero `sorry`, zero `axiom`. `test_full.sh` green.
 
 ## [0.22.13] — W2 audit: completeness and accuracy fixes
