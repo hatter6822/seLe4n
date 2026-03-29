@@ -1281,17 +1281,9 @@ and its implications:
 **File**: `SeLe4n/Kernel/Lifecycle/Operations.lean:37-42`
 **Problem**: Falls back to `(none, none)` if TCB lookup fails during cleanup.
 Should log/assert TCB existence rather than silently degrading.
-**Change**: Add a documentation comment explaining the fallback rationale:
-```lean
-/-- Defensive fallback: if TCB lookup fails during thread removal, treat as
-    already-removed. This can only occur if the TCB was deleted concurrently
-    (impossible in the single-threaded kernel model), or if the invariant
-    `runnableThreadsAreTCBs` was violated. The fallback is safe but masks
-    invariant violations. -/
-```
-If appropriate, change the fallback to return an error instead of `(none, none)`.
+**Change**: Change the fallback to return an error instead of `(none, none)`.
 **Build**: `lake build SeLe4n.Kernel.Lifecycle.Operations`
-**Risk**: Low if documentation-only; Medium if changing behavior
+**Risk**: Medium, because changing behavior
 
 #### W6-B: Factor redundant lifecycle preservation proofs (L-4)
 
