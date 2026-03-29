@@ -1984,7 +1984,7 @@ private def chain32SyscallCall : IO Unit := do
 /-- W5-C: Service lifecycle tests — registerInterface, registerService,
 serviceRegisterDependency, revokeService with success and error paths. -/
 private def chain33ServiceLifecycle : IO Unit := do
-  -- OID range: 960-980 (within OperationChainSuite's 200-950+ range)
+  -- OID range: 960-962 (within OperationChainSuite's 200-962 range)
   let epId1 : SeLe4n.ObjId := ⟨960⟩
   let epId2 : SeLe4n.ObjId := ⟨961⟩
   let nonEpId : SeLe4n.ObjId := ⟨962⟩  -- notification, not endpoint
@@ -2044,6 +2044,13 @@ private def chain33ServiceLifecycle : IO Unit := do
   -- 5d: Duplicate service ID
   expectErr "chain33: registerService duplicate"
     (SeLe4n.Kernel.registerService reg1 st2) .illegalState
+  -- 5e: Non-existent endpoint ObjId (capability targets ObjId not in state)
+  let missingEpCap : Capability := { target := .object ⟨999⟩, rights := writeRights, badge := none }
+  let regMissingEp : ServiceRegistration := { sid := ⟨353⟩, iface := iface1, endpointCap := missingEpCap }
+  expectErr "chain33: registerService non-existent endpoint"
+    (SeLe4n.Kernel.registerService regMissingEp st2) .invalidCapability
+  -- W5-C-9: Invariant check after registerService
+  assertInvariants "chain33: invariants after registerService" st2
   -- === W5-C-6: serviceRegisterDependency acyclic path ===
   -- Register second service for dependency testing
   let reg2 : ServiceRegistration := { sid := svcId2, iface := iface1, endpointCap := epCap2 }
@@ -2067,9 +2074,14 @@ private def chain33ServiceLifecycle : IO Unit := do
   -- === W5-C-7: serviceRegisterDependency cycle rejection ===
   expectErr "chain33: cyclic dependency svc2 -> svc1"
     (SeLe4n.Kernel.serviceRegisterDependency svcId2 svcId1 st4) .cyclicDependency
-  -- Nonexistent service
+  -- Nonexistent source service
   expectErr "chain33: dependency from nonexistent service"
     (SeLe4n.Kernel.serviceRegisterDependency svcIdMissing svcId1 st4) .objectNotFound
+  -- Nonexistent target service
+  expectErr "chain33: dependency to nonexistent service"
+    (SeLe4n.Kernel.serviceRegisterDependency svcId1 svcIdMissing st4) .objectNotFound
+  -- W5-C-9: Invariant check after dependency registration
+  assertInvariants "chain33: invariants after dependency registration" st4
   -- === W5-C-8: revokeService success ===
   let (_, st5) ← expectOkSt "chain33: revokeService svc1"
     (SeLe4n.Kernel.revokeService svcId1 st4)
@@ -2078,10 +2090,14 @@ private def chain33ServiceLifecycle : IO Unit := do
   match SeLe4n.Model.lookupService st5 svcId2 with
   | some entry =>
     expect "chain33: svc2 no longer has svc1 dep" (!entry.dependencies.any (· == svcId1))
-  | none => pure ()  -- svc2 graph entry may also be gone, which is fine
+  | none => pure ()  -- svc2 graph entry may also be gone after removeDependenciesOf
+  -- Verify svc1 is also removed from services dependency graph
+  expect "chain33: svc1 removed from services graph" (SeLe4n.Model.lookupService st5 svcId1 == none)
   -- revokeService on nonexistent
   expectErr "chain33: revokeService nonexistent"
     (SeLe4n.Kernel.revokeService svcIdMissing st5) .objectNotFound
+  -- W5-C-9: Invariant check after revokeService
+  assertInvariants "chain33: invariants after revokeService" st5
 
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke

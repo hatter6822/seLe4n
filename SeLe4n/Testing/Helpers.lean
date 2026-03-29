@@ -82,12 +82,12 @@ accidental interference when suites are run independently.
 
   Suite                    OID Range   Notes
   MainTraceHarness         1-40        threads: 1-5, objects: 6-40
-  OperationChainSuite      200-950     chains use 200+, syscall chains 500-950
+  OperationChainSuite      200-962     chains use 200+, syscall chains 500+, svc lifecycle 960+
   NegativeStateSuite       6-99        overlaps MainTrace (runs independently)
-  FrozenOpsSuite           100-150     frozen kernel monad tests
-  FrozenStateSuite         1-20        FrozenMap/FrozenSet unit tests
+  FrozenOpsSuite           10-11       frozen kernel monad tests
+  FrozenStateSuite         1-7         FrozenMap/FrozenSet unit tests
   FreezeProofSuite         1-20        freeze proof verification
-  TwoPhaseArchSuite        1-50        builder-to-freeze-to-execution pipeline
+  TwoPhaseArchSuite        1-100       builder-to-freeze-to-execution pipeline
   RobinHoodSuite           N/A         uses RHTable keys, not ObjId
   RadixTreeSuite           N/A         uses CNodeRadix keys, not ObjId
   InformationFlowSuite     1-30        info flow policy checks

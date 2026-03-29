@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-w5-testing-qyLuV",
-      "commit_sha": "a8f37c44a1e6856ad49e415d0d2a6281c05e5d20",
-      "tree_sha": "e4b5f085f835b6a6f3b6f2cce1635703176c09df",
-      "committed_at_utc": "2026-03-28T23:27:32-04:00"
+      "commit_sha": "1572106c6b34843bafa8d1cc3b08b9d991caea8a",
+      "tree_sha": "7c33640206ed704ef440462edd0b7c9a6c049d36",
+      "committed_at_utc": "2026-03-29T03:57:40+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "7e7c0296ff2de4b5ea03080563fb76310e91e1960264ac8f36fcaed31b0dde58"
+    "source_digest": "a0c52301a7b1457503b8a9c9d27442839002e0b4ca0c1fd2a2de49d247da6c25"
   },
   "summary": {
     "module_count": 113,
@@ -29,7 +29,7 @@
     "production_files": 103,
     "production_loc": 72047,
     "test_files": 10,
-    "test_loc": 8536,
+    "test_loc": 8552,
     "proved_theorem_lemma_decls": 2070,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -48707,6 +48707,7 @@
             "RHTable.ofList",
             "ServiceId",
             "ServiceRegistration",
+            "assertInvariants",
             "buildChecked",
             "empty",
             "expect",
@@ -48728,7 +48729,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 2086,
+          "line": 2102,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -48769,7 +48770,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2125,
+          "line": 2141,
           "called": [
             "runOperationChainSuite"
           ]
