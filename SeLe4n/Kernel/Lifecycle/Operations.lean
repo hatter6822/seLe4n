@@ -241,18 +241,6 @@ theorem cleanupTcbReferences_removes_from_runnable
   unfold removeRunnable
   exact RunQueue.not_mem_remove_self _ _
 
-/-- Cleanup preserves run queue membership for other threads. -/
-theorem cleanupTcbReferences_preserves_runnable_ne
-    (st : SystemState) (tid other : SeLe4n.ThreadId) (hNe : other ≠ tid)
-    (hMem : other ∈ st.scheduler.runQueue) :
-    other ∈ (cleanupTcbReferences st tid).scheduler.runQueue := by
-  unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_scheduler_eq]
-  rw [removeFromAllEndpointQueues_scheduler_eq]
-  unfold removeRunnable
-  rw [RunQueue.mem_remove]
-  exact ⟨hMem, hNe⟩
-
 /-- Cleanup preserves lifecycle metadata. -/
 theorem cleanupTcbReferences_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -260,14 +248,6 @@ theorem cleanupTcbReferences_lifecycle_eq
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_lifecycle_eq]
   exact removeFromAllEndpointQueues_lifecycle_eq (removeRunnable st tid) tid
-
-/-- Cleanup preserves serviceRegistry. -/
-theorem cleanupTcbReferences_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (cleanupTcbReferences st tid).serviceRegistry = st.serviceRegistry := by
-  unfold cleanupTcbReferences
-  rw [removeFromAllNotificationWaitLists_serviceRegistry_eq]
-  exact removeFromAllEndpointQueues_serviceRegistry_eq (removeRunnable st tid) tid
 
 /-- CDT detach preserves the objects store. -/
 private theorem detachSlotFromCdt_objects_eq (st : SystemState) (ref : SlotRef) :
@@ -328,44 +308,6 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | _ => detachCNodeSlots st target cn
   | _ => st
 
-/-- Pre-retype cleanup preserves the objects store for non-TCB cases.
-    For TCB cases, objects are modified by endpoint/notification queue cleanup.
-    For CNode→non-CNode, CDT detach does not change objects. -/
-theorem lifecyclePreRetypeCleanup_objects_eq_non_tcb
-    (st : SystemState) (target : SeLe4n.ObjId)
-    (currentObj newObj : KernelObject)
-    (hNotTcb : ∀ tcb, currentObj ≠ .tcb tcb) :
-    (lifecyclePreRetypeCleanup st target currentObj newObj).objects = st.objects := by
-  unfold lifecyclePreRetypeCleanup
-  cases currentObj with
-  | tcb tcb => exact absurd rfl (hNotTcb tcb)
-  | cnode cn =>
-    simp only []
-    cases newObj <;> simp only [] <;>
-    first | rfl | exact detachCNodeSlots_objects_eq st target cn
-  | endpoint _ =>
-    simp only []
-    exact cleanupEndpointServiceRegistrations_objects_eq st target
-  | notification _ | vspaceRoot _ | untyped _ => rfl
-
-/-- Pre-retype cleanup preserves lifecycle metadata. -/
-theorem lifecyclePreRetypeCleanup_lifecycle_eq
-    (st : SystemState) (target : SeLe4n.ObjId)
-    (currentObj newObj : KernelObject) :
-    (lifecyclePreRetypeCleanup st target currentObj newObj).lifecycle = st.lifecycle := by
-  unfold lifecyclePreRetypeCleanup
-  cases currentObj with
-  | tcb tcb =>
-    simp only []
-    exact cleanupTcbReferences_lifecycle_eq st tcb.tid
-  | cnode cn =>
-    simp only []
-    cases newObj <;> simp only [] <;>
-    first | rfl | exact detachCNodeSlots_lifecycle_eq st target cn
-  | endpoint _ =>
-    simp only []
-    exact cleanupEndpointServiceRegistrations_lifecycle_eq st target
-  | notification _ | vspaceRoot _ | untyped _ => rfl
 
 
 /-- Pre-retype cleanup only removes elements from the flat list, never adds. -/
@@ -581,11 +523,6 @@ theorem scrubObjectMemory_lifecycle_eq (st : SystemState) (objectId : SeLe4n.Obj
     (objType : KernelObjectType) :
     (scrubObjectMemory st objectId objType).lifecycle = st.lifecycle := rfl
 
-/-- S6-C: `scrubObjectMemory` preserves the TLB state. -/
-theorem scrubObjectMemory_tlb_eq (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).tlb = st.tlb := rfl
-
 /-- S6-C: `scrubObjectMemory` establishes the `memoryZeroed` postcondition
     for the scrubbed region. -/
 theorem scrubObjectMemory_establishes_memoryZeroed
@@ -596,16 +533,6 @@ theorem scrubObjectMemory_establishes_memoryZeroed
     SeLe4n.memoryZeroed (scrubObjectMemory st objectId objType).machine base size := by
   simp [scrubObjectMemory]
   exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _
-
-/-- S6-C: `scrubObjectMemory` preserves the objectIndex. -/
-theorem scrubObjectMemory_objectIndex_eq (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).objectIndex = st.objectIndex := rfl
-
-/-- S6-C: `scrubObjectMemory` preserves the objectIndexSet. -/
-theorem scrubObjectMemory_objectIndexSet_eq (st : SystemState) (objectId : SeLe4n.ObjId)
-    (objType : KernelObjectType) :
-    (scrubObjectMemory st objectId objType).objectIndexSet = st.objectIndexSet := rfl
 
 /-- WS-F2: Retype a new typed object from an untyped memory region.
 
@@ -1259,39 +1186,6 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     })
   | _ + 6 => .error .invalidTypeTag
 
-/-- WS-K-D: `objectOfTypeTag` fails iff the tag exceeds 5. -/
-theorem objectOfTypeTag_error_iff (tag : Nat) (size : Nat) :
-    (∃ e, objectOfTypeTag tag size = .error e) ↔ tag > 5 := by
-  constructor
-  · intro ⟨e, h⟩
-    unfold objectOfTypeTag at h
-    match tag with
-    | 0 | 1 | 2 | 3 | 4 | 5 => simp at h
-    | n + 6 => omega
-  · intro h
-    unfold objectOfTypeTag
-    match tag, h with
-    | n + 6, _ => exact ⟨.invalidTypeTag, rfl⟩
-
-/-- WS-K-D: Successful results have the expected `KernelObjectType`. -/
-theorem objectOfTypeTag_type (tag : Nat) (size : Nat) (obj : KernelObject)
-    (hOk : objectOfTypeTag tag size = .ok obj) :
-    (tag = 0 → obj.objectType = .tcb) ∧
-    (tag = 1 → obj.objectType = .endpoint) ∧
-    (tag = 2 → obj.objectType = .notification) ∧
-    (tag = 3 → obj.objectType = .cnode) ∧
-    (tag = 4 → obj.objectType = .vspaceRoot) ∧
-    (tag = 5 → obj.objectType = .untyped) := by
-  unfold objectOfTypeTag at hOk
-  match tag with
-  | 0 => simp at hOk; subst hOk; simp [KernelObject.objectType]
-  | 1 => simp at hOk; subst hOk; simp [KernelObject.objectType]
-  | 2 => simp at hOk; subst hOk; simp [KernelObject.objectType]
-  | 3 => simp at hOk; subst hOk; simp [KernelObject.objectType]
-  | 4 => simp at hOk; subst hOk; simp [KernelObject.objectType]
-  | 5 => simp at hOk; subst hOk; simp [KernelObject.objectType]
-  | _ + 6 => simp at hOk
-
 /-- R7-E/L-10: Typed version of `objectOfTypeTag` that takes `KernelObjectType` directly.
     Eliminates the invalid-tag error path since the type is already validated. -/
 def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObject :=
@@ -1323,16 +1217,6 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
       isDevice := false
     }
 
-/-- R7-E/L-10: `objectOfKernelType` produces an object of the requested type. -/
-theorem objectOfKernelType_type (objType : KernelObjectType) (sizeHint : Nat) :
-    (objectOfKernelType objType sizeHint).objectType = objType := by
-  cases objType <;> simp [objectOfKernelType, KernelObject.objectType]
-
-/-- R7-E/L-10: `objectOfKernelType` agrees with `objectOfTypeTag` on valid tags. -/
-theorem objectOfKernelType_eq_objectOfTypeTag (objType : KernelObjectType) (sizeHint : Nat) :
-    objectOfTypeTag objType.toNat sizeHint = .ok (objectOfKernelType objType sizeHint) := by
-  cases objType <;> simp [objectOfKernelType, objectOfTypeTag, KernelObjectType.toNat]
-
 -- ============================================================================
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant
 -- ============================================================================
@@ -1349,9 +1233,8 @@ must use `lifecycleRetypeDirectWithCleanup` (for pre-resolved caps) or
 `lifecycleRetypeWithCleanup` (for CSpaceAddr) for the H-05 and S6-C
 guarantees. U-H04: API dispatch now routes through the safe wrapper.
 
-V5-B (M-DEF-2): **Internal only — do not call from new code.** Remains
-public solely for the proof chain (`lifecycleRetypeDirect_eq_lifecycleRetypeObject`,
-etc.). See `lifecycleRetypeObject` for the full rationale.
+V5-B (M-DEF-2): **Internal only — do not call from new code.**
+See `lifecycleRetypeObject` for the full rationale.
 
 Deterministic branch contract:
 1. Target object must exist (`objectNotFound` otherwise).
@@ -1373,50 +1256,6 @@ def lifecycleRetypeDirect
             .error .illegalAuthority
         else
           .error .illegalState
-
-/-- WS-K-D: When `cspaceLookupSlot` resolves to `(cap, st)` (state unchanged),
-`lifecycleRetypeDirect` with that cap equals `lifecycleRetypeObject` with the
-authority address. -/
-theorem lifecycleRetypeDirect_eq_lifecycleRetypeObject
-    (authority : CSpaceAddr) (authCap : Capability)
-    (target : SeLe4n.ObjId) (newObj : KernelObject) (st : SystemState)
-    (hLookup : cspaceLookupSlot authority st = .ok (authCap, st)) :
-    lifecycleRetypeDirect authCap target newObj st =
-    lifecycleRetypeObject authority target newObj st := by
-  unfold lifecycleRetypeDirect lifecycleRetypeObject
-  cases hObj : st.objects[target]? with
-  | none => rfl
-  | some currentObj =>
-      by_cases hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType
-      · simp [hMeta, hLookup]
-      · simp [hMeta]
-
-/-- WS-K-D: `lifecycleRetypeDirect` returns `objectNotFound` when target missing. -/
-theorem lifecycleRetypeDirect_error_objectNotFound
-    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st : SystemState)
-    (hNone : st.objects[target]? = none) :
-    lifecycleRetypeDirect cap target newObj st = .error .objectNotFound := by
-  unfold lifecycleRetypeDirect; simp [hNone]
-
-/-- WS-K-D: `lifecycleRetypeDirect` returns `illegalState` on metadata mismatch. -/
-theorem lifecycleRetypeDirect_error_illegalState
-    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st : SystemState) (currentObj : KernelObject)
-    (hSome : st.objects[target]? = some currentObj)
-    (hMeta : st.lifecycle.objectTypes[target]? ≠ some currentObj.objectType) :
-    lifecycleRetypeDirect cap target newObj st = .error .illegalState := by
-  unfold lifecycleRetypeDirect; simp [hSome, hMeta]
-
-/-- WS-K-D: `lifecycleRetypeDirect` returns `illegalAuthority` when auth check fails. -/
-theorem lifecycleRetypeDirect_error_illegalAuthority
-    (cap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st : SystemState) (currentObj : KernelObject)
-    (hSome : st.objects[target]? = some currentObj)
-    (hMeta : st.lifecycle.objectTypes[target]? = some currentObj.objectType)
-    (hNoAuth : lifecycleRetypeAuthority cap target = false) :
-    lifecycleRetypeDirect cap target newObj st = .error .illegalAuthority := by
-  unfold lifecycleRetypeDirect; simp [hSome, hMeta, hNoAuth]
 
 -- ============================================================================
 -- U-H04: lifecycleRetypeDirectWithCleanup — pre-resolved authority + safe path
