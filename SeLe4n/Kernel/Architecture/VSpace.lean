@@ -201,6 +201,17 @@ def vspaceMapPageCheckedWithFlushPlatform (config : MachineConfig)
     else if !(paddr.toNat < physicalAddressBoundForConfig config) then .error .addressOutOfBounds
     else vspaceMapPageWithFlush asid vaddr paddr perms st
 
+/-- X2-E: **State-aware production entry point** — bounds-checked map with TLB flush
+    using `physicalAddressWidth` stored in `SystemState.machine`.
+    This avoids requiring a separate `MachineConfig` at the API dispatch site;
+    the width is read directly from the live machine state set during boot. -/
+def vspaceMapPageCheckedWithFlushFromState (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
+  fun st =>
+    if !vaddr.isCanonical then .error .addressOutOfBounds
+    else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then .error .addressOutOfBounds
+    else vspaceMapPageWithFlush asid vaddr paddr perms st
+
 -- ============================================================================
 -- V4-J/M-DEF-8: Default permissions documentation
 -- ============================================================================

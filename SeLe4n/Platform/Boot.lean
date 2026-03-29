@@ -57,8 +57,10 @@ structure PlatformConfig where
 
 -- V7-I: O(n) duplicate detection via HashSet accumulation.
 -- Replaces the O(n²) per-element `List.any` scan with a single-pass fold.
--- Note: `Std.HashSet` is opaque so proofs about these functions use
--- `native_decide` rather than `decide`.
+-- Note: `Std.HashSet` is opaque to Lean's kernel; for non-empty lists, proofs
+-- about these functions may require `native_decide`.  For empty-list base
+-- cases the `go` function reduces without touching HashSet, so `decide`
+-- suffices.  See `listAllDistinct` below for a fully transparent alternative.
 private def natKeysNoDup (keys : List Nat) : Bool :=
   let rec go : List Nat → Std.HashSet Nat → Bool
     | [], _ => true
@@ -66,6 +68,23 @@ private def natKeysNoDup (keys : List Nat) : Bool :=
       if seen.contains k then false
       else go rest (seen.insert k)
   go keys {}
+
+/-- X2-F: Transparent O(n²) duplicate detection for kernel-evaluable proofs.
+    Checks that no element appears later in the list. Unlike `natKeysNoDup`
+    (which uses opaque `Std.HashSet`), this function is fully transparent to
+    Lean's kernel, enabling `decide` instead of `native_decide` in proofs.
+    O(n²) is acceptable for boot-time lists (typically ≤100 entries). -/
+private def listAllDistinct [DecidableEq α] : List α → Bool
+  | [] => true
+  | x :: xs => !xs.contains x && listAllDistinct xs
+
+/-- X2-F: Transparent variant of `irqsUnique` for kernel-evaluable proofs. -/
+def irqsUniqueTransparent (irqs : List IrqEntry) : Bool :=
+  listAllDistinct (irqs.map (·.irq.toNat))
+
+/-- X2-F: Transparent variant of `objectIdsUnique` for kernel-evaluable proofs. -/
+def objectIdsUniqueTransparent (objs : List ObjectEntry) : Bool :=
+  listAllDistinct (objs.map (·.id.toNat))
 
 -- U6-E (U-M12): Duplicate IRQ detection.
 -- `registerIrq` uses `RHTable.insert` (last-wins on duplicate keys).
@@ -168,25 +187,30 @@ theorem bootFromPlatform_valid (config : PlatformConfig) :
    bootFromPlatform_perObjectMappings config,
    bootFromPlatform_lifecycleConsistent config⟩
 
-/-- U6-E: Empty IRQ list has no duplicates.
-V7-I: Uses `native_decide` because `Std.HashSet` is opaque to the kernel. -/
+/-- U6-E: Empty IRQ list has no duplicates. -/
 theorem irqsUnique_empty : irqsUnique [] = true := by
-  native_decide
+  decide
 
-/-- U6-F: Empty object list has no duplicates.
-V7-I: Uses `native_decide` because `Std.HashSet` is opaque to the kernel. -/
+/-- U6-F: Empty object list has no duplicates. -/
 theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
-  native_decide
+  decide
 
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs and unique object IDs. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects
 
-/-- U6-E/F: Empty config is well-formed.
-V7-I: Uses `native_decide` because `Std.HashSet` is opaque to the kernel. -/
+/-- U6-E/F: Empty config is well-formed. -/
 theorem PlatformConfig.wellFormed_empty :
     PlatformConfig.wellFormed { irqTable := [], initialObjects := [] } = true := by
-  native_decide
+  decide
+
+/-- X2-F: Transparent empty IRQ uniqueness — fully kernel-evaluable. -/
+theorem irqsUniqueTransparent_empty : irqsUniqueTransparent [] = true := by
+  decide
+
+/-- X2-F: Transparent empty object ID uniqueness — fully kernel-evaluable. -/
+theorem objectIdsUniqueTransparent_empty : objectIdsUniqueTransparent [] = true := by
+  decide
 
 /-- U6-E/F: Checked boot — rejects configs with duplicate IRQs or object IDs.
 
@@ -837,7 +861,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     rw [hSch]; decide
   -- 1. schedulerInvariantBundleFull
   have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
-    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · simp [queueCurrentConsistent, hSch]
     · show (bootFromPlatform config).state.scheduler.runnable.Nodup
       rw [hRun]; exact List.nodup_nil
@@ -852,6 +876,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       simp [RunQueue.toList, hRQflat] at hInFlat
     · -- V5-H: domainTimeRemainingPositive — boot scheduler is default, DTR = 5
       unfold domainTimeRemainingPositive; rw [hSch]; decide
+    · -- X2-A: domainScheduleEntriesPositive — boot scheduler has empty domainSchedule
+      intro e hMem
+      have hDS : (bootFromPlatform config).state.scheduler.domainSchedule = [] := by
+        rw [hSch]; decide
+      rw [hDS] at hMem; simp at hMem
   -- Boot-safe object bridge and shared helpers
   have hBS := bootFromPlatform_objects_bootSafe config hSafe
   have hCdtNS := bootFromPlatform_cdtNodeSlot_eq config

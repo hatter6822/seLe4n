@@ -1849,17 +1849,146 @@ theorem switchDomain_preserves_domainTimeRemainingPositive
         exact List.mem_of_getElem? hGet
       exact hEntriesPos nextEntry (hSched ▸ hInList)
 
-/-- WS-H6/WS-H12b/WS-H12e/V5-H: `switchDomain` preserves the full scheduler invariant bundle.
+-- ============================================================================
+-- X2-A/X2-C: domainSchedule frame lemmas
+-- The domain schedule is set once at boot and is immutable at runtime.
+-- Every scheduler operation preserves it, so these are pure frame lemmas.
+-- ============================================================================
+
+/-- X2-A: `switchDomain` preserves `domainSchedule`. In no-op branches (empty schedule,
+    `getElem?` miss) the state is unchanged. In the active branch, the scheduler update
+    uses `{ st.scheduler with ... }` which does not include `domainSchedule`. -/
+theorem switchDomain_preserves_domainSchedule
+    (st st' : SystemState)
+    (hStep : switchDomain st = .ok ((), st')) :
+    st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
+  unfold switchDomain at hStep
+  cases hSched : st.scheduler.domainSchedule with
+  | nil =>
+    simp [hSched] at hStep; cases hStep; exact hSched
+  | cons entry rest =>
+    simp only [hSched] at hStep
+    split at hStep
+    · simp at hStep; cases hStep; exact hSched
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      show entry :: rest = entry :: rest
+      rfl
+
+/-- X2-C: `saveOutgoingContext` preserves `domainSchedule`. -/
+private theorem saveOutgoingContext_preserves_domainSchedule
+    (st : SystemState) :
+    (saveOutgoingContext st).scheduler.domainSchedule = st.scheduler.domainSchedule := by
+  unfold saveOutgoingContext
+  cases st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+    simp
+    split <;> simp
+
+/-- X2-C: `restoreIncomingContext` preserves `domainSchedule`. -/
+private theorem restoreIncomingContext_preserves_domainSchedule
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContext st tid).scheduler.domainSchedule = st.scheduler.domainSchedule := by
+  unfold restoreIncomingContext
+  split <;> simp
+
+/-- X2-C: `chooseThread` preserves `domainSchedule`. -/
+private theorem chooseThread_preserves_domainSchedule
+    (st stCT : SystemState) (opt : Option SeLe4n.ThreadId)
+    (hStep : chooseThread st = .ok (opt, stCT)) :
+    stCT.scheduler.domainSchedule = st.scheduler.domainSchedule := by
+  unfold chooseThread at hStep
+  cases hCB : chooseBestInBucket st.objects.get? st.scheduler.runQueue st.scheduler.activeDomain with
+  | error e => simp [hCB] at hStep
+  | ok val =>
+    simp [hCB] at hStep
+    cases val with
+    | none => simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | some trip =>
+      obtain ⟨tid, _, _⟩ := trip
+      simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+
+/-- X2-C: `schedule` preserves `domainSchedule`. `schedule` only modifies `runQueue`,
+    `current`, `objects`, and `machine` — never `domainSchedule`. -/
+theorem schedule_preserves_domainSchedule
+    (st st' : SystemState)
+    (hStep : schedule st = .ok ((), st')) :
+    st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
+  unfold schedule at hStep
+  cases hCT : chooseThread st with
+  | error e => simp [hCT] at hStep
+  | ok pair =>
+    cases pair with
+    | mk opt stCT =>
+      have hSchedCT := chooseThread_preserves_domainSchedule st stCT opt hCT
+      simp [hCT] at hStep
+      cases opt with
+      | none =>
+        simp at hStep; unfold setCurrentThread at hStep; cases hStep
+        show (saveOutgoingContext stCT).scheduler.domainSchedule = st.scheduler.domainSchedule
+        rw [saveOutgoingContext_preserves_domainSchedule, hSchedCT]
+      | some tid =>
+        simp at hStep
+        split at hStep
+        · rename_i tcb _
+          split at hStep
+          · unfold setCurrentThread restoreIncomingContext saveOutgoingContext at hStep
+            split at hStep <;> simp only [Except.ok.injEq, Prod.mk.injEq] at hStep <;>
+              obtain ⟨_, rfl⟩ := hStep <;> exact hSchedCT
+          · simp at hStep
+        · simp at hStep
+
+/-- X2-C: `handleYield` preserves `domainSchedule`. -/
+theorem handleYield_preserves_domainSchedule
+    (st st' : SystemState)
+    (hStep : handleYield st = .ok ((), st')) :
+    st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.current with
+  | none => simp [hCur] at hStep
+  | some tid =>
+    simp [hCur] at hStep
+    split at hStep
+    · rename_i tcb _
+      have := schedule_preserves_domainSchedule _ _ hStep
+      simp at this; exact this
+    · simp at hStep
+
+/-- X2-C: `timerTick` preserves `domainSchedule`. -/
+theorem timerTick_preserves_domainSchedule
+    (st st' : SystemState)
+    (hStep : timerTick st = .ok ((), st')) :
+    st'.scheduler.domainSchedule = st.scheduler.domainSchedule := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.current with
+  | none =>
+    simp [hCur] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+  | some tid =>
+    simp [hCur] at hStep
+    split at hStep
+    · rename_i tcb _
+      split at hStep
+      · -- Time-slice expired: schedule is called
+        have hSched := schedule_preserves_domainSchedule _ _ hStep
+        simp at hSched; exact hSched
+      · -- Time-slice not expired: only objects/machine changed
+        simp at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    · simp at hStep
+
+/-- WS-H6/WS-H12b/WS-H12e/V5-H/X2-A: `switchDomain` preserves the full scheduler invariant bundle.
     V5-H: Now includes `domainTimeRemainingPositive` as the 8th conjunct.
-    Requires `hEntriesPos` — all domain schedule entries have positive length. -/
+    X2-A: `domainScheduleEntriesPositive` as the 9th conjunct (frame lemma — `domainSchedule`
+    immutable at runtime). `hEntriesPos` is now extracted from the bundle instead of
+    being required as an external hypothesis. -/
 theorem switchDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hObjInv : st.objects.invExt)
-    (hEntriesPos : ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0)
     (hStep : switchDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM, hDTR⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM, hDTR, hEntries⟩
+  have hEntriesPos := hEntries
   exact ⟨switchDomain_preserves_schedulerInvariantBundle st st' hBase hStep,
          switchDomain_preserves_timeSlicePositive st st' hTS hCurTS hObjInv hStep,
          switchDomain_preserves_currentTimeSlicePositive st st' hCurTS hStep,
@@ -1867,7 +1996,8 @@ theorem switchDomain_preserves_schedulerInvariantBundleFull
          switchDomain_preserves_contextMatchesCurrent st st' hCtx hStep,
          switchDomain_preserves_runnableThreadsAreTCBs st st' hRunnTcb hObjInv hStep,
          switchDomain_preserves_schedulerPriorityMatch st st' hBase hPM hObjInv hStep,
-         switchDomain_preserves_domainTimeRemainingPositive st st' hDTR hEntriesPos hStep⟩
+         switchDomain_preserves_domainTimeRemainingPositive st st' hDTR hEntriesPos hStep,
+         fun e hMem => hEntries e (switchDomain_preserves_domainSchedule st st' hStep ▸ hMem)⟩
 
 /-- WS-H6: `setCurrentThread (some tid)` preserves EDF when the selected thread
 satisfies the EDF deadline ordering among same-domain/same-priority candidates. -/
@@ -2951,7 +3081,7 @@ theorem schedule_preserves_schedulerInvariantBundleFull
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM, hDTR⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM, hDTR, hEntries⟩
   have hpm := hPM
   exact ⟨schedule_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          schedule_preserves_timeSlicePositive st st' hTS hObjInv hStep,
@@ -2960,7 +3090,8 @@ theorem schedule_preserves_schedulerInvariantBundleFull
          schedule_preserves_contextMatchesCurrent st st' hObjInv hStep,
          schedule_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
          schedule_preserves_schedulerPriorityMatch st st' hpm hAllTcb hObjInv hStep,
-         schedule_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep⟩
+         schedule_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep,
+         fun e hMem => hEntries e (schedule_preserves_domainSchedule st st' hStep ▸ hMem)⟩
 
 /-- WS-H6/WS-H12b: `handleYield` preserves the full scheduler invariant bundle.
     R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
@@ -2973,7 +3104,7 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM, hDTR⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, _hCtx, _hRunnTcb, hPM, hDTR, hEntries⟩
   have hpm := hPM
   exact ⟨handleYield_preserves_schedulerInvariantBundle st st' hBase hObjInv hStep,
          handleYield_preserves_timeSlicePositive st st' hTS hCurTS hObjInv hStep,
@@ -2982,7 +3113,8 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
          handleYield_preserves_contextMatchesCurrent st st' hObjInv hStep,
          handleYield_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
          handleYield_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep,
-         handleYield_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep⟩
+         handleYield_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep,
+         fun e hMem => hEntries e (handleYield_preserves_domainSchedule st st' hStep ▸ hMem)⟩
 
 /-- WS-H6/WS-H12b: `timerTick` preserves the full scheduler invariant bundle.
     R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
@@ -2995,7 +3127,7 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
-  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb, hPM, hDTR⟩
+  rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb, hPM, hDTR, hEntries⟩
   have hpm := hPM
   exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hObjInv hStep,
          timerTick_preserves_timeSlicePositive st st' hTS hObjInv hStep,
@@ -3004,7 +3136,8 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
          timerTick_preserves_contextMatchesCurrent st st' hCtx hObjInv hStep,
          timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
          timerTick_preserves_schedulerPriorityMatch st st' hpm hBase.1 hAllTcb hObjInv hStep,
-         timerTick_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep⟩
+         timerTick_preserves_domainTimeRemainingPositive st st' hDTR hObjInv hStep,
+         fun e hMem => hEntries e (timerTick_preserves_domainSchedule st st' hStep ▸ hMem)⟩
 
 -- ============================================================================
 -- S3-E: scheduleDomain full bundle preservation
@@ -3041,20 +3174,19 @@ private theorem switchDomain_preserves_runQueueWellFormed
           | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ =>
             exact hwf
 
-/-- S3-E/U-M08/V5-H: `scheduleDomain` preserves `schedulerInvariantBundleFull`.
+/-- S3-E/U-M08/V5-H/X2-A: `scheduleDomain` preserves `schedulerInvariantBundleFull`.
 
     Composes `switchDomain_preserves_schedulerInvariantBundleFull` and
     `schedule_preserves_schedulerInvariantBundleFull` for the expire path.
     In the non-expire path, `domainTimeRemaining` is decremented by 1;
     V5-H proves the result is still > 0 since the guard ensures > 1.
-    Requires `hEntriesPos` for the expire path (switchDomain sets
-    domainTimeRemaining to an entry's length). -/
+    X2-A: `hEntriesPos` is now extracted from the bundle (9th conjunct)
+    instead of being required as an external hypothesis. -/
 theorem scheduleDomain_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
     (hwf : RunQueue.wellFormed st.scheduler.runQueue)
     (hObjInv : st.objects.invExt)
-    (hEntriesPos : ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0)
     (hStep : scheduleDomain st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
   unfold scheduleDomain at hStep
@@ -3066,9 +3198,9 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
         cases pair with
         | mk _ stSw =>
             have hSched : schedule stSw = .ok ((), st') := by simpa [hSw] using hStep
-            -- switchDomain preserves the full bundle (V5-H: now requires hEntriesPos)
+            -- switchDomain preserves the full bundle (X2-A: hEntriesPos now in bundle)
             have hSwInv : schedulerInvariantBundleFull stSw :=
-              switchDomain_preserves_schedulerInvariantBundleFull st stSw hInv hObjInv hEntriesPos (by simp [hSw])
+              switchDomain_preserves_schedulerInvariantBundleFull st stSw hInv hObjInv (by simp [hSw])
             -- switchDomain preserves objects.invExt
             have hSwObjInv : stSw.objects.invExt :=
               switchDomain_preserves_objects_invExt st stSw hObjInv (by simp [hSw])
@@ -3087,8 +3219,8 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
     -- V5-H: All bundle components except domainTimeRemainingPositive are preserved
     -- trivially (only domainTimeRemaining changed). For domainTimeRemainingPositive,
     -- ¬(domainTimeRemaining ≤ 1) implies domainTimeRemaining > 1, so - 1 > 0.
-    rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM, hDTR⟩
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, hRunnTcb, hPM, hDTR, hEntries⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · exact hBase
     · exact hTS
     · exact hCurTS
@@ -3097,3 +3229,4 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
     · exact hRunnTcb
     · exact hPM
     · unfold domainTimeRemainingPositive at *; simp; omega
+    · exact hEntries

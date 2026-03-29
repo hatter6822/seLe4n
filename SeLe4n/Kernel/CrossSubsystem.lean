@@ -575,4 +575,23 @@ theorem serviceGraphInvariant_monotone
     exact hInv.1 sid (hPathTransfer sid sid hPath)
   · exact serviceCountBounded_monotone hServices hGrow hInv.2
 
+-- ============================================================================
+-- X2-G/X2-H: revokeService preserves noStaleNotificationWaitReferences
+-- ============================================================================
+
+/-- X2-G/X2-H: Service revocation preserves notification wait-list validity.
+    `revokeService` only modifies `serviceRegistry` and `services` (via
+    `removeDependenciesOf`); it does NOT modify `objects`. Since
+    `noStaleNotificationWaitReferences` depends only on `objects`, the
+    invariant is preserved as a frame — no notification wait-list cleanup
+    is needed during service revocation. -/
+theorem revokeService_preserves_noStaleNotificationWaitReferences
+    (st st' : SystemState) (svcId : ServiceId)
+    (hPre : noStaleNotificationWaitReferences st)
+    (hStep : revokeService svcId st = .ok ((), st')) :
+    noStaleNotificationWaitReferences st' :=
+  noStaleNotificationWaitReferences_frame st st'
+    (revokeService_preserves_objects st st' svcId hStep)
+    hPre
+
 end SeLe4n.Kernel

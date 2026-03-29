@@ -45,6 +45,19 @@ audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
   VSpace determinism through functional correctness. Documentation updated.
   Zero sorry/axiom. `test_full.sh` green.
 
+- **X2 (Runtime Invariant Enforcement) COMPLETE** (v0.22.19): 9 sub-tasks
+  (X2-A through X2-I). 5 findings resolved (H-2, H-6, H-8, M-4, M-6):
+  **H-2**: `domainScheduleEntriesPositive` predicate as 9th conjunct of
+  `schedulerInvariantBundleFull`. `setDomainScheduleChecked` builder validation.
+  7 frame lemmas + 4 bundle preservation updates.
+  **H-6**: `physicalAddressWidth` field in `MachineState`.
+  `vspaceMapPageCheckedWithFlushFromState` state-aware PA bounds.
+  **H-8**: `listAllDistinct` transparent duplicate detection. 3 `native_decide`
+  → `decide`.
+  **M-4**: `revokeService_preserves_noStaleNotificationWaitReferences` frame lemma.
+  **M-6**: 4 checked scheduler wrappers with `saveOutgoingContextChecked`.
+  Zero sorry/axiom. `test_full.sh` green.
+
 ### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — COMPLETE
 
 WS-W addresses 49 unique actionable findings from three comprehensive audits of

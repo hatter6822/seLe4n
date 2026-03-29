@@ -103,6 +103,12 @@ structure SchedulerState where
 abbrev SchedulerState.runnable (s : SchedulerState) : List SeLe4n.ThreadId :=
   s.runQueue.toList
 
+/-- X2-B/H-2: Check that all domain schedule entries have positive length.
+This is a runtime-checkable predicate for validating domain schedule
+configurations before they are installed. -/
+def SchedulerState.domainScheduleAllPositive (schedule : List DomainScheduleEntry) : Bool :=
+  schedule.all (fun e => e.length > 0)
+
 /-- Architecture-neutral address of a capability slot inside a CNode object. -/
 structure SlotRef where
   cnode : SeLe4n.ObjId
@@ -276,6 +282,17 @@ instance : Inhabited SystemState where
     cdtNextNode := ⟨0⟩
     tlb := TlbState.empty
   }
+
+/-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
+positive length before installing the schedule. Returns `.error` on invalid
+input to prevent `switchDomain` from setting `domainTimeRemaining` to 0.
+Use this instead of directly setting `scheduler.domainSchedule`. -/
+def setDomainScheduleChecked (st : SystemState) (schedule : List DomainScheduleEntry) :
+    Except String SystemState :=
+  if SchedulerState.domainScheduleAllPositive schedule then
+    .ok { st with scheduler := { st.scheduler with domainSchedule := schedule } }
+  else
+    .error "setDomainScheduleChecked: domain schedule contains zero-length entry"
 
 /-- Q2-J: Predicate asserting that every RHTable and RHSet in the system state
 satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys ∧

@@ -107,13 +107,14 @@ Data structure:
 Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)
-- `schedulerInvariantBundleFull` (8-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs ∧ schedulerPriorityMatch ∧ domainTimeRemainingPositive`, R6-D/L-12/V5-H)
+- `schedulerInvariantBundleFull` (9-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs ∧ schedulerPriorityMatch ∧ domainTimeRemainingPositive ∧ domainScheduleEntriesPositive`, R6-D/L-12/V5-H/X2-A)
 
 Extraction theorems:
 
-- `schedulerInvariantBundleFull_to_contextMatchesCurrent` — extracts `contextMatchesCurrent` from the 8-conjunct bundle (WS-H12e + WS-F6/D3)
-- `schedulerInvariantBundleFull_to_priorityMatch` — extracts `schedulerPriorityMatch` from the 8-conjunct bundle (R6-D/L-12)
-- `schedulerInvariantBundleFull_to_domainTimeRemainingPositive` — extracts `domainTimeRemainingPositive` from the 8-conjunct bundle (V5-H)
+- `schedulerInvariantBundleFull_to_contextMatchesCurrent` — extracts `contextMatchesCurrent` from the 9-conjunct bundle (WS-H12e + WS-F6/D3)
+- `schedulerInvariantBundleFull_to_priorityMatch` — extracts `schedulerPriorityMatch` from the 9-conjunct bundle (R6-D/L-12)
+- `schedulerInvariantBundleFull_to_domainTimeRemainingPositive` — extracts `domainTimeRemainingPositive` from the 9-conjunct bundle (V5-H)
+- `schedulerInvariantBundleFull_to_domainScheduleEntriesPositive` — extracts `domainScheduleEntriesPositive` from the 9-conjunct bundle (X2-A)
 
 Preservation shape:
 
