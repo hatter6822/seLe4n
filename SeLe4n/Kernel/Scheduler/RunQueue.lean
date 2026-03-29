@@ -379,40 +379,6 @@ theorem toList_filter_insert_neg' (rq : RunQueue) (tid : ThreadId) (prio : Prior
     simp only [insert, hContains, ite_true]
   · exact toList_filter_insert_neg rq tid prio p hp hMem
 
-/-- WS-H12b: Inserting the same thread (possibly at different priorities) into two
-run queues preserves filter equality, provided the thread passes the predicate
-and both queues already have equal filtered lists.
-When `tid ∈ rq`, insert is a no-op. When `tid ∉ rq`, insert appends tid. -/
-theorem toList_filter_insert_congr (rq₁ rq₂ : RunQueue) (tid : ThreadId)
-    (prio₁ prio₂ : Priority) (p : ThreadId → Bool) (hp : p tid = true)
-    (hBase : rq₁.toList.filter p = rq₂.toList.filter p) :
-    (rq₁.insert tid prio₁).toList.filter p = (rq₂.insert tid prio₂).toList.filter p := by
-  -- Determine membership of tid in both queues
-  -- From hBase and hp: tid ∈ rq₁ ↔ tid ∈ rq₂
-  have hMem_iff : tid ∈ rq₁ ↔ tid ∈ rq₂ := by
-    constructor
-    · intro h
-      have h1 : tid ∈ rq₁.toList := (mem_toList_iff_mem rq₁ tid).mpr h
-      have h2 : tid ∈ rq₁.toList.filter p := List.mem_filter.mpr ⟨h1, by simp [hp]⟩
-      rw [hBase] at h2
-      exact (mem_toList_iff_mem rq₂ tid).mp (List.mem_filter.mp h2).1
-    · intro h
-      have h1 : tid ∈ rq₂.toList := (mem_toList_iff_mem rq₂ tid).mpr h
-      have h2 : tid ∈ rq₂.toList.filter p := List.mem_filter.mpr ⟨h1, by simp [hp]⟩
-      rw [← hBase] at h2
-      exact (mem_toList_iff_mem rq₁ tid).mp (List.mem_filter.mp h2).1
-  by_cases hMem₁ : tid ∈ rq₁
-  · -- Both in: insert is no-op on both sides
-    have hMem₂ := hMem_iff.mp hMem₁
-    have hc₁ : rq₁.contains tid = true := by rwa [mem_iff_contains] at hMem₁
-    have hc₂ : rq₂.contains tid = true := by rwa [mem_iff_contains] at hMem₂
-    simp only [insert, hc₁, hc₂, ite_true]; exact hBase
-  · -- Both not in: insert appends tid
-    have hMem₂ : ¬(tid ∈ rq₂) := fun h => hMem₁ (hMem_iff.mpr h)
-    rw [toList_insert_not_mem _ _ _ hMem₁, toList_insert_not_mem _ _ _ hMem₂]
-    simp only [List.filter_append, List.filter, hp]
-    exact congrArg (· ++ [tid]) hBase
-
 theorem toList_filter_remove_neg (rq : RunQueue) (tid : ThreadId)
     (p : ThreadId → Bool) (hp : p tid = false) :
     (rq.remove tid).toList.filter p = rq.toList.filter p := by
@@ -420,9 +386,6 @@ theorem toList_filter_remove_neg (rq : RunQueue) (tid : ThreadId)
     simp only [toList]; exact h
   unfold remove
   exact filter_filter_ne_of_false rq.flat tid p hp
-
-theorem toList_nodup_of_flat_nodup (rq : RunQueue) (h : rq.flat.Nodup) :
-    rq.toList.Nodup := h
 
 /-- After remove, tid is not in the flat list. -/
 theorem not_mem_remove_toList (rq : RunQueue) (tid : ThreadId) :
@@ -432,14 +395,6 @@ theorem not_mem_remove_toList (rq : RunQueue) (tid : ThreadId) :
   intro h
   rw [List.mem_filter] at h
   exact absurd h.2 (by simp)
-
-/-- tid is in the toList after rotateToBack. -/
-theorem mem_toList_rotateToBack_self (rq : RunQueue) (tid : ThreadId) (hMem : tid ∈ rq) :
-    tid ∈ (rq.rotateToBack tid).toList := by
-  simp only [toList]
-  unfold rotateToBack
-  have hc : rq.contains tid = true := by rwa [← mem_iff_contains]
-  simp [hc, List.mem_append]
 
 /-- rotateToBack preserves Nodup on the toList. -/
 theorem toList_rotateToBack_nodup (rq : RunQueue) (tid : ThreadId)
@@ -458,22 +413,6 @@ theorem toList_rotateToBack_nodup (rq : RunQueue) (tid : ThreadId)
     have : y = tid := by simpa using hy
     subst this; intro hEq; subst hEq
     exact hNotMemErase hx
-
-/-- An element other than tid is in the toList after rotateToBack iff it was before. -/
-theorem mem_toList_rotateToBack_ne (rq : RunQueue) (tid x : ThreadId)
-    (hne : x ≠ tid) :
-    x ∈ (rq.rotateToBack tid).toList ↔ x ∈ rq.toList := by
-  simp only [toList]
-  unfold rotateToBack
-  split
-  · simp only [List.mem_append, List.mem_singleton]
-    constructor
-    · intro h; cases h with
-      | inl h => exact List.mem_of_mem_erase h
-      | inr h => exact absurd h hne
-    · intro h
-      exact Or.inl (List.mem_erase_of_ne hne |>.mpr h)
-  · exact Iff.rfl
 
 /-- WS-H9: Erasing an element with `p a = false` preserves the filtered list. -/
 private theorem filter_erase_of_false {α : Type} [DecidableEq α] [BEq α] [LawfulBEq α]
@@ -592,12 +531,6 @@ theorem rotateToBack_threadPriority (rq : RunQueue) (tid : ThreadId) :
   unfold rotateToBack
   split <;> rfl
 
-/-- `rotateToBack` does not change `maxPriority`. -/
-theorem rotateToBack_maxPriority (rq : RunQueue) (tid : ThreadId) :
-    (rq.rotateToBack tid).maxPriority = rq.maxPriority := by
-  unfold rotateToBack
-  split <;> rfl
-
 /-- `rotateToBack` does not change `contains`. -/
 theorem rotateToBack_contains (rq : RunQueue) (tid t : ThreadId) :
     (rq.rotateToBack tid).contains t = rq.contains t := by
@@ -607,30 +540,6 @@ theorem rotateToBack_contains (rq : RunQueue) (tid t : ThreadId) :
 theorem rotateToBack_mem_iff (rq : RunQueue) (tid t : ThreadId) :
     t ∈ rq.rotateToBack tid ↔ t ∈ rq := by
   simp only [mem_iff_contains, rotateToBack_contains]
-
-/-- Elements of the rotated flat list were in the original flat list. -/
-theorem rotateToBack_flat_subset (rq : RunQueue) (tid t : ThreadId) :
-    t ∈ (rq.rotateToBack tid).flat → t ∈ rq.flat := by
-  unfold rotateToBack
-  split
-  · intro h
-    simp only [List.mem_append, List.mem_singleton] at h
-    rcases h with h | rfl
-    · exact List.mem_of_mem_erase h
-    · exact rq.flat_wf_rev _ (by assumption)
-  · exact id
-
-/-- Original flat list elements appear in the rotated flat list. -/
-theorem rotateToBack_flat_superset (rq : RunQueue) (tid t : ThreadId) :
-    t ∈ rq.flat → t ∈ (rq.rotateToBack tid).flat := by
-  unfold rotateToBack
-  split
-  · intro h
-    simp only [List.mem_append, List.mem_singleton]
-    by_cases hEq : t = tid
-    · exact Or.inr hEq
-    · exact Or.inl ((List.mem_erase_of_ne hEq).2 h)
-  · exact id
 
 /-- `rotateToBack` preserves `wellFormed`. -/
 theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) (tid : ThreadId) :
@@ -931,22 +840,6 @@ theorem remove_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
       rw [RHTable_get?_erase_ne_K rq.threadPriority tid t hNeBeq rq.threadPrio_invExtK]
       exact hpTP
     · exact remove_byPrio_from_orig rq tid p t hTNe hpBucket
-
-/-- T4-L (M-SCH-1): After inserting a thread at priority `prio`, the resulting
-`maxPriority` is `some` of the maximum of the old `maxPriority` (if any) and
-`prio`. When the queue was empty (maxPriority = none), the result is `some prio`.
-When the queue was non-empty, the result is the larger of old and new priorities.
-
-Proof: by definitional unfolding of `insert`; the `maxPriority` field is computed
-by a `match` on the old `maxPriority` + a comparison, which is exactly this
-specification. -/
-theorem insert_maxPriority_consistency (rq : RunQueue) (tid : ThreadId) (prio : Priority)
-    (hNew : rq.contains tid = false) :
-    (rq.insert tid prio).maxPriority =
-      match rq.maxPriority with
-      | none => some prio
-      | some mp => if prio.toNat > mp.toNat then some prio else some mp := by
-  unfold insert; simp [hNew]
 
 end RunQueue
 end SeLe4n.Kernel
