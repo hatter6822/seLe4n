@@ -112,43 +112,48 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
   let st := builder.build
   let oids := builder.objects.map Prod.fst
   let uniqueOids := oids.eraseDups
+  -- W5-D: Each check includes its number for debuggability
   -- Check 1: No duplicate object IDs in builder input
   if oids.length ≠ uniqueOids.length then
-    .error s!"BuilderTestState: duplicate object IDs (got {oids.length} entries, {uniqueOids.length} unique)"
+    .error s!"BuilderTestState check 1 failed: duplicate object IDs (got {oids.length} entries, {uniqueOids.length} unique)"
   -- Check 2: Lifecycle objectTypes reference existing objects with correct type
   else if builder.lifecycleObjectTypes.any (fun (oid, _) => !oids.contains oid) then
-    .error "BuilderTestState: lifecycleObjectTypes references non-existent object ID"
+    let bad := builder.lifecycleObjectTypes.filter (fun (oid, _) => !oids.contains oid)
+    .error s!"BuilderTestState check 2a failed: lifecycleObjectTypes references non-existent object ID(s): {bad.map Prod.fst}"
   else if builder.lifecycleObjectTypes.any (fun (oid, ty) =>
     match builder.objects.find? (fun (o, _) => o == oid) with
     | some (_, obj) => obj.objectType != ty
     | none => true) then
-    .error "BuilderTestState: lifecycleObjectTypes type tag mismatch with actual object"
+    .error "BuilderTestState check 2b failed: lifecycleObjectTypes type tag mismatch with actual object"
   -- Check 3: Runnable threads reference existing TCB objects
   else if builder.runnable.any (fun tid =>
     !builder.objects.any (fun (oid, obj) =>
       oid.toNat = tid.toNat && match obj with | .tcb _ => true | _ => false)) then
-    .error "BuilderTestState: runnable thread does not reference an existing TCB"
+    let bad := builder.runnable.filter (fun tid =>
+      !builder.objects.any (fun (oid, obj) =>
+        oid.toNat = tid.toNat && match obj with | .tcb _ => true | _ => false))
+    .error s!"BuilderTestState check 3 failed: runnable thread(s) do not reference existing TCB(s): {bad}"
   -- Check 4: CNode slot table capacity bounds
   else if builder.objects.any (fun (_, obj) =>
     match obj with
     | .cnode cn => cn.slots.capacity < 4 || cn.slots.size >= cn.slots.capacity
     | _ => false) then
-    .error "BuilderTestState: CNode slots violate capacity bounds (need 4 ≤ capacity, size < capacity)"
+    .error "BuilderTestState check 4 failed: CNode slots violate capacity bounds (need 4 ≤ capacity, size < capacity)"
   -- Check 5: IRQ handlers reference existing objects
   else if builder.irqHandlers.any (fun (_, oid) => !oids.contains oid) then
-    .error "BuilderTestState: IRQ handler references non-existent object"
+    .error "BuilderTestState check 5 failed: IRQ handler references non-existent object"
   -- Check 6: Lifecycle capabilityRefs reference existing CNode objects
   else if builder.lifecycleCapabilityRefs.any (fun (ref, _) =>
     !builder.objects.any (fun (oid, obj) =>
       oid == ref.cnode && match obj with | .cnode _ => true | _ => false)) then
-    .error "BuilderTestState: capabilityRef references non-existent CNode"
+    .error "BuilderTestState check 6 failed: capabilityRef references non-existent CNode"
   -- Check 7: VSpaceRoot ASID uniqueness
   else
     let asids := builder.objects.filterMap (fun (_, obj) =>
       match obj with | .vspaceRoot vs => some vs.asid | _ => none)
     let uniqueAsids := asids.eraseDups
     if asids.length ≠ uniqueAsids.length then
-      .error "BuilderTestState: duplicate ASIDs across VSpaceRoot objects"
+      .error "BuilderTestState check 7 failed: duplicate ASIDs across VSpaceRoot objects"
     -- Check 8: Dequeue-on-dispatch (WS-H12b) — current thread must NOT be in
     -- the runnable list. The scheduler removes the dispatched thread from the
     -- run queue before setting it as current. If current is set AND also in
@@ -156,7 +161,7 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
     else match builder.current with
     | some tid =>
       if builder.runnable.any (fun t => t.toNat == tid.toNat) then
-        .error "BuilderTestState: current thread must not be in runnable list (dequeue-on-dispatch, WS-H12b)"
+        .error s!"BuilderTestState check 8 failed: current thread {tid.toNat} must not be in runnable list (dequeue-on-dispatch, WS-H12b)"
       else .ok st
     | none => .ok st
 

@@ -317,6 +317,11 @@ For each CPtr in `capAddrs`, resolve it via `resolveCapAddress` in the
 sender's CSpace root, then look up the capability at the resolved slot.
 Caps that fail to resolve are silently dropped (seL4 behavior).
 Returns the resolved capabilities as an array. -/
+/- W5-G: Resolves extra capabilities from IPC buffer. Failed resolutions are
+   silently dropped (matching seL4 `lookupExtraCaps` behavior). This means
+   the receiver gets fewer extra caps than the sender specified. For
+   debugging, callers should check `extraCaps.length` against the expected
+   count from `MessageInfo.extraCaps`. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) : Array Capability :=

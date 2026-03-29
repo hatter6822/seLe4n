@@ -97,13 +97,14 @@ theorem policyOwnerAuthoritySlotPresent_of_lifecycleInvariant
     ⟨cap, hLookup, hTarget⟩
   exact ⟨slot, cap, hLookup, hTarget⟩
 
-/-- Bridge lemma: capability lookup-soundness assumptions imply owner-slot witness facts. -/
+/-- Bridge lemma: capability lookup-soundness assumptions imply owner-slot witness facts.
+    W5-F: Removed unused `_hCap : capabilityInvariantBundle st` parameter — the proof
+    only requires the lookup equivalence, not the full capability invariant bundle. -/
 theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup
     (st : SystemState)
     (svc : ServiceGraphEntry)
     (slot : SeLe4n.Slot)
     (cap : Capability)
-    (_hCap : capabilityInvariantBundle st)
     (hLookup : cspaceLookupSlot { cnode := svc.identity.owner, slot := slot } st = .ok (cap, st))
     (hTarget : cap.target = .object svc.identity.backingObject) :
     policyOwnerAuthoritySlotPresent st svc := by

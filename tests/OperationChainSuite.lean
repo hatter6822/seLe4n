@@ -9,6 +9,7 @@
 import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Testing.Helpers
 import SeLe4n.Platform.Boot
 
 set_option maxRecDepth 1024
@@ -20,42 +21,25 @@ namespace SeLe4n.Testing
 instance : Inhabited SeLe4n.Kernel.CSpaceAddr where
   default := { cnode := ⟨0⟩, slot := ⟨0⟩ }
 
-private def expect (label : String) (cond : Bool) : IO Unit := do
-  if cond then
-    IO.println s!"operation-chain check passed [{label}]"
-  else
-    throw <| IO.userError s!"operation-chain check failed [{label}]"
+-- W5-A: Consolidated test helpers — delegate to SeLe4n.Testing shared helpers
+private def expect (label : String) (cond : Bool) : IO Unit :=
+  SeLe4n.Testing.expectCond "operation-chain" label cond
 
-private def expectOkState
+private def expectOkSt
     (label : String)
     (actual : Except KernelError (α × SystemState)) : IO (α × SystemState) :=
-  match actual with
-  | .ok result => do
-      IO.println s!"operation-chain check passed [{label}]"
-      pure result
-  | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {toString err}"
+  SeLe4n.Testing.expectOkState label actual (msgPrefix := "operation-chain check")
 
-private def runKernelState
+private def runKernelSt
     (label : String)
     (actual : Except KernelError (Unit × SystemState)) : IO SystemState :=
-  match actual with
-  | .ok (_, st) =>
-      pure st
-  | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {toString err}"
+  SeLe4n.Testing.runKernelState label actual
 
-private def expectError
+private def expectErr
     (label : String)
     (actual : Except KernelError α)
     (expected : KernelError) : IO Unit :=
-  match actual with
-  | .ok _ => throw <| IO.userError s!"{label}: expected {toString expected}, got success"
-  | .error err =>
-      if err = expected then
-        IO.println s!"operation-chain check passed [{label}]"
-      else
-        throw <| IO.userError s!"{label}: expected {toString expected}, got {toString err}"
+  SeLe4n.Testing.expectError label actual expected (msgPrefix := "operation-chain check")
 
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
@@ -82,11 +66,19 @@ private def chain1RetypeMintRevoke : IO Unit := do
       |>.withLifecycleCapabilityRef authSlot (.object targetId)
       |>.buildChecked)
 
-  let (_, st1) ← expectOkState "chain1: lifecycleRetypeObject"
+  let (_, st1) ← expectOkSt "chain1: lifecycleRetypeObject"
     (SeLe4n.Kernel.lifecycleRetypeObject authSlot targetId (.endpoint {}) st0)
-  let (_, st2) ← expectOkState "chain1: cspaceMint"
+  -- W5-E: Verify post-state mutation — target retyped to endpoint
+  match st1.objects[targetId]? with
+  | some (.endpoint _) => expect "chain1: target retyped to endpoint" true
+  | _ => throw <| IO.userError "chain1: target not retyped to endpoint"
+  let (_, st2) ← expectOkSt "chain1: cspaceMint"
     (SeLe4n.Kernel.cspaceMint authSlot dstSlot (AccessRightSet.ofList [.read]) none st1)
-  let (_, st3) ← expectOkState "chain1: cspaceRevokeCdtStrict"
+  -- W5-E: Verify post-state mutation — minted cap in destination slot
+  match st2.objects[cnodeId]? with
+  | some (.cnode cn) => expect "chain1: mint dest slot populated" (cn.slots[(⟨1⟩ : SeLe4n.Slot)]?.isSome)
+  | _ => throw <| IO.userError "chain1: CNode not found after mint"
+  let (_, st3) ← expectOkSt "chain1: cspaceRevokeCdtStrict"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict dstSlot st2)
   assertInvariants "chain1: retype→mint→revoke" st3
 
@@ -105,9 +97,9 @@ private def chain2SendSendReceiveFifo : IO Unit := do
       |>.buildChecked)
   let msg1 : IpcMessage := .empty
   let msg2 : IpcMessage := .empty
-  let (_, st1) ← expectOkState "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 msg1 st0)
-  let (_, st2) ← expectOkState "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 msg2 st1)
-  let (sender, st3) ← expectOkState "chain2: receive" (SeLe4n.Kernel.endpointReceiveDual epId tid3 st2)
+  let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 msg1 st0)
+  let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 msg2 st1)
+  let (sender, st3) ← expectOkSt "chain2: receive" (SeLe4n.Kernel.endpointReceiveDual epId tid3 st2)
   expect "chain2: FIFO sender order" (sender = tid1)
   assertInvariants "chain2: send→send→receive" st3
 
@@ -119,15 +111,15 @@ private def chain3MapLookupUnmapLookup : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨220⟩ (.vspaceRoot { asid := asid, mappings := {} })
       |>.buildChecked)
-  let (_, st1) ← expectOkState "chain3: map page"
+  let (_, st1) ← expectOkSt "chain3: map page"
     (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid vaddr paddr default st0)
-  let (resolved, _) ← expectOkState "chain3: lookup after map"
+  let (resolved, _) ← expectOkSt "chain3: lookup after map"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid vaddr st1)
   expect "chain3: map/lookup roundtrip" (resolved = paddr)
-  let (_, st2) ← expectOkState "chain3: unmap page"
+  let (_, st2) ← expectOkSt "chain3: unmap page"
     (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid vaddr st1)
   assertInvariants "chain3: map→lookup→unmap" st2
-  expectError "chain3: lookup after unmap"
+  expectErr "chain3: lookup after unmap"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid vaddr st2) .translationFault
 
 private def chain4ServiceRegistryDependencyGraph : IO Unit := do
@@ -149,10 +141,10 @@ private def chain4ServiceRegistryDependencyGraph : IO Unit := do
   -- Q1: Service lifecycle removed — test dependency graph operations
   expect "chain4: depSid depends on baseSid" ((SeLe4n.Model.lookupService st0 depSid).map ServiceGraphEntry.dependencies = some [baseSid])
   -- Register a new dependency: depSid → baseSid already exists, add baseSid → depSid to form a cycle rejection
-  expectError "chain4: cyclic dependency registration rejected"
+  expectErr "chain4: cyclic dependency registration rejected"
     (SeLe4n.Kernel.serviceRegisterDependency baseSid depSid st0) .cyclicDependency
   -- Self-loop rejection
-  expectError "chain4: self-loop dependency rejected"
+  expectErr "chain4: self-loop dependency rejected"
     (SeLe4n.Kernel.serviceRegisterDependency baseSid baseSid st0) .cyclicDependency
 
 private def chain5CopyMoveDelete : IO Unit := do
@@ -176,9 +168,23 @@ private def chain5CopyMoveDelete : IO Unit := do
       |>.withLifecycleObjectType target .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.buildChecked)
-  let (_, st1) ← expectOkState "chain5: copy cap" (SeLe4n.Kernel.cspaceCopy src copyDst st0)
-  let (_, st2) ← expectOkState "chain5: move copied cap" (SeLe4n.Kernel.cspaceMove copyDst moveDst st1)
-  let (_, st3) ← expectOkState "chain5: delete moved cap" (SeLe4n.Kernel.cspaceDeleteSlot moveDst st2)
+  let (_, st1) ← expectOkSt "chain5: copy cap" (SeLe4n.Kernel.cspaceCopy src copyDst st0)
+  -- W5-E: Verify post-state mutation — copied cap appears in destination slot
+  match st1.objects[cnodeId]? with
+  | some (.cnode cn) => expect "chain5: copy target slot populated" (cn.slots[(⟨1⟩ : SeLe4n.Slot)]?.isSome)
+  | _ => throw <| IO.userError "chain5: CNode not found after copy"
+  let (_, st2) ← expectOkSt "chain5: move copied cap" (SeLe4n.Kernel.cspaceMove copyDst moveDst st1)
+  -- W5-E: Verify post-state mutation — source slot cleared, dest slot populated
+  match st2.objects[cnodeId]? with
+  | some (.cnode cn) =>
+    expect "chain5: move source slot cleared" (cn.slots[(⟨1⟩ : SeLe4n.Slot)]?.isNone)
+    expect "chain5: move dest slot populated" (cn.slots[(⟨2⟩ : SeLe4n.Slot)]?.isSome)
+  | _ => throw <| IO.userError "chain5: CNode not found after move"
+  let (_, st3) ← expectOkSt "chain5: delete moved cap" (SeLe4n.Kernel.cspaceDeleteSlot moveDst st2)
+  -- W5-E: Verify post-state mutation — deleted slot cleared
+  match st3.objects[cnodeId]? with
+  | some (.cnode cn) => expect "chain5: delete slot cleared" (cn.slots[(⟨2⟩ : SeLe4n.Slot)]?.isNone)
+  | _ => throw <| IO.userError "chain5: CNode not found after delete"
   assertInvariants "chain5: copy→move→delete" st3
 
 private def chain6NotificationBadgeAccumulation : IO Unit := do
@@ -198,11 +204,11 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
         })
       |>.withRunnable [waiter]
       |>.buildChecked)
-  let (_, st1) ← expectOkState "chain6: signal badge 0x01"
+  let (_, st1) ← expectOkSt "chain6: signal badge 0x01"
     (SeLe4n.Kernel.notificationSignal ntfnId (SeLe4n.Badge.ofNatMasked 0x01) st0)
-  let (_, st2) ← expectOkState "chain6: signal badge 0x10"
+  let (_, st2) ← expectOkSt "chain6: signal badge 0x10"
     (SeLe4n.Kernel.notificationSignal ntfnId (SeLe4n.Badge.ofNatMasked 0x10) st1)
-  let (received, st3) ← expectOkState "chain6: wait"
+  let (received, st3) ← expectOkSt "chain6: wait"
     (SeLe4n.Kernel.notificationWait ntfnId waiter st2)
   expect "chain6: badge accumulation is bitwise OR"
     (received = some (SeLe4n.Badge.ofNatMasked 0x11))
@@ -222,34 +228,34 @@ private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
       |>.withObject ⟨2701⟩ (.vspaceRoot { asid := asid2, mappings := {} })
       |>.buildChecked)
 
-  let (_, st1) ← expectOkState "chain7: map shared page into asid1"
+  let (_, st1) ← expectOkSt "chain7: map shared page into asid1"
     (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid1 vaddr1 paddr default st0)
-  let (_, st2) ← expectOkState "chain7: map shared page into asid2"
+  let (_, st2) ← expectOkSt "chain7: map shared page into asid2"
     (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid2 vaddr2 paddr default st1)
-  let (asid1Resolved, st3) ← expectOkState "chain7: lookup asid1 shared page"
+  let (asid1Resolved, st3) ← expectOkSt "chain7: lookup asid1 shared page"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid1 vaddr1 st2)
-  let (asid2Resolved, st4) ← expectOkState "chain7: lookup asid2 shared page"
+  let (asid2Resolved, st4) ← expectOkSt "chain7: lookup asid2 shared page"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid2 vaddr2 st3)
   expect "chain7: shared page lookup matches in asid1" (asid1Resolved = paddr)
   expect "chain7: shared page lookup matches in asid2" (asid2Resolved = paddr)
 
-  let (_, st5) ← expectOkState "chain7: unmap shared page from asid1"
+  let (_, st5) ← expectOkSt "chain7: unmap shared page from asid1"
     (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid1 vaddr1 st4)
-  expectError "chain7: asid1 lookup faults after unmap"
+  expectErr "chain7: asid1 lookup faults after unmap"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid1 vaddr1 st5) .translationFault
-  let (asid2StillMapped, st6) ← expectOkState "chain7: asid2 mapping survives asid1 unmap"
+  let (asid2StillMapped, st6) ← expectOkSt "chain7: asid2 mapping survives asid1 unmap"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid2 vaddr2 st5)
   expect "chain7: asid2 retains shared mapping" (asid2StillMapped = paddr)
 
-  let (_, st7) ← expectOkState "chain7: remap asid1 as read-only"
+  let (_, st7) ← expectOkSt "chain7: remap asid1 as read-only"
     (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid1 vaddr1 paddr roPerms st6)
-  let (_, st8) ← expectOkState "chain7: remap asid2 as read-write"
+  let (_, st8) ← expectOkSt "chain7: remap asid2 as read-write"
     (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid2 vaddr2 st7)
-  let (_, st9) ← expectOkState "chain7: map asid2 read-write permissions"
+  let (_, st9) ← expectOkSt "chain7: map asid2 read-write permissions"
     (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid2 vaddr2 paddr rwPerms st8)
-  let ((_, asid1Perms), st10) ← expectOkState "chain7: lookupFull asid1 perms"
+  let ((_, asid1Perms), st10) ← expectOkSt "chain7: lookupFull asid1 perms"
     (SeLe4n.Kernel.Architecture.vspaceLookupFull asid1 vaddr1 st9)
-  let ((_, asid2Perms), st11) ← expectOkState "chain7: lookupFull asid2 perms"
+  let ((_, asid2Perms), st11) ← expectOkSt "chain7: lookupFull asid2 perms"
     (SeLe4n.Kernel.Architecture.vspaceLookupFull asid2 vaddr2 st10)
   expect "chain7: asid1 mapping is read-only" (asid1Perms = roPerms)
   expect "chain7: asid2 mapping is read-write" (asid2Perms = rwPerms)
@@ -273,12 +279,12 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
       |>.withRunnable [tidA, tidB, tidC, tidD]
       |>.buildChecked)
 
-  let (_, st1) ← expectOkState "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st0)
-  let (_, st2) ← expectOkState "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st1)
-  let (_, st3) ← expectOkState "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC .empty st2)
-  let (firstSender, st4) ← expectOkState "chain8: receiver D dequeues first" (SeLe4n.Kernel.endpointReceiveDual epId tidD st3)
-  let (secondSender, st5) ← expectOkState "chain8: receiver D dequeues second" (SeLe4n.Kernel.endpointReceiveDual epId tidD st4)
-  let (thirdSender, st6) ← expectOkState "chain8: receiver D dequeues third" (SeLe4n.Kernel.endpointReceiveDual epId tidD st5)
+  let (_, st1) ← expectOkSt "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st0)
+  let (_, st2) ← expectOkSt "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st1)
+  let (_, st3) ← expectOkSt "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC .empty st2)
+  let (firstSender, st4) ← expectOkSt "chain8: receiver D dequeues first" (SeLe4n.Kernel.endpointReceiveDual epId tidD st3)
+  let (secondSender, st5) ← expectOkSt "chain8: receiver D dequeues second" (SeLe4n.Kernel.endpointReceiveDual epId tidD st4)
+  let (thirdSender, st6) ← expectOkSt "chain8: receiver D dequeues third" (SeLe4n.Kernel.endpointReceiveDual epId tidD st5)
   expect "chain8: FIFO #1 returns sender A" (firstSender = tidA)
   expect "chain8: FIFO #2 returns sender B" (secondSender = tidB)
   expect "chain8: FIFO #3 returns sender C" (thirdSender = tidC)
@@ -289,10 +295,10 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
      | _ => false)
   assertInvariants "chain8: three-sender FIFO ordering" st6
 
-  let (_, st7) ← expectOkState "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st6)
-  let (interleaveFirst, st8) ← expectOkState "chain8: interleave receiver gets A" (SeLe4n.Kernel.endpointReceiveDual epId tidD st7)
-  let (_, st9) ← expectOkState "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st8)
-  let (interleaveSecond, st10) ← expectOkState "chain8: interleave receiver gets B" (SeLe4n.Kernel.endpointReceiveDual epId tidD st9)
+  let (_, st7) ← expectOkSt "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st6)
+  let (interleaveFirst, st8) ← expectOkSt "chain8: interleave receiver gets A" (SeLe4n.Kernel.endpointReceiveDual epId tidD st7)
+  let (_, st9) ← expectOkSt "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st8)
+  let (interleaveSecond, st10) ← expectOkSt "chain8: interleave receiver gets B" (SeLe4n.Kernel.endpointReceiveDual epId tidD st9)
   expect "chain8: interleaved receive #1 sender A" (interleaveFirst = tidA)
   expect "chain8: interleaved receive #2 sender B" (interleaveSecond = tidB)
   let interleavedEndpointObj := st10.objects[epId]?
@@ -329,9 +335,9 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
       |>.withObject grandCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
       |>.buildChecked)
 
-  let (_, st1) ← expectOkState "chain9: mint root→child with CDT"
+  let (_, st1) ← expectOkSt "chain9: mint root→child with CDT"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot childSlot (AccessRightSet.ofList [.read, .write]) none st0)
-  let (_, st2) ← expectOkState "chain9: mint child→grandchild with CDT"
+  let (_, st2) ← expectOkSt "chain9: mint child→grandchild with CDT"
     (SeLe4n.Kernel.cspaceMintWithCdt childSlot grandSlot (AccessRightSet.ofList [.read]) none st1)
 
   let childCap := SystemState.lookupSlotCap st2 childSlot
@@ -341,7 +347,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   expect "chain9: grandchild rights attenuated to read"
     (grandCap.map Capability.rights = some (AccessRightSet.ofList [.read]))
 
-  expectError "chain9: grandchild cannot mint additional write right"
+  expectErr "chain9: grandchild cannot mint additional write right"
     (SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := ⟨1⟩ } (AccessRightSet.ofList [.read, .write]) none st2)
     .invalidCapability
 
@@ -352,18 +358,18 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
     capDepth := 4
     requiredRight := .grant
   }
-  expectError "chain9: grandchild syscall gate has no grant right"
+  expectErr "chain9: grandchild syscall gate has no grant right"
     (SeLe4n.Kernel.syscallLookupCap noGrantGate st2)
     .illegalAuthority
   -- S2-J: Replaced deprecated apiCspaceMint with equivalent syscallInvoke path
-  expectError "chain9: grandchild cannot mint via syscall gate without grant"
+  expectErr "chain9: grandchild cannot mint via syscall gate without grant"
     (SeLe4n.Kernel.syscallInvoke { noGrantGate with requiredRight := .grant } (fun cap =>
       if cap.target ≠ .object grandSlot.cnode then fun _ => .error .invalidCapability
       else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := ⟨1⟩ }
         (AccessRightSet.ofList [.read]) none) st2)
     .illegalAuthority
 
-  let (_, st3) ← expectOkState "chain9: revoke root cascades descendants"
+  let (_, st3) ← expectOkSt "chain9: revoke root cascades descendants"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st2)
   expect "chain9: child slot removed after root revoke"
     (SystemState.lookupSlotCap st3 childSlot = none)
@@ -413,7 +419,7 @@ private partial def scheduleNTimes (n : Nat) (assertEvery : Nat) (st : SystemSta
     pure st
   else
     let step := if st.scheduler.current.isSome then SeLe4n.Kernel.handleYield st else SeLe4n.Kernel.schedule st
-    let st' ← runKernelState s!"scheduler: schedule step {n}" step
+    let st' ← runKernelSt s!"scheduler: schedule step {n}" step
     if assertEvery > 0 && n % assertEvery = 0 then
       assertInvariants s!"scheduler periodic invariant {n}" st'
     scheduleNTimes (n - 1) assertEvery st'
@@ -433,7 +439,7 @@ private def schedulerStressChecks : IO Unit := do
       |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
       |>.buildChecked)
-  let (_, stFirst) ← expectOkState "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
+  let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
   let baseline := stFirst.scheduler.current
   let mut consistent := true
   for _ in List.range 20 do
@@ -487,8 +493,8 @@ private def schedulerStressChecks : IO Unit := do
   let mut st := domainState
   let mut isolated := true
   for _ in List.range 16 do
-    let stSwitch ← runKernelState "scheduler domain switch" (SeLe4n.Kernel.switchDomain st)
-    let stSched ← runKernelState "scheduler domain schedule" (SeLe4n.Kernel.schedule stSwitch)
+    let stSwitch ← runKernelSt "scheduler domain switch" (SeLe4n.Kernel.switchDomain st)
+    let stSched ← runKernelSt "scheduler domain schedule" (SeLe4n.Kernel.schedule stSwitch)
     match stSched.scheduler.current with
     | none => pure ()
     | some tid =>
@@ -704,12 +710,12 @@ private def chain12IpcCapTransfer : IO Unit := do
       |>.buildChecked)
 
   -- Step 1: Receiver blocks on endpoint
-  let (_, st1) ← expectOkState "chain12: receiver blocks on endpoint"
+  let (_, st1) ← expectOkSt "chain12: receiver blocks on endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
 
   -- Step 2: Sender sends with caps (immediate rendezvous)
   let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[cap1, cap2, cap3], badge := none }
-  let (summary, st2) ← expectOkState "chain12: send with caps"
+  let (summary, st2) ← expectOkSt "chain12: send with caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
   -- Verify: transfer summary — 3 caps transferred
@@ -755,11 +761,11 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
-  let (_, st1) ← expectOkState "chain13: receiver blocks"
+  let (_, st1) ← expectOkSt "chain13: receiver blocks"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
 
   let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[cap1], badge := none }
-  let (summary, st2) ← expectOkState "chain13: send without grant right"
+  let (summary, st2) ← expectOkSt "chain13: send without grant right"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg noGrantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
   -- All results should be grantDenied (or empty since no grant)
@@ -815,13 +821,13 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
       |>.buildChecked)
 
   -- Step 1: Receiver blocks on endpoint
-  let (_, st1) ← expectOkState "chain14: receiver blocks on endpoint"
+  let (_, st1) ← expectOkSt "chain14: receiver blocks on endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
 
   -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
   let badgeVal : SeLe4n.Badge := ⟨0xCAFE⟩
   let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[cap1, cap2], badge := some badgeVal }
-  let (summary, st2) ← expectOkState "chain14: send with badge + caps"
+  let (summary, st2) ← expectOkSt "chain14: send with badge + caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
 
   -- Verify: transfer summary has 2 results (both caps transferred)
@@ -893,7 +899,7 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
     let dstSlot := allSlots[i + 1]!
     let rights := if i < 7 then AccessRightSet.ofList [.read, .write, .grant]
                   else AccessRightSet.ofList [.read, .write]
-    let (_, st') ← expectOkState s!"chain15: mint level {i}→{i+1}"
+    let (_, st') ← expectOkSt s!"chain15: mint level {i}→{i+1}"
       (SeLe4n.Kernel.cspaceMintWithCdt srcSlot dstSlot rights none st)
     st := st'
 
@@ -903,7 +909,7 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
     expect s!"chain15: child{i} has cap" capOpt.isSome
 
   -- Execute strict revocation on root
-  let (report, stFinal) ← expectOkState "chain15: strict revoke deep chain"
+  let (report, stFinal) ← expectOkSt "chain15: strict revoke deep chain"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st)
 
   -- Verify: no failure
@@ -968,7 +974,7 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   for i in List.range 5 do
     let srcSlot := allSlots[i]!
     let dstSlot := allSlots[i + 1]!
-    let (_, st') ← expectOkState s!"chain16: mint level {i}→{i+1}"
+    let (_, st') ← expectOkSt s!"chain16: mint level {i}→{i+1}"
       (SeLe4n.Kernel.cspaceMintWithCdt srcSlot dstSlot (AccessRightSet.ofList [.read, .write, .grant]) none st)
     st := st'
 
@@ -984,7 +990,7 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   }
 
   -- Execute strict revocation
-  let (report, stFinal) ← expectOkState "chain16: strict revoke partial fail"
+  let (report, stFinal) ← expectOkSt "chain16: strict revoke partial fail"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot stCorrupted)
 
   -- Verify: firstFailure is present
@@ -1079,19 +1085,19 @@ private def chain17StrictRevokeOrdering : IO Unit := do
 
   -- Build branching tree:
   -- root → A (mint)
-  let (_, st1) ← expectOkState "chain17: mint root→A"
+  let (_, st1) ← expectOkSt "chain17: mint root→A"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
   -- root → B (mint)
-  let (_, st2) ← expectOkState "chain17: mint root→B"
+  let (_, st2) ← expectOkSt "chain17: mint root→B"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotB (AccessRightSet.ofList [.read, .write, .grant]) none st1)
   -- A → A1 (mint)
-  let (_, st3) ← expectOkState "chain17: mint A→A1"
+  let (_, st3) ← expectOkSt "chain17: mint A→A1"
     (SeLe4n.Kernel.cspaceMintWithCdt slotA slotA1 (AccessRightSet.ofList [.read, .write]) none st2)
   -- B → B1 (mint)
-  let (_, st4) ← expectOkState "chain17: mint B→B1"
+  let (_, st4) ← expectOkSt "chain17: mint B→B1"
     (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB1 (AccessRightSet.ofList [.read, .write]) none st3)
   -- B → B2 (mint)
-  let (_, st5) ← expectOkState "chain17: mint B→B2"
+  let (_, st5) ← expectOkSt "chain17: mint B→B2"
     (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB2 (AccessRightSet.ofList [.read]) none st4)
 
   -- Verify tree was built: all 5 descendants have caps (A, B, A1, B1, B2)
@@ -1100,7 +1106,7 @@ private def chain17StrictRevokeOrdering : IO Unit := do
     expect s!"chain17: {label} has cap" capOpt.isSome
 
   -- Execute strict revocation on root
-  let (report, stFinal) ← expectOkState "chain17: strict revoke branching tree"
+  let (report, stFinal) ← expectOkSt "chain17: strict revoke branching tree"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict rootSlot st5)
 
   -- Verify: no failure
@@ -1193,19 +1199,19 @@ private def chain18StreamingRevokeBFS : IO Unit := do
 
   -- Build branching tree:
   -- root → A (mint)
-  let (_, st1) ← expectOkState "chain18: mint root→A"
+  let (_, st1) ← expectOkSt "chain18: mint root→A"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
   -- root → B (mint)
-  let (_, st2) ← expectOkState "chain18: mint root→B"
+  let (_, st2) ← expectOkSt "chain18: mint root→B"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotB (AccessRightSet.ofList [.read, .write, .grant]) none st1)
   -- A → A1 (mint)
-  let (_, st3) ← expectOkState "chain18: mint A→A1"
+  let (_, st3) ← expectOkSt "chain18: mint A→A1"
     (SeLe4n.Kernel.cspaceMintWithCdt slotA slotA1 (AccessRightSet.ofList [.read, .write]) none st2)
   -- B → B1 (mint)
-  let (_, st4) ← expectOkState "chain18: mint B→B1"
+  let (_, st4) ← expectOkSt "chain18: mint B→B1"
     (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB1 (AccessRightSet.ofList [.read, .write]) none st3)
   -- B → B2 (mint)
-  let (_, st5) ← expectOkState "chain18: mint B→B2"
+  let (_, st5) ← expectOkSt "chain18: mint B→B2"
     (SeLe4n.Kernel.cspaceMintWithCdt slotB slotB2 (AccessRightSet.ofList [.read]) none st4)
 
   -- Verify tree was built: all 5 descendants have caps
@@ -1214,7 +1220,7 @@ private def chain18StreamingRevokeBFS : IO Unit := do
     expect s!"chain18: {label} has cap" capOpt.isSome
 
   -- Execute streaming BFS revocation on root
-  let ((), stFinal) ← expectOkState "chain18: streaming BFS revoke branching tree"
+  let ((), stFinal) ← expectOkSt "chain18: streaming BFS revoke branching tree"
     (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st5)
 
   -- Verify: all 5 descendant slots are now empty
@@ -1253,7 +1259,7 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
   let st0 := builder.build
 
   -- Execute streaming BFS revocation (no descendants)
-  let ((), stFinal) ← expectOkState "chain19: streaming BFS revoke empty tree"
+  let ((), stFinal) ← expectOkSt "chain19: streaming BFS revoke empty tree"
     (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st0)
 
   -- Root capability must still be present
@@ -1293,17 +1299,17 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
   let st0 := builder.build
 
   -- Build deep chain: root → A → B → C → D
-  let (_, st1) ← expectOkState "chain20: mint root→A"
+  let (_, st1) ← expectOkSt "chain20: mint root→A"
     (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
-  let (_, st2) ← expectOkState "chain20: mint A→B"
+  let (_, st2) ← expectOkSt "chain20: mint A→B"
     (SeLe4n.Kernel.cspaceMintWithCdt slotA slotB (AccessRightSet.ofList [.read, .write, .grant]) none st1)
-  let (_, st3) ← expectOkState "chain20: mint B→C"
+  let (_, st3) ← expectOkSt "chain20: mint B→C"
     (SeLe4n.Kernel.cspaceMintWithCdt slotB slotC (AccessRightSet.ofList [.read, .write]) none st2)
-  let (_, st4) ← expectOkState "chain20: mint C→D"
+  let (_, st4) ← expectOkSt "chain20: mint C→D"
     (SeLe4n.Kernel.cspaceMintWithCdt slotC slotD (AccessRightSet.ofList [.read]) none st3)
 
   -- Execute streaming BFS revocation on root
-  let ((), stFinal) ← expectOkState "chain20: streaming BFS revoke deep chain"
+  let ((), stFinal) ← expectOkSt "chain20: streaming BFS revoke deep chain"
     (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot st4)
 
   -- All 4 descendants deleted
@@ -1349,20 +1355,20 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
         else SeLe4n.Kernel.RobinHood.RHTable.empty 16
       })
     let st0 := builder.build
-    let (_, st1) ← expectOkState "chain21: mint root→A"
+    let (_, st1) ← expectOkSt "chain21: mint root→A"
       (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
-    let (_, st2) ← expectOkState "chain21: mint A→B"
+    let (_, st2) ← expectOkSt "chain21: mint A→B"
       (SeLe4n.Kernel.cspaceMintWithCdt slotA slotB (AccessRightSet.ofList [.read, .write]) none st1)
     pure st2
 
   let stPre ← mkState
 
   -- Run materialized revocation
-  let ((), stMaterialized) ← expectOkState "chain21: materialized revokeCdt"
+  let ((), stMaterialized) ← expectOkSt "chain21: materialized revokeCdt"
     (SeLe4n.Kernel.cspaceRevokeCdt rootSlot stPre)
 
   -- Run streaming BFS revocation on same initial state
-  let ((), stStreaming) ← expectOkState "chain21: streaming revokeCdtStreaming"
+  let ((), stStreaming) ← expectOkSt "chain21: streaming revokeCdtStreaming"
     (SeLe4n.Kernel.cspaceRevokeCdtStreaming rootSlot stPre)
 
   -- Compare observable slot state: both should have same slot contents
@@ -1405,11 +1411,11 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
       |>.withRunnable [waiter]
       |>.buildChecked)
   -- Step 1: waiter blocks on notification (no pending badge)
-  let (result1, st1) ← expectOkState "chain22: wait blocks"
+  let (result1, st1) ← expectOkSt "chain22: wait blocks"
     (SeLe4n.Kernel.notificationWait ntfnId waiter st0)
   expect "chain22: wait returns none (blocked)" (result1 = none)
   -- Step 2: signal with badge 0xCAFE — should wake the waiter
-  let (_, st2) ← expectOkState "chain22: signal wakes waiter"
+  let (_, st2) ← expectOkSt "chain22: signal wakes waiter"
     (SeLe4n.Kernel.notificationSignal ntfnId badge st1)
   -- Step 3: Verify badge was delivered to waiter's pendingMessage
   match st2.objects[waiter.toObjId]? with
@@ -1473,13 +1479,13 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
       |>.withLifecycleObjectType targetEp .endpoint
       |>.buildChecked)
   -- Level 1: Mint child from root
-  let (_, st1) ← expectOkState "chain23: mint child (level 1)"
+  let (_, st1) ← expectOkSt "chain23: mint child (level 1)"
     (SeLe4n.Kernel.cspaceMintWithCdt slot0 slot1 (AccessRightSet.ofList [.read, .write, .grant]) none st0)
   -- Level 2: Mint grandchild from child
-  let (_, st2) ← expectOkState "chain23: mint grandchild (level 2)"
+  let (_, st2) ← expectOkSt "chain23: mint grandchild (level 2)"
     (SeLe4n.Kernel.cspaceMintWithCdt slot1 slot2 (AccessRightSet.ofList [.read, .write]) none st1)
   -- Level 3: Mint great-grandchild from grandchild
-  let (_, st3) ← expectOkState "chain23: mint great-grandchild (level 3)"
+  let (_, st3) ← expectOkSt "chain23: mint great-grandchild (level 3)"
     (SeLe4n.Kernel.cspaceMintWithCdt slot2 slot3 (AccessRightSet.ofList [.read]) none st2)
   -- Verify all 4 slots are populated
   expect "chain23: 4-level CDT constructed"
@@ -1488,7 +1494,7 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
      (SeLe4n.Model.SystemState.lookupSlotCap st3 slot2).isSome &&
      (SeLe4n.Model.SystemState.lookupSlotCap st3 slot3).isSome)
   -- Strict revoke at child (slot 1) — should remove grandchild + great-grandchild
-  let (report, st4) ← expectOkState "chain23: strict revoke at child"
+  let (report, st4) ← expectOkSt "chain23: strict revoke at child"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict slot1 st3)
   -- Root (slot 0) should still exist — it's in a different CNode
   expect "chain23: root cap preserved after revoke"
@@ -1504,16 +1510,16 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
   assertInvariants "chain23: deep CDT cascade" st4
   -- === Root-level revocation test (spec requirement) ===
   -- Clear slot1 (still occupied after revoke kept source cap), then re-mint full tree
-  let (_, st4b) ← expectOkState "chain23: clear slot1 for remint"
+  let (_, st4b) ← expectOkSt "chain23: clear slot1 for remint"
     (SeLe4n.Kernel.cspaceDeleteSlot slot1 st4)
-  let (_, st5) ← expectOkState "chain23: remint child"
+  let (_, st5) ← expectOkSt "chain23: remint child"
     (SeLe4n.Kernel.cspaceMintWithCdt slot0 slot1 (AccessRightSet.ofList [.read, .write, .grant]) none st4b)
-  let (_, st6) ← expectOkState "chain23: remint grandchild"
+  let (_, st6) ← expectOkSt "chain23: remint grandchild"
     (SeLe4n.Kernel.cspaceMintWithCdt slot1 slot2 (AccessRightSet.ofList [.read, .write]) none st5)
-  let (_, st7) ← expectOkState "chain23: remint great-grandchild"
+  let (_, st7) ← expectOkSt "chain23: remint great-grandchild"
     (SeLe4n.Kernel.cspaceMintWithCdt slot2 slot3 (AccessRightSet.ofList [.read]) none st6)
   -- Revoke at root (slot 0) — should remove all 3 descendants
-  let (rootReport, st8) ← expectOkState "chain23: strict revoke at root"
+  let (rootReport, st8) ← expectOkSt "chain23: strict revoke at root"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict slot0 st7)
   expect "chain23: child removed after root revoke"
     ((SeLe4n.Model.SystemState.lookupSlotCap st8 slot1).isNone)
@@ -1524,19 +1530,19 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
   expect "chain23: root revoke deletedSlots=3" (rootReport.deletedSlots.length == 3)
   -- === Mid-tree delete test (spec requirement) ===
   -- Rebuild tree again, then delete the grandchild CNode object
-  let (_, st9) ← expectOkState "chain23: rebuild child for delete test"
+  let (_, st9) ← expectOkSt "chain23: rebuild child for delete test"
     (SeLe4n.Kernel.cspaceMintWithCdt slot0 slot1 (AccessRightSet.ofList [.read, .write, .grant]) none st8)
-  let (_, st10) ← expectOkState "chain23: rebuild grandchild for delete test"
+  let (_, st10) ← expectOkSt "chain23: rebuild grandchild for delete test"
     (SeLe4n.Kernel.cspaceMintWithCdt slot1 slot2 (AccessRightSet.ofList [.read, .write]) none st9)
-  let (_, st11) ← expectOkState "chain23: rebuild great-grandchild for delete test"
+  let (_, st11) ← expectOkSt "chain23: rebuild great-grandchild for delete test"
     (SeLe4n.Kernel.cspaceMintWithCdt slot2 slot3 (AccessRightSet.ofList [.read]) none st10)
   -- Revoke at grandchild (mid-tree) to cascade great-grandchild removal,
   -- then delete the grandchild slot itself — full mid-tree sub-tree cleanup.
-  let (midReport, st11b) ← expectOkState "chain23: revoke at grandchild (mid-tree)"
+  let (midReport, st11b) ← expectOkSt "chain23: revoke at grandchild (mid-tree)"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict slot2 st11)
   expect "chain23: mid-tree revoke removed great-grandchild"
     (midReport.deletedSlots.length == 1)
-  let (_, st12) ← expectOkState "chain23: delete grandchild slot"
+  let (_, st12) ← expectOkSt "chain23: delete grandchild slot"
     (SeLe4n.Kernel.cspaceDeleteSlot slot2 st11b)
   expect "chain23: root preserved after mid-delete"
     ((SeLe4n.Model.SystemState.lookupSlotCap st12 slot0).isSome)
@@ -1570,10 +1576,10 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.buildChecked)
   -- Schedule to get the thread as current
-  let (_, st1) ← expectOkState "chain24: initial schedule" (SeLe4n.Kernel.schedule st0)
+  let (_, st1) ← expectOkSt "chain24: initial schedule" (SeLe4n.Kernel.schedule st0)
   expect "chain24: thread is current" (st1.scheduler.current == some tid)
   -- Yield — single thread should re-enqueue and re-select itself
-  let (_, st2) ← expectOkState "chain24: handleYield" (SeLe4n.Kernel.handleYield st1)
+  let (_, st2) ← expectOkSt "chain24: handleYield" (SeLe4n.Kernel.handleYield st1)
   expect "chain24: same thread re-selected after yield" (st2.scheduler.current == some tid)
   assertInvariants "chain24: yield single thread" st2
   -- Edge case: handleYield with NO current thread and empty run queue
@@ -1586,7 +1592,7 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.buildChecked)
   -- V5-F: handleYield with current=none now returns .error .invalidArgument
   -- (defensive: yielding requires a current thread to re-enqueue)
-  expectError "chain24: yield empty queue returns invalidArgument"
+  expectErr "chain24: yield empty queue returns invalidArgument"
     (SeLe4n.Kernel.handleYield stEmpty)
     .invalidArgument
 
@@ -1605,7 +1611,7 @@ private def chain25IrqHandlerDispatch : IO Unit := do
   expect "chain25: IRQ handler registered" (st0.irqHandlers[irq]? == some ntfnId)
   -- Signal the notification with badge encoding IRQ number
   let badge := SeLe4n.Badge.ofNatMasked (1 <<< irq.toNat)
-  let (_, st1) ← expectOkState "chain25: notification signal via IRQ"
+  let (_, st1) ← expectOkSt "chain25: notification signal via IRQ"
     (SeLe4n.Kernel.notificationSignal ntfnId badge st0)
   -- Verify notification is now active with badge
   match st1.objects[ntfnId]? with
@@ -1975,6 +1981,124 @@ private def chain32SyscallCall : IO Unit := do
     -- Call dispatch reached but may fail due to IPC state — that's fine
     IO.println s!"operation-chain check passed [chain32: call dispatch reached ({toString err})]"
 
+/-- W5-C: Service lifecycle tests — registerInterface, registerService,
+serviceRegisterDependency, revokeService with success and error paths. -/
+private def chain33ServiceLifecycle : IO Unit := do
+  -- OID range: 960-962 (within OperationChainSuite's 200-962 range)
+  let epId1 : SeLe4n.ObjId := ⟨960⟩
+  let epId2 : SeLe4n.ObjId := ⟨961⟩
+  let nonEpId : SeLe4n.ObjId := ⟨962⟩  -- notification, not endpoint
+  let ifaceId1 : SeLe4n.InterfaceId := ⟨100⟩
+  let svcId1 : ServiceId := ⟨300⟩
+  let svcId2 : ServiceId := ⟨301⟩
+  let svcIdMissing : ServiceId := ⟨399⟩
+  let iface1 : InterfaceSpec := {
+    ifaceId := ifaceId1
+    methodCount := 3
+    maxMessageSize := 1024
+    maxResponseSize := 512
+    requiresGrant := false
+  }
+  let writeRights := AccessRightSet.ofList [.read, .write]
+  let readOnlyRights := AccessRightSet.ofList [.read]
+  let epCap1 : Capability := { target := .object epId1, rights := writeRights, badge := none }
+  let epCap2 : Capability := { target := .object epId2, rights := writeRights, badge := none }
+  let noWriteCap : Capability := { target := .object epId1, rights := readOnlyRights, badge := none }
+  let nonEpCap : Capability := { target := .object nonEpId, rights := writeRights, badge := none }
+  -- Base state with 2 endpoints and 1 notification (non-endpoint target for error tests)
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject epId1 (.endpoint {})
+      |>.withObject epId2 (.endpoint {})
+      |>.withObject nonEpId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withLifecycleObjectType epId1 .endpoint
+      |>.withLifecycleObjectType epId2 .endpoint
+      |>.withLifecycleObjectType nonEpId .notification
+      |>.buildChecked)
+  -- === W5-C-2: registerInterface success ===
+  let (_, st1) ← expectOkSt "chain33: registerInterface success"
+    (SeLe4n.Kernel.registerInterface iface1 st0)
+  expect "chain33: interface in registry" (st1.interfaceRegistry[ifaceId1]? != none)
+  -- === W5-C-3: registerInterface duplicate rejection ===
+  expectErr "chain33: registerInterface duplicate"
+    (SeLe4n.Kernel.registerInterface iface1 st1) .illegalState
+  -- === W5-C-4: registerService success ===
+  let reg1 : ServiceRegistration := { sid := svcId1, iface := iface1, endpointCap := epCap1 }
+  let (_, st2) ← expectOkSt "chain33: registerService success"
+    (SeLe4n.Kernel.registerService reg1 st1)
+  expect "chain33: service in registry" (st2.serviceRegistry[svcId1]? != none)
+  -- === W5-C-5: registerService error paths ===
+  -- 5a: Missing interface
+  let bogusIface : InterfaceSpec := { iface1 with ifaceId := ⟨999⟩ }
+  let regBogus : ServiceRegistration := { sid := ⟨350⟩, iface := bogusIface, endpointCap := epCap1 }
+  expectErr "chain33: registerService missing interface"
+    (SeLe4n.Kernel.registerService regBogus st2) .objectNotFound
+  -- 5b: Non-endpoint target (notification)
+  let regNonEp : ServiceRegistration := { sid := ⟨351⟩, iface := iface1, endpointCap := nonEpCap }
+  expectErr "chain33: registerService non-endpoint target"
+    (SeLe4n.Kernel.registerService regNonEp st2) .invalidCapability
+  -- 5c: Missing write right
+  let regNoWrite : ServiceRegistration := { sid := ⟨352⟩, iface := iface1, endpointCap := noWriteCap }
+  expectErr "chain33: registerService no write right"
+    (SeLe4n.Kernel.registerService regNoWrite st2) .illegalAuthority
+  -- 5d: Duplicate service ID
+  expectErr "chain33: registerService duplicate"
+    (SeLe4n.Kernel.registerService reg1 st2) .illegalState
+  -- 5e: Non-existent endpoint ObjId (capability targets ObjId not in state)
+  let missingEpCap : Capability := { target := .object ⟨999⟩, rights := writeRights, badge := none }
+  let regMissingEp : ServiceRegistration := { sid := ⟨353⟩, iface := iface1, endpointCap := missingEpCap }
+  expectErr "chain33: registerService non-existent endpoint"
+    (SeLe4n.Kernel.registerService regMissingEp st2) .invalidCapability
+  -- W5-C-9: Invariant check after registerService
+  assertInvariants "chain33: invariants after registerService" st2
+  -- === W5-C-6: serviceRegisterDependency acyclic path ===
+  -- Register second service for dependency testing
+  let reg2 : ServiceRegistration := { sid := svcId2, iface := iface1, endpointCap := epCap2 }
+  let (_, st3) ← expectOkSt "chain33: registerService svc2"
+    (SeLe4n.Kernel.registerService reg2 st2)
+  -- Need service graph entries for dependency operations
+  let st3b := { st3 with
+    services := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      (svcId1, { identity := { sid := svcId1, backingObject := epId1, owner := ⟨1⟩ }
+                 dependencies := [], isolatedFrom := [] }),
+      (svcId2, { identity := { sid := svcId2, backingObject := epId2, owner := ⟨1⟩ }
+                 dependencies := [], isolatedFrom := [] })
+    ] }
+  let (_, st4) ← expectOkSt "chain33: dependency svc1 -> svc2"
+    (SeLe4n.Kernel.serviceRegisterDependency svcId1 svcId2 st3b)
+  -- Verify dependency was recorded
+  match SeLe4n.Model.lookupService st4 svcId1 with
+  | some entry =>
+    expect "chain33: svc1 depends on svc2" (entry.dependencies.any (· == svcId2))
+  | none => throw <| IO.userError "chain33: svc1 not found after dependency registration"
+  -- === W5-C-7: serviceRegisterDependency cycle rejection ===
+  expectErr "chain33: cyclic dependency svc2 -> svc1"
+    (SeLe4n.Kernel.serviceRegisterDependency svcId2 svcId1 st4) .cyclicDependency
+  -- Nonexistent source service
+  expectErr "chain33: dependency from nonexistent service"
+    (SeLe4n.Kernel.serviceRegisterDependency svcIdMissing svcId1 st4) .objectNotFound
+  -- Nonexistent target service
+  expectErr "chain33: dependency to nonexistent service"
+    (SeLe4n.Kernel.serviceRegisterDependency svcId1 svcIdMissing st4) .objectNotFound
+  -- W5-C-9: Invariant check after dependency registration
+  assertInvariants "chain33: invariants after dependency registration" st4
+  -- === W5-C-8: revokeService success ===
+  let (_, st5) ← expectOkSt "chain33: revokeService svc1"
+    (SeLe4n.Kernel.revokeService svcId1 st4)
+  expect "chain33: svc1 removed from registry" (st5.serviceRegistry[svcId1]? == none)
+  -- Verify dependency edges cleaned
+  match SeLe4n.Model.lookupService st5 svcId2 with
+  | some entry =>
+    expect "chain33: svc2 no longer has svc1 dep" (!entry.dependencies.any (· == svcId1))
+  | none => pure ()  -- svc2 graph entry may also be gone after removeDependenciesOf
+  -- Verify svc1 is also removed from services dependency graph
+  expect "chain33: svc1 removed from services graph" (SeLe4n.Model.lookupService st5 svcId1 == none)
+  -- revokeService on nonexistent
+  expectErr "chain33: revokeService nonexistent"
+    (SeLe4n.Kernel.revokeService svcIdMissing st5) .objectNotFound
+  -- W5-C-9: Invariant check after revokeService
+  assertInvariants "chain33: invariants after revokeService" st5
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -2009,7 +2133,8 @@ private def runOperationChainSuite : IO Unit := do
   chain30SyscallServiceOps
   chain31SyscallReply
   chain32SyscallCall
-  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5/R3-A/T7)"
+  chain33ServiceLifecycle
+  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5/R3-A/T7/W5-C)"
 
 end SeLe4n.Testing
 
