@@ -12,10 +12,6 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
-/-- Deterministic lookup helper used by the bootstrap-state builder DSL. -/
-def listLookup {α : Type} [DecidableEq α] {β : Type} (entries : List (α × β)) (key : α) : Option β :=
-  (entries.find? (fun entry => entry.fst = key)).map Prod.snd
-
 /--
 Testing DSL for composing bootstrap states from finite override tables.
 
@@ -67,9 +63,6 @@ def withLifecycleCapabilityRef
     (ref : SeLe4n.Model.SlotRef)
     (target : CapTarget) : BootstrapBuilder :=
   { builder with lifecycleCapabilityRefs := (ref, target) :: builder.lifecycleCapabilityRefs }
-
-def withMachine (builder : BootstrapBuilder) (machine : SeLe4n.MachineState) : BootstrapBuilder :=
-  { builder with machine := machine }
 
 /-- Extract the actual TCB priority for a thread from the builder's object list.
     Falls back to Priority 0 if the thread has no TCB entry. -/

@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.22.13.
+Lean 4.28.0 toolchain, Lake build system, version 0.22.14.
 
 ## Build and run
 
@@ -455,6 +455,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-U Phase U2 COMPLETE**: Safety Boundary Hardening — 14 sub-tasks (U2-A through U2-N), all complete (v0.21.1). See `docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-U Phase U1 COMPLETE**: Correctness Fixes — 13 sub-tasks (U1-A through U1-M), all complete (v0.21.0). See `docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`
 - **WS-T PORTFOLIO COMPLETE**: Deep-Dive Audit Remediation — 8 phases (T1–T8, 94 sub-tasks), all complete (v0.20.0–v0.20.7). See `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`
+- **WS-W Phase W3 COMPLETE**: Dead Code Elimination — 8 sub-tasks (W3-A through W3-H), all complete (v0.22.14). Verification-first methodology with Category A/B/C classification. Removed ~40 dead definitions across foundation, kernel, architecture, info flow, data structures, and testing layers. Entire fast-projection cluster (~200 lines), 7 monad helpers, 8 alignment predicates, 9 pow2 witnesses, 4 CDT helpers, `resolveCapAddressK`, `severDerivationEdge`, `maxServiceFuel`, `deleteObject`, `encodeMsgRegs`. FrozenOps retained with architectural status documentation. Zero sorry/axiom. See `docs/audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md`
 - **WS-W Phase W2 COMPLETE**: Proof Formalism & Architecture — 8 sub-tasks (W2-A through W2-H), all complete (v0.22.12). W2-A: field-disjointness formalism closure (3 frame lemmas + modifiedFields + documentation theorem). W2-B: composition gap documentation. W2-C: `dispatchWithCap_wildcard_unreachable`. W2-D: collectQueueMembers fuel sufficiency. W2-E: serviceHasPathTo fuel exhaustion. W2-F: serviceCountBounded preservation chain. W2-G: enforcementBoundaryExtended unified as abbrev. W2-H: maxHeartbeats documentation. Zero sorry/axiom. See `docs/audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md`
 - **WS-W Phase W1 COMPLETE**: Critical Rust ABI Fixes — 9 sub-tasks (W1-A through W1-I), all complete (v0.22.11). See `docs/audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md`
 - **WS-V Phase V8 COMPLETE**: Test Coverage & Documentation — 19 sub-tasks (V8-A through V8-H), all complete (v0.22.9, audit v0.22.10). V8-A: End-to-end `syscallEntryChecked` pipeline test. V8-G: `ThreadState` enum (8 variants incl. `BlockedReply`) + `inferThreadState` + `syncThreadStates`. V8-H: `dispatchCapabilityOnly` shared helper. Audit (v0.22.10): `BlockedReply` semantic fix, 3-cap fixture expansion, dequeue-on-dispatch fixes, threadStateConsistentChecks documentation. Zero sorry/axiom. See `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`

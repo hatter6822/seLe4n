@@ -1,3 +1,41 @@
+## [0.22.14] — W3: Dead Code Elimination
+
+Phase W3 of WS-W pre-release audit remediation. Addresses MED-1/MED-01
+(dead code), MED-2 (FrozenOps status), LOW-03/06/07/08 from v0.22.10 audits.
+
+- **Foundation layer (W3-B)**: Removed 7 dead KernelM helper theorems
+  (`pure_bind_law`, `get_returns_state`, `set_replaces_state`,
+  `modify_applies_function`, `liftExcept_ok`, `liftExcept_error`,
+  `throw_errors`); 8 dead alignment predicates and proofs from Machine.lean
+  (`wordAligned`, `pageAligned`, proofs, `totalRAM`, `addressInMap`); 9 dead
+  `isPowerOfTwo_of_pow2_*` witness theorems and `isPowerOfTwo_spec/pos`;
+  duplicate `maxLength`/`maxExtraCaps'` from Types.lean; 4 dead CDT helpers
+  (`parentOf`, `removeAsChild`, `removeAsParent`, `isAncestor`,
+  `makeObjectCap`) from Structures.lean; `observedCdtEdges` +
+  `observedCdtEdges_eq_projection` from State.lean.
+- **Kernel subsystems (W3-C)**: Removed `resolveCapAddressK`,
+  `severDerivationEdge` from Capability/Operations.lean; `lookupUntyped` from
+  Lifecycle/Operations.lean; `maxServiceFuel` from Service/Operations.lean.
+- **Architecture & Info Flow (W3-D)**: Removed entire fast-projection cluster
+  (~200 lines) from Projection.lean (`computeObservableSet`,
+  `projectObjectsFast`, `projectIrqHandlersFast`, `projectObjectIndexFast`,
+  `projectStateFast`, 6 helper theorems); `capabilityOnlyOperations`,
+  `enforcementBoundaryComplete_counts`, `enforcementBoundary_names_nonempty`
+  from Wrappers.lean; 3 orphaned `List.foldl` HashSet bridge lemmas from
+  Prelude.lean.
+- **Data structures (W3-E)**: Removed `deleteObject` from Builder.lean;
+  `addServiceGraph` from Builder.lean.
+- **Testing layer (W3-F)**: Removed `listLookup`, `withMachine` from
+  StateBuilder.lean.
+- **FrozenOps evaluation (W3-G)**: Retained with architectural status
+  documentation in Core.lean explaining zero-production-consumer status and
+  future integration plan for H3 hardware binding.
+- **Type aliases (W3-H)**: Removed `encodeMsgRegs` + `decodeMsgRegs_roundtrip`
+  from RegisterDecode.lean (simplified `decode_components_roundtrip` to
+  3-component version); `RegisterWriteInvariant` + proof from
+  RPi5/RuntimeContract.lean.
+- Zero `sorry`, zero `axiom`. `test_full.sh` green.
+
 ## [0.22.13] — W2 audit: completeness and accuracy fixes
 
 Post-implementation audit of Phase W2. Ensures all deliverables are complete

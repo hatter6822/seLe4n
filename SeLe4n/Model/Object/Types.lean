@@ -962,12 +962,6 @@ structure MessageInfo where
 
 namespace MessageInfo
 
-/-- Maximum message length in registers (matches seL4 seL4_MsgMaxLength). -/
-def maxLength : Nat := maxMessageRegisters
-
-/-- Maximum extra capabilities per message (matches seL4 seL4_MsgMaxExtraCaps). -/
-def maxExtraCaps' : Nat := maxExtraCaps
-
 /-- V2-E (M-API-3): Maximum label value — 2^20 - 1 (20 bits), matching seL4's
     `seL4_MessageInfo_t` label field width. The previous model allowed unbounded
     labels (55 bits), which diverged from seL4's 20-bit limit. -/

@@ -45,10 +45,6 @@ open SeLe4n.Model
 /-- Encode a syscall identifier as a register value. -/
 @[inline] def encodeSyscallId (s : SyscallId) : RegValue := ⟨s.toNat⟩
 
-/-- Encode message register values (identity in the abstract model).
-    Stated explicitly for proof-surface completeness and round-trip symmetry
-    with the other `encode*` helpers. -/
-@[inline] def encodeMsgRegs (regs : Array RegValue) : Array RegValue := regs
 
 /-- Extract message register values for IPC message population.
     Converts `RegValue` wrappers to raw `Nat` values and limits the result
@@ -162,15 +158,10 @@ theorem decodeMsgInfo_roundtrip (mi : MessageInfo)
   have h := MessageInfo.encode_decode_roundtrip mi hLen hCaps hLabel
   simp only [h]
 
-/-- Round-trip: encoding then decoding message register values is identity. -/
-theorem decodeMsgRegs_roundtrip (vals : Array RegValue) :
-    encodeMsgRegs vals = vals := rfl
-
-/-- All four per-component round-trips compose: given a well-formed
+/-- All three per-component round-trips compose: given a well-formed
     `SyscallDecodeResult`, encoding each field then decoding recovers
-    the original. Includes `msgRegs` identity round-trip.
-    Stated as individual component equalities that can be composed at the
-    call site for any register layout. -/
+    the original. Message registers need no round-trip (identity in the
+    abstract model). -/
 theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
     (hLen : decoded.msgInfo.length ≤ maxMessageRegisters)
     (hCaps : decoded.msgInfo.extraCaps ≤ maxExtraCaps)
@@ -178,12 +169,10 @@ theorem decode_components_roundtrip (decoded : SyscallDecodeResult)
     (hCapBound : isWord64 decoded.capAddr.toNat) :
     decodeCapPtr (encodeCapPtr decoded.capAddr) = .ok decoded.capAddr ∧
     decodeMsgInfo (encodeMsgInfo decoded.msgInfo) = .ok decoded.msgInfo ∧
-    decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId ∧
-    encodeMsgRegs decoded.msgRegs = decoded.msgRegs :=
+    decodeSyscallId (encodeSyscallId decoded.syscallId) = .ok decoded.syscallId :=
   ⟨decodeCapPtr_roundtrip decoded.capAddr hCapBound,
    decodeMsgInfo_roundtrip decoded.msgInfo hLen hCaps hLabel,
-   decodeSyscallId_roundtrip decoded.syscallId,
-   decodeMsgRegs_roundtrip decoded.msgRegs⟩
+   decodeSyscallId_roundtrip decoded.syscallId⟩
 
 -- ============================================================================
 -- Message register extraction lemmas

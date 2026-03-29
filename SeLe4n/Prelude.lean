@@ -621,31 +621,7 @@ def liftExcept {σ ε α : Type} (e : Except ε α) : KernelM σ ε α :=
 def throw {σ ε α : Type} (err : ε) : KernelM σ ε α :=
   fun _ => .error err
 
--- L-03: Correctness theorems for monad helpers
-
-theorem get_returns_state {σ ε : Type} (s : σ) :
-    @get σ ε s = .ok (s, s) := rfl
-
-theorem set_replaces_state {σ ε : Type} (s s' : σ) :
-    @set σ ε s' s = .ok ((), s') := rfl
-
-theorem modify_applies_function {σ ε : Type} (f : σ → σ) (s : σ) :
-    @modify σ ε f s = .ok ((), f s) := rfl
-
-theorem liftExcept_ok {σ ε α : Type} (a : α) (s : σ) :
-    @liftExcept σ ε α (.ok a) s = .ok (a, s) := rfl
-
-theorem liftExcept_error {σ ε α : Type} (err : ε) (s : σ) :
-    @liftExcept σ ε α (.error err) s = .error err := rfl
-
-theorem throw_errors {σ ε α : Type} (err : ε) (s : σ) :
-    @KernelM.throw σ ε α err s = .error err := rfl
-
 -- WS-H14b: LawfulMonad instance for KernelM
-
-/-- WS-H14b: Left identity — `pure a >>= f = f a`. -/
-theorem pure_bind_law {σ ε α β : Type} (a : α) (f : α → KernelM σ ε β) :
-    bind (pure a) f = f a := rfl
 
 /-- WS-H14b: Right identity — `m >>= pure = m`. -/
 theorem bind_pure_law {σ ε α : Type} (m : KernelM σ ε α) :
@@ -1043,69 +1019,6 @@ theorem RHTable_fold_preserves {α β γ : Type} [BEq α] [Hashable α] [LawfulB
     (hStep : ∀ acc k v, P acc → P (f acc k v)) :
     P (t.fold init f) :=
   RHTable.fold_preserves t init f P hInit hStep
-
--- ============================================================================
--- WS-G9: List.foldl HashSet bridge lemmas for observable-set precomputation
--- ============================================================================
-
-/-- WS-G9: If `s.contains a = true`, then after folding any list with conditional
-inserts, `a` remains in the set. Monotonicity of HashSet.insert under foldl. -/
-theorem List.foldl_preserves_contains {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
-    (hContains : s.contains a = true) :
-    (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a = true := by
-  induction xs generalizing s with
-  | nil => exact hContains
-  | cons x xs ih =>
-    simp only [List.foldl_cons]
-    split
-    · exact ih (s.insert x) (by rw [Std.HashSet.contains_insert]; simp [hContains])
-    · exact ih s hContains
-
-/-- WS-G9: If `a` is not in the list `xs`, then folding conditional inserts does
-not change whether `a` is in the set. -/
-theorem List.foldl_not_contains_when_absent {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
-    (hNotIn : a ∉ xs) :
-    (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a =
-      s.contains a := by
-  induction xs generalizing s with
-  | nil => rfl
-  | cons x xs ih =>
-    simp only [List.foldl_cons]
-    have hNe : a ≠ x := fun h => hNotIn (h ▸ List.Mem.head xs)
-    have hNotInXs : a ∉ xs := fun h => hNotIn (List.Mem.tail x h)
-    split
-    · rw [ih (s.insert x) hNotInXs]
-      rw [Std.HashSet.contains_insert]
-      simp [Ne.symm hNe]
-    · exact ih s hNotInXs
-
-/-- WS-G9: If `p a = false`, then folding with conditional inserts guarded by `p`
-preserves `a`'s containment status. Whether `a` is in the list or not, `p a = false`
-prevents any insertion of `a`, so the final `contains a` equals `s.contains a`. -/
-theorem List.foldl_preserves_when_pred_false {α : Type} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
-    (p : α → Bool) (xs : List α) (s : Std.HashSet α) {a : α}
-    (hPa : p a = false) :
-    (xs.foldl (fun acc x => if p x then acc.insert x else acc) s).contains a =
-      s.contains a := by
-  induction xs generalizing s with
-  | nil => rfl
-  | cons x xs ih =>
-    simp only [List.foldl_cons]
-    by_cases hEq : x = a
-    · -- x = a: since p a = false, the if-branch doesn't insert, leaving s unchanged
-      subst hEq
-      split
-      · rename_i hContra; rw [hPa] at hContra; exact absurd hContra (by decide)
-      · exact ih s
-    · -- x ≠ a: whether or not x is inserted, a's membership is unchanged
-      split
-      · -- p x = true: x is inserted; a ≠ x so a remains unchanged
-        rw [ih (s.insert x), Std.HashSet.contains_insert]
-        simp [beq_false_of_ne hEq]
-      · -- p x = false: nothing inserted
-        exact ih s
 
 -- ============================================================================
 -- H-06/WS-E3: Sentinel identity theorems

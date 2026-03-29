@@ -1022,18 +1022,6 @@ def lookupCdtNodeOfSlot (st : SystemState) (ref : SlotRef) : Option CdtNodeId :=
 def lookupCdtSlotOfNode (st : SystemState) (node : CdtNodeId) : Option SlotRef :=
   st.cdtNodeSlot[node]?
 
-/-- Slot-address projection of the node-based CDT as observed from CSpace slots. -/
-def observedCdtEdges (st : SystemState) : List CapDerivationTree.ObservedDerivationEdge :=
-  st.cdt.projectObservedEdges (fun node =>
-    (lookupCdtSlotOfNode st node).map (fun ref => (ref.cnode, ref.slot)))
-
-/-- Abstraction theorem: observed slot-level CDT equals projection of node graph
-through node→slot mapping. -/
-theorem observedCdtEdges_eq_projection (st : SystemState) :
-    observedCdtEdges st =
-      st.cdt.projectObservedEdges (fun node =>
-        (lookupCdtSlotOfNode st node).map (fun ref => (ref.cnode, ref.slot))) := by
-  simp [observedCdtEdges, lookupCdtSlotOfNode]
 
 /-- Attach slot `ref` to `node` and maintain bidirectional consistency.
 If the slot/node already point elsewhere, stale opposite links are cleared.

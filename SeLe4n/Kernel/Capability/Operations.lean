@@ -116,15 +116,6 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
     | _ => .error .objectNotFound
   termination_by bitsRemaining
 
-/-- WS-H13: Resolve a capability address using multi-level CSpace resolution.
-This wraps `resolveCapAddress` in the kernel monad. The `bitsRemaining`
-parameter defaults to the root CNode's `depth` field. -/
-def resolveCapAddressK (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat) : Kernel SlotRef :=
-  fun st =>
-    match resolveCapAddress rootId addr bitsRemaining st with
-    | .ok ref => .ok (ref, st)
-    | .error e => .error e
-
 /-- WS-H13: Lookup a capability via multi-level CSpace resolution.
 Composes `resolveCapAddress` with slot lookup. -/
 def cspaceLookupMultiLevel (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat) : Kernel Capability :=
@@ -826,21 +817,6 @@ def processRevokeNode (st : SystemState) (node : CdtNodeId)
           -- was harmless but misleading. After `cspaceDeleteSlotCore`, the slot is already
           -- detached; we only need `removeNode` to clean up the CDT node itself.
           .ok { stDel with cdt := stDel.cdt.removeNode node }
-
-/-- S3-C: Fine-grained CDT revocation — severs a single parent→child
-    derivation edge without destroying the child node.
-
-    This is the production entry point for `removeEdge` (S3-C/U-L03).
-    Unlike `processRevokeNode` which uses `removeNode` (destroying ALL edges
-    for a node), this severs only the specified derivation relationship,
-    leaving the child's outgoing edges intact.
-
-    Use case: partial revocation where a derived capability's lineage is
-    severed but the capability itself (and its own derivatives) remain valid
-    under a new authority chain. -/
-def severDerivationEdge (st : SystemState) (parent child : CdtNodeId)
-    : SystemState :=
-  { st with cdt := st.cdt.revokeDerivationEdge parent child }
 
 -- ============================================================================
 -- WS-E4/C-04: Cross-CNode CDT revocation

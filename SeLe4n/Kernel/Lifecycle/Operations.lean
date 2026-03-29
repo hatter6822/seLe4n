@@ -687,12 +687,6 @@ def retypeFromUntyped
                 .error .illegalAuthority
     | some _ => .error .untypedTypeMismatch
 
-/-- WS-F2: Helper to look up an UntypedObject by ObjId. -/
-def lookupUntyped (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
-  match st.objects[id]? with
-  | some (.untyped ut) => some ut
-  | _ => none
-
 /-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
 S5-G: The alignment check is an additional error guard (returns `allocationMisaligned`
 for VSpace/CNode objects on unaligned bases); it does not affect the decomposition
