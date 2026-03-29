@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-hardware-binding-proofs-GX80s",
-      "commit_sha": "c06bda749ba538710ed25ef597865015dedd6a8e",
-      "tree_sha": "18bfc5d40065ff1a21d0183f1cfdd2156f843726",
-      "committed_at_utc": "2026-03-29T15:37:20+00:00"
+      "commit_sha": "ef02016031ef7e1e413663afdb8c9ab9c10421b9",
+      "tree_sha": "da36ef6280fdc064e783be19fbe5a5966bc63b81",
+      "committed_at_utc": "2026-03-29T18:31:00+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3ad888dc8ddc3bd31403ff3ccc3e344c7497c467dde26e1a36ba8285a49c293a"
+    "source_digest": "5e4e07a759c521dbaf1eb22a952a35e06334693c99c2b65a461efa935b095c64"
   },
   "summary": {
     "module_count": 113,
@@ -27,7 +27,7 @@
     "version": "0.22.18",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 72385,
+    "production_loc": 72398,
     "test_files": 10,
     "test_loc": 8552,
     "proved_theorem_lemma_decls": 2087,
@@ -1046,7 +1046,7 @@
         {
           "kind": "def",
           "name": "contextSwitchState",
-          "line": 123,
+          "line": 136,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -1056,7 +1056,7 @@
         {
           "kind": "def",
           "name": "adapterContextSwitch",
-          "line": 136,
+          "line": 149,
           "called": [
             "Kernel",
             "RegisterFile",
@@ -1069,7 +1069,7 @@
         {
           "kind": "theorem",
           "name": "adapterContextSwitch_error_unsupportedBinding",
-          "line": 149,
+          "line": 162,
           "called": [
             "RegisterFile",
             "RuntimeBoundaryContract",
@@ -1083,7 +1083,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_ok_returns_machine_byte",
-          "line": 158,
+          "line": 171,
           "called": [
             "PAddr",
             "RuntimeBoundaryContract",

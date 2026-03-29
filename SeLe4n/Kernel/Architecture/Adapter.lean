@@ -116,6 +116,19 @@ theorem adapterReadMemory_error_unsupportedBinding
     updated together, so the post-state always satisfies
     `st'.machine.regs = tcb.registerContext` for the new current thread.
 
+    **Caller obligations** (enforced at proof level via `AdapterProofHooks`):
+    - `newRegs = tcb.registerContext` for the TCB at `newTid` (register match)
+    - `newTid ∉ st.scheduler.runnable` (dequeue before dispatch, for
+      `queueCurrentConsistent`)
+    - The outgoing thread's registers must be saved to its TCB before this
+      call (handled by `saveOutgoingContext` in the scheduler)
+
+    This function is a pure state transformation. It does **not** save the
+    outgoing thread's context, dequeue from the run queue, or read the
+    object store. The scheduler (`Operations/Core.lean:schedule`) orchestrates
+    these steps before calling `setCurrentThread`; this adapter provides
+    a single-step alternative for hardware-binding paths.
+
     **Design note**: This replaces the individual `writeRegisterState` approach
     for context switches. Individual register writes break `contextMatchesCurrent`
     because the register file is partially updated while `scheduler.current`

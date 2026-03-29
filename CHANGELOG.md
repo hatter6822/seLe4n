@@ -19,10 +19,13 @@ findings from the v0.22.17 comprehensive audit.
 - **X1-G (C-3)**: `AdapterProofHooks.preserveContextSwitch` field added to
   proof-carrying adapter hooks structure.
   `adapterContextSwitch_ok_preserves_proofLayerInvariantBundle` composition
-  theorem. Component preservation: `contextSwitchState_preserves_vspaceInvariantBundle`,
+  theorem and `adapterContextSwitch_error_unsupportedBinding_preserves_*`
+  error-case theorem. Component preservation:
+  `contextSwitchState_preserves_vspaceInvariantBundle`,
   `contextSwitchState_preserves_contextMatchesCurrent`,
   `contextSwitchState_preserves_currentThreadValid`. All platform ProofHooks
   (RPi5 restrictive, Sim restrictive, Sim substantive) updated.
+  End-to-end `rpi5Restrictive_adapterContextSwitch_preserves` theorem.
 - **X1-K (C-4)**: TPI-001 (VSpace determinism) closed. Documentation updated
   in VSpace.lean and VSpaceInvariant.lean referencing 4 round-trip theorems.
 - **X1-A/B/C (C-1)**: Verified as pre-existing from V4-A2–A9 workstream.
