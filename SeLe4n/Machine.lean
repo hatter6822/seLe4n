@@ -239,9 +239,14 @@ structure MachineState where
   regs : RegisterFile
   memory : Memory
   timer : Nat
+  /-- X2-D: Physical address width carried in machine state so that kernel
+      transitions can enforce platform-specific PA bounds without requiring
+      a separate `MachineConfig` parameter.  Default 52 (ARM64 LPA maximum);
+      real platforms override at boot (e.g., 44 for BCM2712). -/
+  physicalAddressWidth : Nat := 52
 
 instance : Inhabited MachineState where
-  default := { regs := default, memory := (fun _ => 0), timer := 0 }
+  default := { regs := default, memory := (fun _ => 0), timer := 0, physicalAddressWidth := 52 }
 
 /-- R7-C/L-03: Machine-state word-boundedness invariant.
     Asserts that all register values (PC, SP, and all GPRs) fit in one machine

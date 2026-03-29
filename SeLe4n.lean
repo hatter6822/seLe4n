@@ -15,5 +15,6 @@ import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Platform.Contract
+import SeLe4n.Platform.Boot
 import SeLe4n.Platform.Sim.Contract
 import SeLe4n.Platform.RPi5.Contract

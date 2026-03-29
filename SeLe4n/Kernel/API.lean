@@ -49,9 +49,12 @@ Previously it was just an import barrel (finding L-01); it now defines:
 
 | Entry point | Subsystem | Stability |
 |---|---|---|
-| `schedule`, `handleYield` | Scheduler | Stable |
-| `timerTick` | Scheduler (M-04) | Stable |
-| `scheduleDomain`, `switchDomain` | Scheduler (M-05) | Stable |
+| `schedule`, `handleYield` | Scheduler | Stable (unchecked — internal kernel paths under `currentThreadValid`) |
+| `scheduleChecked`, `handleYieldChecked` | Scheduler (X2-I) | Stable (**production entry point** — `saveOutgoingContextChecked` guard) |
+| `timerTick` | Scheduler (M-04) | Stable (unchecked — internal kernel paths under `currentThreadValid`) |
+| `timerTickChecked` | Scheduler (M-04/X2-I) | Stable (**production entry point** — `saveOutgoingContextChecked` guard) |
+| `scheduleDomain`, `switchDomain` | Scheduler (M-05) | Stable (unchecked — internal kernel paths under `currentThreadValid`) |
+| `switchDomainChecked` | Scheduler (M-05/X2-I) | Stable (**production entry point** — `saveOutgoingContextChecked` guard) |
 | `chooseThread`, `chooseThreadInDomain` | Scheduler | Stable |
 | `cspaceLookupSlot`, `cspaceLookupPath` | Capability | Stable |
 | `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable (M-08/A-20: `cspaceMint` does not record CDT edges — capabilities created via this path are untracked by CDT-based revocation; prefer `cspaceMintWithCdt` for tracked derivation) |
@@ -63,7 +66,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
-| `vspaceMapPageCheckedWithFlush`, `vspaceUnmapPageWithFlush`, `vspaceLookup` | VSpace | Stable (S6-A: production uses WithFlush variants) |
+| `vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`, `vspaceLookup` | VSpace | Stable (S6-A/X2-E: production uses state-aware WithFlush variant) |
 | `endpointSendDualChecked` | Info-flow (dual-queue) | Stable |
 | `cspaceMintChecked` | Info-flow | Stable |
 | ~~`apiEndpointSend`, `apiEndpointReceive`~~ | Syscall IPC (WS-H15c) | **Removed** (S5-A v0.19.4) — replaced by `syscallEntry` |
@@ -110,6 +113,69 @@ in a valid state. -/
 theorem apiInvariantBundle_default :
     apiInvariantBundle (default : SystemState) :=
   Architecture.default_system_state_proofLayerInvariantBundle
+
+-- ============================================================================
+-- X2-I: Checked scheduler API wrappers (defense-in-depth)
+-- ============================================================================
+
+/-! ## X2-I: Scheduler operations with `saveOutgoingContextChecked`
+
+The core scheduler operations (`schedule`, `handleYield`, `timerTick`,
+`switchDomain`) in `Scheduler/Operations/Core.lean` use `saveOutgoingContext`
+(unchecked) internally. Under `currentThreadValid` (part of
+`schedulerInvariantBundle`), the unchecked variant's failure branch — where
+the current thread's TCB lookup fails — is unreachable: the invariant
+guarantees the current thread resolves to a valid TCB.
+
+The checked wrappers below provide defense-in-depth at the API boundary:
+they call `saveOutgoingContextChecked` before delegating to the underlying
+scheduler operation. On failure (`false` return), they propagate
+`schedulerInvariantViolation` rather than silently continuing with stale
+register context. Under correct invariant maintenance the failure branch
+is never taken; the guard exists to surface invariant violations early. -/
+
+/-- X2-I: Checked `schedule` wrapper. Verifies the outgoing context save
+succeeds before delegating to the core scheduler. Under `currentThreadValid`
+the failure branch is unreachable. -/
+def scheduleChecked : Kernel Unit :=
+  fun st =>
+    let (stSaved, ok) := saveOutgoingContextChecked st
+    if ok then
+      schedule stSaved
+    else
+      .error .schedulerInvariantViolation
+
+/-- X2-I: Checked `handleYield` wrapper. Verifies the outgoing context save
+succeeds before delegating to the core yield handler. -/
+def handleYieldChecked : Kernel Unit :=
+  fun st =>
+    let (stSaved, ok) := saveOutgoingContextChecked st
+    if ok then
+      handleYield stSaved
+    else
+      .error .schedulerInvariantViolation
+
+/-- X2-I: Checked `timerTick` wrapper. Verifies the outgoing context save
+succeeds before delegating to the core timer tick handler. -/
+def timerTickChecked : Kernel Unit :=
+  fun st =>
+    let (stSaved, ok) := saveOutgoingContextChecked st
+    if ok then
+      timerTick stSaved
+    else
+      .error .schedulerInvariantViolation
+
+/-- X2-I: Checked `switchDomain` wrapper. Verifies the outgoing context save
+succeeds before delegating to the core domain switch. Note: `switchDomain`
+also calls `saveOutgoingContext` internally; the outer check ensures failure
+is detected before any scheduler state mutation. -/
+def switchDomainChecked : Kernel Unit :=
+  fun st =>
+    let (stSaved, ok) := saveOutgoingContextChecked st
+    if ok then
+      switchDomain stSaved
+    else
+      .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- WS-H15c/A-42: Syscall Capability-Checking Wrappers
@@ -368,7 +434,8 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeVSpaceMapArgs decoded with
         | .error e => .error e
         | .ok args =>
-            Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
+            -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
+            Architecture.vspaceMapPageCheckedWithFlushFromState args.asid args.vaddr args.paddr
               args.perms st
     | _ => fun _ => .error .invalidCapability
   | .vspaceUnmap =>
@@ -1164,9 +1231,11 @@ theorem dispatchWithCap_lifecycleRetype_delegates
       lifecycleRetypeDirectWithCleanup cap args.targetObj (objectOfKernelType args.newType args.size) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
-/-- WS-K-D/S6-A/T6-C: When vspaceMap dispatch succeeds, `vspaceMapPageCheckedWithFlush` is
-invoked with the decoded ASID, vaddr, paddr, and validated permissions.
-Production API uses the TLB-flushing variant to maintain `tlbConsistent`.
+/-- WS-K-D/S6-A/T6-C/X2-E: When vspaceMap dispatch succeeds,
+`vspaceMapPageCheckedWithFlushFromState` is invoked with the decoded ASID,
+vaddr, paddr, and validated permissions.  The state-aware variant reads
+`physicalAddressWidth` from `SystemState.machine` for platform-specific PA
+bounds enforcement.
 T6-C: Permissions are now typed as `PagePermissions` (validated at decode). -/
 theorem dispatchWithCap_vspaceMap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
@@ -1176,7 +1245,7 @@ theorem dispatchWithCap_vspaceMap_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      Architecture.vspaceMapPageCheckedWithFlush args.asid args.vaddr args.paddr
+      Architecture.vspaceMapPageCheckedWithFlushFromState args.asid args.vaddr args.paddr
         args.perms := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 

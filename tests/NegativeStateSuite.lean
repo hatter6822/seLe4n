@@ -10,6 +10,7 @@ import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
 import SeLe4n.Testing.Helpers
+import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Platform.RPi5.BootContract
 
@@ -3135,6 +3136,79 @@ private def runS2HLifecycleErrorTests : IO Unit := do
 
   IO.println "all S2-H lifecycle error-path tests passed"
 
+-- ============================================================================
+-- X2: Runtime Invariant Enforcement tests
+-- ============================================================================
+
+/-- X2: Tests for Phase X2 — Runtime Invariant Enforcement.
+    Covers: X2-B (setDomainScheduleChecked validation),
+    X2-D (applyMachineConfig PA width propagation),
+    X2-I (checked scheduler wrappers). -/
+private def runX2RuntimeInvariantTests : IO Unit := do
+  IO.println "\n=== X2: Runtime Invariant Enforcement ==="
+
+  -- X2-B: setDomainScheduleChecked rejects zero-length entries
+  let st0 : SystemState := default
+  let badSchedule : List DomainScheduleEntry := [
+    { domain := ⟨0⟩, length := 10 },
+    { domain := ⟨1⟩, length := 0 },   -- zero-length entry
+    { domain := ⟨2⟩, length := 5 }
+  ]
+  match setDomainScheduleChecked st0 badSchedule with
+  | .error _ =>
+    IO.println "positive check passed [X2-B-01]: setDomainScheduleChecked rejects zero-length entry"
+  | .ok _ =>
+    throw <| IO.userError "X2-B-01: setDomainScheduleChecked should reject zero-length entry"
+
+  -- X2-B: setDomainScheduleChecked accepts valid schedule
+  let goodSchedule : List DomainScheduleEntry := [
+    { domain := ⟨0⟩, length := 10 },
+    { domain := ⟨1⟩, length := 5 }
+  ]
+  match setDomainScheduleChecked st0 goodSchedule with
+  | .ok st1 =>
+    if st1.scheduler.domainSchedule == goodSchedule then
+      IO.println "positive check passed [X2-B-02]: setDomainScheduleChecked accepts valid schedule"
+    else
+      throw <| IO.userError "X2-B-02: setDomainScheduleChecked result has wrong schedule"
+  | .error e =>
+    throw <| IO.userError s!"X2-B-02: setDomainScheduleChecked should accept valid schedule, got: {e}"
+
+  -- X2-D: applyMachineConfig propagates physicalAddressWidth
+  let bootedState : IntermediateState :=
+    SeLe4n.Platform.Boot.bootFromPlatform { irqTable := [], initialObjects := [] }
+  let rpi5Config := SeLe4n.Platform.RPi5.rpi5MachineConfig
+  let withPA : IntermediateState := SeLe4n.Platform.Boot.applyMachineConfig bootedState rpi5Config
+  if withPA.state.machine.physicalAddressWidth == 44 then
+    IO.println "positive check passed [X2-D-01]: applyMachineConfig sets RPi5 PA width to 44"
+  else
+    throw <| IO.userError s!"X2-D-01: expected PA width 44, got {withPA.state.machine.physicalAddressWidth}"
+
+  -- X2-D: default PA width is 52
+  if bootedState.state.machine.physicalAddressWidth == 52 then
+    IO.println "positive check passed [X2-D-02]: default PA width is 52"
+  else
+    throw <| IO.userError s!"X2-D-02: expected default PA width 52, got {bootedState.state.machine.physicalAddressWidth}"
+
+  -- X2-I: scheduleChecked on malformed state returns schedulerInvariantViolation
+  let malformedSt : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
+      |>.withCurrent none
+      |>.build)
+  expectErr "X2-I-01 scheduleChecked on malformed runnable"
+    (SeLe4n.Kernel.scheduleChecked malformedSt)
+    .schedulerInvariantViolation
+
+  -- X2-I: handleYieldChecked on default state (no current thread) returns invalidArgument
+  -- (not schedulerInvariantViolation — the saveOutgoingContextChecked guard passes
+  -- because current=none, but handleYield itself rejects the no-current-thread case)
+  expectErr "X2-I-02 handleYieldChecked no current thread"
+    (SeLe4n.Kernel.handleYieldChecked (default : SystemState))
+    .invalidArgument
+
+  IO.println "all X2 runtime invariant tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -3156,3 +3230,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSR4CoherenceChecks
   SeLe4n.Testing.runS2GCapabilityErrorTests
   SeLe4n.Testing.runS2HLifecycleErrorTests
+  SeLe4n.Testing.runX2RuntimeInvariantTests

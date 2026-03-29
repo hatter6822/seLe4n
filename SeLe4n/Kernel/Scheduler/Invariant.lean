@@ -224,17 +224,36 @@ and maintained by:
 def domainTimeRemainingPositive (st : SystemState) : Prop :=
   st.scheduler.domainTimeRemaining > 0
 
-/-- R6-D/L-12/V5-H: Extended full scheduler invariant bundle.
-    8-tuple: base triad + timeSlice + EDF + context + runnableAreTCBs +
-    priorityMatch + domainTimeRemainingPositive.
+/-- X2-A/H-2: All entries in the domain schedule table have positive length.
+This validates that `switchDomain` will never set `domainTimeRemaining` to 0
+when advancing to the next schedule entry. The domain schedule is set once
+at boot and is immutable at runtime, so this predicate is trivially preserved
+by all scheduler operations (frame lemma — `domainSchedule` unchanged). -/
+def domainScheduleEntriesPositive (st : SystemState) : Prop :=
+  ∀ e, e ∈ st.scheduler.domainSchedule → e.length > 0
+
+/-- X2-A: Default state has empty domain schedule, so the predicate is vacuously true. -/
+theorem default_domainScheduleEntriesPositive :
+    domainScheduleEntriesPositive (default : SystemState) := by
+  intro e hMem
+  have : (default : SystemState).scheduler.domainSchedule = [] := by decide
+  rw [this] at hMem; simp at hMem
+
+/-- R6-D/L-12/V5-H/X2-A: Extended full scheduler invariant bundle.
+    9-tuple: base triad + timeSlice + EDF + context + runnableAreTCBs +
+    priorityMatch + domainTimeRemainingPositive + domainScheduleEntriesPositive.
     `schedulerPriorityMatch` ensures the RunQueue's priority index stays in sync
     with the authoritative TCB priority in the object store.
-    `domainTimeRemainingPositive` (V5-H) ensures domain time remaining > 0. -/
+    `domainTimeRemainingPositive` (V5-H) ensures domain time remaining > 0.
+    `domainScheduleEntriesPositive` (X2-A/H-2) ensures all domain schedule entries
+    have positive length, closing the `hEntriesPos` precondition gap in
+    `switchDomain_preserves_domainTimeRemainingPositive`. -/
 def schedulerInvariantBundleFull (st : SystemState) : Prop :=
   schedulerInvariantBundle st ∧ timeSlicePositive st ∧
   currentTimeSlicePositive st ∧ edfCurrentHasEarliestDeadline st ∧
   contextMatchesCurrent st ∧ runnableThreadsAreTCBs st ∧
-  schedulerPriorityMatch st ∧ domainTimeRemainingPositive st
+  schedulerPriorityMatch st ∧ domainTimeRemainingPositive st ∧
+  domainScheduleEntriesPositive st
 
 /-- Project the structural triad from the full bundle. -/
 theorem schedulerInvariantBundleFull_to_base {st : SystemState}
@@ -254,7 +273,12 @@ theorem schedulerInvariantBundleFull_to_priorityMatch {st : SystemState}
 /-- V5-H: Project `domainTimeRemainingPositive` from the full scheduler bundle. -/
 theorem schedulerInvariantBundleFull_to_domainTimeRemainingPositive {st : SystemState}
     (h : schedulerInvariantBundleFull st) : domainTimeRemainingPositive st :=
-  h.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.1
+
+/-- X2-A: Project `domainScheduleEntriesPositive` from the full scheduler bundle. -/
+theorem schedulerInvariantBundleFull_to_domainScheduleEntriesPositive {st : SystemState}
+    (h : schedulerInvariantBundleFull st) : domainScheduleEntriesPositive st :=
+  h.2.2.2.2.2.2.2.2
 
 /-- R6-D: schedulerPriorityMatch is preserved when both runQueue and objects
     are unchanged. -/

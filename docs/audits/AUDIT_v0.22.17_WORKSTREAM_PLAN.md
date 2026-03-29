@@ -51,7 +51,7 @@ changes is **24 findings** organized into **40 sub-tasks**.
 | Phase | Name | Sub-tasks | Priority | Gate | Status |
 |-------|------|-----------|----------|------|--------|
 | X1 | Hardware-Binding Critical Proofs | 11 | **BLOCKER** | `lake build` clean, all 9 invariant components proven | **COMPLETE** |
-| X2 | Runtime Invariant Enforcement | 9 | HIGH | `test_full.sh` green, zero sorry | PLANNED |
+| X2 | Runtime Invariant Enforcement | 9 | HIGH | `test_full.sh` green, zero sorry | **COMPLETE** (v0.22.19) |
 | X3 | Information Flow & Composition Closure | 5 | HIGH | `test_full.sh` green, NI theorems compile | PLANNED |
 | X4 | Platform & Architecture Completion | 6 | MEDIUM | Module builds pass, `test_smoke.sh` green | PLANNED |
 | X5 | Documentation, Hardening & Low-Severity | 9 | LOW | `test_fast.sh` green, docs consistent | PLANNED |
@@ -517,13 +517,16 @@ requires that every thread in a notification wait list has a valid TCB.
 notification waiting lists. The cleanup function
 `removeFromAllNotificationWaitLists` (Lifecycle/Operations.lean:110–117)
 already exists but is only called from `cleanupTcbReferences`.
-**Change**: In the service revocation path, after removing the service
-from the registry, call `removeFromAllNotificationWaitLists` for any
-thread IDs that were associated with the revoked service's endpoint.
-Specifically, if the service had a registered endpoint, iterate its
-endpoint queue and clean up notification wait lists for those threads.
-**Verification**: `lake build SeLe4n.Kernel.Service.Operations`
-**Risk**: Low — reuses existing cleanup function
+**Change**: Prove that `revokeService` preserves `noStaleNotificationWaitReferences`.
+**Implementation note**: The original spec suggested calling
+`removeFromAllNotificationWaitLists` during revocation. Analysis showed this
+is unnecessary: `revokeService` only modifies `serviceRegistry`/`services` and
+**never deletes objects** (`revokeService_preserves_objects`). Since no TCBs
+are deleted, no notification wait-list references become stale. The invariant
+is preserved as a **frame lemma** — stronger than explicit cleanup because it
+proves no cleanup is needed by construction.
+**Verification**: `lake build SeLe4n.Kernel.CrossSubsystem`
+**Risk**: Low — frame lemma is structurally sound
 
 #### X2-H: Prove notification cleanup preserves cross-subsystem invariant (M-4)
 
@@ -551,13 +554,37 @@ variant `saveOutgoingContextChecked` (Selection.lean:254–262) returns
 a `Bool` flag indicating success/failure.
 **Change**: In the scheduler dispatch path within API.lean, replace
 `saveOutgoingContext` calls with `saveOutgoingContextChecked`. On
-failure (`false` return), propagate `KernelError.invalidThread` rather
-than silently continuing with potentially stale context.
+failure (`false` return), propagate `KernelError.schedulerInvariantViolation`
+rather than silently continuing with potentially stale context. (Original
+spec said `.invalidThread`; `.schedulerInvariantViolation` is more precise —
+the failure means `currentThreadValid` is violated, which is a scheduler
+invariant condition, not a user-facing thread-ID error.)
 Note: Under `currentThreadValid` invariant, the failure branch is
 unreachable. This change provides defense-in-depth at the API boundary.
 **Verification**: `lake build SeLe4n.Kernel.API`
 **Risk**: Low — the `true` path is identical to `saveOutgoingContext`
 (proven by `saveOutgoingContextChecked_fst_eq` at Selection.lean:265)
+
+### Phase X2 Completion Summary (v0.22.19)
+
+**All 9 sub-tasks COMPLETE.** Zero sorry/axiom. `test_full.sh` green.
+
+| Sub-task | Finding | Status | Key Change |
+|----------|---------|--------|------------|
+| X2-A | H-2 | COMPLETE | `domainScheduleEntriesPositive` predicate, 9th conjunct of `schedulerInvariantBundleFull` |
+| X2-B | H-2 | COMPLETE | `setDomainScheduleChecked` builder validation in `State.lean` |
+| X2-C | H-2 | COMPLETE | 7 frame lemmas (`domainSchedule` immutable at runtime), 4 bundle preservation updates |
+| X2-D | H-6 | COMPLETE | `physicalAddressWidth : Nat := 52` field added to `MachineState`; `applyMachineConfig` propagates from `MachineConfig` post-boot |
+| X2-E | H-6 | COMPLETE | `vspaceMapPageCheckedWithFlushFromState` reads PA width from `SystemState.machine` |
+| X2-F | H-8 | COMPLETE | `listAllDistinct` transparent O(n²) predicate, 3 `native_decide` → `decide` |
+| X2-G | M-4 | COMPLETE | `revokeService_preserves_noStaleNotificationWaitReferences` frame lemma |
+| X2-H | M-4 | COMPLETE | Cross-subsystem invariant preservation proven via `revokeService_preserves_objects` |
+| X2-I | M-6 | COMPLETE | 4 checked wrappers (`scheduleChecked`, `handleYieldChecked`, `timerTickChecked`, `switchDomainChecked`) |
+
+**Files modified**: `Machine.lean`, `Model/State.lean`, `Scheduler/Invariant.lean`,
+`Scheduler/Operations/Preservation.lean`, `Architecture/Invariant.lean`,
+`Architecture/VSpace.lean`, `Kernel/API.lean`, `Platform/Boot.lean`,
+`Kernel/CrossSubsystem.lean`
 
 ---
 

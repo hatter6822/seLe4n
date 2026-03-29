@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.22.18` |
+| Version | `0.22.19` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 72,385 across 103 Lean files |
 | Test LoC | 8,552 across 10 suites |
 | Proved declarations | 2,087 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| Active workstream | **WS-X Phase X1 COMPLETE** (v0.22.18). Prior: **WS-W PORTFOLIO COMPLETE** (v0.22.11–v0.22.17), **WS-V PORTFOLIO COMPLETE** (v0.22.0–v0.22.10), WS-U through WS-B — all COMPLETE. |
+| Active workstream | **WS-X Phase X2 COMPLETE** (v0.22.19). Phase X1 COMPLETE (v0.22.18). Prior: **WS-W PORTFOLIO COMPLETE** (v0.22.11–v0.22.17), **WS-V PORTFOLIO COMPLETE** (v0.22.0–v0.22.10), WS-U through WS-B — all COMPLETE. |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

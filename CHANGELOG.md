@@ -1,3 +1,35 @@
+## [0.22.19] — X2: Runtime Invariant Enforcement
+
+Phase X2 of WS-X pre-release audit remediation. Resolves 5 findings (H-2, H-6,
+H-8, M-4, M-6) from the v0.22.17 comprehensive audit.
+
+- **X2-A/B/C (H-2)**: `domainScheduleEntriesPositive` predicate added as 9th
+  conjunct of `schedulerInvariantBundleFull`. `setDomainScheduleChecked` builder
+  validation rejects zero-length entries. 7 frame lemmas prove `domainSchedule`
+  immutability across all scheduler transitions. 4 bundle preservation theorems
+  updated (`schedule`, `handleYield`, `timerTick`, `switchDomain`).
+- **X2-D/E (H-6)**: `physicalAddressWidth : Nat := 52` field added to
+  `MachineState`. `vspaceMapPageCheckedWithFlushFromState` reads PA width from
+  live machine state. API dispatch updated to use state-aware PA bounds.
+  `applyMachineConfig` post-boot function propagates platform `MachineConfig`
+  (including PA width) to booted state. 3 correctness theorems.
+- **X2-F (H-8)**: `listAllDistinct` transparent O(n²) duplicate detection
+  function. `irqsUniqueTransparent`/`objectIdsUniqueTransparent` variants.
+  3 `native_decide` proofs replaced with `decide` for kernel-evaluable
+  duplicate detection.
+- **X2-G/H (M-4)**: `revokeService_preserves_noStaleNotificationWaitReferences`
+  frame lemma in `CrossSubsystem.lean`. Proof via `revokeService_preserves_objects`
+  and `noStaleNotificationWaitReferences_frame`.
+- **X2-I (M-6)**: 4 checked scheduler wrappers (`scheduleChecked`,
+  `handleYieldChecked`, `timerTickChecked`, `switchDomainChecked`) using
+  `saveOutgoingContextChecked` with `schedulerInvariantViolation` error
+  propagation. Defense-in-depth at API boundary.
+
+Audit: `applyMachineConfig` boot-to-runtime PA width propagation, X2 test
+coverage (6 assertions: X2-B-01/02, X2-D-01/02, X2-I-01/02).
+
+Zero sorry/axiom. All tests pass.
+
 ## [0.22.18] — X1: Hardware-Binding Critical Proofs
 
 Phase X1 of WS-X pre-release audit remediation. Resolves all 4 CRITICAL
