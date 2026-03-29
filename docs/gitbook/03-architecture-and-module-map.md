@@ -269,11 +269,10 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
     `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
   - WS-K-A: `decodeSyscallArgs` populates `SyscallDecodeResult.msgRegs` from
-    layout's message registers via `Array.mapM`; `encodeMsgRegs` identity encoder;
-    `decodeMsgRegs_length` / `decodeMsgRegs_roundtrip` theorems; extended
-    `decode_components_roundtrip` to 4-conjunct.
-  - WS-K-E: `extractMessageRegisters` converts `Array RegValue` → `Array Nat` for
-    IPC message population with triple bound; `extractMessageRegisters_length`,
+    layout's message registers via `Array.mapM`;
+    `decode_components_roundtrip` (3-conjunct, W3-H simplified from 4).
+  - WS-K-E: `extractMessageRegisters` extracts `Array RegValue` for
+    IPC message population with triple bound (S4-D: preserves typed wrapper); `extractMessageRegisters_length`,
     `extractMessageRegisters_ipc_bounded`, `extractMessageRegisters_deterministic`.
   - WS-K-F: `extractMessageRegisters_roundtrip` closes layer-1 extraction
     round-trip gap.

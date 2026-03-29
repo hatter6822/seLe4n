@@ -107,7 +107,7 @@ def DeviceTree.validate (dt : DeviceTree) : Bool :=
 /-- S6-F: Construct a `DeviceTree` from hardcoded board constants.
     This is the current path — all values come from compile-time constants
     in `RPi5/Board.lean`. The result can be validated at compile time via
-    `native_decide` on `DeviceTree.validate`. -/
+    `decide` on `DeviceTree.validate`. -/
 def DeviceTree.fromBoardConstants
     (name : String)
     (config : MachineConfig)

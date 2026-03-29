@@ -214,7 +214,7 @@ H3 proceeds.
 
 **Automated verification**: `rpi5MachineConfig_wellFormed` (above) proves
 structural well-formedness (non-overlap, valid sizes, PA width bounds) via
-`native_decide`. This does not validate against the datasheet — it only
+`decide`. This does not validate against the datasheet — it only
 ensures internal consistency of the declared values.
 -/
 
@@ -286,8 +286,8 @@ the ARM GIC-400 Technical Reference Manual.
 ### MMIO Disjointness
 
 MMIO regions (UART, GIC distributor, GIC CPU interface) are proven disjoint
-from RAM via `mmioRegionDisjoint_holds` (native_decide). Machine configuration
-well-formedness is proven via `rpi5MachineConfig_wellFormed` (native_decide).
+from RAM via `mmioRegionDisjoint_holds` (`decide`). Machine configuration
+well-formedness is proven via `rpi5MachineConfig_wellFormed` (`decide`).
 
 ### Notes
 
