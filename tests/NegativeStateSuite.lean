@@ -9,6 +9,7 @@
 import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Testing.Helpers
 import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Platform.RPi5.BootContract
 
@@ -126,40 +127,25 @@ private def baseState : SystemState :=
 private def invariantObjectIds : List SeLe4n.ObjId :=
   [endpointId, cnodeId, wrongTypeId, guardedCnodeId, notificationId, ⟨20⟩, ⟨6⟩, ⟨7⟩, ⟨8⟩, ⟨9⟩]
 
-private def expectError
+-- W5-A: Consolidated test helpers — delegate to SeLe4n.Testing shared helpers
+private def expectErr
     (label : String)
     (actual : Except KernelError α)
     (expected : KernelError) : IO Unit :=
-  match actual with
-  | .ok _ =>
-      throw <| IO.userError s!"{label}: expected error {toString expected}, got success"
-  | .error err =>
-      if err = expected then
-        IO.println s!"negative check passed [{label}]: {toString err}"
-      else
-        throw <| IO.userError s!"{label}: expected {toString expected}, got {toString err}"
+  SeLe4n.Testing.expectError label actual expected (msgPrefix := "negative check")
 
-private def expectOkState
+private def expectOkSt
     (label : String)
-    (actual : Except KernelError (α × SystemState)) : IO (α × SystemState) :=
-  match actual with
-  | .ok result => do
-      IO.println s!"positive check passed [{label}]"
-      let (_, st) := result
-      assertStateInvariantsFor label invariantObjectIds st
-      pure result
-  | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {toString err}"
+    (actual : Except KernelError (α × SystemState)) : IO (α × SystemState) := do
+  let result ← SeLe4n.Testing.expectOkState label actual (msgPrefix := "positive check")
+  let (_, st) := result
+  assertStateInvariantsFor label invariantObjectIds st
+  pure result
 
-private def expectOk
+private def expectOkVal
     (label : String)
     (actual : Except KernelError α) : IO α :=
-  match actual with
-  | .ok value => do
-      IO.println s!"positive check passed [{label}]"
-      pure value
-  | .error err =>
-      throw <| IO.userError s!"{label}: expected success, got {toString err}"
+  SeLe4n.Testing.expectOk label actual (msgPrefix := "positive check")
 
 private def expectThreadQueueLinks
     (label : String)
@@ -258,17 +244,17 @@ private def f2DeviceState : SystemState :=
 
 private def runNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
-  expectError "lookup wrong object type"
+  expectErr "lookup wrong object type"
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
     .objectNotFound
-  let _ ← expectOk "lookup path resolved"
+  let _ ← expectOkVal "lookup path resolved"
     (SeLe4n.Kernel.cspaceLookupPath slot0Path baseState)
 
-  expectError "lookup path depth mismatch"
+  expectErr "lookup path depth mismatch"
     (SeLe4n.Kernel.cspaceLookupPath guardedPathBadDepth baseState)
     .illegalState
 
-  expectError "lookup path guard mismatch"
+  expectErr "lookup path guard mismatch"
     (SeLe4n.Kernel.cspaceLookupPath guardedPathBadGuard baseState)
     .invalidCapability
 
@@ -289,7 +275,7 @@ private def runNegativeChecks : IO Unit := do
         |>.insert moveChildNode { cnode := cnodeId, slot := ⟨8⟩ })
       cdtNextNode := ⟨3⟩
     }
-  let (_, moveState) ← expectOkState "cspaceMove remaps slot-node pointer"
+  let (_, moveState) ← expectOkSt "cspaceMove remaps slot-node pointer"
     (SeLe4n.Kernel.cspaceMove slot0 moveDst moveSeed)
   if SystemState.lookupCdtNodeOfSlot moveState slot0 = none ∧
       SystemState.lookupCdtNodeOfSlot moveState moveDst = some moveSrcNode ∧
@@ -312,7 +298,7 @@ private def runNegativeChecks : IO Unit := do
       cdtNodeSlot := baseState.cdtNodeSlot.insert leafNode moveDst
       cdtNextNode := ⟨21⟩
     }
-  let (_, deletedMoveDst) ← expectOkState "cspaceDeleteSlot clears stale CDT slot mapping"
+  let (_, deletedMoveDst) ← expectOkSt "cspaceDeleteSlot clears stale CDT slot mapping"
     (SeLe4n.Kernel.cspaceDeleteSlot moveDst leafDeleteSeed)
   if SystemState.lookupCdtNodeOfSlot deletedMoveDst moveDst = none ∧
       SystemState.lookupCdtSlotOfNode deletedMoveDst leafNode = none then
@@ -333,7 +319,7 @@ private def runNegativeChecks : IO Unit := do
         |>.insert childOfBearing { cnode := cnodeId, slot := ⟨9⟩ })
       cdtNextNode := ⟨12⟩
     }
-  expectError "cspaceDeleteSlot rejects delete with CDT children"
+  expectErr "cspaceDeleteSlot rejects delete with CDT children"
     (SeLe4n.Kernel.cspaceDeleteSlot slot0 childBearingSeed)
     .revocationRequired
 
@@ -378,7 +364,7 @@ private def runNegativeChecks : IO Unit := do
       cdtNextNode := ⟨33⟩
     }
 
-  let (strictReport, strictState) ← expectOkState "cspaceRevokeCdtStrict returns report"
+  let (strictReport, strictState) ← expectOkSt "cspaceRevokeCdtStrict returns report"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict strictRootSlot strictSeed)
   if strictReport.deletedSlots = [strictChildSlotOk] then
     IO.println "positive check passed [cspaceRevokeCdtStrict records deleted descendants before failure]"
@@ -401,20 +387,20 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "cspaceRevokeCdtStrict should detach successful descendant slot mapping"
 
-  expectError "dual-queue receive on non-endpoint object"
+  expectErr "dual-queue receive on non-endpoint object"
     (SeLe4n.Kernel.endpointReceiveDual cnodeId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability
 
-  expectError "dual-queue receive on missing object"
+  expectErr "dual-queue receive on missing object"
     (SeLe4n.Kernel.endpointReceiveDual (SeLe4n.ObjId.ofNat 9999) (SeLe4n.ThreadId.ofNat 1) baseState)
     .objectNotFound
 
-  expectError "vspace lookup missing asid"
+  expectErr "vspace lookup missing asid"
     (SeLe4n.Kernel.Architecture.vspaceLookup ⟨99⟩ vaddrPrimary baseState)
     .asidNotBound
 
   -- F-03 fix: VSpace map test — verify mapping was actually created via subsequent lookup
-  let (_, stMapped) ← expectOkState "vspace map initial"
+  let (_, stMapped) ← expectOkSt "vspace map initial"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asidPrimary vaddrPrimary paddrPrimary) baseState)
 
   -- Verify the mapping was actually created by looking it up
@@ -427,15 +413,15 @@ private def runNegativeChecks : IO Unit := do
   | .error err =>
       throw <| IO.userError s!"vspace lookup after map failed: {toString err} — mapping was not created"
 
-  expectError "vspace duplicate map conflict"
+  expectErr "vspace duplicate map conflict"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asidPrimary vaddrPrimary paddrPrimary) stMapped)
     .mappingConflict
 
-  let (_, _stAwait) ← expectOkState "dual-queue receive enqueue seed"
+  let (_, _stAwait) ← expectOkSt "dual-queue receive enqueue seed"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 7) baseState)
 
   -- F-03 fix: Notification wait — consistently check TCB ipcState across ALL variants
-  let (waitBadge, stN1) ← expectOkState "notification wait blocks with none"
+  let (waitBadge, stN1) ← expectOkSt "notification wait blocks with none"
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) baseState)
   if waitBadge = none then
     IO.println "positive check passed [notification wait #1 none]"
@@ -450,7 +436,7 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError "notification wait #1 expected blockedOnNotification ipcState"
   | _ => throw <| IO.userError "notification wait #1 expected waiter tcb"
 
-  let (_, stN2) ← expectOkState "notification signal wakes waiter"
+  let (_, stN2) ← expectOkSt "notification signal wakes waiter"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNatMasked 55) stN1)
 
 
@@ -462,7 +448,7 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError "notification signal wake expected waiter ipcState ready"
   | _ => throw <| IO.userError "notification signal wake expected waiter tcb"
 
-  let (_, stN3) ← expectOkState "notification signal stores active badge"
+  let (_, stN3) ← expectOkSt "notification signal stores active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNatMasked 66) stN2)
 
   -- F-03 fix: Badge accumulation — assert badge value BEFORE final signal
@@ -475,7 +461,7 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError s!"notification badge precondition mismatch: expected some 66, got {toString ntfn.pendingBadge}"
   | _ => throw <| IO.userError "notification badge precondition expected notification object"
 
-  let (_, stN4) ← expectOkState "notification signal accumulates active badge"
+  let (_, stN4) ← expectOkSt "notification signal accumulates active badge"
     (SeLe4n.Kernel.notificationSignal notificationId (SeLe4n.Badge.ofNatMasked 5) stN3)
 
   match (stN4.objects[notificationId]? : Option KernelObject) with
@@ -489,7 +475,7 @@ private def runNegativeChecks : IO Unit := do
   | _ => throw <| IO.userError "notification signal expected notification object"
 
   -- F-03 fix: Notification wait #2 — check TCB ipcState after consuming badge
-  let (waitBadge2, stN5) ← expectOkState "notification wait consumes active badge"
+  let (waitBadge2, stN5) ← expectOkSt "notification wait consumes active badge"
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 8) stN4)
   if waitBadge2 = none then
     throw <| IO.userError "notification wait #2 expected delivered badge"
@@ -538,11 +524,11 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "Badge.bor should always produce valid results"
 
-  expectError "notification wait wrong object type"
+  expectErr "notification wait wrong object type"
     (SeLe4n.Kernel.notificationWait endpointId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability
 
-  expectError "dual-queue send on missing object"
+  expectErr "dual-queue send on missing object"
     (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
       { registers := #[], caps := #[], badge := none } baseState)
     .objectNotFound
@@ -552,13 +538,13 @@ private def runNegativeChecks : IO Unit := do
   -- ==========================================================================
 
   -- Oversized registers (> 120) rejected
-  expectError "endpointSendDual rejects oversized registers"
+  expectErr "endpointSendDual rejects oversized registers"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- Oversized caps (> 3) rejected
-  expectError "endpointSendDual rejects oversized caps"
+  expectErr "endpointSendDual rejects oversized caps"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := #[],
         caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
@@ -569,13 +555,13 @@ private def runNegativeChecks : IO Unit := do
     .ipcMessageTooManyCaps
 
   -- endpointCall rejects oversized registers
-  expectError "endpointCall rejects oversized registers"
+  expectErr "endpointCall rejects oversized registers"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- endpointCall rejects oversized caps
-  expectError "endpointCall rejects oversized caps"
+  expectErr "endpointCall rejects oversized caps"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 1)
       { registers := #[],
         caps := #[{ target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
@@ -586,14 +572,14 @@ private def runNegativeChecks : IO Unit := do
     .ipcMessageTooManyCaps
 
   -- endpointReply rejects oversized registers
-  expectError "endpointReply rejects oversized registers"
+  expectErr "endpointReply rejects oversized registers"
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- endpointReply rejects oversized caps
-  expectError "endpointReply rejects oversized caps"
+  expectErr "endpointReply rejects oversized caps"
     (SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
@@ -605,14 +591,14 @@ private def runNegativeChecks : IO Unit := do
     .ipcMessageTooManyCaps
 
   -- endpointReplyRecv rejects oversized registers
-  expectError "endpointReplyRecv rejects oversized registers"
+  expectErr "endpointReplyRecv rejects oversized registers"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none } baseState)
     .ipcMessageTooLarge
 
   -- endpointReplyRecv rejects oversized caps
-  expectError "endpointReplyRecv rejects oversized caps"
+  expectErr "endpointReplyRecv rejects oversized caps"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 1)
       (SeLe4n.ThreadId.ofNat 2)
       { registers := #[],
@@ -644,7 +630,7 @@ private def runNegativeChecks : IO Unit := do
   -- WS-E4 M-01 refinement: dual-queue endpoint FIFO/handshake coverage
   -- ==========================================================================
 
-  let (_, stDualSend1) ← expectOkState "dual queue send blocks sender"
+  let (_, stDualSend1) ← expectOkSt "dual queue send blocks sender"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
   match (stDualSend1.objects[endpointId]? : Option KernelObject) with
   | some (.endpoint ep) =>
@@ -656,7 +642,7 @@ private def runNegativeChecks : IO Unit := do
   expectThreadQueueLinks "dual queue sender enqueued link clear"
     stDualSend1 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none
 
-  let (firstSender, _) ← expectOkState "dual queue receive dequeues sender"
+  let (firstSender, _) ← expectOkSt "dual queue receive dequeues sender"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualSend1)
   if firstSender = SeLe4n.ThreadId.ofNat 7 then
     IO.println "positive check passed [dual queue first sender delivered]"
@@ -664,33 +650,33 @@ private def runNegativeChecks : IO Unit := do
     throw <| IO.userError s!"dual queue first sender expected tid 7, got {toString firstSender}"
 
   -- FIFO check across two blocked senders and one receiver consuming twice.
-  let (_, stDualFifo1) ← expectOkState "dual queue fifo enqueue sender 7"
+  let (_, stDualFifo1) ← expectOkSt "dual queue fifo enqueue sender 7"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
-  let (_, stDualFifo2) ← expectOkState "dual queue fifo enqueue sender 8"
+  let (_, stDualFifo2) ← expectOkSt "dual queue fifo enqueue sender 8"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stDualFifo1)
   expectThreadQueueLinks "dual queue fifo sender 7 links to sender 8"
     stDualFifo2 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 8))
   expectThreadQueueLinks "dual queue fifo sender 8 links from sender 7"
     stDualFifo2 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 7)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 7))) none
-  let (fifoFirst, stDualFifo3) ← expectOkState "dual queue fifo receive #1"
+  let (fifoFirst, stDualFifo3) ← expectOkSt "dual queue fifo receive #1"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo2)
   expectThreadQueueLinks "dual queue fifo dequeue #1 clears sender 7 links"
     stDualFifo3 (SeLe4n.ThreadId.ofNat 7) none none none
   expectThreadQueueLinks "dual queue fifo dequeue #1 keeps sender 8 singleton head"
     stDualFifo3 (SeLe4n.ThreadId.ofNat 8) none (some .endpointHead) none
-  let (fifoSecond, stDualFifo4) ← expectOkState "dual queue fifo receive #2"
+  let (fifoSecond, stDualFifo4) ← expectOkSt "dual queue fifo receive #2"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualFifo3)
   expectThreadQueueLinks "dual queue fifo dequeue #2 clears sender 8 links"
     stDualFifo4 (SeLe4n.ThreadId.ofNat 8) none none none
 
   -- Arbitrary O(1) remove with queuePPrev metadata: remove middle waiter 8 from [7,8,9].
-  let (_, stDualRm1) ← expectOkState "dual queue remove enqueue sender 7"
+  let (_, stDualRm1) ← expectOkSt "dual queue remove enqueue sender 7"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
-  let (_, stDualRm2) ← expectOkState "dual queue remove enqueue sender 8"
+  let (_, stDualRm2) ← expectOkSt "dual queue remove enqueue sender 8"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stDualRm1)
-  let (_, stDualRm3) ← expectOkState "dual queue remove enqueue sender 9"
+  let (_, stDualRm3) ← expectOkSt "dual queue remove enqueue sender 9"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) .empty stDualRm2)
-  let (_, stDualRm4) ← expectOkState "dual queue remove middle sender 8"
+  let (_, stDualRm4) ← expectOkSt "dual queue remove middle sender 8"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stDualRm3)
   expectThreadQueueLinks "dual queue remove middle clears sender 8 links"
     stDualRm4 (SeLe4n.ThreadId.ofNat 8) none none none
@@ -698,30 +684,30 @@ private def runNegativeChecks : IO Unit := do
     stDualRm4 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9))
   expectThreadQueueLinks "dual queue remove middle repairs sender 9 <- sender 7"
     stDualRm4 (SeLe4n.ThreadId.ofNat 9) (some (SeLe4n.ThreadId.ofNat 7)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 7))) none
-  let (rmFirst, stDualRm5) ← expectOkState "dual queue remove receive #1"
+  let (rmFirst, stDualRm5) ← expectOkSt "dual queue remove receive #1"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 6) stDualRm4)
-  let (rmSecond, _) ← expectOkState "dual queue remove receive #2"
+  let (rmSecond, _) ← expectOkSt "dual queue remove receive #2"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 6) stDualRm5)
   if rmFirst = SeLe4n.ThreadId.ofNat 7 ∧ rmSecond = SeLe4n.ThreadId.ofNat 9 then
     IO.println "positive check passed [dual queue remove preserves remaining FIFO order]"
   else
     throw <| IO.userError s!"dual queue remove expected [7,9], got [{toString rmFirst},{toString rmSecond}]"
 
-  let stMalformedHeadPPrev ← expectOk "dual queue malformed pprev state (head points to prev tcbNext)"
+  let stMalformedHeadPPrev ← expectOkVal "dual queue malformed pprev state (head points to prev tcbNext)"
     (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
-  expectError "dual queue malformed pprev rejects head non-endpoint owner"
+  expectErr "dual queue malformed pprev rejects head non-endpoint owner"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stMalformedHeadPPrev)
     .illegalState
 
-  let stMalformedPrevNext ← expectOk "dual queue malformed pprev state (prev next mismatch)"
+  let stMalformedPrevNext ← expectOkVal "dual queue malformed pprev state (prev next mismatch)"
     (corruptThreadQueueLinks stDualRm3 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9)))
-  expectError "dual queue malformed pprev rejects stale prev pointer"
+  expectErr "dual queue malformed pprev rejects stale prev pointer"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stMalformedPrevNext)
     .illegalState
 
-  let stMalformedDetached ← expectOk "dual queue malformed pprev detached thread in empty queue"
+  let stMalformedDetached ← expectOkVal "dual queue malformed pprev detached thread in empty queue"
     (corruptThreadQueueLinks baseState (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none)
-  expectError "dual queue malformed pprev rejects detached thread marked as queued"
+  expectErr "dual queue malformed pprev rejects detached thread marked as queued"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stMalformedDetached)
     .illegalState
 
@@ -730,27 +716,27 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{toString fifoFirst},{toString fifoSecond}]"
 
-  expectError "dual queue sender double-wait prevention"
+  expectErr "dual queue sender double-wait prevention"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty stDualFifo1)
     .alreadyWaiting
 
-  let (_, stDualRecvWait1) ← expectOkState "dual queue receiver wait #1"
+  let (_, stDualRecvWait1) ← expectOkSt "dual queue receiver wait #1"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) baseState)
   expectThreadQueueLinks "dual queue receiver wait keeps lone waiter detached"
     stDualRecvWait1 (SeLe4n.ThreadId.ofNat 9) none (some .endpointHead) none
-  let (_, stDualRecvWait2) ← expectOkState "dual queue receiver fifo enqueue receiver 8"
+  let (_, stDualRecvWait2) ← expectOkSt "dual queue receiver fifo enqueue receiver 8"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) stDualRecvWait1)
   expectThreadQueueLinks "dual queue receiver fifo receiver 9 links to receiver 8"
     stDualRecvWait2 (SeLe4n.ThreadId.ofNat 9) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 8))
   expectThreadQueueLinks "dual queue receiver fifo receiver 8 links from receiver 9"
     stDualRecvWait2 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 9)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 9))) none
-  let (_, stDualRecvWake) ← expectOkState "dual queue sender wakes first waiting receiver"
+  let (_, stDualRecvWake) ← expectOkSt "dual queue sender wakes first waiting receiver"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty stDualRecvWait2)
   expectThreadQueueLinks "dual queue sender wake clears first receiver links"
     stDualRecvWake (SeLe4n.ThreadId.ofNat 9) none none none
   expectThreadQueueLinks "dual queue sender wake keeps second receiver singleton head"
     stDualRecvWake (SeLe4n.ThreadId.ofNat 8) none (some .endpointHead) none
-  expectError "dual queue receiver double-wait prevention"
+  expectErr "dual queue receiver double-wait prevention"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 9) stDualRecvWait1)
     .alreadyWaiting
 
@@ -786,7 +772,7 @@ private def runNegativeChecks : IO Unit := do
       |>.withRunnable [⟨8⟩]
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 7))
       |>.build)
-  let (_, stPriorityScheduled) ← expectOkState "schedule chooses highest-priority runnable"
+  let (_, stPriorityScheduled) ← expectOkSt "schedule chooses highest-priority runnable"
     (SeLe4n.Kernel.schedule schedPriorityState)
   if stPriorityScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [schedule priority order]: current = tid 8"
@@ -809,7 +795,7 @@ private def runNegativeChecks : IO Unit := do
         runQueue := schedPriorityState.scheduler.runQueue.insert (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
         activeDomain := ⟨0⟩
         current := none } }
-  let (_, stCrossDomainScheduled) ← expectOkState "schedule filters runnable set to active domain"
+  let (_, stCrossDomainScheduled) ← expectOkSt "schedule filters runnable set to active domain"
     (SeLe4n.Kernel.schedule crossDomainState)
   if stCrossDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [schedule domain filter]: active domain thread selected"
@@ -818,7 +804,7 @@ private def runNegativeChecks : IO Unit := do
 
   let noActiveDomainRunnableState : SystemState :=
     { crossDomainState with scheduler := { crossDomainState.scheduler with activeDomain := ⟨2⟩ } }
-  let (_, stNoActiveDomainRunnable) ← expectOkState "schedule returns idle when no active-domain runnable threads"
+  let (_, stNoActiveDomainRunnable) ← expectOkSt "schedule returns idle when no active-domain runnable threads"
     (SeLe4n.Kernel.schedule noActiveDomainRunnableState)
   if stNoActiveDomainRunnable.scheduler.current = none then
     IO.println "positive check passed [schedule domain isolation]: no cross-domain fallback"
@@ -861,14 +847,14 @@ private def runNegativeChecks : IO Unit := do
       |>.withCurrent none
       |>.build)
       |> fun st => { st with scheduler := { st.scheduler with activeDomain := ⟨1⟩ } }
-  let (_, stMixedDomainScheduled) ← expectOkState "schedule ignores higher-priority cross-domain runnable"
+  let (_, stMixedDomainScheduled) ← expectOkSt "schedule ignores higher-priority cross-domain runnable"
     (SeLe4n.Kernel.schedule mixedDomainFifoState)
   if stMixedDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [schedule mixed domain priority]: active-domain runnable wins"
   else
     throw <| IO.userError "schedule mixed domain priority expected current = tid 10"
 
-  let (_, stMixedDomainScheduledFifo) ← expectOkState "schedule keeps FIFO stability for equal prio/deadline in active domain"
+  let (_, stMixedDomainScheduledFifo) ← expectOkSt "schedule keeps FIFO stability for equal prio/deadline in active domain"
     (SeLe4n.Kernel.schedule {
       mixedDomainFifoState with
       objects := mixedDomainFifoState.objects.insert (SeLe4n.ThreadId.ofNat 10).toObjId (.tcb {
@@ -898,7 +884,7 @@ private def runNegativeChecks : IO Unit := do
         ]
         domainScheduleIndex := 0
       } }
-  let (_, stScheduleDomainSwitched) ← expectOkState "scheduleDomain switches domain and reschedules"
+  let (_, stScheduleDomainSwitched) ← expectOkSt "scheduleDomain switches domain and reschedules"
     (SeLe4n.Kernel.scheduleDomain scheduleDomainSwitchState)
   if stScheduleDomainSwitched.scheduler.activeDomain = ⟨1⟩ then
     IO.println "positive check passed [scheduleDomain active domain advance]: activeDomain = 1"
@@ -927,7 +913,7 @@ private def runNegativeChecks : IO Unit := do
         domainTimeRemaining := 3
         domainScheduleIndex := 1
       } }
-  let (_, stScheduleDomainTickOnly) ← expectOkState "scheduleDomain decrements budget without switching"
+  let (_, stScheduleDomainTickOnly) ← expectOkSt "scheduleDomain decrements budget without switching"
     (SeLe4n.Kernel.scheduleDomain scheduleDomainTickOnlyState)
   if stScheduleDomainTickOnly.scheduler.activeDomain = ⟨1⟩ ∧ stScheduleDomainTickOnly.scheduler.domainScheduleIndex = 1 then
     IO.println "positive check passed [scheduleDomain no switch]: domain/index unchanged"
@@ -943,7 +929,7 @@ private def runNegativeChecks : IO Unit := do
     throw <| IO.userError "scheduleDomain no switch current consistency expected current = tid 10"
 
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
-  let (_, stYielded) ← expectOkState "yield rotates current within runnable queue"
+  let (_, stYielded) ← expectOkSt "yield rotates current within runnable queue"
     (SeLe4n.Kernel.handleYield schedPriorityState)
   -- WS-H12b: after yield, schedule dequeues the dispatched thread (8) from runnable
   if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 7] then
@@ -962,13 +948,13 @@ private def runNegativeChecks : IO Unit := do
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
       |>.withCurrent none
       |>.build)
-  expectError "schedule malformed runnable target"
+  expectErr "schedule malformed runnable target"
     (SeLe4n.Kernel.schedule malformedSched)
     .schedulerInvariantViolation
 
   let malformedOffDomain : SystemState :=
     { malformedSched with scheduler := { malformedSched.scheduler with activeDomain := ⟨1⟩ } }
-  expectError "schedule malformed runnable target in non-active domain still rejected"
+  expectErr "schedule malformed runnable target in non-active domain still rejected"
     (SeLe4n.Kernel.schedule malformedOffDomain)
     .schedulerInvariantViolation
 
@@ -977,7 +963,7 @@ private def runNegativeChecks : IO Unit := do
   -- ==========================================================================
 
   -- stN1 already has thread 7 in the waiting list (from "notification wait blocks with none")
-  expectError "notification double-wait prevention"
+  expectErr "notification double-wait prevention"
     (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) stN1)
     .alreadyWaiting
 
@@ -1004,13 +990,13 @@ private def runNegativeChecks : IO Unit := do
       |>.build)
 
   -- Self-dependency should be rejected
-  expectError "service dependency self-loop rejection"
+  expectErr "service dependency self-loop rejection"
     (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdA svcState)
     .cyclicDependency
 
   -- Non-existent dependency target should be rejected
   let svcIdMissing : ServiceId := ⟨999⟩
-  expectError "service dependency missing target rejection"
+  expectErr "service dependency missing target rejection"
     (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdMissing svcState)
     .objectNotFound
 
@@ -1020,48 +1006,48 @@ private def runNegativeChecks : IO Unit := do
   | .ok (_, svcStateAB) => do
     IO.println "positive check passed [service dependency A→B registration]"
     -- Now registering B → A should create a cycle and be rejected
-    expectError "service dependency cycle detection B→A"
+    expectErr "service dependency cycle detection B→A"
       (SeLe4n.Kernel.serviceRegisterDependency svcIdB svcIdA svcStateAB)
       .cyclicDependency
     -- Idempotent re-registration of A → B should succeed
-    let _ ← expectOk "service dependency idempotent re-registration"
+    let _ ← expectOkVal "service dependency idempotent re-registration"
       (SeLe4n.Kernel.serviceRegisterDependency svcIdA svcIdB svcStateAB)
   | .error err =>
     throw <| IO.userError s!"service dependency A→B registration failed: {toString err}"
 
   -- ── WS-F2: Untyped memory negative tests ──────────────────────────
   -- F2-NEG-01: retype from non-existent object
-  expectError "F2 retype from non-existent object"
+  expectErr "F2 retype from non-existent object"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot ⟨999⟩ f2UntypedChildId
       (.endpoint {}) 64 f2UntypedState)
     .objectNotFound
 
   -- F2-NEG-02: retype from non-untyped object (type mismatch)
-  expectError "F2 retype from cnode (type mismatch)"
+  expectErr "F2 retype from cnode (type mismatch)"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedAuthCnode f2UntypedChildId
       (.endpoint {}) 64 f2UntypedState)
     .untypedTypeMismatch
 
   -- F2-NEG-03: retype exhausts region
-  expectError "F2 retype region exhausted (oversized)"
+  expectErr "F2 retype region exhausted (oversized)"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
       (.endpoint {}) 512 f2UntypedState)
     .untypedRegionExhausted
 
   -- F2-NEG-04: device restriction (non-untyped child from device untyped)
-  expectError "F2 device untyped restricts non-untyped child"
+  expectErr "F2 device untyped restricts non-untyped child"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId f2UntypedChildId
       (.endpoint {}) 64 f2DeviceState)
     .untypedDeviceRestriction
 
   -- F2-NEG-05: wrong authority (lookup from bad slot)
-  expectError "F2 retype wrong authority"
+  expectErr "F2 retype wrong authority"
     (SeLe4n.Kernel.retypeFromUntyped { cnode := ⟨999⟩, slot := ⟨0⟩ } f2UntypedObjId f2UntypedChildId
       (.endpoint {}) 64 f2UntypedState)
     .objectNotFound
 
   -- F2-NEG-06: allocSize too small for object type (endpoint needs 64, giving 1)
-  expectError "F2 retype allocSize too small"
+  expectErr "F2 retype allocSize too small"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
       (.endpoint {}) 1 f2UntypedState)
     .untypedAllocSizeTooSmall
@@ -1093,7 +1079,7 @@ private def runNegativeChecks : IO Unit := do
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
       |>.build)
-  expectError "S5-G misaligned base for VSpace root"
+  expectErr "S5-G misaligned base for VSpace root"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
       (.vspaceRoot { asid := ⟨0⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }) 4096 f2MisalignedState)
     .allocationMisaligned
@@ -1104,13 +1090,13 @@ private def runNegativeChecks : IO Unit := do
     Split into a separate function to avoid maxRecDepth limits in the main do block. -/
 private def runH2NegativeChecks : IO Unit := do
   -- H2-NEG-01: childId self-overwrite — childId = untypedId
-  expectError "H2 childId self-overwrite guard"
+  expectErr "H2 childId self-overwrite guard"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedObjId
       (.endpoint {}) 64 f2UntypedState)
     .childIdSelfOverwrite
 
   -- H2-NEG-02: childId collision with existing object
-  expectError "H2 childId collision with existing object"
+  expectErr "H2 childId collision with existing object"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedAuthCnode
       (.endpoint {}) 64 f2UntypedState)
     .childIdCollision
@@ -1142,7 +1128,7 @@ private def runH2NegativeChecks : IO Unit := do
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
       |>.build)
-  expectError "H2 childId collision with untyped child"
+  expectErr "H2 childId collision with untyped child"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨60⟩
       (.endpoint {}) 64 h2UntypedWithChild)
     .childIdCollision
@@ -1154,23 +1140,23 @@ private def runH2NegativeChecks : IO Unit := do
 private def runAuditCoverageChecks : IO Unit := do
   -- ── Audit: endpointReplyRecv coverage ────────────────────────────────
   -- NEG-REPLYRECV-01: replyRecv with non-existent reply target
-  expectError "endpointReplyRecv non-existent reply target"
+  expectErr "endpointReplyRecv non-existent reply target"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 6) (SeLe4n.ThreadId.ofNat 999)
       .empty baseState)
     .objectNotFound
 
   -- NEG-REPLYRECV-02: replyRecv when reply target is not in blockedOnReply state
-  expectError "endpointReplyRecv target not blocked on reply"
+  expectErr "endpointReplyRecv target not blocked on reply"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 6) (SeLe4n.ThreadId.ofNat 7)
       .empty baseState)
     .replyCapInvalid
 
   -- POS-REPLYRECV: Set up a valid blockedOnReply scenario via endpointCall, then replyRecv
   -- First, enqueue receiver in the dual-queue receiveQ (not legacy waitingReceiver)
-  let (_, stCallSetup1) ← expectOkState "replyRecv setup: receiver blocks on receive"
+  let (_, stCallSetup1) ← expectOkSt "replyRecv setup: receiver blocks on receive"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) baseState)
   -- Caller calls endpoint (handshakes with queued receiver, caller blocks for reply)
-  let (_, stCallSetup2) ← expectOkState "replyRecv setup: caller calls endpoint"
+  let (_, stCallSetup2) ← expectOkSt "replyRecv setup: caller calls endpoint"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) .empty stCallSetup1)
   -- Verify caller is now blocked on reply
   match (stCallSetup2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
@@ -1182,7 +1168,7 @@ private def runAuditCoverageChecks : IO Unit := do
         throw <| IO.userError s!"replyRecv setup: expected caller blockedOnReply, got {toString callerTcb.ipcState}"
   | _ => throw <| IO.userError "replyRecv setup: expected caller TCB"
   -- Now execute replyRecv: receiver replies to caller and waits on endpoint
-  let (_, stReplyRecv) ← expectOkState "replyRecv success"
+  let (_, stReplyRecv) ← expectOkSt "replyRecv success"
     (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 8) (SeLe4n.ThreadId.ofNat 7)
       .empty stCallSetup2)
   -- Verify caller is unblocked (ready)
@@ -1197,17 +1183,17 @@ private def runAuditCoverageChecks : IO Unit := do
 
   -- ── Audit: cspaceMutate coverage ─────────────────────────────────────
   -- NEG-MUTATE-01: mutate on non-existent CNode
-  expectError "cspaceMutate non-existent CNode"
+  expectErr "cspaceMutate non-existent CNode"
     (SeLe4n.Kernel.cspaceMutate { cnode := ⟨999⟩, slot := ⟨0⟩ } (AccessRightSet.ofList [.read]) none baseState)
     .objectNotFound
 
   -- NEG-MUTATE-02: mutate with rights not a subset (escalation attempt)
-  expectError "cspaceMutate rights escalation denied"
+  expectErr "cspaceMutate rights escalation denied"
     (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read, .write, .grant]) none baseState)
     .invalidCapability
 
   -- POS-MUTATE: attenuate rights successfully
-  let (_, stMutated) ← expectOkState "cspaceMutate attenuate to read-only"
+  let (_, stMutated) ← expectOkSt "cspaceMutate attenuate to read-only"
     (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read]) none baseState)
   -- Verify rights were attenuated
   match SeLe4n.Kernel.cspaceLookupSlot slot0 stMutated with
@@ -1220,7 +1206,7 @@ private def runAuditCoverageChecks : IO Unit := do
       throw <| IO.userError s!"cspaceMutate: lookup after mutate failed: {toString err}"
 
   -- POS-MUTATE-BADGE: mutate with badge override
-  let (_, stBadgeMutate) ← expectOkState "cspaceMutate with badge override"
+  let (_, stBadgeMutate) ← expectOkSt "cspaceMutate with badge override"
     (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read]) (some (SeLe4n.Badge.ofNatMasked 77)) baseState)
   match SeLe4n.Kernel.cspaceLookupSlot slot0 stBadgeMutate with
   | .ok (cap, _) =>
@@ -1303,21 +1289,21 @@ def runWSH11Checks : IO Unit := do
 
   -- H-02: W^X violation must be rejected
   let wxPerms : PagePermissions := { write := true, execute := true }
-  expectError "WS-H11 W^X violation rejected"
+  expectErr "WS-H11 W^X violation rejected"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩ wxPerms) st)
     .policyDenied
   IO.println "negative check passed [WS-H11 W^X violation correctly rejected]"
 
   -- A-05: Address bounds violation must be rejected (vspaceMapPageChecked)
   let hugeAddr : SeLe4n.PAddr := ⟨2^52 + 1⟩
-  expectError "WS-H11 address out of bounds rejected"
+  expectErr "WS-H11 address out of bounds rejected"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid ⟨4096⟩ hugeAddr) st)
     .addressOutOfBounds
   IO.println "negative check passed [WS-H11 address out of bounds correctly rejected]"
 
   -- Boundary: address exactly at bound is also rejected
   let boundaryAddr : SeLe4n.PAddr := ⟨2^52⟩
-  expectError "WS-H11 address at boundary rejected"
+  expectErr "WS-H11 address at boundary rejected"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid ⟨4096⟩ boundaryAddr) st)
     .addressOutOfBounds
   IO.println "negative check passed [WS-H11 address at boundary correctly rejected]"
@@ -1329,27 +1315,27 @@ def runWSH11Checks : IO Unit := do
   | .error err => throw <| IO.userError s!"WS-H11 valid address rejected: {toString err}"
 
   -- Mapping conflict: duplicate vaddr should fail
-  let (_, stMapped) ← expectOkState "WS-H11 map initial"
+  let (_, stMapped) ← expectOkSt "WS-H11 map initial"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st)
-  expectError "WS-H11 duplicate mapping conflict"
+  expectErr "WS-H11 duplicate mapping conflict"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨16384⟩) stMapped)
     .mappingConflict
   IO.println "negative check passed [WS-H11 duplicate mapping correctly rejected]"
 
   -- ASID not bound: lookup on unregistered ASID
-  expectError "WS-H11 unbound ASID lookup"
+  expectErr "WS-H11 unbound ASID lookup"
     (SeLe4n.Kernel.Architecture.vspaceLookup ⟨99⟩ ⟨4096⟩ st)
     .asidNotBound
   IO.println "negative check passed [WS-H11 unbound ASID correctly rejected]"
 
   -- Translation fault: lookup on unmapped vaddr
-  expectError "WS-H11 unmapped vaddr lookup"
+  expectErr "WS-H11 unmapped vaddr lookup"
     (SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨9999⟩ st)
     .translationFault
   IO.println "negative check passed [WS-H11 unmapped vaddr returns translation fault]"
 
   -- Unmap non-existent mapping returns error
-  expectError "WS-H11 unmap non-existent"
+  expectErr "WS-H11 unmap non-existent"
     ((SeLe4n.Kernel.Architecture.vspaceUnmapPage asid ⟨9999⟩) st)
     .translationFault
   IO.println "negative check passed [WS-H11 unmap non-existent returns translation fault]"
@@ -1432,7 +1418,7 @@ def runWSH11Checks : IO Unit := do
   match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st2Asid with
   | .error err => throw <| IO.userError s!"WS-H11 cross-ASID map failed: {toString err}"
   | .ok (_, stCross) =>
-      expectError "WS-H11 cross-ASID isolation"
+      expectErr "WS-H11 cross-ASID isolation"
         (SeLe4n.Kernel.Architecture.vspaceLookup asid2 ⟨4096⟩ stCross)
         .translationFault
   IO.println "negative check passed [WS-H11 cross-ASID isolation enforced]"
@@ -1489,7 +1475,7 @@ private def runWSH13Checks : IO Unit := do
         isolatedFrom := []
       }
       |>.build)
-  expectError "H13 self-loop dependency rejection"
+  expectErr "H13 self-loop dependency rejection"
     (SeLe4n.Kernel.serviceRegisterDependency svcA svcA svcSelfLoopState)
     .cyclicDependency
 
@@ -1512,7 +1498,7 @@ private def runWSH13Checks : IO Unit := do
         isolatedFrom := []
       }
       |>.build)
-  expectError "H13 cyclic dependency rejection"
+  expectErr "H13 cyclic dependency rejection"
     (SeLe4n.Kernel.serviceRegisterDependency svcB svcA svcCyclicState)
     .cyclicDependency
 
@@ -1546,7 +1532,7 @@ private def runWSH15Checks : IO Unit := do
     callerId := callerId, cspaceRoot := ⟨9999⟩,
     capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
   }
-  expectError "H15 syscallLookupCap non-existent CSpace root"
+  expectErr "H15 syscallLookupCap non-existent CSpace root"
     (SeLe4n.Kernel.syscallLookupCap badRootGate st)
     .objectNotFound
 
@@ -1555,7 +1541,7 @@ private def runWSH15Checks : IO Unit := do
     callerId := callerId, cspaceRoot := cnodeId,
     capAddr := ⟨15⟩, capDepth := 4, requiredRight := .write
   }
-  expectError "H15 syscallLookupCap valid CSpace missing capability"
+  expectErr "H15 syscallLookupCap valid CSpace missing capability"
     (SeLe4n.Kernel.syscallLookupCap missingSlotGate st)
     .invalidCapability
 
@@ -1564,7 +1550,7 @@ private def runWSH15Checks : IO Unit := do
     callerId := callerId, cspaceRoot := cnodeId,
     capAddr := ⟨1⟩, capDepth := 4, requiredRight := .write   -- slot 1 has .read only
   }
-  expectError "H15 syscallLookupCap valid capability wrong right"
+  expectErr "H15 syscallLookupCap valid capability wrong right"
     (SeLe4n.Kernel.syscallLookupCap wrongRightGate st)
     .illegalAuthority
 
@@ -1584,7 +1570,7 @@ private def runWSH15Checks : IO Unit := do
 
   -- H15-NEG-05: S2-J: Replaced deprecated apiEndpointSend with syscallInvoke path
   let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := none }
-  expectError "H15 syscall endpoint send insufficient rights"
+  expectErr "H15 syscall endpoint send insufficient rights"
     (SeLe4n.Kernel.syscallInvoke { wrongRightGate with requiredRight := .write } (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error .invalidCapability
       else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId msg) st)
@@ -1595,7 +1581,7 @@ private def runWSH15Checks : IO Unit := do
     callerId := callerId, cspaceRoot := cnodeId,
     capAddr := ⟨0⟩, capDepth := 0, requiredRight := .write
   }
-  expectError "H15 syscallLookupCap zero depth"
+  expectErr "H15 syscallLookupCap zero depth"
     (SeLe4n.Kernel.syscallLookupCap zeroDepthGate st)
     .illegalState
 
@@ -1708,7 +1694,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.build)
 
   -- H16-NEG-01: lifecycleRetypeObject with non-existent target → objectNotFound
-  expectError "H16 lifecycleRetypeObject non-existent target"
+  expectErr "H16 lifecycleRetypeObject non-existent target"
     (SeLe4n.Kernel.lifecycleRetypeObject h16AuthSlot ⟨999⟩ (.endpoint {}) h16State)
     .objectNotFound
 
@@ -1734,30 +1720,30 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16CnodeId .cnode
       |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
       |>.build)
-  expectError "H16 lifecycleRetypeObject metadata mismatch"
+  expectErr "H16 lifecycleRetypeObject metadata mismatch"
     (SeLe4n.Kernel.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16MismatchState)
     .illegalState
 
   -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
   let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := ⟨1⟩ }
-  expectError "H16 lifecycleRetypeObject insufficient authority"
+  expectErr "H16 lifecycleRetypeObject insufficient authority"
     (SeLe4n.Kernel.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16State)
     .illegalAuthority
 
   -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
   let h16BadAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
-  expectError "H16 lifecycleRetypeObject bad authority CNode"
+  expectErr "H16 lifecycleRetypeObject bad authority CNode"
     (SeLe4n.Kernel.lifecycleRetypeObject h16BadAuthSlot h16TargetId (.endpoint {}) h16State)
     .objectNotFound
 
   -- H16-NEG-05: lifecycleRevokeDeleteRetype with authority = cleanup → illegalState
-  expectError "H16 lifecycleRevokeDeleteRetype authority equals cleanup"
+  expectErr "H16 lifecycleRevokeDeleteRetype authority equals cleanup"
     (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16AuthSlot h16TargetId (.endpoint {}) h16State)
     .illegalState
 
   -- H16-NEG-06: lifecycleRevokeDeleteRetype with non-existent cleanup CNode → objectNotFound
   let h16BadCleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
-  expectError "H16 lifecycleRevokeDeleteRetype bad cleanup CNode"
+  expectErr "H16 lifecycleRevokeDeleteRetype bad cleanup CNode"
     (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16BadCleanupSlot h16TargetId (.endpoint {}) h16State)
     .objectNotFound
 
@@ -1791,7 +1777,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16ExhaustedCnodeId .cnode
       |>.withLifecycleCapabilityRef h16ExhaustedAuthSlot (.object h16ExhaustedUntypedId)
       |>.build)
-  expectError "H16 retypeFromUntyped exhausted untyped"
+  expectErr "H16 retypeFromUntyped exhausted untyped"
     (SeLe4n.Kernel.retypeFromUntyped h16ExhaustedAuthSlot h16ExhaustedUntypedId ⟨162⟩
       (.endpoint {}) 64 h16ExhaustedState)
     .untypedRegionExhausted
@@ -1799,7 +1785,7 @@ def runWSH16LifecycleChecks : IO Unit := do
   -- H16-NEG-08: retypeFromUntyped with non-untyped source → untypedTypeMismatch
   -- Plan REQ: "retypeFromUntyped with invalid object type → expect error"
   -- The source is an endpoint, not an untyped, triggering the type mismatch guard.
-  expectError "H16 retypeFromUntyped non-untyped source"
+  expectErr "H16 retypeFromUntyped non-untyped source"
     (SeLe4n.Kernel.retypeFromUntyped h16AuthSlot h16TargetId ⟨162⟩
       (.endpoint {}) 64 h16State)
     .untypedTypeMismatch
@@ -1835,7 +1821,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16DeviceCnodeId .cnode
       |>.withLifecycleCapabilityRef h16DeviceAuthSlot (.object h16DeviceUntypedId)
       |>.build)
-  expectError "H16 retypeFromUntyped device untyped restriction"
+  expectErr "H16 retypeFromUntyped device untyped restriction"
     (SeLe4n.Kernel.retypeFromUntyped h16DeviceAuthSlot h16DeviceUntypedId ⟨165⟩
       (.endpoint {}) 1024 h16DeviceState)
     .untypedDeviceRestriction
@@ -1843,7 +1829,7 @@ def runWSH16LifecycleChecks : IO Unit := do
   -- H16-NEG-10: lifecycleRevokeDeleteRetype with non-existent target → objectNotFound
   -- Plan REQ: "lifecycleRevokeDeleteRetype with non-existent object → expect error"
   -- cleanup resolves correctly, but the final retype target doesn't exist.
-  expectError "H16 lifecycleRevokeDeleteRetype non-existent target"
+  expectErr "H16 lifecycleRevokeDeleteRetype non-existent target"
     (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16CleanupSlot ⟨999⟩ (.endpoint {}) h16State)
     .objectNotFound
 
@@ -1862,65 +1848,65 @@ Exercises every decode error branch:
 def runWSJ1DecodeChecks : IO Unit := do
   -- J1-NEG-01: validateRegBound with out-of-bounds register index → invalidRegister
   -- ARM64 has 32 GPRs; register index 32 is the first invalid index.
-  expectError "J1 validateRegBound out-of-bounds (32 ≥ 32)"
+  expectErr "J1 validateRegBound out-of-bounds (32 ≥ 32)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨32⟩ 32)
     .invalidRegister
 
   -- J1-NEG-02: validateRegBound with large register index → invalidRegister
-  expectError "J1 validateRegBound large index (999 ≥ 32)"
+  expectErr "J1 validateRegBound large index (999 ≥ 32)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨999⟩ 32)
     .invalidRegister
 
   -- J1-NEG-03: validateRegBound at boundary (31 < 32) → success
-  let _ ← expectOk "J1 validateRegBound boundary (31 < 32)"
+  let _ ← expectOkVal "J1 validateRegBound boundary (31 < 32)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
   -- V2-A: SyscallId covers 0..16 (count=17); value 17 is the first invalid number.
-  expectError "J1 decodeSyscallId invalid (17)"
+  expectErr "J1 decodeSyscallId invalid (17)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨17⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
-  expectError "J1 decodeSyscallId invalid (9999)"
+  expectErr "J1 decodeSyscallId invalid (9999)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨9999⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-06: decodeSyscallId with valid boundary (12 = serviceRevoke) → success
-  let _ ← expectOk "J1 decodeSyscallId valid boundary (12)"
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (12)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨12⟩)
 
   -- J1-NEG-07: decodeMsgInfo with oversized length → invalidMessageInfo
   -- maxMessageRegisters = 120 (7-bit field max 127, but bounded to 120).
   -- Encode a word with length = 121 (exceeds bound).
   let oversizedLength : SeLe4n.RegValue := ⟨121⟩  -- bits 0..6 = 121
-  expectError "J1 decodeMsgInfo oversized length (121 > 120)"
+  expectErr "J1 decodeMsgInfo oversized length (121 > 120)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo oversizedLength)
     .invalidMessageInfo
 
   -- J1-NEG-08: decodeMsgInfo with maximum 7-bit length field → invalidMessageInfo
   -- The 7-bit length field can hold 0..127; any value 121..127 exceeds maxMessageRegisters=120.
   let maxFieldLength : SeLe4n.RegValue := ⟨127⟩  -- bits 0..6 = 127 > 120
-  expectError "J1 decodeMsgInfo max 7-bit length (127 > 120)"
+  expectErr "J1 decodeMsgInfo max 7-bit length (127 > 120)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo maxFieldLength)
     .invalidMessageInfo
 
   -- J1-NEG-09: decodeMsgInfo with valid boundary values → success
   -- length=120, extraCaps=3, label=0 → valid.
   let boundaryMsgInfo : SeLe4n.RegValue := ⟨120 ||| (3 <<< 7)⟩
-  let _ ← expectOk "J1 decodeMsgInfo valid boundary (len=120, caps=3)"
+  let _ ← expectOkVal "J1 decodeMsgInfo valid boundary (len=120, caps=3)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo boundaryMsgInfo)
 
   -- J1-NEG-10: decodeCapPtr with zero → always succeeds (CPtr space is unbounded)
-  let _ ← expectOk "J1 decodeCapPtr zero-valued register"
+  let _ ← expectOkVal "J1 decodeCapPtr zero-valued register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr ⟨0⟩)
 
   -- J1-NEG-11: decodeSyscallId with zero → valid (SyscallId.send = 0)
-  let _ ← expectOk "J1 decodeSyscallId zero-valued register (send)"
+  let _ ← expectOkVal "J1 decodeSyscallId zero-valued register (send)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨0⟩)
 
   -- J1-NEG-12: decodeMsgInfo with zero → valid (length=0, extraCaps=0, label=0)
-  let _ ← expectOk "J1 decodeMsgInfo zero-valued register"
+  let _ ← expectOkVal "J1 decodeMsgInfo zero-valued register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo ⟨0⟩)
 
   -- J1-NEG-13: decodeSyscallArgs with out-of-bounds layout register → invalidRegister
@@ -1932,7 +1918,7 @@ def runWSJ1DecodeChecks : IO Unit := do
     syscallNumReg := ⟨7⟩
   }
   let defaultRegs : SeLe4n.RegisterFile := default
-  expectError "J1 decodeSyscallArgs out-of-bounds layout register"
+  expectErr "J1 decodeSyscallArgs out-of-bounds layout register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badLayout defaultRegs 32)
     .invalidRegister
 
@@ -1943,7 +1929,7 @@ def runWSJ1DecodeChecks : IO Unit := do
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨40⟩, ⟨5⟩]  -- index 40 exceeds bound
     syscallNumReg := ⟨7⟩
   }
-  expectError "J1 decodeSyscallArgs out-of-bounds msgReg"
+  expectErr "J1 decodeSyscallArgs out-of-bounds msgReg"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badMsgRegLayout defaultRegs 32)
     .invalidRegister
 
@@ -1953,7 +1939,7 @@ def runWSJ1DecodeChecks : IO Unit := do
     { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r =>
         if r.val == 7 then ⟨99⟩  -- invalid syscall number
         else ⟨0⟩ }
-  expectError "J1 decodeSyscallArgs invalid syscall in register"
+  expectErr "J1 decodeSyscallArgs invalid syscall in register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
     .invalidSyscallNumber
 
@@ -1964,21 +1950,21 @@ def runWSJ1DecodeChecks : IO Unit := do
         if r.val == 1 then ⟨127⟩  -- length=127 > maxMessageRegisters=120
         else if r.val == 7 then ⟨0⟩  -- valid syscall (send)
         else ⟨0⟩ }
-  expectError "J1 decodeSyscallArgs malformed msgInfo in register"
+  expectErr "J1 decodeSyscallArgs malformed msgInfo in register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
     .invalidMessageInfo
 
   -- J1-NEG-17: decodeSyscallArgs with all-zero registers → valid decode
   -- Zero registers: capPtr=0, msgInfo=(len=0,caps=0,label=0), syscallId=send
   -- K-A: Also verify msgRegs are populated with correct count (4 for ARM64 layout).
-  let decoded ← expectOk "J1 decodeSyscallArgs all-zero registers (valid)"
+  let decoded ← expectOkVal "J1 decodeSyscallArgs all-zero registers (valid)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout default 32)
   unless decoded.msgRegs.size == 4 do
     throw <| IO.userError s!"K-A: expected msgRegs.size = 4 (ARM64 layout), got {decoded.msgRegs.size}"
 
   -- J1-NEG-18: Full syscallEntry with no current thread → illegalState
   let emptyState : SystemState := BootstrapBuilder.empty.build
-  expectError "J1 syscallEntry no current thread"
+  expectErr "J1 syscallEntry no current thread"
     (SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 emptyState)
     .illegalState
 
@@ -2008,7 +1994,7 @@ def runWSKGChecks : IO Unit := do
     syscallId := .cspaceMint
     msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 4
   }
-  expectError "K-G-NEG-01 cspaceMint decode insufficient msgRegs"
+  expectErr "K-G-NEG-01 cspaceMint decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs shortDecode)
     .invalidMessageInfo
 
@@ -2019,12 +2005,12 @@ def runWSKGChecks : IO Unit := do
     syscallId := .cspaceCopy
     msgRegs := #[⟨10⟩]  -- only 1, need 2
   }
-  expectError "K-G-NEG-02 cspaceCopy decode insufficient msgRegs"
+  expectErr "K-G-NEG-02 cspaceCopy decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs oneRegDecode)
     .invalidMessageInfo
 
   -- K-G-NEG-03: decodeCSpaceMoveArgs with insufficient msgRegs (< 2) → invalidMessageInfo
-  expectError "K-G-NEG-03 cspaceMove decode insufficient msgRegs"
+  expectErr "K-G-NEG-03 cspaceMove decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs oneRegDecode)
     .invalidMessageInfo
 
@@ -2035,7 +2021,7 @@ def runWSKGChecks : IO Unit := do
     syscallId := .cspaceDelete
     msgRegs := #[]  -- empty
   }
-  expectError "K-G-NEG-04 cspaceDelete decode empty msgRegs"
+  expectErr "K-G-NEG-04 cspaceDelete decode empty msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs emptyDecode)
     .invalidMessageInfo
 
@@ -2043,7 +2029,7 @@ def runWSKGChecks : IO Unit := do
   let noCnodeState : SystemState := BootstrapBuilder.empty.build
   let mintAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨1⟩ }
-  expectError "K-G-NEG-05 cspaceMint CNode not found"
+  expectErr "K-G-NEG-05 cspaceMint CNode not found"
     (SeLe4n.Kernel.cspaceMint mintAddr dstAddr ⟨0⟩ none noCnodeState)
     .objectNotFound
 
@@ -2058,7 +2044,7 @@ def runWSKGChecks : IO Unit := do
       |>.build)
   let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨0⟩ }
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨1⟩ }
-  expectError "K-G-NEG-06 cspaceCopy source slot empty"
+  expectErr "K-G-NEG-06 cspaceCopy source slot empty"
     (SeLe4n.Kernel.cspaceCopy emptySlot dstSlot emptyCnodeState)
     .invalidCapability
 
@@ -2073,12 +2059,12 @@ def runWSKGChecks : IO Unit := do
     syscallId := .lifecycleRetype
     msgRegs := #[⟨1⟩, ⟨2⟩]  -- only 2, need 3
   }
-  expectError "K-G-NEG-07 lifecycleRetype decode insufficient msgRegs"
+  expectErr "K-G-NEG-07 lifecycleRetype decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs twoRegDecode)
     .invalidMessageInfo
 
   -- K-G-NEG-08: objectOfTypeTag with invalid type tag (99) → invalidTypeTag
-  expectError "K-G-NEG-08 objectOfTypeTag invalid tag"
+  expectErr "K-G-NEG-08 objectOfTypeTag invalid tag"
     (SeLe4n.Kernel.objectOfTypeTag 99 0)
     .invalidTypeTag
 
@@ -2089,7 +2075,7 @@ def runWSKGChecks : IO Unit := do
     rights := AccessRightSet.ofList [.read, .write]
     badge := none
   }
-  expectError "K-G-NEG-09 lifecycleRetypeDirect object not found"
+  expectErr "K-G-NEG-09 lifecycleRetypeDirect object not found"
     (SeLe4n.Kernel.lifecycleRetypeDirect authCap ⟨500⟩ (.endpoint {}) emptyObjState)
     .objectNotFound
 
@@ -2104,7 +2090,7 @@ def runWSKGChecks : IO Unit := do
     rights := AccessRightSet.ofList [.read, .write]
     badge := none
   }
-  expectError "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
+  expectErr "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
     (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) retypeState)
     .illegalAuthority
 
@@ -2115,7 +2101,7 @@ def runWSKGChecks : IO Unit := do
     syscallId := .vspaceMap
     msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
   }
-  expectError "K-G-NEG-11 vspaceMap decode insufficient msgRegs"
+  expectErr "K-G-NEG-11 vspaceMap decode insufficient msgRegs"
     (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs threeRegDecode)
     .invalidMessageInfo
 
@@ -2127,12 +2113,12 @@ def runWSKGChecks : IO Unit := do
       |>.withLifecycleObjectType ⟨400⟩ .vspaceRoot
       |>.build)
   let wxPerms := PagePermissions.ofNat 6  -- bits 1+2 = write+execute
-  expectError "K-G-NEG-12 vspaceMap W^X violation"
+  expectErr "K-G-NEG-12 vspaceMap W^X violation"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked vspaceAsid ⟨4096⟩ ⟨8192⟩ wxPerms) vspaceState)
     .policyDenied
 
   -- K-G-NEG-13: vspaceUnmapPage with no existing mapping → translationFault
-  expectError "K-G-NEG-13 vspaceUnmap no mapping"
+  expectErr "K-G-NEG-13 vspaceUnmap no mapping"
     ((SeLe4n.Kernel.Architecture.vspaceUnmapPage vspaceAsid ⟨4096⟩) vspaceState)
     .translationFault
 
@@ -2160,7 +2146,7 @@ def runWSKGChecks : IO Unit := do
   IO.println "negative check passed [K-G-NEG-14 service registry lookup present]"
 
   -- K-G-NEG-15: Service dependency self-loop rejection
-  expectError "K-G-NEG-15 self-loop dependency rejection"
+  expectErr "K-G-NEG-15 self-loop dependency rejection"
     (SeLe4n.Kernel.serviceRegisterDependency svcPolicyId svcPolicyId registryState)
     .cyclicDependency
 
@@ -2283,29 +2269,29 @@ def runWSL4BlockedThreadChecks : IO Unit := do
     ).build
 
   -- Block thread 7 on send (no receiver → enqueues on sendQ)
-  let (_, stSendBlocked) ← expectOkState "L4-C setup: send blocks thread 7"
+  let (_, stSendBlocked) ← expectOkSt "L4-C setup: send blocks thread 7"
     (SeLe4n.Kernel.endpointSendDual epId tid7 .empty blockedState)
 
   -- Attempt another send on same endpoint while already blocked → alreadyWaiting
-  expectError "L4-C blocked-on-send rejects second send"
+  expectErr "L4-C blocked-on-send rejects second send"
     (SeLe4n.Kernel.endpointSendDual epId tid7 .empty stSendBlocked)
     .alreadyWaiting
 
   -- Block thread 7 on receive instead
-  let (_, stRecvBlocked) ← expectOkState "L4-C setup: receive blocks thread 7"
+  let (_, stRecvBlocked) ← expectOkSt "L4-C setup: receive blocks thread 7"
     (SeLe4n.Kernel.endpointReceiveDual epId tid7 blockedState)
 
   -- Attempt second receive on same endpoint while already blocked → alreadyWaiting
-  expectError "L4-C blocked-on-receive rejects second receive"
+  expectErr "L4-C blocked-on-receive rejects second receive"
     (SeLe4n.Kernel.endpointReceiveDual epId tid7 stRecvBlocked)
     .alreadyWaiting
 
   -- Block thread 7 on notification wait
-  let (_, stNtfnBlocked) ← expectOkState "L4-C setup: notification wait blocks thread 7"
+  let (_, stNtfnBlocked) ← expectOkSt "L4-C setup: notification wait blocks thread 7"
     (SeLe4n.Kernel.notificationWait ntfnId tid7 blockedState)
 
   -- Attempt send while blocked on notification → alreadyWaiting
-  expectError "L4-C blocked-on-notification rejects send"
+  expectErr "L4-C blocked-on-notification rejects send"
     (SeLe4n.Kernel.endpointSendDual epId tid7 .empty stNtfnBlocked)
     .alreadyWaiting
 
@@ -2315,14 +2301,14 @@ def runWSL4BlockedThreadChecks : IO Unit := do
   let epId2 : SeLe4n.ObjId := ⟨41⟩
   let stRecvBlockedWithEp2 : SystemState := { stRecvBlocked with
     objects := stRecvBlocked.objects.insert epId2 (.endpoint { sendQ := {}, receiveQ := {} }) }
-  expectError "L4-C blocked-on-receive rejects send to different endpoint"
+  expectErr "L4-C blocked-on-receive rejects send to different endpoint"
     (SeLe4n.Kernel.endpointSendDual epId2 tid7 .empty stRecvBlockedWithEp2)
     .alreadyWaiting
 
   -- Cross-type: blocked on send → receive from DIFFERENT endpoint rejected
   let stSendBlockedWithEp2 : SystemState := { stSendBlocked with
     objects := stSendBlocked.objects.insert epId2 (.endpoint { sendQ := {}, receiveQ := {} }) }
-  expectError "L4-C blocked-on-send rejects receive from different endpoint"
+  expectErr "L4-C blocked-on-send rejects receive from different endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId2 tid7 stSendBlockedWithEp2)
     .alreadyWaiting
 
@@ -2864,7 +2850,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
     let reg : ServiceRegistration := {
       sid := ⟨701⟩, iface := iface, endpointCap := noWriteCap
     }
-    expectError "R4-NEG-01: register service without Write right"
+    expectErr "R4-NEG-01: register service without Write right"
       (SeLe4n.Kernel.registerService reg stIface)
       .illegalAuthority
 
@@ -2883,7 +2869,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
       let regTcb : ServiceRegistration := {
         sid := ⟨702⟩, iface := iface, endpointCap := writeCap
       }
-      expectError "R4-NEG-02: register service targeting non-endpoint"
+      expectErr "R4-NEG-02: register service targeting non-endpoint"
         (SeLe4n.Kernel.registerService regTcb stIface2)
         .invalidCapability
 
@@ -2975,7 +2961,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let readOnlyState : SystemState :=
     { baseState with objects := baseState.objects.insert cnodeId readOnlyCnode }
   -- Attempt to mint with read+write from a read-only source
-  expectError "S2-G-01 cspaceMint rights exceed source"
+  expectErr "S2-G-01 cspaceMint rights exceed source"
     (SeLe4n.Kernel.cspaceMint mintSrc mintDst
       (AccessRightSet.ofList [.read, .write]) (badge := none) readOnlyState)
     .invalidCapability
@@ -2984,19 +2970,19 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   -- slot0 is already occupied in baseState; copy to it should fail
   let copySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
   let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-  expectError "S2-G-02 cspaceCopy to occupied slot"
+  expectErr "S2-G-02 cspaceCopy to occupied slot"
     (SeLe4n.Kernel.cspaceCopy copySrc copyDst baseState)
     .targetSlotOccupied
 
   -- S2-G-03: cspaceMint to occupied destination slot → targetSlotOccupied
-  expectError "S2-G-03 cspaceMint to occupied slot"
+  expectErr "S2-G-03 cspaceMint to occupied slot"
     (SeLe4n.Kernel.cspaceMint mintSrc copySrc
       (AccessRightSet.ofList [.read]) (badge := none) baseState)
     .targetSlotOccupied
 
   -- S2-G-04: cspaceRevokeCdtStrict on node with no descendants (empty revoke)
   let emptyRevokeSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-  let (emptyReport, _) ← expectOkState "S2-G-04 cspaceRevokeCdtStrict empty descendants"
+  let (emptyReport, _) ← expectOkSt "S2-G-04 cspaceRevokeCdtStrict empty descendants"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict emptyRevokeSlot baseState)
   if emptyReport.deletedSlots ≠ [] then
     throw <| IO.userError "S2-G-04: expected empty deletedSlots for node with no descendants"
@@ -3020,7 +3006,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   -- Copy from slot0 in cnodeId into slot 0 of full CNode (occupied)
   let fullCopySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
   let fullCopyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := fullCnodeId, slot := ⟨0⟩ }
-  expectError "S2-G-05 cspaceCopy to full CNode slot"
+  expectErr "S2-G-05 cspaceCopy to full CNode slot"
     (SeLe4n.Kernel.cspaceCopy fullCopySrc fullCopyDst fullCnodeState)
     .targetSlotOccupied
 
@@ -3061,7 +3047,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   -- Deep revoke must handle 5 levels of descendants. Since slots 3-7 don't exist
   -- in cnodeId (only slot 0 does), deletion of descendants will fail with objectNotFound
   -- at the slots that have no capability. This exercises deep traversal + error propagation.
-  let (deepReport, _) ← expectOkState "S2-G-06 cspaceRevokeCdtStrict deep chain"
+  let (deepReport, _) ← expectOkSt "S2-G-06 cspaceRevokeCdtStrict deep chain"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict deepRootSlot deepSeed)
   -- Verify the report records some activity (deletedSlots or firstFailure)
   if deepReport.deletedSlots.length + (if deepReport.firstFailure.isSome then 1 else 0) = 0 then
@@ -3083,7 +3069,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
 private def runS2HLifecycleErrorTests : IO Unit := do
   -- S2-H-01: retypeFromUntyped with very small untyped (allocSize too small)
   -- The f2UntypedState has a 256-byte untyped; try to retype with tiny allocSize
-  expectError "S2-H-01 retypeFromUntyped allocSize too small"
+  expectErr "S2-H-01 retypeFromUntyped allocSize too small"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨90⟩
       (.tcb { tid := ⟨90⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
@@ -3092,7 +3078,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
 
   -- S2-H-02: retypeFromUntyped with device untyped → TCB rejection
   -- f2DeviceState has isDevice=true; attempt to create a TCB (not untyped)
-  expectError "S2-H-02 retypeFromUntyped device untyped TCB rejection"
+  expectErr "S2-H-02 retypeFromUntyped device untyped TCB rejection"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId ⟨91⟩
       (.tcb { tid := ⟨91⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
@@ -3101,7 +3087,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
 
   -- S2-H-03: retypeFromUntyped targeting non-untyped object → typeMismatch
   -- Use endpointId (which is an endpoint, not untyped) as the source
-  expectError "S2-H-03 retypeFromUntyped non-untyped source"
+  expectErr "S2-H-03 retypeFromUntyped non-untyped source"
     (SeLe4n.Kernel.retypeFromUntyped slot0 endpointId ⟨92⟩
       (.endpoint {}) 64 baseState)
     .untypedTypeMismatch
@@ -3135,14 +3121,14 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       |>.withLifecycleObjectType exhaustedAuthCnode .cnode
       |>.withLifecycleCapabilityRef exhaustedAuthSlot (.object exhaustedUntypedId)
       |>.build)
-  expectError "S2-H-04 retypeFromUntyped region exhausted"
+  expectErr "S2-H-04 retypeFromUntyped region exhausted"
     (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩
       (.endpoint {}) 64 exhaustedState)
     .untypedRegionExhausted
 
   -- S2-H-05: retypeFromUntyped with childId that collides with existing object
   -- Use f2UntypedAuthCnode as the childId — it already exists in f2UntypedState
-  expectError "S2-H-05 retypeFromUntyped childId collision"
+  expectErr "S2-H-05 retypeFromUntyped childId collision"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedAuthCnode
       (.endpoint {}) 64 f2UntypedState)
     .childIdCollision

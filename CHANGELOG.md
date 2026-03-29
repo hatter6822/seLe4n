@@ -1,3 +1,34 @@
+## [0.22.16] — W5: Test Infrastructure & Coverage
+
+Phase W5 of WS-W pre-release audit remediation. Addresses M-10, M-11,
+L-17, L-18, L-7, L-2 from v0.22.10 audits.
+
+- **W5-A (M-10)**: Consolidated `expectError`/`expectOk`/`expectOkState`
+  implementations. Canonical shared helpers in `SeLe4n/Testing/Helpers.lean`
+  with `msgPrefix` parameter for suite-specific formatting. `NegativeStateSuite`
+  and `OperationChainSuite` now delegate to shared versions, eliminating 3
+  duplicate implementations.
+- **W5-B (L-17)**: Documented test fixture OID ranges in `Helpers.lean`.
+  11-suite range table prevents accidental collisions between test suites.
+- **W5-C (L-18)**: Added comprehensive service lifecycle tests (chain33).
+  17 assertions covering `registerInterface` (success + duplicate rejection),
+  `registerService` (success + 4 error paths: missing interface, non-endpoint
+  target, missing write right, duplicate), `serviceRegisterDependency` (acyclic
+  success + cycle rejection + nonexistent service), `revokeService` (success +
+  dependency cleanup verification + nonexistent error).
+- **W5-D (M-11)**: Improved `buildChecked` error reporting. All 8 validation
+  checks now include their check number and failing entity details (e.g.,
+  specific ObjId, ThreadId) for immediate debuggability.
+- **W5-E**: Added weak mutation testing assertions to chain1 (retype→endpoint
+  verification, mint slot population) and chain5 (copy/move/delete slot state
+  verification). Operations now verify actual state mutations, not just success.
+- **W5-F (L-2)**: Removed unused `_hCap : capabilityInvariantBundle st`
+  parameter from `policyOwnerAuthoritySlotPresent_of_capabilityLookup`.
+- **W5-G (L-7)**: Added `resolveExtraCaps` silent-drop documentation explaining
+  seL4-matching behavior where failed capability resolutions are silently
+  dropped rather than errored.
+- Zero sorry/axiom. All test suites pass. `test_smoke.sh` and `test_full.sh` green.
+
 ## [0.22.15] — W4: Platform & Architecture Hardening
 
 Phase W4 of WS-W pre-release audit remediation. Addresses M-8, M-9, MED-02,

@@ -96,6 +96,21 @@ atomic sub-tasks. Plan:
   device-specific semantics, interrupt effects, cache coherency). **W4-G (L-12)**:
   `encodeMsgRegs` already removed in W3-H. Zero sorry/axiom.
 
+- **W5 (Test Infrastructure & Coverage) COMPLETE** (v0.22.16): 8 sub-tasks
+  (W5-A through W5-H). **W5-A (M-10)**: Consolidated 3 duplicate `expectError`
+  implementations into shared `Helpers.lean` with `msgPrefix` parameter.
+  **W5-B (L-17)**: Documented test fixture OID ranges (11-suite table in
+  `Helpers.lean`). **W5-C (L-18)**: Added chain33 service lifecycle tests — 17
+  assertions covering `registerInterface`, `registerService` (5 error paths),
+  `serviceRegisterDependency` (acyclic + cycle + nonexistent),
+  `revokeService` (success + cleanup + nonexistent). **W5-D (M-11)**: Improved
+  `buildChecked` error reporting with check numbers and entity details.
+  **W5-E**: Added mutation testing assertions to chain1 and chain5 verifying
+  actual state changes. **W5-F (L-2)**: Removed unused `_hCap` parameter from
+  `policyOwnerAuthoritySlotPresent_of_capabilityLookup`. **W5-G (L-7)**:
+  Documented `resolveExtraCaps` silent-drop behavior (seL4-matching design).
+  Zero sorry/axiom.
+
 ### WS-V workstream (v0.21.7 Pre-Release Audit Remediation) — COMPLETE
 
 WS-V addresses 95 findings from three comprehensive audits of v0.21.7 (5 HIGH,

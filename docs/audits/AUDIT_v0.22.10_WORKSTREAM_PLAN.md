@@ -48,7 +48,7 @@ sorry/axiom invariant.
 | W2 | Proof Formalism & Architecture | 8 | HIGH | `lake build` clean, `test_full.sh` green | **COMPLETE** (v0.22.12) |
 | W3 | Dead Code Elimination | 8 | MEDIUM | `test_smoke.sh` green, no sorry introduced | **COMPLETE** (v0.22.14) |
 | W4 | Platform & Architecture Hardening | 7 | MEDIUM | Module builds pass, test_smoke green | **COMPLETE** (v0.22.15) |
-| W5 | Test Infrastructure & Coverage | 8 | MEDIUM | All test suites pass | Pending |
+| W5 | Test Infrastructure & Coverage | 8 | MEDIUM | All test suites pass | **COMPLETE** (v0.22.16) |
 | W6 | Code Quality & Documentation | 12 | LOW | `test_fast.sh` green, docs consistent | Pending |
 
 **Dependencies**: W1 is independent and must complete first. W2-W4 can proceed
