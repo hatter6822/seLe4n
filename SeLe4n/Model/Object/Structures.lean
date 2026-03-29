@@ -898,10 +898,10 @@ namespace CapDerivationTree
    - `addEdge_preserves_cdtMapsConsistent`: Composite preservation
    - `removeNode_edges_sub`, `removeNode_parentMapConsistent`, `removeNode_childMapConsistent`
    - `removeEdge_surviving_child_ne`, `removeEdge_preserves_cdtMapsConsistent`
-   Currently unused by the kernel proof chain (operations use hypothesis-carrying
-   patterns via `lifecyclePreRetypeCleanup` instead). Retained as specification
-   surface for CDT correctness — these theorems formally document the properties
-   that any CDT implementation must satisfy. -/
+   Most are specification surface — not directly composed into the kernel proof
+   chain. Exception: `removeNode_edges_sub` is actively used by capability
+   invariant preservation proofs (Capability/Invariant/Preservation.lean).
+   Retained as machine-checked documentation of CDT correctness properties. -/
 
 /-- T2-C (H-2): The canonical empty CDT with no edges and empty index maps.
     Satisfies all CDT invariants by construction (vacuously). -/
