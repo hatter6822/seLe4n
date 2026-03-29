@@ -26,7 +26,7 @@ WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-W addresses 49 unique actionable findings from three comprehensive audits of
 v0.22.10 (2 CRIT, 4 HIGH, 16 MED, 27 LOW) across 6 phases (W1–W6) with 52
 atomic sub-tasks. Plan:
-[`AUDIT_v0.22.10_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.22.10_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.22.10_WORKSTREAM_PLAN.md`](dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md).
 
 - **W1 (Critical Rust ABI Fixes) COMPLETE** (v0.22.11): 9 sub-tasks (W1-A through W1-I).
   **CRIT-1/CRIT-2 fixed**: `notification_signal` and `notification_wait` SyscallId
