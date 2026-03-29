@@ -107,7 +107,7 @@ def DeviceTree.validate (dt : DeviceTree) : Bool :=
 /-- S6-F: Construct a `DeviceTree` from hardcoded board constants.
     This is the current path — all values come from compile-time constants
     in `RPi5/Board.lean`. The result can be validated at compile time via
-    `native_decide` on `DeviceTree.validate`. -/
+    `decide` on `DeviceTree.validate`. -/
 def DeviceTree.fromBoardConstants
     (name : String)
     (config : MachineConfig)
@@ -122,17 +122,18 @@ def DeviceTree.fromBoardConstants
     timerFrequencyHz := timerHz
     debugUartBase := uartBase }
 
-/-- V4-M4/S6-F: Construct a `DeviceTree` from a raw device tree blob byte array.
-    The full parsing pipeline is in `DeviceTree.fromDtbFull` defined below.
+/-- V4-M4/S6-F/W4-D: Construct a `DeviceTree` from a raw device tree blob byte array.
+    Stub — returns `none`. Production DTB parsing is provided by
+    `DeviceTree.fromDtbFull` (defined below after parsing infrastructure).
 
     This declaration exists for forward compatibility — callers that import
-    `DeviceTree.lean` can reference `fromDtb`, and the actual implementation
-    (`fromDtbFull`) is provided after the parsing infrastructure is defined.
+    `DeviceTree.lean` can reference `fromDtb`. For actual DTB parsing, use
+    `fromDtbFull` or `fromDtbParsed` directly.
 
-    V4-M4: No longer returns `none` unconditionally. See `fromDtbFull` for
-    the complete FDT traversal implementation. -/
+    W4-D (LOW-02): Removed stale `@[implemented_by]` comment. No such
+    attribute exists; `fromDtbFull` is a separate function, not an override. -/
 def DeviceTree.fromDtb (_blob : ByteArray) : Option DeviceTree :=
-  none  -- V4-M4: Overridden by fromDtbFull via @[implemented_by] below
+  none  -- Stub: use `fromDtbFull` for actual DTB parsing
 
 -- ============================================================================
 -- T6-M/M-ARCH-2: DTB parsing foundation
@@ -177,20 +178,27 @@ structure FdtHeader where
   sizeDtStruct : UInt32
   deriving Repr
 
-/-- T6-M/V5-A: Read a big-endian UInt32 from a ByteArray at the given offset.
+/-- T6-M/V5-A/W4-B: Read a big-endian UInt32 from a ByteArray at the given offset.
     Returns `none` if the offset is out of bounds.
 
     V5-A (M-DEF-1): Uses `ByteArray.get?` instead of the panicking `get!`
     to eliminate partial-function hazards. The bounds guard (`offset + 4 ≤ size`)
     makes the `get?` calls provably `some`, but using `get?` provides
-    defense-in-depth against future refactoring that might weaken the guard. -/
-def readBE32 (blob : ByteArray) (offset : Nat) : Option UInt32 := do
-  let b0 ← blob.data[offset]?
-  let b1 ← blob.data[offset + 1]?
-  let b2 ← blob.data[offset + 2]?
-  let b3 ← blob.data[offset + 3]?
-  some ((b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
-        (b2.toUInt32 <<< 8) ||| b3.toUInt32)
+    defense-in-depth against future refactoring that might weaken the guard.
+
+    W4-B (M-9): Explicit bounds check before arithmetic prevents unexpected
+    behavior on malformed DTB input where `offset + 4` could overflow or
+    exceed blob size. The upfront guard is redundant with `get?` but makes
+    the contract explicit and prevents callers from reasoning about partial reads. -/
+def readBE32 (blob : ByteArray) (offset : Nat) : Option UInt32 :=
+  if offset + 4 > blob.size then none
+  else do
+    let b0 ← blob.data[offset]?
+    let b1 ← blob.data[offset + 1]?
+    let b2 ← blob.data[offset + 2]?
+    let b3 ← blob.data[offset + 3]?
+    some ((b0.toUInt32 <<< 24) ||| (b1.toUInt32 <<< 16) |||
+          (b2.toUInt32 <<< 8) ||| b3.toUInt32)
 
 /-- T6-M: Parse the FDT header from a device tree blob.
     Returns `none` if the blob is too small or has wrong magic. -/
@@ -358,11 +366,15 @@ theorem extractMemoryRegions_empty :
 -- V4-N/L-PLAT-3: Generalized memory region extraction (32/64-bit cells)
 -- ============================================================================
 
-/-- V4-N/L-PLAT-3: Read a multi-cell big-endian value from a ByteArray.
+/-- V4-N/W4-B/L-PLAT-3: Read a multi-cell big-endian value from a ByteArray.
     Supports 1-cell (32-bit) and 2-cell (64-bit) address formats.
-    `cells` is the number of 32-bit cells (1 or 2). -/
+    `cells` is the number of 32-bit cells (1 or 2).
+
+    W4-B (M-9): Explicit bounds check ensures `offset + cells * 4` does not
+    exceed blob size before delegating to `readBE32`/`readBE64`. -/
 def readCells (blob : ByteArray) (offset : Nat) (cells : Nat) : Option Nat :=
-  match cells with
+  if offset + cells * 4 > blob.size then none  -- W4-B: bounds guard
+  else match cells with
   | 1 => (readBE32 blob offset).map (·.toNat)
   | 2 => (readBE64 blob offset).map (·.toNat)
   | _ => none  -- Only 1 and 2 cells supported
@@ -401,14 +413,17 @@ theorem extractMemoryRegionsGeneral_entrySize_eq :
 -- V4-M1/L-PLAT-1: DTB string reading
 -- ============================================================================
 
-/-- V4-M1/V5-A/L-PLAT-1: Read a null-terminated C string from a ByteArray at the
-    given offset. Returns the string and the 4-byte-aligned offset past it.
+/-- V4-M1/V5-A/W4-B/L-PLAT-1: Read a null-terminated C string from a ByteArray
+    at the given offset. Returns the string and the 4-byte-aligned offset past it.
     Uses fuel to prevent infinite loops on malformed (non-terminated) strings.
 
-    V5-A (M-DEF-1): Uses `ByteArray.get?` instead of the panicking `get!`. -/
+    V5-A (M-DEF-1): Uses `ByteArray.get?` instead of the panicking `get!`.
+    W4-B (M-9): Explicit bounds check on initial offset rejects out-of-range
+    starting positions before entering the traversal loop. -/
 def readCString (blob : ByteArray) (offset : Nat) (fuel : Nat := 256)
     : Option (String × Nat) :=
-  go blob offset fuel []
+  if offset ≥ blob.size then none  -- W4-B: reject out-of-bounds start
+  else go blob offset fuel []
 where
   go (blob : ByteArray) (offset fuel : Nat) (acc : List Char)
       : Option (String × Nat) :=

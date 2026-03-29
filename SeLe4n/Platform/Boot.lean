@@ -118,12 +118,17 @@ def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let withIrqs := foldIrqs config.irqTable initial
   foldObjects config.initialObjects withIrqs
 
-/-- V5-C (M-DEF-3): Explicit alias marking `bootFromPlatform` as the unchecked
-    variant. This function silently uses last-wins semantics on duplicate IRQs
-    or object IDs. **New boot code should prefer `bootFromPlatformChecked`**
-    which validates `PlatformConfig.wellFormed` and returns an error on
-    duplicates. This alias exists solely for backward compatibility with
-    existing proofs and test code. -/
+/-- V5-C/W4-E (M-DEF-3/L-15): **Deprecated** — use `bootFromPlatformChecked`
+    for production boot paths. This function silently uses last-wins semantics
+    on duplicate IRQs or object IDs, which can cause silent data loss if the
+    same ObjId appears multiple times in the platform configuration.
+
+    `bootFromPlatformChecked` validates `PlatformConfig.wellFormed` and returns
+    an explicit error on duplicates, preventing silent overwrites.
+
+    **Retained for**: backward compatibility with existing proofs and test code
+    that exercises invalid-state scenarios (e.g., `NegativeStateSuite`). New
+    boot paths should always use the checked variant. -/
 abbrev bootFromPlatformUnchecked := bootFromPlatform
 
 /-- Q3-C: Boot from empty config yields the empty IntermediateState. -/

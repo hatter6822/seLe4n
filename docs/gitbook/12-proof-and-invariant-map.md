@@ -1531,8 +1531,7 @@ Round-trip theorems:
 - `decodeCapPtr_roundtrip` — `decodeCapPtr (encodeCapPtr c) = .ok c`
 - `decodeSyscallId_roundtrip` — `decodeSyscallId (encodeSyscallId s) = .ok s`
 - `decodeMsgInfo_roundtrip` — `decodeMsgInfo (encodeMsgInfo mi) = .ok mi` (requires `mi.length ≤ maxMessageRegisters ∧ mi.extraCaps ≤ maxExtraCaps`; delegates to `MessageInfo.encode_decode_roundtrip` bitwise proof)
-- `decode_components_roundtrip` — composite: all four per-component round-trips hold simultaneously for any well-formed `SyscallDecodeResult` (extended from 3-conjunct to 4-conjunct in WS-K-A v0.16.0 to include `encodeMsgRegs decoded.msgRegs = decoded.msgRegs`)
-- `decodeMsgRegs_roundtrip` — `encodeMsgRegs vals = vals` (identity encoding round-trip for message registers, WS-K-A v0.16.0)
+- `decode_components_roundtrip` — composite: all three per-component round-trips hold simultaneously for any well-formed `SyscallDecodeResult` (capPtr, msgInfo, syscallId). Message registers need no round-trip (identity in the abstract model). Originally 4-conjunct in WS-K-A v0.16.0; reduced to 3-conjunct in W3-H v0.22.14 when `encodeMsgRegs` was removed as dead code.
 - `decodeMsgRegs_length` — when `decodeSyscallArgs` succeeds, `decoded.msgRegs.size = layout.msgRegs.size` (proved via `list_mapM_except_length` / `array_mapM_except_size` helper lemmas, WS-K-A v0.16.0)
 - `MessageInfo.encode_decode_roundtrip` — bit-field round-trip: `MessageInfo.decode (MessageInfo.encode mi) = some mi` (proved via `Nat.testBit` extensionality with three bitwise extraction helper lemmas: `and_mask_127`, `shift7_and_mask_3`, `shift9_extracts_label`)
 
@@ -1613,7 +1612,7 @@ Operation-chain tests (`tests/OperationChainSuite.lean`):
 Tier 3 invariant surface anchors:
 - 5 definition anchors (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`, `validateRegBound`, `decodeSyscallArgs`)
 - 11 theorem anchors (round-trip ×4 including `decodeMsgInfo_roundtrip`, `decode_components_roundtrip`, `encode_decode_roundtrip`; determinism; error-iff ×2; always-ok; bounds-iff ×2)
-- WS-K-A additions (v0.16.0): 4 new anchors — `encodeMsgRegs` definition, `decodeMsgRegs_roundtrip` theorem, `decodeMsgRegs_length` theorem, `msgRegs` field grep in Types.lean; 4 new `#check` anchors for encode/round-trip/length/composition
+- WS-K-A additions (v0.16.0): `decodeMsgRegs_length` theorem, `msgRegs` field grep in Types.lean; `#check` anchors for length/composition. Note: `encodeMsgRegs` definition and `decodeMsgRegs_roundtrip` theorem were removed in W3-H (v0.22.14) as dead code.
 
 **Completed CdtNodeId cleanup (WS-J1-F, v0.15.10):**
 
@@ -1632,7 +1631,7 @@ WS-K extends the WS-J1 decode layer to complete the full syscall surface.
 validate-and-read message registers in a single `Array.mapM` pass.
 `decodeMsgRegs_length` theorem proves output size equals layout size.
 `decodeMsgRegs_roundtrip` and extended `decode_components_roundtrip` proved.
-`encodeMsgRegs` identity helper added for proof surface completeness.
+`encodeMsgRegs` identity helper was added for proof surface completeness (removed in W3-H v0.22.14 as dead code).
 
 **Completed — K-B (v0.16.1), extended WS-Q1:** `SyscallArgDecode.lean` defines per-syscall typed
 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
