@@ -733,15 +733,15 @@ theorem crossSubsystemInvariant_services_change
       `regDepConsistent_disjoint_staleNotification`, `serviceGraph_disjoint_staleEndpoint`,
       `serviceGraph_disjoint_staleNotification`, `regDepConsistent_disjoint_regEndpointValid`,
       `serviceGraph_disjoint_regEndpointValid`.
-    - **4 sharing pairs**: Proven via operation-specific preservation (X3-C):
+    - **4 sharing pairs**: Proven via frame-based joint preservation (X3-C):
       1. `noStaleEndpointQueueReferences` ↔ `noStaleNotificationWaitReferences` (objects)
-         → `storeObject_preserves_staleEndpoint_and_staleNotification`
+         → `sharingPair1_objects_frame` (generic frame when `objects` unchanged)
       2. `registryEndpointValid` ↔ `noStaleEndpointQueueReferences` (objects)
-         → `revokeService_preserves_sharingPairs_objects` (frame)
+         → `sharingPair23_objects_frame` (generic frame when `objects` + `serviceRegistry` unchanged)
       3. `registryEndpointValid` ↔ `noStaleNotificationWaitReferences` (objects)
-         → `revokeService_preserves_sharingPairs_objects` (frame)
+         → `sharingPair23_objects_frame` (same combined frame lemma)
       4. `registryDependencyConsistent` ↔ `serviceGraphInvariant` (services)
-         → `revokeService_preserves_sharingPair4_services`
+         → `sharingPair4_services_frame` (generic frame when `services` + `objectIndex` unchanged)
 
     **Tightness statement**: All 10 predicate interaction pairs are covered by
     either disjointness-based frame lemmas or explicit preservation proofs.
