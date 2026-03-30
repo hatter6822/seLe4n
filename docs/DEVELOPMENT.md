@@ -14,7 +14,7 @@ It is aligned to the **current project state**:
 - **hardware target:** Raspberry Pi 5 (ARM64).
 
 Canonical planning sources:
-[`docs/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) for WS-X (all 5 phases complete),
+[`docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) for WS-X (all 5 phases complete),
 [`docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) for WS-U (Phase U8 complete — all 8 phases delivered),
 [`docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md) for WS-T (complete),
 [`docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md) for WS-S (completed),

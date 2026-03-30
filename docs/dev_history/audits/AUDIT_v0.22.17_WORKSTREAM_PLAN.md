@@ -3,7 +3,7 @@
 **Created**: 2026-03-29
 **Baseline version**: 0.22.17
 **Baseline audit**:
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.22.17_PRE_RELEASE.md` (4 CRIT, 9 HIGH, 11 MED, 7 LOW)
+- `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.22.17_PRE_RELEASE.md` (4 CRIT, 9 HIGH, 11 MED, 7 LOW)
 **Prior portfolios**: WS-B through WS-W (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 
@@ -1248,5 +1248,5 @@ Each version bumps the patch number. All versions maintain zero sorry/axiom.
 ---
 
 *Workstream plan created by Claude Code (Opus 4.6) on 2026-03-29*
-*Baseline audit: `docs/audits/AUDIT_COMPREHENSIVE_v0.22.17_PRE_RELEASE.md`*
+*Baseline audit: `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.22.17_PRE_RELEASE.md`*
 *Session: claude/audit-workstream-planning-42ohV*
