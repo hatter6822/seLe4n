@@ -87,7 +87,7 @@ principles:
 | Time-slice decrement | `Core.lean:timerTick` | Complete | **Replace** — CBS budget decrement replaces fixed quantum |
 | Domain scheduling | `Core.lean:switchDomain` | Complete | **Preserve** — orthogonal to CBS (temporal partitioning layer above CBS) |
 | Context save/restore | `Selection.lean` | Complete | **Preserve** — unchanged by scheduling context separation |
-| 12 scheduler invariants | `Invariant.lean` | Complete | **Extend** — 6 new invariants added, 3 existing modified |
+| 9 scheduler invariants | `Invariant.lean` | Complete | **Extend** — 6 new invariants added; `timeSlicePositive`/`currentTimeSlicePositive` gain SchedContext-aware branches; `schedulerPriorityMatch` complemented by `effectiveParamsMatchRunQueue` |
 
 ### 2.2 Object Model (What Exists)
 
@@ -104,9 +104,9 @@ principles:
 | Component | File | Status | Change Required |
 |-----------|------|--------|----------------|
 | `ThreadIpcState` | `Types.lean` | 6 variants | **Add** timeout metadata to blocking states |
-| `endpointSendDual` | `Endpoint.lean` | Complete | **Extend** — budget check before blocking |
-| `endpointReceiveDual` | `Endpoint.lean` | Complete | **Extend** — passive server SchedContext donation |
-| `endpointCall` | `Endpoint.lean` | Complete | **Extend** — timeout + SchedContext lending |
+| `endpointSendDual` | `DualQueue/Transport.lean` | Complete | **Extend** — budget check before blocking |
+| `endpointReceiveDual` | `DualQueue/Transport.lean` | Complete | **Extend** — passive server SchedContext donation |
+| `endpointCall` | `DualQueue/Transport.lean` | Complete | **Extend** — timeout + SchedContext lending |
 | Dual-queue operations | `DualQueue/Core.lean` | Complete | **Preserve** — queue structure unchanged |
 
 ### 2.4 Capability Infrastructure (What Exists)
@@ -181,33 +181,29 @@ Z1 (SchedContext Type Foundation)
  │
  ├──→ Z2 (CBS Budget Engine)
  │     │
- │     ├──→ Z4 (Scheduler Integration)
- │     │     │
- │     │     ├──→ Z6 (Timeout Endpoints)
- │     │     │     │
- │     │     │     └──→ Z8 (API Surface & Syscall Wiring)
- │     │     │           │
- │     │     │           └──→ Z10 (Documentation & Closure)
- │     │     │
- │     │     └──→ Z7 (SchedContext Donation / Passive Servers)
- │     │           │
- │     │           └──→ Z8
- │     │
- │     └──→ Z5 (Capability-Controlled Thread Binding)
- │           │
- │           └──→ Z8
- │
- ├──→ Z3 (Replenishment Queue)
- │     │
- │     └──→ Z4
- │
- └──→ Z9 (Invariant Composition & Cross-Subsystem)
-       │
-       └──→ Z10
+ │     ├──→ Z4 (Scheduler Integration) ───────────────┐
+ │     │     │                                         │
+ │     │     ├──→ Z6 (Timeout Endpoints) ──────────┐   │
+ │     │     │     │                               │   │
+ │     │     │     └──→ Z8 (API Surface)           │   │
+ │     │     │           │                         │   │
+ │     │     │           └──→ Z10 (Docs/Closure)   │   │
+ │     │     │                  ▲                   │   │
+ │     │     └──→ Z7 (Donation/Passive Servers) ┐  │   │
+ │     │           │                            │  │   │
+ │     │           └──→ Z8                      │  │   │
+ │     │                                        │  │   │
+ │     └──→ Z5 (Capability Binding) ──────────┐ │  │   │
+ │           │                                │ │  │   │
+ │           └──→ Z8                          │ │  │   │
+ │                                            ▼ ▼  ▼   ▼
+ ├──→ Z3 (Replenishment Queue)         Z9 (Invariant Composition)
+ │     │                                      │
+ │     └──→ Z4                                └──→ Z10
 ```
 
 **Critical path**: Z1 → Z2 → Z4 → Z6 → Z8 → Z10 (6 sequential phases)
-**Parallelizable**: Z3 ∥ Z2 (after Z1); Z5 ∥ Z4 (after Z2); Z7 ∥ Z6 (after Z4)
+**Parallelizable**: Z3 ∥ Z2 (after Z1); Z5 ∥ Z4 (after Z2); Z7 ∥ Z6 (after Z4, with care — both touch Transport.lean but different functions)
 
 ---
 
@@ -231,13 +227,13 @@ changes, no proof obligations beyond structural well-formedness.
 | ID | Description | Files | Est. |
 |----|-------------|-------|------|
 | Z1-A | **Define `SchedContextId` typed wrapper in Prelude.lean.** Follow existing pattern: `structure SchedContextId where val : Nat deriving DecidableEq, Repr, Inhabited`. Add `Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq` instances (required for RHTable keys). Add `toObjId`/`ofObjId` conversions mirroring `ThreadId.toObjId`. Add `sentinel`, `isReserved`, `valid` predicates matching Prelude conventions. ~40 lines | `Prelude.lean` | Small |
-| Z1-B | **Define `Budget` typed wrapper.** `structure Budget where val : Nat deriving DecidableEq, Repr, Inhabited`. Represents CPU time in ticks. Add `isZero`, `isPositive` predicates. Add `decrement : Budget → Budget` (saturating at 0). Add `refill : Budget → Budget → Budget` (set to min of value and max). `Budget.zero := ⟨0⟩`. ~25 lines | `Types.lean` | Trivial |
+| Z1-B | **Define `Budget` typed wrapper.** `structure Budget where val : Nat deriving DecidableEq, Repr, Inhabited`. Represents CPU time in ticks. Add `isZero`, `isPositive` predicates. Add `decrement : Budget → Budget` (saturating at 0). Add `refill : Budget → Budget → Budget` (set to min of value and ceiling). `Budget.zero := ⟨0⟩`. ~25 lines | `Types.lean` | Trivial |
 | Z1-C | **Define `Period` typed wrapper.** `structure Period where val : Nat deriving DecidableEq, Repr, Inhabited`. Represents replenishment period in ticks. Add `isPositive` predicate (period must be > 0 for well-formedness). Add `Period.default := ⟨10000⟩` (default 10k ticks). ~15 lines | `Types.lean` | Trivial |
 | Z1-D | **Define `Bandwidth` computed type.** `structure Bandwidth where budget : Nat, period : Nat`. Add `isValid : Bandwidth → Bool := period > 0`. Add `utilization : Bandwidth → Nat := budget * 1000 / period` (per-mille). Add `exceeds : Bandwidth → Bandwidth → Bool` for admission control. ~20 lines | `Types.lean` | Trivial |
 | Z1-E | **Define `ReplenishmentEntry` structure.** Models a single CBS replenishment event: `structure ReplenishmentEntry where amount : Budget, eligibleAt : Nat` where `eligibleAt` is the absolute tick at which this replenishment becomes available. Add `isEligible : ReplenishmentEntry → Nat → Bool := entry.eligibleAt ≤ currentTime`. ~15 lines | `Types.lean` | Trivial |
-| Z1-F | **Define `SchedContext` structure (core).** The first-class scheduling context object: `structure SchedContext where scId : SchedContextId, budget : Budget, period : Period, maxBudget : Budget, priority : Priority, deadline : Deadline, domain : DomainId, budgetRemaining : Budget, periodStart : Nat, replenishments : List ReplenishmentEntry := [], boundThread : Option ThreadId := none, isActive : Bool := false`. This is the central data type. ~35 lines | `Types.lean` | Small |
-| Z1-G | **Define `SchedContext.wellFormed` predicate.** Structural well-formedness: `period.isPositive ∧ maxBudget.val ≤ period.val ∧ budget.val ≤ maxBudget.val ∧ budgetRemaining.val ≤ budget.val ∧ replenishments.length ≤ maxReplenishments`. Add `maxReplenishments : Nat := 8` constant (seL4 uses `MIN_REFILLS = 2`, `MAX_REFILLS` varies). ~20 lines | `Types.lean` | Small |
-| Z1-H | **Define `SchedContext.bandwidth` accessor.** `def bandwidth (sc : SchedContext) : Bandwidth := { budget := sc.maxBudget.val, period := sc.period.val }`. Add `SchedContext.utilizationPerMille`. ~10 lines | `Types.lean` | Trivial |
+| Z1-F | **Define `SchedContext` structure (core).** The first-class scheduling context object: `structure SchedContext where scId : SchedContextId, budget : Budget` (configured CBS budget — the amount replenished each period)`, period : Period, priority : Priority, deadline : Deadline, domain : DomainId, budgetRemaining : Budget` (current remaining ticks — decremented each tick, refilled up to `budget` on replenishment)`, periodStart : Nat, replenishments : List ReplenishmentEntry := [], boundThread : Option ThreadId := none, isActive : Bool := false`. Note: seL4 uses `scBudget` for the configured value and tracks consumption separately; we use `budget` (configured ceiling) and `budgetRemaining` (current). There is no separate `maxBudget` — the configured `budget` IS the replenishment cap. ~35 lines | `Types.lean` | Small |
+| Z1-G | **Define `SchedContext.wellFormed` predicate.** Structural well-formedness: `period.isPositive ∧ budget.val ≤ period.val ∧ budgetRemaining.val ≤ budget.val ∧ replenishments.length ≤ maxReplenishments`. Add `maxReplenishments : Nat := 8` constant (seL4 uses `MIN_REFILLS = 2`, `MAX_REFILLS` varies). The key CBS constraint is `budget ≤ period` (utilization ≤ 1.0 per-context). ~20 lines | `Types.lean` | Small |
+| Z1-H | **Define `SchedContext.bandwidth` accessor.** `def bandwidth (sc : SchedContext) : Bandwidth := { budget := sc.budget.val, period := sc.period.val }`. Add `SchedContext.utilizationPerMille`. ~10 lines | `Types.lean` | Trivial |
 | Z1-I | **Define `SchedContextBinding` enum.** Models the thread ↔ SchedContext relationship: `inductive SchedContextBinding where \| unbound \| bound (scId : SchedContextId) \| donated (scId : SchedContextId, originalOwner : ThreadId)`. The `donated` variant tracks IPC-based SchedContext lending for passive servers. ~15 lines | `Types.lean` | Trivial |
 | Z1-J | **Add `schedContextBinding` field to TCB.** Extend TCB structure: `schedContextBinding : SchedContextBinding := .unbound`. This replaces the monolithic `priority`/`deadline`/`timeSlice`/`domain` fields as the primary scheduling parameter source for threads with bound SchedContexts. The legacy fields are retained for backward compatibility during migration. ~5 lines (field addition) | `Object/Types.lean` | Trivial |
 | Z1-K | **Add `.schedContext` variant to `KernelObject`.** Extend the `KernelObject` inductive: `\| schedContext (sc : SchedContext)`. Add corresponding `KernelObjectType.schedContext` variant. Update `KernelObject.objectType` match. Update `KernelObjectType.ofNat?`/`toNat` codec (assign value 6). ~15 lines across matches | `Object/Structures.lean` | Small |
@@ -283,21 +279,21 @@ yet — this phase builds the budget engine in isolation.
 | Z2-C3 | **Define `scheduleReplenishment` (compose C1+C2).** `def scheduleReplenishment (sc : SchedContext) (currentTime : Nat) (consumed : Budget) : SchedContext`. Creates entry via `mkReplenishmentEntry`, appends to `sc.replenishments`, truncates via `truncateReplenishments`. ~10 lines | `Budget.lean` | Small |
 | Z2-D1 | **Define `partitionEligible` helper.** `def partitionEligible (rs : List ReplenishmentEntry) (currentTime : Nat) : List ReplenishmentEntry × List ReplenishmentEntry`. Splits replenishment list into (eligible, not-yet-eligible) based on `eligibleAt ≤ currentTime`. Returns `(due, remaining)`. Theorem: `partitionEligible_disjoint`. ~12 lines | `Budget.lean` | Small |
 | Z2-D2 | **Define `sumReplenishments` helper.** `def sumReplenishments (entries : List ReplenishmentEntry) : Nat`. Sums the `amount.val` of all entries. Theorem: `sumReplenishments_nil`, `sumReplenishments_cons`. ~8 lines | `Budget.lean` | Trivial |
-| Z2-D3 | **Define `applyRefill` helper.** `def applyRefill (sc : SchedContext) (refillAmount : Nat) : SchedContext`. Adds `refillAmount` to `budgetRemaining`, capped at `maxBudget`: `budgetRemaining := ⟨min (sc.budgetRemaining.val + refillAmount) sc.maxBudget.val⟩`. Theorem: `applyRefill_le_maxBudget`. ~8 lines | `Budget.lean` | Trivial |
+| Z2-D3 | **Define `applyRefill` helper.** `def applyRefill (sc : SchedContext) (refillAmount : Nat) : SchedContext`. Adds `refillAmount` to `budgetRemaining`, capped at configured `budget`: `budgetRemaining := ⟨min (sc.budgetRemaining.val + refillAmount) sc.budget.val⟩`. Theorem: `applyRefill_le_budget`. ~8 lines | `Budget.lean` | Trivial |
 | Z2-D4 | **Define `processReplenishments` (compose D1+D2+D3).** `def processReplenishments (sc : SchedContext) (currentTime : Nat) : SchedContext`. Calls `partitionEligible`, sums eligible via `sumReplenishments`, applies via `applyRefill`, stores remaining list. ~10 lines | `Budget.lean` | Small |
 | Z2-E | **Define `cbsUpdateDeadline` operation.** `def cbsUpdateDeadline (sc : SchedContext) (currentTime : Nat) : SchedContext`. CBS deadline assignment rule: when a SchedContext is replenished and becomes eligible, set `deadline := currentTime + sc.period.val`. If budget was not exhausted (continuing execution), deadline is unchanged. This maintains the CBS invariant that `deadline` reflects the current server period. ~15 lines | `Budget.lean` | Small |
 | Z2-F | **Define `cbsBudgetCheck` combined operation.** `def cbsBudgetCheck (sc : SchedContext) (currentTime : Nat) (ticksConsumed : Nat) : SchedContext × Bool`. Combines consume + exhaustion check + replenishment scheduling into a single atomic step. Returns `(updatedSc, wasPreempted)`. This is the per-tick budget accounting entry point. ~20 lines | `Budget.lean` | Small |
 | Z2-G | **Define `admissionCheck` predicate.** `def admissionCheck (existing : List SchedContext) (candidate : SchedContext) : Bool`. CBS admission control: total utilization must not exceed 1.0 (or configurable threshold). Computes `Σ(budget_i/period_i) + candidate.budget/candidate.period ≤ threshold`. Uses integer arithmetic (per-mille) to avoid rationals. ~20 lines | `Budget.lean` | Small |
-| Z2-H | **Define `SchedContext` invariant: `budgetWithinBounds`.** `def budgetWithinBounds (sc : SchedContext) : Prop := sc.budgetRemaining.val ≤ sc.maxBudget.val ∧ sc.maxBudget.val ≤ sc.period.val`. The fundamental CBS bandwidth constraint. ~8 lines | `Invariant/Defs.lean` | Trivial |
+| Z2-H | **Define `SchedContext` invariant: `budgetWithinBounds`.** `def budgetWithinBounds (sc : SchedContext) : Prop := sc.budgetRemaining.val ≤ sc.budget.val ∧ sc.budget.val ≤ sc.period.val`. The fundamental CBS bandwidth constraint: remaining ≤ configured ≤ period. ~8 lines | `Invariant/Defs.lean` | Trivial |
 | Z2-I | **Define `replenishmentListWellFormed` invariant.** `def replenishmentListWellFormed (sc : SchedContext) : Prop := sc.replenishments.length ≤ maxReplenishments ∧ ∀ r ∈ sc.replenishments, r.amount.val > 0`. No zero-amount entries, bounded list length. ~10 lines | `Invariant/Defs.lean` | Trivial |
 | Z2-J | **Define `schedContextWellFormed` bundle.** Conjunction: `sc.wellFormed ∧ budgetWithinBounds sc ∧ replenishmentListWellFormed sc`. This is the per-object invariant for SchedContext, analogous to `CNode.wellFormed`. ~8 lines | `Invariant/Defs.lean` | Trivial |
 | Z2-K | **Prove `consumeBudget_preserves_budgetWithinBounds`.** If `budgetWithinBounds sc`, then `budgetWithinBounds (consumeBudget sc ticks)`. Core preservation theorem. Proof by `Nat.sub_le` and transitivity. ~15 lines | `Invariant/Defs.lean` | Small |
-| Z2-L | **Prove `processReplenishments_preserves_budgetWithinBounds`.** Refill is capped at `maxBudget`, so `budgetRemaining ≤ maxBudget` is maintained. Proof by `Nat.min_le_left`. ~20 lines | `Invariant/Defs.lean` | Small |
+| Z2-L | **Prove `processReplenishments_preserves_budgetWithinBounds`.** Refill is capped at `budget` (configured ceiling), so `budgetRemaining ≤ budget` is maintained. Proof by `Nat.min_le_left`. ~20 lines | `Invariant/Defs.lean` | Small |
 | Z2-M | **Prove `scheduleReplenishment_preserves_replenishmentListWellFormed`.** New entry has `consumed > 0` (only called when budget was actually consumed), and list is truncated to `maxReplenishments`. ~15 lines | `Invariant/Defs.lean` | Small |
 | Z2-N | **Prove `cbsBudgetCheck_preserves_schedContextWellFormed`.** Composition of Z2-K through Z2-M. The combined operation preserves the full invariant bundle. ~15 lines | `Invariant/Defs.lean` | Small |
 | Z2-O1 | **Define `totalConsumed` accumulator.** `def totalConsumed (sc : SchedContext) (window : Nat) : Nat`. Computes the total ticks consumed by a SchedContext over a time window by summing replenishment amounts within the window. Helper for the bandwidth theorem. ~10 lines | `Invariant/Defs.lean` | Trivial |
-| Z2-O2 | **Prove single-period bandwidth bound.** `theorem cbs_single_period_bound : ∀ sc, totalConsumed sc sc.period.val ≤ sc.maxBudget.val`. Within one period, consumption is at most `maxBudget` (from `budgetWithinBounds`). Base case for induction. ~10 lines | `Invariant/Defs.lean` | Small |
-| Z2-O3 | **Prove CBS bandwidth isolation theorem (multi-period).** `theorem cbs_bandwidth_bounded : ∀ sc window, totalConsumed sc window ≤ sc.maxBudget.val * (window / sc.period.val + 1)`. Induction on `window / period` using Z2-O2 as base case. Each period adds at most `maxBudget` consumption. ~15 lines | `Invariant/Defs.lean` | Small |
+| Z2-O2 | **Prove single-period bandwidth bound.** `theorem cbs_single_period_bound : ∀ sc, totalConsumed sc sc.period.val ≤ sc.budget.val`. Within one period, consumption is at most `budget` (from `budgetWithinBounds`). Base case for induction. ~10 lines | `Invariant/Defs.lean` | Small |
+| Z2-O3 | **Prove CBS bandwidth isolation theorem (multi-period).** `theorem cbs_bandwidth_bounded : ∀ sc window, totalConsumed sc window ≤ sc.budget.val * (window / sc.period.val + 1)`. Induction on `window / period` using Z2-O2 as base case. Each period adds at most `budget` consumption. ~15 lines | `Invariant/Defs.lean` | Small |
 | Z2-P | **Create re-export hub.** `SeLe4n/Kernel/SchedContext/Invariant.lean`: `import SeLe4n.Kernel.SchedContext.Invariant.Defs`. ~5 lines | `Invariant.lean` | Trivial |
 | Z2-Q | **Build verification.** `lake build SeLe4n.Kernel.SchedContext.Budget && lake build SeLe4n.Kernel.SchedContext.Invariant`. Run `./scripts/test_fast.sh`. | — | Small |
 
@@ -352,7 +348,8 @@ operations. Z3-K depends on Z3-A. Z3-L terminal.
 **Goal**: Wire the CBS budget engine and replenishment queue into the existing
 scheduler. Replace the fixed `timeSlice` decrement with SchedContext-aware
 budget accounting. Extend `isBetterCandidate` to use SchedContext deadlines.
-Preserve all 12 existing scheduler invariants and add 6 new ones.
+Preserve all 9 existing scheduler invariants (`schedulerInvariantBundleFull`)
+and add 6 new ones.
 
 **Modified files**:
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`
@@ -368,13 +365,13 @@ Preserve all 12 existing scheduler invariants and add 6 new ones.
 | Z4-A | **Add `replenishQueue` field to `SchedulerState`.** `replenishQueue : ReplenishQueue := ReplenishQueue.empty`. This tracks system-wide CBS replenishment events. Update `SchedulerState` default. ~5 lines | `State.lean` | Trivial |
 | Z4-B | **Define `effectivePriority` accessor.** `def effectivePriority (st : SystemState) (tid : ThreadId) : Option (Priority × Deadline × DomainId)`. Resolves scheduling params from SchedContext if bound, else falls back to TCB legacy fields. Central resolution point used by all scheduler operations. ~20 lines | `Selection.lean` | Small |
 | Z4-C | **Define `hasSufficientBudget` eligibility predicate.** `def hasSufficientBudget (st : SystemState) (tid : ThreadId) : Bool`. Returns `true` if the thread's SchedContext has `budgetRemaining > 0`, or if the thread is unbound (legacy mode — always eligible). Unbound threads use the existing `timeSlice` mechanism unchanged. ~15 lines | `Selection.lean` | Small |
-| Z4-D | **Extend `chooseBestRunnableBy` with budget eligibility.** Add `hasSufficientBudget` check to the eligibility filter in `chooseBestRunnableBy`. Threads with exhausted budgets are skipped even if they have higher priority. This is the core CBS enforcement point. ~10 lines (modification) | `Selection.lean` | Small |
+| Z4-D | **Compose budget eligibility into `chooseBestRunnableBy`.** `chooseBestRunnableBy` already accepts an `eligible : TCB → Bool` parameter (line 137). Modify the call site to compose `hasSufficientBudget` with the existing eligibility predicate: `eligible := fun tcb => existingEligible tcb && hasSufficientBudget st tcb.tid`. Threads with exhausted budgets are skipped even if they have higher priority. This is the core CBS enforcement point. ~5 lines (call-site modification only) | `Selection.lean` | Trivial |
 | Z4-E | **Extend `isBetterCandidate` to use SchedContext deadlines.** The existing 3-level comparison already handles `Priority × Deadline`. Modify the call site to pass SchedContext-derived deadlines via `effectivePriority` instead of raw TCB fields. The comparison logic itself is unchanged — only the input source changes. ~10 lines (modification) | `Selection.lean` | Small |
-| Z4-F1 | **Define `timerTickBudget` — unbound branch.** `def timerTickBudget (st : SystemState) : SystemState`. Match on current thread's `schedContextBinding`: if `.unbound`, delegate to existing `timeSlice` decrement logic (call existing `timerTick` path). ~12 lines | `Core.lean` | Small |
+| Z4-F1 | **Define `timerTickBudget` — unbound branch.** `def timerTickBudget (st : SystemState) : SystemState`. Match on current thread's `schedContextBinding`: if `.unbound`, delegate to existing `timeSlice` decrement logic (reuses existing `timerTick` path which already uses `configDefaultTimeSlice` from `SchedulerState`). ~12 lines | `Core.lean` | Small |
 | Z4-F2 | **Define `timerTickBudget` — bound decrement branch.** Extend `timerTickBudget` for `.bound scId` case when `budgetRemaining > 1`: call `consumeBudget sc 1`, write updated SchedContext back to store. ~12 lines | `Core.lean` | Small |
 | Z4-F3 | **Define `timerTickBudget` — bound exhaustion branch.** Extend `timerTickBudget` for `.bound scId` case when `budgetRemaining ≤ 1`: call `scheduleReplenishment`, update deadline via `updateDeadline`, preempt current thread (re-enqueue + reschedule). ~18 lines | `Core.lean` | Small |
-| Z4-G1 | **Define `popDueReplenishments` helper.** `def popDueReplenishments (rq : ReplenishQueue) (now : Nat) : List (ObjId × ReplenishEntry) × ReplenishQueue`. Pops all entries with `dueTime ≤ now` from the sorted queue. Returns popped entries and remaining queue. ~12 lines | `Core.lean` | Small |
-| Z4-G2 | **Define per-SchedContext refill logic.** `def refillSchedContext (st : SystemState) (scId : ObjId) (entry : ReplenishEntry) : SystemState`. Calls `processReplenishments` on the SchedContext, updates deadline. ~10 lines | `Core.lean` | Small |
+| Z4-G1 | **Define `popDueReplenishments` helper.** `def popDueReplenishments (rq : ReplenishQueue) (now : Nat) : List SchedContextId × ReplenishQueue`. Wraps `ReplenishQueue.popDue` (Z3-D) at the system level, converting SchedContextIds for use in `refillSchedContext`. Returns due SchedContextIds and remaining queue. ~12 lines | `Core.lean` | Small |
+| Z4-G2 | **Define per-SchedContext refill logic.** `def refillSchedContext (st : SystemState) (scId : SchedContextId) : SystemState`. Looks up SchedContext by `scId.toObjId`, calls `processReplenishments` (Z2-D4) with current timer, calls `cbsUpdateDeadline` (Z2-E), writes updated SchedContext back to store. ~10 lines | `Core.lean` | Small |
 | Z4-G3 | **Define `processReplenishmentsDue` — compose and re-enqueue.** `def processReplenishmentsDue (st : SystemState) : SystemState`. Calls `popDueReplenishments`, folds `refillSchedContext` over results, re-enqueues bound threads whose budget was restored (was 0, now > 0). ~15 lines | `Core.lean` | Small |
 | Z4-H | **Integrate replenishment into `timerTick`.** Modify `timerTick` to: (1) call `processReplenishmentsDue` first, (2) then `timerTickBudget` for current thread, (3) then existing domain scheduling logic. The replenishment check must happen before budget decrement so newly-eligible threads can preempt. ~15 lines (modification) | `Core.lean` | Small |
 | Z4-I | **Integrate budget into `schedule`.** Modify `schedule` to verify the chosen thread has sufficient budget before dispatch. If `chooseThread` selects a thread with exhausted budget (race between replenishment and selection), skip it and re-select. In practice this is unreachable because `chooseBestRunnableBy` already filters by budget (Z4-D), but the guard is defense-in-depth. ~10 lines (modification) | `Core.lean` | Small |
@@ -434,7 +431,7 @@ This is where execution becomes a capability-controlled resource.
 
 | ID | Description | Files | Est. |
 |----|-------------|-------|------|
-| Z5-A | **Define `SchedContextConfigure` syscall arguments.** `structure SchedContextConfigureArgs where budget : Nat, period : Nat, maxBudget : Nat, priority : Nat, deadline : Nat, domain : Nat`. Add decode/encode functions following `SyscallArgDecode.lean` patterns. Requires 6 message registers. ~40 lines | `SyscallArgDecode.lean` | Small |
+| Z5-A | **Define `SchedContextConfigure` syscall arguments.** `structure SchedContextConfigureArgs where budget : Nat, period : Nat, priority : Nat, deadline : Nat, domain : Nat`. Add decode/encode functions following `SyscallArgDecode.lean` patterns. Requires 5 message registers. ~35 lines | `SyscallArgDecode.lean` | Small |
 | Z5-B | **Define `SchedContextBind` syscall arguments.** `structure SchedContextBindArgs where threadId : Nat`. Thread to bind. Requires 1 message register. Add decode/encode. ~15 lines | `SyscallArgDecode.lean` | Trivial |
 | Z5-C | **Define `SchedContextUnbind` syscall arguments.** No additional args (SchedContext from capability target). Add decode (trivial). ~10 lines | `SyscallArgDecode.lean` | Trivial |
 | Z5-D | **Add `SyscallId` variants.** Add `.schedContextConfigure` (17), `.schedContextBind` (18), `.schedContextUnbind` (19) to `SyscallId` enum. Update `ofNat?`/`toNat` codec. Update `toNat_injective` proof. ~15 lines | `Object/Types.lean` | Small |
@@ -448,7 +445,7 @@ This is where execution becomes a capability-controlled resource.
 | Z5-H1 | **Define `schedContextUnbind` — preemption guard.** If bound thread is current, trigger preemption first (save context, clear current). Prevents unbinding the running thread without rescheduling. ~10 lines | `Operations.lean` | Small |
 | Z5-H2 | **Define `schedContextUnbind` — RunQueue removal and unbinding.** If thread is runnable, remove from RunQueue. Clear `sc.boundThread` and `tcb.schedContextBinding := .unbound`. Write both objects. ~12 lines | `Operations.lean` | Small |
 | Z5-H3 | **Define `schedContextUnbind` — replenish queue cleanup.** Remove SchedContext from replenish queue (pending replenishments no longer relevant after unbind). ~8 lines | `Operations.lean` | Trivial |
-| Z5-I1 | **Define `schedContextYieldTo` — budget transfer.** `def schedContextYieldTo (scId : ObjId) : Kernel Unit`. Transfer `budgetRemaining` from current thread's SchedContext to target SchedContext. Cap at target's `maxBudget`. ~12 lines | `Operations.lean` | Small |
+| Z5-I1 | **Define `schedContextYieldTo` — budget transfer (kernel-internal).** `def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId) : SystemState`. Transfer `budgetRemaining` from source to target SchedContext. Cap at target's configured `budget`. This is a kernel-internal helper for hierarchical scheduling, **not a userspace syscall** — no SyscallId or decode is defined in this workstream. A future workstream may expose it as a 4th SchedContext syscall if needed. ~12 lines | `Operations.lean` | Small |
 | Z5-I2 | **Define `schedContextYieldTo` — re-enqueue target.** If target SchedContext's bound thread was waiting for budget (budget was 0, now > 0), enqueue it in RunQueue. ~12 lines | `Operations.lean` | Small |
 | Z5-J | **Wire dispatch for new syscalls.** Add arms to `dispatchWithCap` and `dispatchWithCapChecked` in `API.lean`. Route `.schedContextConfigure`, `.schedContextBind`, `.schedContextUnbind` through `syscallInvoke` with capability gate. ~20 lines | `API.lean` | Small |
 | Z5-K | **Prove `schedContextBind_preserves_schedContextBindingConsistent`.** After bind, the bidirectional TCB ↔ SchedContext references are consistent. ~20 lines | `Preservation.lean` | Small |
@@ -488,8 +485,9 @@ blocking (limitation L-5) and closes starvation vector SV-3 from WS-V.
 
 **Modified files**:
 - `SeLe4n/Model/Object/Types.lean` (timeout metadata in ThreadIpcState)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean`
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (endpointSendDual/ReceiveDual/Call timeout metadata)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (new endpointQueueRemove)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (timeoutThread, timeoutAwareReceive)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean`
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean`
 
@@ -498,17 +496,17 @@ blocking (limitation L-5) and closes starvation vector SV-3 from WS-V.
 | ID | Description | Files | Est. |
 |----|-------------|-------|------|
 | Z6-A | **Add timeout metadata to blocking IPC states.** Extend `ThreadIpcState` variants to carry optional timeout info: `blockedOnSend (endpoint : ObjId) (timeoutBudget : Option SchedContextId := none)`, `blockedOnReceive (endpoint : ObjId) (timeoutBudget : Option SchedContextId := none)`, `blockedOnCall (endpoint : ObjId) (timeoutBudget : Option SchedContextId := none)`, `blockedOnReply (endpoint : ObjId) (replyTarget : Option ThreadId) (timeoutBudget : Option SchedContextId := none)`. The `timeoutBudget` field records which SchedContext's budget bounds this blocking operation. `none` = no timeout (legacy/unbound). ~15 lines (field additions) | `Object/Types.lean` | Small |
-| Z6-B1 | **Update IPC operation pattern matches.** Add `timeoutBudget` field to `blockedOnSend`/`blockedOnReceive`/`blockedOnCall`/`blockedOnReply` matches in `Endpoint.lean` and `DualQueue/Core.lean`. Use `..` syntax where the field is irrelevant. ~20 lines across 2 files | `Endpoint.lean`, `DualQueue/Core.lean` | Small |
+| Z6-B1 | **Update IPC operation pattern matches.** Add `timeoutBudget` field to `blockedOnSend`/`blockedOnReceive`/`blockedOnCall`/`blockedOnReply` matches in `DualQueue/Transport.lean` and `DualQueue/Core.lean`. Use `..` syntax where the field is irrelevant. ~20 lines across 2 files | `DualQueue/Transport.lean`, `DualQueue/Core.lean` | Small |
 | Z6-B2 | **Update IPC invariant proof pattern matches.** Add `timeoutBudget` field handling in `EndpointPreservation.lean`, `CallReplyRecv.lean`, `NotificationPreservation.lean`. Since field defaults to `none`, existing proofs need only the additional wildcard. ~20 lines across 3 files | `Invariant/*.lean` | Small |
 | Z6-B3 | **Update scheduler/lifecycle IPC state matches.** Add `timeoutBudget` field to pattern matches in `Lifecycle/Operations.lean` (`cleanupTcbReferences`) and scheduler code that inspects IPC state. ~10 lines across 2 files | `Lifecycle/Operations.lean`, `Core.lean` | Trivial |
 | Z6-C1 | **Define `timeoutThread` — IPC state reset.** Set `tcb.ipcState := .ready`, clear `tcb.pendingMessage := none`. Write updated TCB to store. ~10 lines | `Endpoint.lean` | Small |
 | Z6-C2 | **Define `timeoutThread` — endpoint queue removal.** Call `endpointQueueRemove` (Z6-D) to dequeue the timed-out thread from the endpoint's sendQ or recvQ. ~8 lines | `Endpoint.lean` | Trivial |
 | Z6-C3 | **Define `timeoutThread` — scheduler re-enqueue.** Set timeout error code in register context (`tcb.regs.gpr 0 := timeoutErrorCode`). Re-enqueue thread in RunQueue with current effective priority. ~12 lines | `Endpoint.lean` | Small |
 | Z6-D1 | **Define `endpointQueueRemove` — queue location lookup.** Determine whether thread is in sendQ or recvQ (from `isReceiveQ` parameter). Look up the endpoint and verify thread is actually in the specified queue. ~10 lines | `DualQueue/Core.lean` | Small |
-| Z6-D2 | **Define `endpointQueueRemove` — mid-queue splice-out.** Adapt `spliceOutMidQueueNode` pattern: patch predecessor's `queueNext` to successor, patch successor's `queuePrev` to predecessor. Handle head/tail edge cases. Write updated TCBs and endpoint. ~15 lines | `DualQueue/Core.lean` | Small |
-| Z6-E | **Integrate timeout into `timerTickBudget`.** In the budget exhaustion branch of `timerTickBudget` (Z4-F): if current thread is blocked on IPC with `timeoutBudget = some scId` and `scId`'s budget is exhausted, call `timeoutThread` instead of normal preemption. ~15 lines (modification) | `Core.lean` | Small |
-| Z6-F | **Integrate timeout into `processReplenishmentsDue`.** When processing replenishments, check if any thread blocked on IPC has a timeout tied to a different SchedContext that has been replenished. If the blocking SchedContext's budget expires while the thread waits, the thread should be timed out. ~15 lines (modification) | `Core.lean` | Small |
-| Z6-G | **Set timeout metadata on IPC blocking.** Modify `endpointSendDual` to set `timeoutBudget := tcb.schedContextBinding.scId?` when blocking. Same for `endpointReceiveDual`, `endpointCall`. The timeout is tied to the caller's own SchedContext budget: when the budget expires, the IPC times out. ~15 lines across Endpoint.lean | `Endpoint.lean` | Small |
+| Z6-D2 | **Define `endpointQueueRemove` — mid-queue splice-out.** Adapt `spliceOutMidQueueNode` pattern (from `Lifecycle/Operations.lean:60`): patch predecessor's `queueNext` to successor, patch successor's `queuePrev` to predecessor. Handle head/tail edge cases. Write updated TCBs and endpoint. ~15 lines | `DualQueue/Core.lean` | Small |
+| Z6-E | **Integrate timeout into `timerTickBudget` — blocked thread scan.** In the budget exhaustion branch of `timerTickBudget` (Z4-F3): after preempting the running thread, scan all blocked threads whose `timeoutBudget = some scId` references the now-exhausted SchedContext. For each such thread, call `timeoutThread`. Rationale: the running thread consumed the last tick of the SC's budget; any blocked thread whose IPC was bounded by that SC must now be timed out. In the donation case, the client blocked on reply with `timeoutBudget = some clientScId` is timed out when the server (running on the donated SC) exhausts the budget. ~18 lines (modification) | `Core.lean` | Small |
+| Z6-F | **Integrate timeout into `processReplenishmentsDue`.** After processing replenishments, no timeout action is needed — replenishment *restores* budget, which is the opposite of timeout. However, verify that replenished SchedContexts whose bound threads are blocked do NOT get incorrectly timed out (guard: only timeout when `budgetRemaining = 0`). Add defensive assertion. ~8 lines (modification) | `Core.lean` | Trivial |
+| Z6-G | **Set timeout metadata on IPC blocking.** Modify `endpointSendDual` to set `timeoutBudget := tcb.schedContextBinding.scId?` when blocking. Same for `endpointReceiveDual`, `endpointCall`. The timeout is tied to the caller's own SchedContext budget: when the budget expires, the IPC times out. ~15 lines across Transport.lean | `DualQueue/Transport.lean` | Small |
 | Z6-H | **Define `IpcTimeoutResult` type.** `inductive IpcTimeoutResult where \| completed (msg : IpcMessage) \| timedOut`. Returned by timeout-aware IPC operations to distinguish successful delivery from timeout. ~8 lines | `Object/Types.lean` | Trivial |
 | Z6-I | **Define `timeoutAwareReceive` wrapper.** `def timeoutAwareReceive (endpointId : ObjId) (receiver : ThreadId) : Kernel IpcTimeoutResult`. Wraps `endpointReceiveDual` with timeout semantics. If the receive completes before budget expiry, returns `.completed`. If budget expires during blocking, `timeoutThread` is called by the timer tick path and the thread observes `.timedOut` when it resumes. ~20 lines | `Endpoint.lean` | Small |
 | Z6-J | **Define `blockedThreadTimeoutConsistent` invariant.** `def blockedThreadTimeoutConsistent (st : SystemState) : Prop`. For every blocked thread with `timeoutBudget = some scId`: (1) the SchedContext exists, (2) the thread's TCB references the correct endpoint. Prevents dangling timeout references. ~15 lines | `Invariant/Defs.lean` | Small |
@@ -540,6 +538,21 @@ blocked, the timer tick handler unblocks the thread directly. This avoids
 the complexity of timeout endpoint objects while providing the same guarantee:
 no IPC blocks indefinitely if the caller has a finite budget.
 
+**Cross-cutting concern — timeout + donation**: When a client's SchedContext is
+donated to a passive server (Z7), the server runs on the client's budget. The
+client is blocked on reply with `timeoutBudget = some clientScId`. If the server
+consumes all of the donated budget, `timerTickBudget` exhausts the SchedContext
+and Z6-E fires: the server is preempted (budget exhaustion), AND the client is
+timed out (budget-bounded IPC). The client observes a timeout error; the server
+becomes passive (unbound, removed from RunQueue). The SchedContext returns to the
+client via the timeout cleanup path, not the normal reply path. This interaction
+between Z6 and Z7 is safe because: (1) the SchedContext has exactly one `boundThread`
+at any time (the server during donation), (2) the client's `timeoutBudget` references
+the same SchedContext, (3) timeout cleanup and donation return are mutually exclusive
+(timeout fires only when budget = 0, at which point normal reply has not occurred).
+Z6-E's blocked-thread scan and Z7-P's lifecycle cleanup together guarantee no
+dangling donation references after timeout.
+
 ---
 
 ### Phase Z7: SchedContext Donation / Passive Servers (26 sub-tasks)
@@ -550,25 +563,29 @@ client's SchedContext is temporarily donated to the server. The server runs
 on the client's budget and returns the SchedContext when it replies.
 
 **Modified files**:
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (endpointCall donation, endpointReply return, endpointReplyRecv swap)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (donation cleanup helpers)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean`
 - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean`
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean`
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` (donation cleanup on destroy)
 
-**Prerequisites**: Z4 complete. **Parallelizable with Z6.**
+**Prerequisites**: Z4 complete. **Partially parallelizable with Z6** (Z7 modifies
+`endpointCall`/`endpointReply`/`endpointReplyRecv` in Transport.lean; Z6 modifies
+`endpointSendDual`/`endpointReceiveDual` and adds `timeoutThread` — different
+functions in the same file, so merge conflicts are possible but logic is independent).
 
 | ID | Description | Files | Est. |
 |----|-------------|-------|------|
-| Z7-A | **Define donation semantics.** Document the SchedContext donation protocol: (1) Client calls server via `endpointCall`. (2) Client's SchedContext is "lent" to server: server's TCB gets `schedContextBinding := .donated(clientScId, clientTid)`. (3) Server runs on client's budget. (4) Server replies via `endpointReply`. (5) SchedContext returned to client: server's TCB reverts to previous binding. This is a design document within the code (module docstring). ~30 lines comment | `Endpoint.lean` | Small |
-| Z7-B1 | **Detect passive server in `endpointCall`.** After blocking the client, check if the receiving server has `schedContextBinding = .unbound`. If server is active (already has SchedContext), skip donation — no changes needed. ~8 lines | `Endpoint.lean` | Trivial |
-| Z7-B2 | **Perform donation transfer in `endpointCall`.** For passive servers: save client's `SchedContextId`, set `server.schedContextBinding := .donated(clientScId, clientTid)`, set `sc.boundThread := some serverTid`. Write both updated objects. ~12 lines | `Endpoint.lean` | Small |
-| Z7-B3 | **Enqueue donated server in RunQueue.** After donation, enqueue server in RunQueue with the donated SchedContext's priority and deadline. Server becomes runnable on the client's budget. ~10 lines | `Endpoint.lean` | Small |
-| Z7-C1 | **Detect donated binding in `endpointReply`.** Check if server's `schedContextBinding` is `.donated(scId, originalOwner)`. If `.bound` or `.unbound`, skip return logic — this is a normal reply. ~8 lines | `Endpoint.lean` | Trivial |
-| Z7-C2 | **Return SchedContext to original client.** Rebind SchedContext: `sc.boundThread := some originalOwner`, `originalOwner.schedContextBinding := .bound scId`, `server.schedContextBinding := .unbound`. Write all three objects. ~12 lines | `Endpoint.lean` | Small |
-| Z7-C3 | **Remove passive server from RunQueue.** If server has no own SchedContext after return (binding = `.unbound`), remove from RunQueue. Server returns to passive/idle state. ~8 lines | `Endpoint.lean` | Trivial |
-| Z7-D1 | **Return SchedContext in `endpointReplyRecv`.** Reuse Z7-C1/C2/C3 logic: detect donated binding, return SchedContext to previous client, remove server from RunQueue if passive. ~8 lines (reuse helper) | `Endpoint.lean` | Small |
-| Z7-D2 | **Accept new donation in `endpointReplyRecv`.** If a new client is waiting on send queue, accept its call. Reuse Z7-B1/B2/B3 logic: detect passive server, donate new client's SchedContext, enqueue server. Atomic transition from one client's budget to the next. ~12 lines | `Endpoint.lean` | Small |
-| Z7-E | **Handle donation during `endpointReceiveDual`.** When a passive server receives (blocking case): if server has `.donated` binding from a previous call that was never replied to (abnormal path), the donation must be cleaned up before blocking. Set `schedContextBinding := .unbound` and return SchedContext to original owner. ~15 lines (modification) | `Endpoint.lean` | Small |
+| Z7-A | **Define donation semantics.** Document the SchedContext donation protocol: (1) Client calls server via `endpointCall`. (2) Client's SchedContext is "lent" to server: server's TCB gets `schedContextBinding := .donated(clientScId, clientTid)`. (3) Server runs on client's budget. (4) Server replies via `endpointReply`. (5) SchedContext returned to client: server's TCB reverts to previous binding. This is a design document within the code (module docstring). ~30 lines comment | `DualQueue/Transport.lean` | Small |
+| Z7-B1 | **Detect passive server in `endpointCall`.** After blocking the client, check if the receiving server has `schedContextBinding = .unbound`. If server is active (already has SchedContext), skip donation — no changes needed. ~8 lines | `DualQueue/Transport.lean` | Trivial |
+| Z7-B2 | **Perform donation transfer in `endpointCall`.** For passive servers: save client's `SchedContextId`, set `server.schedContextBinding := .donated(clientScId, clientTid)`, set `sc.boundThread := some serverTid`. Write both updated objects. ~12 lines | `DualQueue/Transport.lean` | Small |
+| Z7-B3 | **Enqueue donated server in RunQueue.** After donation, enqueue server in RunQueue with the donated SchedContext's priority and deadline. Server becomes runnable on the client's budget. ~10 lines | `DualQueue/Transport.lean` | Small |
+| Z7-C1 | **Detect donated binding in `endpointReply`.** Check if server's `schedContextBinding` is `.donated(scId, originalOwner)`. If `.bound` or `.unbound`, skip return logic — this is a normal reply. ~8 lines | `DualQueue/Transport.lean` | Trivial |
+| Z7-C2 | **Return SchedContext to original client.** Rebind SchedContext: `sc.boundThread := some originalOwner`, `originalOwner.schedContextBinding := .bound scId`, `server.schedContextBinding := .unbound`. Write all three objects. ~12 lines | `DualQueue/Transport.lean` | Small |
+| Z7-C3 | **Remove passive server from RunQueue.** If server has no own SchedContext after return (binding = `.unbound`), remove from RunQueue. Server returns to passive/idle state. ~8 lines | `DualQueue/Transport.lean` | Trivial |
+| Z7-D1 | **Return SchedContext in `endpointReplyRecv`.** Reuse Z7-C1/C2/C3 logic: detect donated binding, return SchedContext to previous client, remove server from RunQueue if passive. ~8 lines (reuse helper) | `DualQueue/Transport.lean` | Small |
+| Z7-D2 | **Accept new donation in `endpointReplyRecv`.** If a new client is waiting on send queue, accept its call. Reuse Z7-B1/B2/B3 logic: detect passive server, donate new client's SchedContext, enqueue server. Atomic transition from one client's budget to the next. ~12 lines | `DualQueue/Transport.lean` | Small |
+| Z7-E | **Handle donation during `endpointReceiveDual`.** When a passive server receives (blocking case): if server has `.donated` binding from a previous call that was never replied to (abnormal path), the donation must be cleaned up before blocking. Set `schedContextBinding := .unbound` and return SchedContext to original owner. ~15 lines (modification) | `DualQueue/Transport.lean` | Small |
 | Z7-F | **Define `donationChainAcyclic` invariant.** `def donationChainAcyclic (st : SystemState) : Prop`. No thread can transitively donate to itself: if A donates to B and B donates to C, C ≠ A. Prevents circular donation chains that would cause resource leaks. Formalized as well-foundedness on donation edges. ~15 lines | `Invariant/Defs.lean` | Small |
 | Z7-G | **Define `donationOwnerValid` invariant.** `def donationOwnerValid (st : SystemState) : Prop`. For every TCB with `.donated(scId, originalOwner)`: (1) SchedContext exists, (2) `originalOwner` exists as a TCB, (3) `originalOwner` is blocked on reply (waiting for the server). Ensures donation can always be returned. ~15 lines | `Invariant/Defs.lean` | Small |
 | Z7-H | **Define `passiveServerIdle` invariant.** `def passiveServerIdle (st : SystemState) : Prop`. A thread with `schedContextBinding = .unbound` that is not in the RunQueue and not current is considered a passive server. Such threads must be blocked on receive or inactive — not blocked on send/call (which requires a SchedContext for timeout). ~12 lines | `Invariant/Defs.lean` | Small |
@@ -623,7 +640,7 @@ frozen operation variants. Update test harness and fixtures.
 | ID | Description | Files | Est. |
 |----|-------------|-------|------|
 | Z8-A | **Add round-trip theorems for new syscall decode.** `decodeSyscallId_roundtrip` must cover new IDs 17-19. `decodeSchedContextConfigureArgs_roundtrip`, `decodeSchedContextBindArgs_roundtrip`. Follow existing patterns in `SyscallArgDecode.lean`. ~25 lines | `SyscallArgDecode.lean` | Small |
-| Z8-B | **Add error-exclusivity theorems for new decode.** `decodeSchedContextConfigureArgs_error_iff : ... ↔ msgRegs.size < 6`. `decodeSchedContextBindArgs_error_iff : ... ↔ msgRegs.size < 1`. Follow existing patterns. ~20 lines | `SyscallArgDecode.lean` | Small |
+| Z8-B | **Add error-exclusivity theorems for new decode.** `decodeSchedContextConfigureArgs_error_iff : ... ↔ msgRegs.size < 5`. `decodeSchedContextBindArgs_error_iff : ... ↔ msgRegs.size < 1`. Follow existing patterns. ~20 lines | `SyscallArgDecode.lean` | Small |
 | Z8-C | **Wire `dispatchWithCap` for `.schedContextConfigure`.** Decode args from message registers, invoke `schedContextConfigure` with resolved SchedContext ObjId from capability target. ~15 lines | `API.lean` | Small |
 | Z8-D | **Wire `dispatchWithCap` for `.schedContextBind`.** Decode `threadId` from message registers, invoke `schedContextBind`. ~10 lines | `API.lean` | Small |
 | Z8-E | **Wire `dispatchWithCap` for `.schedContextUnbind`.** No additional args, invoke `schedContextUnbind` with SchedContext ObjId. ~8 lines | `API.lean` | Trivial |
@@ -791,8 +808,9 @@ This is intentionally deferred to minimize the blast radius of WS-Z.
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | **Heartbeat pressure in CBS proofs** | HIGH | Budget isolation theorem (Z2-O) may require high `maxHeartbeats`. Mitigation: decompose into helper lemmas, use `Nat.sub`/`Nat.min` simp sets. |
-| **RunQueue priority update on bind** | MEDIUM | Binding changes effective priority, requiring RunQueue remove + re-insert. Must preserve all 12+ scheduler invariants through the update. Mitigation: factor into `updateRunQueuePriority` helper with bundled preservation. |
-| **Donation chain complexity** | MEDIUM | Nested calls (A calls B calls C) create multi-hop donation chains. Each link must be tracked and returned in LIFO order. Mitigation: model as `List (SchedContextId × ThreadId)` stack, not single pair. |
+| **RunQueue priority update on bind** | MEDIUM | Binding changes effective priority, requiring RunQueue remove + re-insert. Must preserve all 15 scheduler invariants (9 original + 6 new) through the update. Mitigation: factor into `updateRunQueuePriority` helper with bundled preservation. |
+| **Donation chain complexity** | MEDIUM | Nested calls (A calls B calls C) create multi-hop donation chains. Each link must be tracked and returned in LIFO order. Mitigation: `SchedContextBinding.donated` tracks `(scId, originalOwner)` per-link; the `donationChainAcyclic` invariant (Z7-F) prevents cycles; LIFO ordering is enforced by the Call/Reply protocol (blocked clients cannot initiate further calls). |
+| **Timeout + donation interaction** | MEDIUM | When a donated SchedContext's budget expires, both the running server (preemption) and the blocked client (timeout) must be handled atomically. Mitigation: Z6-E's blocked-thread scan handles the client; Z4-F3 handles the server; the `schedContextNotDualBound` invariant (Z9-B) ensures no aliasing. See Z6 "Cross-cutting concern" note. |
 | **ThreadIpcState field additions** | LOW | Z6-B requires updating all pattern matches across the codebase. Mitigation: default `none` for new field, use `..` syntax where possible. |
 | **Admission control arithmetic** | LOW | Integer per-mille arithmetic may have precision issues (e.g., 333/1000 vs 1/3). Mitigation: over-approximate (round up) for safety. |
 | **Frozen ops divergence** | LOW | FrozenOps must mirror builder-phase operations. Mitigation: Z8-H,I added after builder ops are stable. |
@@ -805,11 +823,11 @@ This is intentionally deferred to minimize the blast radius of WS-Z.
 |--------|-------|
 | Total phases | 10 |
 | Total atomic sub-tasks | 213 |
-| New files | 7 |
+| New files | 8 |
 | Modified files | ~25 |
 | New kernel object types | 1 (SchedContext) |
 | New syscalls | 3 (configure, bind, unbind) |
-| New invariants | ~12 |
+| New invariants | ~14 |
 | New preservation theorems | ~45 |
 | Critical path length | 6 phases (Z1→Z2→Z4→Z6→Z8→Z10) |
 | Parallelizable pairs | 3 (Z3∥Z2, Z5∥Z4, Z7∥Z6) |
