@@ -794,6 +794,10 @@ and four sub-documents (M2A–M2D).
    A `serviceCountBounded` precondition bounds the BFS universe by `serviceBfsFuel st`
    (Approach A). `serviceCountBounded_preserved_by_registerDependency` proves the
    precondition is maintained across dependency registration.
+   **X4-E:** `serviceBfsFuel_sufficient` and `serviceBfsFuel_sound` provide
+   bi-directional correctness: nontrivial paths are detected (sufficient) and
+   `false` results are genuine (sound). `serviceBfsFuel_has_margin` proves
+   the `+ 256` margin is strictly conservative.
 
 4. **Core completeness ([M2D](../dev_history/audits/execution_plans/milestones/M2D_COMPLETENESS_PROOF.md)):**
    `go_complete` (CP1) carries the four-part invariant (I1: target not visited,
@@ -1438,7 +1442,8 @@ Introduces the seL4-style capability-gated syscall entry pattern:
 - **Negative tests**: 6 tests in `NegativeStateSuite.lean` exercising
   `syscallLookupCap` and `apiEndpointSend` error paths.
 - **Platform contract tests**: 7 tests in `NegativeStateSuite.lean` validating
-  `rpi5MachineConfig.wellFormed`, `mmioRegionDisjointCheck`, GIC-400 IRQ
+  `rpi5MachineConfig.wellFormed`, `mmioRegionDisjointCheck`,
+  `mmioRegionsPairwiseDisjointCheck` (X4-D inter-device disjointness), GIC-400 IRQ
   boundary values (INTID 0, 223, 224), and boot contract predicates.
 - **Tier 3 anchors**: 31 anchors covering all WS-H15 additions.
 

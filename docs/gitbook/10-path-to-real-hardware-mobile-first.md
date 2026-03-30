@@ -86,10 +86,12 @@ provides the organizational infrastructure for hardware binding:
   changes).
 - **NI for scrubbing (S6-E):** `scrubObjectMemory_preserves_lowEquivalent`
   proves non-interference is maintained when scrubbing non-observable targets.
-- **Device tree abstraction (S6-F):** `Platform/DeviceTree.lean` defines a
+- **Device tree abstraction (S6-F/X4-A/B/C):** `Platform/DeviceTree.lean` defines a
   platform-independent `DeviceTree` structure. `rpi5DeviceTree` constructs
-  an instance from Board.lean constants. `DeviceTree.fromDtb` stub prepared
-  for WS-T DTB parsing.
+  an instance from Board.lean constants. `DeviceTree.fromDtbFull` implements
+  full FDT parsing with generic device node traversal (`parseFdtNodes`),
+  GIC-400 interrupt controller discovery (`extractInterruptController`), and
+  timer frequency extraction (`extractTimerFrequency`).
 - **BCM2712 validation (S6-G):** All RPi5 address constants cross-referenced
   against BCM2712 documentation and ARM specifications. Validation results
   documented in Board.lean.
@@ -101,7 +103,7 @@ provides the organizational infrastructure for hardware binding:
 3. Implement interrupt routing for GIC-400 with IRQ acknowledgment.
 4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
 5. Define boot sequence as a verified initial state construction.
-6. Implement DTB parsing in `DeviceTree.fromDtb` (S6-F preparation complete).
+6. ~~Implement DTB parsing in `DeviceTree.fromDtb`.~~ **DONE** (X4-A/B/C: full FDT node traversal, GIC discovery, timer extraction).
 
 ### H4 — Planned: evidence convergence
 

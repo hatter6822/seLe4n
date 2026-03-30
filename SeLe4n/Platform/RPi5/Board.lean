@@ -173,6 +173,28 @@ def mmioRegionDisjointCheck : Bool :=
     involved types (`MemoryRegion`, `MemoryKind`, `PAddr`). -/
 theorem mmioRegionDisjoint_holds : mmioRegionDisjointCheck = true := by decide
 
+/-- X4-D/M-10: Computable check that MMIO regions are pairwise non-overlapping.
+    Verifies that no two distinct MMIO device regions share any address.
+    The 3 MMIO regions (UART PL011, GIC distributor, GIC CPU interface) must
+    have disjoint address ranges to prevent register aliasing.
+    Direct pair enumeration for the 3 concrete regions (3 ordered pairs). -/
+def mmioRegionsPairwiseDisjointCheck : Bool :=
+  let uart := { base := uart0Base, size := 0x1000, kind := MemoryKind.device : SeLe4n.MemoryRegion }
+  let gicDist := { base := gicDistributorBase, size := 0x1000, kind := MemoryKind.device : SeLe4n.MemoryRegion }
+  let gicCpu := { base := gicCpuInterfaceBase, size := 0x2000, kind := MemoryKind.device : SeLe4n.MemoryRegion }
+  !uart.overlaps gicDist && !uart.overlaps gicCpu && !gicDist.overlaps gicCpu
+
+/-- X4-D/M-10: Proof that RPi5 MMIO regions are pairwise disjoint.
+    The 3 MMIO regions have non-overlapping address ranges:
+    - UART PL011:       [0xFE201000, 0xFE202000)
+    - GIC distributor:  [0xFF841000, 0xFF842000)
+    - GIC CPU interface: [0xFF842000, 0xFF844000)
+    Note: GIC distributor ends at 0xFF842000 and GIC CPU interface starts at
+    0xFF842000 — these are exactly adjacent (non-overlapping) by the strict
+    less-than comparison in `overlaps`. -/
+theorem mmioRegionsPairwiseDisjoint_holds :
+    mmioRegionsPairwiseDisjointCheck = true := by decide
+
 /-- WS-H15b/A-41/W4-C: The RPi5 machine configuration is well-formed: nonzero region
     sizes, no overlapping regions, power-of-two page size, positive widths,
     and all region end addresses fit within the 44-bit physical address space.

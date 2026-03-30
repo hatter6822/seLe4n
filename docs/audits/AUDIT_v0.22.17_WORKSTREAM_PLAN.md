@@ -53,7 +53,7 @@ changes is **24 findings** organized into **40 sub-tasks**.
 | X1 | Hardware-Binding Critical Proofs | 11 | **BLOCKER** | `lake build` clean, all 9 invariant components proven | **COMPLETE** |
 | X2 | Runtime Invariant Enforcement | 9 | HIGH | `test_full.sh` green, zero sorry | **COMPLETE** (v0.22.19) |
 | X3 | Information Flow & Composition Closure | 5 | HIGH | `test_full.sh` green, NI theorems compile | **COMPLETE** (v0.22.20) |
-| X4 | Platform & Architecture Completion | 6 | MEDIUM | Module builds pass, `test_smoke.sh` green | PLANNED |
+| X4 | Platform & Architecture Completion | 6 | MEDIUM | Module builds pass, `test_smoke.sh` green | **COMPLETE** (v0.22.21) |
 | X5 | Documentation, Hardening & Low-Severity | 9 | LOW | `test_fast.sh` green, docs consistent | PLANNED |
 
 **Dependencies**: X1 is the critical path and must complete first (blocks hardware
@@ -760,10 +760,11 @@ by ensuring untrusted entities cannot modify trusted state.
 ## 6. Phase X4 — Platform & Architecture Completion (MEDIUM)
 
 **Priority**: MEDIUM — hardware readiness hardening
+**Status**: **COMPLETE** (v0.22.21)
 **Scope**: `Platform/DeviceTree.lean`, `Platform/RPi5/Board.lean`,
-`Service/Operations.lean`, `Architecture/SyscallArgDecode.lean`
-**Gate**: Module builds pass, `test_smoke.sh` green
-**Estimated sub-tasks**: 6
+`Service/Invariant/Acyclicity.lean`, `Architecture/SyscallArgDecode.lean`
+**Gate**: Module builds pass, `test_smoke.sh` green — **ALL GATES MET**
+**Sub-tasks**: 6 (all complete)
 **Dependencies**: Independent of X1–X3
 
 ### Findings Addressed
@@ -887,6 +888,22 @@ Add a comment in `SyscallArgDecode.lean` documenting that `regCount` must
 be updated if targeting a non-ARM64 platform with different register counts.
 **Verification**: `lake build SeLe4n.Kernel.Architecture.SyscallArgDecode`
 **Risk**: None — documentation theorem only
+
+### Phase X4 Completion Summary (v0.22.21)
+
+**All 6 sub-tasks COMPLETE.** Zero sorry/axiom. `test_full.sh` green.
+
+| Sub-task | Finding | Status | Key Change |
+|----------|---------|--------|------------|
+| X4-A | H-7 | COMPLETE | Generic FDT node traversal (`parseFdtNodes`, `FdtNode`, `FdtProperty`), full node tree parsing with depth tracking and fuel bound |
+| X4-B | H-7 | COMPLETE | `extractInterruptController` — GIC-400 discovery via `compatible` string match, `reg` property parsing for distributor/CPU interface bases |
+| X4-C | H-7 | COMPLETE | `extractTimerFrequency` — `/timer` node discovery, `clock-frequency` property extraction, graceful fallback to board constants |
+| X4-D | M-10 | COMPLETE | `mmioRegionsPairwiseDisjointCheck` + `mmioRegionsPairwiseDisjoint_holds` — 3 ordered pairs proven disjoint via `decide` |
+| X4-E | M-9 | COMPLETE | `serviceBfsFuel_sufficient` + `serviceBfsFuel_sound` — bi-directional correctness of fuel-bounded traversal under `serviceCountBounded`, `serviceBfsFuel_has_margin` |
+| X4-F | M-8 | COMPLETE | `arm64_regCount_valid` + `machineConfig_registerCount_default_eq_arm64GPRCount` — ARM64 register count consistency theorems |
+
+**Files modified**: `Platform/DeviceTree.lean`, `Platform/RPi5/Board.lean`,
+`Kernel/Service/Invariant/Acyclicity.lean`, `Kernel/Architecture/SyscallArgDecode.lean`
 
 ---
 
@@ -1175,7 +1192,7 @@ Each version bumps the patch number. All versions maintain zero sorry/axiom.
 | H-4 | HIGH | X3 | X3-C, X3-D | PLANNED |
 | H-5 | HIGH | X3 | X3-B | PLANNED |
 | H-6 | HIGH | X2 | X2-D, X2-E | PLANNED |
-| H-7 | HIGH | X4 | X4-A, X4-B, X4-C | PLANNED |
+| H-7 | HIGH | X4 | X4-A, X4-B, X4-C | **COMPLETE** (generic FDT traversal + GIC discovery + timer extraction) |
 | H-8 | HIGH | X2 | X2-F | PLANNED |
 | H-9 | HIGH | X5 | X5-B | PLANNED (doc only) |
 | M-1 | MEDIUM | X3 | X3-E | PLANNED |
@@ -1185,9 +1202,9 @@ Each version bumps the patch number. All versions maintain zero sorry/axiom.
 | M-5 | MEDIUM | X5 | X5-D | PLANNED (doc only) |
 | M-6 | MEDIUM | X2 | X2-I | PLANNED |
 | M-7 | MEDIUM | — | ERR-1 | ERRONEOUS |
-| M-8 | MEDIUM | X4 | X4-F | PLANNED (doc only) |
-| M-9 | MEDIUM | X4 | X4-E | PLANNED |
-| M-10 | MEDIUM | X4 | X4-D | PLANNED |
+| M-8 | MEDIUM | X4 | X4-F | **COMPLETE** (ARM64 regCount consistency theorems) |
+| M-9 | MEDIUM | X4 | X4-E | **COMPLETE** (serviceBfsFuel bi-directional correctness) |
+| M-10 | MEDIUM | X4 | X4-D | **COMPLETE** (MMIO pairwise disjointness via decide) |
 | M-11 | MEDIUM | X5 | X5-E | PLANNED |
 | L-1 | LOW | X5 | X5-F | PLANNED |
 | L-2 | LOW | X5 | X5-G | PLANNED (doc only) |

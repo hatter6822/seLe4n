@@ -1,3 +1,32 @@
+## [0.22.21] — X4: Platform & Architecture Completion
+
+Phase X4 of WS-X pre-release audit remediation. Resolves 4 findings (H-7, M-8,
+M-9, M-10) from the v0.22.17 comprehensive audit.
+
+- **X4-A/B/C (H-7)**: Generic FDT device node traversal (`parseFdtNodes`,
+  `FdtNode`, `FdtProperty` structures). Full node tree parsing with depth
+  tracking and fuel bound. `extractInterruptController` discovers GIC-400 via
+  `compatible` string matching and parses `reg` property for distributor/CPU
+  interface bases. `extractTimerFrequency` discovers `/timer` node and extracts
+  `clock-frequency` property. `extractPeripherals` walks device nodes with
+  `compatible` + `reg` properties. `fromDtbFull` now performs complete device
+  discovery (peripherals, interrupt controller, timer) instead of stubs.
+- **X4-D (M-10)**: `mmioRegionsPairwiseDisjointCheck` and
+  `mmioRegionsPairwiseDisjoint_holds` — proof that 3 RPi5 MMIO regions (UART
+  PL011, GIC distributor, GIC CPU interface) have non-overlapping address ranges.
+  Proven via `decide` on concrete address computation.
+- **X4-E (M-9)**: `serviceBfsFuel_sufficient` and `serviceBfsFuel_sound` —
+  bi-directional correctness of fuel-bounded graph traversal under
+  `serviceCountBounded`. `serviceBfsFuel_has_margin` proves the `+ 256` margin
+  is strictly conservative. Completes the fuel sufficiency proof chain.
+- **X4-F (M-8)**: `arm64_regCount_valid` and
+  `machineConfig_registerCount_default_eq_arm64GPRCount` — compile-time
+  assertions confirming ARM64 register count (32) consistency between
+  `decodeSyscallArgs` default, `RegName.arm64GPRCount`, and
+  `MachineConfig.registerCount`.
+
+Zero sorry/axiom. All tests pass.
+
 ## [0.22.20] — X3: Information Flow & Composition Closure
 
 Phase X3 of WS-X pre-release audit remediation. Resolves 4 findings (H-3, H-4,

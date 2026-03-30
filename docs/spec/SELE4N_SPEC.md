@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 2,087 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-X Phase X1 COMPLETE** — Hardware-Binding Critical Proofs: MmioReadOutcome volatile semantics (C-2), contextSwitchState atomic operation (C-3), MMIO witness generators (C-4), context-switch invariant preservation suite, TPI-001 CLOSED. Plan: [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md). Prior: WS-W (all 6 phases, v0.22.11–v0.22.17 COMPLETE), WS-V–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-X Phases X1–X4 COMPLETE** (v0.22.18–v0.22.21). X4: Platform & Architecture Completion — FDT device node traversal, GIC-400 discovery, timer extraction, MMIO pairwise disjointness, serviceBfsFuel sufficiency, ARM64 regCount validation. Phase X5 planned. Plan: [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md). Prior: WS-W (v0.22.11–v0.22.17 COMPLETE), WS-V–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

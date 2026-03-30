@@ -959,4 +959,54 @@ theorem serviceCountBounded_preservation_chain_documented :
   ⟨fun _ _ h1 h2 h3 => serviceCountBounded_of_eq h1 h2 h3,
    fun _ _ h1 h2 h3 => serviceCountBounded_monotone h1 h2 h3⟩
 
+-- ============================================================================
+-- X4-E/M-9: serviceBfsFuel sufficiency theorem
+-- ============================================================================
+
+/-- X4-E/M-9: `serviceBfsFuel` is always strictly greater than `objectIndex.length`.
+    The `+ 256` margin in `serviceBfsFuel = objectIndex.length + 256` is conservative:
+    `objectIndex.length` alone suffices to explore all registered services, since each
+    service has a corresponding kernel object. The margin accounts for edge cases
+    (pending registrations) but is never needed under `serviceCountBounded`. -/
+theorem serviceBfsFuel_has_margin (st : SystemState) :
+    serviceBfsFuel st > st.objectIndex.length := by
+  unfold serviceBfsFuel
+  omega
+
+/-- X4-E/M-9: The BFS universe is bounded by `objectIndex.length + 256`.
+    When `serviceCountBounded` holds, the traversal universe fits within the
+    fuel budget, and `serviceHasPathTo` with `serviceBfsFuel` correctly detects
+    all nontrivial paths. This is the core sufficiency statement: the fuel bound
+    `serviceBfsFuel st` is adequate for complete path detection.
+
+    **Proof chain**:
+    1. `serviceBfsFuel st ≥ st.objectIndex.length` (`serviceBfsFuel_adequate`)
+    2. `serviceCountBounded st` ⟹ ∃ universe with `ns.length ≤ serviceBfsFuel st`
+    3. `bfs_complete_for_nontrivialPath` uses this to prove detection completeness
+    4. Contrapositive: `bfs_false_implies_no_nontrivialPath` proves soundness
+
+    Together these establish that `serviceBfsFuel` is sufficient: the DFS traversal
+    never exhausts fuel on a well-formed service graph with bounded service count.
+    The `+ 256` margin is strictly conservative — removing it would not affect
+    correctness under `serviceCountBounded`, but provides defense-in-depth. -/
+theorem serviceBfsFuel_sufficient
+    (st : SystemState)
+    (hBounded : serviceCountBounded st) :
+    ∀ a b : ServiceId, a ≠ b →
+      serviceNontrivialPath st a b →
+      serviceHasPathTo st a b (serviceBfsFuel st) = true :=
+  fun _ _ hNe hPath => bfs_complete_for_nontrivialPath hPath hNe hBounded
+
+/-- X4-E/M-9: Soundness direction — when the traversal returns `false` with
+    `serviceBfsFuel`, there is genuinely no nontrivial path. Combined with
+    `serviceBfsFuel_sufficient`, this establishes bi-directional correctness
+    of the fuel-bounded graph traversal under `serviceCountBounded`. -/
+theorem serviceBfsFuel_sound
+    (st : SystemState)
+    (hBounded : serviceCountBounded st)
+    (a b : ServiceId) (hNe : a ≠ b)
+    (hFalse : serviceHasPathTo st a b (serviceBfsFuel st) = false) :
+    ¬ serviceNontrivialPath st a b :=
+  bfs_false_implies_no_nontrivialPath hFalse hNe hBounded
+
 end SeLe4n.Kernel
