@@ -73,7 +73,7 @@ Device and reserved regions require explicit MMIO adapter calls.
     compatibility with the `RuntimeBoundaryContract.registerContextStable` field
     but is not inspected. Register-context stability is checked uniformly via the
     post-state only: `st'.machine.regs == tcb.registerContext`. This is correct
-    because `contextSwitchState` (X1-C) guarantees that post-state registers
+    because `contextSwitchState` (X1-F) guarantees that post-state registers
     always match the current TCB's saved context regardless of whether a context
     switch occurred. -/
 def registerContextStableCheck (_st st' : SystemState) : Bool :=
@@ -84,7 +84,7 @@ def registerContextStableCheck (_st st' : SystemState) : Bool :=
     | some (.tcb tcb) =>
       -- LOW-05: Register-context stability is checked uniformly regardless of
       -- whether a context switch occurred. The `contextSwitchState` operation
-      -- (X1-C) guarantees that post-state registers always match the current
+      -- (X1-F) guarantees that post-state registers always match the current
       -- TCB's saved context — both for same-thread continuation and for
       -- cross-thread context switches. The previous implementation had identical
       -- `then`/`else` branches; this simplification removes the dead branching.

@@ -302,7 +302,7 @@ switch) but the code is identical.
 2. Return `regsMatchNewTcb` directly after the `some oldTid` match.
 3. Add a comment explaining that register-context stability is checked
    uniformly regardless of whether a context switch occurred, because the
-   `contextSwitchState` operation (X1-C) guarantees registers always match
+   `contextSwitchState` operation (X1-F) guarantees registers always match
    the current TCB's saved context.
 
 **Files**: `SeLe4n/Platform/RPi5/RuntimeContract.lean`
