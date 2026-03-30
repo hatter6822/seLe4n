@@ -83,12 +83,41 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
     that `collectQueueMembers` produces a `QueueNextPath`-compatible traversal,
     which involves non-trivial infrastructure. The per-element validity guaranteed
     by `noStaleEndpointQueueReferences` is the operationally relevant property. -/
+-- TPI-DOC: fuel-sufficiency formal connection to `tcbQueueChainAcyclic` deferred.
+-- Closure requires connecting `QueueNextPath` (inductive path predicate) to
+-- `queueNext` field traversal in `collectQueueMembers`. See INFO-06.
 theorem collectQueueMembers_fuel_sufficiency_documented
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
     (start : Option SeLe4n.ThreadId) :
     -- When start is none, result is empty regardless of fuel
     start = none → collectQueueMembers objects start objects.size = [] := by
   intro h; subst h; exact collectQueueMembers_none objects objects.size
+
+/-- INFO-06 / Y2-G: The result list length is bounded by the fuel parameter.
+This holds trivially by structural recursion: each recursive call consumes
+1 fuel and appends at most 1 element. Combined with the informal argument
+that `tcbQueueChainAcyclic` ensures at most `objects.size` unique threads,
+this supports the fuel-sufficiency argument without requiring the full
+`QueueNextPath` connection. -/
+theorem collectQueueMembers_length_bounded
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (start : Option SeLe4n.ThreadId) (fuel : Nat) :
+    (collectQueueMembers objects start fuel).length ≤ fuel := by
+  induction fuel generalizing start with
+  | zero => simp [collectQueueMembers]
+  | succ n ih =>
+    cases start with
+    | none => simp [collectQueueMembers]
+    | some tid =>
+      simp only [collectQueueMembers]
+      cases objects[tid.toObjId]? with
+      | none => simp
+      | some obj =>
+        cases obj with
+        | tcb tcb =>
+          simp only [List.length_cons]
+          exact Nat.succ_le_succ (ih tcb.queueNext)
+        | _ => simp
 
 /-- R4-E.1 + T5-I (M-CS-1): No endpoint queue references a non-existent TCB.
     For every endpoint object, every ThreadId reachable via the intrusive

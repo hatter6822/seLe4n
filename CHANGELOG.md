@@ -1,3 +1,41 @@
+## [0.22.24] — Y2: Platform, Data Structures & Proof Hardening
+
+Phase Y2 of WS-Y final audit remediation. Resolves 7 findings (LOW-04,
+LOW-05, LOW-06, INFO-01, INFO-03, INFO-04, INFO-06) from the v0.22.22
+comprehensive full-kernel audit.
+
+- **Y2-A (LOW-04)**: `switchDomain` fallback `| none =>` branch documented as
+  unreachable under `schedulerInvariantBundleFull`. Added
+  `switchDomain_index_in_bounds` lemma proving modular index is always valid for
+  non-empty schedules, and `switchDomain_index_lookup_isSome` corollary
+  confirming the `List.getElem?` lookup always returns `some`.
+- **Y2-B (LOW-05)**: `registerContextStableCheck` dead branching simplified —
+  removed `if oldTid == tid` conditional with identical branches. Register
+  context stability is now checked uniformly via single expression
+  `st'.machine.regs == tcb.registerContext`.
+- **Y2-C (LOW-06)**: `insertLoop` and `backshiftLoop` fuel-exhaustion branches
+  documented with invariant-based unreachability argument. References `invExtK`
+  load-factor bound guaranteeing sufficient fuel for all probe/backshift sequences.
+- **Y2-D (INFO-01)**: `VSpaceRoot.beq_converse_limitation` documentation updated
+  with current V7 `LawfulBEq` status. Clarifies that V7 added `LawfulBEq` as a
+  *key-type constraint* but not a `LawfulBEq RHTable` instance. Identifies two
+  closure paths (backing-array-independent equality or canonical representation).
+- **Y2-E (INFO-03)**: `enforcementBridge_to_NonInterferenceStep` extended from
+  6/11 to **11/11** checked wrappers. Added 5 new soundness theorems
+  (`enforcementSoundness_endpointCallChecked`, `enforcementSoundness_endpointReplyChecked`,
+  `enforcementSoundness_cspaceMintChecked`, `enforcementSoundness_notificationWaitChecked`,
+  `enforcementSoundness_endpointReplyRecvChecked`) and integrated all into the
+  unified bridge theorem. Complete enforcement-NI coverage.
+- **Y2-F (INFO-04)**: `VSpaceBackend.lean` module status updated with explicit
+  integration marker: "H3 forward declaration — not yet integrated into kernel
+  dispatch. Milestone: Raspberry Pi 5 hardware binding (post-v1.0)."
+- **Y2-G (INFO-06)**: `collectQueueMembers` fuel sufficiency gap annotated with
+  `TPI-DOC` tracking marker. Added `collectQueueMembers_length_bounded` lemma
+  proving result list length is bounded by fuel parameter (supports informal
+  acyclicity argument without requiring `QueueNextPath` connection).
+
+Zero sorry/axiom. All modules build. All tests pass.
+
 ## [0.22.23] — Y1: Frozen State & Foundation Fixes
 
 Phase Y1 of WS-Y final audit remediation. Resolves 4 findings (MED-01,

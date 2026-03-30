@@ -51,9 +51,14 @@ the existing `VSpaceRoot` lemmas in `SeLe4n/Model/Object.lean`.
 
 ## Status
 
-H3-prep forward declaration. The existing VSpace operations continue to
-work as before. This interface will be consumed during H3 when the RPi5
-platform provides an ARMv8 page-table backend.
+**INFO-04 / Y2-F**: H3 forward declaration — not yet integrated into kernel dispatch.
+**Milestone**: Raspberry Pi 5 hardware binding (post-v1.0).
+
+The existing VSpace operations (`VSpace.lean`) continue to operate on the
+concrete `VSpaceRoot` type directly. This typeclass is currently unused by
+kernel dispatch. It will be consumed during H3 when the RPi5 platform provides
+an ARMv8 page-table backend, allowing abstract kernel proofs to be reused
+across different page-table implementations.
 -/
 
 namespace SeLe4n.Kernel.Architecture

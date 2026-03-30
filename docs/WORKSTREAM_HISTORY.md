@@ -21,7 +21,7 @@ through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
-WS-Y Phase Y1 complete. Phases Y2–Y3 planned.
+WS-Y Phases Y1–Y2 complete. Phase Y3 planned.
 
 ### WS-Y workstream (v0.22.22 Final Audit Remediation) — IN PROGRESS
 
@@ -42,6 +42,24 @@ atomic sub-tasks. Plan:
   `Std.HashSet` visited-set with 12 updated theorems.
   **LOW-03**: All 16 `allTablesInvExtK` conjuncts have named accessors with
   completeness documentation.
+  Zero sorry/axiom. `test_smoke.sh` green.
+
+- **Y2 (Platform, Data Structures & Proof Hardening) COMPLETE** (v0.22.24): 7
+  sub-tasks (Y2-A through Y2-G). Resolves LOW-04, LOW-05, LOW-06, INFO-01,
+  INFO-03, INFO-04, INFO-06:
+  **LOW-04**: `switchDomain` fallback documented as unreachable with
+  `switchDomain_index_in_bounds` and `switchDomain_index_lookup_isSome` proofs.
+  **LOW-05**: `registerContextStableCheck` dead branching removed — identical
+  `if/else` branches simplified to single uniform check.
+  **LOW-06**: `insertLoop`/`backshiftLoop` fuel-exhaustion documented with
+  `invExtK` load-factor unreachability argument.
+  **INFO-01**: `beq_converse_limitation` documentation updated with V7
+  `LawfulBEq` status and two identified closure paths.
+  **INFO-03**: `enforcementBridge_to_NonInterferenceStep` extended from 6/11 to
+  11/11 checked wrappers with 5 new soundness theorems.
+  **INFO-04**: `VSpaceBackend.lean` annotated with H3 forward-declaration status.
+  **INFO-06**: `collectQueueMembers_length_bounded` fuel bound lemma added with
+  `TPI-DOC` tracking annotation.
   Zero sorry/axiom. `test_smoke.sh` green.
 
 ### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — COMPLETE

@@ -378,13 +378,23 @@ theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
   exact ⟨h.1.1, h.1.2⟩
 
-/-- X5-F (L-1): The converse of `beq_sound` (`a = b → (a == b) = true`) requires
-    extensional equality of `RHTable` contents, which depends on the RHTable's
-    internal array representation. The current `BEq VSpaceRoot` checks structural
-    equality (ASID, size, and element-wise comparison via `RHTable.BEq`), but
-    `RHTable.BEq` is not provably `LawfulBEq` at the `VSpaceRoot` level because
+/-- INFO-01 / X5-F (L-1): The converse of `beq_sound` (`a = b → (a == b) = true`)
+    requires extensional equality of `RHTable` contents, which depends on the
+    RHTable's internal array representation. The current `BEq VSpaceRoot` checks
+    structural equality (ASID, size, and element-wise comparison via `RHTable.BEq`),
+    but `RHTable.BEq` is not provably `LawfulBEq` at the `VSpaceRoot` level because
     it involves `RHTable (VAddr) (PAddr × PagePermissions)` where the inner BEq
     traverses the hash table's backing array.
+
+    **Status (Y2-D, v0.22.24)**: WS-V Phase V7 added `LawfulBEq` as an explicit
+    API-level *requirement* on `RHTable` key types (18-file ripple), but this is a
+    *constraint on callers*, not a `LawfulBEq` instance for `RHTable` itself. The
+    prerequisite for the converse proof — proving that the fold-based element-wise
+    comparison is extensionally complete over the backing array — remains unmet.
+    Specifically, this requires showing that two `RHTable`s with identical logical
+    contents (same key-value pairs) produce `(a == b) = true` even if their backing
+    arrays differ in layout (different probe sequences from different insertion
+    orders). This is a non-trivial property of Robin Hood hashing.
 
     **Impact on kernel correctness**: None. `VSpaceRoot` equality is never used
     as a proof obligation in any kernel invariant or preservation theorem.
@@ -392,9 +402,11 @@ theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
     and runtime assertions. All VSpace proofs operate on the underlying `RHTable`
     operations (map/unmap/lookup) rather than structural equality.
 
-    L-FND-3: Tracked limitation — converse proof deferred until `RHTable.LawfulBEq`
-    is established (requires proving the hash table's backing array comparison
-    is extensionally complete). -/
+    L-FND-3: Tracked limitation — converse proof deferred. Closure requires either:
+    (a) a `LawfulBEq (RHTable α β)` instance proving backing-array-independent
+        equality, or
+    (b) a canonical representation theorem showing that RHTable layout is
+        deterministic given the same insertion sequence. -/
 theorem VSpaceRoot.beq_converse_limitation :
     -- Witnessing that the limitation is documented; kernel correctness is unaffected
     -- because VSpaceRoot equality is not used in any proof obligation.

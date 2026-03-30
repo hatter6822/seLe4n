@@ -123,6 +123,14 @@ def insertLoop [BEq α] [Hashable α]
     (hCapPos : 0 < capacity)
     : Array (Option (RHEntry α β)) × Bool :=
   match fuel with
+  -- LOW-06: Fuel exhaustion cannot occur under maintained invariants. The caller
+  -- (`insert`) passes `fuel = capacity`, and the `invExtK` bundle guarantees the
+  -- load factor remains below 1.0, ensuring at least one empty slot exists. The
+  -- maximum probe distance is therefore bounded by `capacity - 1`, and fuel
+  -- always exceeds this bound. The `false` return flag is the only signal of
+  -- incomplete insertion — callers should treat it as a table-full condition.
+  -- The defensive return of `(slots, false)` is the correct kernel-safe fallback:
+  -- no mutation occurs and the caller observes a failed insertion.
   | 0 => (slots, false)
   | fuel' + 1 =>
     let i := idx % capacity
@@ -229,6 +237,12 @@ def backshiftLoop
     (hCapPos : 0 < capacity)
     : Array (Option (RHEntry α β)) :=
   match fuel with
+  -- LOW-06: Fuel exhaustion cannot occur under maintained invariants. The caller
+  -- (`erase`) passes `fuel = capacity`, and the `invExtK` bundle guarantees at
+  -- least one empty slot exists (load < 1.0). Backshift terminates at the first
+  -- empty slot or an entry at its ideal position (dist = 0), both of which are
+  -- guaranteed to occur within `capacity` steps. The defensive return of the
+  -- unchanged `slots` array is the correct kernel-safe fallback.
   | 0 => slots
   | fuel' + 1 =>
     let nextI := (gapIdx + 1) % capacity

@@ -484,7 +484,7 @@ Information-flow:
 
 - `endpointSendDualChecked` — bounds checks precede flow checks; `enforcement_sufficiency_endpointSendDual` expanded to 4-way disjunction.
 - **X3-A (v0.22.20)**: `serviceOrchestrationOutsideNiBoundary` — formal exclusion boundary documenting that service orchestration internals are outside NI scope. `serviceRegistryAffectsProjection` predicate.
-- **X3-B (v0.22.20)**: `enforcementBridge_to_NonInterferenceStep` — unified 6-conjunct bridge theorem connecting enforcement soundness (6 checked wrappers) to NI composition framework.
+- **X3-B (v0.22.20, extended Y2-E v0.22.24)**: `enforcementBridge_to_NonInterferenceStep` — unified 11-conjunct bridge theorem connecting enforcement soundness (all 11 checked wrappers) to NI composition framework. Y2-E added `endpointCallChecked`, `endpointReplyChecked`, `cspaceMintChecked`, `notificationWaitChecked`, `endpointReplyRecvChecked`.
 - **X3-E (v0.22.20)**: `integrityFlowsTo_prevents_escalation` — privilege escalation prevention theorem for the non-BIBA integrity direction. `securityFlowsTo_prevents_label_escalation` — label-level denial.
 
 ## 5. IPC-scheduler coherence (M3.5)
