@@ -484,7 +484,7 @@ Information-flow:
 
 - `endpointSendDualChecked` — bounds checks precede flow checks; `enforcement_sufficiency_endpointSendDual` expanded to 4-way disjunction.
 - **X3-A (v0.22.20)**: `serviceOrchestrationOutsideNiBoundary` — formal exclusion boundary documenting that service orchestration internals are outside NI scope. `serviceRegistryAffectsProjection` predicate.
-- **X3-B (v0.22.20)**: `enforcementBridge_to_NonInterferenceStep` — unified 6-conjunct bridge theorem connecting enforcement soundness (6 checked wrappers) to NI composition framework.
+- **X3-B (v0.22.20, extended Y2-E v0.22.24)**: `enforcementBridge_to_NonInterferenceStep` — unified 11-conjunct bridge theorem connecting enforcement soundness (all 11 checked wrappers) to NI composition framework. Y2-E added `endpointCallChecked`, `endpointReplyChecked`, `cspaceMintChecked`, `notificationWaitChecked`, `endpointReplyRecvChecked`.
 - **X3-E (v0.22.20)**: `integrityFlowsTo_prevents_escalation` — privilege escalation prevention theorem for the non-BIBA integrity direction. `securityFlowsTo_prevents_label_escalation` — label-level denial.
 
 ## 5. IPC-scheduler coherence (M3.5)
@@ -641,7 +641,7 @@ VSpace invariant bundle preservation is now proven for both success and error pa
 
 Data structure (WS-G6 / F-P05):
 
-- `VSpaceRoot.mappings : Std.HashMap VAddr (PAddr × PagePermissions)` — O(1) amortized lookup/insert/erase (WS-G6, enriched by WS-H11 with per-page permissions). HashMap key uniqueness makes `noVirtualOverlap` trivially true. `BEq VSpaceRoot` uses size + fold containment (order-independent HashMap equality). `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
+- `VSpaceRoot.mappings : RHTable VAddr (PAddr × PagePermissions)` — O(1) amortized lookup/insert/erase (WS-G6, enriched by WS-H11 with per-page permissions). Robin Hood key uniqueness makes `noVirtualOverlap` trivially true. `BEq VSpaceRoot` uses size + fold containment (order-independent equality). `VSpaceRoot.beq_refl` (Y2-D+, v0.22.25): machine-checked BEq reflexivity under `invExt`. `LawfulBEq VSpaceRoot` is provably impossible (non-canonical Robin Hood layouts); reflexivity is the strongest achievable result (L-FND-3 closed).
 
 VSpace invariant bundle structure (7-conjunct, WS-G3/WS-H11/WS-F6/U2-C):
 - `vspaceAsidRootsUnique` — no two VSpaceRoot objects share the same ASID

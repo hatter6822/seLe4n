@@ -42,7 +42,7 @@ compact phases** (Y1–Y3) with **20 atomic sub-tasks**.
 | Phase | Name | Sub-tasks | Priority | Gate | Status |
 |-------|------|-----------|----------|------|--------|
 | Y1 | Frozen State & Foundation Fixes | 7 | HIGH | `lake build` clean, freeze proofs compile, `test_smoke.sh` green | **COMPLETE** (v0.22.23) |
-| Y2 | Platform, Data Structures & Proof Hardening | 7 | MEDIUM | Module builds pass, `test_smoke.sh` green | PLANNED |
+| Y2 | Platform, Data Structures & Proof Hardening | 7 | MEDIUM | Module builds pass, `test_smoke.sh` green | **COMPLETE** (v0.22.24, Y2-D+ v0.22.25) |
 | Y3 | Test Infrastructure & Documentation | 6 | LOW | All test suites pass, `test_fast.sh` green, docs consistent | PLANNED |
 
 **Dependencies**: Y1 is the critical path — MED-01 (frozen time-slice transfer)
@@ -302,7 +302,7 @@ switch) but the code is identical.
 2. Return `regsMatchNewTcb` directly after the `some oldTid` match.
 3. Add a comment explaining that register-context stability is checked
    uniformly regardless of whether a context switch occurred, because the
-   `contextSwitchState` operation (X1-C) guarantees registers always match
+   `contextSwitchState` operation (X1-F) guarantees registers always match
    the current TCB's saved context.
 
 **Files**: `SeLe4n/Platform/RPi5/RuntimeContract.lean`

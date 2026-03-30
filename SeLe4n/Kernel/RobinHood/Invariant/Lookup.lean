@@ -2161,4 +2161,26 @@ theorem RHTable.insertNoResize_get_ne [BEq α] [Hashable α] [LawfulBEq α]
         omega)
       (by omega)
 
+/-- Y2-D: If an entry with key `k` and value `v` exists at slot `j` in the table,
+and the table satisfies `invExt`, then `get? k = some v`. This is the reverse
+direction of `get_some_slot_entry` and enables BEq reflexivity proofs: for every
+entry visited by `fold`, the same table's `get?` retrieves the identical value. -/
+theorem RHTable.slot_entry_implies_get [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (j : Nat) (hj : j < t.capacity)
+    (e : RHEntry α β) (hSlot : t.slots[j]'(t.hSlotsLen ▸ hj) = some e)
+    (hExt : t.invExt) :
+    t.get? e.key = some e.value := by
+  unfold RHTable.get?
+  have hDist := hExt.2.1 j hj e hSlot
+  have hdk_lt : e.dist < t.capacity := by
+    have := Nat.mod_lt (j + t.capacity -
+      idealIndex e.key t.capacity t.hCapPos) t.hCapPos; omega
+  exact getLoop_finds_present t.capacity
+    (idealIndex e.key t.capacity t.hCapPos) e.key 0
+    t.slots t.capacity t.hSlotsLen t.hCapPos
+    j hj e hSlot (BEq.refl e.key) rfl
+    hExt.2.1 hExt.2.2.2 hExt.2.2.1
+    (by simp [Nat.mod_eq_of_lt (idealIndex_lt e.key _ _)])
+    (by omega) (by omega)
+
 end SeLe4n.Kernel.RobinHood

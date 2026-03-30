@@ -416,7 +416,14 @@ def switchDomain : Kernel Unit :=
     | _ =>
         let nextIdx := (st.scheduler.domainScheduleIndex + 1) % schedule.length
         match schedule[nextIdx]? with
-        | none => .ok ((), st)  -- safety: should not happen with valid modular index
+        -- LOW-04: This branch is unreachable when `schedulerInvariantBundleFull` holds.
+        -- `nextIdx` is computed as `(idx + 1) % schedule.length`, which guarantees
+        -- `0 ≤ nextIdx < schedule.length` for any non-empty schedule. The
+        -- `domainScheduleEntriesPositive` predicate (9th conjunct) further ensures all
+        -- entries are valid. The defensive fallback (return unchanged state) is retained
+        -- because silently absorbing an impossible case is safer in a kernel than panicking.
+        -- See `switchDomain_index_in_bounds` below for the formal proof.
+        | none => .ok ((), st)
         | some entry =>
             -- U-M39: Save outgoing context before clearing current
             let stSaved := saveOutgoingContext st
@@ -436,6 +443,28 @@ def switchDomain : Kernel Unit :=
               domainScheduleIndex := nextIdx
             }
             .ok ((), { stSaved with scheduler := sched' })
+
+/-- LOW-04: The modular index computation in `switchDomain` always produces a valid
+index into a non-empty domain schedule. This formalizes the argument that the
+`| none =>` fallback branch is unreachable when the schedule is non-empty. -/
+theorem switchDomain_index_in_bounds
+    (schedule : List DomainScheduleEntry)
+    (idx : Nat) (hNe : schedule ≠ []) :
+    ((idx + 1) % schedule.length) < schedule.length := by
+  have hPos : 0 < schedule.length := by
+    cases schedule with
+    | nil => exact absurd rfl hNe
+    | cons _ _ => simp
+  exact Nat.mod_lt _ hPos
+
+/-- Corollary: the `List.getElem?` lookup in `switchDomain` always returns `some`
+for a non-empty schedule, confirming the `| none =>` branch is dead code. -/
+theorem switchDomain_index_lookup_isSome
+    (schedule : List DomainScheduleEntry)
+    (idx : Nat) (hNe : schedule ≠ []) :
+    (schedule[(idx + 1) % schedule.length]?).isSome = true := by
+  have hBound := switchDomain_index_in_bounds schedule idx hNe
+  simp [List.getElem?_eq_getElem hBound]
 
 /-- `switchDomain` preserves `objects.invExt`. In no-op branches the state is
 unchanged; in the active branch the objects come from `saveOutgoingContext`,

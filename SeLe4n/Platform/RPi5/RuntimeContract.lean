@@ -69,31 +69,26 @@ Device and reserved regions require explicit MMIO adapter calls.
       object represents a malformed scheduler state. The contract must reject
       this to prevent unsound reasoning about register-file consistency.
 
-    V4-I/M-HW-9: The pre-state parameter `st` is now used: when both states have
-    a current thread, we additionally check that either the current thread hasn't
-    changed (register file tracks the same thread), or the new thread's saved
-    context matches the post-state register file (context switch occurred correctly). -/
-def registerContextStableCheck (st st' : SystemState) : Bool :=
+    LOW-05 / Y2-B: The pre-state parameter `_st` is retained for signature
+    compatibility with the `RuntimeBoundaryContract.registerContextStable` field
+    but is not inspected. Register-context stability is checked uniformly via the
+    post-state only: `st'.machine.regs == tcb.registerContext`. This is correct
+    because `contextSwitchState` (X1-F) guarantees that post-state registers
+    always match the current TCB's saved context regardless of whether a context
+    switch occurred. -/
+def registerContextStableCheck (_st st' : SystemState) : Bool :=
   match st'.scheduler.current with
   | none => true
   | some tid =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      -- V4-I: Use pre-state to validate context switch correctness.
-      -- If the same thread was running before and after, the register file
-      -- must match its saved context. If a different thread is now current,
-      -- the register file must match the NEW thread's saved context
-      -- (context switch loaded the correct registers).
-      let regsMatchNewTcb := st'.machine.regs == tcb.registerContext
-      match st.scheduler.current with
-      | none => regsMatchNewTcb
-      | some oldTid =>
-        if oldTid == tid then
-          -- Same thread still running: registers must match saved context
-          regsMatchNewTcb
-        else
-          -- Context switch occurred: new thread's context must be loaded
-          regsMatchNewTcb
+      -- LOW-05: Register-context stability is checked uniformly regardless of
+      -- whether a context switch occurred. The `contextSwitchState` operation
+      -- (X1-F) guarantees that post-state registers always match the current
+      -- TCB's saved context — both for same-thread continuation and for
+      -- cross-thread context switches. The previous implementation had identical
+      -- `then`/`else` branches; this simplification removes the dead branching.
+      st'.machine.regs == tcb.registerContext
     | _ => false
 
 /-- U6-C: Prop-level register context stability predicate. -/
