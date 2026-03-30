@@ -2017,7 +2017,8 @@ Key theorems:
 - `FrozenCNode` — uses `CNodeRadix` (from Q4) for O(1) zero-hash slot lookup,
 - `FrozenVSpaceRoot` — uses `FrozenMap VAddr (PAddr × PagePermissions)`,
 - `FrozenKernelObject` — 6-variant inductive matching `KernelObject`,
-- `FrozenSchedulerState` — FrozenMap-based RunQueue fields + scalar metadata,
+- `FrozenSchedulerState` — FrozenMap-based RunQueue fields + scalar metadata
+  including `configDefaultTimeSlice` (Y1-A, preserves platform-tuned value),
 - `FrozenSystemState` — 19 fields mirroring `SystemState` with all `RHTable`
   fields replaced by `FrozenMap`.
 
@@ -2035,7 +2036,8 @@ Key theorems:
 - `freeze_deterministic` — same input yields same output,
 - `freeze_preserves_machine` — machine state unchanged,
 - `freeze_preserves_objectIndex` — object index list preserved,
-- `freeze_preserves_cdtEdges` — CDT edge list preserved.
+- `freeze_preserves_cdtEdges` — CDT edge list preserved,
+- `freeze_preserves_configDefaultTimeSlice` — platform time-slice config preserved (Y1-B).
 
 #### Q5-D: Capacity planning
 

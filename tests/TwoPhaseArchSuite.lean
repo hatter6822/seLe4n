@@ -75,6 +75,7 @@ private def emptyFrozenState : FrozenSystemState := {
     domainTimeRemaining := 5
     domainSchedule := []
     domainScheduleIndex := 0
+    configDefaultTimeSlice := 5
   }
   objectTypes := freezeMap (RHTable.empty 16)
   capabilityRefs := freezeMap (RHTable.empty 16)
@@ -261,12 +262,13 @@ private def tph006b_timerTickExpiry : IO Unit := do
       domainTimeRemaining := 5
       domainSchedule := []
       domainScheduleIndex := 0
+      configDefaultTimeSlice := 5
     } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
       expect "TPH-006d timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
       -- After expiry: current was cleared, frozenSchedule ran.
-      -- The thread's time slice was reset to frozenDefaultTimeSlice (5).
+      -- The thread's time slice was reset to configDefaultTimeSlice (5).
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
           expect "TPH-006e time slice reset" (tcb.timeSlice == frozenDefaultTimeSlice)
@@ -376,6 +378,7 @@ private def tph014a_frozenSchedule : IO Unit := do
       domainTimeRemaining := 5
       domainSchedule := []
       domainScheduleIndex := 0
+      configDefaultTimeSlice := 5
     } }
   match frozenSchedule fst with
   | .ok ((), fst') =>
@@ -400,6 +403,7 @@ private def tph014b_frozenYield : IO Unit := do
       domainTimeRemaining := 5
       domainSchedule := []
       domainScheduleIndex := 0
+      configDefaultTimeSlice := 5
     } }
   match frozenHandleYield fst with
   | .ok ((), fst') =>
@@ -426,6 +430,7 @@ private def tph014c_scheduleNoEligible : IO Unit := do
       domainTimeRemaining := 5
       domainSchedule := []
       domainScheduleIndex := 0
+      configDefaultTimeSlice := 5
     } }
   match frozenSchedule fst with
   | .ok ((), fst') =>

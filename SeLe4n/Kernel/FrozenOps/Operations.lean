@@ -146,14 +146,17 @@ def frozenHandleYield : FrozenKernel Unit :=
         let st' := { st with scheduler := { st.scheduler with current := none } }
         frozenSchedule st'
 
-/-- Q7-C1: Default time-slice quantum for frozen scheduler. -/
+/-- Q7-C1: Default time-slice quantum for frozen scheduler.
+DEPRECATED: Use `FrozenSchedulerState.configDefaultTimeSlice` instead.
+Retained for backward compatibility in tests that reference this constant. -/
 def frozenDefaultTimeSlice : Nat := 5
 
 /-- Q7-C1: Frozen timer tick — handle preemption in frozen state.
 Mirrors `timerTick` with dequeue-on-dispatch.
 
-On time-slice expiry: reset time-slice, advance timer, clear `current`
-(conceptually re-enqueue the preempted thread), then reschedule.
+On time-slice expiry: reset time-slice to the platform-configured value
+(`configDefaultTimeSlice`), advance timer, clear `current` (conceptually
+re-enqueue the preempted thread), then reschedule.
 On non-expiry: decrement time-slice, advance timer. -/
 def frozenTimerTick : FrozenKernel Unit :=
   fun st =>
@@ -164,8 +167,8 @@ def frozenTimerTick : FrozenKernel Unit :=
         match st.objects.get? tid.toObjId with
         | some (.tcb tcb) =>
             if tcb.timeSlice ≤ 1 then
-              -- Time-slice expired: reset, update TCB, advance timer, reschedule
-              let tcb' := { tcb with timeSlice := frozenDefaultTimeSlice }
+              -- Time-slice expired: reset to platform-configured value, update TCB
+              let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
               match st.objects.set tid.toObjId (.tcb tcb') with
               | some objects' =>
                   let st' := { st with objects := objects', machine := tick st.machine }

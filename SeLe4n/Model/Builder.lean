@@ -63,6 +63,56 @@ private theorem allTablesInvExtK_objectIndexSet {st : SystemState}
 private theorem allTablesInvExtK_asidTable {st : SystemState}
     (h : st.allTablesInvExtK) : st.asidTable.invExtK := h.2.2.1
 
+/-- Y1-F: Extract cdtSlotNode invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_cdtSlotNode {st : SystemState}
+    (h : st.allTablesInvExtK) : st.cdtSlotNode.invExtK := h.2.2.2.1
+
+/-- Y1-F: Extract cdtNodeSlot invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_cdtNodeSlot {st : SystemState}
+    (h : st.allTablesInvExtK) : st.cdtNodeSlot.invExtK := h.2.2.2.2.1
+
+/-- Y1-F: Extract cdt.childMap invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_cdtChildMap {st : SystemState}
+    (h : st.allTablesInvExtK) : st.cdt.childMap.invExtK := h.2.2.2.2.2.2.2.1
+
+/-- Y1-F: Extract cdt.parentMap invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_cdtParentMap {st : SystemState}
+    (h : st.allTablesInvExtK) : st.cdt.parentMap.invExtK := h.2.2.2.2.2.2.2.2.1
+
+/-- Y1-F: Extract scheduler.runQueue.byPriority invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_byPriority {st : SystemState}
+    (h : st.allTablesInvExtK) : st.scheduler.runQueue.byPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- Y1-F: Extract scheduler.runQueue.threadPriority invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_threadPriority {st : SystemState}
+    (h : st.allTablesInvExtK) : st.scheduler.runQueue.threadPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- Y1-F: Extract scheduler.runQueue.membership.table invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_membership {st : SystemState}
+    (h : st.allTablesInvExtK) : st.scheduler.runQueue.membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+
+-- Y1-G: Completeness note — all 16 conjuncts of `allTablesInvExtK` have named
+-- accessors. The full list (matching the definition order in State.lean:302-324):
+--  1. allTablesInvExtK_objects         (objects)
+--  2. allTablesInvExtK_irqHandlers     (irqHandlers)
+--  3. allTablesInvExtK_asidTable       (asidTable)
+--  4. allTablesInvExtK_cdtSlotNode     (cdtSlotNode)
+--  5. allTablesInvExtK_cdtNodeSlot     (cdtNodeSlot)
+--  6. allTablesInvExtK_objectTypes     (lifecycle.objectTypes)
+--  7. allTablesInvExtK_capabilityRefs  (lifecycle.capabilityRefs)
+--  8. allTablesInvExtK_cdtChildMap     (cdt.childMap)
+--  9. allTablesInvExtK_cdtParentMap    (cdt.parentMap)
+-- 10. allTablesInvExtK_services       (services)
+-- 11. allTablesInvExtK_interfaceRegistry (interfaceRegistry)
+-- 12. allTablesInvExtK_serviceRegistry (serviceRegistry)
+-- 13. allTablesInvExtK_byPriority     (scheduler.runQueue.byPriority)
+-- 14. allTablesInvExtK_threadPriority (scheduler.runQueue.threadPriority)
+-- 15. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
+-- 16. allTablesInvExtK_membership     (scheduler.runQueue.membership.table)
+-- WARNING: Do not use raw tuple projections (.2.2.2...) on allTablesInvExtK.
+-- Use the named accessors above instead. Raw projections are fragile and break
+-- silently when fields are added or reordered.
+
 -- ============================================================================
 -- Q3-B.1: registerIrq — insert into irqHandlers
 -- ============================================================================

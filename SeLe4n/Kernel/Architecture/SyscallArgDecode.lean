@@ -145,7 +145,7 @@ def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
   let r3 ← requireMsgReg decoded.msgRegs 3
   pure { srcSlot := Slot.ofNat r0.val
          dstSlot := Slot.ofNat r1.val
-         rights  := ⟨r2.val⟩
+         rights  := ⟨r2.val⟩  -- Raw constructor: register value is trusted kernel input
          badge   := Badge.ofNatMasked r3.val }
 
 /-- Decode CSpace copy arguments from message registers.

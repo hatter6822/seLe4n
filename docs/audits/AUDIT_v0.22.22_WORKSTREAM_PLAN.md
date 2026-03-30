@@ -41,7 +41,7 @@ compact phases** (Y1–Y3) with **20 atomic sub-tasks**.
 
 | Phase | Name | Sub-tasks | Priority | Gate | Status |
 |-------|------|-----------|----------|------|--------|
-| Y1 | Frozen State & Foundation Fixes | 7 | HIGH | `lake build` clean, freeze proofs compile, `test_smoke.sh` green | PLANNED |
+| Y1 | Frozen State & Foundation Fixes | 7 | HIGH | `lake build` clean, freeze proofs compile, `test_smoke.sh` green | **COMPLETE** (v0.22.23) |
 | Y2 | Platform, Data Structures & Proof Hardening | 7 | MEDIUM | Module builds pass, `test_smoke.sh` green | PLANNED |
 | Y3 | Test Infrastructure & Documentation | 6 | LOW | All test suites pass, `test_fast.sh` green, docs consistent | PLANNED |
 

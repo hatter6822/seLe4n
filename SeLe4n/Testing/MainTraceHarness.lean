@@ -2312,7 +2312,7 @@ private def runRustXvalVectors : IO Unit := do
 
   -- RUST-XVAL: CSpaceMintArgs encode/decode
   let mintArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMintArgs :=
-    { srcSlot := ⟨10⟩, dstSlot := ⟨20⟩, rights := ⟨0x07⟩, badge := ⟨999⟩ }
+    { srcSlot := ⟨10⟩, dstSlot := ⟨20⟩, rights := .ofNat 0x07, badge := ⟨999⟩ }
   let mintEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs mintArgs
   let mintStub : SyscallDecodeResult :=
     { capAddr := ⟨0⟩, msgInfo := { length := 0, extraCaps := 0, label := 0 },
