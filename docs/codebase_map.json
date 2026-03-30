@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-test-infrastructure-ogzTY",
-      "commit_sha": "116a2298cb75ce4132ea8aeeca3b5284ea523143",
-      "tree_sha": "ddd08bc9ae8a890de1286daf7b7a8127c4ff0732",
-      "committed_at_utc": "2026-03-30T15:29:34-04:00"
+      "commit_sha": "f4ac2cef18f376d4680267fdace382a1ec92b518",
+      "tree_sha": "71fc236b707240727b13eba4ef25504d68e68f28",
+      "committed_at_utc": "2026-03-30T21:29:21+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 3760
   },
   "readme_sync": {
-    "version": "0.22.25",
+    "version": "0.22.26",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
     "production_loc": 74040,
