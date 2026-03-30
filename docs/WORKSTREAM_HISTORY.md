@@ -27,7 +27,7 @@ WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
 WS-X addresses 24 unique actionable findings from a comprehensive pre-release
 audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
 40 atomic sub-tasks. Plan:
-[`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md).
 
 - **X1 (Hardware-Binding Critical Proofs) COMPLETE** (v0.22.18): 11 sub-tasks
   (X1-A through X1-K). All 4 CRITICAL findings resolved:
