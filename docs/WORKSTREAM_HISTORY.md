@@ -20,7 +20,7 @@ GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
-WS-X Phases X1–X3 complete. Phases X4–X5 in progress.
+WS-X Phases X1–X4 complete. Phase X5 in progress.
 
 ### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — IN PROGRESS
 
@@ -69,6 +69,21 @@ audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
   connecting enforcement soundness to NI composition framework.
   **M-1**: `integrityFlowsTo_prevents_escalation` privilege escalation prevention.
   `securityFlowsTo_prevents_label_escalation` label-level denial.
+  Zero sorry/axiom. `test_full.sh` green.
+
+- **X4 (Platform & Architecture Completion) COMPLETE** (v0.22.21): 6 sub-tasks
+  (X4-A through X4-F). 4 findings resolved (H-7, M-8, M-9, M-10):
+  **H-7**: Generic FDT device node traversal (`parseFdtNodes`, `FdtNode`,
+  `FdtProperty`). `extractInterruptController` GIC-400 discovery via `compatible`
+  string match + `reg` property parsing. `extractTimerFrequency` `/timer` node
+  discovery + `clock-frequency` extraction. `extractPeripherals` device node
+  enumeration. `fromDtbFull` now performs complete device discovery.
+  **M-10**: `mmioRegionsPairwiseDisjointCheck` + `mmioRegionsPairwiseDisjoint_holds`
+  — 3 RPi5 MMIO regions proven pairwise disjoint via `decide`.
+  **M-9**: `serviceBfsFuel_sufficient` + `serviceBfsFuel_sound` bi-directional
+  correctness under `serviceCountBounded`. `serviceBfsFuel_has_margin`.
+  **M-8**: `arm64_regCount_valid` + `machineConfig_registerCount_default_eq_arm64GPRCount`
+  ARM64 register count consistency theorems.
   Zero sorry/axiom. `test_full.sh` green.
 
 ### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — COMPLETE

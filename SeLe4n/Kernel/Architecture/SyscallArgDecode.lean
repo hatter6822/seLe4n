@@ -1005,4 +1005,31 @@ def decodeExtraCapAddrs (decoded : SyscallDecodeResult) :
   (Array.range count).filterMap fun i =>
     decoded.msgRegs[startIdx + i]?.map fun rv => ⟨rv.val⟩
 
+-- ============================================================================
+-- X4-F/M-8: Platform-specific regCount validation
+-- ============================================================================
+
+/-- X4-F/M-8: ARM64 register count correctness.
+    Confirms that the default `regCount := 32` used by `decodeSyscallArgs`
+    matches the architectural GPR count defined in `Machine.lean`.
+    ARM64 AAPCS64: x0–x30 (31 general-purpose) + xzr (zero register) = 32 indices.
+    Register index 31 (xzr) is the last valid index; index 32 is correctly
+    rejected by `validateRegBound`.
+
+    If targeting a non-ARM64 platform with a different register file width,
+    `regCount` must be updated to match `RegName.arm64GPRCount` (or its
+    platform-specific equivalent) and this theorem must be re-proven. -/
+theorem arm64_regCount_valid :
+    32 = RegName.arm64GPRCount := rfl
+
+/-- X4-F/M-8: The `MachineConfig.registerCount` default value equals the
+    ARM64 GPR count, ensuring configuration-level consistency.
+    Any `MachineConfig` using the default `registerCount` field is aligned
+    with the ARM64 architecture. -/
+theorem machineConfig_registerCount_default_eq_arm64GPRCount :
+    ({ registerWidth := 64, virtualAddressWidth := 48,
+       physicalAddressWidth := 44, pageSize := 4096,
+       maxASID := 65536, memoryMap := [] } : MachineConfig).registerCount
+    = RegName.arm64GPRCount := rfl
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

@@ -348,13 +348,16 @@ def DeviceTree.fromDtbWithRegions (blob : ByteArray)
     maxASID := 65536
     memoryMap := memRegions
   }
+  -- Note: fromDtbWithRegions uses pre-extracted memory bytes and does not
+  -- perform full FDT node traversal. For full device discovery (peripherals,
+  -- interrupt controller, timer), use fromDtbFull which invokes parseFdtNodes.
   some {
     platformName := s!"DTB-parsed (version {hdr.version.toNat})"
     machineConfig := config
-    peripherals := []  -- WS-U: device node traversal
+    peripherals := []  -- Use fromDtbFull for full device discovery
     interruptController := { distributorBase := ⟨0⟩, cpuInterfaceBase := ⟨0⟩,
-                             spiCount := 0, timerPpiId := ⟨0⟩ }  -- WS-U: /interrupt-controller
-    timerFrequencyHz := 0  -- WS-U: /timer or CNTFRQ_EL0
+                             spiCount := 0, timerPpiId := ⟨0⟩ }
+    timerFrequencyHz := 0
   }
 
 /-- T6-M: Empty region bytes produce an empty memory map. -/
@@ -521,14 +524,259 @@ where
           none  -- Unknown token
 
 -- ============================================================================
+-- X4-A/H-7: Generic FDT device node traversal
+-- ============================================================================
+
+/-- X4-A/H-7: A parsed FDT property with its name and raw value bytes. -/
+structure FdtProperty where
+  name : String
+  value : ByteArray
+
+
+/-- X4-A/H-7: A parsed FDT device node with its name, properties, and children. -/
+structure FdtNode where
+  name : String
+  properties : List FdtProperty
+  children : List FdtNode
+
+/-- X4-A/H-7: Look up a property by name in an FDT node's property list. -/
+def FdtNode.findProperty (node : FdtNode) (propName : String) : Option ByteArray :=
+  match node.properties.find? (fun p => p.name == propName) with
+  | some p => some p.value
+  | none => none
+
+/-- X4-A/H-7: Get the `compatible` string from an FDT node.
+    The `compatible` property is a null-terminated string list; we extract
+    only the first (most specific) compatible string. -/
+def FdtNode.compatibleString (node : FdtNode) : Option String :=
+  match node.findProperty "compatible" with
+  | some bytes =>
+    if bytes.size == 0 then none
+    else
+      -- Extract first null-terminated string from raw bytes
+      let byteList := bytes.data.toList.takeWhile (· != 0)
+      if byteList.isEmpty then none
+      else some (String.ofList (byteList.map (fun b => Char.ofNat b.toNat)))
+  | none => none
+
+/-- X4-A/H-7: Fuel-bounded generic FDT structure block traversal.
+    Parses the FDT structure block into a tree of `FdtNode` values.
+    Returns the root node containing all device nodes, properties, and children.
+
+    Token format (Devicetree Spec v0.4, §5.4):
+    - FDT_BEGIN_NODE (0x1): followed by node name (null-terminated, 4-byte aligned)
+    - FDT_END_NODE (0x2): no payload — closes current node
+    - FDT_PROP (0x3): followed by len (u32), nameoff (u32), value (len bytes, aligned)
+    - FDT_NOP (0x4): no payload — skip
+    - FDT_END (0x9): terminates the structure block
+
+    Uses depth tracking and fuel bound to prevent infinite loops on
+    malformed DTB data. The W4-B bounds-checked helpers (`readBE32`,
+    `readCString`) are used throughout. -/
+def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
+    (fuel : Nat := 2000) : Option (List FdtNode) :=
+  let result := go blob hdr.offDtStruct.toNat hdr.offDtStrings.toNat fuel
+  result.map (·.1)
+where
+  /-- Parse nodes at the current level. Returns parsed nodes and the
+      offset past the last consumed token, or `none` on malformed input. -/
+  go (blob : ByteArray) (offset offStrings : Nat) :
+      Nat → Option (List FdtNode × Nat)
+  | 0 => some ([], offset) -- Fuel exhausted — return what we have
+  | fuel + 1 =>
+    match readBE32 blob offset with
+    | none => some ([], offset) -- Read failure — stop
+    | some token =>
+      if token == fdtBeginNode then
+        -- Read node name
+        match readCString blob (offset + 4) with
+        | none => some ([], offset)
+        | some (name, nextOffset) =>
+          -- Parse this node's contents (properties + children)
+          match parseNodeContents blob nextOffset offStrings fuel with
+          | none => some ([], offset)
+          | some (props, children, afterOffset) =>
+            let node : FdtNode := { name, properties := props, children }
+            -- Continue parsing sibling nodes
+            match go blob afterOffset offStrings fuel with
+            | none => some ([node], afterOffset)
+            | some (siblings, endOffset) => some (node :: siblings, endOffset)
+      else if token == fdtEndNode then
+        some ([], offset + 4)  -- End of current level
+      else if token == fdtNop then
+        go blob (offset + 4) offStrings fuel
+      else if token == fdtEnd then
+        some ([], offset + 4)  -- End of structure block
+      else
+        some ([], offset)  -- Unknown token — stop
+  /-- Parse properties and children within a single node.
+      Returns (properties, children, offset past FDT_END_NODE). -/
+  parseNodeContents (blob : ByteArray) (offset offStrings : Nat) :
+      Nat → Option (List FdtProperty × List FdtNode × Nat)
+  | 0 => some ([], [], offset) -- Fuel exhausted
+  | fuel + 1 =>
+    match readBE32 blob offset with
+    | none => some ([], [], offset)
+    | some token =>
+      if token == fdtProp then
+        -- Read property header: len (u32), nameoff (u32)
+        match readBE32 blob (offset + 4), readBE32 blob (offset + 8) with
+        | some len, some nameoff =>
+          let valueOffset := offset + 12
+          let valueEnd := valueOffset + len.toNat
+          let alignedNext := valueOffset + ((len.toNat + 3) / 4) * 4
+          if valueEnd ≤ blob.size then
+            let propName := match lookupFdtString blob offStrings nameoff.toNat with
+              | some n => n
+              | none => ""
+            let propValue := blob.extract valueOffset valueEnd
+            match parseNodeContents blob alignedNext offStrings fuel with
+            | none => some ([{ name := propName, value := propValue }], [], alignedNext)
+            | some (moreProps, children, endOffset) =>
+              some ({ name := propName, value := propValue } :: moreProps, children, endOffset)
+          else some ([], [], offset) -- Truncated property
+        | _, _ => some ([], [], offset)
+      else if token == fdtBeginNode then
+        -- Child node — recursively parse, then continue with remaining contents
+        match readCString blob (offset + 4) with
+        | none => some ([], [], offset)
+        | some (childName, nextOffset) =>
+          match parseNodeContents blob nextOffset offStrings fuel with
+          | none => some ([], [], offset)
+          | some (childProps, grandchildren, afterChild) =>
+            let child : FdtNode := { name := childName, properties := childProps, children := grandchildren }
+            match parseNodeContents blob afterChild offStrings fuel with
+            | none => some ([], [child], afterChild)
+            | some (moreProps, moreSiblings, endOffset) =>
+              some (moreProps, child :: moreSiblings, endOffset)
+      else if token == fdtEndNode then
+        some ([], [], offset + 4) -- End of this node
+      else if token == fdtNop then
+        parseNodeContents blob (offset + 4) offStrings fuel
+      else
+        some ([], [], offset) -- Unknown token or FDT_END
+
+-- ============================================================================
+-- X4-B/H-7: DTB interrupt controller discovery
+-- ============================================================================
+
+/-- X4-B/H-7: Extract GIC-400 interrupt controller configuration from FDT nodes.
+    Searches for a node with `compatible` matching "arm,gic-400" or
+    "arm,cortex-a15-gic" (standard GIC-400 compatible strings).
+    Parses the `reg` property to extract distributor and CPU interface bases.
+
+    Falls back to zeros if the interrupt controller node is not found
+    (graceful degradation for boards without full DTB support). -/
+def extractInterruptController (nodes : List FdtNode) : InterruptControllerInfo :=
+  let findGic := nodes.find? fun n =>
+    match n.compatibleString with
+    | some c => c == "arm,gic-400" || c == "arm,cortex-a15-gic"
+    | none => n.name == "interrupt-controller" || n.name.startsWith "interrupt-controller@"
+  match findGic with
+  | none =>
+    -- Also search children (GIC may be nested under a bus node)
+    let childResult := nodes.findSome? fun (n : FdtNode) =>
+      n.children.find? fun (c : FdtNode) =>
+        match c.compatibleString with
+        | some compat => compat == "arm,gic-400" || compat == "arm,cortex-a15-gic"
+        | none => c.name == "interrupt-controller" || c.name.startsWith "interrupt-controller@"
+    match childResult with
+    | none => { distributorBase := ⟨0⟩, cpuInterfaceBase := ⟨0⟩, spiCount := 0, timerPpiId := ⟨0⟩ }
+    | some gicNode => parseGicRegProperty gicNode
+  | some gicNode => parseGicRegProperty gicNode
+where
+  /-- Parse the `reg` property of a GIC-400 node.
+      GIC-400 `reg` property format: distributor base+size, CPU interface base+size.
+      Assumes 2-cell addresses (64-bit), 2-cell sizes (standard for ARM64). -/
+  parseGicRegProperty (node : FdtNode) : InterruptControllerInfo :=
+    match node.findProperty "reg" with
+    | none => { distributorBase := ⟨0⟩, cpuInterfaceBase := ⟨0⟩, spiCount := 0, timerPpiId := ⟨0⟩ }
+    | some regBytes =>
+      -- GIC reg: [dist_base(8), dist_size(8), cpu_base(8), cpu_size(8)] = 32 bytes minimum
+      if regBytes.size < 32 then
+        { distributorBase := ⟨0⟩, cpuInterfaceBase := ⟨0⟩, spiCount := 0, timerPpiId := ⟨0⟩ }
+      else
+        let distBase := match readBE64 regBytes 0 with | some v => v.toNat | none => 0
+        let cpuBase := match readBE64 regBytes 16 with | some v => v.toNat | none => 0
+        { distributorBase := ⟨distBase⟩
+          cpuInterfaceBase := ⟨cpuBase⟩
+          spiCount := 0  -- SPI count not in `reg`; from `#interrupt-cells` or board constants
+          timerPpiId := ⟨0⟩ }  -- Timer PPI from /timer node
+
+-- ============================================================================
+-- X4-C/H-7: DTB timer frequency extraction
+-- ============================================================================
+
+/-- X4-C/H-7: Extract timer frequency from FDT nodes.
+    Searches for a `/timer` node (compatible = "arm,armv8-timer") and extracts
+    the `clock-frequency` property if present.
+
+    On many ARM64 platforms (including RPi5), the timer frequency is set by
+    firmware in `CNTFRQ_EL0` and may not appear in the DTB. Returns 0 if the
+    timer node is not found or has no `clock-frequency` property; callers
+    should fall back to board constants (e.g., RPi5's 54 MHz). -/
+def extractTimerFrequency (nodes : List FdtNode) : Nat :=
+  let findTimer := nodes.find? fun n =>
+    match n.compatibleString with
+    | some c => c == "arm,armv8-timer" || c == "arm,armv7-timer"
+    | none => n.name == "timer"
+  -- Also search children
+  let timerNode := match findTimer with
+    | some n => some n
+    | none => nodes.findSome? fun (n : FdtNode) =>
+        n.children.find? fun (c : FdtNode) =>
+          match c.compatibleString with
+          | some compat => compat == "arm,armv8-timer" || compat == "arm,armv7-timer"
+          | none => c.name == "timer"
+  match timerNode with
+  | none => 0
+  | some node =>
+    match node.findProperty "clock-frequency" with
+    | none => 0  -- Frequency set by CNTFRQ_EL0, not in DTB
+    | some freqBytes =>
+      -- clock-frequency can be 32-bit (4 bytes) or 64-bit (8 bytes) big-endian
+      if freqBytes.size >= 8 then
+        match readBE64 freqBytes 0 with
+        | some freq => freq.toNat
+        | none => 0
+      else
+        match readBE32 freqBytes 0 with
+        | some freq => freq.toNat
+        | none => 0
+
+/-- X4-A/H-7: Extract peripheral device entries from FDT nodes.
+    Walks top-level and one level of children, extracting nodes that have
+    both `compatible` and `reg` properties as peripheral devices. -/
+def extractPeripherals (nodes : List FdtNode) : List DeviceEntry :=
+  let allNodes := nodes ++ (nodes.map (·.children)).flatten
+  allNodes.filterMap fun node =>
+    -- Skip memory and reserved-memory nodes
+    if node.name == "memory" || node.name.startsWith "memory@"
+       || node.name == "reserved-memory" || node.name.startsWith "reserved-memory@"
+       || node.name == "chosen" || node.name == "cpus" || node.name.startsWith "cpus@"
+    then none
+    else match node.findProperty "reg", node.compatibleString with
+    | some regBytes, some _ =>
+      if regBytes.size < 16 then none  -- Need at least base + size (8+8 bytes)
+      else
+        let base := match readBE64 regBytes 0 with | some v => v.toNat | none => 0
+        let size := match readBE64 regBytes 8 with | some v => v.toNat | none => 0
+        if size == 0 then none
+        else some { name := node.name, base := ⟨base⟩, size }
+    | _, _ => none
+
+-- ============================================================================
 -- V4-M4/L-PLAT-1: Wire into fromDtb
 -- ============================================================================
 
-/-- V4-M4/L-PLAT-1: Full DTB parsing pipeline. Replaces the `none` stub.
+/-- V4-M4/L-PLAT-1/X4-A/B/C: Full DTB parsing pipeline.
     1. Parses and validates the FDT header
     2. Traverses the structure block to find `/memory` node's `reg` property
     3. Extracts memory regions from the `reg` property bytes
-    4. Constructs a `DeviceTree` from the parsed data
+    4. X4-A: Traverses device nodes for peripheral discovery
+    5. X4-B: Discovers interrupt controller configuration (GIC-400)
+    6. X4-C: Extracts timer frequency from `/timer` node
+    7. Constructs a `DeviceTree` from all parsed data
 
     Returns `none` if the DTB is malformed, has no valid header, or contains
     no `/memory` node with a `reg` property. -/
@@ -548,13 +796,16 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat := 48)
       maxASID := 65536
       memoryMap := memRegions
     }
+    -- X4-A/B/C: Parse full FDT node tree for device discovery
+    let nodes := match parseFdtNodes blob hdr with
+      | some ns => ns
+      | none => []
     some {
       platformName := s!"DTB-parsed (version {hdr.version.toNat})"
       machineConfig := config
-      peripherals := []
-      interruptController := { distributorBase := ⟨0⟩, cpuInterfaceBase := ⟨0⟩,
-                               spiCount := 0, timerPpiId := ⟨0⟩ }
-      timerFrequencyHz := 0
+      peripherals := extractPeripherals nodes
+      interruptController := extractInterruptController nodes
+      timerFrequencyHz := extractTimerFrequency nodes
     }
 
 /-- V4-M4: Convenience alias mapping `fromDtb` to the full parsing pipeline.

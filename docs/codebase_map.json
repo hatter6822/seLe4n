@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-x3-workstream-87A0n",
-      "commit_sha": "8e98ce23e72d33772f9d674e7fb3fced054937fb",
-      "tree_sha": "ab1ed2c1bb40f0dfe75e33933af4366f2a21532e",
-      "committed_at_utc": "2026-03-29T23:39:51+00:00"
+      "branch": "claude/optimize-phase-x4-platform-R2PeZ",
+      "commit_sha": "3d12361f2d841d5ec14f15acd2d109c705d8a9f3",
+      "tree_sha": "d2c430cceb5f25e8f864eb6e0b3f5c194671cb69",
+      "committed_at_utc": "2026-03-30T01:07:00+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "341dcb4500f75493311dc36e15a71cbf25a4dcdbc75abe5722a6e16b07b579a5"
+    "source_digest": "3a87a2a5bb11c82af426f3d91ab79d24a6f1e3a58f35812010cf838e5ef1d501"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3719
+    "declaration_count": 3734
   },
   "readme_sync": {
-    "version": "0.22.20",
+    "version": "0.22.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 73156,
+    "production_loc": 73505,
     "test_files": 10,
     "test_loc": 8627,
-    "proved_theorem_lemma_decls": 2114,
+    "proved_theorem_lemma_decls": 2120,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2181,7 +2181,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
       "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
-      "declaration_count": 77,
+      "declaration_count": 79,
       "declarations": [
         {
           "kind": "namespace",
@@ -3129,6 +3129,23 @@
             "SyscallDecodeResult",
             "count",
             "maxExtraCaps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "arm64_regCount_valid",
+          "line": 1022,
+          "called": [
+            "arm64GPRCount"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "machineConfig_registerCount_default_eq_arm64GPRCount",
+          "line": 1029,
+          "called": [
+            "MachineConfig",
+            "arm64GPRCount"
           ]
         }
       ]
@@ -31427,7 +31444,7 @@
     {
       "module": "SeLe4n.Kernel.Service.Invariant.Acyclicity",
       "path": "SeLe4n/Kernel/Service/Invariant/Acyclicity.lean",
-      "declaration_count": 56,
+      "declaration_count": 59,
       "declarations": [
         {
           "kind": "namespace",
@@ -32121,11 +32138,48 @@
           "name": "serviceCountBounded_preservation_chain_documented",
           "line": 950,
           "called": [
-            "Kernel",
             "SystemState",
             "serviceCountBounded",
             "serviceCountBounded_monotone",
             "serviceCountBounded_of_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceBfsFuel_has_margin",
+          "line": 971,
+          "called": [
+            "SystemState",
+            "serviceBfsFuel"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceBfsFuel_sufficient",
+          "line": 992,
+          "called": [
+            "ServiceId",
+            "SystemState",
+            "bfs_complete_for_nontrivialPath",
+            "serviceBfsFuel",
+            "serviceCountBounded",
+            "serviceHasPathTo",
+            "serviceNontrivialPath"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceBfsFuel_sound",
+          "line": 1004,
+          "called": [
+            "Kernel",
+            "ServiceId",
+            "SystemState",
+            "bfs_false_implies_no_nontrivialPath",
+            "serviceBfsFuel",
+            "serviceCountBounded",
+            "serviceHasPathTo",
+            "serviceNontrivialPath"
           ]
         }
       ]
@@ -40990,7 +41044,7 @@
     {
       "module": "SeLe4n.Platform.DeviceTree",
       "path": "SeLe4n/Platform/DeviceTree.lean",
-      "declaration_count": 37,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
@@ -41238,7 +41292,7 @@
         {
           "kind": "theorem",
           "name": "extractMemoryRegions_empty",
-          "line": 361,
+          "line": 364,
           "called": [
             "empty",
             "extractMemoryRegions"
@@ -41247,7 +41301,7 @@
         {
           "kind": "def",
           "name": "readCells",
-          "line": 375,
+          "line": 378,
           "called": [
             "none",
             "readBE32",
@@ -41259,7 +41313,7 @@
         {
           "kind": "def",
           "name": "extractMemoryRegionsGeneral",
-          "line": 386,
+          "line": 389,
           "called": [
             "FdtMemoryRegion",
             "readCells",
@@ -41269,13 +41323,13 @@
         {
           "kind": "theorem",
           "name": "extractMemoryRegionsGeneral_entrySize_eq",
-          "line": 409,
+          "line": 412,
           "called": []
         },
         {
           "kind": "def",
           "name": "readCString",
-          "line": 423,
+          "line": 426,
           "called": [
             "none",
             "ofList",
@@ -41287,7 +41341,7 @@
         {
           "kind": "def",
           "name": "lookupFdtString",
-          "line": 447,
+          "line": 450,
           "called": [
             "none",
             "readCString"
@@ -41296,13 +41350,13 @@
         {
           "kind": "structure",
           "name": "FdtSearchResult",
-          "line": 460,
+          "line": 463,
           "called": []
         },
         {
           "kind": "def",
           "name": "findMemoryRegProperty",
-          "line": 472,
+          "line": 475,
           "called": [
             "FdtHeader",
             "FdtSearchResult",
@@ -41320,27 +41374,134 @@
           ]
         },
         {
+          "kind": "structure",
+          "name": "FdtProperty",
+          "line": 531,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "FdtNode",
+          "line": 537,
+          "called": [
+            "FdtProperty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "FdtNode.findProperty",
+          "line": 543,
+          "called": [
+            "FdtNode",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "FdtNode.compatibleString",
+          "line": 551,
+          "called": [
+            "FdtNode",
+            "findProperty",
+            "none",
+            "ofList",
+            "ofNat",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "parseFdtNodes",
+          "line": 576,
+          "called": [
+            "FdtHeader",
+            "FdtNode",
+            "FdtProperty",
+            "fdtBeginNode",
+            "fdtEnd",
+            "fdtEndNode",
+            "fdtNop",
+            "fdtProp",
+            "lookupFdtString",
+            "none",
+            "readBE32",
+            "readCString",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "extractInterruptController",
+          "line": 670,
+          "called": [
+            "FdtNode",
+            "InterruptControllerInfo",
+            "compatibleString",
+            "findProperty",
+            "none",
+            "readBE64",
+            "size",
+            "timerPpiId",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "extractTimerFrequency",
+          "line": 718,
+          "called": [
+            "FdtNode",
+            "compatibleString",
+            "findProperty",
+            "none",
+            "readBE32",
+            "readBE64",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "extractPeripherals",
+          "line": 750,
+          "called": [
+            "DeviceEntry",
+            "FdtNode",
+            "compatibleString",
+            "findProperty",
+            "none",
+            "readBE64",
+            "size",
+            "toNat"
+          ]
+        },
+        {
           "kind": "def",
           "name": "DeviceTree.fromDtbFull",
-          "line": 535,
+          "line": 783,
           "called": [
             "DeviceTree",
             "MachineConfig",
             "config",
+            "extractInterruptController",
             "extractMemoryRegions",
+            "extractPeripherals",
+            "extractTimerFrequency",
             "fdtRegionsToMemoryRegions",
             "findMemoryRegProperty",
             "none",
             "parseAndValidateFdtHeader",
+            "parseFdtNodes",
             "timerFrequencyHz",
-            "timerPpiId",
             "toNat"
           ]
         },
         {
           "kind": "abbrev",
           "name": "DeviceTree.fromDtbParsed",
-          "line": 562,
+          "line": 813,
           "called": [
             "DeviceTree",
             "DeviceTree.fromDtbFull"
@@ -41349,7 +41510,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_fromDtbFull_some",
-          "line": 571,
+          "line": 822,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtHeader",
@@ -41366,7 +41527,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.Board",
       "path": "SeLe4n/Platform/RPi5/Board.lean",
-      "declaration_count": 21,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -41516,9 +41677,26 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "mmioRegionsPairwiseDisjointCheck",
+          "line": 181,
+          "called": [
+            "all",
+            "overlaps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioRegionsPairwiseDisjoint_holds",
+          "line": 194,
+          "called": [
+            "mmioRegionsPairwiseDisjointCheck"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "rpi5MachineConfig_wellFormed",
-          "line": 180,
+          "line": 201,
           "called": [
             "wellFormed"
           ]
@@ -41526,7 +41704,7 @@
         {
           "kind": "def",
           "name": "rpi5DeviceTree",
-          "line": 228,
+          "line": 249,
           "called": [
             "DeviceTree",
             "DeviceTree.fromBoardConstants",
@@ -41543,7 +41721,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeviceTree_valid",
-          "line": 245,
+          "line": 266,
           "called": [
             "validate"
           ]
