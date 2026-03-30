@@ -210,7 +210,13 @@ structure LabelingContext where
   serviceLabelOf : ServiceId → SecurityLabel
   memoryOwnership : Option MemoryDomainOwnership := none
 
-/-- Minimal default labeling: everything is publicly observable and untrusted. -/
+/-- Minimal default labeling: everything is publicly observable and untrusted.
+
+    X5-H (M-2): **PRODUCTION WARNING** — This default labeling context assigns
+    `publicLabel` to all entities, defeating all information-flow enforcement.
+    See `defaultLabelingContext_insecure` and `defaultLabelingContext_all_threads_observable`
+    for formal proofs of this insecurity. Production deployments MUST override this
+    with a domain-specific labeling policy. See also `docs/SECURITY_ADVISORY.md` SA-2. -/
 def defaultLabelingContext : LabelingContext :=
   {
     objectLabelOf := fun _ => SecurityLabel.publicLabel

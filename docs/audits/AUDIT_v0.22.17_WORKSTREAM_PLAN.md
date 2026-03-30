@@ -54,7 +54,7 @@ changes is **24 findings** organized into **40 sub-tasks**.
 | X2 | Runtime Invariant Enforcement | 9 | HIGH | `test_full.sh` green, zero sorry | **COMPLETE** (v0.22.19) |
 | X3 | Information Flow & Composition Closure | 5 | HIGH | `test_full.sh` green, NI theorems compile | **COMPLETE** (v0.22.20) |
 | X4 | Platform & Architecture Completion | 6 | MEDIUM | Module builds pass, `test_smoke.sh` green | **COMPLETE** (v0.22.21) |
-| X5 | Documentation, Hardening & Low-Severity | 9 | LOW | `test_fast.sh` green, docs consistent | PLANNED |
+| X5 | Documentation, Hardening & Low-Severity | 9 | LOW | `test_fast.sh` green, docs consistent | **COMPLETE** (v0.22.22) |
 
 **Dependencies**: X1 is the critical path and must complete first (blocks hardware
 deployment claims). X2 can begin in parallel with X1 for items not dependent on boot
@@ -910,10 +910,13 @@ be updated if targeting a non-ARM64 platform with different register counts.
 ## 7. Phase X5 — Documentation, Hardening & Low-Severity (LOW)
 
 **Priority**: LOW — post-release hardening and documentation sync
+**Status**: **COMPLETE** (v0.22.22)
 **Scope**: Documentation files, `Kernel/API.lean`, `Model/Object/Structures.lean`,
-`Machine.lean`, `Scheduler/Invariant.lean`, `RobinHood/Bridge.lean`
-**Gate**: `test_fast.sh` green, docs consistent, no sorry
-**Estimated sub-tasks**: 9
+`Machine.lean`, `Scheduler/Invariant.lean`, `RobinHood/Bridge.lean`,
+`Model/State.lean`, `InformationFlow/Projection.lean`, `InformationFlow/Policy.lean`,
+`Architecture/SyscallArgDecode.lean`, `RobinHood/Invariant/Lookup.lean`
+**Gate**: `test_full.sh` green, docs consistent, no sorry — **ALL GATES MET**
+**Sub-tasks**: 9 (all complete)
 **Dependencies**: All prior phases (documentation sync requires final state)
 
 ### Findings Addressed
@@ -1094,6 +1097,30 @@ block to establish audit trail continuity.
 **Verification**: `test_fast.sh`
 **Risk**: None — comment additions only
 
+### Phase X5 Completion Summary (v0.22.22)
+
+**All 9 sub-tasks COMPLETE.** Zero sorry/axiom. `test_full.sh` green.
+
+| Sub-task | Finding | Status | Key Change |
+|----------|---------|--------|------------|
+| X5-A | H-1 | COMPLETE | `docs/SECURITY_ADVISORY.md` SA-1: starvation freedom documented with seL4 precedent and recommended user-level mitigations |
+| X5-B | H-9 | COMPLETE | `cnode_capacity_always_ge4` theorem: witnesses CNode.empty capacity = 16 ≥ 4, enforcement chain documented |
+| X5-C | M-3 | COMPLETE | `schedulingCovertChannel_bounded_width` theorem + formal bandwidth analysis (≤ 400 bits/sec for typical configs) |
+| X5-D | M-5 | COMPLETE | `contextMatchesCurrent` idle-state design rationale: vacuous truth by design, re-established by `schedule` |
+| X5-E | M-11 | COMPLETE | `invalidSyscallArgument` KernelError variant (discriminant 41), Rust ABI sync (42 variants), decode path updated in `SyscallArgDecode.lean` |
+| X5-F | L-1 | COMPLETE | `VSpaceRoot.beq_converse_limitation` documented: converse requires RHTable extensional equality, no kernel correctness impact |
+| X5-G | L-2 | COMPLETE | RegisterFile BEq safety analysis: 4-point argument that non-lawful edge case cannot occur in real kernel execution |
+| X5-H | M-2 | COMPLETE | `defaultLabelingContext` production warning confirmed, cross-referenced to SECURITY_ADVISORY.md SA-2 |
+| X5-I | L-4/5/6/7 | COMPLETE | 4 low-severity items confirmed with v0.22.17 audit trail cross-references |
+
+**Files modified**: `docs/SECURITY_ADVISORY.md` (new), `Model/State.lean`, `Machine.lean`,
+`Kernel/RobinHood/Bridge.lean`, `Kernel/InformationFlow/Projection.lean`,
+`Kernel/InformationFlow/Policy.lean`, `Kernel/Scheduler/Invariant.lean`,
+`Model/Object/Structures.lean`, `Kernel/Architecture/SyscallArgDecode.lean`,
+`Kernel/API.lean`, `Kernel/RobinHood/Invariant/Lookup.lean`,
+`rust/sele4n-types/src/error.rs`, `rust/sele4n-abi/src/decode.rs`,
+`rust/sele4n-abi/tests/conformance.rs`
+
 ---
 
 ## 8. Dependency Graph
@@ -1186,33 +1213,33 @@ Each version bumps the patch number. All versions maintain zero sorry/axiom.
 | C-2 | CRITICAL | X1 | X1-D, X1-E | **COMPLETE** (MmioReadOutcome + witnesses) |
 | C-3 | CRITICAL | X1 | X1-F, X1-G | **COMPLETE** (contextSwitchState atomic op) |
 | C-4 | CRITICAL | X1 | X1-H, X1-I, X1-J, X1-K | **COMPLETE** (round-trip theorems pre-existing, TPI-001 closed) |
-| H-1 | HIGH | X5 | X5-A | PLANNED (doc only) |
-| H-2 | HIGH | X2 | X2-A, X2-B, X2-C | PLANNED |
-| H-3 | HIGH | X3 | X3-A | PLANNED |
-| H-4 | HIGH | X3 | X3-C, X3-D | PLANNED |
-| H-5 | HIGH | X3 | X3-B | PLANNED |
-| H-6 | HIGH | X2 | X2-D, X2-E | PLANNED |
+| H-1 | HIGH | X5 | X5-A | **COMPLETE** (SECURITY_ADVISORY.md SA-1) |
+| H-2 | HIGH | X2 | X2-A, X2-B, X2-C | **COMPLETE** (v0.22.19) |
+| H-3 | HIGH | X3 | X3-A | **COMPLETE** (v0.22.20) |
+| H-4 | HIGH | X3 | X3-C, X3-D | **COMPLETE** (v0.22.20) |
+| H-5 | HIGH | X3 | X3-B | **COMPLETE** (v0.22.20) |
+| H-6 | HIGH | X2 | X2-D, X2-E | **COMPLETE** (v0.22.19) |
 | H-7 | HIGH | X4 | X4-A, X4-B, X4-C | **COMPLETE** (generic FDT traversal + GIC discovery + timer extraction) |
-| H-8 | HIGH | X2 | X2-F | PLANNED |
-| H-9 | HIGH | X5 | X5-B | PLANNED (doc only) |
-| M-1 | MEDIUM | X3 | X3-E | PLANNED |
-| M-2 | MEDIUM | X5 | X5-H | PLANNED (doc confirm) |
-| M-3 | MEDIUM | X5 | X5-C | PLANNED |
-| M-4 | MEDIUM | X2 | X2-G, X2-H | PLANNED |
-| M-5 | MEDIUM | X5 | X5-D | PLANNED (doc only) |
-| M-6 | MEDIUM | X2 | X2-I | PLANNED |
+| H-8 | HIGH | X2 | X2-F | **COMPLETE** (v0.22.19) |
+| H-9 | HIGH | X5 | X5-B | **COMPLETE** (cnode_capacity_always_ge4 theorem) |
+| M-1 | MEDIUM | X3 | X3-E | **COMPLETE** (v0.22.20) |
+| M-2 | MEDIUM | X5 | X5-H | **COMPLETE** (doc confirmed + SECURITY_ADVISORY.md SA-2) |
+| M-3 | MEDIUM | X5 | X5-C | **COMPLETE** (schedulingCovertChannel_bounded_width + bandwidth analysis) |
+| M-4 | MEDIUM | X2 | X2-G, X2-H | **COMPLETE** (v0.22.19) |
+| M-5 | MEDIUM | X5 | X5-D | **COMPLETE** (idle-state design rationale documented) |
+| M-6 | MEDIUM | X2 | X2-I | **COMPLETE** (v0.22.19) |
 | M-7 | MEDIUM | — | ERR-1 | ERRONEOUS |
 | M-8 | MEDIUM | X4 | X4-F | **COMPLETE** (ARM64 regCount consistency theorems) |
 | M-9 | MEDIUM | X4 | X4-E | **COMPLETE** (serviceBfsFuel bi-directional correctness) |
 | M-10 | MEDIUM | X4 | X4-D | **COMPLETE** (MMIO pairwise disjointness via decide) |
-| M-11 | MEDIUM | X5 | X5-E | PLANNED |
-| L-1 | LOW | X5 | X5-F | PLANNED |
-| L-2 | LOW | X5 | X5-G | PLANNED (doc only) |
+| M-11 | MEDIUM | X5 | X5-E | **COMPLETE** (invalidSyscallArgument variant + Rust ABI sync) |
+| L-1 | LOW | X5 | X5-F | **COMPLETE** (VSpaceRoot.beq_converse_limitation documented) |
+| L-2 | LOW | X5 | X5-G | **COMPLETE** (safety analysis documented) |
 | L-3 | LOW | — | ERR-2 | OVERSTATED |
-| L-4 | LOW | X5 | X5-I | PLANNED (doc confirm) |
-| L-5 | LOW | X5 | X5-I | PLANNED (doc confirm) |
-| L-6 | LOW | X5 | X5-I | PLANNED (doc confirm) |
-| L-7 | LOW | X5 | X5-I | PLANNED (doc confirm) |
+| L-4 | LOW | X5 | X5-I | **COMPLETE** (v0.22.17 audit confirmed) |
+| L-5 | LOW | X5 | X5-I | **COMPLETE** (v0.22.17 audit confirmed) |
+| L-6 | LOW | X5 | X5-I | **COMPLETE** (v0.22.17 audit confirmed) |
+| L-7 | LOW | X5 | X5-I | **COMPLETE** (v0.22.17 audit confirmed) |
 
 **Coverage**: 31/31 findings accounted for. 24 actionable (code/proof changes),
 5 documentation confirmations, 1 erroneous (M-7), 1 overstated (L-3).

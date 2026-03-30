@@ -227,6 +227,27 @@ theorem RegisterFile.not_lawfulBEq : ¬ LawfulBEq RegisterFile := by
   have hEval : r₁.gpr ⟨32⟩ ≠ r₂.gpr ⟨32⟩ := by decide
   exact hEval (by rw [hPropEq])
 
+-- X5-G (L-2): Safety analysis of RegisterFile's non-lawful BEq.
+--
+-- The non-lawful BEq does NOT affect kernel correctness because:
+-- 1. `RegisterFile.BEq` is used only in `contextMatchesCurrent` comparisons
+--    and test infrastructure — never in proof-critical paths.
+-- 2. The 32-index check (0..31) covers all ARM64 GPRs (x0–x30 + xzr).
+--    Index 32+ is never accessed by kernel code, proven by `regCount = 32`
+--    bound in `decodeSyscallArgs` (SyscallArgDecode.lean).
+-- 3. The non-lawful edge case (functions agreeing on 0..31 but differing at
+--    index ≥ 32) cannot occur in practice because `RegisterFile` is only
+--    constructed from finite register arrays with 32 entries. The `gpr`
+--    function is always a closure over a finite array, not an arbitrary
+--    function on `RegName`.
+-- 4. All proofs requiring propositional register-file equality use
+--    `RegisterFile.ext` (below), which requires pointwise equality of the
+--    `gpr` function — bypassing `BEq` entirely.
+--
+-- The `not_lawfulBEq` counterexample (above) uses synthetic functions that
+-- disagree at out-of-range indices — a scenario impossible in real kernel
+-- execution.
+
 /-- S1-J: Extensionality lemma for `RegisterFile`. Two register files are equal
     when their `pc`, `sp`, and `gpr` functions agree. -/
 theorem RegisterFile.ext {a b : RegisterFile}

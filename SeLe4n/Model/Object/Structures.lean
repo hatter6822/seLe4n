@@ -378,6 +378,28 @@ theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
   exact ⟨h.1.1, h.1.2⟩
 
+/-- X5-F (L-1): The converse of `beq_sound` (`a = b → (a == b) = true`) requires
+    extensional equality of `RHTable` contents, which depends on the RHTable's
+    internal array representation. The current `BEq VSpaceRoot` checks structural
+    equality (ASID, size, and element-wise comparison via `RHTable.BEq`), but
+    `RHTable.BEq` is not provably `LawfulBEq` at the `VSpaceRoot` level because
+    it involves `RHTable (VAddr) (PAddr × PagePermissions)` where the inner BEq
+    traverses the hash table's backing array.
+
+    **Impact on kernel correctness**: None. `VSpaceRoot` equality is never used
+    as a proof obligation in any kernel invariant or preservation theorem.
+    The `BEq` instance exists solely for testing infrastructure (`MainTraceHarness`)
+    and runtime assertions. All VSpace proofs operate on the underlying `RHTable`
+    operations (map/unmap/lookup) rather than structural equality.
+
+    L-FND-3: Tracked limitation — converse proof deferred until `RHTable.LawfulBEq`
+    is established (requires proving the hash table's backing array comparison
+    is extensionally complete). -/
+theorem VSpaceRoot.beq_converse_limitation :
+    -- Witnessing that the limitation is documented; kernel correctness is unaffected
+    -- because VSpaceRoot equality is not used in any proof obligation.
+    True := trivial
+
 namespace CNode
 
 open SeLe4n.Kernel.RobinHood

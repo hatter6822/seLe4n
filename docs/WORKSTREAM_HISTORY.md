@@ -20,9 +20,9 @@ GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
-WS-X Phases X1–X4 complete. Phase X5 in progress.
+WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
 
-### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — IN PROGRESS
+### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — COMPLETE
 
 WS-X addresses 24 unique actionable findings from a comprehensive pre-release
 audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
@@ -85,6 +85,28 @@ audit of v0.22.17 (4 CRIT, 9 HIGH, 9 MED, 2 LOW) across 5 phases (X1–X5) with
   **M-8**: `arm64_regCount_valid` + `machineConfig_registerCount_default_eq_arm64GPRCount`
   ARM64 register count consistency theorems.
   Zero sorry/axiom. `test_full.sh` green.
+
+- **X5 (Documentation, Hardening & Low-Severity) COMPLETE** (v0.22.22): 9 sub-tasks
+  (X5-A through X5-I). 9 findings resolved (H-1, H-9, M-2, M-3, M-5, M-11, L-1, L-2,
+  L-4/L-5/L-6/L-7):
+  **H-1**: `docs/SECURITY_ADVISORY.md` created — starvation freedom documented as
+  design-level advisory with seL4 precedent and recommended user-level mitigations.
+  **H-9**: `cnode_capacity_always_ge4` documentation theorem witnessing CNode.empty
+  capacity = 16 ≥ 4 enforcement chain.
+  **M-3**: `schedulingCovertChannel_bounded_width` theorem + formal bandwidth analysis
+  (≤ 400 bits/sec for typical configurations).
+  **M-5**: `contextMatchesCurrent` idle-state design rationale documented.
+  **M-11**: `invalidSyscallArgument` KernelError variant (discriminant 41) added to
+  Lean and Rust ABI (42 total variants). Decode paths updated in `SyscallArgDecode.lean`.
+  **M-2**: Default labeling context production warning confirmed, cross-referenced to
+  SECURITY_ADVISORY.md SA-2.
+  **L-1**: `VSpaceRoot.beq_converse_limitation` documented — converse proof deferred
+  until RHTable.LawfulBEq established.
+  **L-2**: RegisterFile BEq safety analysis documented — 4-point argument that
+  non-lawful edge case cannot occur in real kernel execution.
+  **L-4/L-5/L-6/L-7**: All 4 low-severity items confirmed with v0.22.17 audit trail
+  cross-references in source code.
+  Zero sorry/axiom. `test_full.sh` green. **WS-X PORTFOLIO COMPLETE.**
 
 ### WS-W workstream (v0.22.10 Pre-Release Audit Remediation) — COMPLETE
 

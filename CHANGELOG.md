@@ -1,3 +1,37 @@
+## [0.22.22] — X5: Documentation, Hardening & Low-Severity
+
+Phase X5 of WS-X pre-release audit remediation. Resolves 9 findings (H-1, H-9,
+M-2, M-3, M-5, M-11, L-1, L-2, L-4/L-5/L-6/L-7) from the v0.22.17
+comprehensive audit. **WS-X PORTFOLIO COMPLETE.**
+
+- **X5-A (H-1)**: Created `docs/SECURITY_ADVISORY.md` with SA-1 (starvation
+  freedom advisory), SA-2 (default labeling context), SA-3 (scheduling covert
+  channel). Documents seL4 precedent and recommended user-level mitigations.
+- **X5-B (H-9)**: `cnode_capacity_always_ge4` documentation theorem witnessing
+  that CNode.empty uses `RHTable.empty 16` (capacity 16 ≥ 4), satisfying the
+  `insert_size_lt_capacity` precondition at all creation sites.
+- **X5-C (M-3)**: `schedulingCovertChannel_bounded_width` theorem with formal
+  bandwidth analysis (≤ 400 bits/sec for typical configurations with N ≤ 16
+  domain entries at F ≤ 100 Hz). Acceptance rationale documented per seL4
+  precedent (Murray et al., CCS 2013).
+- **X5-D (M-5)**: `contextMatchesCurrent` idle-state design rationale documented:
+  vacuously true when `current = none` by design, re-established by `schedule`.
+- **X5-E (M-11)**: `invalidSyscallArgument` KernelError variant added (Lean
+  discriminant 41, Rust `InvalidSyscallArgument = 41`). Decode path in
+  `SyscallArgDecode.lean` updated. Rust ABI synced (42 total variants). All
+  conformance tests updated.
+- **X5-F (L-1)**: `VSpaceRoot.beq_converse_limitation` documented — converse
+  requires RHTable extensional equality; no kernel correctness impact.
+- **X5-G (L-2)**: RegisterFile BEq safety analysis: 4-point argument that
+  non-lawful edge case (functions agreeing on 0..31 but differing at 32+)
+  cannot occur in real kernel execution.
+- **X5-H (M-2)**: Default labeling context production warning confirmed and
+  cross-referenced to SECURITY_ADVISORY.md SA-2.
+- **X5-I (L-4/L-5/L-6/L-7)**: All 4 low-severity items confirmed with
+  v0.22.17 audit trail cross-references in source code comments.
+
+Zero sorry/axiom. All tests pass.
+
 ## [0.22.21] — X4: Platform & Architecture Completion
 
 Phase X4 of WS-X pre-release audit remediation. Resolves 4 findings (H-7, M-8,

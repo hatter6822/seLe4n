@@ -147,7 +147,20 @@ by the inline context restore step in `schedule`.
 
 When `current = none` (idle), the invariant is vacuously satisfied.
 When the current thread's object is not a TCB (impossible under
-`currentThreadValid`), the invariant is vacuously satisfied. -/
+`currentThreadValid`), the invariant is vacuously satisfied.
+
+**X5-D (M-5): Idle-state design rationale.** `contextMatchesCurrent` is
+vacuously true when `current = none` by design. During domain switching
+(`switchDomain`), the kernel enters an idle state where no thread is dispatched
+and `current` is set to `none`. The invariant is re-established by the
+`schedule` transition, which atomically loads the selected thread's saved
+context into the register file (Core.lean inline context restore). This design
+avoids the need for an "idle context" concept and simplifies proof obligations:
+every preservation theorem for operations that set `current := none` trivially
+satisfies this predicate. The invariant's strength lies in the `some tid` branch,
+where it guarantees register-TCB synchronization for the dispatched thread.
+Under `currentThreadValid`, the "not a TCB" branch is unreachable, making the
+match on `st.objects[tid.toObjId]?` effectively a two-case analysis. -/
 def contextMatchesCurrent (st : SystemState) : Prop :=
   match st.scheduler.current with
   | some tid =>

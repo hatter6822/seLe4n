@@ -864,7 +864,10 @@ private theorem insert_has_key [BEq α] [Hashable α] [LawfulBEq α]
     identifiers (`ObjId`, `ThreadId`, `SlotRef`, etc.) as keys, which are
     system-assigned monotonic IDs — not adversary-controlled inputs. For
     adversarial key sets, a collision-resistant hash function would be needed,
-    but this is outside the kernel's threat model. -/
+    but this is outside the kernel's threat model.
+    X5-I (L-7): Confirmed v0.22.17 audit — hash collision DoS is theoretical
+    only. Kernel-internal usage with system-assigned monotonic IDs prevents
+    adversary-controlled key selection. -/
 theorem RHTable.get_after_insert_eq [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) (hExt : t.invExt) :
     (t.insert k v).get? k = some v := by
