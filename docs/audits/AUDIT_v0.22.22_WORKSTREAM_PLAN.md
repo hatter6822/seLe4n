@@ -278,7 +278,7 @@ provably unreachable when the scheduler invariant holds.
 **Fix**:
 1. Add a documentation comment on the `| none =>` branch explaining why it is
    unreachable (modular arithmetic guarantee + `schedulerInvariantBundleFull`).
-2. Optionally, add a `switchDomain_index_in_bounds` lemma proving
+2. Add a `switchDomain_index_in_bounds` lemma proving
    `schedule[(idx + 1) % schedule.length]? = some _` when `schedule ≠ []`.
    This would formalize the argument without changing runtime behavior.
 
