@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-phase-y2-platform-g7v82",
-      "commit_sha": "d4b3b117b77d8b6cb461f8b9ef9dcdca4f57926a",
-      "tree_sha": "524f25858cdf3f44b724b7b1fa6c4a3885fca13f",
-      "committed_at_utc": "2026-03-30T08:48:44-04:00"
+      "commit_sha": "f579fcf71ec9b50a0492eda737974d1b45ed7533",
+      "tree_sha": "d2aec37e79da0ad3d0b4bac1e39b6a9f0243b00d",
+      "committed_at_utc": "2026-03-30T13:08:53+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3d69e05f2e858ddd3482068e760debc417b760368f49c0245f6967d9e0684f41"
+    "source_digest": "38402fa16cd23a41da2f89e8ce5c89675c1f8694e597a395a632fef021dae092"
   },
   "summary": {
     "module_count": 113,
@@ -27,7 +27,7 @@
     "version": "0.22.24",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 73971,
+    "production_loc": 73974,
     "test_files": 10,
     "test_loc": 8666,
     "proved_theorem_lemma_decls": 2142,
@@ -42680,7 +42680,7 @@
         {
           "kind": "def",
           "name": "registerContextStableCheck",
-          "line": 76,
+          "line": 79,
           "called": [
             "SystemState",
             "none",
@@ -42690,7 +42690,7 @@
         {
           "kind": "def",
           "name": "registerContextStablePred",
-          "line": 92,
+          "line": 95,
           "called": [
             "SystemState",
             "registerContextStableCheck"
@@ -42699,7 +42699,7 @@
         {
           "kind": "instance",
           "name": "registerContextStablePred_decidable",
-          "line": 96,
+          "line": 99,
           "called": [
             "SystemState",
             "registerContextStablePred"
@@ -42708,7 +42708,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContract",
-          "line": 100,
+          "line": 103,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -42721,7 +42721,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContractRestrictive",
-          "line": 134,
+          "line": 137,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -42732,7 +42732,7 @@
         {
           "kind": "def",
           "name": "mmioAccessAllowed",
-          "line": 160,
+          "line": 163,
           "called": [
             "PAddr",
             "SystemState",
@@ -42742,7 +42742,7 @@
         {
           "kind": "instance",
           "name": "mmioAccessAllowed_decidable",
-          "line": 165,
+          "line": 168,
           "called": [
             "PAddr",
             "SystemState",
@@ -42754,7 +42754,7 @@
         {
           "kind": "theorem",
           "name": "mmioAccess_ram_kind_disjoint",
-          "line": 174,
+          "line": 177,
           "called": [
             "MemoryRegion"
           ]

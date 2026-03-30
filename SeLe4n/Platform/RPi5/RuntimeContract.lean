@@ -69,10 +69,13 @@ Device and reserved regions require explicit MMIO adapter calls.
       object represents a malformed scheduler state. The contract must reject
       this to prevent unsound reasoning about register-file consistency.
 
-    V4-I/M-HW-9: The pre-state parameter `st` is now used: when both states have
-    a current thread, we additionally check that either the current thread hasn't
-    changed (register file tracks the same thread), or the new thread's saved
-    context matches the post-state register file (context switch occurred correctly). -/
+    LOW-05 / Y2-B: The pre-state parameter `_st` is retained for signature
+    compatibility with the `RuntimeBoundaryContract.registerContextStable` field
+    but is not inspected. Register-context stability is checked uniformly via the
+    post-state only: `st'.machine.regs == tcb.registerContext`. This is correct
+    because `contextSwitchState` (X1-C) guarantees that post-state registers
+    always match the current TCB's saved context regardless of whether a context
+    switch occurred. -/
 def registerContextStableCheck (_st st' : SystemState) : Bool :=
   match st'.scheduler.current with
   | none => true
