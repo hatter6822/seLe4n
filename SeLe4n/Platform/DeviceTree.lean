@@ -559,14 +559,6 @@ def FdtNode.compatibleString (node : FdtNode) : Option String :=
       else some (String.ofList (byteList.map (fun b => Char.ofNat b.toNat)))
   | none => none
 
-/-- X4-A/H-7: Find a child node by name prefix (e.g., "interrupt-controller"). -/
-def FdtNode.findChild (node : FdtNode) (namePrefix : String) : Option FdtNode :=
-  node.children.find? (fun c => c.name == namePrefix || c.name.startsWith (namePrefix ++ "@"))
-
-/-- X4-A/H-7: Find a child node by `compatible` string match. -/
-def FdtNode.findByCompatible (node : FdtNode) (compat : String) : Option FdtNode :=
-  node.children.find? (fun c => c.compatibleString == some compat)
-
 /-- X4-A/H-7: Fuel-bounded generic FDT structure block traversal.
     Parses the FDT structure block into a tree of `FdtNode` values.
     Returns the root node containing all device nodes, properties, and children.

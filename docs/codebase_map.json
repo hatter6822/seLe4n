@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-x4-platform-R2PeZ",
-      "commit_sha": "f73ee9a95bc86245359e42f60e23f7136ddfab00",
-      "tree_sha": "69b43790997a78161809b31894ce4594305e838e",
-      "committed_at_utc": "2026-03-30T00:52:51+00:00"
+      "commit_sha": "3d12361f2d841d5ec14f15acd2d109c705d8a9f3",
+      "tree_sha": "d2c430cceb5f25e8f864eb6e0b3f5c194671cb69",
+      "committed_at_utc": "2026-03-30T01:07:00+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1628a26a78c31bd886acb13191da1d911bbba4bfd4e2a35dcd6185110b322a1e"
+    "source_digest": "3a87a2a5bb11c82af426f3d91ab79d24a6f1e3a58f35812010cf838e5ef1d501"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3736
+    "declaration_count": 3734
   },
   "readme_sync": {
     "version": "0.22.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 73513,
+    "production_loc": 73505,
     "test_files": 10,
     "test_loc": 8627,
     "proved_theorem_lemma_decls": 2120,
@@ -41044,7 +41044,7 @@
     {
       "module": "SeLe4n.Platform.DeviceTree",
       "path": "SeLe4n/Platform/DeviceTree.lean",
-      "declaration_count": 47,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
@@ -41412,25 +41412,8 @@
         },
         {
           "kind": "def",
-          "name": "FdtNode.findChild",
-          "line": 563,
-          "called": [
-            "FdtNode"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "FdtNode.findByCompatible",
-          "line": 567,
-          "called": [
-            "FdtNode",
-            "compatibleString"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "parseFdtNodes",
-          "line": 584,
+          "line": 576,
           "called": [
             "FdtHeader",
             "FdtNode",
@@ -41451,7 +41434,7 @@
         {
           "kind": "def",
           "name": "extractInterruptController",
-          "line": 678,
+          "line": 670,
           "called": [
             "FdtNode",
             "InterruptControllerInfo",
@@ -41467,7 +41450,7 @@
         {
           "kind": "def",
           "name": "extractTimerFrequency",
-          "line": 726,
+          "line": 718,
           "called": [
             "FdtNode",
             "compatibleString",
@@ -41482,7 +41465,7 @@
         {
           "kind": "def",
           "name": "extractPeripherals",
-          "line": 758,
+          "line": 750,
           "called": [
             "DeviceEntry",
             "FdtNode",
@@ -41497,7 +41480,7 @@
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbFull",
-          "line": 791,
+          "line": 783,
           "called": [
             "DeviceTree",
             "MachineConfig",
@@ -41518,7 +41501,7 @@
         {
           "kind": "abbrev",
           "name": "DeviceTree.fromDtbParsed",
-          "line": 821,
+          "line": 813,
           "called": [
             "DeviceTree",
             "DeviceTree.fromDtbFull"
@@ -41527,7 +41510,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_fromDtbFull_some",
-          "line": 830,
+          "line": 822,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtHeader",
