@@ -53,9 +53,10 @@ private def sampleState : SystemState :=
     |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
-    |>.withRunnable [⟨1⟩]
+    -- Y3-A: current thread set for projection tests (not in runnable → check 8 passes).
+    -- No runnable list needed: information flow projection doesn't use scheduler state.
     |>.withCurrent (some ⟨2⟩)
-    |>.build)
+    |>.buildChecked)
 
 private def sampleLabeling : SeLe4n.Kernel.LabelingContext :=
   {
@@ -81,11 +82,10 @@ private def altState : SystemState :=
     |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
-    |>.withRunnable [⟨1⟩, ⟨2⟩]
     -- Current thread differs: none (vs some tid=2 in sampleState).
     -- Both project to none for the public observer since tid=2 is secret.
     |>.withCurrent none
-    |>.build)
+    |>.buildChecked)
 
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
@@ -218,7 +218,7 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨10⟩ (.endpoint {})
       |>.withRunnable []
       |>.withCurrent (some ⟨1⟩)
-      |>.build)
+      |>.buildChecked)
 
   let publicCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
@@ -254,7 +254,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
       |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList []) })
-      |>.build)
+      |>.buildChecked)
 
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
     { objectLabelOf := fun _ => publicLabel
@@ -439,7 +439,7 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
       |>.withIrqHandler ⟨0⟩ ⟨1⟩   -- IRQ 0 → oid 1 (public object)
       |>.withIrqHandler ⟨1⟩ ⟨2⟩   -- IRQ 1 → oid 2 (secret object)
-      |>.build)
+      |>.buildChecked)
 
   let irqPublicProj := SeLe4n.Kernel.projectState sampleLabeling reviewer irqState
   let irqAdminProj := SeLe4n.Kernel.projectState sampleLabeling admin irqState
@@ -501,7 +501,7 @@ def runInformationFlowChecks : IO Unit := do
           , (⟨1⟩, { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
           , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
-      |>.build)
+      |>.buildChecked)
 
   -- oid 50 (the CNode) is public so both observers can see it
   let cnodeLabeling : SeLe4n.Kernel.LabelingContext :=
@@ -556,7 +556,7 @@ def runInformationFlowChecks : IO Unit := do
           [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
           , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
-      |>.build)
+      |>.buildChecked)
 
   let cnodeSlotProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeSlotState
   match cnodeSlotProj.objects ⟨60⟩ with
@@ -602,7 +602,7 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨20⟩ (.endpoint {})
       |>.withService ⟨10⟩ registryServiceEntry
       |>.withService ⟨5⟩ { identity := { sid := ⟨5⟩, backingObject := ⟨25⟩, owner := ⟨1⟩ }, dependencies := [], isolatedFrom := [] }
-      |>.build)
+      |>.buildChecked)
 
   -- Same-domain projection: public observer can see public service presence
   let sameDomainRegistryCtx : SeLe4n.Kernel.LabelingContext :=
@@ -642,7 +642,7 @@ def runInformationFlowChecks : IO Unit := do
           state := .idle
           pendingBadge := none
           waitingThreads := [] })
-      |>.build)
+      |>.buildChecked)
 
   -- Same-domain signal (public signaler → public notification) should succeed
   let sameDomainNtfnCtx : SeLe4n.Kernel.LabelingContext :=
@@ -685,7 +685,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨40⟩ (.cnode copySrcCNodeWithCap)
       |>.withObject ⟨41⟩ (.cnode SeLe4n.Model.CNode.empty)
-      |>.build)
+      |>.buildChecked)
 
   let copySrc : SlotRef := { cnode := ⟨40⟩, slot := ⟨0⟩ }
   let copyDst : SlotRef := { cnode := ⟨41⟩, slot := ⟨0⟩ }
@@ -728,7 +728,7 @@ def runInformationFlowChecks : IO Unit := do
   let recvEpState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨50⟩ (.endpoint {})
-      |>.build)
+      |>.buildChecked)
 
   -- Cross-domain receive (secret endpoint → public receiver) should be denied
   let crossDomainRecvCtx : SeLe4n.Kernel.LabelingContext :=
@@ -775,7 +775,7 @@ def runInformationFlowChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨901⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject ⟨902⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
-      |>.build)
+      |>.buildChecked)
 
   let allowDecl : SeLe4n.Kernel.DeclassificationPolicy :=
     { canDeclassify := fun src dst => src = ⟨2⟩ && dst = ⟨0⟩ }
@@ -825,8 +825,8 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-H8/A-36: ObservableState domain timing metadata coverage
   -- Verify that projectState includes domain timing fields
   let timingState :=
-    { (BootstrapBuilder.empty.build) with
-        scheduler := { (BootstrapBuilder.empty.build).scheduler with
+    { (BootstrapBuilder.empty.buildChecked) with
+        scheduler := { (BootstrapBuilder.empty.buildChecked).scheduler with
           domainTimeRemaining := 42
           domainSchedule := [{ domain := ⟨0⟩, length := 10 }, { domain := ⟨1⟩, length := 5 }]
           domainScheduleIndex := 1 } }
@@ -883,7 +883,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- V6-E: serviceRegistry projection
   let svcRegProjection := SeLe4n.Kernel.projectState sameDomainNtfnCtx
-    { clearance := publicLabel } (BootstrapBuilder.empty.build)
+    { clearance := publicLabel } (BootstrapBuilder.empty.buildChecked)
   expect "V6-E: serviceRegistry field exists in projection"
     (svcRegProjection.serviceRegistry ⟨999⟩ == none)
 

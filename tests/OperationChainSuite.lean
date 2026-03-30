@@ -412,7 +412,7 @@ private def buildParameterizedTopology
   let builder := BootstrapBuilder.empty |>.withRunnable runnableThreads
   let builder := allObjects.foldl (fun b (oid, obj) => b.withObject oid obj) builder
   let builder := lifecycleTypes.foldl (fun b (oid, ty) => b.withLifecycleObjectType oid ty) builder
-  builder.build
+  builder.buildChecked
 
 private partial def scheduleNTimes (n : Nat) (assertEvery : Nat) (st : SystemState) : IO SystemState := do
   if n = 0 then
@@ -476,7 +476,7 @@ private def schedulerStressChecks : IO Unit := do
       |>.withObject ⟨4103⟩ (.vspaceRoot { asid := ⟨7⟩, mappings := {} })
       |>.withRunnable runnableDomainThreads)
   let domainStateBase :=
-    (domainThreads.foldl (fun b (oid, obj) => b.withObject oid obj) domainStateBaseBuilder).build
+    (domainThreads.foldl (fun b (oid, obj) => b.withObject oid obj) domainStateBaseBuilder).buildChecked
   let domainState :=
     { domainStateBase with
       scheduler := { domainStateBase.scheduler with
@@ -889,7 +889,7 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build 15-level chain: root → child0 → child1 → ... → child14
   let mut st := st0
@@ -966,7 +966,7 @@ private def chain16StrictRevokePartialFail : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build 5-level chain: root → c0 → c1 → c2 → c3 → c4
   let mut st := st0
@@ -1081,7 +1081,7 @@ private def chain17StrictRevokeOrdering : IO Unit := do
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build branching tree:
   -- root → A (mint)
@@ -1195,7 +1195,7 @@ private def chain18StreamingRevokeBFS : IO Unit := do
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build branching tree:
   -- root → A (mint)
@@ -1256,7 +1256,7 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
       (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Execute streaming BFS revocation (no descendants)
   let ((), stFinal) ← expectOkSt "chain19: streaming BFS revoke empty tree"
@@ -1296,7 +1296,7 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
-  let st0 := builder.build
+  let st0 := builder.buildChecked
 
   -- Build deep chain: root → A → B → C → D
   let (_, st1) ← expectOkSt "chain20: mint root→A"
@@ -1354,7 +1354,7 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
           ]
         else SeLe4n.Kernel.RobinHood.RHTable.empty 16
       })
-    let st0 := builder.build
+    let st0 := builder.buildChecked
     let (_, st1) ← expectOkSt "chain21: mint root→A"
       (SeLe4n.Kernel.cspaceMintWithCdt rootSlot slotA (AccessRightSet.ofList [.read, .write, .grant]) none st0)
     let (_, st2) ← expectOkSt "chain21: mint A→B"

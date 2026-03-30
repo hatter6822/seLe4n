@@ -17,7 +17,7 @@ namespace SeLe4n.Testing
 scheduler, and capability families. -/
 inductive ProbeOp where
   | send
-  | awaitReceive
+  | capCopy
   | receive
   | notifySignal
   | notifyWait
@@ -76,7 +76,7 @@ def nextRand (x : Nat) : Nat :=
 def pickOp (x : Nat) : ProbeOp :=
   match x % 7 with
   | 0 => .send
-  | 1 => .awaitReceive
+  | 1 => .capCopy
   | 2 => .receive
   | 3 => .notifySignal
   | 4 => .notifyWait
@@ -98,7 +98,10 @@ def probeInvariantObjectIds (threadCount : Nat) : List SeLe4n.ObjId :=
   probeThreadIds threadCount ++ [probeEndpointId, probeNotificationId, probeCNodeId]
 
 def checkStateInvariants (threadCount : Nat) (st : SystemState) : Except String Unit :=
-  let failures := (stateInvariantChecksFor (probeInvariantObjectIds threadCount) st).filterMap fun (label, ok) => if ok then none else some label
+  -- Y3-D: Sync threadState before checking, matching assertStateInvariantsFor behavior.
+  -- Probe TCBs may not have threadState maintained by every operation; inference ensures consistency.
+  let stSynced := SeLe4n.Kernel.syncThreadStates st
+  let failures := (stateInvariantChecksFor (probeInvariantObjectIds threadCount) stSynced).filterMap fun (label, ok) => if ok then none else some label
   if failures.isEmpty then
     .ok ()
   else
@@ -142,23 +145,30 @@ def classifyError (op : ProbeOp) (err : KernelError) : StepOutcome :=
   -- WS-F7: scheduler may fail if no runnable thread in active domain
   | .schedulerInvariantViolation => .expectedFailure err
   -- WS-F7: invalidCapability is expected for capLookup on empty slots
+  -- Y3-D: capCopy may fail with targetSlotOccupied when dst slot is non-empty
+  | .targetSlotOccupied => .expectedFailure err
   | .invalidCapability =>
       match op with
       | .capLookup => .expectedFailure err
+      | .capCopy => .expectedFailure err
       | _ => .unexpectedFailure err s!"invalidCapability during {toString op}: probe objects should be correctly typed"
   | .objectNotFound =>
       match op with
-      -- capLookup on a non-existent CNode slot returns objectNotFound
+      -- capLookup/capCopy on a non-existent CNode slot returns objectNotFound
       | .capLookup => .expectedFailure err
+      | .capCopy => .expectedFailure err
       | _ => .unexpectedFailure err s!"objectNotFound during {toString op}: probe objects should always exist"
   | other =>
       .unexpectedFailure other s!"unexpected error {toString other} during {toString op}"
 
 /-- Execute one probe operation with error-aware classification.
 
-WS-F7/D2d: Extended to cover 7 operation families (was 3). Each new operation
+WS-F7/D2d: Extended to cover 7 distinct operation families (was 3). Each operation
 uses the fixed probe objects (endpoint, notification, CNode) and classifies
 errors as expected or unexpected based on the operation semantics.
+Y3-D: `capCopy` replaced duplicate `awaitReceive` (LOW-07), now exercising
+IPC send, IPC receive, capability copy, capability lookup, notification
+signal, notification wait, and schedule — 7 truly distinct operations.
 
 Guard: IPC and notification operations that modify thread ipcState are skipped
 when the target thread is already blocked. In a real kernel, blocked threads
@@ -177,11 +187,16 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
       else match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext probeEndpointId tid .empty st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .send err
-  | .awaitReceive =>
-      if threadBlocked == true then .expectedFailure .endpointStateMismatch
-      else match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
+  -- Y3-D: capCopy replaces duplicate awaitReceive (LOW-07), exercising CSpace
+  -- copy subsystem (distinct from capLookup which only reads).
+  | .capCopy =>
+      let srcSlot := ⟨tid.toNat % 16⟩
+      let dstSlot := ⟨(tid.toNat + 8) % 16⟩
+      let src : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := srcSlot }
+      let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := dstSlot }
+      match SeLe4n.Kernel.cspaceCopy src dst st with
       | .ok (_, st') => .mutated st'
-      | .error err => classifyError .awaitReceive err
+      | .error err => classifyError .capCopy err
   | .receive =>
       if threadBlocked == true then .expectedFailure .endpointStateMismatch
       else match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with

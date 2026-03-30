@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-phase-y2-platform-g7v82",
-      "commit_sha": "a499e671f9a94b6b781daa215ff1952ce9415067",
-      "tree_sha": "509279d0b5c71dbb6e31c1d814df3aeff4819c60",
-      "committed_at_utc": "2026-03-30T19:13:47+00:00"
+      "branch": "claude/optimize-test-infrastructure-ogzTY",
+      "commit_sha": "116a2298cb75ce4132ea8aeeca3b5284ea523143",
+      "tree_sha": "ddd08bc9ae8a890de1286daf7b7a8127c4ff0732",
+      "committed_at_utc": "2026-03-30T15:29:34-04:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e9fd5746efe6bacde2708c8ed997cc540d44c40475d365e109b546a4e8806aba"
+    "source_digest": "a39da5c259fe3e1c6bde4c8ae3c6efa7a9f832d922bdaa716803c9e6d9cff9d5"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3759
+    "declaration_count": 3760
   },
   "readme_sync": {
     "version": "0.22.25",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 74024,
+    "production_loc": 74040,
     "test_files": 10,
-    "test_loc": 8666,
+    "test_loc": 8687,
     "proved_theorem_lemma_decls": 2143,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -45520,7 +45520,7 @@
     {
       "module": "SeLe4n.Testing.InvariantChecks",
       "path": "SeLe4n/Testing/InvariantChecks.lean",
-      "declaration_count": 30,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -45851,7 +45851,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsFor",
-          "line": 377,
+          "line": 381,
           "called": [
             "ObjId",
             "ServiceId",
@@ -45867,10 +45867,25 @@
         {
           "kind": "def",
           "name": "assertStateInvariants",
-          "line": 388,
+          "line": 392,
           "called": [
             "SystemState",
             "assertStateInvariantsFor"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertStateInvariantsWithoutSync",
+          "line": 399,
+          "called": [
+            "ObjId",
+            "ServiceId",
+            "SystemState",
+            "failedChecks",
+            "invariant",
+            "pure",
+            "stateInvariantChecksFor",
+            "throw"
           ]
         }
       ]
@@ -48096,20 +48111,19 @@
           "line": 50,
           "called": [
             "SystemState",
-            "build",
+            "buildChecked",
             "empty",
             "publicServiceEntry",
             "sampleServiceEntry",
             "withCurrent",
             "withObject",
-            "withRunnable",
             "withService"
           ]
         },
         {
           "kind": "def",
           "name": "sampleLabeling",
-          "line": 60,
+          "line": 61,
           "called": [
             "LabelingContext",
             "publicLabel",
@@ -48119,17 +48133,16 @@
         {
           "kind": "def",
           "name": "altState",
-          "line": 77,
+          "line": 78,
           "called": [
             "SystemState",
-            "build",
+            "buildChecked",
             "empty",
             "none",
             "publicServiceEntry",
             "sampleServiceEntry",
             "withCurrent",
             "withObject",
-            "withRunnable",
             "withService"
           ]
         },
@@ -48159,7 +48172,7 @@
             "allowAll",
             "altState",
             "bibaIntegrityFlowsTo",
-            "build",
+            "buildChecked",
             "chooseThread",
             "contains",
             "cspaceCopy",
@@ -48548,6 +48561,7 @@
             "baseState",
             "bor",
             "build",
+            "buildChecked",
             "cnodeId",
             "corruptThreadQueueLinks",
             "cspaceDeleteSlot",
@@ -48615,11 +48629,11 @@
         {
           "kind": "def",
           "name": "runH2NegativeChecks",
-          "line": 1092,
+          "line": 1094,
           "called": [
             "RHTable.ofList",
             "SystemState",
-            "build",
+            "buildChecked",
             "empty",
             "expectErr",
             "f2UntypedAuthCnode",
@@ -48638,7 +48652,7 @@
         {
           "kind": "def",
           "name": "runAuditCoverageChecks",
-          "line": 1141,
+          "line": 1143,
           "called": [
             "KernelObject",
             "baseState",
@@ -48664,7 +48678,7 @@
         {
           "kind": "def",
           "name": "runWSH7Checks",
-          "line": 1224,
+          "line": 1226,
           "called": [
             "CNode",
             "Capability",
@@ -48689,7 +48703,7 @@
         {
           "kind": "def",
           "name": "runWSH11Checks",
-          "line": 1281,
+          "line": 1283,
           "called": [
             "ASID",
             "ObjId",
@@ -48702,7 +48716,7 @@
             "adapterFlushTlb",
             "adapterFlushTlbByAsid",
             "adapterFlushTlbByVAddr",
-            "build",
+            "buildChecked",
             "empty",
             "expectErr",
             "expectOkSt",
@@ -48722,11 +48736,11 @@
         {
           "kind": "def",
           "name": "runWSH13Checks",
-          "line": 1468,
+          "line": 1470,
           "called": [
             "ServiceId",
             "SystemState",
-            "build",
+            "buildChecked",
             "empty",
             "expectErr",
             "serviceRegisterDependency",
@@ -48737,7 +48751,7 @@
         {
           "kind": "def",
           "name": "runWSH15Checks",
-          "line": 1510,
+          "line": 1512,
           "called": [
             "CNode",
             "Capability",
@@ -48748,7 +48762,7 @@
             "SyscallGate",
             "SystemState",
             "ThreadId",
-            "build",
+            "buildChecked",
             "cnodeId",
             "empty",
             "endpointSendDual",
@@ -48765,7 +48779,7 @@
         {
           "kind": "def",
           "name": "runWSH15PlatformChecks",
-          "line": 1594,
+          "line": 1596,
           "called": [
             "CapTarget",
             "Irq",
@@ -48783,13 +48797,14 @@
         {
           "kind": "def",
           "name": "runWSH16LifecycleChecks",
-          "line": 1650,
+          "line": 1652,
           "called": [
             "CSpaceAddr",
             "ObjId",
             "RHTable.ofList",
             "SystemState",
             "build",
+            "buildChecked",
             "empty",
             "expectErr",
             "lifecycleRetypeObject",
@@ -48805,14 +48820,14 @@
         {
           "kind": "def",
           "name": "runWSJ1DecodeChecks",
-          "line": 1849,
+          "line": 1853,
           "called": [
             "RegValue",
             "RegisterFile",
             "SyscallRegisterLayout",
             "SystemState",
             "arm64DefaultLayout",
-            "build",
+            "buildChecked",
             "decodeCapPtr",
             "decodeMsgInfo",
             "decodeSyscallArgs",
@@ -48828,7 +48843,7 @@
         {
           "kind": "def",
           "name": "runWSKGChecks",
-          "line": 1986,
+          "line": 1990,
           "called": [
             "ASID",
             "CSpaceAddr",
@@ -48843,7 +48858,7 @@
             "SyscallDecodeResult",
             "SystemState",
             "arm64DefaultLayout",
-            "build",
+            "buildChecked",
             "cspaceCopy",
             "cspaceMint",
             "decodeCSpaceCopyArgs",
@@ -48876,12 +48891,12 @@
         {
           "kind": "def",
           "name": "runWSL4BlockedThreadChecks",
-          "line": 2247,
+          "line": 2251,
           "called": [
             "ObjId",
             "SystemState",
             "ThreadId",
-            "build",
+            "buildChecked",
             "empty",
             "endpointReceiveDual",
             "endpointSendDual",
@@ -48897,14 +48912,14 @@
         {
           "kind": "def",
           "name": "runWSM3CapTransferNegativeChecks",
-          "line": 2321,
+          "line": 2325,
           "called": [
             "CNode",
             "CSpaceAddr",
             "Capability",
             "ObjId",
             "RHTable.ofList",
-            "build",
+            "buildChecked",
             "empty",
             "ipcTransferSingleCap",
             "none",
@@ -48916,13 +48931,13 @@
         {
           "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
-          "line": 2385,
+          "line": 2389,
           "called": [
             "CPtr",
             "ObjId",
             "RHTable.empty",
             "RHTable.ofList",
-            "build",
+            "buildChecked",
             "cnodeId",
             "cspaceLookupMultiLevel",
             "empty",
@@ -48936,7 +48951,7 @@
         {
           "kind": "def",
           "name": "runWSR2RevocationChecks",
-          "line": 2731,
+          "line": 2735,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -48944,7 +48959,7 @@
             "RHTable.ofList",
             "SystemState",
             "addEdge",
-            "build",
+            "buildChecked",
             "cspaceRevokeCdt",
             "empty",
             "insert",
@@ -48959,7 +48974,7 @@
         {
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
-          "line": 2832,
+          "line": 2836,
           "called": [
             "Capability",
             "InterfaceId",
@@ -48967,7 +48982,7 @@
             "ObjId",
             "ServiceId",
             "ServiceRegistration",
-            "build",
+            "buildChecked",
             "cleanupEndpointServiceRegistrations",
             "empty",
             "expectErr",
@@ -48986,7 +49001,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 2943,
+          "line": 2947,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -49013,14 +49028,14 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3070,
+          "line": 3074,
           "called": [
             "CSpaceAddr",
             "ObjId",
             "RHTable.ofList",
             "SystemState",
             "baseState",
-            "build",
+            "buildChecked",
             "cnodeId",
             "empty",
             "endpointId",
@@ -49043,7 +49058,7 @@
         {
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
-          "line": 3147,
+          "line": 3151,
           "called": [
             "DomainScheduleEntry",
             "IntermediateState",
@@ -49069,7 +49084,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 3214,
+          "line": 3220,
           "called": [
             "runAuditCoverageChecks",
             "runH2NegativeChecks",
@@ -49373,7 +49388,7 @@
             "Slot",
             "SystemState",
             "ThreadId",
-            "build",
+            "buildChecked",
             "empty",
             "none",
             "ofList",
@@ -49407,7 +49422,6 @@
             "RHTable.empty",
             "ThreadId",
             "assertInvariants",
-            "build",
             "buildChecked",
             "buildParameterizedTopology",
             "empty",
@@ -49569,7 +49583,7 @@
             "RHTable.empty",
             "RHTable.ofList",
             "assertInvariants",
-            "build",
+            "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStrict",
             "empty",
@@ -49592,7 +49606,7 @@
             "ObjId",
             "RHTable.empty",
             "RHTable.ofList",
-            "build",
+            "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStrict",
             "empty",
@@ -49619,7 +49633,7 @@
             "RHTable.ofList",
             "all",
             "assertInvariants",
-            "build",
+            "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStrict",
             "empty",
@@ -49644,7 +49658,7 @@
             "RHTable.empty",
             "RHTable.ofList",
             "assertInvariants",
-            "build",
+            "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStreaming",
             "empty",
@@ -49667,7 +49681,7 @@
             "ObjId",
             "RHTable.ofList",
             "assertInvariants",
-            "build",
+            "buildChecked",
             "cspaceRevokeCdtStreaming",
             "empty",
             "expect",
@@ -49689,7 +49703,7 @@
             "RHTable.empty",
             "RHTable.ofList",
             "assertInvariants",
-            "build",
+            "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStreaming",
             "empty",
@@ -49714,7 +49728,7 @@
             "RHTable.ofList",
             "SystemState",
             "assertInvariants",
-            "build",
+            "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdt",
             "cspaceRevokeCdtStreaming",
@@ -50706,13 +50720,14 @@
             "invariant",
             "none",
             "probeInvariantObjectIds",
-            "stateInvariantChecksFor"
+            "stateInvariantChecksFor",
+            "syncThreadStates"
           ]
         },
         {
           "kind": "def",
           "name": "checkEndpointConsistency",
-          "line": 107,
+          "line": 110,
           "called": [
             "SystemState",
             "endpointConsistencyHolds",
@@ -50725,7 +50740,7 @@
         {
           "kind": "inductive",
           "name": "StepOutcome",
-          "line": 124,
+          "line": 127,
           "called": [
             "KernelError",
             "SystemState"
@@ -50734,7 +50749,7 @@
         {
           "kind": "def",
           "name": "classifyError",
-          "line": 137,
+          "line": 140,
           "called": [
             "KernelError",
             "ProbeOp",
@@ -50744,7 +50759,7 @@
         {
           "kind": "def",
           "name": "stepOp",
-          "line": 168,
+          "line": 178,
           "called": [
             "CSpaceAddr",
             "ProbeOp",
@@ -50752,6 +50767,7 @@
             "SystemState",
             "ThreadId",
             "classifyError",
+            "cspaceCopy",
             "cspaceLookupSlot",
             "defaultLabelingContext",
             "empty",
@@ -50771,13 +50787,13 @@
         {
           "kind": "structure",
           "name": "ProbeStats",
-          "line": 216,
+          "line": 231,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:223>",
-          "line": 223,
+          "name": "<anonymous:instance:238>",
+          "line": 238,
           "called": [
             "ProbeStats"
           ]
@@ -50785,7 +50801,7 @@
         {
           "kind": "def",
           "name": "runProbeLoop",
-          "line": 226,
+          "line": 241,
           "called": [
             "ProbeStats",
             "SystemState",
@@ -50800,13 +50816,13 @@
         {
           "kind": "def",
           "name": "pickThreadCount",
-          "line": 250,
+          "line": 265,
           "called": []
         },
         {
           "kind": "def",
           "name": "runProbe",
-          "line": 253,
+          "line": 268,
           "called": [
             "ProbeStats",
             "pickThreadCount",
@@ -50817,7 +50833,7 @@
         {
           "kind": "def",
           "name": "parseNatArg",
-          "line": 264,
+          "line": 279,
           "called": [
             "none",
             "toNat"
@@ -50826,7 +50842,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 269,
+          "line": 284,
           "called": [
             "parseNatArg",
             "runProbe",

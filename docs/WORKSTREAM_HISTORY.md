@@ -21,9 +21,9 @@ through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
-WS-Y Phases Y1–Y2 complete. Phase Y3 planned.
+WS-Y Phases Y1–Y3 complete. **WS-Y PORTFOLIO COMPLETE.**
 
-### WS-Y workstream (v0.22.22 Final Audit Remediation) — IN PROGRESS
+### WS-Y workstream (v0.22.22 Final Audit Remediation) — COMPLETE
 
 WS-Y addresses 14 unique actionable findings from a comprehensive full-kernel
 audit of v0.22.22 (2 MED, 8 LOW, 4 INFO) across 3 phases (Y1–Y3) with 20
@@ -63,6 +63,21 @@ atomic sub-tasks. Plan:
   **INFO-06**: `collectQueueMembers_length_bounded` fuel bound lemma added with
   `TPI-DOC` tracking annotation.
   Zero sorry/axiom. `test_smoke.sh` green.
+
+- **Y3 (Test Infrastructure & Documentation) COMPLETE** (v0.22.26): 6
+  sub-tasks (Y3-A through Y3-F). Resolves MED-02, LOW-07, LOW-08:
+  **MED-02**: 59 of 62 `.build` calls across 3 test suites migrated to
+  `.buildChecked` (InformationFlowSuite: 15/15, NegativeStateSuite: 35/38,
+  OperationChainSuite: 9/9). 3 calls retained with per-call annotations for
+  deliberately malformed negative test states.
+  **LOW-07**: Duplicate `awaitReceive` probe replaced with `capCopy`
+  (`cspaceCopy`), covering 7 truly distinct operation families.
+  `checkStateInvariants` fixed to sync threadState before checking.
+  **LOW-08**: `assertStateInvariantsFor` docstring documenting V8-G7 design
+  (inference self-consistency, not drift detection). Companion function
+  `assertStateInvariantsWithoutSync` added for drift-detection use cases.
+  Zero sorry/axiom. `test_full.sh` green.
+  **WS-Y PORTFOLIO COMPLETE.**
 
 ### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — COMPLETE
 
