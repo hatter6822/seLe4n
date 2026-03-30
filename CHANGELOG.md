@@ -1,3 +1,38 @@
+## [0.22.26] — Y3: Test Infrastructure & Documentation
+
+Phase Y3 of WS-Y final audit remediation. Resolves 3 findings (MED-02,
+LOW-07, LOW-08) from the v0.22.22 comprehensive full-kernel audit.
+**WS-Y PORTFOLIO COMPLETE.**
+
+- **Y3-A (MED-02, part 1)**: All 15 `.build` calls in `InformationFlowSuite.lean`
+  migrated to `.buildChecked`. Two states with non-TCB runnable entries fixed
+  (runnable list removed — irrelevant to security projection tests).
+- **Y3-B (MED-02, part 2)**: 35 of 38 `.build` calls in `NegativeStateSuite.lean`
+  migrated to `.buildChecked`. 3 calls retained as `.build` with per-call
+  annotations explaining the deliberate invariant violation:
+  - 2× malformed runnable list (tid 77 references non-existent TCB) for
+    scheduler error path testing (check 3).
+  - 1× lifecycle metadata mismatch (TCB vs endpoint) for retype error path
+    testing (check 2b).
+- **Y3-C (MED-02, part 3)**: All 9 `.build` calls in `OperationChainSuite.lean`
+  migrated to `.buildChecked` (1 pre-existing `.buildChecked` preserved).
+- **Y3-D (LOW-07)**: Duplicate `awaitReceive` probe operation replaced with
+  `capCopy` (`cspaceCopy`), exercising the CSpace copy subsystem. Probe now
+  covers 7 truly distinct operation families: IPC send, IPC receive, capability
+  copy, capability lookup, notification signal, notification wait, schedule.
+  `classifyError` updated to handle `targetSlotOccupied` errors.
+  `checkStateInvariants` fixed to call `syncThreadStates` before checking
+  (matching `assertStateInvariantsFor` behavior).
+- **Y3-E (LOW-08)**: `assertStateInvariantsFor` docstring added documenting
+  V8-G7 design: validates inference self-consistency (idempotency of
+  `syncThreadStates`), not operational drift. Companion function
+  `assertStateInvariantsWithoutSync` added for drift detection when needed.
+- **Y3-F**: MED-01 test fixture and documentation changes verified as already
+  landed in Y1 (v0.22.23). `configDefaultTimeSlice` correctly used in
+  `frozenTimerTick` tests (TPH-006c verifies custom value 12).
+
+Zero sorry/axiom. All modules build. `test_full.sh` green.
+
 ## [0.22.25] — Y2-D+: VSpaceRoot BEq Reflexivity (Real Proof)
 
 Replaces the `True := trivial` placeholder in `VSpaceRoot.beq_converse_limitation`

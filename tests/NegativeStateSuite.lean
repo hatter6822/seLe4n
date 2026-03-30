@@ -772,7 +772,7 @@ private def runNegativeChecks : IO Unit := do
       })
       |>.withRunnable [⟨8⟩]
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 7))
-      |>.build)
+      |>.buildChecked)
   let (_, stPriorityScheduled) ← expectOkSt "schedule chooses highest-priority runnable"
     (SeLe4n.Kernel.schedule schedPriorityState)
   if stPriorityScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
@@ -846,7 +846,7 @@ private def runNegativeChecks : IO Unit := do
       })
       |>.withRunnable [⟨12⟩, ⟨10⟩, ⟨11⟩]
       |>.withCurrent none
-      |>.build)
+      |>.buildChecked)
       |> fun st => { st with scheduler := { st.scheduler with activeDomain := ⟨1⟩ } }
   let (_, stMixedDomainScheduled) ← expectOkSt "schedule ignores higher-priority cross-domain runnable"
     (SeLe4n.Kernel.schedule mixedDomainFifoState)
@@ -944,6 +944,8 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError s!"yield current thread expected tid 8, got {toString stYielded.scheduler.current}"
 
+  -- Uses .build intentionally: runnable [tid 77] references non-existent TCB
+  -- (check 3 would reject). Tests scheduler handling of malformed runnable list.
   let malformedSched : SystemState :=
     (BootstrapBuilder.empty
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
@@ -988,7 +990,7 @@ private def runNegativeChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withService svcIdA svcEntryA
       |>.withService svcIdB svcEntryB
-      |>.build)
+      |>.buildChecked)
 
   -- Self-dependency should be rejected
   expectErr "service dependency self-loop rejection"
@@ -1079,7 +1081,7 @@ private def runNegativeChecks : IO Unit := do
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
-      |>.build)
+      |>.buildChecked)
   expectErr "S5-G misaligned base for VSpace root"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
       (.vspaceRoot { asid := ⟨0⟩, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }) 4096 f2MisalignedState)
@@ -1128,7 +1130,7 @@ private def runH2NegativeChecks : IO Unit := do
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
       |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
-      |>.build)
+      |>.buildChecked)
   expectErr "H2 childId collision with untyped child"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨60⟩
       (.endpoint {}) 64 h2UntypedWithChild)
@@ -1286,7 +1288,7 @@ def runWSH11Checks : IO Unit := do
   let vspaceOid : SeLe4n.ObjId := ⟨20⟩
   let st := (BootstrapBuilder.empty
     |>.withObject vspaceOid (.vspaceRoot { asid := asid, mappings := {} })
-    |>.withLifecycleObjectType vspaceOid .vspaceRoot).build
+    |>.withLifecycleObjectType vspaceOid .vspaceRoot).buildChecked
 
   -- H-02: W^X violation must be rejected
   let wxPerms : PagePermissions := { write := true, execute := true }
@@ -1415,7 +1417,7 @@ def runWSH11Checks : IO Unit := do
     |>.withObject vspaceOid (.vspaceRoot { asid := asid, mappings := {} })
     |>.withLifecycleObjectType vspaceOid .vspaceRoot
     |>.withObject vspaceOid2 (.vspaceRoot { asid := asid2, mappings := {} })
-    |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).build
+    |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).buildChecked
   match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st2Asid with
   | .error err => throw <| IO.userError s!"WS-H11 cross-ASID map failed: {toString err}"
   | .ok (_, stCross) =>
@@ -1475,7 +1477,7 @@ private def runWSH13Checks : IO Unit := do
         dependencies := []
         isolatedFrom := []
       }
-      |>.build)
+      |>.buildChecked)
   expectErr "H13 self-loop dependency rejection"
     (SeLe4n.Kernel.serviceRegisterDependency svcA svcA svcSelfLoopState)
     .cyclicDependency
@@ -1498,7 +1500,7 @@ private def runWSH13Checks : IO Unit := do
         dependencies := []
         isolatedFrom := []
       }
-      |>.build)
+      |>.buildChecked)
   expectErr "H13 cyclic dependency rejection"
     (SeLe4n.Kernel.serviceRegisterDependency svcB svcA svcCyclicState)
     .cyclicDependency
@@ -1526,7 +1528,7 @@ private def runWSH15Checks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject cnodeId (.cnode cn)
       |>.withObject epId ep
-      |>.build)
+      |>.buildChecked)
 
   -- H15-NEG-01: syscallLookupCap with non-existent CSpace root
   let badRootGate : SeLe4n.Kernel.SyscallGate := {
@@ -1692,7 +1694,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16TcbId .tcb
       |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
       |>.withLifecycleCapabilityRef h16CleanupSlot (.object h16TargetId)
-      |>.build)
+      |>.buildChecked)
 
   -- H16-NEG-01: lifecycleRetypeObject with non-existent target → objectNotFound
   expectErr "H16 lifecycleRetypeObject non-existent target"
@@ -1717,6 +1719,8 @@ def runWSH16LifecycleChecks : IO Unit := do
           })
         ]
       })
+      -- Uses .build intentionally: lifecycleObjectType .tcb mismatches actual .endpoint
+      -- (check 2b would reject). Tests kernel handling of metadata mismatch.
       |>.withLifecycleObjectType h16TargetId .tcb  -- mismatch: object is endpoint but metadata says tcb
       |>.withLifecycleObjectType h16CnodeId .cnode
       |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
@@ -1777,7 +1781,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
       |>.withLifecycleObjectType h16ExhaustedCnodeId .cnode
       |>.withLifecycleCapabilityRef h16ExhaustedAuthSlot (.object h16ExhaustedUntypedId)
-      |>.build)
+      |>.buildChecked)
   expectErr "H16 retypeFromUntyped exhausted untyped"
     (SeLe4n.Kernel.retypeFromUntyped h16ExhaustedAuthSlot h16ExhaustedUntypedId ⟨162⟩
       (.endpoint {}) 64 h16ExhaustedState)
@@ -1821,7 +1825,7 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16DeviceUntypedId .untyped
       |>.withLifecycleObjectType h16DeviceCnodeId .cnode
       |>.withLifecycleCapabilityRef h16DeviceAuthSlot (.object h16DeviceUntypedId)
-      |>.build)
+      |>.buildChecked)
   expectErr "H16 retypeFromUntyped device untyped restriction"
     (SeLe4n.Kernel.retypeFromUntyped h16DeviceAuthSlot h16DeviceUntypedId ⟨165⟩
       (.endpoint {}) 1024 h16DeviceState)
@@ -1964,7 +1968,7 @@ def runWSJ1DecodeChecks : IO Unit := do
     throw <| IO.userError s!"K-A: expected msgRegs.size = 4 (ARM64 layout), got {decoded.msgRegs.size}"
 
   -- J1-NEG-18: Full syscallEntry with no current thread → illegalState
-  let emptyState : SystemState := BootstrapBuilder.empty.build
+  let emptyState : SystemState := BootstrapBuilder.empty.buildChecked
   expectErr "J1 syscallEntry no current thread"
     (SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 emptyState)
     .illegalState
@@ -2027,7 +2031,7 @@ def runWSKGChecks : IO Unit := do
     .invalidMessageInfo
 
   -- K-G-NEG-05: cspaceMint dispatch fails — CNode not found
-  let noCnodeState : SystemState := BootstrapBuilder.empty.build
+  let noCnodeState : SystemState := BootstrapBuilder.empty.buildChecked
   let mintAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨1⟩ }
   expectErr "K-G-NEG-05 cspaceMint CNode not found"
@@ -2042,7 +2046,7 @@ def runWSKGChecks : IO Unit := do
         slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16  -- no slots occupied
       })
       |>.withLifecycleObjectType ⟨200⟩ .cnode
-      |>.build)
+      |>.buildChecked)
   let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨0⟩ }
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨1⟩ }
   expectErr "K-G-NEG-06 cspaceCopy source slot empty"
@@ -2070,7 +2074,7 @@ def runWSKGChecks : IO Unit := do
     .invalidTypeTag
 
   -- K-G-NEG-09: lifecycleRetypeDirect with non-existent target → objectNotFound
-  let emptyObjState : SystemState := BootstrapBuilder.empty.build
+  let emptyObjState : SystemState := BootstrapBuilder.empty.buildChecked
   let authCap : Capability := {
     target := .object ⟨500⟩
     rights := AccessRightSet.ofList [.read, .write]
@@ -2085,7 +2089,7 @@ def runWSKGChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨300⟩ (.endpoint {})
       |>.withLifecycleObjectType ⟨300⟩ .endpoint
-      |>.build)
+      |>.buildChecked)
   let wrongAuthCap : Capability := {
     target := .object ⟨999⟩  -- targets different object
     rights := AccessRightSet.ofList [.read, .write]
@@ -2112,7 +2116,7 @@ def runWSKGChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨400⟩ (.vspaceRoot { asid := vspaceAsid, mappings := {} })
       |>.withLifecycleObjectType ⟨400⟩ .vspaceRoot
-      |>.build)
+      |>.buildChecked)
   let wxPerms := PagePermissions.ofNat 6  -- bits 1+2 = write+execute
   expectErr "K-G-NEG-12 vspaceMap W^X violation"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked vspaceAsid ⟨4096⟩ ⟨8192⟩ wxPerms) vspaceState)
@@ -2141,7 +2145,7 @@ def runWSKGChecks : IO Unit := do
         dependencies := []
         isolatedFrom := []
       }
-      |>.build)
+      |>.buildChecked)
   unless (SeLe4n.Model.lookupService registryState svcPolicyId).isSome do
     throw <| IO.userError "K-G-NEG-14: expected service to be present in registry"
   IO.println "negative check passed [K-G-NEG-14 service registry lookup present]"
@@ -2267,7 +2271,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
         ipcState := .ready
       })
       |>.withRunnable [⟨7⟩, ⟨8⟩]
-    ).build
+    ).buildChecked
 
   -- Block thread 7 on send (no receiver → enqueues on sendQ)
   let (_, stSendBlocked) ← expectOkSt "L4-C setup: send blocks thread 7"
@@ -2347,7 +2351,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap)]
         })
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
-      |>.build)
+      |>.buildChecked)
 
   -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot
   let senderSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := senderRoot, slot := ⟨0⟩ }
@@ -2401,7 +2405,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           ]
         })
       |>.withObject guardOnlyTarget (.endpoint {})
-      |>.build)
+      |>.buildChecked)
 
   -- Correct guard: addr=0xA (top 4 bits encode guard 0xA)
   let resultOk := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot ⟨0xA⟩ 4 stGuardOnly
@@ -2440,7 +2444,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           ]
         })
       |>.withObject leafTarget (.endpoint {})
-      |>.build)
+      |>.buildChecked)
 
   let resultLeaf := SeLe4n.Kernel.resolveCapAddress leafRoot ⟨5⟩ 4 stLeaf
   match resultLeaf with
@@ -2464,7 +2468,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           radixWidth := 4
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
-      |>.build)
+      |>.buildChecked)
 
   let resultPartial := SeLe4n.Kernel.resolveCapAddress partialRoot ⟨0⟩ 4 stPartial
   match resultPartial with
@@ -2538,7 +2542,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           ]
         })
       |>.withObject lvl2Target (.endpoint {})
-      |>.build)
+      |>.buildChecked)
 
   -- Correct: all guards match, should resolve to lvl2 slot 7
   let resultCorrect := SeLe4n.Kernel.resolveCapAddress lvl0 ⟨0xC47⟩ 12 stMidGuard
@@ -2597,7 +2601,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
     ]
   })
   builder := builder.withObject maxDepthLeafTarget (.endpoint {})
-  let stMaxDepth := builder.build
+  let stMaxDepth := builder.buildChecked
 
   -- Resolve with 64 bits: 0x0101010101010101
   let addr64 : SeLe4n.CPtr := ⟨0x0101010101010101⟩
@@ -2652,7 +2656,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           radixWidth := 4
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16  -- all slots empty
         })
-      |>.build)
+      |>.buildChecked)
 
   -- addr=0xC0 (10 bits): lvl0 shift=(10-4)=6, 0xC0>>>6=3, slot 3 → lvl1.
   -- At lvl1: bits=6, shift=(6-4)=2, 0xC0>>>2=48, slot=48%16=0. Remaining=2>0.
@@ -2682,7 +2686,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           ]
         })
       |>.withObject nonCnodeMidEp (.endpoint {})
-      |>.build)
+      |>.buildChecked)
 
   -- addr=0x15 (8 bits): lvl0 slot = 1 → cap targets endpoint, recurse with 4 bits
   -- endpoint is not a CNode → objectNotFound
@@ -2741,7 +2745,7 @@ def runWSR2RevocationChecks : IO Unit := do
             depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
             slots := SeLe4n.Kernel.RobinHood.RHTable.ofList []
           })
-      |>.build)
+      |>.buildChecked)
   let r2Seed := { r2State with
     cdtNodeSlot := r2State.cdtNodeSlot.insert r2NodeId r2BadSlot
     cdtSlotNode := r2State.cdtSlotNode.insert r2BadSlot r2NodeId
@@ -2842,7 +2846,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
   let r4State := (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withLifecycleObjectType epId .endpoint
-      |>.build)
+      |>.buildChecked)
   match SeLe4n.Kernel.registerInterface iface r4State with
   | .error _ => throw <| IO.userError "R4-NEG-01: interface registration unexpectedly failed"
   | .ok (_, stIface) =>
@@ -2862,7 +2866,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
           tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
           cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ })
         |>.withLifecycleObjectType tcbId .tcb
-        |>.build)
+        |>.buildChecked)
     match SeLe4n.Kernel.registerInterface iface r4State2 with
     | .error _ => throw <| IO.userError "R4-NEG-02: interface registration unexpectedly failed"
     | .ok (_, stIface2) =>
@@ -2879,7 +2883,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
     let r4State3 := (BootstrapBuilder.empty
         |>.withObject epForRetype (.endpoint {})
         |>.withLifecycleObjectType epForRetype .endpoint
-        |>.build)
+        |>.buildChecked)
     -- Register interface and service on this endpoint
     match SeLe4n.Kernel.registerInterface iface r4State3 with
     | .error _ => throw <| IO.userError "R4-NEG-03: interface registration failed"
@@ -2916,7 +2920,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
           dependencies := []
           isolatedFrom := []
         }
-        |>.build)
+        |>.buildChecked)
     -- Run removeDependenciesOf to clean svcB from the graph
     let stCleaned4 := SeLe4n.Kernel.removeDependenciesOf r4State4 svcB
     -- Verify svcB is removed from services
@@ -3121,7 +3125,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       |>.withLifecycleObjectType exhaustedUntypedId .untyped
       |>.withLifecycleObjectType exhaustedAuthCnode .cnode
       |>.withLifecycleCapabilityRef exhaustedAuthSlot (.object exhaustedUntypedId)
-      |>.build)
+      |>.buildChecked)
   expectErr "S2-H-04 retypeFromUntyped region exhausted"
     (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩
       (.endpoint {}) 64 exhaustedState)
@@ -3191,6 +3195,8 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     throw <| IO.userError s!"X2-D-02: expected default PA width 52, got {bootedState.state.machine.physicalAddressWidth}"
 
   -- X2-I: scheduleChecked on malformed state returns schedulerInvariantViolation
+  -- Uses .build intentionally: runnable [tid 77] references non-existent TCB
+  -- (check 3 would reject). Tests scheduleChecked handling of malformed state.
   let malformedSt : SystemState :=
     (BootstrapBuilder.empty
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]

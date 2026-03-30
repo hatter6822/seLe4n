@@ -374,6 +374,10 @@ def stateInvariantChecks (st : SystemState) : List (String × Bool) :=
 private def failedChecks (checks : List (String × Bool)) : List String :=
   checks.filterMap fun (label, ok) => if ok then none else some label
 
+/-- Check state invariants for the given object IDs, reporting failures as IO errors.
+
+NOTE: Validates inference self-consistency (idempotency of `syncThreadStates`),
+not operational drift.  See V8-G7 design note at `threadStateConsistentChecks`. -/
 def assertStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId) (st : SystemState)
     (serviceIds : List ServiceId := []) : IO Unit := do
   -- V8-G: Sync threadState fields before checking, since state may come from
@@ -387,5 +391,17 @@ def assertStateInvariantsFor (label : String) (objectIds : List SeLe4n.ObjId) (s
 
 def assertStateInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
+
+/-- Like `assertStateInvariantsFor` but skips the `syncThreadStates` step,
+enabling detection of operational drift between `threadState` fields and
+runtime queue membership.  Use when you want to verify that a kernel
+operation maintained threadState consistency on its own. -/
+def assertStateInvariantsWithoutSync (label : String) (objectIds : List SeLe4n.ObjId)
+    (st : SystemState) (serviceIds : List ServiceId := []) : IO Unit := do
+  let failures := failedChecks (stateInvariantChecksFor objectIds st serviceIds)
+  if failures.isEmpty then
+    pure ()
+  else
+    throw <| IO.userError s!"{label}: invariant checks failed (without sync): {reprStr failures}"
 
 end SeLe4n.Testing
