@@ -1,3 +1,35 @@
+## [0.22.23] — Y1: Frozen State & Foundation Fixes
+
+Phase Y1 of WS-Y final audit remediation. Resolves 4 findings (MED-01,
+LOW-01, LOW-02, LOW-03) from the v0.22.22 comprehensive full-kernel audit.
+
+- **Y1-A/B (MED-01)**: `configDefaultTimeSlice` field added to
+  `FrozenSchedulerState` and transferred in `freezeScheduler`. Platform-tuned
+  time-slice value now survives the builder→frozen transition.
+  `freeze_preserves_configDefaultTimeSlice` proof ensures round-trip correctness.
+- **Y1-C (MED-01)**: `frozenTimerTick` updated to use
+  `st.scheduler.configDefaultTimeSlice` instead of hardcoded
+  `frozenDefaultTimeSlice` constant. The constant is retained but deprecated.
+- **Y1-D (LOW-01)**: `AccessRightSet.mk` raw constructor documented as
+  internal-only with prominent warning. External uses migrated to `ofNat`
+  (safe, masked constructor). `eta` simp lemma added for proof reconstruction.
+  `decodeCSpaceMintArgs` now uses `AccessRightSet.ofNat` at the decode boundary
+  to mask untrusted register values to the valid 5-bit range. Roundtrip proof
+  updated with `hRights : args.rights.valid` hypothesis.
+- **Y1-E (LOW-02)**: `descendantsOf` BFS visited-set optimized from O(n²)
+  `List.Mem` to O(1) `Std.HashSet` membership checks. All 12 supporting
+  theorems updated with visited/acc sync invariant. `foldl_insert_contains`
+  and `sync_after_extend` helper lemmas added.
+- **Y1-F/G (LOW-03)**: 7 missing named accessors added to `allTablesInvExtK`
+  decomposition (cdtSlotNode, cdtNodeSlot, cdtChildMap, cdtParentMap,
+  byPriority, threadPriority, membership). All 16 conjuncts now have named
+  accessors with completeness documentation and raw-projection warning.
+- **Audit hardening**: TPH-006b test updated to verify time-slice reset against
+  `configDefaultTimeSlice` field (not hardcoded constant). TPH-006c added with
+  non-default config value (12) to semantically verify the MED-01 fix path.
+
+Zero sorry/axiom. All tests pass.
+
 ## [0.22.22] — X5: Documentation, Hardening & Low-Severity
 
 Phase X5 of WS-X pre-release audit remediation. Resolves 9 findings (H-1, H-9,

@@ -46,6 +46,7 @@ private def emptyFrozenState : FrozenSystemState := {
     domainTimeRemaining := 5
     domainSchedule := []
     domainScheduleIndex := 0
+    configDefaultTimeSlice := 5
   }
   objectTypes := freezeMap (RHTable.empty 16)
   capabilityRefs := freezeMap (RHTable.empty 16)
@@ -146,7 +147,7 @@ private def fo007_cspaceLookup : IO Unit := do
   -- Create a CNodeRadix with one slot
   let cap : Capability := {
     target := .object ⟨42⟩
-    rights := ⟨7⟩
+    rights := .ofNat 7
     badge := none
   }
   let radix := (CNodeRadix.empty 0 0 4).insert ⟨3⟩ cap
@@ -202,7 +203,7 @@ private def fo011_serviceLookup : IO Unit := do
     sid := ⟨1⟩
     iface := { ifaceId := ⟨1⟩, methodCount := 1, maxMessageSize := 64,
                maxResponseSize := 64, requiresGrant := false }
-    endpointCap := { target := .object ⟨42⟩, rights := ⟨7⟩, badge := none }
+    endpointCap := { target := .object ⟨42⟩, rights := .ofNat 7, badge := none }
   }
   let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨1⟩ reg
   let fst := { emptyFrozenState with serviceRegistry := freezeMap regRt }
@@ -223,7 +224,7 @@ private def fo012_serviceLookupMissing : IO Unit := do
 
 /-- FO-013: frozenCspaceDelete — erase slot from frozen CNode -/
 private def fo013_cspaceDelete : IO Unit := do
-  let cap : Capability := { target := .object ⟨42⟩, rights := ⟨7⟩, badge := none }
+  let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 7, badge := none }
   let radix := (CNodeRadix.empty 0 0 4).insert ⟨3⟩ cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
@@ -373,7 +374,7 @@ private def fo020_frozenCspaceMint : IO Unit := do
   let objs := [(cnodeId, FrozenKernelObject.cnode frozenCNode), (epId, FrozenKernelObject.endpoint {})]
   let objsMap := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
   let st0 : FrozenSystemState := { emptyFrozenState with objects := freezeMap objsMap }
-  let testCap : Capability := { target := .object epId, rights := ⟨7⟩, badge := none }
+  let testCap : Capability := { target := .object epId, rights := .ofNat 7, badge := none }
   match frozenCspaceMint cnodeId ⟨0⟩ testCap st0 with
   | .ok ((), st1) =>
     -- Verify slot 0 now has the cap

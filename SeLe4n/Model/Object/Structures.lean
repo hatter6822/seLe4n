@@ -971,18 +971,22 @@ def removeNode (cdt : CapDerivationTree) (node : CdtNodeId)
 Uses fuel = edges.length to ensure termination and completeness
 for acyclic trees.
 WS-G8/F-P14: Uses `childrenOf` (O(1) via `childMap`) instead of inline
-edge scan, yielding O(N+E) total traversal. -/
+edge scan, yielding O(N+E) total traversal.
+Y1-E: Uses `Std.HashSet` for O(1) visited-set membership checks (was O(n²)
+with `List.Mem`). The `visited` parameter mirrors `acc` for membership;
+`acc` remains the result list. -/
 def descendantsOf (cdt : CapDerivationTree) (root : CdtNodeId)
     : List CdtNodeId :=
-  go cdt.edges.length [root] []
+  go cdt.edges.length [root] {} []
 where
-  go : Nat → List CdtNodeId → List CdtNodeId → List CdtNodeId
-    | 0, _, acc => acc
-    | _ + 1, [], acc => acc
-    | fuel + 1, node :: rest, acc =>
+  go : Nat → List CdtNodeId → Std.HashSet CdtNodeId → List CdtNodeId → List CdtNodeId
+    | 0, _, _, acc => acc
+    | _ + 1, [], _, acc => acc
+    | fuel + 1, node :: rest, visited, acc =>
         let children := cdt.childrenOf node
-        let newChildren := children.filter (fun c => c ∉ acc)
-        go fuel (rest ++ newChildren) (acc ++ newChildren)
+        let newChildren := children.filter (fun c => !visited.contains c)
+        let visited' := newChildren.foldl (fun s c => s.insert c) visited
+        go fuel (rest ++ newChildren) visited' (acc ++ newChildren)
 
 /-- CDT acyclicity: no node reaches itself through derivation edges. -/
 def acyclic (cdt : CapDerivationTree) : Prop :=
@@ -1955,6 +1959,46 @@ theorem mk_checked_cdtMapsConsistent
   hConsistent
 
 -- ============================================================================
+-- Y1-E: HashSet/List sync lemma for descendantsOf proofs
+-- ============================================================================
+
+/-- Y1-E: After folding `insert` over `newChildren`, the resulting HashSet
+    contains exactly the elements of the original HashSet plus the new elements.
+    Used to maintain the visited/acc sync invariant through BFS iterations. -/
+private theorem foldl_insert_contains
+    (visited : Std.HashSet CdtNodeId) (newChildren : List CdtNodeId) (x : CdtNodeId) :
+    (newChildren.foldl (fun s c => s.insert c) visited).contains x = true ↔
+    visited.contains x = true ∨ x ∈ newChildren := by
+  induction newChildren generalizing visited with
+  | nil => simp [List.foldl]
+  | cons c cs ih =>
+    simp only [List.foldl, List.mem_cons]
+    rw [ih]
+    constructor
+    · rintro (h | h)
+      · rw [HashSet_contains_insert_iff] at h
+        rcases h with rfl | h
+        · right; left; rfl
+        · left; exact h
+      · right; right; exact h
+    · rintro (h | rfl | h)
+      · left; rw [HashSet_contains_insert_iff]; right; exact h
+      · left; exact HashSet_contains_insert_self _ _
+      · right; exact h
+
+/-- Y1-E: Sync invariant maintenance — if `visited` and `acc` are in sync,
+    then extending both with `newChildren` preserves sync. -/
+private theorem sync_after_extend
+    (visited : Std.HashSet CdtNodeId) (acc newChildren : List CdtNodeId)
+    (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
+    ∀ x, x ∈ (acc ++ newChildren) ↔
+    (newChildren.foldl (fun s c => s.insert c) visited).contains x = true := by
+  intro x
+  rw [List.mem_append, foldl_insert_contains]
+  exact ⟨fun h => h.elim (fun ha => .inl ((hSync x).mp ha)) .inr,
+         fun h => h.elim (fun hv => .inl ((hSync x).mpr hv)) .inr⟩
+
+-- ============================================================================
 -- T4-G: descendantsOf fuel sufficiency
 -- ============================================================================
 
@@ -1967,25 +2011,28 @@ inductive CdtChildReachable (cdt : CapDerivationTree) : CdtNodeId → CdtNodeId 
 
 /-- T4-G: Unfolding lemma for descendantsOf.go at a cons queue step. -/
 private theorem descendantsOf_go_cons (cdt : CapDerivationTree) (fuel : Nat)
-    (node : CdtNodeId) (rest acc : List CdtNodeId) :
-    descendantsOf.go cdt (fuel + 1) (node :: rest) acc =
+    (node : CdtNodeId) (rest : List CdtNodeId)
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId) :
+    descendantsOf.go cdt (fuel + 1) (node :: rest) visited acc =
     descendantsOf.go cdt fuel
-      (rest ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
-      (acc ++ (cdt.childrenOf node).filter (fun c => c ∉ acc)) := by
+      (rest ++ (cdt.childrenOf node).filter (fun c => !visited.contains c))
+      ((cdt.childrenOf node).filter (fun c => !visited.contains c) |>.foldl (fun s c => s.insert c) visited)
+      (acc ++ (cdt.childrenOf node).filter (fun c => !visited.contains c)) := by
   rfl
 
 /-- T4-G: Unfolding lemma for descendantsOf.go at an empty queue. -/
 private theorem descendantsOf_go_nil (cdt : CapDerivationTree) (fuel : Nat)
-    (acc : List CdtNodeId) :
-    descendantsOf.go cdt (fuel + 1) [] acc = acc := by
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId) :
+    descendantsOf.go cdt (fuel + 1) [] visited acc = acc := by
   rfl
 
 /-- T4-G: BFS accumulator monotonicity — `descendantsOf.go` only adds to acc,
 never removes. -/
 theorem descendantsOf_go_acc_subset
-    (cdt : CapDerivationTree) (fuel : Nat) (queue acc : List CdtNodeId) :
-    ∀ x ∈ acc, x ∈ descendantsOf.go cdt fuel queue acc := by
-  induction fuel generalizing queue acc with
+    (cdt : CapDerivationTree) (fuel : Nat) (queue : List CdtNodeId)
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId) :
+    ∀ x ∈ acc, x ∈ descendantsOf.go cdt fuel queue visited acc := by
+  induction fuel generalizing queue visited acc with
   | zero => intro x hx; exact hx
   | succ n ih =>
     intro x hx
@@ -1993,25 +2040,32 @@ theorem descendantsOf_go_acc_subset
     | nil => rw [descendantsOf_go_nil]; exact hx
     | cons node rest =>
       rw [descendantsOf_go_cons]
-      exact ih (rest ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
-        (acc ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
+      exact ih (rest ++ (cdt.childrenOf node).filter (fun c => !visited.contains c))
+        ((cdt.childrenOf node).filter (fun c => !visited.contains c) |>.foldl (fun s c => s.insert c) visited)
+        (acc ++ (cdt.childrenOf node).filter (fun c => !visited.contains c))
         x (List.mem_append_left _ hx)
 
 /-- T4-G: Direct children of root appear in descendantsOf result when
 fuel ≥ 1 and root is in the BFS queue. -/
 theorem descendantsOf_go_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (rest acc : List CdtNodeId)
+    (cdt : CapDerivationTree) (fuel : Nat) (rest : List CdtNodeId)
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
     (root : CdtNodeId) (c : CdtNodeId)
     (hChild : c ∈ cdt.childrenOf root)
-    (hNotInAcc : c ∉ acc) :
-    c ∈ descendantsOf.go cdt (fuel + 1) (root :: rest) acc := by
+    (hNotInAcc : c ∉ acc)
+    (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
+    c ∈ descendantsOf.go cdt (fuel + 1) (root :: rest) visited acc := by
   rw [descendantsOf_go_cons]
-  have hInNew : c ∈ (cdt.childrenOf root).filter (fun x => x ∉ acc) := by
-    simp only [List.mem_filter, decide_eq_true_eq]
-    exact ⟨hChild, hNotInAcc⟩
-  have hInNewAcc : c ∈ acc ++ (cdt.childrenOf root).filter (fun x => x ∉ acc) :=
+  have hNotVis : visited.contains c = false := by
+    cases h : visited.contains c
+    · rfl
+    · exact absurd ((hSync c).mpr h) hNotInAcc
+  have hInNew : c ∈ (cdt.childrenOf root).filter (fun x => !visited.contains x) := by
+    simp only [List.mem_filter]
+    exact ⟨hChild, by simp [hNotVis]⟩
+  have hInNewAcc : c ∈ acc ++ (cdt.childrenOf root).filter (fun x => !visited.contains x) :=
     List.mem_append_right _ hInNew
-  exact descendantsOf_go_acc_subset cdt fuel _ _ c hInNewAcc
+  exact descendantsOf_go_acc_subset cdt fuel _ _ _ c hInNewAcc
 
 /-- T4-G: Direct children of the root are in the descendantsOf result,
 provided the CDT has at least one edge (ensuring fuel ≥ 1). -/
@@ -2023,20 +2077,22 @@ theorem descendantsOf_children_subset
   simp only [descendantsOf]
   obtain ⟨n, hn⟩ : ∃ n, cdt.edges.length = n + 1 := ⟨cdt.edges.length - 1, by omega⟩
   rw [hn]
-  exact descendantsOf_go_children_found cdt n [] [] root c hChild (fun h => nomatch h)
+  exact descendantsOf_go_children_found cdt n [] {} [] root c hChild
+    (fun h => nomatch h) (fun x => Iff.intro (fun h => nomatch h) (fun h => by simp at h))
 
 /-- T4-G: BFS monotonicity — adding more fuel does not lose results.
 If a node is found with fuel `n`, it is also found with fuel `n + k`. -/
 theorem descendantsOf_go_fuel_mono
-    (cdt : CapDerivationTree) (n : Nat) (queue acc : List CdtNodeId)
-    (x : CdtNodeId) (hIn : x ∈ descendantsOf.go cdt n queue acc) :
-    ∀ k, x ∈ descendantsOf.go cdt (n + k) queue acc := by
-  induction n generalizing queue acc with
+    (cdt : CapDerivationTree) (n : Nat) (queue : List CdtNodeId)
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
+    (x : CdtNodeId) (hIn : x ∈ descendantsOf.go cdt n queue visited acc) :
+    ∀ k, x ∈ descendantsOf.go cdt (n + k) queue visited acc := by
+  induction n generalizing queue visited acc with
   | zero =>
     simp only [descendantsOf.go] at hIn
     intro k
     have : 0 + k = k := Nat.zero_add k
-    rw [this]; exact descendantsOf_go_acc_subset cdt k queue acc x hIn
+    rw [this]; exact descendantsOf_go_acc_subset cdt k queue visited acc x hIn
   | succ m ih =>
     intro k
     have hRw : m + 1 + k = (m + k) + 1 := by omega
@@ -2047,22 +2103,30 @@ theorem descendantsOf_go_fuel_mono
     | cons node rest =>
       rw [descendantsOf_go_cons] at hIn
       rw [hRw, descendantsOf_go_cons]
-      exact ih _ _ hIn k
+      exact ih _ _ _ hIn k
 
 /-- T4-G: Core BFS property — if `node` is at the head of the queue,
 then all children of `node` end up in the BFS result (go processes
-the head and adds its unvisited children to both queue and acc). -/
+the head and adds its unvisited children to both queue and acc).
+Requires visited/acc sync invariant: `∀ x, x ∈ acc ↔ visited.contains x`. -/
 theorem descendantsOf_go_head_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (rest acc : List CdtNodeId)
+    (cdt : CapDerivationTree) (fuel : Nat) (rest : List CdtNodeId)
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
     (node : CdtNodeId) (c : CdtNodeId)
-    (hChild : c ∈ cdt.childrenOf node) :
-    c ∈ descendantsOf.go cdt (fuel + 1) (node :: rest) acc := by
+    (hChild : c ∈ cdt.childrenOf node)
+    (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
+    c ∈ descendantsOf.go cdt (fuel + 1) (node :: rest) visited acc := by
   rw [descendantsOf_go_cons]
   by_cases hcAcc : c ∈ acc
-  · exact descendantsOf_go_acc_subset cdt fuel _ _ c (List.mem_append_left _ hcAcc)
-  · have hcNew : c ∈ (cdt.childrenOf node).filter (fun x => x ∉ acc) := by
-      simp only [List.mem_filter, decide_eq_true_eq]; exact ⟨hChild, hcAcc⟩
-    exact descendantsOf_go_acc_subset cdt fuel _ _ c (List.mem_append_right _ hcNew)
+  · exact descendantsOf_go_acc_subset cdt fuel _ _ _ c (List.mem_append_left _ hcAcc)
+  · have hNotVis : visited.contains c = false := by
+      cases h : visited.contains c
+      · rfl
+      · exact absurd ((hSync c).mpr h) hcAcc
+    have hcNew : c ∈ (cdt.childrenOf node).filter (fun x => !visited.contains x) := by
+      simp only [List.mem_filter]
+      exact ⟨hChild, by simp [hNotVis]⟩
+    exact descendantsOf_go_acc_subset cdt fuel _ _ _ c (List.mem_append_right _ hcNew)
 
 /-- T4-G: Fuel bound for `descendantsOf` — with sufficient fuel, all
 direct children of the root are discovered. Combined with
@@ -2073,10 +2137,11 @@ theorem descendantsOf_fuel_bound
     (cdt : CapDerivationTree) (root : CdtNodeId)
     (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)
     (fuel : Nat) (hFuel : fuel ≥ 1) :
-    c ∈ descendantsOf.go cdt fuel [root] [] := by
+    c ∈ descendantsOf.go cdt fuel [root] {} [] := by
   obtain ⟨k, hk⟩ : ∃ k, fuel = k + 1 := ⟨fuel - 1, by omega⟩
   rw [hk]
-  exact descendantsOf_go_children_found cdt k [] [] root c hChild (fun h => nomatch h)
+  exact descendantsOf_go_children_found cdt k [] {} [] root c hChild
+    (fun h => nomatch h) (fun x => Iff.intro (fun h => nomatch h) (fun h => by simp at h))
 
 /-- T4-G (M-CAP-2): `descendantsOf` with the default fuel (`edges.length`)
 discovers all direct children of the root, provided the CDT has at least one
@@ -2114,27 +2179,30 @@ theorem descendantsOf_fuel_sufficiency
     delegates to `descendantsOf_go_head_children_found`; the step unfolds one
     BFS iteration via `descendantsOf_go_cons` and reassociates the queue. -/
 private theorem descendantsOf_go_queue_pos_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (before after acc : List CdtNodeId)
+    (cdt : CapDerivationTree) (fuel : Nat) (before after : List CdtNodeId)
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
     (mid c : CdtNodeId) (hChild : c ∈ cdt.childrenOf mid)
-    (hFuel : fuel > before.length) :
-    c ∈ descendantsOf.go cdt fuel (before ++ mid :: after) acc := by
-  induction before generalizing fuel after acc with
+    (hFuel : fuel > before.length)
+    (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
+    c ∈ descendantsOf.go cdt fuel (before ++ mid :: after) visited acc := by
+  induction before generalizing fuel after visited acc with
   | nil =>
     simp only [List.nil_append]
     obtain ⟨k, rfl⟩ : ∃ k, fuel = k + 1 := ⟨fuel - 1, by omega⟩
-    exact descendantsOf_go_head_children_found cdt k after acc mid c hChild
+    exact descendantsOf_go_head_children_found cdt k after visited acc mid c hChild hSync
   | cons node before' ih =>
     obtain ⟨k, rfl⟩ : ∃ k, fuel = k + 1 := ⟨fuel - 1, by omega⟩
-    show c ∈ descendantsOf.go cdt (k + 1) ((node :: before') ++ mid :: after) acc
+    show c ∈ descendantsOf.go cdt (k + 1) ((node :: before') ++ mid :: after) visited acc
     rw [List.cons_append, descendantsOf_go_cons]
-    have hReassoc : (before' ++ mid :: after) ++
-        (cdt.childrenOf node).filter (fun c => c ∉ acc) =
-        before' ++ mid :: (after ++ (cdt.childrenOf node).filter (fun c => c ∉ acc)) := by
+    let newChildren := (cdt.childrenOf node).filter (fun c => !visited.contains c)
+    let visited' := newChildren.foldl (fun s c => s.insert c) visited
+    have hReassoc : (before' ++ mid :: after) ++ newChildren =
+        before' ++ mid :: (after ++ newChildren) := by
       rw [List.append_assoc]; rfl
     rw [hReassoc]
-    exact ih k (after ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
-      (acc ++ (cdt.childrenOf node).filter (fun c => c ∉ acc))
+    exact ih k (after ++ newChildren) visited' (acc ++ newChildren)
       (by simp only [List.length_cons] at hFuel; omega)
+      (sync_after_extend visited acc newChildren hSync)
 
 /-- U4-N helper: decompose list membership into a prefix/suffix split. -/
 private theorem list_mem_split {a : α} {l : List α} (h : a ∈ l) :
@@ -2153,14 +2221,17 @@ private theorem list_mem_split {a : α} {l : List α} (h : a ∈ l) :
     appears in the BFS result. Decomposes queue membership into a positional
     split and delegates to `descendantsOf_go_queue_pos_children_found`. -/
 theorem descendantsOf_go_mem_children_found
-    (cdt : CapDerivationTree) (fuel : Nat) (queue acc : List CdtNodeId)
+    (cdt : CapDerivationTree) (fuel : Nat) (queue : List CdtNodeId)
+    (visited : Std.HashSet CdtNodeId) (acc : List CdtNodeId)
     (mid c : CdtNodeId)
     (hMid : mid ∈ queue) (hChild : c ∈ cdt.childrenOf mid)
-    (hFuel : fuel ≥ queue.length) :
-    c ∈ descendantsOf.go cdt fuel queue acc := by
+    (hFuel : fuel ≥ queue.length)
+    (hSync : ∀ x, x ∈ acc ↔ visited.contains x = true) :
+    c ∈ descendantsOf.go cdt fuel queue visited acc := by
   obtain ⟨before, after, rfl⟩ := list_mem_split hMid
-  apply descendantsOf_go_queue_pos_children_found cdt fuel before after acc mid c hChild
-  simp only [List.length_append, List.length_cons] at hFuel; omega
+  apply descendantsOf_go_queue_pos_children_found cdt fuel before after visited acc mid c hChild
+  · simp only [List.length_append, List.length_cons] at hFuel; omega
+  · exact hSync
 
 end CapDerivationTree
 

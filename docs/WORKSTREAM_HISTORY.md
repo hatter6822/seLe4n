@@ -21,6 +21,28 @@ through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
+WS-Y Phase Y1 complete. Phases Y2–Y3 planned.
+
+### WS-Y workstream (v0.22.22 Final Audit Remediation) — IN PROGRESS
+
+WS-Y addresses 14 unique actionable findings from a comprehensive full-kernel
+audit of v0.22.22 (2 MED, 8 LOW, 4 INFO) across 3 phases (Y1–Y3) with 20
+atomic sub-tasks. Plan:
+[`AUDIT_v0.22.22_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.22.22_WORKSTREAM_PLAN.md).
+
+- **Y1 (Frozen State & Foundation Fixes) COMPLETE** (v0.22.23): 7 sub-tasks
+  (Y1-A through Y1-G). Resolves MED-01, LOW-01, LOW-02, LOW-03:
+  **MED-01**: `configDefaultTimeSlice` transferred through freeze pipeline —
+  field added to `FrozenSchedulerState`, `freezeScheduler` updated,
+  `freeze_preserves_configDefaultTimeSlice` proven, `frozenTimerTick` uses
+  configurable value instead of hardcoded constant.
+  **LOW-01**: `AccessRightSet.mk` documented as internal-only with migration
+  to safe constructors.
+  **LOW-02**: `descendantsOf` BFS optimized from O(n²) to O(n) via
+  `Std.HashSet` visited-set with 12 updated theorems.
+  **LOW-03**: All 16 `allTablesInvExtK` conjuncts have named accessors with
+  completeness documentation.
+  Zero sorry/axiom. `test_smoke.sh` green.
 
 ### WS-X workstream (v0.22.17 Pre-Release Audit Remediation) — COMPLETE
 

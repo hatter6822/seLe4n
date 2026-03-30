@@ -145,7 +145,7 @@ def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
   let r3 ← requireMsgReg decoded.msgRegs 3
   pure { srcSlot := Slot.ofNat r0.val
          dstSlot := Slot.ofNat r1.val
-         rights  := ⟨r2.val⟩
+         rights  := AccessRightSet.ofNat r2.val  -- Mask to valid 5-bit range at decode boundary
          badge   := Badge.ofNatMasked r3.val }
 
 /-- Decode CSpace copy arguments from message registers.
@@ -606,18 +606,19 @@ private def stubDecoded (regs : Array RegValue) : SyscallDecodeResult :=
     msgRegs := regs }
 
 /-- Round-trip: encoding then decoding CSpaceMintArgs recovers the original
-    when the badge is word-bounded. R6-B: `ofNatMasked` decode requires
-    the badge to fit in one machine word for lossless roundtrip. -/
+    when the rights are valid (bits < 32) and the badge is word-bounded.
+    R6-B: `ofNatMasked` decode requires the badge to fit in one machine word
+    for lossless roundtrip. Y1-D: `ofNat` decode masks to 5-bit range, so
+    lossless roundtrip requires `args.rights.valid`. -/
 theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs)
-    (hBadge : args.badge.valid) :
+    (hRights : args.rights.valid) (hBadge : args.badge.valid) :
     decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args := by
   rcases args with ⟨s, d, r, ⟨bv⟩⟩
   simp only [Badge.valid, machineWordMax, machineWordBits] at hBadge
-  show decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs ⟨s, d, r, ⟨bv⟩⟩)) = .ok ⟨s, d, r, ⟨bv⟩⟩
-  have hMod : bv % 18446744073709551616 = bv := Nat.mod_eq_of_lt hBadge
-  unfold decodeCSpaceMintArgs encodeCSpaceMintArgs stubDecoded requireMsgReg
-    Badge.ofNatMasked Badge.toNat machineWordMax machineWordBits
-  exact congrArg Except.ok (congrArg (fun v => (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat, ⟨r.bits⟩, ⟨v⟩⟩ : CSpaceMintArgs)) hMod)
+  have hModBadge : bv % 18446744073709551616 = bv := Nat.mod_eq_of_lt hBadge
+  have hModRights : AccessRightSet.ofNat r.bits = r := AccessRightSet.ofNat_idempotent r hRights
+  show Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat, AccessRightSet.ofNat r.bits, ⟨bv % 18446744073709551616⟩⟩ : CSpaceMintArgs) = Except.ok ⟨s, d, r, ⟨bv⟩⟩
+  simp only [Slot.ofNat, Slot.toNat, hModRights, hModBadge]
 
 /-- Round-trip: encoding then decoding CSpaceCopyArgs recovers the original. -/
 theorem decodeCSpaceCopyArgs_roundtrip (args : CSpaceCopyArgs) :
@@ -918,10 +919,12 @@ theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
 
 /-- Composed round-trip: all 12 argument structures satisfy the encode-decode
     round-trip property. R6-B: CSpaceMintArgs and NotificationSignalArgs require
-    badge validity for lossless roundtrip through `ofNatMasked`. Parallel to
-    `decode_components_roundtrip` in `RegisterDecode.lean`. -/
+    badge validity for lossless roundtrip through `ofNatMasked`. Y1-D:
+    CSpaceMintArgs additionally requires rights validity for lossless roundtrip
+    through `AccessRightSet.ofNat`. Parallel to `decode_components_roundtrip`
+    in `RegisterDecode.lean`. -/
 theorem decode_layer2_roundtrip_all :
-    (∀ args, args.badge.valid →
+    (∀ args, args.rights.valid → args.badge.valid →
       decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
@@ -938,7 +941,7 @@ theorem decode_layer2_roundtrip_all :
       decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
     (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) :=
-  ⟨fun args h => decodeCSpaceMintArgs_roundtrip args h,
+  ⟨fun args hR hB => decodeCSpaceMintArgs_roundtrip args hR hB,
    decodeCSpaceCopyArgs_roundtrip,
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,

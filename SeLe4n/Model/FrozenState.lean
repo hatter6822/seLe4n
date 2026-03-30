@@ -209,6 +209,7 @@ structure FrozenSchedulerState where
   domainTimeRemaining : Nat
   domainSchedule      : List DomainScheduleEntry
   domainScheduleIndex : Nat
+  configDefaultTimeSlice : Nat
 
 -- ============================================================================
 -- Q5-B: FrozenSystemState
@@ -320,7 +321,8 @@ def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
     activeDomain := sched.activeDomain
     domainTimeRemaining := sched.domainTimeRemaining
     domainSchedule := sched.domainSchedule
-    domainScheduleIndex := sched.domainScheduleIndex }
+    domainScheduleIndex := sched.domainScheduleIndex
+    configDefaultTimeSlice := sched.configDefaultTimeSlice }
 
 /-- Q5-C: Master freeze function — converts an `IntermediateState` (builder
 phase with invariant witnesses) into a `FrozenSystemState` (execution phase
@@ -402,6 +404,13 @@ theorem freeze_preserves_activeDomain (ist : IntermediateState) :
 /-- Q5-C: `freeze` preserves the domain schedule. -/
 theorem freeze_preserves_domainSchedule (ist : IntermediateState) :
     (freeze ist).scheduler.domainSchedule = ist.state.scheduler.domainSchedule := rfl
+
+/-- Y1-B: `freeze` preserves the configured default time-slice value.
+Ensures platform-tuned time-slice configuration survives the builder→frozen
+transition (MED-01 fix). -/
+theorem freeze_preserves_configDefaultTimeSlice (ist : IntermediateState) :
+    (freeze ist).scheduler.configDefaultTimeSlice =
+    ist.state.scheduler.configDefaultTimeSlice := rfl
 
 /-- Q5-C helper: folding over an array of `none` values with the toList accumulator
 returns the initial accumulator unchanged. -/

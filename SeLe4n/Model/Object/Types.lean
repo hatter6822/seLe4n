@@ -66,7 +66,12 @@ end AccessRight
 Matches seL4's rights representation as a word-sized bitmask. Each of the 5
 access rights maps to a unique bit position (0..4). Membership is a single
 bit test; subset is bitwise AND comparison. Two sets with the same rights in
-any order are structurally equal. -/
+any order are structurally equal.
+
+**INTERNAL**: Do not use `AccessRightSet.mk` or `⟨n⟩` directly outside this
+module. Use `ofNat` (masked), `mk_checked` (proof-carrying), `ofList`,
+`singleton`, or `empty` instead. Raw construction can create invalid
+values with `bits ≥ 32` that bypass the `valid` predicate. -/
 structure AccessRightSet where
   bits : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -113,6 +118,13 @@ theorem ofNat_idempotent (s : AccessRightSet) (h : s.valid) :
 theorem mk_checked_valid (bits : Nat) (h : bits < 2 ^ 5) :
     (mk_checked bits h).valid := by
   simp [mk_checked, valid, maxBits]; exact h
+
+/-- Y1-D: Eta reconstruction — `ofNat` on a value's bits recovers the
+    original when the value is already valid (bits < 32). For proof
+    contexts that need to reconstruct an `AccessRightSet` from its `.bits`
+    field. -/
+@[simp] theorem eta (s : AccessRightSet) (h : s.valid) : ofNat s.bits = s :=
+  ofNat_idempotent s h
 
 /-- The empty rights set (no permissions). -/
 @[inline] def empty : AccessRightSet := ⟨0⟩
