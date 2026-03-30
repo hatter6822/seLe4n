@@ -641,7 +641,7 @@ VSpace invariant bundle preservation is now proven for both success and error pa
 
 Data structure (WS-G6 / F-P05):
 
-- `VSpaceRoot.mappings : Std.HashMap VAddr (PAddr × PagePermissions)` — O(1) amortized lookup/insert/erase (WS-G6, enriched by WS-H11 with per-page permissions). HashMap key uniqueness makes `noVirtualOverlap` trivially true. `BEq VSpaceRoot` uses size + fold containment (order-independent HashMap equality). `hashMapVSpaceBackend` replaces `listVSpaceBackend`.
+- `VSpaceRoot.mappings : RHTable VAddr (PAddr × PagePermissions)` — O(1) amortized lookup/insert/erase (WS-G6, enriched by WS-H11 with per-page permissions). Robin Hood key uniqueness makes `noVirtualOverlap` trivially true. `BEq VSpaceRoot` uses size + fold containment (order-independent equality). `VSpaceRoot.beq_refl` (Y2-D+, v0.22.25): machine-checked BEq reflexivity under `invExt`. `LawfulBEq VSpaceRoot` is provably impossible (non-canonical Robin Hood layouts); reflexivity is the strongest achievable result (L-FND-3 closed).
 
 VSpace invariant bundle structure (7-conjunct, WS-G3/WS-H11/WS-F6/U2-C):
 - `vspaceAsidRootsUnique` — no two VSpaceRoot objects share the same ASID

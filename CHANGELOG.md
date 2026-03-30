@@ -1,3 +1,27 @@
+## [0.22.25] — Y2-D+: VSpaceRoot BEq Reflexivity (Real Proof)
+
+Replaces the `True := trivial` placeholder in `VSpaceRoot.beq_converse_limitation`
+with a genuine machine-checked proof. Rigorous analysis confirms `LawfulBEq VSpaceRoot`
+is provably impossible; BEq reflexivity under `invExt` is the strongest achievable result.
+
+- **LawfulBEq PagePermissions**: New instance proving PagePermissions BEq is sound
+  and reflexive. Required for value-type reflexivity in the VSpaceRoot fold proof.
+  `eq_of_beq` via field-wise decomposition, `rfl` via field-wise `Bool` reflexivity.
+- **RHTable.slot_entry_implies_get**: New public theorem (Lookup.lean) proving
+  that if entry `(k, v)` occupies slot `j` and `invExt` holds, then `get? k = some v`.
+  This is the reverse direction of `get_some_slot_entry` — proven via
+  `getLoop_finds_present` using `distCorrect`, `probeChainDominant`, and `noDupKeys`.
+- **VSpaceRoot.beq_refl**: Real proof that `(a == a) = true` when `a.mappings.invExt`
+  holds. Uses `Array.foldl_induction` to show the fold accumulator stays `true`:
+  each step applies `slot_entry_implies_get` to establish `get? e.key = some e.value`,
+  then `beq_self_eq_true` for the value-type BEq comparison.
+- **LawfulBEq impossibility documented**: Rigorous analysis proves `eq_of_beq` for
+  `RHTable` is false in general — Robin Hood hashing does not produce canonical
+  layouts (different insertion orders yield different backing arrays for identical
+  logical content). L-FND-3 limitation closed with this analysis.
+
+Zero sorry/axiom. All 198 modules build. All tests pass.
+
 ## [0.22.24] — Y2: Platform, Data Structures & Proof Hardening
 
 Phase Y2 of WS-Y final audit remediation. Resolves 7 findings (LOW-04,

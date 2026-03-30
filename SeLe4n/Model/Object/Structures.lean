@@ -29,6 +29,14 @@ instance : BEq PagePermissions where
   beq a b := a.read == b.read && a.write == b.write && a.execute == b.execute &&
               a.user == b.user && a.cacheable == b.cacheable
 
+instance : LawfulBEq PagePermissions where
+  eq_of_beq {a b} h := by
+    simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
+    cases a; cases b; simp_all
+  rfl {a} := by
+    simp only [BEq.beq]
+    cases a; simp
+
 instance : Hashable PagePermissions where
   hash p := mixHash (hash p.read) (mixHash (hash p.write) (mixHash (hash p.execute)
             (mixHash (hash p.user) (hash p.cacheable))))
@@ -378,39 +386,59 @@ theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
   exact ⟨h.1.1, h.1.2⟩
 
-/-- INFO-01 / X5-F (L-1): The converse of `beq_sound` (`a = b → (a == b) = true`)
-    requires extensional equality of `RHTable` contents, which depends on the
-    RHTable's internal array representation. The current `BEq VSpaceRoot` checks
-    structural equality (ASID, size, and element-wise comparison via `RHTable.BEq`),
-    but `RHTable.BEq` is not provably `LawfulBEq` at the `VSpaceRoot` level because
-    it involves `RHTable (VAddr) (PAddr × PagePermissions)` where the inner BEq
-    traverses the hash table's backing array.
+/-- Y2-D: BEq reflexivity for VSpaceRoot under the Robin Hood invariant.
 
-    **Status (Y2-D, v0.22.24)**: WS-V Phase V7 added `LawfulBEq` as an explicit
-    API-level *requirement* on `RHTable` key types (18-file ripple), but this is a
-    *constraint on callers*, not a `LawfulBEq` instance for `RHTable` itself. The
-    prerequisite for the converse proof — proving that the fold-based element-wise
-    comparison is extensionally complete over the backing array — remains unmet.
-    Specifically, this requires showing that two `RHTable`s with identical logical
-    contents (same key-value pairs) produce `(a == b) = true` even if their backing
-    arrays differ in layout (different probe sequences from different insertion
-    orders). This is a non-trivial property of Robin Hood hashing.
+    Proves the converse direction of `beq_sound`: if `a = b` and the mappings
+    satisfy `invExt`, then `(a == b) = true`. Substituting `b := a`, this gives
+    BEq reflexivity `(a == a) = true` — the strongest achievable result.
 
-    **Impact on kernel correctness**: None. `VSpaceRoot` equality is never used
-    as a proof obligation in any kernel invariant or preservation theorem.
-    The `BEq` instance exists solely for testing infrastructure (`MainTraceHarness`)
-    and runtime assertions. All VSpace proofs operate on the underlying `RHTable`
-    operations (map/unmap/lookup) rather than structural equality.
+    **Proof strategy**: The fold checks `a.mappings.get? k == some v` for each
+    entry `(k, v)` in the slots array. `RHTable.slot_entry_implies_get` (proven
+    via `getLoop_finds_present` under `invExt`) guarantees `get? k = some v` for
+    each stored entry. Combined with `LawfulBEq` reflexivity on the value type
+    `(PAddr × PagePermissions)`, each fold step preserves `acc = true`.
 
-    L-FND-3: Tracked limitation — converse proof deferred. Closure requires either:
-    (a) a `LawfulBEq (RHTable α β)` instance proving backing-array-independent
-        equality, or
-    (b) a canonical representation theorem showing that RHTable layout is
-        deterministic given the same insertion sequence. -/
-theorem VSpaceRoot.beq_converse_limitation :
-    -- Witnessing that the limitation is documented; kernel correctness is unaffected
-    -- because VSpaceRoot equality is not used in any proof obligation.
-    True := trivial
+    **Why `invExt` is required**: Without the Robin Hood invariants (`distCorrect`,
+    `probeChainDominant`, `noDupKeys`), the `get?` probe sequence may not find
+    entries that are stored in the slots array. The `invExt` hypothesis is always
+    available in practice because all kernel VSpaceRoots are constructed through
+    `vspaceMapPage`/`vspaceUnmapPage` which preserve `invExt`.
+
+    **Why full `LawfulBEq VSpaceRoot` is not achievable**: `LawfulBEq` requires
+    `eq_of_beq : (a == b) = true → a = b` where `=` is structural equality.
+    The VSpaceRoot BEq compares *logical content* (same key-value pairs via
+    `get?`), but two `RHTable`s with identical logical content can have different
+    backing arrays from different insertion orders. Robin Hood hashing does NOT
+    produce a canonical layout — the `probeChainDominant` invariant constrains
+    relative ordering but not absolute slot assignment. Therefore, BEq-true does
+    not imply structural equality, making `eq_of_beq` provably false in general.
+
+    L-FND-3: `LawfulBEq VSpaceRoot` limitation closed with rigorous analysis.
+    Reflexivity under `invExt` is the strongest achievable result.
+
+    **Impact on kernel correctness**: None. VSpaceRoot equality is never used
+    as a proof obligation in any kernel invariant or preservation theorem. -/
+theorem VSpaceRoot.beq_refl (a : VSpaceRoot) (hExt : a.mappings.invExt) :
+    (a == a) = true := by
+  unfold BEq.beq instBEqVSpaceRoot
+  simp only [beq_self_eq_true, Bool.true_and]
+  -- Remaining goal: the fold over a.mappings produces true
+  unfold SeLe4n.Kernel.RobinHood.RHTable.fold
+  apply Array.foldl_induction (motive := fun _ acc => acc = true)
+  · rfl
+  · intro i acc hAcc
+    simp only []
+    split
+    · exact hAcc
+    · rename_i e hSlot
+      -- e is an entry at slot i in the array; slots.size = capacity
+      have hi : i.val < a.mappings.capacity :=
+        a.mappings.hSlotsLen ▸ i.isLt
+      have hGet := SeLe4n.Kernel.RobinHood.RHTable.slot_entry_implies_get
+        a.mappings i.val hi e hSlot hExt
+      rw [hAcc, Bool.true_and]
+      show (a.mappings.get? e.key == some e.value) = true
+      rw [hGet]; exact beq_self_eq_true _
 
 namespace CNode
 

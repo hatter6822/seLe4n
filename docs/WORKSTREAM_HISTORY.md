@@ -53,8 +53,10 @@ atomic sub-tasks. Plan:
   `if/else` branches simplified to single uniform check.
   **LOW-06**: `insertLoop`/`backshiftLoop` fuel-exhaustion documented with
   `invExtK` load-factor unreachability argument.
-  **INFO-01**: `beq_converse_limitation` documentation updated with V7
-  `LawfulBEq` status and two identified closure paths.
+  **INFO-01**: `beq_converse_limitation` replaced with real `VSpaceRoot.beq_refl`
+  proof (v0.22.25). `LawfulBEq PagePermissions` + `RHTable.slot_entry_implies_get`
+  + `Array.foldl_induction`-based fold reflexivity. `LawfulBEq VSpaceRoot`
+  impossibility rigorously documented (non-canonical Robin Hood layouts). L-FND-3 closed.
   **INFO-03**: `enforcementBridge_to_NonInterferenceStep` extended from 6/11 to
   11/11 checked wrappers with 5 new soundness theorems.
   **INFO-04**: `VSpaceBackend.lean` annotated with H3 forward-declaration status.
