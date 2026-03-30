@@ -177,12 +177,11 @@ theorem mmioRegionDisjoint_holds : mmioRegionDisjointCheck = true := by decide
     Verifies that no two distinct MMIO device regions share any address.
     The 3 MMIO regions (UART PL011, GIC distributor, GIC CPU interface) must
     have disjoint address ranges to prevent register aliasing.
-    Direct pair enumeration for the 3 concrete regions (3 ordered pairs). -/
+    Uses `mmioRegions` directly to avoid duplication and stay in sync. -/
 def mmioRegionsPairwiseDisjointCheck : Bool :=
-  let uart := { base := uart0Base, size := 0x1000, kind := MemoryKind.device : SeLe4n.MemoryRegion }
-  let gicDist := { base := gicDistributorBase, size := 0x1000, kind := MemoryKind.device : SeLe4n.MemoryRegion }
-  let gicCpu := { base := gicCpuInterfaceBase, size := 0x2000, kind := MemoryKind.device : SeLe4n.MemoryRegion }
-  !uart.overlaps gicDist && !uart.overlaps gicCpu && !gicDist.overlaps gicCpu
+  mmioRegions.all fun r1 =>
+    mmioRegions.all fun r2 =>
+      r1.base == r2.base || !r1.overlaps r2
 
 /-- X4-D/M-10: Proof that RPi5 MMIO regions are pairwise disjoint.
     The 3 MMIO regions have non-overlapping address ranges:

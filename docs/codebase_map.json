@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-x4-platform-R2PeZ",
-      "commit_sha": "57b66ac79723ffac7d8dd6da1e2f03f38ce3d2fb",
-      "tree_sha": "c9d03e96ff2928b60920ae76f1732132bee406ea",
-      "committed_at_utc": "2026-03-29T20:17:39-04:00"
+      "commit_sha": "f73ee9a95bc86245359e42f60e23f7136ddfab00",
+      "tree_sha": "69b43790997a78161809b31894ce4594305e838e",
+      "committed_at_utc": "2026-03-30T00:52:51+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "50b460ec3de585ebd811283b4367de7da7b51a04e2b149f5a718bb553c341e36"
+    "source_digest": "1628a26a78c31bd886acb13191da1d911bbba4bfd4e2a35dcd6185110b322a1e"
   },
   "summary": {
     "module_count": 113,
@@ -27,7 +27,7 @@
     "version": "0.22.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 73509,
+    "production_loc": 73513,
     "test_files": 10,
     "test_loc": 8627,
     "proved_theorem_lemma_decls": 2120,
@@ -41474,13 +41474,15 @@
             "findProperty",
             "none",
             "readBE32",
+            "readBE64",
+            "size",
             "toNat"
           ]
         },
         {
           "kind": "def",
           "name": "extractPeripherals",
-          "line": 753,
+          "line": 758,
           "called": [
             "DeviceEntry",
             "FdtNode",
@@ -41495,7 +41497,7 @@
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbFull",
-          "line": 786,
+          "line": 791,
           "called": [
             "DeviceTree",
             "MachineConfig",
@@ -41516,7 +41518,7 @@
         {
           "kind": "abbrev",
           "name": "DeviceTree.fromDtbParsed",
-          "line": 816,
+          "line": 821,
           "called": [
             "DeviceTree",
             "DeviceTree.fromDtbFull"
@@ -41525,7 +41527,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_fromDtbFull_some",
-          "line": 825,
+          "line": 830,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtHeader",
@@ -41696,18 +41698,14 @@
           "name": "mmioRegionsPairwiseDisjointCheck",
           "line": 181,
           "called": [
-            "MemoryRegion",
-            "gicCpuInterfaceBase",
-            "gicDistributorBase",
-            "overlaps",
-            "size",
-            "uart0Base"
+            "all",
+            "overlaps"
           ]
         },
         {
           "kind": "theorem",
           "name": "mmioRegionsPairwiseDisjoint_holds",
-          "line": 195,
+          "line": 194,
           "called": [
             "mmioRegionsPairwiseDisjointCheck"
           ]
@@ -41715,7 +41713,7 @@
         {
           "kind": "theorem",
           "name": "rpi5MachineConfig_wellFormed",
-          "line": 202,
+          "line": 201,
           "called": [
             "wellFormed"
           ]
@@ -41723,7 +41721,7 @@
         {
           "kind": "def",
           "name": "rpi5DeviceTree",
-          "line": 250,
+          "line": 249,
           "called": [
             "DeviceTree",
             "DeviceTree.fromBoardConstants",
@@ -41740,7 +41738,7 @@
         {
           "kind": "theorem",
           "name": "rpi5DeviceTree_valid",
-          "line": 267,
+          "line": 266,
           "called": [
             "validate"
           ]

@@ -25,6 +25,12 @@ M-9, M-10) from the v0.22.17 comprehensive audit.
   `decodeSyscallArgs` default, `RegName.arm64GPRCount`, and
   `MachineConfig.registerCount`.
 
+Audit refinements:
+- `extractTimerFrequency` now supports 64-bit `clock-frequency` values
+  (checks `freqBytes.size >= 8` before falling back to 32-bit).
+- `mmioRegionsPairwiseDisjointCheck` refactored to iterate over `mmioRegions`
+  directly instead of duplicating region definitions in let bindings.
+
 Zero sorry/axiom. All tests pass.
 
 ## [0.22.20] — X3: Information Flow & Composition Closure

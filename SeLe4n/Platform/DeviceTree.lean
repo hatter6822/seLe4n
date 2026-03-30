@@ -742,10 +742,15 @@ def extractTimerFrequency (nodes : List FdtNode) : Nat :=
     match node.findProperty "clock-frequency" with
     | none => 0  -- Frequency set by CNTFRQ_EL0, not in DTB
     | some freqBytes =>
-      -- clock-frequency is a 32-bit big-endian value
-      match readBE32 freqBytes 0 with
-      | some freq => freq.toNat
-      | none => 0
+      -- clock-frequency can be 32-bit (4 bytes) or 64-bit (8 bytes) big-endian
+      if freqBytes.size >= 8 then
+        match readBE64 freqBytes 0 with
+        | some freq => freq.toNat
+        | none => 0
+      else
+        match readBE32 freqBytes 0 with
+        | some freq => freq.toNat
+        | none => 0
 
 /-- X4-A/H-7: Extract peripheral device entries from FDT nodes.
     Walks top-level and one level of children, extracting nodes that have
