@@ -220,7 +220,8 @@ def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
              perms := perms }
     -- U5-E/U-M07: Invalid permission bits are a decode error, not a policy violation.
     -- Prior to U5-E this incorrectly returned `.policyDenied`.
-    | none => .error .invalidArgument
+    -- X5-E/M-11: Use `invalidSyscallArgument` for syscall-specific decode context.
+    | none => .error .invalidSyscallArgument
 
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
@@ -480,7 +481,7 @@ theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
     · -- VAddr not canonical → error
       exact ⟨.addressOutOfBounds, rfl⟩
     · -- VAddr canonical → perms check fails
-      exact ⟨.invalidArgument, by simp [hPerms]⟩
+      exact ⟨.invalidSyscallArgument, by simp [hPerms]⟩
 
 /-- VSpace map decode fails iff fewer than 4 message registers,
     ASID is invalid, VAddr is non-canonical, or the permissions word is invalid.
@@ -488,7 +489,7 @@ theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
     1. `msgRegs.size < 4` → `requireMsgReg` returns error
     2. ASID (msgRegs[0]) ≥ 65536 → asidNotBound
     3. VAddr (msgRegs[1]) ≥ 2^48 → addressOutOfBounds
-    4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → invalidArgument (U5-E) -/
+    4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → invalidSyscallArgument (X5-E) -/
 theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
     (∃ e, decodeVSpaceMapArgs d = .error e) ↔
     (d.msgRegs.size < 4 ∨

@@ -1,6 +1,6 @@
 //! Kernel error enumeration — 1:1 mapping from `SeLe4n.Model.KernelError`.
 //!
-//! Lean source: `SeLe4n/Model/State.lean` lines 19–54.
+//! Lean source: `SeLe4n/Model/State.lean` lines 19–62.
 
 /// All kernel error variants, matching the Lean `KernelError` inductive exactly.
 ///
@@ -62,6 +62,8 @@ pub enum KernelError {
     InvalidArgument = 39,
     /// V4-B/M-HW-1: MMIO access at unaligned address (4-byte for 32-bit, 8-byte for 64-bit)
     MmioUnaligned = 40,
+    /// X5-E/M-11: Syscall-specific argument decode failure (distinct from generic InvalidArgument)
+    InvalidSyscallArgument = 41,
 }
 
 impl KernelError {
@@ -109,6 +111,7 @@ impl KernelError {
             38 => Some(Self::RevocationRequired),
             39 => Some(Self::InvalidArgument),
             40 => Some(Self::MmioUnaligned),
+            41 => Some(Self::InvalidSyscallArgument),
             _ => None,
         }
     }
@@ -159,6 +162,7 @@ impl std::fmt::Display for KernelError {
             Self::RevocationRequired => write!(f, "revocation required"),
             Self::InvalidArgument => write!(f, "invalid argument"),
             Self::MmioUnaligned => write!(f, "MMIO access at unaligned address"),
+            Self::InvalidSyscallArgument => write!(f, "invalid syscall argument"),
         }
     }
 }
@@ -172,8 +176,8 @@ mod tests {
 
     #[test]
     fn from_u32_roundtrip() {
-        // T1-H: All 41 variants (0-40) must roundtrip
-        for i in 0..=40u32 {
+        // T1-H: All 42 variants (0-41) must roundtrip
+        for i in 0..=41u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -181,8 +185,8 @@ mod tests {
 
     #[test]
     fn from_u32_out_of_range() {
-        // T1-G: Discriminants >= 41 must return None (unknown error)
-        assert!(KernelError::from_u32(41).is_none());
+        // T1-G: Discriminants >= 42 must return None (unknown error)
+        assert!(KernelError::from_u32(42).is_none());
         assert!(KernelError::from_u32(255).is_none());
         assert!(KernelError::from_u32(u32::MAX).is_none());
     }
@@ -197,6 +201,7 @@ mod tests {
         assert_eq!(KernelError::RevocationRequired as u32, 38);
         assert_eq!(KernelError::InvalidArgument as u32, 39);
         assert_eq!(KernelError::MmioUnaligned as u32, 40);
+        assert_eq!(KernelError::InvalidSyscallArgument as u32, 41);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
@@ -207,8 +212,8 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // Verify total variant count matches Lean (41 variants, 0-40)
-        let max_valid = 40u32;
+        // Verify total variant count matches Lean (42 variants, 0-41)
+        let max_valid = 41u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
@@ -216,11 +221,11 @@ mod tests {
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — all 41 variants are sequential from 0
+    /// T1-H: Discriminant ordering — all 42 variants are sequential from 0
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=40u32 {
+        for i in 0..=41u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {

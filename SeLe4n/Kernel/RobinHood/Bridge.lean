@@ -969,4 +969,25 @@ theorem RHTable.filter_preserves_invExtK [BEq α] [Hashable α] [LawfulBEq α]
    t.filter_size_lt_capacity f hK.2.1 hK.1.1,
    by rw [t.filter_capacity_eq f]; exact hK.2.2⟩
 
+-- ============================================================================
+-- X5-B (H-9): CNode capacity enforcement documentation
+-- ============================================================================
+
+/-- X5-B (H-9): All CNode tables are created with `RHTable.empty 16`
+    (Structures.lean:390), so the `4 ≤ capacity` precondition required by
+    `insert_size_lt_capacity` is always trivially satisfied.
+
+    **Enforcement chain**:
+    1. `CNode.empty` uses `RHTable.empty 16` → initial capacity = 16
+    2. `invExtK` bundles `4 ≤ capacity` as its third conjunct (line 858)
+    3. `insert_preserves_invExtK` preserves `4 ≤ capacity` through inserts
+       (capacity only grows via doubling on resize)
+    4. All call sites discharge `hCapGe4` via `(by omega)` or `invExtK_capacity_ge4`
+
+    This theorem witnesses step 1: the empty CNode's slot table satisfies
+    the minimum capacity requirement. -/
+theorem cnode_capacity_always_ge4 [BEq α] [Hashable α] [LawfulBEq α] :
+    4 ≤ (RHTable.empty 16 (by omega) : RHTable α β).capacity := by
+  simp [RHTable.empty]
+
 end SeLe4n.Kernel.RobinHood

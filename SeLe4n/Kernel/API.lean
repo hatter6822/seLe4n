@@ -387,7 +387,10 @@ Returns the resolved capabilities as an array. -/
    silently dropped (matching seL4 `lookupExtraCaps` behavior). This means
    the receiver gets fewer extra caps than the sender specified. For
    debugging, callers should check `extraCaps.length` against the expected
-   count from `MessageInfo.extraCaps`. -/
+   count from `MessageInfo.extraCaps`.
+   X5-I (L-4): Confirmed v0.22.17 audit — silent dropping matches seL4
+   reference semantics. No security impact: caps that fail resolution
+   simply don't transfer. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) : Array Capability :=
@@ -540,6 +543,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
   -- semantics where badge 0 indicates an unbadged capability. This means callers
   -- cannot explicitly set badge 0 — a deliberate simplification that matches
   -- seL4's treatment of zero-valued badges as "no badge specified".
+  -- X5-I (L-5): Confirmed v0.22.17 audit — badge zero indistinguishability
+  -- matches seL4 semantics. No security impact.
   | .cspaceMint =>
     match cap.target with
     | .object cnodeId =>

@@ -62,6 +62,15 @@ Hardening is validated by standard test gates:
 ./scripts/test_full.sh    # + Tier 3: invariant surface anchors (checks SHA-pinning, threat-model symbols)
 ```
 
+## Security advisories
+
+See [`docs/SECURITY_ADVISORY.md`](../SECURITY_ADVISORY.md) for documented
+security advisories:
+
+- **SA-1**: Starvation freedom not guaranteed (fixed-priority preemptive scheduler)
+- **SA-2**: Default labeling context defeats information-flow enforcement
+- **SA-3**: Scheduling covert channel (accepted by design, bounded bandwidth)
+
 ## Related
 
 - [CI Maturity and Telemetry](29-ci-maturity-and-telemetry-baseline.md) — WS-B10 observability

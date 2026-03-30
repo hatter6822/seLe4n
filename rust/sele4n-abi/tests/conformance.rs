@@ -458,14 +458,14 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(17).is_none());
 }
 
-/// Verify KernelError roundtrip for all 41 variants (W1-D: MmioUnaligned at 40).
+/// Verify KernelError roundtrip for all 42 variants (X5-E: InvalidSyscallArgument at 41).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=40u32 {
+    for i in 0..=41u32 {
         let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(41).is_none());
+    assert!(KernelError::from_u32(42).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 6 variants.
@@ -723,13 +723,13 @@ fn u3de_access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn u3f_kernel_error_non_exhaustive() {
-    // All 41 variants (0–40) roundtrip (W1-D: +MmioUnaligned)
-    for i in 0..=40u32 {
+    // All 42 variants (0–41) roundtrip (X5-E: +InvalidSyscallArgument)
+    for i in 0..=41u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(41).is_none());
+    assert!(KernelError::from_u32(42).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -906,11 +906,11 @@ fn v1h_identifier_validation() {
 // W1 — Critical Rust ABI Fix conformance tests
 // ============================================================================
 
-/// W1-H: KernelError variant count matches Lean (41 variants, 0-40).
+/// W1-H: KernelError variant count matches Lean (42 variants, 0-41).
 /// Detects Lean-Rust enum divergence automatically.
 #[test]
 fn w1h_kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 41;
+    const KERNEL_ERROR_COUNT: u32 = 42;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
