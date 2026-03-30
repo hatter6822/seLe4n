@@ -639,4 +639,71 @@ def checkedDispatchEnforcementCoverage : List String :=
 theorem checkedDispatchEnforcementCoverage_complete :
     checkedDispatchEnforcementCoverage.length = 11 := by rfl
 
+-- ============================================================================
+-- X3-B (H-5): Enforcement-NI global bridge theorem
+-- ============================================================================
+
+/-- X3-B (H-5): **Enforcement-NI global bridge theorem.**
+
+    This theorem unifies all 6 enforcement soundness theorems into a single
+    bridge connecting the enforcement layer to the non-interference layer.
+
+    **Structure**: For each of the 6 checked wrappers with individual soundness
+    proofs, this theorem proves that wrapper success implies the underlying
+    `securityFlowsTo` check passed. This `securityFlowsTo` witness is the
+    prerequisite for constructing `NonInterferenceStep` terms in
+    `Invariant/Composition.lean`.
+
+    **Bridge mechanism**: The enforcement layer gates operations on
+    `securityFlowsTo` checks. The NI layer's `NonInterferenceStep` constructors
+    require domain-separation hypotheses (endpoint/thread non-observability).
+    The bridge connects these: enforcement success ⟹ flow allowed ⟹
+    NI step constructable (given the domain-separation context).
+
+    **Coverage**: 6 of 11 checked wrappers have direct soundness theorems.
+    The remaining 5 (`endpointCallChecked`, `endpointReplyChecked`,
+    `endpointReplyRecvChecked`, `cspaceMintChecked`, `notificationWaitChecked`)
+    are covered by compound NI constructors (`endpointCallHigh`,
+    `endpointReplyRecvHigh`, `cspaceMint`, `notificationWait`,
+    `syscallDispatchHigh`). -/
+theorem enforcementBridge_to_NonInterferenceStep
+    (ctx : LabelingContext) (st st' : SystemState) :
+    -- 1. endpointSendDualChecked: success implies sender→endpoint flow allowed
+    (∀ eid sender msg,
+      endpointSendDualChecked ctx eid sender msg st = .ok ((), st') →
+      securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf eid) = true) ∧
+    -- 2. notificationSignalChecked: success implies signaler→notification flow allowed
+    (∀ ntfnId signaler badge,
+      notificationSignalChecked ctx ntfnId signaler badge st = .ok ((), st') →
+      securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf ntfnId) = true) ∧
+    -- 3. cspaceCopyChecked: success implies src→dst CNode flow allowed
+    (∀ src dst,
+      cspaceCopyChecked ctx src dst st = .ok ((), st') →
+      securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true) ∧
+    -- 4. cspaceMoveChecked: success implies src→dst CNode flow allowed
+    (∀ src dst,
+      cspaceMoveChecked ctx src dst st = .ok ((), st') →
+      securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true) ∧
+    -- 5. endpointReceiveDualChecked: success implies endpoint→receiver flow allowed
+    (∀ eid receiver r,
+      endpointReceiveDualChecked ctx eid receiver st = .ok (r, st') →
+      securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
+    -- 6. registerServiceChecked: success implies caller→service flow allowed
+    (∀ caller reg,
+      registerServiceChecked ctx caller reg st = .ok ((), st') →
+      securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = true) := by
+  exact ⟨
+    fun eid sender msg hStep =>
+      enforcementSoundness_endpointSendDualChecked ctx eid sender msg st st' hStep,
+    fun ntfnId signaler badge hStep =>
+      enforcementSoundness_notificationSignalChecked ctx ntfnId signaler badge st st' hStep,
+    fun src dst hStep =>
+      enforcementSoundness_cspaceCopyChecked ctx src dst st st' hStep,
+    fun src dst hStep =>
+      enforcementSoundness_cspaceMoveChecked ctx src dst st st' hStep,
+    fun eid receiver r hStep =>
+      enforcementSoundness_endpointReceiveDualChecked ctx eid receiver st r st' hStep,
+    fun caller reg hStep =>
+      enforcementSoundness_registerServiceChecked ctx caller reg st st' hStep⟩
+
 end SeLe4n.Kernel

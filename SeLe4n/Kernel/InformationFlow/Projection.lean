@@ -467,4 +467,118 @@ theorem lowEquivalent_trans
     lowEquivalent ctx observer s₁ s₃ := by
   simpa [lowEquivalent] using Eq.trans h₁₂ h₂₃
 
+-- ============================================================================
+-- X3-A (H-3): Service orchestration NI exclusion boundary
+-- ============================================================================
+
+/-- X3-A (H-3): Predicate witnessing that the `services` field affects the
+    observer's projection. This is true whenever any observable service is
+    registered — i.e., the `services` store contains at least one entry for
+    an observable service ID.
+
+    When this predicate holds, `projectServicePresence` and
+    `projectServiceRegistry` are non-trivially influenced by `st.services`.
+    When it does not hold, the projection is independent of service state. -/
+def serviceRegistryAffectsProjection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : Prop :=
+  ∃ sid, serviceObservable ctx observer sid = true ∧
+    (lookupService st sid).isSome = true
+
+/-- X3-A (H-3): **Service orchestration NI exclusion boundary.**
+
+    The NI projection model (`projectState`) captures service state through
+    exactly two channels:
+    1. `projectServicePresence` — boolean presence per service ID
+    2. `projectServiceRegistry` — full `ServiceGraphEntry` for observable services
+
+    These projections cover the *registry* layer (which services exist and their
+    dependency edges). **Service orchestration internals** — lifecycle transitions,
+    restart policies, dependency resolution order, heartbeat state — are NOT
+    captured by the projection model and therefore NOT covered by NI theorems.
+
+    This theorem shows that when two states agree on all fields EXCEPT
+    `services`, and no observable services are registered in either state,
+    the two states are observationally equivalent to any observer. This
+    formalizes the boundary: service orchestration state changes that don't
+    create or remove observable services are invisible to the projection model.
+
+    **Scope of NI guarantees**: The 32 `NonInterferenceStep` constructors
+    (in `Invariant/Composition.lean`) cover kernel primitives (IPC, scheduling,
+    capability operations, lifecycle). Service orchestration NI is deferred to
+    a future workstream requiring extension of `ObservableState` with dependency
+    graph projections and NI proofs for all service operations. -/
+theorem serviceOrchestrationOutsideNiBoundary
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st₁ st₂ : SystemState)
+    (hObjects : st₁.objects = st₂.objects)
+    (hScheduler : st₁.scheduler = st₂.scheduler)
+    (hMachine : st₁.machine = st₂.machine)
+    (hIrqHandlers : st₁.irqHandlers = st₂.irqHandlers)
+    (hObjectIndex : st₁.objectIndex = st₂.objectIndex)
+    (hNoObs : ∀ sid, serviceObservable ctx observer sid = true →
+      (lookupService st₁ sid).isNone ∧ (lookupService st₂ sid).isNone) :
+    lowEquivalent ctx observer st₁ st₂ := by
+  unfold lowEquivalent projectState
+  congr 1
+  · -- projectObjects: depends on objects only
+    funext oid
+    simp only [projectObjects]
+    cases objectObservable ctx observer oid <;> simp [hObjects]
+  · -- projectRunnable: depends on scheduler only
+    simp [projectRunnable, hScheduler]
+  · -- projectCurrent: depends on scheduler only
+    simp [projectCurrent, hScheduler]
+  · -- projectServicePresence: depends on services, gated by serviceObservable
+    funext sid
+    simp only [projectServicePresence]
+    cases hObs : serviceObservable ctx observer sid with
+    | false => rfl
+    | true =>
+      have ⟨h₁, h₂⟩ := hNoObs sid hObs
+      simp [lookupService, Option.isNone_iff_eq_none] at h₁ h₂
+      simp [lookupService, h₁, h₂]
+  · -- projectActiveDomain: depends on scheduler only
+    simp [projectActiveDomain, hScheduler]
+  · -- projectIrqHandlers: depends on irqHandlers only
+    funext irq; simp only [projectIrqHandlers]; rw [hIrqHandlers]
+  · -- projectObjectIndex: depends on objectIndex only
+    simp [projectObjectIndex, hObjectIndex]
+  · -- projectDomainTimeRemaining: depends on scheduler only
+    simp [projectDomainTimeRemaining, hScheduler]
+  · -- projectDomainSchedule: depends on scheduler only
+    simp [projectDomainSchedule, hScheduler]
+  · -- projectDomainScheduleIndex: depends on scheduler only
+    simp [projectDomainScheduleIndex, hScheduler]
+  · -- projectMachineRegs: depends on scheduler + machine
+    simp [projectMachineRegs, hScheduler, hMachine]
+  · -- projectMemory: depends on machine only
+    exact projectMemory_eq_of_memory_eq ctx observer st₁ st₂ (by rw [hMachine])
+  · -- projectServiceRegistry: depends on services, gated by serviceObservable
+    funext sid
+    simp only [projectServiceRegistry]
+    cases hObs : serviceObservable ctx observer sid with
+    | false => rfl
+    | true =>
+      have ⟨h₁, h₂⟩ := hNoObs sid hObs
+      simp [lookupService, Option.isNone_iff_eq_none] at h₁ h₂
+      simp [lookupService, h₁, h₂]
+
+/-- X3-A (H-3): Service registry affects projection disjunction —
+    either no observable services are registered (and the projection is
+    independent of the services field), or the effect is explicitly
+    acknowledged via `serviceRegistryAffectsProjection`. -/
+theorem serviceOrchestration_boundary_disjunction
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+    (∀ sid, serviceObservable ctx observer sid = true →
+      (lookupService st sid) = none) ∨
+    serviceRegistryAffectsProjection ctx observer st := by
+  by_cases h : ∃ sid, serviceObservable ctx observer sid = true ∧
+      (lookupService st sid).isSome = true
+  · exact Or.inr h
+  · left
+    intro sid hObs
+    cases hLookup : lookupService st sid with
+    | none => rfl
+    | some v => exfalso; exact h ⟨sid, hObs, by simp [hLookup]⟩
+
 end SeLe4n.Kernel

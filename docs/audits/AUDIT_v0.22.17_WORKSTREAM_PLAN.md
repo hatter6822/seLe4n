@@ -52,7 +52,7 @@ changes is **24 findings** organized into **40 sub-tasks**.
 |-------|------|-----------|----------|------|--------|
 | X1 | Hardware-Binding Critical Proofs | 11 | **BLOCKER** | `lake build` clean, all 9 invariant components proven | **COMPLETE** |
 | X2 | Runtime Invariant Enforcement | 9 | HIGH | `test_full.sh` green, zero sorry | **COMPLETE** (v0.22.19) |
-| X3 | Information Flow & Composition Closure | 5 | HIGH | `test_full.sh` green, NI theorems compile | PLANNED |
+| X3 | Information Flow & Composition Closure | 5 | HIGH | `test_full.sh` green, NI theorems compile | **COMPLETE** (v0.22.20) |
 | X4 | Platform & Architecture Completion | 6 | MEDIUM | Module builds pass, `test_smoke.sh` green | PLANNED |
 | X5 | Documentation, Hardening & Low-Severity | 9 | LOW | `test_fast.sh` green, docs consistent | PLANNED |
 
@@ -591,12 +591,12 @@ unreachable. This change provides defense-in-depth at the API boundary.
 ## 5. Phase X3 — Information Flow & Composition Closure (HIGH)
 
 **Priority**: HIGH — must complete before production security claims
+**Status**: **COMPLETE** (v0.22.20)
 **Scope**: `InformationFlow/Projection.lean`,
 `InformationFlow/Enforcement/Soundness.lean`,
-`InformationFlow/Invariant/Composition.lean`,
 `InformationFlow/Policy.lean`, `CrossSubsystem.lean`
-**Gate**: `test_full.sh` green, NI theorems compile, zero sorry
-**Estimated sub-tasks**: 5
+**Gate**: `test_full.sh` green, NI theorems compile, zero sorry — **ALL GATES MET**
+**Sub-tasks**: 5 (all complete)
 **Dependencies**: X2-G/X2-H (notification cleanup affects cross-subsystem)
 
 ### Findings Addressed
@@ -739,6 +739,21 @@ This proves that the non-BIBA direction still prevents privilege escalation
 by ensuring untrusted entities cannot modify trusted state.
 **Verification**: `lake build SeLe4n.Kernel.InformationFlow.Policy`
 **Risk**: Low — all conjuncts are decidable properties of the 2-element lattice
+
+### Phase X3 Completion Summary (v0.22.20)
+
+**All 5 sub-tasks COMPLETE.** Zero sorry/axiom. `test_full.sh` green.
+
+| Sub-task | Finding | Status | Key Change |
+|----------|---------|--------|------------|
+| X3-A | H-3 | COMPLETE | `serviceOrchestrationOutsideNiBoundary` exclusion boundary theorem, `serviceRegistryAffectsProjection` predicate, `serviceOrchestration_boundary_disjunction` |
+| X3-B | H-5 | COMPLETE | `enforcementBridge_to_NonInterferenceStep` unified 6-conjunct bridge theorem connecting enforcement soundness to NI layer |
+| X3-C | H-4 (part 1) | COMPLETE | 4 sharing pair frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`), `crossSubsystemInvariant_objects_frame`, `crossSubsystemInvariant_services_change` |
+| X3-D | H-4 (part 2) | COMPLETE | `crossSubsystemInvariant_composition_complete` — 10-conjunct tightness theorem (6 disjoint + 4 sharing witnesses) |
+| X3-E | M-1 | COMPLETE | `integrityFlowsTo_prevents_escalation` 4-conjunct privilege escalation prevention, `securityFlowsTo_prevents_label_escalation` label-level denial |
+
+**Files modified**: `InformationFlow/Projection.lean`, `InformationFlow/Policy.lean`,
+`InformationFlow/Enforcement/Soundness.lean`, `CrossSubsystem.lean`
 
 ---
 

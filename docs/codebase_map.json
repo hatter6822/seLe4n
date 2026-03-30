@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-runtime-invariants-VyorZ",
-      "commit_sha": "67d4985397e715b8bbb231a376d0361af2710c59",
-      "tree_sha": "39bd39008880b0a43523e894f27abbb5857aeca2",
-      "committed_at_utc": "2026-03-29T22:48:48+00:00"
+      "branch": "claude/optimize-phase-x3-workstream-87A0n",
+      "commit_sha": "8e98ce23e72d33772f9d674e7fb3fced054937fb",
+      "tree_sha": "ab1ed2c1bb40f0dfe75e33933af4366f2a21532e",
+      "committed_at_utc": "2026-03-29T23:39:51+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "621e6a03203a3a8daf3d4e136fcf59c7f68235b8e0a54a50f75b179d47c16f8b"
+    "source_digest": "341dcb4500f75493311dc36e15a71cbf25a4dcdbc75abe5722a6e16b07b579a5"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3706
+    "declaration_count": 3719
   },
   "readme_sync": {
-    "version": "0.22.19",
+    "version": "0.22.20",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 72743,
+    "production_loc": 73156,
     "test_files": 10,
     "test_loc": 8627,
-    "proved_theorem_lemma_decls": 2102,
+    "proved_theorem_lemma_decls": 2114,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -7824,7 +7824,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 43,
+      "declaration_count": 50,
       "declarations": [
         {
           "kind": "namespace",
@@ -8253,13 +8253,107 @@
           "name": "revokeService_preserves_noStaleNotificationWaitReferences",
           "line": 588,
           "called": [
-            "Kernel",
             "ServiceId",
             "SystemState",
             "noStaleNotificationWaitReferences",
             "noStaleNotificationWaitReferences_frame",
             "revokeService",
             "revokeService_preserves_objects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sharingPair1_objects_frame",
+          "line": 627,
+          "called": [
+            "SystemState",
+            "noStaleEndpointQueueReferences",
+            "noStaleEndpointQueueReferences_frame",
+            "noStaleNotificationWaitReferences",
+            "noStaleNotificationWaitReferences_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sharingPair23_objects_frame",
+          "line": 640,
+          "called": [
+            "SystemState",
+            "noStaleEndpointQueueReferences",
+            "noStaleEndpointQueueReferences_frame",
+            "noStaleNotificationWaitReferences",
+            "noStaleNotificationWaitReferences_frame",
+            "registryEndpointValid",
+            "registryEndpointValid_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sharingPair4_services_frame",
+          "line": 658,
+          "called": [
+            "SystemState",
+            "registryDependencyConsistent",
+            "registryDependencyConsistent_frame",
+            "serviceGraphInvariant",
+            "serviceGraphInvariant_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeService_preserves_sharingPairs_objects",
+          "line": 672,
+          "called": [
+            "ServiceId",
+            "SystemState",
+            "noStaleEndpointQueueReferences",
+            "noStaleEndpointQueueReferences_frame",
+            "noStaleNotificationWaitReferences",
+            "noStaleNotificationWaitReferences_frame",
+            "revokeService",
+            "revokeService_preserves_objects"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_objects_frame",
+          "line": 688,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "noStaleEndpointQueueReferences_frame",
+            "noStaleNotificationWaitReferences_frame",
+            "registryDependencyConsistent_frame",
+            "registryEndpointValid_frame",
+            "serviceGraphInvariant_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_services_change",
+          "line": 708,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "noStaleEndpointQueueReferences_frame",
+            "noStaleNotificationWaitReferences_frame",
+            "registryDependencyConsistent",
+            "registryEndpointValid_frame",
+            "serviceGraphInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_composition_complete",
+          "line": 749,
+          "called": [
+            "Kernel",
+            "fieldsDisjoint",
+            "noStaleEndpointQueueReferences_fields",
+            "noStaleNotificationWaitReferences_fields",
+            "registryDependencyConsistent_fields",
+            "registryEndpointValid_fields",
+            "serviceGraphInvariant_fields"
           ]
         }
       ]
@@ -18195,7 +18289,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Enforcement.Soundness",
       "path": "SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean",
-      "declaration_count": 43,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
@@ -18739,8 +18833,29 @@
           "kind": "theorem",
           "name": "checkedDispatchEnforcementCoverage_complete",
           "line": 639,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "enforcementBridge_to_NonInterferenceStep",
+          "line": 669,
           "called": [
-            "Kernel"
+            "Kernel",
+            "LabelingContext",
+            "SystemState",
+            "cspaceCopyChecked",
+            "cspaceMoveChecked",
+            "endpointReceiveDualChecked",
+            "endpointSendDualChecked",
+            "enforcementSoundness_cspaceCopyChecked",
+            "enforcementSoundness_cspaceMoveChecked",
+            "enforcementSoundness_endpointReceiveDualChecked",
+            "enforcementSoundness_endpointSendDualChecked",
+            "enforcementSoundness_notificationSignalChecked",
+            "enforcementSoundness_registerServiceChecked",
+            "notificationSignalChecked",
+            "registerServiceChecked",
+            "securityFlowsTo"
           ]
         }
       ]
@@ -21591,7 +21706,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
-      "declaration_count": 90,
+      "declaration_count": 92,
       "declarations": [
         {
           "kind": "namespace",
@@ -21685,9 +21800,17 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_prevents_escalation",
+          "line": 157,
+          "called": [
+            "integrityFlowsTo"
+          ]
+        },
+        {
           "kind": "def",
           "name": "securityFlowsTo",
-          "line": 142,
+          "line": 180,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -21695,9 +21818,19 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "securityFlowsTo_prevents_label_escalation",
+          "line": 193,
+          "called": [
+            "kernelTrusted",
+            "publicLabel",
+            "securityFlowsTo"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "MemoryDomainOwnership",
-          "line": 147,
+          "line": 201,
           "called": [
             "DomainId",
             "PAddr",
@@ -21707,7 +21840,7 @@
         {
           "kind": "structure",
           "name": "LabelingContext",
-          "line": 152,
+          "line": 206,
           "called": [
             "MemoryDomainOwnership",
             "ObjId",
@@ -21720,7 +21853,7 @@
         {
           "kind": "def",
           "name": "defaultLabelingContext",
-          "line": 160,
+          "line": 214,
           "called": [
             "LabelingContext",
             "publicLabel"
@@ -21729,7 +21862,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_insecure",
-          "line": 180,
+          "line": 234,
           "called": [
             "ObjId",
             "confidentialityFlowsTo",
@@ -21742,7 +21875,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_all_threads_observable",
-          "line": 190,
+          "line": 244,
           "called": [
             "ThreadId",
             "confidentialityFlowsTo",
@@ -21755,7 +21888,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_refl",
-          "line": 198,
+          "line": 252,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -21764,7 +21897,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_refl",
-          "line": 202,
+          "line": 256,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -21773,7 +21906,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_refl",
-          "line": 206,
+          "line": 260,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_refl",
@@ -21784,7 +21917,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_trans",
-          "line": 212,
+          "line": 266,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -21793,7 +21926,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_trans",
-          "line": 219,
+          "line": 273,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -21802,7 +21935,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_trans",
-          "line": 226,
+          "line": 280,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_trans",
@@ -21813,7 +21946,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_antisymm",
-          "line": 248,
+          "line": 302,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -21822,7 +21955,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_antisymm",
-          "line": 255,
+          "line": 309,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -21831,7 +21964,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_antisymm",
-          "line": 263,
+          "line": 317,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_antisymm",
@@ -21841,8 +21974,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:281>",
-          "line": 281,
+          "name": "<anonymous:instance:335>",
+          "line": 335,
           "called": [
             "securityFlowsTo"
           ]
@@ -21850,7 +21983,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_lattice_verified",
-          "line": 286,
+          "line": 340,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -21860,13 +21993,13 @@
         {
           "kind": "structure",
           "name": "SecurityDomain",
-          "line": 320,
+          "line": 374,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:325>",
-          "line": 325,
+          "name": "<anonymous:instance:379>",
+          "line": 379,
           "called": [
             "SecurityDomain"
           ]
@@ -21874,13 +22007,13 @@
         {
           "kind": "namespace",
           "name": "SecurityDomain",
-          "line": 328,
+          "line": 382,
           "called": []
         },
         {
           "kind": "def",
           "name": "lowest",
-          "line": 331,
+          "line": 385,
           "called": [
             "SecurityDomain"
           ]
@@ -21888,7 +22021,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 334,
+          "line": 388,
           "called": [
             "SecurityDomain"
           ]
@@ -21896,15 +22029,15 @@
         {
           "kind": "def",
           "name": "toNat",
-          "line": 337,
+          "line": 391,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:339>",
-          "line": 339,
+          "name": "<anonymous:instance:393>",
+          "line": 393,
           "called": [
             "SecurityDomain"
           ]
@@ -21912,7 +22045,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 343,
+          "line": 397,
           "called": [
             "ofNat",
             "toNat"
@@ -21921,7 +22054,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 345,
+          "line": 399,
           "called": [
             "SecurityDomain",
             "ofNat",
@@ -21931,7 +22064,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_injective",
-          "line": 347,
+          "line": 401,
           "called": [
             "ofNat"
           ]
@@ -21939,31 +22072,31 @@
         {
           "kind": "theorem",
           "name": "ext",
-          "line": 350,
+          "line": 404,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:356>",
-          "line": 356,
+          "name": "<anonymous:instance:410>",
+          "line": 410,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:358>",
-          "line": 358,
+          "name": "<anonymous:instance:412>",
+          "line": 412,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:362>",
-          "line": 362,
+          "name": "<anonymous:instance:416>",
+          "line": 416,
           "called": [
             "SecurityDomain"
           ]
@@ -21971,7 +22104,7 @@
         {
           "kind": "structure",
           "name": "DomainFlowPolicy",
-          "line": 370,
+          "line": 424,
           "called": [
             "SecurityDomain"
           ]
@@ -21979,13 +22112,13 @@
         {
           "kind": "namespace",
           "name": "DomainFlowPolicy",
-          "line": 373,
+          "line": 427,
           "called": []
         },
         {
           "kind": "def",
           "name": "isReflexive",
-          "line": 376,
+          "line": 430,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -21994,7 +22127,7 @@
         {
           "kind": "def",
           "name": "isTransitive",
-          "line": 380,
+          "line": 434,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -22003,7 +22136,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 385,
+          "line": 439,
           "called": [
             "DomainFlowPolicy",
             "isReflexive",
@@ -22013,7 +22146,7 @@
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 389,
+          "line": 443,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -22021,7 +22154,7 @@
         {
           "kind": "def",
           "name": "linearOrder",
-          "line": 394,
+          "line": 448,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -22029,7 +22162,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_reflexive",
-          "line": 403,
+          "line": 457,
           "called": [
             "isReflexive"
           ]
@@ -22037,7 +22170,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_transitive",
-          "line": 407,
+          "line": 461,
           "called": [
             "isTransitive"
           ]
@@ -22045,7 +22178,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_wellFormed",
-          "line": 411,
+          "line": 465,
           "called": [
             "allowAll_reflexive",
             "allowAll_transitive",
@@ -22055,7 +22188,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_reflexive",
-          "line": 415,
+          "line": 469,
           "called": [
             "isReflexive",
             "linearOrder"
@@ -22064,7 +22197,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_transitive",
-          "line": 419,
+          "line": 473,
           "called": [
             "isTransitive",
             "linearOrder"
@@ -22073,7 +22206,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_wellFormed",
-          "line": 425,
+          "line": 479,
           "called": [
             "linearOrder_reflexive",
             "linearOrder_transitive",
@@ -22083,7 +22216,7 @@
         {
           "kind": "def",
           "name": "domainFlowsTo",
-          "line": 433,
+          "line": 487,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -22092,7 +22225,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_refl",
-          "line": 436,
+          "line": 490,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -22103,7 +22236,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_trans",
-          "line": 442,
+          "line": 496,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -22114,7 +22247,7 @@
         {
           "kind": "structure",
           "name": "GenericLabelingContext",
-          "line": 456,
+          "line": 510,
           "called": [
             "DomainFlowPolicy",
             "ObjId",
@@ -22126,7 +22259,7 @@
         {
           "kind": "def",
           "name": "genericFlowCheck",
-          "line": 465,
+          "line": 519,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -22136,7 +22269,7 @@
         {
           "kind": "structure",
           "name": "EndpointFlowPolicy",
-          "line": 478,
+          "line": 532,
           "called": [
             "DomainFlowPolicy",
             "ObjId"
@@ -22145,7 +22278,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheck",
-          "line": 483,
+          "line": 537,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -22160,7 +22293,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_fallback",
-          "line": 493,
+          "line": 547,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -22175,7 +22308,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_override",
-          "line": 504,
+          "line": 558,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -22190,7 +22323,7 @@
         {
           "kind": "def",
           "name": "embedLegacyLabel",
-          "line": 529,
+          "line": 583,
           "called": [
             "SecurityDomain",
             "SecurityLabel"
@@ -22199,7 +22332,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_public",
-          "line": 537,
+          "line": 591,
           "called": [
             "embedLegacyLabel",
             "publicLabel"
@@ -22208,7 +22341,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_kernelTrusted",
-          "line": 541,
+          "line": 595,
           "called": [
             "embedLegacyLabel",
             "kernelTrusted"
@@ -22217,7 +22350,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_preserves_flow",
-          "line": 546,
+          "line": 600,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -22230,7 +22363,7 @@
         {
           "kind": "def",
           "name": "liftLegacyContext",
-          "line": 560,
+          "line": 614,
           "called": [
             "GenericLabelingContext",
             "LabelingContext",
@@ -22241,7 +22374,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_reflexive",
-          "line": 596,
+          "line": 650,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -22251,7 +22384,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_transitive",
-          "line": 599,
+          "line": 653,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -22261,7 +22394,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationEvent",
-          "line": 618,
+          "line": 672,
           "called": [
             "ObjId",
             "SecurityDomain"
@@ -22270,7 +22403,7 @@
         {
           "kind": "abbrev",
           "name": "DeclassificationAuditLog",
-          "line": 638,
+          "line": 692,
           "called": [
             "DeclassificationEvent"
           ]
@@ -22278,7 +22411,7 @@
         {
           "kind": "def",
           "name": "recordDeclassification",
-          "line": 641,
+          "line": 695,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent"
@@ -22287,7 +22420,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_preserves_existing",
-          "line": 647,
+          "line": 701,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -22297,7 +22430,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_contains_new",
-          "line": 654,
+          "line": 708,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -22307,7 +22440,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_length",
-          "line": 660,
+          "line": 714,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -22317,7 +22450,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationPolicy",
-          "line": 694,
+          "line": 748,
           "called": [
             "SecurityDomain"
           ]
@@ -22325,13 +22458,13 @@
         {
           "kind": "namespace",
           "name": "DeclassificationPolicy",
-          "line": 697,
+          "line": 751,
           "called": []
         },
         {
           "kind": "def",
           "name": "none",
-          "line": 700,
+          "line": 754,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -22339,7 +22472,7 @@
         {
           "kind": "def",
           "name": "isDeclassificationAuthorized",
-          "line": 706,
+          "line": 760,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -22349,7 +22482,7 @@
         {
           "kind": "theorem",
           "name": "isDeclassificationAuthorized_not_reflexive",
-          "line": 714,
+          "line": 768,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -22361,7 +22494,7 @@
         {
           "kind": "def",
           "name": "endpointFlowPolicyWellFormed",
-          "line": 739,
+          "line": 793,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -22371,7 +22504,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowPolicyWellFormed_no_overrides",
-          "line": 747,
+          "line": 801,
           "called": [
             "DomainFlowPolicy",
             "endpointFlowPolicyWellFormed",
@@ -22382,7 +22515,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_reflexive",
-          "line": 758,
+          "line": 812,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -22399,7 +22532,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_transitive",
-          "line": 774,
+          "line": 828,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -22416,7 +22549,7 @@
         {
           "kind": "def",
           "name": "endpointPolicyRestricted",
-          "line": 805,
+          "line": 859,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -22427,7 +22560,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_no_overrides",
-          "line": 816,
+          "line": 870,
           "called": [
             "DomainFlowPolicy",
             "endpointPolicyRestricted",
@@ -22437,7 +22570,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_restricted_subset",
-          "line": 823,
+          "line": 877,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -22457,7 +22590,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Projection",
       "path": "SeLe4n/Kernel/InformationFlow/Projection.lean",
-      "declaration_count": 34,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -22879,10 +23012,64 @@
           "line": 461,
           "called": [
             "IfObserver",
-            "Kernel",
             "LabelingContext",
             "SystemState",
             "lowEquivalent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "serviceRegistryAffectsProjection",
+          "line": 482,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lookupService",
+            "serviceObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceOrchestrationOutsideNiBoundary",
+          "line": 510,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lookupService",
+            "lowEquivalent",
+            "objectObservable",
+            "projectActiveDomain",
+            "projectCurrent",
+            "projectDomainSchedule",
+            "projectDomainScheduleIndex",
+            "projectDomainTimeRemaining",
+            "projectIrqHandlers",
+            "projectMachineRegs",
+            "projectMemory_eq_of_memory_eq",
+            "projectObjectIndex",
+            "projectObjects",
+            "projectRunnable",
+            "projectServicePresence",
+            "projectServiceRegistry",
+            "projectState",
+            "serviceObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serviceOrchestration_boundary_disjunction",
+          "line": 570,
+          "called": [
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "SystemState",
+            "lookupService",
+            "none",
+            "serviceObservable",
+            "serviceRegistryAffectsProjection"
           ]
         }
       ]
