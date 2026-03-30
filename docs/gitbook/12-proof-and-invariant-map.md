@@ -1726,7 +1726,7 @@ See [workstream plan](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WO
 The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 
 **Layer-2 round-trip proofs** (SyscallArgDecode.lean, K-F):
-- `encodeCSpaceMintArgs`/`decodeCSpaceMintArgs` round-trip (and 9 analogous pairs, WS-Q1: +`ServiceRegisterArgs`, `ServiceRevokeArgs`, `ServiceQueryArgs`)
+- `encodeCSpaceMintArgs`/`decodeCSpaceMintArgs` round-trip (requires `rights.valid` + `badge.valid`; Y1-D: `ofNat` decode masks at boundary) (and 9 analogous pairs, WS-Q1: +`ServiceRegisterArgs`, `ServiceRevokeArgs`, `ServiceQueryArgs`)
 - `decode_layer2_roundtrip_all` — composed conjunction of all 10 round-trips
 
 **Layer-1 extraction round-trip** (RegisterDecode.lean, K-F):

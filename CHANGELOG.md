@@ -13,6 +13,9 @@ LOW-01, LOW-02, LOW-03) from the v0.22.22 comprehensive full-kernel audit.
 - **Y1-D (LOW-01)**: `AccessRightSet.mk` raw constructor documented as
   internal-only with prominent warning. External uses migrated to `ofNat`
   (safe, masked constructor). `eta` simp lemma added for proof reconstruction.
+  `decodeCSpaceMintArgs` now uses `AccessRightSet.ofNat` at the decode boundary
+  to mask untrusted register values to the valid 5-bit range. Roundtrip proof
+  updated with `hRights : args.rights.valid` hypothesis.
 - **Y1-E (LOW-02)**: `descendantsOf` BFS visited-set optimized from O(n²)
   `List.Mem` to O(1) `Std.HashSet` membership checks. All 12 supporting
   theorems updated with visited/acc sync invariant. `foldl_insert_contains`
@@ -21,6 +24,9 @@ LOW-01, LOW-02, LOW-03) from the v0.22.22 comprehensive full-kernel audit.
   decomposition (cdtSlotNode, cdtNodeSlot, cdtChildMap, cdtParentMap,
   byPriority, threadPriority, membership). All 16 conjuncts now have named
   accessors with completeness documentation and raw-projection warning.
+- **Audit hardening**: TPH-006b test updated to verify time-slice reset against
+  `configDefaultTimeSlice` field (not hardcoded constant). TPH-006c added with
+  non-default config value (12) to semantically verify the MED-01 fix path.
 
 Zero sorry/axiom. All tests pass.
 

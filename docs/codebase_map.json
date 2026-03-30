@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-phase-y1-optimization-82dVF",
-      "commit_sha": "a6a3fe704409c57061c30fc7f8bdd45d58369464",
-      "tree_sha": "3e99ba56291f080c7de31bd5e183bab11083d172",
-      "committed_at_utc": "2026-03-30T01:41:44-04:00"
+      "commit_sha": "9fcf55891f0191bee55cf019b910ae381edffe86",
+      "tree_sha": "f8b3ce632b2466c35f96ab1ea50d318b5f3cdea4",
+      "committed_at_utc": "2026-03-30T06:14:40+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c47c317ef65cddce18b93a1c81dcf968c8ad07530c2a16df8a6c8e69a91b6cff"
+    "source_digest": "d2d67be2a7b90d6185107fa7b0ac516bafceda55f7eb7de92cc3918877d6993c"
   },
   "summary": {
     "module_count": 113,
-    "declaration_count": 3748
+    "declaration_count": 3749
   },
   "readme_sync": {
     "version": "0.22.23",
     "lean_toolchain": "v4.28.0",
     "production_files": 103,
-    "production_loc": 73784,
+    "production_loc": 73787,
     "test_files": 10,
-    "test_loc": 8633,
+    "test_loc": 8666,
     "proved_theorem_lemma_decls": 2134,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -2671,7 +2671,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMintArgs_roundtrip",
-          "line": 611,
+          "line": 613,
           "called": [
             "CSpaceMintArgs",
             "decodeCSpaceMintArgs",
@@ -2679,8 +2679,7 @@
             "machineWordBits",
             "machineWordMax",
             "ofNat",
-            "ofNatMasked",
-            "requireMsgReg",
+            "ofNat_idempotent",
             "stubDecoded",
             "toNat",
             "valid"
@@ -2689,7 +2688,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceCopyArgs_roundtrip",
-          "line": 623,
+          "line": 624,
           "called": [
             "CSpaceCopyArgs",
             "decodeCSpaceCopyArgs",
@@ -2700,7 +2699,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMoveArgs_roundtrip",
-          "line": 628,
+          "line": 629,
           "called": [
             "CSpaceMoveArgs",
             "decodeCSpaceMoveArgs",
@@ -2711,7 +2710,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceDeleteArgs_roundtrip",
-          "line": 633,
+          "line": 634,
           "called": [
             "CSpaceDeleteArgs",
             "decodeCSpaceDeleteArgs",
@@ -2722,7 +2721,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_roundtrip",
-          "line": 640,
+          "line": 641,
           "called": [
             "LifecycleRetypeArgs",
             "decodeLifecycleRetypeArgs",
@@ -2735,7 +2734,7 @@
         {
           "kind": "theorem",
           "name": "pagePermissions_toNat_lt_32",
-          "line": 649,
+          "line": 650,
           "called": [
             "PagePermissions",
             "toNat"
@@ -2744,7 +2743,7 @@
         {
           "kind": "theorem",
           "name": "pagePermissions_ofNat",
-          "line": 654,
+          "line": 655,
           "called": [
             "PagePermissions",
             "PagePermissions.ofNat",
@@ -2757,7 +2756,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_roundtrip",
-          "line": 665,
+          "line": 666,
           "called": [
             "ASID.ofNat_toNat",
             "PAddr.ofNat_toNat",
@@ -2782,7 +2781,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_roundtrip",
-          "line": 694,
+          "line": 695,
           "called": [
             "ASID.ofNat_toNat",
             "VAddr.ofNat_toNat",
@@ -2799,7 +2798,7 @@
         {
           "kind": "structure",
           "name": "ServiceRegisterArgs",
-          "line": 709,
+          "line": 710,
           "called": [
             "InterfaceId"
           ]
@@ -2807,7 +2806,7 @@
         {
           "kind": "structure",
           "name": "ServiceRevokeArgs",
-          "line": 719,
+          "line": 720,
           "called": [
             "ServiceId"
           ]
@@ -2815,13 +2814,13 @@
         {
           "kind": "structure",
           "name": "ServiceQueryArgs",
-          "line": 726,
+          "line": 727,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeServiceRegisterArgs",
-          "line": 736,
+          "line": 737,
           "called": [
             "KernelError",
             "ServiceRegisterArgs",
@@ -2834,7 +2833,7 @@
         {
           "kind": "def",
           "name": "decodeServiceRevokeArgs",
-          "line": 751,
+          "line": 752,
           "called": [
             "KernelError",
             "ServiceRevokeArgs",
@@ -2846,7 +2845,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRegisterArgs",
-          "line": 762,
+          "line": 763,
           "called": [
             "RegValue",
             "ServiceRegisterArgs",
@@ -2856,7 +2855,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRevokeArgs",
-          "line": 768,
+          "line": 769,
           "called": [
             "RegValue",
             "ServiceRevokeArgs",
@@ -2866,7 +2865,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_error_iff",
-          "line": 776,
+          "line": 777,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -2881,7 +2880,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_error_iff",
-          "line": 809,
+          "line": 810,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -2895,7 +2894,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_roundtrip",
-          "line": 830,
+          "line": 831,
           "called": [
             "ServiceRegisterArgs",
             "bind",
@@ -2911,7 +2910,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_roundtrip",
-          "line": 839,
+          "line": 840,
           "called": [
             "ServiceRevokeArgs",
             "decodeServiceRevokeArgs",
@@ -2922,7 +2921,7 @@
         {
           "kind": "structure",
           "name": "NotificationSignalArgs",
-          "line": 850,
+          "line": 851,
           "called": [
             "Badge"
           ]
@@ -2930,13 +2929,13 @@
         {
           "kind": "structure",
           "name": "NotificationWaitArgs",
-          "line": 857,
+          "line": 858,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ReplyRecvArgs",
-          "line": 864,
+          "line": 865,
           "called": [
             "ThreadId"
           ]
@@ -2944,7 +2943,7 @@
         {
           "kind": "def",
           "name": "decodeNotificationSignalArgs",
-          "line": 870,
+          "line": 871,
           "called": [
             "KernelError",
             "NotificationSignalArgs",
@@ -2957,7 +2956,7 @@
         {
           "kind": "def",
           "name": "decodeNotificationWaitArgs",
-          "line": 876,
+          "line": 877,
           "called": [
             "KernelError",
             "NotificationWaitArgs",
@@ -2968,7 +2967,7 @@
         {
           "kind": "def",
           "name": "decodeReplyRecvArgs",
-          "line": 882,
+          "line": 883,
           "called": [
             "KernelError",
             "ReplyRecvArgs",
@@ -2981,7 +2980,7 @@
         {
           "kind": "def",
           "name": "encodeNotificationSignalArgs",
-          "line": 888,
+          "line": 889,
           "called": [
             "NotificationSignalArgs",
             "RegValue"
@@ -2990,7 +2989,7 @@
         {
           "kind": "def",
           "name": "encodeNotificationWaitArgs",
-          "line": 892,
+          "line": 893,
           "called": [
             "NotificationWaitArgs",
             "RegValue"
@@ -2999,7 +2998,7 @@
         {
           "kind": "def",
           "name": "encodeReplyRecvArgs",
-          "line": 896,
+          "line": 897,
           "called": [
             "RegValue",
             "ReplyRecvArgs",
@@ -3009,7 +3008,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_roundtrip",
-          "line": 901,
+          "line": 902,
           "called": [
             "Badge.ofNatMasked_toNat",
             "NotificationSignalArgs",
@@ -3025,7 +3024,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationWaitArgs_roundtrip",
-          "line": 910,
+          "line": 911,
           "called": [
             "NotificationWaitArgs",
             "decodeNotificationWaitArgs",
@@ -3036,7 +3035,7 @@
         {
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_roundtrip",
-          "line": 915,
+          "line": 916,
           "called": [
             "ReplyRecvArgs",
             "decodeReplyRecvArgs",
@@ -3047,7 +3046,7 @@
         {
           "kind": "theorem",
           "name": "decode_layer2_roundtrip_all",
-          "line": 923,
+          "line": 926,
           "called": [
             "decodeCSpaceCopyArgs",
             "decodeCSpaceCopyArgs_roundtrip",
@@ -3095,7 +3094,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_error_iff",
-          "line": 955,
+          "line": 958,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -3109,7 +3108,7 @@
         {
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_error_iff",
-          "line": 972,
+          "line": 975,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -3123,7 +3122,7 @@
         {
           "kind": "def",
           "name": "decodeExtraCapAddrs",
-          "line": 1002,
+          "line": 1005,
           "called": [
             "CPtr",
             "SyscallDecodeResult",
@@ -3134,7 +3133,7 @@
         {
           "kind": "theorem",
           "name": "arm64_regCount_valid",
-          "line": 1023,
+          "line": 1026,
           "called": [
             "arm64GPRCount"
           ]
@@ -3142,7 +3141,7 @@
         {
           "kind": "theorem",
           "name": "machineConfig_registerCount_default_eq_arm64GPRCount",
-          "line": 1030,
+          "line": 1033,
           "called": [
             "MachineConfig",
             "arm64GPRCount"
@@ -50691,7 +50690,7 @@
     {
       "module": "tests.TwoPhaseArchSuite",
       "path": "tests/TwoPhaseArchSuite.lean",
-      "declaration_count": 20,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -50873,7 +50872,28 @@
             "ThreadId",
             "expect",
             "freezeMap",
-            "frozenDefaultTimeSlice",
+            "frozenLookupTcb",
+            "frozenTimerTick",
+            "insert",
+            "mkFrozenState",
+            "mkTcb",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tph006c_timerTickExpiryCustomConfig",
+          "line": 284,
+          "called": [
+            "Priority",
+            "RHTable",
+            "RHTable.empty",
+            "TCB",
+            "ThreadId",
+            "config",
+            "expect",
+            "freezeMap",
             "frozenLookupTcb",
             "frozenTimerTick",
             "insert",
@@ -50886,7 +50906,7 @@
         {
           "kind": "def",
           "name": "tph010_commutativity",
-          "line": 291,
+          "line": 323,
           "called": [
             "FrozenKernelObject",
             "FrozenKernelObject.objectType",
@@ -50904,7 +50924,7 @@
         {
           "kind": "def",
           "name": "tph012_preallocatedSlot",
-          "line": 331,
+          "line": 363,
           "called": [
             "expect",
             "get",
@@ -50918,7 +50938,7 @@
         {
           "kind": "def",
           "name": "tph014a_frozenSchedule",
-          "line": 361,
+          "line": 393,
           "called": [
             "Priority",
             "RHTable",
@@ -50939,7 +50959,7 @@
         {
           "kind": "def",
           "name": "tph014b_frozenYield",
-          "line": 390,
+          "line": 422,
           "called": [
             "Priority",
             "RHTable",
@@ -50958,7 +50978,7 @@
         {
           "kind": "def",
           "name": "tph014c_scheduleNoEligible",
-          "line": 416,
+          "line": 448,
           "called": [
             "Priority",
             "RHTable",
@@ -50978,7 +50998,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 447,
+          "line": 479,
           "called": [
             "tph001a_emptyBuilder",
             "tph001b_builderPipeline",
@@ -50989,6 +51009,7 @@
             "tph005c_callBlocksForReply",
             "tph006a_timerTickActive",
             "tph006b_timerTickExpiry",
+            "tph006c_timerTickExpiryCustomConfig",
             "tph010_commutativity",
             "tph012_preallocatedSlot",
             "tph014a_frozenSchedule",

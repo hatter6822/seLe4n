@@ -271,12 +271,44 @@ private def tph006b_timerTickExpiry : IO Unit := do
       -- The thread's time slice was reset to configDefaultTimeSlice (5).
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
-          expect "TPH-006e time slice reset" (tcb.timeSlice == frozenDefaultTimeSlice)
+          expect "TPH-006e time slice reset" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
       | none => throw <| IO.userError "TPH-006e TCB missing after expiry"
       -- frozenSchedule was called after clearing current. Thread 1 is the
       -- only eligible thread (domain 0, .ready), so it should be re-selected.
       expect "TPH-006f thread re-selected" (fst'.scheduler.current == some ⟨1⟩)
   | .error e => throw <| IO.userError s!"TPH-006b expiry should succeed: {toString e}"
+
+/-- TPH-006c: Timer tick expiry with non-default configDefaultTimeSlice (MED-01
+    semantic verification). Verifies that frozenTimerTick resets the time slice
+    to the platform-configured value, not the hardcoded default. -/
+private def tph006c_timerTickExpiryCustomConfig : IO Unit := do
+  let tcb1 : TCB := { mkTcb 1 10 0 with timeSlice := 1, ipcState := .ready }
+  let byPrioRt := (RHTable.empty 16 : RHTable Priority (List ThreadId))
+    |>.insert ⟨10⟩ [⟨1⟩]
+  let memberRt := (RHTable.empty 16 : RHTable ThreadId Unit)
+    |>.insert ⟨1⟩ ()
+  -- Use configDefaultTimeSlice := 12, deliberately different from default (5)
+  let fst := { mkFrozenState [(⟨1⟩, .tcb tcb1)] with
+    scheduler := {
+      byPriority := freezeMap byPrioRt
+      threadPriority := freezeMap (RHTable.empty 16)
+      membership := freezeMap memberRt
+      current := some ⟨1⟩
+      activeDomain := ⟨0⟩
+      domainTimeRemaining := 5
+      domainSchedule := []
+      domainScheduleIndex := 0
+      configDefaultTimeSlice := 12
+    } }
+  match frozenTimerTick fst with
+  | .ok ((), fst') =>
+      match frozenLookupTcb fst' ⟨1⟩ with
+      | some tcb =>
+          -- Must reset to 12 (the config value), NOT 5 (the old default)
+          expect "TPH-006g time slice reset to custom config" (tcb.timeSlice == 12)
+          expect "TPH-006h time slice uses config field" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
+      | none => throw <| IO.userError "TPH-006g TCB missing after expiry"
+  | .error e => throw <| IO.userError s!"TPH-006c custom config expiry should succeed: {toString e}"
 
 -- ============================================================================
 -- TPH-010: Commutativity Property
@@ -465,6 +497,7 @@ def main : IO Unit := do
   IO.println "--- TPH-006: Frozen Scheduler Tick (Active) ---"
   tph006a_timerTickActive
   tph006b_timerTickExpiry
+  tph006c_timerTickExpiryCustomConfig
 
   IO.println "--- TPH-010: Commutativity ---"
   tph010_commutativity
@@ -478,5 +511,5 @@ def main : IO Unit := do
   tph014c_scheduleNoEligible
 
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 14 two-phase architecture tests passed!"
+  IO.println "  All 15 two-phase architecture tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
