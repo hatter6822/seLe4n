@@ -52,13 +52,27 @@ def replenishmentListWellFormed (sc : SchedContext) : Prop :=
   ∀ r ∈ sc.replenishments, r.amount.val > 0
 
 -- ============================================================================
+-- Z2-I2: replenishmentAmountsBounded invariant
+-- ============================================================================
+
+/-- Replenishment entry amounts are bounded by the configured budget.
+This invariant holds because each replenishment entry is created from
+`budgetRemaining` which satisfies `budgetRemaining ≤ budget`. -/
+def replenishmentAmountsBounded (sc : SchedContext) : Prop :=
+  ∀ r ∈ sc.replenishments, r.amount.val ≤ sc.budget.val
+
+-- ============================================================================
 -- Z2-J: schedContextWellFormed bundle
 -- ============================================================================
 
 /-- Full per-object SchedContext invariant: structural well-formedness from Z1,
-CBS budget bounds, and replenishment list well-formedness. -/
+CBS budget bounds, replenishment list well-formedness, and replenishment
+entry amount bounds. The fourth conjunct ensures that every replenishment
+entry's amount is ≤ the configured budget — required by the CBS bandwidth
+isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`). -/
 def schedContextWellFormed (sc : SchedContext) : Prop :=
-  sc.wellFormed ∧ budgetWithinBounds sc ∧ replenishmentListWellFormed sc
+  sc.wellFormed ∧ budgetWithinBounds sc ∧
+  replenishmentListWellFormed sc ∧ replenishmentAmountsBounded sc
 
 -- ============================================================================
 -- Z2-K: consumeBudget preserves budgetWithinBounds
@@ -227,66 +241,8 @@ theorem scheduleReplenishment_preserves_budgetWithinBounds (sc : SchedContext)
   exact h
 
 -- ============================================================================
--- Z2-N: cbsBudgetCheck preserves schedContextWellFormed
+-- Z2-M2: replenishmentAmountsBounded preservation
 -- ============================================================================
-
-/-- The combined per-tick budget check preserves the full SchedContext invariant
-bundle. This composes the individual preservation theorems for each sub-operation
-(consume, schedule replenishment, process replenishments, update deadline). -/
-theorem cbsBudgetCheck_preserves_schedContextWellFormed (sc : SchedContext)
-    (currentTime : Nat) (ticksConsumed : Nat)
-    (h : schedContextWellFormed sc)
-    (hbudgetPos : sc.budgetRemaining.val > 0) :
-    schedContextWellFormed (cbsBudgetCheck sc currentTime ticksConsumed).1 := by
-  obtain ⟨hwf, hbounds, hrepl⟩ := h
-  simp [schedContextWellFormed, cbsBudgetCheck]
-  split
-  · -- Budget exhausted branch
-    refine ⟨?_, ?_, ?_⟩
-    · -- wellFormed
-      apply cbsUpdateDeadline_preserves_wellFormed
-      apply processReplenishments_preserves_wellFormed
-      apply scheduleReplenishment_preserves_wellFormed
-      exact consumeBudget_preserves_wellFormed sc ticksConsumed hwf
-    · -- budgetWithinBounds
-      apply cbsUpdateDeadline_preserves_budgetWithinBounds
-      apply processReplenishments_preserves_budgetWithinBounds
-      apply scheduleReplenishment_preserves_budgetWithinBounds
-      exact consumeBudget_preserves_budgetWithinBounds sc ticksConsumed hbounds
-    · -- replenishmentListWellFormed
-      apply cbsUpdateDeadline_preserves_replenishmentListWellFormed
-      apply processReplenishments_preserves_replenishmentListWellFormed
-      apply scheduleReplenishment_preserves_replenishmentListWellFormed
-      · exact consumeBudget_preserves_replenishmentListWellFormed sc ticksConsumed hrepl
-      · -- consumed amount > 0: we know budgetRemaining was > 0
-        exact hbudgetPos
-  · -- Budget not exhausted branch
-    refine ⟨?_, ?_, ?_⟩
-    · apply processReplenishments_preserves_wellFormed
-      exact consumeBudget_preserves_wellFormed sc ticksConsumed hwf
-    · apply processReplenishments_preserves_budgetWithinBounds
-      exact consumeBudget_preserves_budgetWithinBounds sc ticksConsumed hbounds
-    · apply processReplenishments_preserves_replenishmentListWellFormed
-      exact consumeBudget_preserves_replenishmentListWellFormed sc ticksConsumed hrepl
-
--- ============================================================================
--- Z2-O1: totalConsumed accumulator
--- ============================================================================
-
-/-- Compute the total ticks consumed by a SchedContext within a time window,
-measured by summing replenishment amounts whose eligibility falls within
-`[windowStart, windowStart + window)`. This models the CBS accounting identity:
-consumed ticks are eventually scheduled for replenishment. -/
-def totalConsumed (sc : SchedContext) (windowStart : Nat) (window : Nat) : Nat :=
-  let relevant := sc.replenishments.filter (fun r =>
-    r.eligibleAt ≥ windowStart && r.eligibleAt < windowStart + window)
-  sumReplenishments relevant
-
-/-- Replenishment entry amounts are bounded by the configured budget.
-This invariant holds because each replenishment entry is created from
-`budgetRemaining` which satisfies `budgetRemaining ≤ budget`. -/
-def replenishmentAmountsBounded (sc : SchedContext) : Prop :=
-  ∀ r ∈ sc.replenishments, r.amount.val ≤ sc.budget.val
 
 /-- `consumeBudget` preserves `replenishmentAmountsBounded`: the replenishment
 list and budget ceiling are unchanged by consumption. -/
@@ -330,6 +286,70 @@ theorem cbsUpdateDeadline_preserves_replenishmentAmountsBounded
     replenishmentAmountsBounded (cbsUpdateDeadline sc currentTime wasExhausted) := by
   simp [cbsUpdateDeadline, replenishmentAmountsBounded]
   split <;> exact h
+
+-- ============================================================================
+-- Z2-N: cbsBudgetCheck preserves schedContextWellFormed
+-- ============================================================================
+
+/-- The combined per-tick budget check preserves the full SchedContext invariant
+bundle. This composes the individual preservation theorems for each sub-operation
+(consume, schedule replenishment, process replenishments, update deadline). -/
+theorem cbsBudgetCheck_preserves_schedContextWellFormed (sc : SchedContext)
+    (currentTime : Nat) (ticksConsumed : Nat)
+    (h : schedContextWellFormed sc)
+    (hbudgetPos : sc.budgetRemaining.val > 0) :
+    schedContextWellFormed (cbsBudgetCheck sc currentTime ticksConsumed).1 := by
+  obtain ⟨hwf, hbounds, hrepl, hamounts⟩ := h
+  simp [schedContextWellFormed, cbsBudgetCheck]
+  split
+  · -- Budget exhausted branch
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · -- wellFormed
+      apply cbsUpdateDeadline_preserves_wellFormed
+      apply processReplenishments_preserves_wellFormed
+      apply scheduleReplenishment_preserves_wellFormed
+      exact consumeBudget_preserves_wellFormed sc ticksConsumed hwf
+    · -- budgetWithinBounds
+      apply cbsUpdateDeadline_preserves_budgetWithinBounds
+      apply processReplenishments_preserves_budgetWithinBounds
+      apply scheduleReplenishment_preserves_budgetWithinBounds
+      exact consumeBudget_preserves_budgetWithinBounds sc ticksConsumed hbounds
+    · -- replenishmentListWellFormed
+      apply cbsUpdateDeadline_preserves_replenishmentListWellFormed
+      apply processReplenishments_preserves_replenishmentListWellFormed
+      apply scheduleReplenishment_preserves_replenishmentListWellFormed
+      · exact consumeBudget_preserves_replenishmentListWellFormed sc ticksConsumed hrepl
+      · -- consumed amount > 0: we know budgetRemaining was > 0
+        exact hbudgetPos
+    · -- replenishmentAmountsBounded
+      apply cbsUpdateDeadline_preserves_replenishmentAmountsBounded
+      apply processReplenishments_preserves_replenishmentAmountsBounded
+      apply scheduleReplenishment_preserves_replenishmentAmountsBounded
+      · exact consumeBudget_preserves_replenishmentAmountsBounded sc ticksConsumed hamounts
+      · exact hbounds.1
+  · -- Budget not exhausted branch
+    refine ⟨?_, ?_, ?_, ?_⟩
+    · apply processReplenishments_preserves_wellFormed
+      exact consumeBudget_preserves_wellFormed sc ticksConsumed hwf
+    · apply processReplenishments_preserves_budgetWithinBounds
+      exact consumeBudget_preserves_budgetWithinBounds sc ticksConsumed hbounds
+    · apply processReplenishments_preserves_replenishmentListWellFormed
+      exact consumeBudget_preserves_replenishmentListWellFormed sc ticksConsumed hrepl
+    · apply processReplenishments_preserves_replenishmentAmountsBounded
+      exact consumeBudget_preserves_replenishmentAmountsBounded sc ticksConsumed hamounts
+
+-- ============================================================================
+-- Z2-O1: totalConsumed accumulator
+-- ============================================================================
+
+/-- Compute the total ticks consumed by a SchedContext within a time window,
+measured by summing replenishment amounts whose eligibility falls within
+`[windowStart, windowStart + window)`. This models the CBS accounting identity:
+consumed ticks are eventually scheduled for replenishment. -/
+def totalConsumed (sc : SchedContext) (windowStart : Nat) (window : Nat) : Nat :=
+  let relevant := sc.replenishments.filter (fun r =>
+    r.eligibleAt ≥ windowStart && r.eligibleAt < windowStart + window)
+  sumReplenishments relevant
 
 /-- `cbsBudgetCheck` preserves `replenishmentAmountsBounded`. The key insight
 is that the consumed amount equals `sc.budgetRemaining.val` which is ≤

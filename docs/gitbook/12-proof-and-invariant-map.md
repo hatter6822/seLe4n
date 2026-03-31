@@ -2270,13 +2270,11 @@ invariant proofs.
 **Invariant definitions** (`Kernel/SchedContext/Invariant/Defs.lean`):
 - `budgetWithinBounds` — `budgetRemaining ≤ budget ≤ period`.
 - `replenishmentListWellFormed` — bounded length, no zero-amount entries.
-- `schedContextWellFormed` — conjunction of structural + CBS invariants.
 - `replenishmentAmountsBounded` — each entry's amount ≤ configured budget.
+- `schedContextWellFormed` — 4-conjunct bundle: `wellFormed ∧ budgetWithinBounds ∧ replenishmentListWellFormed ∧ replenishmentAmountsBounded`.
 
-**Preservation theorems** (12 `schedContextWellFormed` + 6
-`replenishmentAmountsBounded`, composing into
-`cbsBudgetCheck_preserves_schedContextWellFormed` and
-`cbsBudgetCheck_preserves_replenishmentAmountsBounded`):
+**Preservation theorems** (16 per-sub-invariant + 1 bundled composite,
+composing into `cbsBudgetCheck_preserves_schedContextWellFormed`):
 - `consumeBudget_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed, replenishmentAmountsBounded}`
 - `processReplenishments_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed, replenishmentAmountsBounded}`
 - `scheduleReplenishment_preserves_{replenishmentListWellFormed, wellFormed, budgetWithinBounds, replenishmentAmountsBounded}`
