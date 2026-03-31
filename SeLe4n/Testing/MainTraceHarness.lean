@@ -2292,13 +2292,14 @@ private def runRustXvalVectors : IO Unit := do
       throw <| IO.userError "[XVAL-001] MessageInfo roundtrip FAILED"
   | none => throw <| IO.userError "[XVAL-001] MessageInfo decode returned none"
 
-  -- RUST-XVAL: SyscallId roundtrip (all 17)
+  -- RUST-XVAL: SyscallId roundtrip (all 20)
   let allSyscalls : List SyscallId := [
     .send, .receive, .call, .reply,
     .cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete,
     .lifecycleRetype, .vspaceMap, .vspaceUnmap,
     .serviceRegister, .serviceRevoke, .serviceQuery,
-    .notificationSignal, .notificationWait, .replyRecv
+    .notificationSignal, .notificationWait, .replyRecv,
+    .schedContextConfigure, .schedContextBind, .schedContextUnbind
   ]
   let mut syscallOk := true
   for s in allSyscalls do
@@ -2306,7 +2307,7 @@ private def runRustXvalVectors : IO Unit := do
     | some s' => if s != s' then syscallOk := false
     | none => syscallOk := false
   if syscallOk then
-    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 17 variants"
+    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 20 variants"
   else
     throw <| IO.userError "[XVAL-002] SyscallId roundtrip FAILED"
 

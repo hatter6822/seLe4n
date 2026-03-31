@@ -614,19 +614,24 @@ def frozenOpCoverage : SyscallId → Bool
   | .notificationSignal => true  -- V2-A: notification signal (frozen-phase badge merge)
   | .notificationWait => true    -- V2-A: notification wait (frozen-phase consume/block)
   | .replyRecv => true           -- V2-C: compound reply + receive
+  | .schedContextConfigure => false  -- Z5-D: builder-only (configure SchedContext)
+  | .schedContextBind => false       -- Z5-D: builder-only (bind thread to SchedContext)
+  | .schedContextUnbind => false     -- Z5-D: builder-only (unbind thread from SchedContext)
 
 /-- S3-L: Exactly 12 SyscallId arms have frozen operation coverage.
-    The 5 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
-    lifecycleRetype, serviceRegister, serviceRevoke). -/
+    The 8 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
+    lifecycleRetype, serviceRegister, serviceRevoke, schedContextConfigure,
+    schedContextBind, schedContextUnbind). -/
 theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
-       .notificationSignal, .notificationWait, .replyRecv].filter
+       .notificationSignal, .notificationWait, .replyRecv,
+       .schedContextConfigure, .schedContextBind, .schedContextUnbind].filter
          frozenOpCoverage).length = 12) := by
   decide
 
-/-- S3-L: All 17 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L: All 20 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

@@ -2361,3 +2361,54 @@ SchedContext's budget becomes eligible for refill.
 via induction), `insertSorted_head_ge` (lower bound on inserted elements),
 `insertSorted_head_time_ge` (head? lower bound), `filter_head_time_ge`
 (filtered head time bound).
+
+## 27. Capability-Controlled Thread Binding (WS-Z Phase Z5)
+
+**SchedContext operations** (`Kernel/SchedContext/Operations.lean`) —
+capability-gated operations to bind threads to scheduling contexts, configure
+scheduling parameters, and enforce admission control.
+
+**Syscall registration** (`Model/Object/Types.lean`):
+- `SyscallId.schedContextConfigure` (17), `.schedContextBind` (18),
+  `.schedContextUnbind` (19). `ofNat?`/`toNat` codec. `SyscallId.count` = 20.
+- `toNat_injective`, `toNat_ofNat` proofs updated (20 variants).
+
+**Syscall argument decode** (`Kernel/Architecture/SyscallArgDecode.lean`):
+- `SchedContextConfigureArgs` — 5 message registers (budget, period, priority,
+  deadline, domain). Decode/encode + round-trip proof.
+- `SchedContextBindArgs` — 1 message register (threadId). Decode/encode +
+  round-trip proof.
+- `SchedContextUnbindArgs` — 0 message registers. Trivial decode/encode.
+
+**Core operations** (`Kernel/SchedContext/Operations.lean`):
+- `validateSchedContextParams` — parameter validation: period > 0, budget ≤ period,
+  priority ≤ maxPriority, domain < numDomains.
+- `collectSchedContexts` — gather all SchedContext objects from object store.
+- `checkAdmission` — bandwidth admission control (total utilization ≤ threshold).
+- `schedContextConfigure` — validate + admit + store SchedContext update.
+- `schedContextBind` — bidirectional TCB↔SchedContext binding.
+- `schedContextUnbind` — unbind + cleanup.
+- `schedContextYieldTo` — kernel-internal budget transfer between SchedContexts.
+
+**Preservation theorems** (`Kernel/SchedContext/Invariant/Preservation.lean`):
+- `validateSchedContextParams_implies_wellFormed` — period > 0 ∧ budget ≤ period.
+- `schedContextConfigure_output_wellFormed` — configured SchedContext satisfies
+  `SchedContext.wellFormed` when parameters pass validation and original has
+  bounded replenishments.
+- `schedContextYieldTo_target_bounded` — target `budgetRemaining` ≤ configured
+  `budget` after transfer.
+
+**API dispatch** (`Kernel/API.lean`):
+- 3 new arms in `dispatchCapabilityOnly` routing SchedContext syscalls.
+- 3 structural equivalence theorems: `checkedDispatch_schedContextConfigure_eq_unchecked`,
+  `checkedDispatch_schedContextBind_eq_unchecked`,
+  `checkedDispatch_schedContextUnbind_eq_unchecked`.
+- `checkedDispatch_capabilityOnly_eq_unchecked` extended (6→9 disjuncts).
+- `dispatchWithCap_wildcard_unreachable` updated (17→20 variants).
+
+**Information-flow enforcement**: SchedContext operations are capability-only
+(no cross-domain flows). Routed through `dispatchCapabilityOnly` shared path.
+Structural equivalence between checked and unchecked dispatch proven.
+
+**FrozenOps coverage**: 3 new `frozenOpCoverage` arms (all `false` —
+builder-only operations).

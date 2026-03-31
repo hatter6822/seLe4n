@@ -864,6 +864,9 @@ inductive SyscallId where
   | notificationSignal   -- V2-A: notification signal (badge merge / wake waiter)
   | notificationWait     -- V2-A: notification wait (consume badge / block)
   | replyRecv            -- V2-C: compound reply + receive in one transition
+  | schedContextConfigure  -- Z5-D: configure SchedContext parameters
+  | schedContextBind       -- Z5-D: bind thread to SchedContext
+  | schedContextUnbind     -- Z5-D: unbind thread from SchedContext
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -888,9 +891,12 @@ namespace SyscallId
   | .notificationSignal => 14
   | .notificationWait   => 15
   | .replyRecv          => 16
+  | .schedContextConfigure => 17
+  | .schedContextBind      => 18
+  | .schedContextUnbind    => 19
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 17
+def count : Nat := 20
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -912,6 +918,9 @@ def count : Nat := 17
   | 14 => some .notificationSignal
   | 15 => some .notificationWait
   | 16 => some .replyRecv
+  | 17 => some .schedContextConfigure
+  | 18 => some .schedContextBind
+  | 19 => some .schedContextUnbind
   | _  => none
 
 instance : ToString SyscallId where
@@ -933,6 +942,9 @@ instance : ToString SyscallId where
     | .notificationSignal => "notificationSignal"
     | .notificationWait   => "notificationWait"
     | .replyRecv          => "replyRecv"
+    | .schedContextConfigure => "schedContextConfigure"
+    | .schedContextBind      => "schedContextBind"
+    | .schedContextUnbind    => "schedContextUnbind"
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
@@ -941,7 +953,7 @@ theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
 /-- Round-trip: decoding then encoding preserves the numeric value.
 
 S4-I: This proof uses a uniform `match`/`simp`/`subst` pattern for each of
-the 17 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
+the 20 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
 used for `ofNat_toNat` is not applicable here because the hypothesis is on `n`
 (a `Nat`) rather than on a finite inductive type. A `decide`-based approach
 would require `BEq`/`DecidableEq` on the `Option SyscallId × Nat` pair and
@@ -953,9 +965,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   match n with
   | 0  | 1  | 2  | 3  | 4  | 5  | 6
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
-  | 14 | 15 | 16 =>
+  | 14 | 15 | 16 | 17 | 18 | 19 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 17 => intro s h; simp [ofNat?] at h
+  | n + 20 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

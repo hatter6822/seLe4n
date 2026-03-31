@@ -1,3 +1,33 @@
+## [0.23.9] — Z5: Capability-Controlled Thread Binding
+
+Phase Z5 of WS-Z Composable Performance Objects. 25 sub-tasks (Z5-A through
+Z5-P2) implementing capability-gated SchedContext operations.
+
+- **Z5-A/B/C**: 3 new `SyscallArgDecode` structures
+  (`SchedContextConfigureArgs`, `SchedContextBindArgs`,
+  `SchedContextUnbindArgs`) with decode/encode functions and round-trip proofs.
+- **Z5-D**: 3 new `SyscallId` variants (`.schedContextConfigure`,
+  `.schedContextBind`, `.schedContextUnbind`). Codec and injectivity proofs
+  updated. Count 17→20.
+- **Z5-E/J**: API dispatch wiring — 3 new `syscallRequiredRight` entries
+  (all `.write`), 3 new `dispatchCapabilityOnly` arms, 3 structural
+  equivalence theorems.
+- **Z5-F/G/H/I**: Core operations in new `Operations.lean` —
+  `validateSchedContextParams`, `collectSchedContexts`, `checkAdmission`,
+  `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`,
+  `schedContextYieldTo`.
+- **Z5-K/L/M/N**: Preservation theorems in new `Preservation.lean` —
+  `validateSchedContextParams_implies_wellFormed`,
+  `schedContextConfigure_output_wellFormed`,
+  `schedContextYieldTo_target_bounded`.
+- **Z5-O**: Information-flow enforcement via `dispatchCapabilityOnly` shared
+  path (capability-only, no separate wrappers needed). Structural equivalence
+  proven.
+- **Z5-P1/P2**: Build verification + smoke tests passing.
+
+New files: `SchedContext/Operations.lean`, `SchedContext/Invariant/Preservation.lean`.
+Zero sorry/axiom. All tiers pass (0-2). 212 modules build.
+
 ## [0.23.8] — Z4 Audit v2: Tier 3 Invariant Surface Anchors
 
 Second audit pass on Z4 Scheduler Integration. Added comprehensive Tier 3
