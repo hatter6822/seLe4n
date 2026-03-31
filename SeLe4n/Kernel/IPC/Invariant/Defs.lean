@@ -903,14 +903,57 @@ def queueHeadBlockedConsistent (st : SystemState) : Prop :=
       tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
 
 -- ============================================================================
--- Full IPC invariant bundle (9 conjuncts)
+-- Z6-J: Blocked thread timeout consistency
 -- ============================================================================
 
-/-- Full IPC invariant: conjunction of all nine IPC sub-invariants. -/
+/-- Z6-J: Blocked thread timeout consistency invariant.
+
+For every thread with `timeoutBudget = some scId`:
+1. The referenced SchedContext exists in the object store
+2. The thread's `ipcState` is one of the blocking states
+   (blockedOnSend, blockedOnReceive, blockedOnCall, blockedOnReply)
+
+This prevents dangling timeout references and ensures `timeoutBlockedThreads`
+only encounters valid state when scanning for timed-out threads.
+
+Note: In Z6, `timeoutBudget` defaults to `none` (timeout metadata is deferred
+to Z7 donation). This invariant is trivially satisfied when all threads have
+`timeoutBudget = none`, which is the case for Z6. The invariant definition is
+provided here for completeness and future Z7 integration. -/
+def blockedThreadTimeoutConsistent (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.timeoutBudget = some scId →
+    -- (1) The SchedContext exists
+    (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc)) ∧
+    -- (2) The thread is in a blocking IPC state
+    (match tcb.ipcState with
+     | .blockedOnSend _ | .blockedOnReceive _ | .blockedOnCall _ | .blockedOnReply _ _ => True
+     | _ => False)
+
+/-- Z6-J: Any state where all timeoutBudget fields are `none` trivially
+satisfies `blockedThreadTimeoutConsistent`. This covers all states in Z6
+since timeout metadata is not set until Z7 donation. -/
+theorem blockedThreadTimeoutConsistent_of_all_none
+    (st : SystemState)
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.timeoutBudget = none) :
+    blockedThreadTimeoutConsistent st := by
+  intro tid tcb scId hTcb hBudget
+  have := hNone tid tcb hTcb
+  rw [this] at hBudget
+  cases hBudget
+
+-- ============================================================================
+-- Full IPC invariant bundle (10 conjuncts)
+-- ============================================================================
+
+/-- Full IPC invariant: conjunction of all ten IPC sub-invariants. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
   endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
-  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st
+  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
+  blockedThreadTimeoutConsistent st
 
 end SeLe4n.Kernel

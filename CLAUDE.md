@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.23.8.
+Lean 4.28.0 toolchain, Lake build system, version 0.23.12.
 
 ## Build and run
 
@@ -93,6 +93,7 @@ SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
 SeLe4n/Kernel/IPC/*              IPC subsystem
   Operations.lean                Re-export hub
     Operations/Endpoint.lean     Core endpoint/notification ops
+    Operations/Timeout.lean      Z6 timeout-driven IPC unblocking
     Operations/SchedulerLemmas.lean Scheduler preservation lemmas
   DualQueue.lean                 Re-export hub
     DualQueue/Core.lean          Dual-queue operations
@@ -483,7 +484,8 @@ under `docs/` and `docs/gitbook/`.
 - **WS-Z Phase Z3 COMPLETE**: Replenishment Queue — 12 sub-tasks (Z3-A through Z3-L), all complete. ReplenishQueue structure (sorted list of SchedContextId × eligibleAt pairs with cached size), operations: empty, insert (sorted O(n)), popDue (prefix split O(k)), remove (filter O(n)), peek (O(1)), hasDue (O(1)). Invariants: pairwiseSortedBy (recursive adjacency predicate), replenishQueueSorted, replenishQueueSizeConsistent, replenishQueueConsistent (parameterized by object store lookup). Preservation theorems: insert_preserves_sorted, popDue_preserves_sorted, popDue_sizeConsistent, remove_preserves_sorted, filter_preserves_pairwiseSortedBy. Length/membership theorems: splitDue_length_additive, insertSorted_length, insert_sizeConsistent, remove_sizeConsistent, mem_insertSorted, subset_insertSorted, empty_sorted/sizeConsistent/consistent. Public helpers: pairwiseSortedBy_cons, pairwiseSortedBy_head_le_second, pairwiseSortedBy_tail, pairwiseSortedBy_nil/singleton. Private helpers: pairwiseSortedBy_head_le_all, insertSorted_head_ge, insertSorted_head_time_ge, filter_head_time_ge. Tier 3 anchors: 13 #check entries. New file: ReplenishQueue.lean. Zero sorry/axiom. See `docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`
 - **WS-Z Phase Z4 COMPLETE**: Scheduler Integration — 33 sub-tasks (Z4-A through Z4-V2), all complete. CBS budget engine and replenishment queue wired into scheduler. `replenishQueue` field in `SchedulerState`. Selection: `effectivePriority`, `hasSufficientBudget`, `chooseThreadEffective`. Core: `timerTickBudget` (3-branch), `processReplenishmentsDue`, `scheduleEffective`, `timerTickWithBudget`, `handleYieldWithBudget`. 6 new invariants + `schedulerInvariantBundleExtended` (15-tuple). Preservation theorems. Backward-compatible: original ops + 3236 lines of proofs unchanged. Zero sorry/axiom.
 - **WS-Z Phase Z5 COMPLETE**: Capability-Controlled Thread Binding — 25 sub-tasks (Z5-A through Z5-P2), all complete (v0.23.9, audit v0.23.10, audit v0.23.11). 3 new SyscallId variants (.schedContextConfigure/.schedContextBind/.schedContextUnbind), 3 SyscallArgDecode structures, core operations (validateSchedContextParams, collectSchedContexts, checkAdmission, schedContextConfigure, schedContextBind, schedContextUnbind, schedContextYieldTo), preservation theorems (validateSchedContextParams_implies_wellFormed, schedContextConfigure_output_wellFormed, schedContextYieldTo_target_bounded, schedContextBind_output_bidirectional, schedContextUnbind_output_cleared, schedContextBind_runQueue_insert_uses_sc_priority, schedContextConfigure_admission_excludes_eq), API dispatch wiring (3 dispatchCapabilityOnly arms + 3 structural equivalence theorems), information-flow via shared capability-only path. Audit fixes (v0.23.10): AUD-1 RunQueue re-insertion in bind, AUD-2 preemption guard in unbind, AUD-3 RunQueue removal in unbind, AUD-4 re-enqueue in yieldTo, AUD-5/6/7 4 new preservation theorems + admission double-count fix. 19 trace tests (SCO-001 through SCO-019). New files: Operations.lean, Invariant/Preservation.lean. Zero sorry/axiom.
-- **Next milestone**: WS-Z Phase Z6 (Timeout Endpoints) / Raspberry Pi 5 hardware binding
+- **WS-Z Phase Z6 COMPLETE**: Timeout Endpoints — 26 sub-tasks (Z6-A through Z6-P2), all complete (v0.23.12). Budget-driven timeout for IPC blocking operations. `timeoutBudget : Option SchedContextId` TCB field (design optimization: TCB-level instead of per-ThreadIpcState variant). `endpointQueueRemove` (mid-queue splice-out + invExt proof). `timeoutThread` (queue removal + IPC reset + error code + re-enqueue). `timeoutAwareReceive` (timeout-detecting receive wrapper). `IpcTimeoutResult` type. `timeoutBlockedThreads` (scan via `schedContextBinding.scId?`). Timer tick integration in `timerTickBudget` Z4-F3 branch. `blockedThreadTimeoutConsistent` invariant (10th conjunct of `ipcInvariantFull`). Transport lemmas: `endpointQueueRemove_{scheduler,cdt,lifecycle,services}_eq`. New file: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`. Zero sorry/axiom.
+- **Next milestone**: WS-Z Phase Z7 / Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

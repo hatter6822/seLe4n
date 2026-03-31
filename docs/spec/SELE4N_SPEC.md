@@ -448,12 +448,27 @@ This enforcement closes the gap between the abstract model (which previously
 accepted any allocation base) and hardware requirements for ARM64 page-table
 structures. See `SeLe4n/Kernel/Lifecycle/Operations.lean` (S5-G/S5-H).
 
-### 8.5 IPC Timeout Semantics
+### 8.5 IPC Timeout Semantics (Z6)
 
-seL4's `Call` operation provides no caller-side timeout. Once blocked, a caller
-remains blocked until a server executes `Reply`/`ReplyRecv`. Timeout monitoring
-is the responsibility of the scheduler/fault handler, not the IPC subsystem.
-This matches the seL4 specification and is faithfully modeled.
+seLe4n implements budget-driven timeout for IPC blocking operations (Z6),
+extending seL4 MCS timeout semantics. When a thread's SchedContext budget
+expires while blocked on send/receive/call/reply, the thread is unblocked
+with timeout error code `0xFFFFFFFF` in register x0 and re-enqueued in the
+RunQueue.
+
+- **`timeoutThread`** (`Timeout.lean`): Removes thread from endpoint queue
+  via `endpointQueueRemove`, resets IPC state to `.ready`, writes timeout
+  error code, re-enqueues via `ensureRunnable`.
+- **`timeoutBlockedThreads`** (`Core.lean`): Scans object store for TCBs
+  bound to an exhausted SchedContext and calls `timeoutThread` on each.
+- **`timeoutAwareReceive`** (`Timeout.lean`): Wrapper that detects prior
+  timeout via error code in register context.
+- **`blockedThreadTimeoutConsistent`** invariant: Threads with
+  `timeoutBudget = some scId` must reference a valid SchedContext and be
+  in a blocking IPC state.
+
+The timeout scan is triggered in `timerTickBudget` on budget exhaustion,
+using `schedContextBinding.scId?` to identify affected threads.
 
 ### 8.6 Memory Scrubbing on Delete (WS-S Phase S6)
 

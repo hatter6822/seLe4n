@@ -2206,4 +2206,92 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
       simp only []
       exact ⟨tcb', st2, rfl⟩
 
+-- ============================================================================
+-- Z6-K/M: Transport lemmas for endpointQueueRemove
+-- ============================================================================
+
+/-- Z6-K: endpointQueueRemove does not modify the scheduler. -/
+theorem endpointQueueRemove_scheduler_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
+
+/-- Z6-K: endpointQueueRemove does not modify the CDT. -/
+theorem endpointQueueRemove_cdt_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.cdt = st.cdt := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
+
+/-- Z6-K: endpointQueueRemove does not modify the lifecycle state. -/
+theorem endpointQueueRemove_lifecycle_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.lifecycle = st.lifecycle := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
+
+/-- Z6-M: endpointQueueRemove does not modify services. -/
+theorem endpointQueueRemove_services_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.services = st.services := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]
+
 end SeLe4n.Kernel

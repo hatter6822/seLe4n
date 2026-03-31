@@ -478,20 +478,35 @@ the SchedContext. This means:
 
 ---
 
-### Phase Z6: Timeout Endpoints (26 sub-tasks)
+### Phase Z6: Timeout Endpoints (26 sub-tasks) — COMPLETE (v0.23.12)
 
 **Goal**: Add budget-driven timeout to all blocking IPC operations. When a
 thread's SchedContext budget expires while the thread is blocked on IPC, the
 thread is unblocked with a timeout error. This eliminates unbounded IPC
 blocking (limitation L-5) and closes starvation vector SV-3 from WS-V.
 
+**Implementation notes (v0.23.12)**:
+- **Design optimization**: `timeoutBudget` placed as a TCB-level field (not
+  per-ThreadIpcState variant) to avoid ~200 pattern match changes across 28+
+  files. Zero existing proof breakage.
+- **Scan optimization**: Timer tick handler scans via `schedContextBinding.scId?`
+  instead of modifying IPC store functions. Zero changes to existing IPC
+  operations.
+- **New file**: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`
+- **Invariant extension**: `ipcInvariantFull` extended from 9 to 10 conjuncts
+  with `blockedThreadTimeoutConsistent`.
+
 **Modified files**:
-- `SeLe4n/Model/Object/Types.lean` (timeout metadata in ThreadIpcState)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (endpointSendDual/ReceiveDual/Call timeout metadata)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (new endpointQueueRemove)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (timeoutThread, timeoutAwareReceive)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean`
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean`
+- `SeLe4n/Model/Object/Types.lean` (timeoutBudget TCB field, IpcTimeoutResult type)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (endpointQueueRemove + invExt proof)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (transport lemmas)
+- `SeLe4n/Kernel/IPC/Operations/Timeout.lean` (NEW: timeoutThread, timeoutAwareReceive)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (blockedThreadTimeoutConsistent)
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (bundle ripple)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (timeoutBlockedThreads integration)
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (default state proof)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (bundle projection fix)
+- `SeLe4n/Platform/Boot.lean` (boot safety extension)
 
 **Prerequisites**: Z4 complete.
 

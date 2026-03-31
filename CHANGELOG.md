@@ -1,3 +1,40 @@
+## [0.23.12] — Z6: Timeout Endpoints
+
+Phase Z6 implements budget-driven timeout for IPC blocking operations. When a
+thread's SchedContext budget expires while blocked on send/receive/call/reply,
+the thread is unblocked with a timeout error code and re-enqueued in the RunQueue.
+
+- **Z6-A**: Added `timeoutBudget : Option SchedContextId` field to TCB struct
+  for tracking which SchedContext governs a blocking IPC operation's timeout.
+- **Z6-C**: `timeoutThread` operation: removes thread from endpoint queue,
+  resets IPC state to `.ready`, clears pending message and timeout budget,
+  writes timeout error code (`0xFFFFFFFF`) to register x0, re-enqueues via
+  `ensureRunnable`. `timeoutAwareReceive` wrapper detects prior timeout.
+- **Z6-D**: `endpointQueueRemove` mid-queue splice-out: O(1) removal of any
+  thread from an intrusive dual-queue endpoint. Patches predecessor/successor
+  links, updates head/tail pointers, clears removed thread's queue fields.
+  `endpointQueueRemove_preserves_objects_invExt` proven.
+- **Z6-E/F**: Integrated timeout into `timerTickBudget`: on budget exhaustion
+  (Z4-F3 branch), calls `timeoutBlockedThreads` to unblock all threads bound
+  to the exhausted SchedContext. `processReplenishmentsDue` documented as
+  not requiring timeout action.
+- **Z6-G**: Design optimization — timeout scan uses `schedContextBinding.scId?`
+  match in timer tick handler instead of modifying IPC store functions. Zero
+  changes to existing IPC operations, zero existing proof breakage.
+- **Z6-H**: `IpcTimeoutResult` inductive type (`.completed msg | .timedOut`).
+- **Z6-J**: `blockedThreadTimeoutConsistent` invariant: threads with
+  `timeoutBudget = some scId` must reference a valid SchedContext and be in a
+  blocking IPC state. Extended `ipcInvariantFull` from 9 to 10 conjuncts.
+  Full ripple fix across Structural.lean (~12 sites), Boot.lean,
+  Architecture/Invariant.lean, Capability/Invariant/Preservation.lean.
+- **Z6-K/M**: Transport lemmas for `endpointQueueRemove`: scheduler, CDT,
+  lifecycle, and services backward preservation theorems.
+- **New file**: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`
+- **Boot safety**: Extended `bootSafeObject` TCB clause with
+  `timeoutBudget = none` requirement.
+
+Zero sorry/axiom. All tiers pass (0-3).
+
 ## [0.23.11] — Z5 Audit Pass 2: Test Coverage Completion
 
 Second audit pass of Z5 Capability-Controlled Thread Binding. Found 7 untested

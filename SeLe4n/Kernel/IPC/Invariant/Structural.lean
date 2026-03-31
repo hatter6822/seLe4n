@@ -3765,13 +3765,14 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hObjInv hStep,
    notificationSignal_preserves_dualQueueSystemInvariant st st' notificationId badge hInv.2.1 hObjInv hStep,
    notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hObjInv hStep,
    notificationSignal_preserves_badgeWellFormed st st' notificationId badge hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- R3-B/M-18: notificationWait preserves the full IPC invariant (self-contained).
 All four components derived from pre-state invariants — no externalized hypotheses. -/
@@ -3786,13 +3787,14 @@ theorem notificationWait_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariantFull st' :=
   ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hObjInv hStep,
    notificationWait_preserves_dualQueueSystemInvariant st st' notificationId waiter result hInv.2.1 hObjInv hStep,
    notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hObjInv hStep,
    notificationWait_preserves_badgeWellFormed st st' notificationId waiter result hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- R3-B/M-18: endpointReply preserves the full IPC invariant (self-contained).
 All four components derived from pre-state invariants. -/
@@ -3806,13 +3808,14 @@ theorem endpointReply_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hObjInv hStep,
    endpointReply_preserves_dualQueueSystemInvariant replier target msg st st' hObjInv hStep hInv.2.1,
    endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2.1 hObjInv hStep,
    endpointReply_preserves_badgeWellFormed st st' replier target msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 -- ============================================================================
 -- V3-K IPC operation proofs: endpointQueueNoDup preservation
@@ -4201,7 +4204,7 @@ theorem endpointSendDual_preserves_ipcStateQueueMembershipConsistent
   have hInv := hInvFull.2.2.2.2.2.2.1
   have hDQSI := hInvFull.2.1
   have hQNBC := hInvFull.2.2.2.2.2.2.2.1
-  have hQHBC := hInvFull.2.2.2.2.2.2.2.2
+  have hQHBC := hInvFull.2.2.2.2.2.2.2.2.1
   unfold endpointSendDual at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -4485,7 +4488,7 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
   have hInv := hInvFull.2.2.2.2.2.2.1
   have hDQSI := hInvFull.2.1
   have hQNBC := hInvFull.2.2.2.2.2.2.2.1
-  have hQHBC := hInvFull.2.2.2.2.2.2.2.2
+  have hQHBC := hInvFull.2.2.2.2.2.2.2.2.1
   unfold endpointCall at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -4621,7 +4624,7 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
   have hInv := hInvFull.2.2.2.2.2.2.1
   have hDQSI := hInvFull.2.1
   have hQNBC := hInvFull.2.2.2.2.2.2.2.1
-  have hQHBC := hInvFull.2.2.2.2.2.2.2.2
+  have hQHBC := hInvFull.2.2.2.2.2.2.2.2.1
   unfold endpointReplyRecv at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
     intro h; simp [h] at hStep, ↓reduceIte] at hStep
@@ -4744,13 +4747,14 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hObjInv hStep,
    hDualQueue',
    endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- U4-K/R3-B: endpointReceiveDual preserves the full IPC invariant.
 `allPendingMessagesBounded` and `badgeWellFormed` derived internally. -/
@@ -4765,13 +4769,14 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
     ipcInvariantFull st' :=
   ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId hInv.1 hObjInv hStep,
    hDualQueue',
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- U4-K/R3-B: endpointCall preserves the full IPC invariant.
 `allPendingMessagesBounded` and `badgeWellFormed` derived internally. -/
@@ -4786,13 +4791,14 @@ theorem endpointCall_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hObjInv hStep,
    hDualQueue',
    endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- U4-K: endpointReplyRecv preserves the full IPC invariant.
 `allPendingMessagesBounded` and `badgeWellFormed` derived internally. -/
@@ -4807,13 +4813,14 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv hStep,
    hDualQueue',
    endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg hInv.2.2.1 hObjInv hStep,
    endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- T4-K (L-P10): Convenience theorem for composing `ipcInvariantFull` from its
 individual components. Reduces boilerplate for callers that must manually
@@ -4828,9 +4835,10 @@ theorem ipcInvariantFull_compositional
     (hNoDup : endpointQueueNoDup st)
     (hQMC : ipcStateQueueMembershipConsistent st)
     (hQNBC : queueNextBlockingConsistent st)
-    (hQHBC : queueHeadBlockedConsistent st) :
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hBlockedTimeout : blockedThreadTimeoutConsistent st) :
     ipcInvariantFull st :=
-  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC⟩
+  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout⟩
 
 -- ============================================================================
 -- T4-E/F (M-IPC-3): WithCaps wrappers preserve ipcInvariantFull
@@ -4854,12 +4862,13 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' :=
   ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
      endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- T4-F (M-IPC-3): endpointReceiveDualWithCaps preserves the full IPC invariant.
 Same composition pattern as T4-E for the receive path. -/
@@ -4878,12 +4887,13 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointReceiveDualWithCaps endpointId receiver endpointRights
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver endpointRights
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 /-- T4-E (M-IPC-3): endpointCallWithCaps preserves the full IPC invariant. -/
 theorem endpointCallWithCaps_preserves_ipcInvariantFull
@@ -4901,12 +4911,13 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' :=
   ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
      endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC'⟩
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout'⟩
 
 -- ============================================================================
 -- WS-L3/L3-B: Standalone tcbQueueLinkIntegrity preservation

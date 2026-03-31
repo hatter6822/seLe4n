@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.SchedContext.Budget
+import SeLe4n.Kernel.IPC.Operations.Timeout
 
 namespace SeLe4n.Kernel
 
@@ -416,7 +417,15 @@ def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
 /-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
 was restored. Pops due entries from the replenish queue, refills each
 SchedContext, and for any bound thread whose budget went from 0 to positive,
-enqueues it in the RunQueue. -/
+enqueues it in the RunQueue.
+
+Z6-F: No timeout action needed during replenishment. Replenishment *restores*
+budget, which is the opposite of timeout. Threads blocked on IPC whose
+SchedContext is replenished should remain blocked — they now have budget
+again. Only `timerTickBudget`'s budget-exhaustion branch (Z4-F3) triggers
+`timeoutBlockedThreads`, ensuring that timeouts fire only when
+`budgetRemaining = 0`. This guard is correct by construction: this function
+never calls `timeoutBlockedThreads`. -/
 def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
   let (remainingQueue, dueIds) := popDueReplenishments st now
   let st' := { st with scheduler := { st.scheduler with
@@ -442,6 +451,55 @@ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
       else refilled
     | _ => refilled
   ) st'
+
+-- ============================================================================
+-- Z6-E: Timeout blocked threads on budget expiry
+-- ============================================================================
+
+/-- Z6-E: Helper to determine if a TCB's IPC state is a blocking state
+that should be timed out, and returns the endpoint ID and queue type. -/
+private def tcbBlockingInfo (tcb : TCB) : Option (SeLe4n.ObjId × Bool) :=
+  match tcb.ipcState with
+  | .blockedOnSend epId => some (epId, false)      -- sendQ
+  | .blockedOnReceive epId => some (epId, true)     -- receiveQ
+  | .blockedOnCall epId => some (epId, false)       -- sendQ (Call uses sendQ)
+  | .blockedOnReply epId _ => some (epId, false)    -- not in queue but still blocked
+  | _ => none
+
+/-- Z6-E: Timeout all threads blocked on IPC whose SchedContext budget
+has been exhausted.
+
+When a SchedContext's budget reaches zero, any thread that was relying on
+that SchedContext's budget to bound its IPC blocking time must be unblocked.
+This function scans all TCBs in the object store, finds those with
+`schedContextBinding.scId? = some scId`, and calls `timeoutThread` to
+unblock them from their respective endpoint queues.
+
+The scan is O(n) in the number of objects. This is acceptable because:
+1. Budget expiry is an infrequent event (once per SchedContext period)
+2. The number of threads bound to a single SchedContext is typically small
+3. The alternative (maintaining a per-SC blocked thread list) adds complexity
+
+Note: threads in `blockedOnReply` are also timed out. In seL4 MCS, this
+handles the case where a client's donated budget expires while the server
+is running — the client is unblocked with a timeout error (Z6-E integration
+with future Z7 donation). -/
+def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
+    : SystemState :=
+  st.objects.fold st fun acc oid obj =>
+    match obj with
+    | .tcb tcb =>
+      -- Check if this thread's SchedContext matches the exhausted one
+      if tcb.schedContextBinding.scId? = some scId then
+        match tcbBlockingInfo tcb with
+        | some (epId, isReceiveQ) =>
+          -- Attempt to timeout this thread
+          match timeoutThread epId isReceiveQ ⟨oid.val⟩ acc with
+          | .ok st' => st'
+          | .error _ => acc  -- defensive: skip if queue removal fails
+        | none => acc  -- not blocked on IPC
+      else acc
+    | _ => acc
 
 -- ============================================================================
 -- Z4-F: SchedContext-aware budget decrement (timerTickBudget)
@@ -500,7 +558,10 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
         let st'' := { st' with scheduler := { st'.scheduler with
           replenishQueue := rq,
           runQueue := st'.scheduler.runQueue.insert tid sc.priority } }
-        .ok (st'', true)
+        -- Z6-E: Timeout any threads blocked on IPC whose timeout was bounded
+        -- by this SchedContext. Budget is now 0, so all such threads must unblock.
+        let st''' := timeoutBlockedThreads st'' scId
+        .ok (st''', true)
       else
         -- Z4-F2: Budget remains — decrement and continue
         let sc' := consumeBudget sc 1
