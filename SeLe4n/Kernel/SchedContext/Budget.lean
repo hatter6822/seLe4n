@@ -131,10 +131,13 @@ theorem sumReplenishments_cons (r : ReplenishmentEntry)
 -- ============================================================================
 
 /-- Add `refillAmount` to `budgetRemaining`, capped at the configured `budget`
-ceiling. This ensures the CBS invariant `budgetRemaining ≤ budget`. -/
+ceiling. This ensures the CBS invariant `budgetRemaining ≤ budget`.
+Also updates `isActive` to reflect whether budget is now positive. -/
 def applyRefill (sc : SchedContext) (refillAmount : Nat) : SchedContext :=
+  let newRemaining : Budget := ⟨min (sc.budgetRemaining.val + refillAmount) sc.budget.val⟩
   { sc with
-    budgetRemaining := ⟨min (sc.budgetRemaining.val + refillAmount) sc.budget.val⟩ }
+    budgetRemaining := newRemaining
+    isActive := newRemaining.isPositive }
 
 /-- After refill, `budgetRemaining` never exceeds `budget`. -/
 theorem applyRefill_le_budget (sc : SchedContext) (refillAmount : Nat) :

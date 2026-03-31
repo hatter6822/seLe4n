@@ -567,6 +567,7 @@ budget management operations with machine-checked invariants:
 - **Replenishment processing**: `processReplenishments` partitions the
   replenishment list by eligibility time, sums eligible amounts, and refills
   `budgetRemaining` capped at the configured `budget` ceiling via `applyRefill`.
+  `applyRefill` also synchronizes `isActive` to reflect whether budget is positive.
 - **CBS deadline rule**: `cbsUpdateDeadline` assigns `deadline := currentTime +
   period` when a SchedContext is replenished after budget exhaustion.
 - **Combined entry point**: `cbsBudgetCheck` composes consume → exhaust check →

@@ -1,3 +1,27 @@
+## [0.23.2] — Z2 Audit: CBS Budget Engine Correctness Fixes
+
+Post-implementation audit of Z2 CBS Budget Engine. Three correctness fixes:
+
+- **AUD-1 (MED)**: `applyRefill` now updates `isActive` after budget refill.
+  Previously, `isActive` remained stale (`false`) after successful replenishment
+  because only `consumeBudget` updated it. The `isActive` flag must reflect
+  `budgetRemaining > 0` at all times for correct scheduler preemption decisions.
+- **AUD-2 (MED)**: Added 6 preservation theorems for `replenishmentAmountsBounded`:
+  `consumeBudget_preserves_replenishmentAmountsBounded`,
+  `processReplenishments_preserves_replenishmentAmountsBounded`,
+  `scheduleReplenishment_preserves_replenishmentAmountsBounded`,
+  `cbsUpdateDeadline_preserves_replenishmentAmountsBounded`,
+  `cbsBudgetCheck_preserves_replenishmentAmountsBounded`.
+  Without these, the bandwidth theorems (`cbs_single_period_bound`,
+  `cbs_bandwidth_bounded`) required an invariant hypothesis that was never
+  proven to be maintained across CBS operations — now fully closed.
+- **AUD-3 (LOW)**: Refactored `cbs_single_period_bound` and `cbs_bandwidth_bounded`
+  to share a common `totalConsumed_le_max_budget` lemma and document the
+  relationship between the proven bound (`maxReplenishments × budget`) and the
+  tighter theoretical bound (`budget × ⌈window/period⌉`).
+
+Zero sorry/axiom. All tiers pass.
+
 ## [0.23.1] — Z2: CBS Budget Engine
 
 Phase Z2 of WS-Z Composable Performance Objects. Implements the Constant

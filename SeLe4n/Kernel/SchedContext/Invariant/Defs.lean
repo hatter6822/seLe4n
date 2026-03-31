@@ -288,6 +288,70 @@ This invariant holds because each replenishment entry is created from
 def replenishmentAmountsBounded (sc : SchedContext) : Prop :=
   ∀ r ∈ sc.replenishments, r.amount.val ≤ sc.budget.val
 
+/-- `consumeBudget` preserves `replenishmentAmountsBounded`: the replenishment
+list and budget ceiling are unchanged by consumption. -/
+theorem consumeBudget_preserves_replenishmentAmountsBounded (sc : SchedContext)
+    (ticks : Nat) (h : replenishmentAmountsBounded sc) :
+    replenishmentAmountsBounded (consumeBudget sc ticks) := by
+  simp [replenishmentAmountsBounded, consumeBudget]
+  exact h
+
+/-- `processReplenishments` preserves `replenishmentAmountsBounded`: the
+remaining entries are a subset of the original list with the same budget. -/
+theorem processReplenishments_preserves_replenishmentAmountsBounded
+    (sc : SchedContext) (currentTime : Nat)
+    (h : replenishmentAmountsBounded sc) :
+    replenishmentAmountsBounded (processReplenishments sc currentTime) := by
+  simp [replenishmentAmountsBounded, processReplenishments, partitionEligible]
+  intro r hr _
+  exact h r hr
+
+/-- `scheduleReplenishment` preserves `replenishmentAmountsBounded` when the
+consumed amount ≤ budget (which holds when `budgetWithinBounds` is satisfied,
+since consumed = budgetRemaining ≤ budget). -/
+theorem scheduleReplenishment_preserves_replenishmentAmountsBounded
+    (sc : SchedContext) (currentTime : Nat) (consumed : Budget)
+    (h : replenishmentAmountsBounded sc) (hle : consumed.val ≤ sc.budget.val) :
+    replenishmentAmountsBounded (scheduleReplenishment sc currentTime consumed) := by
+  simp [replenishmentAmountsBounded, scheduleReplenishment, truncateReplenishments]
+  intro r hr
+  have hmem : r ∈ sc.replenishments ++ [mkReplenishmentEntry consumed currentTime sc.period] :=
+    List.mem_of_mem_drop hr
+  simp [List.mem_append] at hmem
+  cases hmem with
+  | inl hmem => exact h r hmem
+  | inr heq => rw [heq]; simp [mkReplenishmentEntry]; exact hle
+
+/-- `cbsUpdateDeadline` preserves `replenishmentAmountsBounded` (only changes
+deadline, not replenishments or budget). -/
+theorem cbsUpdateDeadline_preserves_replenishmentAmountsBounded
+    (sc : SchedContext) (currentTime : Nat) (wasExhausted : Bool)
+    (h : replenishmentAmountsBounded sc) :
+    replenishmentAmountsBounded (cbsUpdateDeadline sc currentTime wasExhausted) := by
+  simp [cbsUpdateDeadline, replenishmentAmountsBounded]
+  split <;> exact h
+
+/-- `cbsBudgetCheck` preserves `replenishmentAmountsBounded`. The key insight
+is that the consumed amount equals `sc.budgetRemaining.val` which is ≤
+`sc.budget.val` by `budgetWithinBounds`. -/
+theorem cbsBudgetCheck_preserves_replenishmentAmountsBounded (sc : SchedContext)
+    (currentTime : Nat) (ticksConsumed : Nat)
+    (h : replenishmentAmountsBounded sc)
+    (hbounds : budgetWithinBounds sc) :
+    replenishmentAmountsBounded (cbsBudgetCheck sc currentTime ticksConsumed).1 := by
+  simp [cbsBudgetCheck]
+  split
+  · -- Budget exhausted branch
+    apply cbsUpdateDeadline_preserves_replenishmentAmountsBounded
+    apply processReplenishments_preserves_replenishmentAmountsBounded
+    apply scheduleReplenishment_preserves_replenishmentAmountsBounded
+    · exact consumeBudget_preserves_replenishmentAmountsBounded sc ticksConsumed h
+    · -- consumed.val = sc.budgetRemaining.val ≤ sc.budget.val
+      exact hbounds.1
+  · -- Budget not exhausted branch
+    apply processReplenishments_preserves_replenishmentAmountsBounded
+    exact consumeBudget_preserves_replenishmentAmountsBounded sc ticksConsumed h
+
 -- ============================================================================
 -- Z2-O2: Single-period bandwidth bound
 -- ============================================================================
@@ -321,40 +385,11 @@ private theorem sumReplenishments_le_count_mul_max
     rw [this]
     exact Nat.add_le_add hhd htl
 
-/-- Within a single period, a well-formed SchedContext's consumption is bounded
-by its configured budget. Each replenishment entry was created from budget
-that was ≤ the configured budget, and the total sum of the filtered entries
-cannot exceed the budget ceiling. -/
-theorem cbs_single_period_bound (sc : SchedContext)
-    (windowStart : Nat)
-    (hamounts : replenishmentAmountsBounded sc)
-    (hwf : sc.wellFormed) :
-    totalConsumed sc windowStart sc.period.val ≤
-      maxReplenishments * sc.budget.val := by
-  -- Within a single period the bound is maxReplenishments * budget.
-  -- A tighter 1 * budget bound requires tracking that entries within a single
-  -- period sum to at most budget — the weaker bound suffices for type-level
-  -- CBS correctness and the tight bound follows from scheduling discipline.
-  simp [totalConsumed]
-  calc sumReplenishments (sc.replenishments.filter _)
-      ≤ sumReplenishments sc.replenishments :=
-        sumReplenishments_filter_le _ _
-    _ ≤ sc.replenishments.length * sc.budget.val :=
-        sumReplenishments_le_count_mul_max sc.replenishments sc.budget.val hamounts
-    _ ≤ maxReplenishments * sc.budget.val :=
-        Nat.mul_le_mul_right _ hwf.2.2.2
-
--- ============================================================================
--- Z2-O3: CBS bandwidth isolation theorem (multi-period)
--- ============================================================================
-
-/-- Over any time window, a well-formed SchedContext's total consumption is
-bounded by `maxReplenishments * budget`. This is the fundamental CBS bandwidth
-isolation guarantee: the replenishment list is bounded in length, and each
-entry's amount is bounded by the configured budget, giving an absolute
-consumption ceiling. Combined with the CBS scheduling discipline (which
-limits per-period consumption to budget), this ensures bandwidth isolation. -/
-theorem cbs_bandwidth_bounded (sc : SchedContext)
+/-- Core CBS consumption bound: total consumption from the replenishment list
+(over any window) is bounded by `maxReplenishments × budget`. This follows from
+two invariants: (1) list length ≤ `maxReplenishments`, (2) each entry's amount ≤
+budget. -/
+private theorem totalConsumed_le_max_budget (sc : SchedContext)
     (windowStart : Nat) (window : Nat)
     (hamounts : replenishmentAmountsBounded sc)
     (hwf : sc.wellFormed) :
@@ -368,5 +403,46 @@ theorem cbs_bandwidth_bounded (sc : SchedContext)
         sumReplenishments_le_count_mul_max sc.replenishments sc.budget.val hamounts
     _ ≤ maxReplenishments * sc.budget.val :=
         Nat.mul_le_mul_right _ hwf.2.2.2
+
+/-- Within a single period, a well-formed SchedContext's consumption is bounded
+by `maxReplenishments × budget`. This is an upper bound on the total CBS
+consumption observable via the replenishment list during one period.
+
+**Design note**: The tighter bound `totalConsumed ≤ budget` (one budget per
+period) holds under the CBS scheduling discipline (which ensures at most one
+full budget is consumed per period), but proving it requires tracking the
+temporal ordering of consume/replenish operations across scheduler ticks.
+The weaker bound proven here suffices for admission control and is
+fully machine-checked. -/
+theorem cbs_single_period_bound (sc : SchedContext)
+    (windowStart : Nat)
+    (hamounts : replenishmentAmountsBounded sc)
+    (hwf : sc.wellFormed) :
+    totalConsumed sc windowStart sc.period.val ≤
+      maxReplenishments * sc.budget.val :=
+  totalConsumed_le_max_budget sc windowStart sc.period.val hamounts hwf
+
+-- ============================================================================
+-- Z2-O3: CBS bandwidth isolation theorem (multi-period)
+-- ============================================================================
+
+/-- Over any time window, a well-formed SchedContext's total consumption is
+bounded by `maxReplenishments × budget`. This is the fundamental CBS bandwidth
+isolation guarantee: the replenishment list is bounded in length (`≤ 8`), and
+each entry's amount is bounded by the configured budget, giving an absolute
+consumption ceiling of `8 × budget` ticks.
+
+Combined with the CBS scheduling discipline (which limits per-period consumption
+to budget), the effective runtime bound is `budget × ⌈window / period⌉`, but
+that tighter bound requires tracking temporal consume/replenish ordering across
+scheduler integration (Z4). This static bound from list structure alone is
+sufficient for admission control and type-level CBS correctness. -/
+theorem cbs_bandwidth_bounded (sc : SchedContext)
+    (windowStart : Nat) (window : Nat)
+    (hamounts : replenishmentAmountsBounded sc)
+    (hwf : sc.wellFormed) :
+    totalConsumed sc windowStart window ≤
+      maxReplenishments * sc.budget.val :=
+  totalConsumed_le_max_budget sc windowStart window hamounts hwf
 
 end SeLe4n.Kernel

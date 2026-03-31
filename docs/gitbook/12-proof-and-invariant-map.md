@@ -2273,15 +2273,20 @@ invariant proofs.
 - `schedContextWellFormed` — conjunction of structural + CBS invariants.
 - `replenishmentAmountsBounded` — each entry's amount ≤ configured budget.
 
-**Preservation theorems** (12 total, composing into
-`cbsBudgetCheck_preserves_schedContextWellFormed`):
-- `consumeBudget_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed}`
-- `processReplenishments_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed}`
-- `scheduleReplenishment_preserves_{replenishmentListWellFormed, wellFormed, budgetWithinBounds}`
-- `cbsUpdateDeadline_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed}`
+**Preservation theorems** (12 `schedContextWellFormed` + 6
+`replenishmentAmountsBounded`, composing into
+`cbsBudgetCheck_preserves_schedContextWellFormed` and
+`cbsBudgetCheck_preserves_replenishmentAmountsBounded`):
+- `consumeBudget_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed, replenishmentAmountsBounded}`
+- `processReplenishments_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed, replenishmentAmountsBounded}`
+- `scheduleReplenishment_preserves_{replenishmentListWellFormed, wellFormed, budgetWithinBounds, replenishmentAmountsBounded}`
+- `cbsUpdateDeadline_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed, replenishmentAmountsBounded}`
 
 **Bandwidth theorems**:
 - `totalConsumed` — accumulator summing replenishment amounts in a time window.
-- `cbs_single_period_bound` — single-period consumption ≤ `maxReplenishments × budget`.
+- `totalConsumed_le_max_budget` — core bound: consumption ≤ `maxReplenishments × budget`.
+- `cbs_single_period_bound` — single-period specialization of the core bound.
 - `cbs_bandwidth_bounded` — multi-period isolation: consumption over any window
   bounded by `maxReplenishments × budget`.
+- Design note: the tighter bound `budget × ⌈window/period⌉` requires temporal
+  ordering across scheduler ticks (deferred to Z4 scheduler integration).
