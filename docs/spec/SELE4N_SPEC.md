@@ -605,6 +605,68 @@ operations maintain the invariant bundle, composed into
 Bandwidth isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`)
 bound total consumption by `maxReplenishments × budget`.
 
+#### 8.12.2 Replenishment Queue (WS-Z Phase Z3)
+
+The system-wide `ReplenishQueue` (`Kernel/SchedContext/ReplenishQueue.lean`)
+tracks when each SchedContext's budget becomes eligible for refill. The queue
+is a sorted list of `(SchedContextId, eligibleAt)` pairs with a cached `size`
+field, enabling O(1) `peek`/`hasDue` and O(k) `popDue` (prefix split).
+
+Operations: `insert` (sorted O(n)), `popDue` (prefix split O(k)), `remove`
+(filter O(n)). Invariants: `pairwiseSortedBy` (recursive adjacency predicate),
+`replenishQueueSorted`, `replenishQueueSizeConsistent`, `replenishQueueConsistent`
+(parameterized by object store lookup). 13 preservation/membership theorems
+including `insert_preserves_sorted`, `popDue_preserves_sorted`,
+`splitDue_length_additive`, `mem_insertSorted`.
+
+#### 8.12.3 Scheduler Integration (WS-Z Phase Z4)
+
+The CBS budget engine and replenishment queue are wired into the scheduler via
+`effectivePriority` (resolves scheduling params from SchedContext if bound, TCB
+fields if unbound), `hasSufficientBudget` (budget eligibility predicate),
+`chooseThreadEffective` (budget-filtered selection chain), and `timerTickBudget`
+(3-branch: unbound legacy / bound decrement / bound exhaustion+preempt).
+
+6 new invariants: `budgetPositive`, `currentBudgetPositive`,
+`schedContextsWellFormed`, `replenishQueueValid`, `schedContextBindingConsistent`,
+`effectiveParamsMatchRunQueue`. Extended bundle:
+`schedulerInvariantBundleExtended` (15-tuple: original 9 + 6 new). Backward
+compatible: existing `chooseThread`/`schedule`/`timerTick`/`handleYield`
+preserved unchanged.
+
+#### 8.12.4 Capability-Controlled Thread Binding (WS-Z Phase Z5)
+
+3 new `SyscallId` variants: `.schedContextConfigure` (17), `.schedContextBind`
+(18), `.schedContextUnbind` (19). Capability-gated operations:
+`validateSchedContextParams`, `schedContextConfigure` (validate + admit + store),
+`schedContextBind` (bidirectional TCB↔SchedContext binding + RunQueue
+re-insertion), `schedContextUnbind` (unbind + preemption guard + RunQueue
+removal), `schedContextYieldTo` (kernel-internal budget transfer). 7
+preservation theorems including `schedContextBind_output_bidirectional` and
+`schedContextConfigure_admission_excludes_eq`. API dispatch via
+`dispatchCapabilityOnly` shared path.
+
+#### 8.12.5 API Surface & Syscall Wiring (WS-Z Phase Z8)
+
+3 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,
+`decodeSchedContextBindArgs_error_iff`, `decodeSchedContextUnbindArgs_error_iff`).
+4 frozen SchedContext operations (`frozenSchedContextConfigure`,
+`frozenSchedContextBind`, `frozenSchedContextUnbind`, `frozenTimerTickBudget`).
+`enforcementBoundary` expanded 22→25 entries (3 new `.capabilityOnly` SchedContext
+operations). `frozenOpCoverage_count` increased 12→15.
+
+#### 8.12.6 Invariant Composition & Cross-Subsystem (WS-Z Phase Z9)
+
+3 new cross-subsystem predicates: `schedContextStoreConsistent` (every
+SchedContext in the object store satisfies `schedContextWellFormed`),
+`schedContextNotDualBound` (no SchedContext simultaneously bound to two threads),
+`schedContextRunQueueConsistent` (RunQueue threads have bound SchedContext with
+positive budget or are legacy-unbound). `crossSubsystemInvariant` extended from
+5 to 8 predicates. `proofLayerInvariantBundle` extended from 9 to 10 conjuncts
+(added `schedulerInvariantBundleExtended`). `bootSafeObject` extended with
+SchedContext `schedContextWellFormed` requirement (6th conjunct). Field-
+disjointness: 16 pairwise witnesses for 8 predicates, 3 new frame lemmas.
+
 ### 8.7 SchedContext Donation (Z7)
 
 SchedContext donation enables **passive servers** — threads that consume zero

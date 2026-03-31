@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.23.20-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.23.21-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -52,15 +52,21 @@ transition is an executable pure function. Every invariant is machine-checked
 by the Lean type-checker — zero `sorry`, zero `axiom`. The entire proof surface
 compiles to native code with no admitted proofs.
 
-The project utilizes a capability-based security model while introducing novel 
+The project utilizes a capability-based security model while introducing novel
 architectural improvements compared to other microkernels:
 
-- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified `RHTable`/`RHSet`
-- **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics
-- **Node-stable capability derivation tree** with `childMap` + `parentMap` RHTable indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
+- **Composable performance objects** — CPU time is a first-class, capability-controlled kernel object. `SchedContext` (the 7th kernel object type) encapsulates budget, period, priority, deadline, and domain into a reusable scheduling context that threads bind to via capability operations. Multiple threads can share scheduling parameters; parameters can be reconfigured dynamically without recreating threads
+- **Constant Bandwidth Server (CBS) scheduling** — each `SchedContext` acts as a sporadic server with proven bandwidth isolation. `consumeBudget` performs saturating per-tick decrements; `processReplenishments` refills budgets from a timer-driven replenishment queue; `admissionCheck` enforces total system utilization cannot exceed 100%. The `cbs_bandwidth_bounded` theorem machine-checks that no SchedContext can exceed `maxReplenishments x budget` consumption over any time window
+- **Passive servers via SchedContext donation** — servers that are idle (`.unbound`) borrow the client's SchedContext during IPC Call/Reply, consuming zero CPU when not actively serving requests. `donateSchedContext` transfers the client's CBS budget to the server during `endpointCall`; `returnDonatedSchedContext` returns it on reply. The `donationChainAcyclic` invariant prevents circular donation chains
+- **Budget-driven IPC timeouts** — IPC blocking operations are bounded by the caller's SchedContext budget. When budget expires during a blocking call, `timeoutThread` splices the thread out of the endpoint queue, resets its IPC state, writes error code `0xFFFFFFFF`, and re-enqueues it. The `blockedThreadTimeoutConsistent` invariant guarantees every timed-out thread references a valid SchedContext
+- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked `distCorrect`, `noDupKeys`, and `probeChainDominant` invariants
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
-- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition)
-- **EDF + priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware partitioning
+- **Node-stable capability derivation tree** with `childMap` + `parentMap` RHTable indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
+- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition). 25-entry enforcement boundary with per-operation non-interference proofs
+- **EDF + CBS priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware temporal partitioning, and a 15-conjunct `schedulerInvariantBundleExtended` covering both legacy and CBS scheduling paths
+- **Two-phase state architecture** — kernel state flows through a builder phase (with 4 invariant witnesses) to a frozen immutable representation. `FrozenMap`/`FrozenSet` provide O(1) lookups with proven equivalence to the live state via `freeze_preserves_*` theorems. 15 frozen operations mirror the live kernel API
+- **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics and proven dependency acyclicity
+- **10-conjunct proof layer** — `proofLayerInvariantBundle` composes scheduler, capability, IPC (14-conjunct), lifecycle, service, VSpace, cross-subsystem (8-predicate), TLB, and extended scheduler invariants into a single top-level proof obligation verified from boot through all kernel operations
 
 ## Current state
 
@@ -70,11 +76,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.23.20` |
+| **Version** | `0.23.21` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 79,419 across 113 files |
+| **Production Lean LoC** | 79,743 across 113 files |
 | **Test Lean LoC** | 8,759 across 10 test suites |
-| **Proved declarations** | 2,281 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,295 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -301,42 +307,129 @@ tests/                           10 test suites (negative-state, info-flow, trac
 
 | Feature | seL4 | seLe4n |
 |---------|------|--------|
+| **Scheduling model** | MCS extensions: C-implemented sporadic server with `SchedContext` kernel object | CBS (Constant Bandwidth Server) with machine-checked `cbs_bandwidth_bounded` isolation theorem; `SchedContext` as 7th kernel object type with capability-controlled `configure`/`bind`/`unbind` operations |
+| **Passive servers** | SchedContext donation via C code paths | Formally verified donation protocol: `donateSchedContext`/`returnDonatedSchedContext` with `donationChainAcyclic` invariant preventing circular chains |
+| **IPC timeout** | Budget-driven timeout in C | `timeoutThread` with mid-queue splice-out, `blockedThreadTimeoutConsistent` invariant, and `endpointQueueRemove` with invExt proof |
 | **IPC mechanism** | Single linked-list endpoint queue | Intrusive dual-queue with `queuePPrev` back-pointers for O(1) mid-queue removal |
-| **Information flow** | Binary high/low partition | N-domain configurable flow policy (generalizes legacy confidentiality × integrity labels) |
+| **Information flow** | Binary high/low partition | N-domain configurable flow policy with 25-entry enforcement boundary and per-operation NI proofs |
 | **Service management** | Not in kernel | First-class service orchestration with dependency graph and DFS cycle detection |
 | **Capability derivation** | CDT with linked-list children | `childMap` HashMap for O(1) children lookup |
-| **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with inline `maxPriority` tracking and EDF |
+| **Object stores** | Linked lists and arrays | All stores backed by formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with `distCorrect`/`noDupKeys`/`probeChainDominant` invariants |
+| **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with EDF tie-breaking, CBS budget filtering, and 15-conjunct invariant bundle |
 | **VSpace** | Hardware page tables | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions |
+| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (2,295 theorems, zero sorry/axiom) |
 | **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ### Comparison with Fiasco.OC (TU Dresden)
 
 | Feature | Fiasco.OC (TU Dresden) | seLe4n |
 |---------|-------------------------|--------|
-| **IPC mechanism** | L4 message-based endpoint IPC | Intrusive dual-queue endpoint IPC with `queuePPrev` back-pointers for O(1) mid-queue removal |
+| **Scheduling model** | Priority-driven real-time scheduler | CBS sporadic server with `SchedContext` kernel objects, capability-controlled binding, and `cbs_bandwidth_bounded` isolation proof |
+| **Passive servers** | No SchedContext donation mechanism | SchedContext donation during IPC Call/Reply with `donationChainAcyclic` invariant |
+| **IPC mechanism** | L4 message-based endpoint IPC | Intrusive dual-queue endpoint IPC with `queuePPrev` back-pointers for O(1) mid-queue removal and budget-driven timeout |
 | **Information flow** | Mechanism/policy isolation (no in-tree machine-checked noninterference layer) | N-domain configurable flow policy with machine-checked low-equivalence/noninterference theorems |
 | **Service management** | Not in kernel (external user-space stacks such as L4Re) | First-class service orchestration with dependency graph and DFS cycle detection |
 | **Capability derivation** | L4 capability/object model | `childMap` HashMap for O(1) children lookup with typed transitions |
-| **Scheduler** | Priority-driven real-time scheduler | Priority-bucketed `RunQueue` with inline `maxPriority` tracking and EDF |
+| **Object stores** | Kernel-managed object pools | Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked correctness invariants |
 | **VSpace** | Architecture-native page tables/MMU | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with proofs co-located with transitions |
+| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with 2,295 theorems co-located with transitions (zero sorry/axiom) |
 | **Platform abstraction** | Architecture/board support via kernel + ecosystem engineering | `PlatformBinding` typeclass with typed boundary contracts |
 
 
 ## What's next
 
-Current priorities and the full workstream history are maintained in
-[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
+The full workstream history is maintained in
+[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
-- **WS-Z** — Composable Performance Objects (8 phases, Z1–Z8) **COMPLETE** (v0.23.0–v0.23.20). SchedContext type foundation, CBS budget engine with 16 preservation theorems, replenishment queue, scheduler integration, capability-controlled thread binding, timeout endpoints, SchedContext donation for passive servers, API surface with 3 error-exclusivity theorems and 4 frozen operations. Enforcement boundary expanded 22→25 entries. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
-- **WS-Y** — Documentation & Cross-Subsystem Hardening (3 phases, Y1–Y3) **PORTFOLIO COMPLETE** (v0.22.23–v0.22.26).
-- **WS-X** — Documentation, Hardening & Low-Severity (5 phases, X1–X5) **PORTFOLIO COMPLETE** (v0.22.18–v0.22.22).
-- **WS-W** — Pre-Release Audit Remediation (6 phases, W1–W6, 52 sub-tasks) **PORTFOLIO COMPLETE** (v0.22.11–v0.22.17).
-- **WS-V** — Deep Audit Remediation (8 phases, V1–V8) **PORTFOLIO COMPLETE** (v0.22.0–v0.22.10).
-- **WS-U** — Comprehensive Audit Remediation (8 phases, U1–U8, 97 sub-tasks) **PORTFOLIO COMPLETE** (v0.21.0–v0.21.7).
-- **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (next major milestone)
+### Recently completed: WS-Z — Composable Performance Objects
 
-All prior portfolios (WS-B through WS-T) are complete. Prior audits (v0.8.0–v0.9.32),
-milestone closeouts, and legacy GitBook chapters are archived in
+**10 phases, 213 sub-tasks, v0.23.0–v0.23.21** | [Plan](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md) | **PORTFOLIO COMPLETE**
+
+WS-Z introduced composable performance objects to seLe4n, adapting seL4's MCS
+(Mixed-Criticality System) scheduling extensions with machine-checked proofs.
+The workstream addresses five fundamental limitations of monolithic scheduling
+state: no CPU budget accounting, no scheduling context separation, no passive
+server support, no capability-controlled resource binding, and no timeout-bounded
+IPC.
+
+**Phase Z1 — SchedContext Type Foundation**: `SchedContext` as the 7th kernel
+object type with 11 fields (`scId`, `budget`, `period`, `priority`, `deadline`,
+`domain`, `budgetRemaining`, `periodStart`, `replenishments`, `boundThread`,
+`isActive`). `SchedContextBinding` enum (`.unbound` | `.bound scId` |
+`.donated scId originalOwner`) on every TCB. `threadSchedulingParams` migration
+accessor resolves effective parameters from bound SchedContext or falls back to
+legacy TCB fields. Full codebase ripple fix across 24 files (~150 match arms).
+
+**Phase Z2 — CBS Budget Engine**: Pure-function Constant Bandwidth Server
+operations: `consumeBudget` (saturating decrement), `processReplenishments`
+(partitioning + refill capped at budget ceiling), `cbsUpdateDeadline` (CBS
+deadline rule: `deadline := currentTime + period` on replenishment after
+exhaustion), `admissionCheck` (total utilization cannot exceed 1000 per-mille).
+4-conjunct `schedContextWellFormed` invariant bundle with 16 per-operation
+preservation theorems composing into `cbsBudgetCheck_preserves_schedContextWellFormed`.
+Bandwidth isolation: `cbs_bandwidth_bounded` theorem bounds consumption by
+`maxReplenishments x budget` over any time window.
+
+**Phase Z3 — Replenishment Queue**: System-wide sorted `ReplenishQueue` for
+timer-driven CBS refills. O(1) `peek`/`hasDue`, O(k) `popDue` prefix split,
+O(n) sorted `insert`. `pairwiseSortedBy` recursive adjacency predicate with 13
+preservation and membership theorems.
+
+**Phase Z4 — Scheduler Integration**: CBS budget engine wired into the scheduler.
+`effectivePriority` resolves scheduling parameters from SchedContext if bound.
+`timerTickBudget` implements 3-branch logic: unbound legacy path, bound budget
+decrement, and bound budget exhaustion (schedule replenishment, insert into
+replenish queue, preempt thread, timeout blocked IPC threads).
+`chooseThreadEffective` filters by budget eligibility.
+`schedulerInvariantBundleExtended` (15-tuple) extends the original 9-conjunct
+scheduler bundle with 6 CBS invariants. All 3,236 lines of existing preservation
+proofs pass unchanged.
+
+**Phase Z5 — Capability-Controlled Thread Binding**: 3 new syscalls
+(`.schedContextConfigure`, `.schedContextBind`, `.schedContextUnbind`).
+`schedContextConfigure` validates parameters and checks admission control.
+`schedContextBind` creates bidirectional TCB-SchedContext binding and re-inserts
+into RunQueue at SchedContext priority. `schedContextUnbind` includes preemption
+guard and RunQueue cleanup. `schedContextYieldTo` enables kernel-internal budget
+transfer. 7 preservation theorems including
+`schedContextConfigure_admission_excludes_eq` (prevents admission double-counting).
+
+**Phase Z6 — Timeout Endpoints**: Budget-driven IPC timeout. `timeoutThread`
+splices a thread out of the endpoint queue via `endpointQueueRemove`, resets IPC
+state to `.ready`, writes error code `0xFFFFFFFF`, and re-enqueues in the
+RunQueue. `timeoutBlockedThreads` scans for timed-out threads on budget
+exhaustion during `timerTickBudget`. `blockedThreadTimeoutConsistent` invariant
+ensures every thread with `timeoutBudget` references a valid SchedContext and is
+in a blocking IPC state.
+
+**Phase Z7 — SchedContext Donation / Passive Servers**: Enables servers that
+consume zero CPU when idle. During `endpointCall`, if the receiver is passive
+(`.unbound`) and the caller has a bound SchedContext, `donateSchedContext`
+transfers the caller's CBS budget to the server. The server executes on the
+client's budget. On `endpointReply`, `returnDonatedSchedContext` returns the
+SchedContext to the original owner. 4 new invariants: `donationChainAcyclic`
+(no circular donation chains), `donationOwnerValid` (bidirectional consistency),
+`passiveServerIdle` (unbound non-runnable threads are ready/receiving),
+`donationBudgetTransfer` (at most one thread per SchedContext).
+`ipcInvariantFull` extended from 10 to 14 conjuncts.
+
+**Phase Z8 — API Surface & Syscall Wiring**: 3 error-exclusivity theorems, 4
+frozen SchedContext operations (`frozenSchedContextConfigure`/`Bind`/`Unbind`,
+`frozenTimerTickBudget`), `enforcementBoundary` expanded 22 to 25 entries,
+`frozenOpCoverage_count` 12 to 15.
+
+**Phase Z9 — Invariant Composition & Cross-Subsystem**: 3 new cross-subsystem
+predicates (`schedContextStoreConsistent`, `schedContextNotDualBound`,
+`schedContextRunQueueConsistent`) extending `crossSubsystemInvariant` from 5 to
+8 predicates. `proofLayerInvariantBundle` extended from 9 to 10 conjuncts.
+`bootSafeObject` extended with SchedContext wellFormedness (6th conjunct). 16
+pairwise field-disjointness witnesses, 3 frame lemmas.
+
+**Phase Z10 — Documentation & Closure**: All documentation synchronized.
+
+### Next major milestone
+
+**Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt
+routing, boot sequence. All software-level workstreams (WS-B through WS-Z) are
+complete. Prior audits and milestone closeouts are archived in
 [`docs/dev_history/`](docs/dev_history/README.md).

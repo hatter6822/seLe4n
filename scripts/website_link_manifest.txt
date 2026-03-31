@@ -68,7 +68,15 @@ SeLe4n/Kernel/RobinHood/Invariant.lean
 
 # SchedContext
 SeLe4n/Kernel/SchedContext/Types.lean
+SeLe4n/Kernel/SchedContext/Budget.lean
+SeLe4n/Kernel/SchedContext/ReplenishQueue.lean
+SeLe4n/Kernel/SchedContext/Operations.lean
+SeLe4n/Kernel/SchedContext/Invariant.lean
 SeLe4n/Kernel/SchedContext.lean
+
+# IPC (WS-Z additions)
+SeLe4n/Kernel/IPC/Operations/Timeout.lean
+SeLe4n/Kernel/IPC/Operations/Donation.lean
 
 # Architecture
 SeLe4n/Kernel/Architecture/VSpace.lean
@@ -113,6 +121,7 @@ SeLe4n/Kernel/IPC/
 SeLe4n/Kernel/InformationFlow/
 SeLe4n/Kernel/Lifecycle/
 SeLe4n/Kernel/Service/
+SeLe4n/Kernel/SchedContext/
 SeLe4n/Kernel/Architecture/
 SeLe4n/Model/
 SeLe4n/Testing/

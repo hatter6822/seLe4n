@@ -43,8 +43,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ### 3.0 Current status
 
-**WS-Z** (Composable Performance Objects) is **COMPLETE** (v0.23.0–v0.23.18) —
-8 phases (Z1–Z8) delivering the full SchedContext subsystem:
+**WS-Z** (Composable Performance Objects) is **COMPLETE** (v0.23.0–v0.23.21) —
+10 phases (Z1–Z10, 213 sub-tasks) delivering the full SchedContext subsystem:
 
 - **Z1** (v0.23.0): SchedContext type foundation — 18 sub-tasks. SchedContextId typed wrapper, Budget/Period/Bandwidth types, SchedContext structure, SchedContextBinding enum, TCB schedContextBinding field, 7th KernelObject variant, full codebase ripple fix (24 files).
 - **Z2** (v0.23.1–v0.23.4): CBS budget engine — 24 sub-tasks. consumeBudget, replenish, admission control. 4-conjunct `schedContextWellFormed` bundle, 16 per-operation preservation theorems, `cbs_bandwidth_bounded` theorem.
@@ -54,6 +54,8 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **Z6** (v0.23.12–v0.23.14): Timeout endpoints — 26 sub-tasks. Budget-driven IPC timeout, `endpointQueueRemove`, `timeoutThread`, `blockedThreadTimeoutConsistent` invariant (10th conjunct of `ipcInvariantFull`).
 - **Z7** (v0.23.15–v0.23.16): SchedContext donation / passive servers — 26 sub-tasks. `donateSchedContext`, `returnDonatedSchedContext`, donation-aware IPC wrappers, 4 new invariants (`donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`). `ipcInvariantFull` extended to 14 conjuncts.
 - **Z8** (v0.23.17–v0.23.18): API surface & syscall wiring — 17 sub-tasks. 3 error-exclusivity theorems, 4 frozen SchedContext operations, enforcement boundary 22→25, `frozenOpCoverage_count` 12→15, 6 budget lifecycle trace scenarios, 8 negative tests.
+- **Z9** (v0.23.19–v0.23.20): Invariant Composition & Cross-Subsystem — 20 sub-tasks. 3 new cross-subsystem predicates (`schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`). `crossSubsystemInvariant` 5→8 predicates. `proofLayerInvariantBundle` 9→10 conjuncts. 16 pairwise disjointness witnesses, 3 frame lemmas, boot/freeze/operation preservation.
+- **Z10** (v0.23.21): Documentation & Closure — 12 sub-tasks. Spec, development docs, workstream history, claims, codebase map, GitBook, README, CLAUDE.md, website manifest synchronized. WS-Z PORTFOLIO COMPLETE.
 
 **Next major milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence.
@@ -339,7 +341,10 @@ source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant.Defs
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant.Preservation
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Operations
+source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.ReplenishQueue
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext
+# Cross-subsystem (includes SchedContext predicates)
+source ~/.elan/env && lake build SeLe4n.Kernel.CrossSubsystem
 ```
 
 Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:

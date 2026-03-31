@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-z9-DcGlt",
-      "commit_sha": "c18fac744c26e734b68851e95aac3c9abe923778",
-      "tree_sha": "cb9fe1f7d2f535382d4fa43870854c2fe62c9b91",
-      "committed_at_utc": "2026-03-31T17:14:33+00:00"
+      "branch": "claude/optimize-documentation-closure-JRW9U",
+      "commit_sha": "cd9ef678207233972e825ad67683191d6f7f248d",
+      "tree_sha": "2cfbf81f990b578ecab5932be1dbfd41510112fa",
+      "committed_at_utc": "2026-03-31T13:31:28-04:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 4083
   },
   "readme_sync": {
-    "version": "0.23.20",
+    "version": "0.23.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 113,
     "production_loc": 79743,

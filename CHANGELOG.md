@@ -1,3 +1,28 @@
+## [0.23.21] — Z10: Documentation & Closure — WS-Z PORTFOLIO COMPLETE
+
+Final documentation synchronization for the WS-Z Composable Performance Objects
+workstream. All 10 phases (Z1–Z10, 213 sub-tasks) delivered.
+
+- **Z10-A1/A2**: Added 5 new subsections to `SELE4N_SPEC.md` (§8.12.2–§8.12.6):
+  ReplenishQueue (Z3), Scheduler Integration (Z4), Capability Binding (Z5),
+  API Surface (Z8), Cross-Subsystem Composition (Z9)
+- **Z10-B**: Updated `DEVELOPMENT.md` with Z9/Z10 phase entries and
+  ReplenishQueue/CrossSubsystem build targets
+- **Z10-C**: Updated `WORKSTREAM_HISTORY.md` with Z10 closure entry
+- **Z10-D**: Updated `CLAIM_EVIDENCE_INDEX.md` with 4 key verified claims:
+  CBS bandwidth isolation, donation chain acyclicity, timeout termination,
+  admission control soundness
+- **Z10-E**: Regenerated `codebase_map.json` (v0.23.21, 113 files, 79,743 LoC,
+  2,295 proved declarations)
+- **Z10-F**: Added GitBook §30 (Documentation & Closure) to proof/invariant map
+- **Z10-G**: Updated `README.md` metrics from `codebase_map.json`
+- **Z10-H**: Updated `CLAUDE.md` source layout (Operations.lean,
+  Invariant/Preservation.lean) and active workstream context
+- **Z10-I**: Updated `website_link_manifest.txt` with Budget.lean,
+  ReplenishQueue.lean, Operations.lean, Invariant.lean, Timeout.lean,
+  Donation.lean, and SchedContext/ directory
+- Zero sorry/axiom. All tests pass (full).
+
 ## [0.23.20] — Z9 Audit: Documentation Accuracy & Disjointness Completeness
 
 Post-implementation audit of Z9 Invariant Composition & Cross-Subsystem phase.
