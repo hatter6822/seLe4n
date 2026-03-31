@@ -1,3 +1,26 @@
+## [0.23.8] — Z4 Audit v2: Tier 3 Invariant Surface Anchors
+
+Second audit pass on Z4 Scheduler Integration. Added comprehensive Tier 3
+invariant surface anchors for Z4 definitions, operations, and preservation
+theorems.
+
+- **AUD-T3 (MED)**: Added 23 `#check` Tier 3 anchors to
+  `test_tier3_invariant_surface.sh` covering all Z4 invariant definitions
+  (`budgetPositive`, `currentBudgetPositive`, `schedContextsWellFormed`,
+  `replenishQueueValid`, `schedContextBindingConsistent`,
+  `effectiveParamsMatchRunQueue`, `schedulerInvariantBundleExtended`),
+  operations (`effectivePriority`, `hasSufficientBudget`,
+  `chooseThreadEffective`, `timerTickBudget`, `scheduleEffective`,
+  `timerTickWithBudget`, `handleYieldWithBudget`, `processReplenishmentsDue`),
+  and key preservation theorems (`chooseThreadEffective_state_unchanged`,
+  `budgetPositive_subset`, `effectivePriority_unbound_legacy`,
+  `hasSufficientBudget_unbound_legacy`,
+  `consumeBudget_preserves_schedContextWellFormed_full`,
+  `scheduleReplenishment_preserves_schedContextWellFormed_full`,
+  `cbsUpdateDeadline_preserves_wf`).
+
+Zero sorry/axiom. All tiers pass (0-3). 210 modules build.
+
 ## [0.23.7] — Z4 Audit: Scheduler Integration Verification
 
 Post-implementation audit of Z4 Scheduler Integration (33 sub-tasks). Four

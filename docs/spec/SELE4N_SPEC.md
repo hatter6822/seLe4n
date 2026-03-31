@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.23.7` (`lakefile.toml`) |
+| **Package version** | `0.23.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 76,554 across 109 Lean files |
 | **Test LoC** | 8,687 across 10 Lean test suites |
 | **Proved declarations** | 2,238 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-Z Phases Z1–Z4 COMPLETE** (v0.23.0–v0.23.7). Z4: Scheduler Integration — CBS budget engine and replenishment queue wired into scheduler, 33 sub-tasks, 6 new invariants, `schedulerInvariantBundleExtended` (15-tuple). Z5 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-Z Phases Z1–Z4 COMPLETE** (v0.23.0–v0.23.8). Z4: Scheduler Integration — CBS budget engine and replenishment queue wired into scheduler, 33 sub-tasks, 6 new invariants, `schedulerInvariantBundleExtended` (15-tuple). Z5 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

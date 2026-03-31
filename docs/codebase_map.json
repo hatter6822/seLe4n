@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-scheduler-integration-XNStJ",
-      "commit_sha": "492d0dcdd9c12d881f15c6e83fb737760b16e956",
-      "tree_sha": "551f01ef335c98587835ccee41f0c05eac83e23e",
-      "committed_at_utc": "2026-03-31T04:01:02+00:00"
+      "commit_sha": "aeea1ca253be2e24b49c96b15da6a28f30549ca4",
+      "tree_sha": "49e340272a0acd82279fcba5e0e55930ff38dd1d",
+      "committed_at_utc": "2026-03-31T04:39:22+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 3966
   },
   "readme_sync": {
-    "version": "0.23.7",
+    "version": "0.23.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 109,
     "production_loc": 76554,
