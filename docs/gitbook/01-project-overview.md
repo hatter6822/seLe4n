@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 64,229 lines of production Lean across 100 files, 8,316 lines across 10 Lean test suites,
-1,878 theorem/lemma declarations, zero unsound constructs.
+Current state: 79,419 lines of production Lean across 113 files, 8,759 lines across 10 Lean test suites,
+2,281 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -73,19 +73,20 @@ M7 (audit remediation).
 
 ### What's next
 
-**WS-Q** (Kernel State Architecture) is **PORTFOLIO COMPLETE** (v0.17.7–v0.17.14) —
-all 9 phases delivered: Q1 service interface simplification, Q2 universal RHTable
-migration, Q3 IntermediateState formalization, Q4 CNode radix tree, Q5 FrozenSystemState +
-freeze, Q6 freeze correctness proofs, Q7 frozen kernel operations, Q8 Rust syscall
-wrappers, Q9 integration testing + documentation.
+All workstreams from WS-B through WS-Z are **COMPLETE** (v0.9.0–v0.23.18).
+Key recent completions:
 
-**WS-S** (Pre-Benchmark Strengthening) is **PORTFOLIO COMPLETE** (v0.19.0–v0.19.6) —
-7 phases (S1–S7), 83 sub-tasks addressing 115+ findings from dual v0.18.7 audits.
-**WS-R** (Comprehensive Audit Remediation) is **PORTFOLIO COMPLETE** (v0.18.0–v0.18.7).
-Next: **Raspberry Pi 5 hardware binding**.
+- **WS-Z** (v0.23.0–v0.23.18): Composable Performance Objects — 8 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, and full API surface. **PORTFOLIO COMPLETE.**
+- **WS-Y** (v0.22.23–v0.22.26): Documentation & cross-subsystem hardening. **PORTFOLIO COMPLETE.**
+- **WS-X** (v0.22.18–v0.22.22): Documentation, hardening & low-severity. **PORTFOLIO COMPLETE.**
+- **WS-W** (v0.22.11–v0.22.17): Pre-release audit remediation — 6 phases, 52 sub-tasks. **PORTFOLIO COMPLETE.**
+- **WS-V** (v0.22.0–v0.22.10): Deep audit remediation — 8 phases. **PORTFOLIO COMPLETE.**
+
+**Next major milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
+GIC-400 interrupt routing, boot sequence.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
-[WS-S workstream plan](../dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md).
+[`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md).
 
 ## 5. Architecture mental model
 
@@ -126,5 +127,5 @@ For milestone-moving changes:
 - Project specification: [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md)
 - seL4 reference: [`docs/spec/SEL4_SPEC.md`](../spec/SEL4_SPEC.md)
 - Performance optimization: [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
-- Active workstream plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md) (WS-R)
+- Workstream history: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md)
 - Hardware path: [Path to Real Hardware (Raspberry Pi 5)](10-path-to-real-hardware-mobile-first.md)

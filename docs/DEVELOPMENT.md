@@ -41,30 +41,46 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ## 3) Next workstreams
 
-The WS-F portfolio (v0.12.2 audit) is fully complete — all 33 findings closed.
-The WS-J1 portfolio (v0.14.10) is fully complete — all 6 phases closed.
-The **WS-K** portfolio (v0.16.0–v0.16.8) is **fully complete** — all 8 phases
-(K-A through K-H) delivered: full syscall dispatch with message register
-extraction, per-syscall argument decode, 13/13 dispatch, service policy
-configuration, IPC message population, 44+ theorems, 34 NI step constructors,
-comprehensive testing, and documentation sync. See
-[`AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
+### 3.0 Current status
 
-The **WS-L** portfolio (IPC subsystem audit & remediation) is **fully complete**
-(v0.16.9–v0.16.13) — all 5 phases delivered: L1 (performance), L2 (code quality),
-L3 (proof strengthening), L4 (test coverage), L5 (documentation & closeout).
-12 of 13 findings resolved, 1 intentionally deferred (L-T03: cap transfer requires
-CSpace IPC integration not yet modeled). All 4 WS-I5 deferred items resolved.
-See [`AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
+**WS-Z** (Composable Performance Objects) is **COMPLETE** (v0.23.0–v0.23.18) —
+8 phases (Z1–Z8) delivering the full SchedContext subsystem:
 
-The **WS-M** portfolio (Capability subsystem audit & remediation) is **fully
-complete** (v0.16.14–v0.17.0) — all 5 phases delivered: M1 (proof strengthening,
-v0.16.14), M2 (performance optimization, v0.16.15), M3 (IPC capability transfer,
-v0.16.17), M4 (test coverage expansion, v0.16.18), M5 (streaming BFS revocation
-+ documentation sync, v0.16.19), plus v0.17.0 (shared `processRevokeNode` helper
-extraction, unified BFS revocation proofs, edge-case test expansion). All 14
-audit findings resolved. Zero sorry/axiom.
-See [`AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md).
+- **Z1** (v0.23.0): SchedContext type foundation — 18 sub-tasks. SchedContextId typed wrapper, Budget/Period/Bandwidth types, SchedContext structure, SchedContextBinding enum, TCB schedContextBinding field, 7th KernelObject variant, full codebase ripple fix (24 files).
+- **Z2** (v0.23.1–v0.23.4): CBS budget engine — 24 sub-tasks. consumeBudget, replenish, admission control. 4-conjunct `schedContextWellFormed` bundle, 16 per-operation preservation theorems, `cbs_bandwidth_bounded` theorem.
+- **Z3** (v0.23.5–v0.23.6): Replenishment queue — 12 sub-tasks. Sorted insert, popDue, remove, peek/hasDue. `pairwiseSortedBy` predicate, 13 preservation/membership theorems.
+- **Z4** (v0.23.7–v0.23.8): Scheduler integration — 33 sub-tasks. `effectivePriority`, `hasSufficientBudget`, `timerTickBudget`, `scheduleEffective`. 6 new invariants, `schedulerInvariantBundleExtended` (15-tuple).
+- **Z5** (v0.23.9–v0.23.11): Capability-controlled thread binding — 25 sub-tasks. 3 new SyscallId variants, schedContextConfigure/Bind/Unbind/YieldTo operations, 7 preservation theorems, API dispatch wiring.
+- **Z6** (v0.23.12–v0.23.14): Timeout endpoints — 26 sub-tasks. Budget-driven IPC timeout, `endpointQueueRemove`, `timeoutThread`, `blockedThreadTimeoutConsistent` invariant (10th conjunct of `ipcInvariantFull`).
+- **Z7** (v0.23.15–v0.23.16): SchedContext donation / passive servers — 26 sub-tasks. `donateSchedContext`, `returnDonatedSchedContext`, donation-aware IPC wrappers, 4 new invariants (`donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`). `ipcInvariantFull` extended to 14 conjuncts.
+- **Z8** (v0.23.17–v0.23.18): API surface & syscall wiring — 17 sub-tasks. 3 error-exclusivity theorems, 4 frozen SchedContext operations, enforcement boundary 22→25, `frozenOpCoverage_count` 12→15, 6 budget lifecycle trace scenarios, 8 negative tests.
+
+**Next major milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
+GIC-400 interrupt routing, boot sequence.
+
+### 3.0a Prior completed portfolios (summary)
+
+All portfolios from WS-B through WS-Y are complete. Key milestones:
+
+- **WS-Y** (v0.22.23–v0.22.26): Documentation & cross-subsystem hardening. **PORTFOLIO COMPLETE.**
+- **WS-X** (v0.22.18–v0.22.22): Documentation, hardening & low-severity. **PORTFOLIO COMPLETE.**
+- **WS-W** (v0.22.11–v0.22.17): Pre-release audit remediation — 6 phases, 52 sub-tasks. **PORTFOLIO COMPLETE.**
+- **WS-V** (v0.22.0–v0.22.10): Deep audit remediation — 8 phases. **PORTFOLIO COMPLETE.**
+- **WS-U** (v0.21.0–v0.21.7): Comprehensive audit remediation — 8 phases, 97 sub-tasks. **PORTFOLIO COMPLETE.**
+- **WS-T** (v0.20.0–v0.20.7): Deep-dive audit remediation — 8 phases, 94 sub-tasks. **PORTFOLIO COMPLETE.**
+- **WS-S** (v0.19.0–v0.19.6): Pre-benchmark strengthening — 7 phases, 83 sub-tasks. **PORTFOLIO COMPLETE.**
+- **WS-R** (v0.18.0–v0.18.7): Comprehensive audit remediation — 8 phases, 111 sub-tasks. **PORTFOLIO COMPLETE.**
+- **WS-Q** (v0.17.7–v0.17.14): Kernel state architecture — 9 phases, 45 atomic units. **PORTFOLIO COMPLETE.**
+- **WS-N** (v0.17.0–v0.17.5): Robin Hood hashing — 5 phases, 122 subtasks. **PORTFOLIO COMPLETE.**
+- **WS-M** (v0.16.14–v0.17.0): Capability subsystem — 5 phases. **PORTFOLIO COMPLETE.**
+- **WS-L** (v0.16.9–v0.16.13): IPC subsystem — 5 phases. **PORTFOLIO COMPLETE.**
+- **WS-K** (v0.16.0–v0.16.8): Full syscall dispatch — 8 phases. **PORTFOLIO COMPLETE.**
+- **WS-J1** (v0.15.4–v0.15.10): Register-indexed namespaces — 6 phases. **PORTFOLIO COMPLETE.**
+- **WS-F–WS-I** (v0.12.2–v0.15.3): Audit remediation, testing, infrastructure. **ALL COMPLETE.**
+- **WS-B–WS-E** (historical): Foundation workstreams. **ALL COMPLETE.**
+
+For detailed per-phase descriptions of completed workstreams, see
+[`docs/WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md).
 
 The **WS-Q** portfolio (Kernel State Architecture) is **fully complete**
 (v0.17.7–v0.17.14) — a multi-phase plan unifying two-phase state architecture,
@@ -287,13 +303,13 @@ Every milestone-moving PR should include:
 
 - IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
-- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) by default; unchecked operations remain available for research experiments. `enforcementBoundary` classifies 17 operations (3 policy-gated in base, 7 in extended). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added — service lifecycle simplified to registry-only model; SRG-001 through SRG-010 test scenarios added.)
+- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) by default; unchecked operations remain available for research experiments. `enforcementBoundary` classifies 25 operations (11 policy-gated, 8 capability-only, 4 read-only, 2 lifecycle). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added — service lifecycle simplified to registry-only model; SRG-001 through SRG-010 test scenarios added.)
 - WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) with per-thread links stored in `TCB.queuePrev`/`TCB.queuePPrev`/`TCB.queueNext`; invariant checks now include `intrusiveQueueWellFormed` validation for both endpoint queues (including head/tail shape, cycle-free traversal, and per-node `queuePrev`/`queuePPrev`/`queueNext` linkage), and `negative_state_suite` adds runtime queue-link assertions for both send-queue and receive-queue FIFO/dequeue paths alongside enqueue/block, rendezvous/dequeue, queue drain, O(1) middle removal via `endpointQueueRemoveDual`, malformed-`queuePPrev` rejection (`illegalState`), and dual-queue double-wait rejection (`alreadyWaiting`).
 - WS-E4 CDT representation is node-stable: derivation edges are over stable node IDs and slots map to nodes via bidirectional maps (`cdtSlotNode`, `cdtNodeSlot`). `cspaceMove` updates slot→node ownership/backpointers instead of rewriting every CDT edge, `cspaceDeleteSlot` detaches stale slot↔node mappings on deletion, the observed slot-level CDT is defined as projection of node edges through the slot mapping (`SystemState.observedCdtEdges`), and strict revoke (`cspaceRevokeCdtStrict`) now reports the first descendant deletion failure with offending slot context.
 
 ## 5) Daily contributor loop
 
-1. Sync branch and choose one coherent slice from the active plans (currently Raspberry Pi 5 hardware binding prep — WS-J1 register-namespace migration is fully completed).
+1. Sync branch and choose one coherent slice from the active plans (currently Raspberry Pi 5 hardware binding — all pre-hardware workstreams WS-B through WS-Z are complete).
 2. Implement the minimal semantic/proof/doc delta.
 3. Run smallest relevant check first, then higher tiers.
 4. Update docs in the same commit range.

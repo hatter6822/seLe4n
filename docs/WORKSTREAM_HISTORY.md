@@ -22,9 +22,9 @@ WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
 WS-Y Phases Y1–Y3 complete. **WS-Y PORTFOLIO COMPLETE.**
-WS-Z Phases Z1–Z6 complete. **WS-Z IN PROGRESS.**
+WS-Z Phases Z1–Z8 complete. **WS-Z PORTFOLIO COMPLETE.**
 
-### WS-Z: Composable Performance Objects (IN PROGRESS)
+### WS-Z: Composable Performance Objects (PORTFOLIO COMPLETE)
 
 - **Phase Z1 COMPLETE** (v0.23.0): SchedContext Type Foundation — 18 sub-tasks (Z1-A through Z1-R). SchedContextId typed identifier, Budget/Period/Bandwidth/ReplenishmentEntry types, SchedContext structure (CBS scheduling context object), SchedContextBinding enum (unbound/bound/donated), TCB schedContextBinding field, KernelObject/KernelObjectType .schedContext variant (7th object type), FrozenKernelObject extension, threadSchedulingParams migration accessor, BEq instances, re-export hub. 24 files updated for KernelObject variant ripple. Zero sorry/axiom.
 - **Phase Z2 COMPLETE** (v0.23.1, audit v0.23.2): CBS Budget Engine — 24 sub-tasks (Z2-A through Z2-Q). Pure-function CBS budget management operations: `consumeBudget` (saturating decrement), `isBudgetExhausted`, `mkReplenishmentEntry`/`truncateReplenishments`/`scheduleReplenishment` (replenishment scheduling), `partitionEligible`/`sumReplenishments`/`applyRefill`/`processReplenishments` (replenishment processing), `cbsUpdateDeadline` (CBS deadline rule), `cbsBudgetCheck` (combined per-tick entry point), `admissionCheck` (bandwidth admission control). Invariant definitions: `budgetWithinBounds`, `replenishmentListWellFormed`, `schedContextWellFormed`, `replenishmentAmountsBounded`. 12 preservation theorems composing into `cbsBudgetCheck_preserves_schedContextWellFormed`. 6 `replenishmentAmountsBounded` preservation theorems including `cbsBudgetCheck_preserves_replenishmentAmountsBounded`. Bandwidth isolation theorems: `cbs_single_period_bound`, `cbs_bandwidth_bounded`. Audit fixes: `applyRefill` `isActive` synchronization (AUD-1), `replenishmentAmountsBounded` preservation chain (AUD-2), bandwidth theorem refactoring (AUD-3). New files: `Budget.lean`, `Invariant/Defs.lean`, `Invariant.lean`. Zero sorry/axiom.

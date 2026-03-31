@@ -93,12 +93,14 @@ SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
 SeLe4n/Kernel/IPC/*              IPC subsystem
   Operations.lean                Re-export hub
     Operations/Endpoint.lean     Core endpoint/notification ops
+    Operations/CapTransfer.lean  IPC capability transfer (WS-M3)
     Operations/Timeout.lean      Z6 timeout-driven IPC unblocking
     Operations/Donation.lean     Z7: SchedContext donation wrappers + preservation proofs
     Operations/SchedulerLemmas.lean Scheduler preservation lemmas
   DualQueue.lean                 Re-export hub
     DualQueue/Core.lean          Dual-queue operations
     DualQueue/Transport.lean     Transport lemmas
+    DualQueue/WithCaps.lean      DualQueue with capability transfer
   Invariant.lean                 Re-export hub
     Invariant/Defs.lean          Core IPC invariant definitions
     Invariant/EndpointPreservation.lean Endpoint preservation proofs
@@ -110,10 +112,21 @@ SeLe4n/Kernel/IPC/*              IPC subsystem
     Invariant/Structural.lean    Structural invariants, composition theorems
 SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
 SeLe4n/Kernel/Service/*          Service orchestration + policy
+  Interface.lean                 Service interface definitions
+  Operations.lean                Service operations
+  Registry.lean                  Service registry
+  Registry/Invariant.lean        Registry invariant proofs
   Invariant.lean                 Re-export hub
     Invariant/Policy.lean        Policy surface, bridge theorems
     Invariant/Acyclicity.lean    Dependency acyclicity proofs
 SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace + VSpaceBackend + RegisterDecode
+  VSpace.lean                    VSpace HashMap map/unmap/lookup, W^X enforcement
+  VSpaceBackend.lean             VSpace backend operations
+  VSpaceInvariant.lean           VSpace invariant proofs
+  TlbModel.lean                  TLB flush model
+  Adapter.lean                   Architecture adapter
+  Assumptions.lean               Architecture assumptions
+  Invariant.lean                 Architecture invariant re-export hub
   RegisterDecode.lean            Total deterministic decode: raw registers → typed kernel IDs
   SyscallArgDecode.lean          Per-syscall typed argument decode (msgRegs → typed structs)
 SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
@@ -126,6 +139,7 @@ SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
     Invariant/Composition.lean   Trace composition, declassification
 SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
   Core.lean                      Types, operations, proofs (N1 complete)
+  Set.lean                       RHSet type (hash-set wrapper over RHTable)
   Bridge.lean                    Kernel API bridge: instances, bridge lemmas, filter (N3)
   Invariant.lean                 Re-export hub (N2)
     Invariant/Defs.lean          Invariant definitions, empty table proofs, probeChainDominant
@@ -144,12 +158,13 @@ SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
   Bridge.lean                    buildCNodeRadix (RHTable → CNodeRadix), freezeCNodeSlots, bridge lemmas
 SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7)
   Core.lean                      FrozenKernel monad, lookup/store primitives
-  Operations.lean                12 per-subsystem frozen operations
+  Operations.lean                15 per-subsystem frozen operations
   Commutativity.lean             FrozenMap set/get? roundtrip proofs, frame lemmas
   Invariant.lean                 frozenStoreObject preservation theorems
 SeLe4n/Kernel/CrossSubsystem.lean Cross-subsystem invariants (R4-E)
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
+SeLe4n/Platform/DeviceTree.lean  FDT parsing with bounds-checked helpers
 SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks
   Sim/RuntimeContract.lean       Permissive + restrictive runtime contracts
   Sim/BootContract.lean          Boot + interrupt contracts (all True)
@@ -160,9 +175,15 @@ SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform (BCM2712)
   RPi5/Board.lean                BCM2712 addresses, MMIO, MachineConfig
   RPi5/RuntimeContract.lean      Substantive runtime + restrictive contract
   RPi5/BootContract.lean         Boot + interrupt contracts (GIC-400)
+  RPi5/MmioAdapter.lean           MMIO adapter for RPi5
   RPi5/ProofHooks.lean           AdapterProofHooks for restrictive contract
   RPi5/Contract.lean             PlatformBinding instance (re-export hub)
 SeLe4n/Testing/*                 Test harness, state builder, fixtures
+  Helpers.lean                   Shared test helpers (expectError, expectOk, expectCond)
+  StateBuilder.lean              Test state construction
+  InvariantChecks.lean           Runtime invariant check helpers
+  MainTraceHarness.lean          Main trace test harness
+  RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
 ```

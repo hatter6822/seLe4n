@@ -13,9 +13,10 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
    - global object store, scheduler state, typed lookup/store helpers,
    - shared error taxonomy (`KernelError`, including explicit illegal-state/authority lifecycle branches).
 
-3. **Kernel transition subsystems (`Kernel/Scheduler`, `Kernel/Capability`, `Kernel/IPC`, `Kernel/Lifecycle`, `Kernel/Service`)**
+3. **Kernel transition subsystems (`Kernel/Scheduler`, `Kernel/Capability`, `Kernel/IPC`, `Kernel/Lifecycle`, `Kernel/Service`, `Kernel/SchedContext`)**
    - executable transition definitions,
-   - local invariants and transition-preservation theorem entrypoints.
+   - local invariants and transition-preservation theorem entrypoints,
+   - SchedContext subsystem (WS-Z): CBS budget engine, replenishment queue, scheduling context types, capability-controlled thread binding, timeout endpoints, SchedContext donation for passive servers.
 
 4. **Architecture boundary (`Kernel/Architecture`)**
    - architecture assumptions, VSpace address-space semantics, adapter entrypoints,
@@ -101,15 +102,23 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Bridge.lean` — `buildCNodeRadix` (RHTable → CNodeRadix conversion via fold),
     `CNodeConfig`/`CNodeRadix.ofCNode`, parameter preservation theorems.
   - Re-export hub: `SeLe4n/Kernel/RadixTree.lean`.
+- `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.18):
+  - `Types.lean` — `SchedContextId`, `Budget`, `Period`, `Bandwidth`, `ReplenishmentEntry`, `SchedContext`, `SchedContextBinding` (unbound/bound/donated), BEq instances.
+  - `Budget.lean` — CBS budget operations: `consumeBudget`, `isBudgetExhausted`, replenishment scheduling/processing, `cbsBudgetCheck`, `admissionCheck`.
+  - `ReplenishQueue.lean` — sorted replenishment queue: `insert`, `popDue`, `remove`, `peek`, `hasDue` with `pairwiseSortedBy` invariant.
+  - `Operations.lean` — `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`.
+  - `Invariant/Defs.lean` — `budgetWithinBounds`, `replenishmentListWellFormed`, `schedContextWellFormed`, `replenishmentAmountsBounded`, preservation proofs, bandwidth theorems.
+  - `Invariant/Preservation.lean` — operation-level preservation theorems for Z5 operations.
+  - Re-export hubs: `SeLe4n/Kernel/SchedContext/Invariant.lean`, `SeLe4n/Kernel/SchedContext.lean`.
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntry` — top-level register-sourced user-space entry point,
   - `lookupThreadRegisterContext` — TCB register context extraction,
   - `dispatchSyscall` — routes decoded arguments through `SyscallGate`/`syscallInvoke`,
-  - `dispatchWithCap` — per-syscall routing for all 13 kernel operations; accepts
-    `SyscallDecodeResult` (WS-K-C); all 13 syscalls fully dispatch with zero
-    `.illegalState` stubs (WS-K-C/K-D); IPC message body population from decoded
-    registers via `extractMessageRegisters` (WS-K-E). *(WS-Q1: `ServiceConfig`-sourced
-    policy for service start/stop removed — registry-only model.)*
+  - `dispatchWithCap` — per-syscall routing for all 20 kernel operations (13 base +
+    4 IPC compound + 3 SchedContext); accepts `SyscallDecodeResult` (WS-K-C);
+    IPC message body population from decoded registers via `extractMessageRegisters`
+    (WS-K-E); SchedContext ops via `dispatchCapabilityOnly` (WS-Z5). *(WS-Q1:
+    `ServiceConfig`-sourced policy for service start/stop removed — registry-only model.)*
   - `syscallRequiredRight` — total mapping from `SyscallId` to `AccessRight`,
   - soundness theorems: `syscallEntry_requires_valid_decode`,
     `syscallEntry_implies_capability_held`, `dispatchSyscall_requires_right`,
@@ -331,9 +340,9 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     declassification.
 - `SeLe4n/Kernel/InformationFlow/Invariant.lean` (re-export hub)
   - `Invariant/Helpers.lean` — shared NI proof infrastructure.
-  - `Invariant/Operations.lean` — 69 NI preservation theorems covering >80% of
-    kernel operations (WS-H9/H10).
-  - `Invariant/Composition.lean` — 34-constructor `NonInterferenceStep` inductive
+  - `Invariant/Operations.lean` — 80 NI preservation theorems covering >80% of
+    kernel operations (WS-H9/H10 and subsequent workstreams).
+  - `Invariant/Composition.lean` — 32-constructor `NonInterferenceStep` inductive
     (WS-J1-D: `syscallDecodeError`, `syscallDispatchHigh`;
     WS-K-G: `lifecycleRevokeDeleteRetype`);
     `composedNonInterference_trace`; `declassifyStore_NI`;

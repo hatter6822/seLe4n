@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.22.19` |
+| Version | `0.23.18` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 72,385 across 103 Lean files |
-| Test LoC | 8,552 across 10 suites |
-| Proved declarations | 2,087 theorem/lemma declarations (zero sorry/axiom) |
+| Production LoC | 79,419 across 113 Lean files |
+| Test LoC | 8,759 across 10 suites |
+| Proved declarations | 2,281 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| Active workstream | **WS-Z Phase Z5 COMPLETE** (v0.23.9, audit v0.23.10, audit v0.23.11). Phases Z1–Z4 complete (v0.23.0–v0.23.8). Prior: **WS-Y PORTFOLIO COMPLETE**, **WS-X PORTFOLIO COMPLETE**, **WS-W PORTFOLIO COMPLETE**, **WS-V PORTFOLIO COMPLETE**, WS-U through WS-B — all COMPLETE. |
+| Active workstream | **All workstreams COMPLETE** (WS-B through WS-Z). WS-Z Phases Z1–Z8 complete (v0.23.0–v0.23.18): SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, donation for passive servers, and full API surface. **Next: Raspberry Pi 5 hardware binding.** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -74,7 +74,34 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-Q3 (IntermediateState formalization, v0.17.9) — COMPLETED.** →
 **WS-Q4 (CNode radix tree, v0.17.10) — COMPLETED.** →
 **WS-Q5 (FrozenSystemState + freeze, v0.17.11) — COMPLETED.** →
-**WS-Q6 (Freeze correctness proofs, v0.17.12) — COMPLETED.**
+**WS-Q6..Q9 (Freeze proofs, frozen ops, Rust wrappers, integration, v0.17.12–v0.17.14) — WS-Q PORTFOLIO COMPLETE.** →
+**WS-R (Comprehensive audit remediation, v0.18.0–v0.18.7) — PORTFOLIO COMPLETE.** →
+**WS-S (Pre-benchmark strengthening, v0.19.0–v0.19.6) — PORTFOLIO COMPLETE.** →
+**WS-T (Deep-dive audit remediation, v0.20.0–v0.20.7) — PORTFOLIO COMPLETE.** →
+**WS-U (Comprehensive audit remediation, v0.21.0–v0.21.7) — PORTFOLIO COMPLETE.** →
+**WS-V (Deep audit remediation, v0.22.0–v0.22.10) — PORTFOLIO COMPLETE.** →
+**WS-W (Pre-release audit remediation, v0.22.11–v0.22.17) — PORTFOLIO COMPLETE.** →
+**WS-X (Documentation & hardening, v0.22.18–v0.22.22) — PORTFOLIO COMPLETE.** →
+**WS-Y (Cross-subsystem hardening, v0.22.23–v0.22.26) — PORTFOLIO COMPLETE.** →
+**WS-Z (Composable performance objects, v0.23.0–v0.23.18) — PORTFOLIO COMPLETE.**
+
+## Completed: WS-Z Composable Performance Objects (v0.23.0–v0.23.18, PORTFOLIO COMPLETE)
+
+8 phases (Z1–Z8) delivering the complete SchedContext subsystem — CBS budget
+engine, replenishment queue, scheduler integration, capability-controlled thread
+binding, timeout endpoints, SchedContext donation for passive servers, and full
+API surface with frozen operations.
+
+- **Z1** (v0.23.0): SchedContext type foundation — SchedContextId, Budget/Period types, 7th KernelObject variant, 24-file ripple fix.
+- **Z2** (v0.23.1–v0.23.4): CBS budget engine — consumeBudget, replenish, admission control, 16 preservation theorems, `cbs_bandwidth_bounded`.
+- **Z3** (v0.23.5–v0.23.6): Replenishment queue — sorted insert, popDue, remove, 13 theorems.
+- **Z4** (v0.23.7–v0.23.8): Scheduler integration — `schedulerInvariantBundleExtended` (15-tuple), 6 new invariants.
+- **Z5** (v0.23.9–v0.23.11): Capability-controlled binding — 3 new SyscallId variants, configure/bind/unbind/yieldTo, 7 preservation theorems.
+- **Z6** (v0.23.12–v0.23.14): Timeout endpoints — budget-driven IPC timeout, `endpointQueueRemove`, `blockedThreadTimeoutConsistent` invariant.
+- **Z7** (v0.23.15–v0.23.16): SchedContext donation — `donateSchedContext`, donation-aware IPC wrappers, 4 new invariants, `ipcInvariantFull` extended to 14 conjuncts.
+- **Z8** (v0.23.17–v0.23.18): API surface — 3 error-exclusivity theorems, 4 frozen operations, enforcement boundary 22→25.
+
+Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
 
 ## Completed: WS-V Phase V1 Rust ABI Hardening (v0.22.0)
 
@@ -315,20 +342,19 @@ and NI coverage for all new paths. All 8 phases (K-A through K-H) completed
 (v0.16.0–v0.16.8). See
 [workstream plan](../dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md).
 
-## Active: WS-L IPC Subsystem Audit & Remediation (v0.16.8)
+## Completed: WS-L IPC Subsystem Audit & Remediation (v0.16.9–v0.16.13, PORTFOLIO COMPLETE)
 
-A comprehensive end-to-end audit of the IPC subsystem (9,195 LoC, 12 files)
-found zero critical issues and zero sorry/axiom, but identified 3 performance
-optimization opportunities, 5 proof strengthening opportunities, and 5 test
-coverage gaps. WS-L also resolves all deferred WS-I5 items.
+A comprehensive end-to-end audit of the IPC subsystem (9,195 LoC, 12 files).
+All 5 phases delivered. 12 of 13 findings resolved; 1 intentionally deferred
+(L-T03: resolved by WS-M3 IPC capability transfer).
 
 | Phase | Focus | Priority | Status |
 |-------|-------|----------|--------|
-| **WS-L1** | IPC performance optimization (redundant TCB lookups) | HIGH | Planned |
-| **WS-L2** | Code quality: HashMap.fold migration | MEDIUM | Planned |
-| **WS-L3** | Proof strengthening: round-trip, consistency, preservation | MEDIUM | Planned |
-| **WS-L4** | Test coverage: ReplyRecv, blocked-thread, interleaving | MEDIUM | Partially complete |
-| **WS-L5** | Documentation: IF readers' guide, fixture process, metrics | LOW | In progress |
+| **WS-L1** | IPC performance optimization (redundant TCB lookups) | HIGH | **Completed** |
+| **WS-L2** | Code quality: HashMap.fold migration | MEDIUM | **Completed** |
+| **WS-L3** | Proof strengthening: round-trip, consistency, preservation | MEDIUM | **Completed** |
+| **WS-L4** | Test coverage: ReplyRecv, blocked-thread, interleaving | MEDIUM | **Completed** |
+| **WS-L5** | Documentation: IF readers' guide, fixture process, metrics | LOW | **Completed** |
 
 See [WS-L workstream plan](../dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md).
 

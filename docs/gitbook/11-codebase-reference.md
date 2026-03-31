@@ -66,7 +66,22 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
   - `Invariant/EndpointPreservation.lean` — endpoint preservation proofs.
   - `Invariant/CallReplyRecv.lean` — call/replyRecv preservation proofs.
   - `Invariant/NotificationPreservation.lean` — notification preservation proofs.
-  - `Invariant/Structural.lean` — structural invariants, ipcInvariantFull composition.
+  - `Invariant/QueueNoDup.lean` — no self-loops, send/receive head disjointness (V3-K).
+  - `Invariant/QueueMembership.lean` — queue membership consistency (V3-J).
+  - `Invariant/QueueNextBlocking.lean` — queueNext blocking consistency (V3-J-cross).
+  - `Invariant/Structural.lean` — structural invariants, ipcInvariantFull composition (14 conjuncts).
+  - `Operations/CapTransfer.lean` — IPC capability transfer (WS-M3).
+  - `Operations/Timeout.lean` — budget-driven IPC timeout unblocking (WS-Z6).
+  - `Operations/Donation.lean` — SchedContext donation wrappers + preservation (WS-Z7).
+  - `DualQueue/WithCaps.lean` — DualQueue with capability transfer.
+- `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.18):
+  - `Types.lean` — SchedContextId, Budget, Period, SchedContext, SchedContextBinding.
+  - `Budget.lean` — CBS budget operations: consume, replenish, admission control.
+  - `ReplenishQueue.lean` — sorted replenishment queue: insert, popDue, remove.
+  - `Operations.lean` — schedContextConfigure/Bind/Unbind/YieldTo operations.
+  - `Invariant/Defs.lean` — invariant definitions, preservation proofs, bandwidth theorems.
+  - `Invariant/Preservation.lean` — operation-level preservation theorems.
+  - Re-export hubs: `Invariant.lean`, `SeLe4n/Kernel/SchedContext.lean`.
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
 - `SeLe4n/Kernel/Service/Operations.lean`
@@ -88,7 +103,7 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants
     (WS-H12e: uses `schedulerInvariantBundleFull` and `coreIpcInvariantBundle` with full
-    `ipcInvariantFull` 9-conjunct; 6 default-state proofs for new bundle components).
+    `ipcInvariantFull` 14-conjunct; 6 default-state proofs for new bundle components).
 
 ### Information-flow layer
 
@@ -101,15 +116,14 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
     activeDomain, irqHandlers, objectIndex, domainSchedule, machineRegs),
     `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
-  - `Enforcement/Wrappers.lean` — 7 policy-checked wrappers (`endpointSendDualChecked`,
-    `endpointReceiveDualChecked`, `cspaceMintChecked`, `cspaceCopyChecked`,
-    `cspaceMoveChecked`, `notificationSignalChecked`, `registerServiceChecked`)
-    wiring `securityFlowsTo` policy into enforcement boundaries.
+  - `Enforcement/Wrappers.lean` — 25-entry enforcement boundary (11 policy-gated,
+    8 capability-only, 4 read-only, 2 lifecycle) wiring `securityFlowsTo` policy
+    into enforcement boundaries. Includes SchedContext ops (WS-Z8).
   - `Enforcement/Soundness.lean` — correctness theorems, soundness, declassification.
 - `SeLe4n/Kernel/InformationFlow/Invariant.lean` (re-export hub)
   - `Invariant/Helpers.lean` — shared NI proof infrastructure.
-  - `Invariant/Operations.lean` — 69 NI preservation theorems covering >80% of kernel operations.
-  - `Invariant/Composition.lean` — 31-constructor `NonInterferenceStep` inductive;
+  - `Invariant/Operations.lean` — 80 NI preservation theorems covering >80% of kernel operations.
+  - `Invariant/Composition.lean` — 32-constructor `NonInterferenceStep` inductive;
     `composedNonInterference_trace`; `declassifyStore_NI`;
     `InformationFlowConfigInvariant` bundle.
 
