@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 2,251 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-Z Phases Z1–Z5 COMPLETE** (v0.23.0–v0.23.11). Z5: Capability-Controlled Thread Binding — 25 sub-tasks, 3 new syscalls, capability-gated SchedContext operations, preservation theorems. Z5 audit (v0.23.10): 7 findings fixed — RunQueue re-insertion in bind, preemption guard + RunQueue removal in unbind, re-enqueue in yieldTo, 4 new preservation theorems, admission control double-count fix. Z6 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-Z Phases Z1–Z7 COMPLETE** (v0.23.0–v0.23.15). Z7: SchedContext Donation / Passive Servers — 26 sub-tasks, donation-aware IPC wrappers, 4 new invariants, API dispatch wiring. Z8 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -604,6 +604,37 @@ operations maintain the invariant bundle, composed into
 `cbsBudgetCheck_preserves_replenishmentAmountsBounded` (standalone).
 Bandwidth isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`)
 bound total consumption by `maxReplenishments × budget`.
+
+### 8.7 SchedContext Donation (Z7)
+
+SchedContext donation enables **passive servers** — threads that consume zero
+CPU when idle by borrowing the client's SchedContext during IPC Call/Reply.
+
+**Protocol**: (1) Client calls server via `endpointCall`. If server is passive
+(`.unbound`), client's SchedContext is donated via `donateSchedContext`. (2)
+Server executes on client's budget. (3) Server replies via `endpointReply` —
+`returnDonatedSchedContext` returns the SC to the original owner. (4) Server
+becomes passive (`.unbound`, removed from RunQueue).
+
+**Architecture**: Donation is implemented as post-processing in the API dispatch
+layer (`API.lean`), preserving all existing IPC invariant proofs unchanged. Core
+IPC functions (`endpointCall`, `endpointReply`, `endpointReplyRecv`) are not
+modified. Key helpers: `donateSchedContext`, `returnDonatedSchedContext`,
+`applyCallDonation`, `applyReplyDonation`, `cleanupPreReceiveDonation`.
+
+**Invariants** (`ipcInvariantFull` extended from 10 to 14 conjuncts):
+- `donationChainAcyclic`: no circular donation chains (A→B and B→A)
+- `donationOwnerValid`: donated bindings reference valid objects with
+  bidirectional consistency (`sc.boundThread = some server`,
+  `owner.schedContextBinding = .bound scId`, `owner.ipcState = .blockedOnReply`)
+- `passiveServerIdle`: unbound non-runnable threads are ready/receiving
+- `donationBudgetTransfer`: at most one thread per SchedContext
+
+**Lifecycle**: `cleanupDonatedSchedContext` in `lifecyclePreRetypeCleanup`
+returns donated SchedContexts before TCB destruction.
+
+**Defense-in-depth**: `donateSchedContext` validates `sc.boundThread = some
+clientTid` before transferring ownership.
 
 ---
 

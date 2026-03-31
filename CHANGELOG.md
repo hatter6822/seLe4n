@@ -1,3 +1,16 @@
+## [0.23.16] — Z7 Audit: Documentation Hardening + Verification
+
+Comprehensive audit pass 2 of Phase Z7 SchedContext Donation.
+
+- **Gitbook update**: Chapter 12 `ipcInvariantFull` count updated from
+  10-conjunct to 14-conjunct; `coreIpcInvariantBundle` description updated
+  to list all 14 sub-invariants including Z7 donation invariants
+- **Spec update**: Section 8.7 added to `SELE4N_SPEC.md` documenting
+  donation protocol, architecture, invariants, lifecycle integration,
+  and defense-in-depth measures
+- **Spec active workstream**: Updated to "WS-Z Phases Z1–Z7 COMPLETE"
+- Zero sorry/axiom. All tests pass (smoke + full).
+
 ## [0.23.15] — Z7: SchedContext Donation / Passive Servers
 
 Implement SchedContext lending during IPC Call/Reply, enabling passive servers
