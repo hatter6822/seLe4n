@@ -1344,6 +1344,11 @@ theorem coreIpcInvariantBundle_to_queueHeadBlockedConsistent {st : SystemState}
     (h : coreIpcInvariantBundle st) : queueHeadBlockedConsistent st :=
   h.2.2.2.2.2.2.2.2.2.2.1
 
+/-- Z6-J: Extract `blockedThreadTimeoutConsistent` from the core bundle. -/
+theorem coreIpcInvariantBundle_to_blockedThreadTimeoutConsistent {st : SystemState}
+    (h : coreIpcInvariantBundle st) : blockedThreadTimeoutConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.2.2
+
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
   runnableThreadIpcReady st

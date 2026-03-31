@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-z6-timeouts-tSNkV",
-      "commit_sha": "69c12500b89352a539abc4713695ae27987f87c5",
-      "tree_sha": "1c299693483e3a06558ebfb5c44a6dd284dff688",
-      "committed_at_utc": "2026-03-31T07:37:06+00:00"
+      "commit_sha": "1ffe40d276948700ed443578054bf229f3e6a280",
+      "tree_sha": "7158a8fa667a638a1a56dc5569cf2bae8181e0d1",
+      "committed_at_utc": "2026-03-31T07:47:43+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c36a15fac321ab43bbbfeabc4e87a5583e6833124d4646ef32d138d0eed31973"
+    "source_digest": "c16020e34748d23922c0eed4ff3a10a095271dca322213331215b02c9d8f5bd7"
   },
   "summary": {
     "module_count": 122,
-    "declaration_count": 4018
+    "declaration_count": 4019
   },
   "readme_sync": {
     "version": "0.23.14",
     "lean_toolchain": "v4.28.0",
     "production_files": 112,
-    "production_loc": 78159,
+    "production_loc": 78164,
     "test_files": 10,
     "test_loc": 8687,
-    "proved_theorem_lemma_decls": 2258,
+    "proved_theorem_lemma_decls": 2259,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -5745,7 +5745,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.Preservation",
       "path": "SeLe4n/Kernel/Capability/Invariant/Preservation.lean",
-      "declaration_count": 81,
+      "declaration_count": 82,
       "declarations": [
         {
           "kind": "namespace",
@@ -6519,9 +6519,19 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "coreIpcInvariantBundle_to_blockedThreadTimeoutConsistent",
+          "line": 1348,
+          "called": [
+            "SystemState",
+            "blockedThreadTimeoutConsistent",
+            "coreIpcInvariantBundle"
+          ]
+        },
+        {
           "kind": "def",
           "name": "ipcSchedulerRunnableReadyComponent",
-          "line": 1348,
+          "line": 1353,
           "called": [
             "SystemState",
             "runnableThreadIpcReady"
@@ -6530,7 +6540,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedSendComponent",
-          "line": 1352,
+          "line": 1357,
           "called": [
             "SystemState",
             "blockedOnSendNotRunnable"
@@ -6539,7 +6549,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReceiveComponent",
-          "line": 1356,
+          "line": 1361,
           "called": [
             "SystemState",
             "blockedOnReceiveNotRunnable"
@@ -6548,7 +6558,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedCallComponent",
-          "line": 1360,
+          "line": 1365,
           "called": [
             "SystemState",
             "blockedOnCallNotRunnable"
@@ -6557,7 +6567,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedReplyComponent",
-          "line": 1364,
+          "line": 1369,
           "called": [
             "SystemState",
             "blockedOnReplyNotRunnable"
@@ -6566,7 +6576,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerBlockedNotificationComponent",
-          "line": 1368,
+          "line": 1373,
           "called": [
             "SystemState",
             "blockedOnNotificationNotRunnable"
@@ -6575,7 +6585,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerCoherenceComponent",
-          "line": 1372,
+          "line": 1377,
           "called": [
             "SystemState",
             "ipcSchedulerBlockedCallComponent",
@@ -6589,7 +6599,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerCoherenceComponent_iff_contractPredicates",
-          "line": 1380,
+          "line": 1385,
           "called": [
             "SystemState",
             "ipcSchedulerCoherenceComponent",
@@ -6599,7 +6609,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerCouplingInvariantBundle",
-          "line": 1390,
+          "line": 1395,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -6611,7 +6621,7 @@
         {
           "kind": "def",
           "name": "lifecycleCompositionInvariantBundle",
-          "line": 1396,
+          "line": 1401,
           "called": [
             "SystemState",
             "ipcSchedulerCouplingInvariantBundle",
@@ -6621,7 +6631,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_schedulerInvariantBundle",
-          "line": 1399,
+          "line": 1404,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6637,7 +6647,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_capabilityInvariantBundle",
-          "line": 1418,
+          "line": 1423,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6671,7 +6681,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_ipcInvariant",
-          "line": 1475,
+          "line": 1480,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6689,7 +6699,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_coreIpcInvariantBundle",
-          "line": 1502,
+          "line": 1507,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6722,7 +6732,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle",
-          "line": 1534,
+          "line": 1539,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6760,7 +6770,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle",
-          "line": 1572,
+          "line": 1577,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6791,7 +6801,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant",
-          "line": 1619,
+          "line": 1624,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6821,7 +6831,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle",
-          "line": 1665,
+          "line": 1670,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -6835,7 +6845,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_of_storeTcbIpcState",
-          "line": 1678,
+          "line": 1683,
           "called": [
             "SystemState",
             "ThreadId",
@@ -6853,7 +6863,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_blocking_path",
-          "line": 1698,
+          "line": 1703,
           "called": [
             "Endpoint",
             "ObjId",
@@ -6875,7 +6885,7 @@
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_through_handshake_path",
-          "line": 1713,
+          "line": 1718,
           "called": [
             "Endpoint",
             "ObjId",
@@ -6897,7 +6907,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_cnode_preserves_notificationBadgesWellFormed",
-          "line": 1733,
+          "line": 1738,
           "called": [
             "CNode",
             "ObjId",
@@ -6911,7 +6921,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_cnode_preserves_capabilityBadgesWellFormed",
-          "line": 1744,
+          "line": 1749,
           "called": [
             "CNode",
             "ObjId",
@@ -6928,7 +6938,7 @@
         {
           "kind": "theorem",
           "name": "badgeWellFormed_of_objects_eq",
-          "line": 1760,
+          "line": 1765,
           "called": [
             "SystemState",
             "badgeWellFormed"
@@ -6937,7 +6947,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMint_preserves_badgeWellFormed",
-          "line": 1771,
+          "line": 1776,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -6966,7 +6976,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_preserves_badgeWellFormed",
-          "line": 1834,
+          "line": 1839,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -6997,7 +7007,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_capabilityInvariantBundle",
-          "line": 1913,
+          "line": 1918,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -7028,7 +7038,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle",
-          "line": 1974,
+          "line": 1979,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -7054,7 +7064,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant",
-          "line": 2035,
+          "line": 2040,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -7078,7 +7088,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant",
-          "line": 2067,
+          "line": 2072,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -7092,7 +7102,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle",
-          "line": 2090,
+          "line": 2095,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -7116,7 +7126,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMint_preserves_cdtMapsConsistent",
-          "line": 2126,
+          "line": 2131,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -7134,7 +7144,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlotCore_preserves_cdtMapsConsistent",
-          "line": 2148,
+          "line": 2153,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7152,7 +7162,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_cdtMapsConsistent",
-          "line": 2177,
+          "line": 2182,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7164,7 +7174,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_cdtMapsConsistent",
-          "line": 2190,
+          "line": 2195,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7175,7 +7185,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_cdtMapsConsistent",
-          "line": 2198,
+          "line": 2203,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7186,7 +7196,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_cdtMapsConsistent",
-          "line": 2207,
+          "line": 2212,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7205,7 +7215,7 @@
         {
           "kind": "theorem",
           "name": "cdtExpandingOp_preserves_bundle_with_hypothesis",
-          "line": 2284,
+          "line": 2289,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -7216,7 +7226,7 @@
         {
           "kind": "theorem",
           "name": "cdtShrinkingOps_preserve_acyclicity",
-          "line": 2296,
+          "line": 2301,
           "called": [
             "Kernel",
             "SystemState",
