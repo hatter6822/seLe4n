@@ -2453,3 +2453,36 @@ kernel-wide invariant bundle.
 - `crossSubsystemFieldSets` extended from 5 to **8 entries** (added `schedContextStore`, `replenishQueue`, `schedContextBinding` field sets)
 - Pairwise disjointness witnesses increased from 10 to **14** (4 new witnesses covering SchedContext field interactions with scheduler, IPC, lifecycle, and service fields)
 - 3 new frame lemmas: `schedContextStoreConsistent_frame`, `schedContextNotDualBound_frame`, `schedContextRunQueueConsistent_frame`
+
+## 30. Documentation & Closure (WS-Z Phase Z10)
+
+Phase Z10 synchronizes all documentation with the WS-Z composable performance
+object architecture delivered across phases Z1–Z9 (213 sub-tasks, v0.23.0–v0.23.21).
+
+**Specification updates** (`docs/spec/SELE4N_SPEC.md`):
+- §8.12.2: Replenishment Queue (Z3) — `ReplenishQueue` structure, sorted operations,
+  `pairwiseSortedBy` predicate, 13 preservation/membership theorems
+- §8.12.3: Scheduler Integration (Z4) — `effectivePriority`, `hasSufficientBudget`,
+  `chooseThreadEffective`, `timerTickBudget`, 6 new invariants,
+  `schedulerInvariantBundleExtended` (15-tuple)
+- §8.12.4: Capability-Controlled Thread Binding (Z5) — 3 new syscalls,
+  `schedContextConfigure`/`Bind`/`Unbind`/`YieldTo`, 7 preservation theorems
+- §8.12.5: API Surface & Syscall Wiring (Z8) — error-exclusivity theorems,
+  frozen operations, enforcement boundary expansion
+- §8.12.6: Invariant Composition & Cross-Subsystem (Z9) — 3 new cross-subsystem
+  predicates, `proofLayerInvariantBundle` 9→10, field-disjointness
+
+**Key verified claims** (machine-checked, zero sorry/axiom):
+1. **CBS bandwidth isolation**: `cbs_bandwidth_bounded` — total CPU consumption
+   bounded by `maxReplenishments × budget` over any time window
+2. **Donation chain acyclicity**: `donationChainAcyclic` — no circular SchedContext
+   donation chains (prevents deadlock in passive server protocol)
+3. **Timeout termination**: `blockedThreadTimeoutConsistent` — budget-exhausted
+   IPC blocks are guaranteed to be unblocked via `timeoutBlockedThreads`
+4. **Admission control soundness**: `admissionCheck` enforces total utilization
+   ≤ 1000 per-mille; `schedContextConfigure_admission_excludes_eq` prevents
+   double-counting during reconfiguration
+
+**WS-Z PORTFOLIO COMPLETE**: 10 phases, 213 sub-tasks, 8 new files, ~25
+modified files, 1 new kernel object type, 3 new syscalls, ~14 new invariants,
+~45 new preservation theorems. Zero sorry/axiom throughout.

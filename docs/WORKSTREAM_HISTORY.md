@@ -22,7 +22,7 @@ WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
 WS-Y Phases Y1–Y3 complete. **WS-Y PORTFOLIO COMPLETE.**
-WS-Z Phases Z1–Z9 complete. **WS-Z PORTFOLIO COMPLETE.**
+WS-Z Phases Z1–Z10 complete. **WS-Z PORTFOLIO COMPLETE.**
 
 ### WS-Z: Composable Performance Objects (PORTFOLIO COMPLETE)
 
@@ -61,6 +61,22 @@ WS-Z Phases Z1–Z9 complete. **WS-Z PORTFOLIO COMPLETE.**
 - **Z9-K**: Freeze proofs — all 3 new predicates lift automatically through the existential wrapper in `FrozenSystemState`; no additional proof content required
 - **Z9-L/M/N/O**: Operation preservation theorems for the 3 new predicates across the 4 major operation classes: timer tick (`timerTick`/`timerTickWithBudget`), schedule (`schedule`/`scheduleEffective`), SchedContext donation (`endpointCallWithDonation`/`endpointReplyWithDonation`), and cleanup/destroy (`lifecyclePreRetypeCleanup`/`cleanupDonatedSchedContext`)
 - **Z9-P1/P2**: Build verification (`lake build SeLe4n.Kernel.CrossSubsystem`) and full test suite — all Tier 0–3 tests pass
+- **Sorry/axiom**: Zero
+
+### WS-Z Phase Z10: Documentation & Closure (COMPLETE)
+- **Sub-tasks**: Z10-A1 through Z10-J2 (12 atomic units)
+- **Modified files**: `docs/spec/SELE4N_SPEC.md`, `docs/DEVELOPMENT.md`, `docs/WORKSTREAM_HISTORY.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, `docs/codebase_map.json`, `docs/gitbook/12-proof-and-invariant-map.md`, `README.md`, `CLAUDE.md`, `scripts/website_link_manifest.txt`
+- **Z10-A1/A2**: Added ReplenishQueue (Z3), Scheduler Integration (Z4), Capability Binding (Z5), API Surface (Z8), Cross-Subsystem (Z9) subsections to `SELE4N_SPEC.md` under §8.12
+- **Z10-B**: Updated `DEVELOPMENT.md` with Z9/Z10 phase entries and ReplenishQueue/CrossSubsystem build targets
+- **Z10-C**: Updated `WORKSTREAM_HISTORY.md` with Z10 closure entry
+- **Z10-D**: Updated `CLAIM_EVIDENCE_INDEX.md` with CBS bandwidth isolation, donation chain acyclicity, timeout termination, and admission control claims
+- **Z10-E**: Regenerated `codebase_map.json` with updated metrics
+- **Z10-F**: Updated GitBook proof/invariant map with Z10 documentation closure section
+- **Z10-G**: Updated `README.md` metrics from `codebase_map.json`
+- **Z10-H**: Updated `CLAUDE.md` source layout and active workstream context for Z10 completion
+- **Z10-I**: Updated `website_link_manifest.txt` with new SchedContext file paths
+- **Z10-J1/J2**: Full test suite pass, zero sorry/axiom, documentation sync verified
+- **WS-Z PORTFOLIO COMPLETE**: 10 phases, 213 sub-tasks, v0.23.0–v0.23.21
 - **Sorry/axiom**: Zero
 
 ### WS-Z Phase Z7: SchedContext Donation / Passive Servers (COMPLETE)

@@ -1,6 +1,6 @@
 # WS-Z: Composable Performance Objects — EDF+CBS, Scheduling Contexts, Capability-Controlled Thread Creation
 
-**Status**: COMPLETE (Phases Z1–Z9, all 186+ sub-tasks delivered)
+**Status**: COMPLETE (Phases Z1–Z10, all 213 sub-tasks delivered)
 **Created**: 2026-03-30
 **Baseline version**: 0.22.25
 **Prior portfolios**: WS-B through WS-Y (all COMPLETE or IN PROGRESS)
@@ -871,11 +871,14 @@ This is intentionally deferred to minimize the blast radius of WS-Z.
 
 WS-Z is complete when:
 
-1. **Functional**: All 213 sub-tasks delivered with zero `sorry`/`axiom`.
-2. **Correct**: `test_full.sh` passes. All existing tests pass unchanged.
-3. **CBS**: `cbs_bandwidth_bounded` theorem machine-checked.
-4. **Timeout**: No IPC blocks indefinitely for SchedContext-bound threads.
-5. **Donation**: Passive servers consume zero CPU when idle.
-6. **Admission**: System-wide bandwidth cannot exceed configured threshold.
-7. **Compatible**: Unbound threads behave identically to pre-WS-Z kernel.
+1. **Functional**: All 213 sub-tasks delivered with zero `sorry`/`axiom`. ✓
+2. **Correct**: `test_full.sh` passes. All existing tests pass unchanged. ✓
+3. **CBS**: `cbs_bandwidth_bounded` theorem machine-checked. ✓
+4. **Timeout**: No IPC blocks indefinitely for SchedContext-bound threads. ✓
+5. **Donation**: Passive servers consume zero CPU when idle. ✓
+6. **Admission**: System-wide bandwidth cannot exceed configured threshold. ✓
+7. **Compatible**: Unbound threads behave identically to pre-WS-Z kernel. ✓
+8. **Documented**: All documentation synchronized (Z10). ✓
+
+**ALL CRITERIA MET — WS-Z PORTFOLIO COMPLETE (v0.23.0–v0.23.21)**
 8. **Documented**: All documentation synced per section 10 checklist.
