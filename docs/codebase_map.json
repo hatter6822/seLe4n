@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-z3-replenishment-3qRpd",
-      "commit_sha": "0126a0c4ad05245eaa3094e00f76e2b694d32ece",
-      "tree_sha": "7b0e28c00e9e1c18495acded9686654e938f94b5",
-      "committed_at_utc": "2026-03-30T22:24:45-04:00"
+      "commit_sha": "ae2a45c33d6f286fd8cbf7379f9c0e4039f4df49",
+      "tree_sha": "922a8609365af2671bc15bdefbd3d917cdcbd2e4",
+      "committed_at_utc": "2026-03-31T02:50:51+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "be4f63aefc2e416a9592a3a5f1f695fc1fd10cfd19e6129a0ae02aeb18ea9049"
+    "source_digest": "210f3d0ecea91e563036197691c9769fa33516c14a761410f4affe125e631766"
   },
   "summary": {
     "module_count": 119,
-    "declaration_count": 3909
+    "declaration_count": 3911
   },
   "readme_sync": {
     "version": "0.23.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 109,
-    "production_loc": 75632,
+    "production_loc": 75669,
     "test_files": 10,
     "test_loc": 8687,
-    "proved_theorem_lemma_decls": 2202,
+    "proved_theorem_lemma_decls": 2204,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -29182,7 +29182,7 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.ReplenishQueue",
       "path": "SeLe4n/Kernel/SchedContext/ReplenishQueue.lean",
-      "declaration_count": 39,
+      "declaration_count": 41,
       "declarations": [
         {
           "kind": "namespace",
@@ -29226,7 +29226,7 @@
         {
           "kind": "def",
           "name": "insert",
-          "line": 73,
+          "line": 82,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -29238,7 +29238,7 @@
         {
           "kind": "def",
           "name": "splitDue",
-          "line": 85,
+          "line": 94,
           "called": [
             "SchedContextId",
             "scId"
@@ -29247,7 +29247,7 @@
         {
           "kind": "def",
           "name": "popDue",
-          "line": 98,
+          "line": 107,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -29258,7 +29258,7 @@
         {
           "kind": "def",
           "name": "remove",
-          "line": 109,
+          "line": 118,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -29270,7 +29270,7 @@
         {
           "kind": "def",
           "name": "peek",
-          "line": 120,
+          "line": 129,
           "called": [
             "ReplenishQueue",
             "none"
@@ -29279,7 +29279,7 @@
         {
           "kind": "def",
           "name": "isEmpty",
-          "line": 126,
+          "line": 135,
           "called": [
             "ReplenishQueue"
           ]
@@ -29287,7 +29287,7 @@
         {
           "kind": "def",
           "name": "hasDue",
-          "line": 130,
+          "line": 139,
           "called": [
             "ReplenishQueue"
           ]
@@ -29295,7 +29295,7 @@
         {
           "kind": "def",
           "name": "pairwiseSortedBy",
-          "line": 143,
+          "line": 152,
           "called": [
             "SchedContextId"
           ]
@@ -29303,7 +29303,7 @@
         {
           "kind": "def",
           "name": "replenishQueueSorted",
-          "line": 150,
+          "line": 159,
           "called": [
             "ReplenishQueue",
             "pairwiseSortedBy"
@@ -29312,7 +29312,7 @@
         {
           "kind": "def",
           "name": "replenishQueueSizeConsistent",
-          "line": 154,
+          "line": 163,
           "called": [
             "ReplenishQueue",
             "size"
@@ -29321,7 +29321,7 @@
         {
           "kind": "theorem",
           "name": "pairwiseSortedBy_nil",
-          "line": 161,
+          "line": 170,
           "called": [
             "SchedContextId",
             "pairwiseSortedBy"
@@ -29330,7 +29330,7 @@
         {
           "kind": "theorem",
           "name": "pairwiseSortedBy_singleton",
-          "line": 164,
+          "line": 173,
           "called": [
             "SchedContextId",
             "pairwiseSortedBy"
@@ -29339,7 +29339,7 @@
         {
           "kind": "theorem",
           "name": "pairwiseSortedBy_head_le_second",
-          "line": 169,
+          "line": 178,
           "called": [
             "SchedContextId",
             "pairwiseSortedBy"
@@ -29348,7 +29348,7 @@
         {
           "kind": "theorem",
           "name": "pairwiseSortedBy_tail",
-          "line": 176,
+          "line": 185,
           "called": [
             "SchedContextId",
             "pairwiseSortedBy"
@@ -29357,7 +29357,7 @@
         {
           "kind": "theorem",
           "name": "pairwiseSortedBy_cons",
-          "line": 184,
+          "line": 193,
           "called": [
             "SchedContextId",
             "pairwiseSortedBy"
@@ -29366,7 +29366,7 @@
         {
           "kind": "theorem",
           "name": "pairwiseSortedBy_head_le_all",
-          "line": 200,
+          "line": 209,
           "called": [
             "SchedContextId",
             "pairwiseSortedBy",
@@ -29377,7 +29377,7 @@
         {
           "kind": "theorem",
           "name": "insertSorted_head_ge",
-          "line": 215,
+          "line": 224,
           "called": [
             "SchedContextId",
             "insertSorted",
@@ -29387,7 +29387,7 @@
         {
           "kind": "theorem",
           "name": "insertSorted_head_time_ge",
-          "line": 240,
+          "line": 249,
           "called": [
             "SchedContextId",
             "insertSorted",
@@ -29397,7 +29397,7 @@
         {
           "kind": "theorem",
           "name": "insertSorted_preserves_sorted",
-          "line": 261,
+          "line": 270,
           "called": [
             "SchedContextId",
             "insertSorted",
@@ -29412,7 +29412,7 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_sorted",
-          "line": 284,
+          "line": 293,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -29425,7 +29425,7 @@
         {
           "kind": "theorem",
           "name": "splitDue_remaining_sorted",
-          "line": 294,
+          "line": 303,
           "called": [
             "SchedContextId",
             "pairwiseSortedBy",
@@ -29437,7 +29437,7 @@
         {
           "kind": "theorem",
           "name": "popDue_preserves_sorted",
-          "line": 311,
+          "line": 320,
           "called": [
             "ReplenishQueue",
             "popDue",
@@ -29447,8 +29447,29 @@
         },
         {
           "kind": "theorem",
+          "name": "splitDue_length_additive",
+          "line": 326,
+          "called": [
+            "SchedContextId",
+            "scId",
+            "splitDue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "popDue_sizeConsistent",
+          "line": 345,
+          "called": [
+            "ReplenishQueue",
+            "popDue",
+            "replenishQueueSizeConsistent",
+            "splitDue_length_additive"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "filter_head_time_ge",
-          "line": 321,
+          "line": 358,
           "called": [
             "SchedContextId",
             "filter",
@@ -29459,7 +29480,7 @@
         {
           "kind": "theorem",
           "name": "filter_preserves_pairwiseSortedBy",
-          "line": 339,
+          "line": 376,
           "called": [
             "SchedContextId",
             "filter",
@@ -29472,7 +29493,7 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_sorted",
-          "line": 359,
+          "line": 396,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -29485,7 +29506,7 @@
         {
           "kind": "def",
           "name": "replenishQueueConsistent",
-          "line": 376,
+          "line": 413,
           "called": [
             "ReplenishQueue",
             "SchedContext",
@@ -29496,7 +29517,7 @@
         {
           "kind": "theorem",
           "name": "empty_sorted",
-          "line": 388,
+          "line": 425,
           "called": [
             "empty",
             "replenishQueueSorted"
@@ -29505,7 +29526,7 @@
         {
           "kind": "theorem",
           "name": "empty_sizeConsistent",
-          "line": 392,
+          "line": 429,
           "called": [
             "empty",
             "replenishQueueSizeConsistent"
@@ -29514,7 +29535,7 @@
         {
           "kind": "theorem",
           "name": "empty_consistent",
-          "line": 396,
+          "line": 433,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -29526,7 +29547,7 @@
         {
           "kind": "theorem",
           "name": "insertSorted_length",
-          "line": 402,
+          "line": 439,
           "called": [
             "SchedContextId",
             "insertSorted",
@@ -29536,7 +29557,7 @@
         {
           "kind": "theorem",
           "name": "insert_sizeConsistent",
-          "line": 416,
+          "line": 453,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -29549,7 +29570,7 @@
         {
           "kind": "theorem",
           "name": "remove_sizeConsistent",
-          "line": 424,
+          "line": 461,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -29561,7 +29582,7 @@
         {
           "kind": "theorem",
           "name": "mem_insertSorted",
-          "line": 429,
+          "line": 466,
           "called": [
             "SchedContextId",
             "insertSorted",
@@ -29571,7 +29592,7 @@
         {
           "kind": "theorem",
           "name": "subset_insertSorted",
-          "line": 441,
+          "line": 478,
           "called": [
             "Kernel",
             "SchedContextId",

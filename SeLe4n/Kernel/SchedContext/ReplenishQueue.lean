@@ -69,7 +69,16 @@ def insertSorted (entries : List (SchedContextId × Nat)) (scId : SchedContextId
     else
       (hId, hTime) :: insertSorted tail scId eligibleAt
 
-/-- Insert a replenishment entry maintaining sorted order. -/
+/-- Insert a replenishment entry maintaining sorted order.
+
+**Duplicate SchedContextId policy**: Multiple entries for the same SchedContextId
+are permitted. In the CBS model a SchedContext may have multiple pending
+replenishments at different eligibility times (e.g., after budget exhaustion at
+different periods). `processReplenishments` is idempotent — consuming an entry
+when the SchedContext is already replenished is a safe no-op. This avoids the
+overhead of an O(n) deduplication scan on every insert while preserving
+correctness. Callers that require at-most-one semantics should call `remove`
+before `insert`. -/
 def insert (rq : ReplenishQueue) (scId : SchedContextId) (eligibleAt : Nat)
     : ReplenishQueue :=
   { entries := insertSorted rq.entries scId eligibleAt
@@ -312,6 +321,34 @@ theorem popDue_preserves_sorted {rq : ReplenishQueue} {currentTime : Nat}
     (h : replenishQueueSorted rq) :
     replenishQueueSorted (rq.popDue currentTime).1 :=
   splitDue_remaining_sorted h
+
+/-- splitDue preserves total length: due.length + remaining.length = entries.length. -/
+theorem splitDue_length_additive
+    (entries : List (SchedContextId × Nat)) (currentTime : Nat) :
+    (ReplenishQueue.splitDue entries currentTime).1.length +
+      (ReplenishQueue.splitDue entries currentTime).2.length = entries.length := by
+  induction entries with
+  | nil => simp [ReplenishQueue.splitDue]
+  | cons hd tail ih =>
+    obtain ⟨scId, eligibleAt⟩ := hd
+    simp only [ReplenishQueue.splitDue]
+    split
+    case isTrue _ =>
+      -- Entry is due: prepended to due list, tail recurses
+      simp [List.length_cons]
+      omega
+    case isFalse _ =>
+      -- Entry not due: entire list becomes remaining
+      simp
+
+/-- popDue preserves size consistency. -/
+theorem popDue_sizeConsistent {rq : ReplenishQueue} {currentTime : Nat}
+    (h : replenishQueueSizeConsistent rq) :
+    replenishQueueSizeConsistent (rq.popDue currentTime).1 := by
+  simp [replenishQueueSizeConsistent, ReplenishQueue.popDue]
+  have hadd := splitDue_length_additive rq.entries currentTime
+  rw [h]
+  omega
 
 -- ============================================================================
 -- Z3-J: remove_preserves_sorted
