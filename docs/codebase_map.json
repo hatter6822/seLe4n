@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-api-syscall-wiring-8F1QL",
-      "commit_sha": "f3ece3963db8aaa8a052b74fa8cb53d99d9be4b5",
-      "tree_sha": "6a67ada9192af4840107ed2a676fe28fb11aeaa8",
-      "committed_at_utc": "2026-03-31T10:54:12-04:00"
+      "commit_sha": "ffa71c27ab2e9e3b5a16bdcfc768ac7d4babbaca",
+      "tree_sha": "1e2a9ddd32f35fb0474adf766d7bcdcac9da14c6",
+      "committed_at_utc": "2026-03-31T15:46:28+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "23d21ec555f777231b14469a050373c53c7106c62e06ad47f723d7ba0cd421f1"
+    "source_digest": "2516490c877b2d139cde9a9041c9c25ce38a152934eaf4722ba3a5ec13724b04"
   },
   "summary": {
     "module_count": 123,
     "declaration_count": 4063
   },
   "readme_sync": {
-    "version": "0.23.17",
+    "version": "0.23.18",
     "lean_toolchain": "v4.28.0",
     "production_files": 113,
     "production_loc": 79419,

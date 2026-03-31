@@ -1,3 +1,14 @@
+## [0.23.18] — Z8 Audit: Defense-in-Depth Hardening
+
+Post-implementation audit of Z8 API Surface & Syscall Wiring phase.
+
+- **AUD-1**: `frozenSchedContextUnbind` — replaced silent fallback on
+  `FrozenMap.set` failure with explicit `.error .objectNotFound`. Prevents
+  theoretical inconsistent state where TCB is unbound but SC retains stale
+  binding. Aligns with `frozenSchedContextBind` error-handling pattern.
+- Regenerated `docs/codebase_map.json`.
+- Zero sorry/axiom. All tests pass (smoke + full).
+
 ## [0.23.17] — Z8: API Surface & Syscall Wiring
 
 Complete public API surface for SchedContext operations. Wire new operations

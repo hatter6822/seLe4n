@@ -675,9 +675,9 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
           { st with scheduler := { st.scheduler with current := none } }
         else st
         let updatedSc := { sc with boundThread := none, isActive := false }
-        let st1Objs := match st0.objects.set scId (.schedContext updatedSc) with
-          | some objs => objs
-          | none => st0.objects
+        match st0.objects.set scId (.schedContext updatedSc) with
+        | none => .error .objectNotFound
+        | some st1Objs =>
         match st1Objs.get? tid.toObjId with
         | some (.tcb tcb) =>
           let updatedTcb := { tcb with
