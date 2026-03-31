@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-api-syscall-wiring-8F1QL",
-      "commit_sha": "ffa71c27ab2e9e3b5a16bdcfc768ac7d4babbaca",
-      "tree_sha": "1e2a9ddd32f35fb0474adf766d7bcdcac9da14c6",
-      "committed_at_utc": "2026-03-31T15:46:28+00:00"
+      "branch": "claude/audit-documentation-dr0cq",
+      "commit_sha": "ee45330cb2717a6507e50b24ffb9cd4285bead37",
+      "tree_sha": "58c6480a830db9a1baad329f1e7661e27a3969ab",
+      "committed_at_utc": "2026-03-31T12:08:27-04:00"
     }
   },
   "source_sync": {

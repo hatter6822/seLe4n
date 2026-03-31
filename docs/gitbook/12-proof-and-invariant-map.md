@@ -858,7 +858,7 @@ The information-flow subsystem is organized in three architectural layers:
    preserve `lowEquivalent` for unobservable state changes. The composition
    layer (`composedNonInterference_trace`) chains single-step NI proofs into
    trace-level non-interference using the `NonInterferenceStep` inductive type
-   (34 constructors as of v0.16.8).
+   (32 constructors as of v0.23.18).
 
 ### IF-M1 baseline (WS-B7 complete)
 
@@ -1721,7 +1721,7 @@ functions depend only on `msgRegs` (two results with same `msgRegs` produce same
 `dispatchWithCap_preservation_composition_witness` structural preservation theorem.
 `retypeFromUntyped_preserves_lowEquivalent` NI theorem (two-stage store composition).
 `syscallNI_coverage_witness` witnesses decode-error NI step availability, step→trace
-composition, and `step_preserves_projection` totality over all 33 constructors.
+composition, and `step_preserves_projection` totality over all 32 constructors.
 Zero sorry/axiom.
 
 **Completed — K-G (v0.16.7) — Lifecycle NI proof completion and deferred proof resolution:**

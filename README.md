@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.23.16-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.23.18-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -70,11 +70,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.23.16` |
+| **Version** | `0.23.18` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 77,424 across 111 files |
-| **Test Lean LoC** | 8,687 across 10 test suites |
-| **Proved declarations** | 2,251 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 79,419 across 113 files |
+| **Test Lean LoC** | 8,759 across 10 test suites |
+| **Proved declarations** | 2,281 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -161,6 +161,7 @@ machine-checked invariant preservation proofs:
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
 │   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
 │  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│  SchedContext│             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -186,39 +187,68 @@ SeLe4n/Machine.lean              Register file, memory, timer, MachineConfig
 SeLe4n/Model/Object.lean         Re-export hub: TCB, Endpoint, Notification, CNode, VSpaceRoot, CDT
   Object/Types.lean              Core data types through UntypedObject
   Object/Structures.lean         VSpaceRoot, CNode, KernelObject, CDT helpers
-SeLe4n/Model/State.lean          SystemState with HashMap-backed stores
+SeLe4n/Model/State.lean          SystemState with RHTable-backed stores
+SeLe4n/Model/IntermediateState.lean  Builder-phase state with invariant witnesses
+SeLe4n/Model/Builder.lean        Builder operations (invariant-preserving state construction)
+SeLe4n/Model/FrozenState.lean    FrozenMap, FrozenSet, FrozenSystemState, freeze function
+SeLe4n/Model/FreezeProofs.lean   Freeze correctness proofs (lookup equiv, invariant transfer)
 SeLe4n/Kernel/Scheduler/*        Priority-bucketed RunQueue, EDF scheduling, domain partitioning
+  RunQueue.lean                  RunQueue structure, 13 bridge lemmas
   Operations/Selection.lean      EDF predicates, thread selection, candidate ordering
   Operations/Core.lean           Core transitions (schedule, handleYield, timerTick)
   Operations/Preservation.lean   Scheduler invariant preservation theorems
 SeLe4n/Kernel/Capability/*       CSpace lookup/mint/copy/move/delete/revoke with CDT tracking
+  Operations.lean                CSpace operations
   Invariant/Defs.lean            Core invariant definitions, transfer theorems
   Invariant/Authority.lean       Authority reduction, badge routing consistency
   Invariant/Preservation.lean    Operation preservation, lifecycle integration
 SeLe4n/Kernel/IPC/*              Dual-queue IPC subsystem
   Operations/Endpoint.lean       Core endpoint/notification ops
+  Operations/CapTransfer.lean    IPC capability transfer
+  Operations/Timeout.lean        Budget-driven IPC timeout unblocking (Z6)
+  Operations/Donation.lean       SchedContext donation wrappers + preservation (Z7)
   Operations/SchedulerLemmas.lean  Scheduler preservation lemmas
   DualQueue/Core.lean            Intrusive dual-queue ops with O(1) removal
   DualQueue/Transport.lean       Dual-queue transport lemmas
+  DualQueue/WithCaps.lean        DualQueue with capability transfer
   Invariant/Defs.lean            IPC invariant definitions
   Invariant/EndpointPreservation.lean  Endpoint preservation proofs
   Invariant/CallReplyRecv.lean   Call/ReplyRecv preservation proofs
   Invariant/NotificationPreservation.lean  Notification preservation proofs
+  Invariant/QueueNoDup.lean      No self-loops, send/receive head disjointness
+  Invariant/QueueMembership.lean Queue membership consistency proofs
+  Invariant/QueueNextBlocking.lean  queueNext blocking consistency proofs
   Invariant/Structural.lean      Structural invariants, composition theorems
 SeLe4n/Kernel/Lifecycle/*        Object retype with lifecycle metadata preservation
 SeLe4n/Kernel/Service/*          Service graph with HashSet-backed DFS cycle detection
+  Interface.lean                 Service interface definitions
+  Operations.lean                Service operations
+  Registry.lean                  Service registry
+  Registry/Invariant.lean        Registry invariant proofs
   Invariant/Policy.lean          Policy surface, bridge theorems
   Invariant/Acyclicity.lean      Dependency acyclicity proofs
-SeLe4n/Kernel/Architecture/*     VSpace HashMap map/unmap/lookup, W^X, TLB model, VSpaceBackend
-SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 69 NI theorems
-  Enforcement/Wrappers.lean      Policy-gated operation wrappers
+SeLe4n/Kernel/Architecture/*     VSpace, TLB model, register decode, platform adapter
+  VSpace.lean                    VSpace HashMap map/unmap/lookup, W^X enforcement
+  VSpaceBackend.lean             VSpace backend operations
+  VSpaceInvariant.lean           VSpace invariant proofs
+  TlbModel.lean                  TLB flush model
+  Adapter.lean                   Architecture adapter
+  Assumptions.lean               Architecture assumptions
+  Invariant.lean                 Architecture invariant re-export hub
+  RegisterDecode.lean            Total deterministic decode: raw registers → typed kernel IDs
+  SyscallArgDecode.lean          Per-syscall typed argument decode (msgRegs → typed structs)
+SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 80 NI theorems
+  Policy.lean                    Security labels, flow policies, domain flow validation
+  Projection.lean                Low-equivalence projection for NI proofs
+  Enforcement/Wrappers.lean      25-entry enforcement boundary, policy-gated wrappers
   Enforcement/Soundness.lean     Correctness theorems, declassification
   Invariant/Helpers.lean         Shared NI proof infrastructure
   Invariant/Operations.lean      Per-operation NI proofs
-  Invariant/Composition.lean     Trace composition, 33-constructor NonInterferenceStep
-SeLe4n/Kernel/RobinHood/*       Robin Hood hash table verified implementation
+  Invariant/Composition.lean     Trace composition, 32-constructor NonInterferenceStep
+SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
   Core.lean                      Types, operations, proofs (N1 complete)
-  Bridge.lean                    Kernel API bridge: instances, bridge lemmas, filter (N3 complete)
+  Set.lean                       RHSet type (hash-set wrapper over RHTable)
+  Bridge.lean                    Kernel API bridge: instances, bridge lemmas, filter (N3)
   Invariant.lean                 Re-export hub (N2)
     Invariant/Defs.lean          Invariant definitions (distCorrect, noDupKeys, probeChainDominant)
     Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops)
@@ -227,13 +257,44 @@ SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
   Core.lean                      Types, operations (O(1) lookup/insert/erase via bit extraction)
   Invariant.lean                 24 correctness proofs (lookup, WF, size, toList, fold)
   Bridge.lean                    RHTable→CNodeRadix conversion, freeze integration
+SeLe4n/Kernel/SchedContext/*     Scheduling context: CBS budget, replenishment queue (Z1–Z8)
+  Types.lean                     Budget, Period, SchedContext, SchedContextBinding
+  Budget.lean                    CBS budget operations: consume, replenish, admission control
+  ReplenishQueue.lean            Sorted replenishment queue: insert, popDue, remove
+  Operations.lean                SchedContext configure/bind/unbind/yieldTo operations (Z5)
+  Invariant.lean                 Re-export hub (Z2)
+    Invariant/Defs.lean          Invariant definitions, preservation proofs, bandwidth theorems
+    Invariant/Preservation.lean  SchedContext operation preservation theorems (Z5)
+SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7)
+  Core.lean                      FrozenKernel monad, lookup/store primitives
+  Operations.lean                15 per-subsystem frozen operations
+  Commutativity.lean             FrozenMap set/get? roundtrip proofs, frame lemmas
+  Invariant.lean                 frozenStoreObject preservation theorems
+SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants
 SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
+SeLe4n/Platform/DeviceTree.lean  FDT parsing with bounds-checked helpers
+SeLe4n/Platform/Boot.lean        Boot sequence (PlatformConfig → IntermediateState)
 SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)
-SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform stubs (BCM2712)
+  RuntimeContract.lean           Permissive + restrictive runtime contracts
+  BootContract.lean              Boot + interrupt contracts (all True)
+  ProofHooks.lean                AdapterProofHooks for restrictive contract
+  Contract.lean                  PlatformBinding instance (re-export hub)
+SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform (BCM2712)
+  Board.lean                     BCM2712 addresses, MMIO, MachineConfig
+  RuntimeContract.lean           Substantive runtime + restrictive contract
+  BootContract.lean              Boot + interrupt contracts (GIC-400)
+  MmioAdapter.lean               MMIO adapter for RPi5
+  ProofHooks.lean                AdapterProofHooks for restrictive contract
+  Contract.lean                  PlatformBinding instance (re-export hub)
 SeLe4n/Testing/*                 Test harness, state builder, fixtures
+  Helpers.lean                   Shared test helpers (expectError, etc.)
+  StateBuilder.lean              Test state construction
+  InvariantChecks.lean           Runtime invariant check helpers
+  MainTraceHarness.lean          Main trace test harness
+  RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
-tests/                           Negative-state, information-flow, trace probe, radix tree suites
+tests/                           10 test suites (negative-state, info-flow, trace, radix, etc.)
 ```
 
 ### Comparison with seL4
@@ -268,13 +329,14 @@ tests/                           Negative-state, information-flow, trace probe, 
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-U Phase U2** — Safety Boundary Hardening (14 sub-tasks, U2-A through U2-N) **COMPLETE** (v0.21.1). VAddr canonical address checks, parameterized PA width, ASID validation in decode layer, AccessRightSet `mk_checked` constructor, `allTablesInvExtK` completeness witness, `storeObject` callsite audit, negative `LawfulBEq` instances for RegisterFile/TCB. Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
-- **WS-U Phase U1** — Correctness Fixes (13 sub-tasks, U1-A through U1-M) **COMPLETE** (v0.21.0). Addresses 7 audit findings (U-H01 through U-H04, U-H13, U-H14, U-M39): frozen queue link safety, retype page-alignment, lifecycle dispatch cleanup, authority right alignment, IPC CSpace root fallback, CDT deletion guard, domain switch context save. Plan: [`AUDIT_v0.20.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md).
-- **WS-T** — Deep-Dive Audit Remediation (8 phases, T1–T8, 94 sub-tasks) **COMPLETE** (v0.20.0–v0.20.7). Plan: [`AUDIT_v0.19.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md).
-- **WS-S** — Pre-Benchmark Strengthening (7 phases, S1–S7, 83 sub-tasks) **COMPLETE** (v0.19.0–v0.19.6). Plan: [`AUDIT_v0.18.7_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.18.7_WORKSTREAM_PLAN.md). Closure: [`WS_S_CLOSURE_REPORT.md`](docs/dev_history/audits/WS_S_CLOSURE_REPORT.md).
-- **WS-R** — Comprehensive Audit Remediation (8 phases, R1–R8, 111 sub-tasks) **COMPLETE** (v0.18.0–v0.18.7). Plan: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
-- **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (next workstream after WS-U)
+- **WS-Z** — Composable Performance Objects (8 phases, Z1–Z8) **COMPLETE** (v0.23.0–v0.23.18). SchedContext type foundation, CBS budget engine with 16 preservation theorems, replenishment queue, scheduler integration, capability-controlled thread binding, timeout endpoints, SchedContext donation for passive servers, API surface with 3 error-exclusivity theorems and 4 frozen operations. Enforcement boundary expanded 22→25 entries. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
+- **WS-Y** — Documentation & Cross-Subsystem Hardening (3 phases, Y1–Y3) **PORTFOLIO COMPLETE** (v0.22.23–v0.22.26).
+- **WS-X** — Documentation, Hardening & Low-Severity (5 phases, X1–X5) **PORTFOLIO COMPLETE** (v0.22.18–v0.22.22).
+- **WS-W** — Pre-Release Audit Remediation (6 phases, W1–W6, 52 sub-tasks) **PORTFOLIO COMPLETE** (v0.22.11–v0.22.17).
+- **WS-V** — Deep Audit Remediation (8 phases, V1–V8) **PORTFOLIO COMPLETE** (v0.22.0–v0.22.10).
+- **WS-U** — Comprehensive Audit Remediation (8 phases, U1–U8, 97 sub-tasks) **PORTFOLIO COMPLETE** (v0.21.0–v0.21.7).
+- **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence (next major milestone)
 
-Prior portfolios (WS-B through WS-R) are all complete. Prior audits (v0.8.0–v0.9.32),
+All prior portfolios (WS-B through WS-T) are complete. Prior audits (v0.8.0–v0.9.32),
 milestone closeouts, and legacy GitBook chapters are archived in
 [`docs/dev_history/`](docs/dev_history/README.md).
