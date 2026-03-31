@@ -476,7 +476,7 @@ theorem retypeFromUntyped_ok_childId_ne
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ =>
+      | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ =>
           simp [hObj] at hStep
       | untyped _ =>
           simp only [hObj] at hStep

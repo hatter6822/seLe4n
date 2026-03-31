@@ -308,6 +308,7 @@ theorem resolveAsidRoot_some_implies_obj
           | endpoint _ => simp [hObj] at hResolve
           | notification _ => simp [hObj] at hResolve
           | untyped _ => simp [hObj] at hResolve
+          | schedContext _ => simp [hObj] at hResolve
 
 /-- WS-G3/F-P06: Characterization lemma — given the ASID table entry and object-store
     evidence, `resolveAsidRoot` returns exactly the expected root.

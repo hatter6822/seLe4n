@@ -275,7 +275,7 @@ theorem notificationSignal_preserves_endpointQueueNoDup
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hWaiters : ntfn.waitingThreads with
@@ -318,7 +318,7 @@ theorem notificationWait_preserves_endpointQueueNoDup
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hBadge : ntfn.pendingBadge with
@@ -455,7 +455,7 @@ theorem endpointQueueEnqueue_preserves_endpointQueueNoDup
       cases hObj : st.objects[endpointId]? with
       | none => simp [hObj] at hEnqueue
       | some obj => cases obj with
-        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hEnqueue
+        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hEnqueue
         | endpoint ep =>
           simp only [hObj] at hEnqueue
           have hOppNone := hOppositeEmpty ep hObj
@@ -545,7 +545,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
       cases hObj : st.objects[endpointId]? with
       | none => simp
       | some obj => cases obj with
-        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp
+        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp
         | endpoint ep =>
           simp only []
           cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with

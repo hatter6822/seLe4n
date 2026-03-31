@@ -83,7 +83,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
       | none => simp [hPre] at hStep
       | some preObj =>
         cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
         | cnode preCn =>
           simp [hPre] at hStep
           -- WS-E4/H-02: case split on occupied-slot guard
@@ -115,7 +115,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     | none => simp [hPre] at hStep
     | some preObj =>
       cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
       | cnode preCn =>
         cases hLookup : preCn.lookup addr.slot with
         | some _ => simp [hPre, hLookup] at hStep
@@ -223,7 +223,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
     | none => simp [hPre] at hStep
     | some preObj =>
       cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
       | cnode preCn =>
         simp [hPre] at hStep
         cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
@@ -263,7 +263,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
     | none => simp [hPre] at hStep
     | some preObj =>
       cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
       | cnode preCn =>
         simp [hPre] at hStep
         cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
@@ -328,7 +328,7 @@ private theorem cspaceDeleteSlotCore_preserves_cdtNodeSlot
   | none => simp [hPre] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
     | cnode preCn =>
       simp [hPre] at hStep
       cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
@@ -388,7 +388,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
       | none => simp [hLookup, hPre] at hStep
       | some preObj =>
         cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hLookup, hPre] at hStep
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hLookup, hPre] at hStep
         | cnode preCn =>
           simp [hLookup, hPre] at hStep
           cases hStore : storeObject addr.cnode
@@ -430,7 +430,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
       | none => simp [hLookup2, hPre] at hStep
       | some preObj =>
         cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hLookup2, hPre] at hStep
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hLookup2, hPre] at hStep
         | cnode preCn =>
           simp [hLookup2, hPre] at hStep
           cases hStore : storeObject addr.cnode (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) st with
@@ -562,7 +562,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                         have hNS1 := (storeObject_cdtNodeSlot_eq st stM dst.cnode _ hS).1
                         have ⟨_, hNS2, _, _⟩ := storeCapabilityRef_cdt_eq stM st2 dst (some cap.target) hInsert
                         rw [hNS2, hNS1]
-                  | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hPre] at hInsert
+                  | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hInsert
               have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2
                 (by rw [hNSSt2]; exact hNodeSlotK) hDelete
               rcases hBundleSt3 with ⟨hU3, _, hBnd3, _, _, hDepth3, hObjInv3⟩
@@ -660,7 +660,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
         | none => simp
         | some preObj =>
           cases preObj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp
           | cnode preCn =>
             simp only []
             cases hStore : storeObject addr.cnode
@@ -710,7 +710,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
         | none => simp_all
         | some preObj =>
           cases preObj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp_all
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp_all
           | cnode preCn =>
             simp only [hPre] at hStep
             cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot
@@ -920,7 +920,7 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
         | none => simp [hObj] at hRevoke
         | some obj =>
           cases obj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hRevoke
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
           | cnode preCn =>
             simp [hObj] at hRevoke
             cases hStore : storeObject addr.cnode
@@ -995,7 +995,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
         | none => simp [hObj] at hRevoke
         | some obj =>
           cases obj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hRevoke
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
           | cnode preCn =>
             simp [hObj] at hRevoke
             cases hStore : storeObject addr.cnode
@@ -1154,7 +1154,7 @@ theorem cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle
         | none => simp [hObj] at hRevoke
         | some obj =>
           cases obj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hRevoke
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
           | cnode preCn =>
             simp [hObj] at hRevoke
             cases hStore : storeObject addr.cnode
@@ -1438,7 +1438,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       rw [hObjAtTarget] at hObj
       cases newObj with
       | cnode _ => cases hObj; exact hNewObjCNodeUniq cn rfl
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
     · have hPreserved := lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target
         cnodeId newObj hEq hObjInv hStep
       rw [hPreserved] at hObj
@@ -1455,7 +1455,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       · rw [hEq] at hObj; rw [lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore] at hObj
         cases newObj with
         | cnode _ => cases hObj; exact hNewObjCNodeBounded cn rfl
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
       · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hObjInv hStep] at hObj
         exact hBounded cnodeId cn hObj
     · exact cdtCompleteness_of_storeObject st st' target newObj hComp hObjInv hStore hNS
@@ -1465,7 +1465,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       · rw [hEq] at hObj; rw [lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore] at hObj
         cases newObj with
         | cnode _ => cases hObj; exact hNewObjCNodeDepth cn rfl
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
       · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hObjInv hStep] at hObj
         exact hDepthPre cnodeId cn hObj
     · exact storeObject_preserves_objects_invExt st st' target newObj hObjInv hStore
@@ -1597,7 +1597,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
       | none => simp [hObj] at hRevoke
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hRevoke
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
         | cnode preCn =>
           simp [hObj] at hRevoke
           cases hStore : storeObject cleanup.cnode
@@ -1924,7 +1924,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | cnode cn =>
       simp [hObj] at hStep
       cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with

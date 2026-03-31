@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.22.26.
+Lean 4.28.0 toolchain, Lake build system, version 0.23.0.
 
 ## Build and run
 
@@ -129,6 +129,9 @@ SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
     Invariant/Defs.lean          Invariant definitions, empty table proofs, probeChainDominant
     Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops), helpers
     Invariant/Lookup.lean        Functional correctness (get after insert/erase), key absence
+SeLe4n/Kernel/SchedContext/*      Scheduling context types (Z1)
+  Types.lean                     Budget, Period, SchedContext, SchedContextBinding, BEq instances
+SeLe4n/Kernel/SchedContext.lean  Re-export hub
 SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
   Core.lean                      CNodeRadix type, extractBits, O(1) lookup/insert/erase/fold/toList
   Invariant.lean                 24 correctness proofs (lookup, WF, size, toList, fold)
@@ -471,7 +474,8 @@ under `docs/` and `docs/gitbook/`.
 - **WS-V Phase V2 COMPLETE**: API Surface Completion — 9 sub-tasks (V2-A through V2-I), all complete (v0.22.1). See `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`
 - **WS-V Phase V1 COMPLETE**: Rust ABI Hardening — 12 sub-tasks (V1-A through V1-L), all complete (v0.22.0). See `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`
 - **All prior workstreams completed**: WS-B through WS-U (see `docs/WORKSTREAM_HISTORY.md`)
-- **Next milestone**: Raspberry Pi 5 hardware binding
+- **WS-Z Phase Z1 COMPLETE**: SchedContext Type Foundation — 18 sub-tasks (Z1-A through Z1-R), all complete. SchedContextId typed wrapper, Budget/Period/Bandwidth/ReplenishmentEntry types, SchedContext structure with wellFormed/bandwidth/default, SchedContextBinding enum, TCB schedContextBinding field, KernelObject/KernelObjectType .schedContext variant (7th object type), FrozenKernelObject extension, threadSchedulingParams accessor, objectTypeAllocSize entry, all BEq instances, re-export hub. Full codebase ripple fix (24 files, ~150 match arms). Zero sorry/axiom. See `docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`
+- **Next milestone**: WS-Z Phase Z2 (CBS Budget Engine) / Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

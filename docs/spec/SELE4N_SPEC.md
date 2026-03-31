@@ -540,6 +540,19 @@ All test states use `BootstrapBuilder.buildChecked` instead of `build`:
 - **31 post-mutation invariant checks** in the trace harness covering all
   major transition families (IPC, VSpace, lifecycle, scheduler, capability).
 
+### 8.12 Scheduling Context Objects (WS-Z)
+
+A `SchedContext` is a first-class kernel object containing CPU budget, period,
+priority, deadline, and domain parameters for CBS (Constant Bandwidth Server)
+scheduling. Threads bind to SchedContexts via the `schedContextBinding` field
+(unbound | bound | donated). The `threadSchedulingParams` accessor resolves
+effective scheduling parameters from the bound SchedContext or falls back to
+legacy TCB fields.
+
+Key types: `Budget` (CPU time in ticks), `Period` (replenishment period),
+`Bandwidth` (budget/period pair for admission control), `ReplenishmentEntry`
+(CBS replenishment event), `SchedContextBinding` (thread ↔ SchedContext relationship).
+
 ---
 
 ## 9. Non-Negotiable Baseline Contracts

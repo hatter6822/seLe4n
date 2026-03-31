@@ -8,6 +8,7 @@
 
 import SeLe4n.Machine
 import SeLe4n.Kernel.RobinHood
+import SeLe4n.Kernel.SchedContext.Types
 
 namespace SeLe4n.Model
 
@@ -438,6 +439,10 @@ structure TCB where
       notification can wake the thread when it is waiting on an endpoint.
       `none` = no bound notification. -/
   boundNotification : Option SeLe4n.ObjId := none
+  /-- WS-Z/Z1-J: Scheduling context binding. Determines whether this thread
+      uses legacy TCB scheduling fields or a first-class SchedContext object.
+      Default `.unbound` preserves backward compatibility. -/
+  schedContextBinding : SeLe4n.Kernel.SchedContextBinding := .unbound
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -458,7 +463,8 @@ instance : BEq TCB where
     a.queuePrev == b.queuePrev && a.queuePPrev == b.queuePPrev &&
     a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
     a.registerContext == b.registerContext &&
-    a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification
+    a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification &&
+    a.schedContextBinding == b.schedContextBinding
 
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.

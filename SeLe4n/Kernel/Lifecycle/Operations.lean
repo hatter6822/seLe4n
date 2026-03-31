@@ -379,7 +379,7 @@ private theorem lifecyclePreRetypeCleanup_flat_subset
     simp only [] at h
     rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h
     exact h
-  | notification _ | vspaceRoot _ | untyped _ => exact h
+  | notification _ | vspaceRoot _ | untyped _ | schedContext _ => exact h
 
 /-- **Internal building block — callers should use `lifecycleRetypeWithCleanup` instead.**
 
@@ -477,6 +477,7 @@ def objectTypeAllocSize : KernelObjectType → Nat
   | .cnode => 4096
   | .vspaceRoot => 4096
   | .untyped => 4096
+  | .schedContext => 256
 
 /-- S5-G: Predicate for object types that require page-aligned allocation bases.
 VSpace roots and CNodes back page-table structures on ARM64, so their backing
@@ -655,6 +656,7 @@ theorem retypeFromUntyped_ok_decompose
       | notification _ => simp [hObj] at hStep
       | cnode _ => simp [hObj] at hStep
       | vspaceRoot _ => simp [hObj] at hStep
+      | schedContext _ => simp [hObj] at hStep
       | untyped ut =>
           simp only [hObj] at hStep
           -- S4-B: Discharge capacity check
@@ -768,6 +770,7 @@ theorem retypeFromUntyped_error_typeMismatch
   | notification _ => simp [hObj]
   | cnode _ => simp [hObj]
   | vspaceRoot _ => simp [hObj]
+  | schedContext _ => simp [hObj]
 
 
 /-- WS-F2: `retypeFromUntyped` returns `untypedAllocSizeTooSmall` when allocSize is insufficient. -/
@@ -1227,6 +1230,7 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
       children := [],
       isDevice := false
     }
+  | .schedContext => .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨0⟩)
 
 -- ============================================================================
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant

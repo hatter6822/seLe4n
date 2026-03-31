@@ -72,6 +72,7 @@ theorem saveOutgoingContext_preserves_tcb
           | cnode _ => exact ⟨tcb, h⟩
           | vspaceRoot _ => exact ⟨tcb, h⟩
           | untyped _ => exact ⟨tcb, h⟩
+          | schedContext _ => exact ⟨tcb, h⟩
 
 /-- `saveOutgoingContext` preserves all TCB fields except `registerContext`. -/
 theorem saveOutgoingContext_tcb_fields
@@ -107,6 +108,7 @@ theorem saveOutgoingContext_tcb_fields
           | cnode _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
           | vspaceRoot _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
           | untyped _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+          | schedContext _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
 
 /-- When `st.objects[oid]?` is not a TCB (i.e., `none` or a non-TCB object),
 `saveOutgoingContext` preserves the lookup unchanged. This is because the only
@@ -139,6 +141,7 @@ theorem saveOutgoingContext_preserves_non_tcb_lookup
           | cnode _ => rfl
           | vspaceRoot _ => rfl
           | untyped _ => rfl
+          | schedContext _ => rfl
 
 /-- `saveOutgoingContext` preserves `timeSlicePositive`. The context save only
 changes `registerContext` on the outgoing TCB — no scheduler or time-slice
@@ -174,6 +177,7 @@ theorem saveOutgoingContext_preserves_timeSlicePositive
           | cnode _ => exact hOrig
           | vspaceRoot _ => exact hOrig
           | untyped _ => exact hOrig
+          | schedContext _ => exact hOrig
 
 /-- `saveOutgoingContext` preserves `objects.invExt`. The context save
 inserts a TCB at an existing key, which preserves the Robin Hood invariant. -/
@@ -225,7 +229,8 @@ the given thread ID does not correspond to a TCB in the object store. -/
   | some obj =>
       cases obj with
       | tcb t => exact absurd hObj (h t)
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => rfl
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+      | schedContext _ => rfl
 
 /-- WS-H12b/H-04 + WS-H12c/H-03: Scheduler step with dequeue-on-dispatch and
 inline context switch semantics.

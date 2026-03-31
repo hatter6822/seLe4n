@@ -287,7 +287,8 @@ theorem cspaceInsertSlot_preserves_scheduler
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -316,7 +317,8 @@ theorem cspaceInsertSlot_preserves_services
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -346,7 +348,8 @@ theorem cspaceInsertSlot_preserves_objects_ne
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -373,7 +376,8 @@ theorem cspaceInsertSlot_preserves_objects_invExt
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -399,7 +403,8 @@ theorem cspaceInsertSlot_preserves_machine
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -425,7 +430,8 @@ theorem cspaceInsertSlot_preserves_irqHandlers
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -1043,7 +1049,8 @@ theorem ipcTransferSingleCap_preserves_scheduler
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ => simp [hObj] at hStep
     | cnode cn =>
       simp [hObj] at hStep
       cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
@@ -1078,7 +1085,8 @@ theorem ipcTransferSingleCap_preserves_objects_ne
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ => simp [hObj] at hStep
     | cnode cn =>
       simp [hObj] at hStep
       cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
@@ -1111,7 +1119,8 @@ theorem ipcTransferSingleCap_preserves_services
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ => simp [hObj] at hStep
     | cnode cn =>
       simp [hObj] at hStep
       cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
@@ -1145,7 +1154,8 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ => simp [hObj] at hStep
     | cnode cn =>
       simp [hObj] at hStep
       cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
@@ -1205,7 +1215,8 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ => simp [hObj] at hStep
     | cnode cn =>
       simp [hObj] at hStep
       cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
