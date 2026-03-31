@@ -519,7 +519,7 @@ and no additional decoded arguments) and this explicit match (handles syscalls
 requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 1. Shares a single checked/unchecked dispatch implementation (V8-H)
 2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
-   showing all 17 `SyscallId` variants are handled by one of the two tiers
+   showing all 20 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)

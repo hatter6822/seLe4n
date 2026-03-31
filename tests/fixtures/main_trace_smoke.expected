@@ -177,6 +177,13 @@
 [SCO-010] schedContextUnbind not-bound: SeLe4n.Model.KernelError.illegalState
 [SCO-011] schedContextYieldTo from=0 target=180
 [SCO-012] admission without-exclude=true with-exclude=true
+[SCO-013] schedContextBind runqueue-reinsert: inQueue=true prio=200
+[SCO-014] schedContextUnbind current-thread: current_cleared=true
+[SCO-015] schedContextUnbind runqueue-removal: removed=true
+[SCO-016] schedContextYieldTo starved-enqueue: enqueued=true budget=100
+[SCO-017] admission-failure: admitted=false
+[SCO-018] schedContextBind tcb-already-bound: SeLe4n.Model.KernelError.illegalState
+[SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty=true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)

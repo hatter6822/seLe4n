@@ -1,3 +1,26 @@
+## [0.23.11] — Z5 Audit Pass 2: Test Coverage Completion
+
+Second audit pass of Z5 Capability-Controlled Thread Binding. Found 7 untested
+critical code paths (scheduler integration behaviors) and 1 stale doc comment.
+
+- **AUD-8 (LOW)**: API.lean line 522 comment said "17 SyscallId variants"
+  when the actual count is 20. Fixed.
+- **AUD-9 (HIGH)**: 5 critical code paths had zero test coverage:
+  - Z5-G3: `schedContextBind` RunQueue re-insertion (SCO-013)
+  - Z5-H1: `schedContextUnbind` preemption guard when thread is current (SCO-014)
+  - Z5-H2: `schedContextUnbind` RunQueue removal of bound thread (SCO-015)
+  - Z5-I2: `schedContextYieldTo` budget-starved target enqueue (SCO-016)
+  - Admission control failure path when bandwidth > 100% (SCO-017)
+- **AUD-10 (MED)**: 2 additional untested error paths:
+  - `schedContextBind` when TCB is already bound to different SC (SCO-018)
+  - `schedContextYieldTo` when target has no bound thread (SCO-019)
+- **Testing**: 7 new trace tests SCO-013 through SCO-019. All 19 SCO tests pass.
+- **Operations.lean deep review**: No correctness or security issues found.
+  All scheduler integration logic (RunQueue, preemption, admission) verified.
+
+Zero sorry/axiom. All tiers pass (0-3). Metrics: 77,424 production LoC,
+111 files, 2,251 proved declarations.
+
 ## [0.23.10] — Z5 Audit: SchedContext Operations Hardening
 
 Post-implementation audit of Z5 Capability-Controlled Thread Binding. Seven

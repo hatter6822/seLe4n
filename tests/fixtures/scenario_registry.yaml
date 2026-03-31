@@ -1081,3 +1081,38 @@ scenarios:
     function: runSchedContextOpsTrace
     subsystem: SchedContext
     description: "Z5-AUD-7: admission control exclude prevents double-counting"
+  SCO-013:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-G3: schedContextBind RunQueue re-insertion at SchedContext priority"
+  SCO-014:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-H1: schedContextUnbind preemption guard — current thread cleared"
+  SCO-015:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-H2: schedContextUnbind RunQueue removal of unbound thread"
+  SCO-016:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-I2: schedContextYieldTo budget-starved target enqueued"
+  SCO-017:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-AUD-9: admission control failure when bandwidth exceeds 100%"
+  SCO-018:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-AUD-10: schedContextBind TCB already bound to different SC rejected"
+  SCO-019:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-AUD-10: schedContextYieldTo no bound thread — no enqueue"

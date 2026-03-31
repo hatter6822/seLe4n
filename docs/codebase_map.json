@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-thread-binding-0jQyg",
-      "commit_sha": "91a1bfabb58f52cf5489787ce93c549fdd52f8f0",
-      "tree_sha": "400230b299480ae5c015d94825334eaa0e40c5a5",
-      "committed_at_utc": "2026-03-31T05:36:33+00:00"
+      "commit_sha": "d2acdf36e668d53f88bf969f93582c9443518375",
+      "tree_sha": "8fa82a9f85f67f11d84b490c6f11c333b4d3ddc7",
+      "committed_at_utc": "2026-03-31T05:59:08+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f4332255375bd988f4260671a2bdae580193e1be65abf7bef0ae5c761c2f5fb1"
+    "source_digest": "a31aa9cf010f53eb5a05fa4612ef487a3dd2789bf4585682060edbc7abb09a67"
   },
   "summary": {
     "module_count": 121,
     "declaration_count": 4001
   },
   "readme_sync": {
-    "version": "0.23.10",
+    "version": "0.23.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 111,
-    "production_loc": 77278,
+    "production_loc": 77424,
     "test_files": 10,
     "test_loc": 8687,
     "proved_theorem_lemma_decls": 2251,
@@ -49444,15 +49444,20 @@
             "SystemState",
             "ThreadId",
             "checkAdmission",
+            "contains",
             "empty",
+            "get",
             "insert",
             "isBound",
+            "mkRunQueue",
             "none",
+            "ofNat",
             "scId",
             "schedContextBind",
             "schedContextConfigure",
             "schedContextUnbind",
             "schedContextYieldTo",
+            "toNat",
             "toObjId",
             "valid",
             "validateSchedContextParams",
@@ -49462,7 +49467,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 2293,
+          "line": 2439,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -49503,7 +49508,7 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 2339,
+          "line": 2485,
           "called": [
             "Capability",
             "KernelObject",
@@ -49528,7 +49533,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 2390,
+          "line": 2536,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -49543,7 +49548,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2405,
+          "line": 2551,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -49551,7 +49556,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2416,
+          "line": 2562,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -49579,7 +49584,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2471,
+          "line": 2617,
           "called": [
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",
