@@ -897,8 +897,7 @@ run_check "INVARIANT" rg -n 'lifecycleRevokeDeleteRetype_preserves_lowEquivalent
 run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
-# Build SchedContext.Invariant first (not in default build target).
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant.Defs >/dev/null 2>&1 && lake env lean --stdin <<"EOF"
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
 import SeLe4n.Kernel.Capability.Invariant.Preservation
 import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation

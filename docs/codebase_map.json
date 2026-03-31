@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-cbs-budget-engine-O4kIv",
-      "commit_sha": "d2aeee91c48bc22de19b17bdbf6258e0bf1ba2b4",
-      "tree_sha": "c1adc905b2d9ed1cee9535cddef38357a63986bc",
-      "committed_at_utc": "2026-03-31T01:34:21+00:00"
+      "commit_sha": "3f2a5562d5166d143064851bbe5c52c11bf5fa4a",
+      "tree_sha": "11282b980c68167d3d2144a6fd6e4c5cc0a661e1",
+      "committed_at_utc": "2026-03-31T02:10:30+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c13025254c391d819776e25c965127f5fbeba0be011cb5a804ee03f8c4d91019"
+    "source_digest": "3f309e409576f31ec8fca0503d893050969b33669db620198bccb84ae695299a"
   },
   "summary": {
     "module_count": 118,
     "declaration_count": 3870
   },
   "readme_sync": {
-    "version": "0.23.3",
+    "version": "0.23.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 108,
     "production_loc": 75173,

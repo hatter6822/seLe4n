@@ -1,3 +1,17 @@
+## [0.23.4] — Z2 Audit v3: Build Graph Fix
+
+Third audit pass on Z2 CBS Budget Engine. Root-cause fix for CI failure:
+
+- **AUD-10 (HIGH)**: `Object/Types.lean` imported only `SchedContext.Types`,
+  leaving `Budget.lean` and `Invariant/Defs.lean` outside the default build
+  graph (`lake build` = executable target only). Changed import to the full
+  re-export hub `SeLe4n.Kernel.SchedContext`, ensuring all Z2 modules compile
+  as part of the default `lake build`. This fixes Tier 3 CI failures where
+  `lake env lean` couldn't find SchedContext.Invariant olean files.
+- Reverted fragile `lake build` workaround in `test_tier3_invariant_surface.sh`.
+
+Verified via `lake clean && lake build` (208 jobs). Zero sorry/axiom. All tiers pass.
+
 ## [0.23.3] — Z2 Audit v2: Bundle Completion & Surface Anchors
 
 Second audit pass on Z2 CBS Budget Engine. Four improvements:
