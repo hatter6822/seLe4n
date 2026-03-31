@@ -1,3 +1,31 @@
+## [0.23.0] — Z1: SchedContext Type Foundation
+
+Phase Z1 of WS-Z Composable Performance Objects. Introduces the `SchedContext`
+kernel object type and all supporting data structures for CBS (Constant Bandwidth
+Server) scheduling. Pure type foundation — no behavioral changes.
+
+- **Z1-A**: `SchedContextId` typed wrapper in `Prelude.lean` with full instance
+  suite (`Hashable`, `LawfulHashable`, `EquivBEq`, `LawfulBEq`), `toObjId`/
+  `ofObjId` conversions, `sentinel`/`isReserved`/`valid` predicates,
+  `toObjId_injective` proof.
+- **Z1-B/C/D/E**: CBS primitive types in `SchedContext/Types.lean`: `Budget`
+  (saturating decrement, ceiling refill), `Period` (default 10k ticks),
+  `Bandwidth` (per-mille utilization), `ReplenishmentEntry` (amount + eligibleAt).
+- **Z1-F/G/H**: `SchedContext` structure (11 fields), `wellFormed` predicate
+  (period > 0, budget ≤ period, budgetRemaining ≤ budget, bounded replenishments),
+  `bandwidth`/`utilizationPerMille` accessors.
+- **Z1-I/J**: `SchedContextBinding` enum (`unbound`/`bound`/`donated`), TCB
+  `schedContextBinding` field (defaults `.unbound`).
+- **Z1-K**: `KernelObject.schedContext` (7th variant, tag 6),
+  `KernelObjectType.schedContext`. Pattern match exhaustiveness updated across
+  ~24 files (~150 match arms).
+- **Z1-L**: `objectTypeAllocSize` entry (256 bytes).
+- **Z1-M**: `SchedContext.empty`/`mkChecked` constructors.
+- **Z1-N**: `threadSchedulingParams` migration bridge accessor.
+- **Z1-O**: `FrozenKernelObject.schedContext` (passthrough freeze).
+- **Z1-P**: `BEq` instances for all new types.
+- **Z1-Q/R**: Re-export hub, build verification. Zero sorry/axiom. All tiers pass.
+
 ## [0.22.26] — Y3: Test Infrastructure & Documentation
 
 Phase Y3 of WS-Y final audit remediation. Resolves 3 findings (MED-02,

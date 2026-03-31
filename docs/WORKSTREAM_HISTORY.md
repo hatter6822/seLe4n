@@ -26,7 +26,7 @@ WS-Z Phase Z1 complete. **WS-Z IN PROGRESS.**
 
 ### WS-Z: Composable Performance Objects (IN PROGRESS)
 
-- **Phase Z1 COMPLETE**: SchedContext Type Foundation — 18 sub-tasks (Z1-A through Z1-R). SchedContextId typed identifier, Budget/Period/Bandwidth/ReplenishmentEntry types, SchedContext structure (CBS scheduling context object), SchedContextBinding enum (unbound/bound/donated), TCB schedContextBinding field, KernelObject/KernelObjectType .schedContext variant (7th object type), FrozenKernelObject extension, threadSchedulingParams migration accessor, BEq instances, re-export hub. 24 files updated for KernelObject variant ripple. Zero sorry/axiom.
+- **Phase Z1 COMPLETE** (v0.23.0): SchedContext Type Foundation — 18 sub-tasks (Z1-A through Z1-R). SchedContextId typed identifier, Budget/Period/Bandwidth/ReplenishmentEntry types, SchedContext structure (CBS scheduling context object), SchedContextBinding enum (unbound/bound/donated), TCB schedContextBinding field, KernelObject/KernelObjectType .schedContext variant (7th object type), FrozenKernelObject extension, threadSchedulingParams migration accessor, BEq instances, re-export hub. 24 files updated for KernelObject variant ripple. Zero sorry/axiom.
 
 ### WS-Y workstream (v0.22.22 Final Audit Remediation) — COMPLETE
 
