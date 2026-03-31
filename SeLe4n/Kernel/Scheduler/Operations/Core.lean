@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Operations.Selection
+import SeLe4n.Kernel.SchedContext.Budget
 
 namespace SeLe4n.Kernel
 
@@ -387,6 +388,247 @@ def timerTick : Kernel Unit :=
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
               .ok ((), { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine })
         | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
+-- Z4-G: System-level replenishment processing
+-- ============================================================================
+
+/-- Z4-G1: Pop all due replenishment entries from the system replenish queue.
+Returns the list of SchedContextIds that are due for replenishment and the
+remaining queue. Wraps `ReplenishQueue.popDue` at the system level. -/
+def popDueReplenishments (st : SystemState) (now : Nat)
+    : ReplenishQueue × List SeLe4n.SchedContextId :=
+  st.scheduler.replenishQueue.popDue now
+
+/-- Z4-G2: Refill a single SchedContext's budget via CBS replenishment processing.
+Looks up the SchedContext, calls `processReplenishments` and `cbsUpdateDeadline`,
+writes the updated object back to the store. No-op if the SchedContext is not found
+or is not a SchedContext object. -/
+def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (now : Nat) : SystemState :=
+  match st.objects[scId.toObjId]? with
+  | some (.schedContext sc) =>
+    let processed := processReplenishments sc now
+    let updated := cbsUpdateDeadline processed now true
+    { st with objects := st.objects.insert scId.toObjId (.schedContext updated) }
+  | _ => st
+
+/-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
+was restored. Pops due entries from the replenish queue, refills each
+SchedContext, and for any bound thread whose budget went from 0 to positive,
+enqueues it in the RunQueue. -/
+def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
+  let (remainingQueue, dueIds) := popDueReplenishments st now
+  let st' := { st with scheduler := { st.scheduler with
+    replenishQueue := remainingQueue } }
+  dueIds.foldl (fun acc scId =>
+    let wasExhausted := match acc.objects[scId.toObjId]? with
+      | some (.schedContext sc) => sc.budgetRemaining.isZero
+      | _ => false
+    let refilled := refillSchedContext acc scId now
+    -- If the SchedContext's bound thread was budget-exhausted and is now refilled,
+    -- re-enqueue the thread into the RunQueue
+    match refilled.objects[scId.toObjId]? with
+    | some (.schedContext sc) =>
+      if wasExhausted && sc.budgetRemaining.isPositive then
+        match sc.boundThread with
+        | some tid =>
+          -- Only re-enqueue if the thread is not already current or in queue
+          if tid ∈ refilled.scheduler.runQueue then refilled
+          else if refilled.scheduler.current == some tid then refilled
+          else { refilled with scheduler := { refilled.scheduler with
+            runQueue := refilled.scheduler.runQueue.insert tid sc.priority } }
+        | none => refilled
+      else refilled
+    | _ => refilled
+  ) st'
+
+-- ============================================================================
+-- Z4-F: SchedContext-aware budget decrement (timerTickBudget)
+-- ============================================================================
+
+/-- Z4-F: SchedContext-aware timer tick budget handling.
+
+Dispatches on the current thread's `schedContextBinding`:
+- **Unbound** (Z4-F1): Delegates to the existing time-slice decrement logic.
+- **Bound, budget > 1** (Z4-F2): Decrements the SchedContext budget by 1 tick.
+- **Bound, budget ≤ 1** (Z4-F3): Budget exhausted — schedules a replenishment
+  entry, inserts into the system replenish queue, preempts the current thread
+  (re-enqueue + reschedule).
+
+Returns `(updatedState, wasPreempted)`. Callers use `wasPreempted` to decide
+whether to call `schedule`. -/
+def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    : Except KernelError (SystemState × Bool) :=
+  match tcb.schedContextBinding with
+  | .unbound =>
+    -- Z4-F1: Legacy path — mirrors `timerTick` exactly for backward compatibility.
+    -- V5-L: Uses global `defaultTimeSlice` (not `configDefaultTimeSlice`) to match
+    -- the legacy `timerTick` proof chain. See `timerTick` comment at line 372.
+    if tcb.timeSlice ≤ 1 then
+      let tcb' := { tcb with timeSlice := defaultTimeSlice }
+      let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
+                           machine := tick st.machine }
+      let st'' := { st' with scheduler := { st'.scheduler with
+          runQueue := st'.scheduler.runQueue.insert tid tcb.priority } }
+      .ok (st'', true)
+    else
+      let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
+      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
+                      machine := tick st.machine }, false)
+  | .bound scId | .donated scId _ =>
+    match st.objects[scId.toObjId]? with
+    | some (.schedContext sc) =>
+      if sc.budgetRemaining.val ≤ 1 then
+        -- Z4-F3: Budget exhausted — schedule replenishment and preempt.
+        -- CBS semantics: `consumedAmount` is the full remaining budget (not 1 tick),
+        -- because the entire period's consumed budget is recorded for replenishment.
+        -- `now` is captured pre-tick: replenishment is scheduled relative to when
+        -- budget was consumed, not after the timer advances (standard CBS timing).
+        let now := st.machine.timer
+        let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
+        let sc' := consumeBudget sc 1
+        let sc'' := scheduleReplenishment sc' now consumedAmount
+        let sc''' := cbsUpdateDeadline sc'' now true
+        -- Write updated SchedContext back
+        let st' := { st with
+          objects := st.objects.insert scId.toObjId (.schedContext sc'''),
+          machine := tick st.machine }
+        -- Insert into system replenish queue for future refill
+        let rq := st'.scheduler.replenishQueue.insert scId (now + sc.period.val)
+        -- Re-enqueue current thread at its effective priority
+        let st'' := { st' with scheduler := { st'.scheduler with
+          replenishQueue := rq,
+          runQueue := st'.scheduler.runQueue.insert tid sc.priority } }
+        .ok (st'', true)
+      else
+        -- Z4-F2: Budget remains — decrement and continue
+        let sc' := consumeBudget sc 1
+        let st' := { st with
+          objects := st.objects.insert scId.toObjId (.schedContext sc'),
+          machine := tick st.machine }
+        .ok (st', false)
+    | _ =>
+      -- SchedContext not found — fall back to legacy path (defensive)
+      .ok ({ st with machine := tick st.machine }, false)
+
+-- ============================================================================
+-- Z4-I: Budget-aware schedule (must precede timerTickWithBudget)
+-- ============================================================================
+
+/-- Z4-I: SchedContext-aware schedule that uses effective thread selection.
+
+Identical to `schedule` but uses `chooseThreadEffective` which filters
+by budget eligibility and resolves effective priorities from SchedContext.
+Threads with exhausted CBS budgets are automatically skipped during selection.
+The original `schedule` is preserved for backward compatibility. -/
+def scheduleEffective : Kernel Unit :=
+  fun st =>
+    match chooseThreadEffective st with
+    | .error e => .error e
+    | .ok (none, st') =>
+        let stSaved := saveOutgoingContext st'
+        setCurrentThread none stSaved
+    | .ok (some tid, st') =>
+        match st'.objects[tid.toObjId]? with
+        | some (.tcb tcb) =>
+            if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
+              let stSaved := saveOutgoingContext st'
+              let stDequeued := { stSaved with scheduler := { stSaved.scheduler with
+                  runQueue := stSaved.scheduler.runQueue.remove tid } }
+              let stRestored := restoreIncomingContext stDequeued tid
+              setCurrentThread (some tid) stRestored
+            else
+              .error .schedulerInvariantViolation
+        | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
+-- Z4-H: Integrated timerTick with replenishment and budget
+-- ============================================================================
+
+/-- Z4-H: Extended timer tick with CBS replenishment and budget accounting.
+
+This replaces the original `timerTick` as the primary timer entry point.
+Processing order:
+1. Process due replenishments (may re-enqueue budget-restored threads)
+2. Handle current thread's budget (unbound: time-slice; bound: CBS budget)
+3. If preempted, call `schedule` to select next thread
+
+The original `timerTick` is preserved as `timerTickLegacy` for backward
+compatibility with existing preservation proofs. -/
+def timerTickWithBudget : Kernel Unit :=
+  fun st =>
+    -- Step 1: Process due replenishments
+    let now := st.machine.timer
+    let stReplenished := processReplenishmentsDue st now
+    -- Step 2: Handle current thread's budget
+    match stReplenished.scheduler.current with
+    | none =>
+      -- No current thread: just advance the timer
+      .ok ((), { stReplenished with machine := tick stReplenished.machine })
+    | some tid =>
+      match stReplenished.objects[tid.toObjId]? with
+      | some (.tcb tcb) =>
+        match timerTickBudget stReplenished tid tcb with
+        | .error e => .error e
+        | .ok (st', true) =>
+          -- Preempted: reschedule using effective selection
+          scheduleEffective st'
+        | .ok (st', false) =>
+          -- Not preempted: continue
+          .ok ((), st')
+      | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
+-- Z4-J: Budget-aware handleYield
+-- ============================================================================
+
+/-- Z4-J: Extended yield with SchedContext budget handling.
+
+When a SchedContext-bound thread yields:
+1. Charges remaining budget as consumed (schedule replenishment for it)
+2. Inserts replenishment entry into system queue
+3. Re-enqueues at updated deadline/priority
+4. Calls `schedule` to select next thread
+
+Unbound threads use the existing yield path (insert + rotateToBack). -/
+def handleYieldWithBudget : Kernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none => .error .invalidArgument
+    | some tid =>
+      match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) =>
+        match tcb.schedContextBinding with
+        | .unbound =>
+          -- Legacy yield: re-enqueue at back of priority bucket
+          let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+          let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
+          scheduleEffective st'
+        | .bound scId | .donated scId _ =>
+          match st.objects[scId.toObjId]? with
+          | some (.schedContext sc) =>
+            -- Charge remaining budget and schedule replenishment
+            let now := st.machine.timer
+            let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
+            let sc' := { sc with budgetRemaining := Budget.zero, isActive := false }
+            let sc'' := scheduleReplenishment sc' now consumedAmount
+            -- Insert into replenish queue
+            let rq := st.scheduler.replenishQueue.insert scId (now + sc.period.val)
+            -- Write updated SchedContext
+            let st' := { st with
+              objects := st.objects.insert scId.toObjId (.schedContext sc''),
+              scheduler := { st.scheduler with replenishQueue := rq } }
+            -- Re-enqueue thread and reschedule
+            let rq' := st'.scheduler.runQueue.insert tid sc.priority
+            let st'' := { st' with scheduler := { st'.scheduler with runQueue := rq' } }
+            scheduleEffective st''
+          | _ =>
+            -- SchedContext not found — fall back to legacy yield
+            let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+            let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
+            scheduleEffective st'
+      | _ => .error .schedulerInvariantViolation
 
 -- ============================================================================
 -- M-05/WS-E6: Domain scheduling

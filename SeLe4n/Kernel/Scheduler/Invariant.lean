@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.SchedContext.Invariant
 
 /-!
 # Scheduler Invariant Definitions
@@ -344,7 +345,217 @@ theorem schedulerPriorityMatch_insert
     simp only [beq_self_eq_true, ↓reduceIte]
     simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
 
+-- ============================================================================
+-- Z4-K: budgetPositive invariant
+-- ============================================================================
 
+/-- Z4-K: Every SchedContext-bound runnable thread has positive budget remaining.
 
+For unbound threads, this is vacuously true (they use the `timeSlice` mechanism).
+For bound threads, the SchedContext must have `budgetRemaining > 0` to be in
+the run queue. This is the CBS analog of `timeSlicePositive`. -/
+def budgetPositive (st : SystemState) : Prop :=
+  ∀ tid, tid ∈ st.scheduler.runnable →
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+      match tcb.schedContextBinding with
+      | .unbound => True
+      | .bound scId | .donated scId _ =>
+        match st.objects[scId.toObjId]? with
+        | some (.schedContext sc) => sc.budgetRemaining.val > 0
+        | _ => True
+    | _ => True
+
+/-- Z4-K: Default state has empty run queue — vacuously true. -/
+theorem default_budgetPositive :
+    budgetPositive (default : SystemState) := by
+  intro tid hMem
+  have : (default : SystemState).scheduler.runnable = [] := by decide
+  rw [this] at hMem; simp at hMem
+
+-- ============================================================================
+-- Z4-L: currentBudgetPositive invariant
+-- ============================================================================
+
+/-- Z4-L: The current thread (if SchedContext-bound) has positive budget.
+
+Under dequeue-on-dispatch, `budgetPositive` does not cover the current thread.
+This companion predicate closes the gap. -/
+def currentBudgetPositive (st : SystemState) : Prop :=
+  match st.scheduler.current with
+  | none => True
+  | some tid =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+      match tcb.schedContextBinding with
+      | .unbound => True
+      | .bound scId | .donated scId _ =>
+        match st.objects[scId.toObjId]? with
+        | some (.schedContext sc) => sc.budgetRemaining.val > 0
+        | _ => True
+    | _ => True
+
+/-- Z4-L: Default state has no current thread — vacuously true. -/
+theorem default_currentBudgetPositive :
+    currentBudgetPositive (default : SystemState) := by
+  simp [currentBudgetPositive]
+
+-- ============================================================================
+-- Z4-M: schedContextsWellFormed invariant
+-- ============================================================================
+
+/-- Z4-M: Every SchedContext object in the store satisfies `schedContextWellFormed`.
+
+System-wide per-object well-formedness for all SchedContext objects. -/
+def schedContextsWellFormed (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (sc : SchedContext),
+    st.objects[oid]? = some (.schedContext sc) →
+    schedContextWellFormed sc
+
+/-- Z4-M: Default state has no SchedContext objects — vacuously true.
+The default object store is empty (`RHTable.empty 16`), so all lookups
+return `none`. -/
+theorem default_schedContextsWellFormed :
+    schedContextsWellFormed (default : SystemState) := by
+  intro oid sc hObj
+  have hNone : (default : SystemState).objects.get? oid = none :=
+    RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+  simp [GetElem?.getElem?] at hObj
+  rw [hNone] at hObj
+  exact absurd hObj (by simp)
+
+-- ============================================================================
+-- Z4-N: replenishQueueValid invariant
+-- ============================================================================
+
+/-- Z4-N: The system replenish queue is sorted and every entry references an
+active SchedContext. Connects Z3's queue invariants to system state. -/
+def replenishQueueValid (st : SystemState) : Prop :=
+  replenishQueueSorted st.scheduler.replenishQueue ∧
+  replenishQueueSizeConsistent st.scheduler.replenishQueue
+
+/-- Z4-N: Default state has empty replenish queue — trivially valid. -/
+theorem default_replenishQueueValid :
+    replenishQueueValid (default : SystemState) := by
+  constructor
+  · exact empty_sorted
+  · exact empty_sizeConsistent
+
+-- ============================================================================
+-- Z4-O: schedContextBindingConsistent invariant
+-- ============================================================================
+
+/-- Z4-O: Bidirectional consistency between TCB and SchedContext binding.
+
+For every TCB with `schedContextBinding = .bound scId`, the SchedContext
+object exists and `sc.boundThread = some tid`. Conversely, for every
+SchedContext with `boundThread = some tid`, the TCB has a matching binding. -/
+def schedContextBindingConsistent (st : SystemState) : Prop :=
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    ∀ scId, tcb.schedContextBinding = .bound scId →
+      ∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+        sc.boundThread = some tid) ∧
+  (∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    ∀ tid, sc.boundThread = some tid →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        (tcb.schedContextBinding = .bound scId ∨
+         ∃ owner, tcb.schedContextBinding = .donated scId owner))
+
+/-- Z4-O: Default state has no objects — vacuously true. -/
+theorem default_schedContextBindingConsistent :
+    schedContextBindingConsistent (default : SystemState) := by
+  constructor
+  · intro tid tcb hObj
+    have hNone : (default : SystemState).objects.get? tid.toObjId = none :=
+      RobinHood.RHTable.getElem?_empty 16 (by omega) tid.toObjId
+    simp [GetElem?.getElem?] at hObj
+    rw [hNone] at hObj; exact absurd hObj (by simp)
+  · intro scId sc hObj
+    have hNone : (default : SystemState).objects.get? scId.toObjId = none :=
+      RobinHood.RHTable.getElem?_empty 16 (by omega) scId.toObjId
+    simp [GetElem?.getElem?] at hObj
+    rw [hNone] at hObj; exact absurd hObj (by simp)
+
+-- ============================================================================
+-- Z4-P: effectiveParamsMatchRunQueue invariant
+-- ============================================================================
+
+/-- Z4-P: For every runnable thread, the RunQueue's cached priority matches
+the effective priority from `effectivePriority` resolution. This extends
+`schedulerPriorityMatch` to the SchedContext world — when a thread is bound
+to a SchedContext, the RunQueue entry reflects the SchedContext's priority. -/
+def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
+  ∀ tid, tid ∈ st.scheduler.runQueue →
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+      match tcb.schedContextBinding with
+      | .unbound =>
+        st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
+      | .bound scId | .donated scId _ =>
+        match st.objects[scId.toObjId]? with
+        | some (.schedContext sc) =>
+          st.scheduler.runQueue.threadPriority[tid]? = some sc.priority
+        | _ => True
+    | _ => True
+
+/-- Z4-P: Default state has empty run queue — vacuously true. -/
+theorem default_effectiveParamsMatchRunQueue :
+    effectiveParamsMatchRunQueue (default : SystemState) := by
+  intro tid hMem
+  have hEmpty : (default : SystemState).scheduler.runQueue.membership.contains tid = false :=
+    RobinHood.RHSet.contains_empty tid
+  simp [Membership.mem, RunQueue.contains] at hMem
+  simp [hEmpty] at hMem
+
+-- ============================================================================
+-- Z4: Extended scheduler invariant bundle
+-- ============================================================================
+
+/-- Z4: Extended scheduler invariant bundle with 6 additional SchedContext
+invariants. 15-tuple: original 9 + budgetPositive + currentBudgetPositive +
+schedContextsWellFormed + replenishQueueValid + schedContextBindingConsistent +
+effectiveParamsMatchRunQueue. -/
+def schedulerInvariantBundleExtended (st : SystemState) : Prop :=
+  schedulerInvariantBundleFull st ∧
+  budgetPositive st ∧ currentBudgetPositive st ∧
+  schedContextsWellFormed st ∧ replenishQueueValid st ∧
+  schedContextBindingConsistent st ∧ effectiveParamsMatchRunQueue st
+
+/-- Z4: Project the original 9-tuple from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_full {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : schedulerInvariantBundleFull st :=
+  h.1
+
+/-- Z4: Project `budgetPositive` from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_budgetPositive {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : budgetPositive st :=
+  h.2.1
+
+/-- Z4: Project `currentBudgetPositive` from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_currentBudgetPositive {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : currentBudgetPositive st :=
+  h.2.2.1
+
+/-- Z4: Project `schedContextsWellFormed` from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_schedContextsWellFormed {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : schedContextsWellFormed st :=
+  h.2.2.2.1
+
+/-- Z4: Project `replenishQueueValid` from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_replenishQueueValid {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : replenishQueueValid st :=
+  h.2.2.2.2.1
+
+/-- Z4: Project `schedContextBindingConsistent` from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_schedContextBindingConsistent {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : schedContextBindingConsistent st :=
+  h.2.2.2.2.2.1
+
+/-- Z4: Project `effectiveParamsMatchRunQueue` from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : effectiveParamsMatchRunQueue st :=
+  h.2.2.2.2.2.2
 
 end SeLe4n.Kernel

@@ -201,6 +201,139 @@ theorem bucketFirst_fullScan_equivalence
        | .ok none => chooseBestRunnableInDomain objects rq.toList activeDomain none) := by
   rfl
 
+-- ============================================================================
+-- Z4-B: Effective scheduling parameter resolution
+-- ============================================================================
+
+/-- Z4-B: Resolve effective scheduling parameters for a thread.
+
+If the thread is bound to a SchedContext (`.bound scId` or `.donated scId _`),
+returns the SchedContext's `(priority, deadline, domain)`. Otherwise falls back
+to the TCB's legacy fields. Returns `none` only if the SchedContext object is
+missing from the store (a consistency violation).
+
+This is the central resolution point used by all scheduler operations to
+determine a thread's scheduling parameters, enabling the migration from
+monolithic TCB fields to first-class SchedContext objects. -/
+def effectivePriority (st : SystemState) (tcb : TCB)
+    : Option (SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :=
+  match tcb.schedContextBinding with
+  | .unbound => some (tcb.priority, tcb.deadline, tcb.domain)
+  | .bound scId | .donated scId _ =>
+    match st.objects[scId.toObjId]? with
+    | some (.schedContext sc) => some (sc.priority, sc.deadline, sc.domain)
+    | _ => none
+
+/-- Z4-B: For unbound threads, `effectivePriority` always returns the TCB fields. -/
+theorem effectivePriority_unbound (st : SystemState) (tcb : TCB)
+    (h : tcb.schedContextBinding = .unbound) :
+    effectivePriority st tcb = some (tcb.priority, tcb.deadline, tcb.domain) := by
+  simp [effectivePriority, h]
+
+-- ============================================================================
+-- Z4-C: Budget eligibility predicate
+-- ============================================================================
+
+/-- Z4-C: Check whether a thread has sufficient CBS budget to be scheduled.
+
+For unbound threads (legacy mode), returns `true` — they use the existing
+`timeSlice` mechanism and are always budget-eligible. For SchedContext-bound
+threads, returns `true` only if `budgetRemaining > 0`. Returns `true` for
+missing SchedContext objects (fail-open for robustness; the binding consistency
+invariant ensures this is unreachable under normal operation). -/
+def hasSufficientBudget (st : SystemState) (tcb : TCB) : Bool :=
+  match tcb.schedContextBinding with
+  | .unbound => true
+  | .bound scId | .donated scId _ =>
+    match st.objects[scId.toObjId]? with
+    | some (.schedContext sc) => sc.budgetRemaining.isPositive
+    | _ => true
+
+/-- Z4-C: Unbound threads always have sufficient budget. -/
+theorem hasSufficientBudget_unbound (st : SystemState) (tcb : TCB)
+    (h : tcb.schedContextBinding = .unbound) :
+    hasSufficientBudget st tcb = true := by
+  simp [hasSufficientBudget, h]
+
+-- ============================================================================
+-- Z4-D/E: SchedContext-aware scheduling selection
+-- ============================================================================
+
+/-- Z4-D/E: Resolve effective priority and deadline for a TCB.
+
+Returns the priority/deadline pair to use for scheduling comparison.
+For bound threads, uses SchedContext parameters; for unbound threads,
+falls back to TCB legacy fields. -/
+@[inline] def resolveEffectivePrioDeadline (st : SystemState) (tcb : TCB)
+    : SeLe4n.Priority × SeLe4n.Deadline :=
+  match tcb.schedContextBinding with
+  | .unbound => (tcb.priority, tcb.deadline)
+  | .bound scId | .donated scId _ =>
+    match st.objects[scId.toObjId]? with
+    | some (.schedContext sc) => (sc.priority, sc.deadline)
+    | _ => (tcb.priority, tcb.deadline)
+
+/-- Z4-D/E: SchedContext-aware three-level scheduling selection.
+
+Extends `chooseBestRunnableBy` with two SchedContext enhancements:
+1. **Budget eligibility** (Z4-D): Threads with exhausted SchedContext budgets
+   are excluded via the composed `eligible` predicate.
+2. **Effective priority** (Z4-E): Priority and deadline are resolved from the
+   SchedContext when bound, falling back to TCB fields when unbound.
+
+The three-level comparison logic (`isBetterCandidate`) is unchanged — only
+the priority/deadline source and eligibility filter differ. -/
+def chooseBestRunnableEffective
+    (st : SystemState)
+    (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  match runnable with
+  | [] => .ok best
+  | tid :: rest =>
+      match st.objects.get? tid.toObjId with
+      | some (.tcb tcb) =>
+          let best' :=
+            if eligible tcb && hasSufficientBudget st tcb then
+              let (prio, dl) := resolveEffectivePrioDeadline st tcb
+              match best with
+              | none => some (tid, prio, dl)
+              | some (_, bestPrio, bestDl) =>
+                  if isBetterCandidate bestPrio bestDl prio dl then
+                    some (tid, prio, dl)
+                  else
+                    best
+            else
+              best
+          chooseBestRunnableEffective st eligible rest best'
+      | _ => .error .schedulerInvariantViolation
+
+/-- Z4-D/E: SchedContext-aware domain-filtered selection. -/
+def chooseBestRunnableInDomainEffective
+    (st : SystemState)
+    (runnable : List SeLe4n.ThreadId)
+    (activeDomain : SeLe4n.DomainId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  chooseBestRunnableEffective st (fun tcb => tcb.domain == activeDomain) runnable best
+
+/-- Z4-D/E: SchedContext-aware bucket-first selection.
+
+Uses the effective selection variant for both the max-priority bucket scan
+and the full-list fallback. -/
+def chooseBestInBucketEffective
+    (st : SystemState)
+    (rq : RunQueue)
+    (activeDomain : SeLe4n.DomainId) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  let maxBucket := rq.maxPriorityBucket
+  match chooseBestRunnableInDomainEffective st maxBucket activeDomain none with
+  | .error e => .error e
+  | .ok (some result) => .ok (some result)
+  | .ok none =>
+    chooseBestRunnableInDomainEffective st rq.toList activeDomain none
+
 /-- M-03/M-05 WS-E6/WS-G4: Choose the highest-priority runnable thread from the
 active domain using deterministic selection: priority > EDF deadline > FIFO.
 
@@ -223,6 +356,39 @@ def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
     | .error e => .error e
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
+
+/-- Z4-D/E: SchedContext-aware thread selection.
+
+Uses `chooseBestInBucketEffective` which filters by budget eligibility and
+resolves effective priorities from SchedContext objects. This is used by the
+extended scheduler operations (`scheduleEffective`, `timerTickWithBudget`,
+`handleYieldWithBudget`). The original `chooseThread` is preserved for
+backward compatibility with existing preservation proofs. -/
+def chooseThreadEffective : Kernel (Option SeLe4n.ThreadId) :=
+  fun st =>
+    match chooseBestInBucketEffective st st.scheduler.runQueue st.scheduler.activeDomain with
+    | .error e => .error e
+    | .ok none => .ok (none, st)
+    | .ok (some (tid, _, _)) => .ok (some tid, st)
+
+/-- Z4-D/E: `chooseThreadEffective` is read-only — preserves state. -/
+theorem chooseThreadEffective_preserves_state
+    (st st' : SystemState)
+    (next : Option SeLe4n.ThreadId)
+    (hStep : chooseThreadEffective st = .ok (next, st')) :
+    st' = st := by
+  unfold chooseThreadEffective at hStep
+  cases hPick : chooseBestInBucketEffective st st.scheduler.runQueue st.scheduler.activeDomain with
+  | error e => simp [hPick] at hStep
+  | ok best =>
+      cases best with
+      | none =>
+          rcases (by simpa [hPick] using hStep : none = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
+      | some triple =>
+          obtain ⟨tid, prio, dl⟩ := triple
+          rcases (by simpa [hPick] using hStep : some tid = next ∧ st = st') with ⟨_, hSt⟩
+          simpa using hSt.symm
 
 /-- WS-H12c/H-03/V5-D: Save the outgoing (current) thread's machine registers into
 its TCB `registerContext` field. If no thread is current, returns the state
@@ -307,4 +473,34 @@ theorem restoreIncomingContextChecked_fst_eq (st : SystemState)
   | none => simp_all
   | some obj =>
       cases obj <;> simp_all
+
+/-- Z4-D/E: For a system with all unbound threads, the effective selection
+reduces to the original selection. -/
+theorem chooseBestRunnableEffective_unbound_equiv
+    (st : SystemState)
+    (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (hAllUnbound : ∀ tid ∈ runnable, ∀ tcb : TCB,
+      st.objects.get? tid.toObjId = some (.tcb tcb) →
+      tcb.schedContextBinding = .unbound) :
+    chooseBestRunnableEffective st eligible runnable best =
+    chooseBestRunnableBy st.objects.get? eligible runnable best := by
+  induction runnable generalizing best with
+  | nil => simp [chooseBestRunnableEffective, chooseBestRunnableBy]
+  | cons tid rest ih =>
+    simp only [chooseBestRunnableEffective, chooseBestRunnableBy]
+    cases hObj : st.objects.get? tid.toObjId with
+    | none => rfl
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        have hMem : tid ∈ tid :: rest := List.mem_cons_self ..
+        have hUnb := hAllUnbound tid hMem tcb hObj
+        simp [hasSufficientBudget_unbound st tcb hUnb, Bool.and_true,
+              resolveEffectivePrioDeadline, hUnb]
+        apply ih
+        intro t hMemRest
+        exact hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
+      | _ => rfl
 

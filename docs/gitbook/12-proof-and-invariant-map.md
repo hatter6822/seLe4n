@@ -108,6 +108,7 @@ Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)
 - `schedulerInvariantBundleFull` (9-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs ∧ schedulerPriorityMatch ∧ domainTimeRemainingPositive ∧ domainScheduleEntriesPositive`, R6-D/L-12/V5-H/X2-A)
+- `schedulerInvariantBundleExtended` (15-conjunct: `schedulerInvariantBundleFull ∧ budgetPositive ∧ currentBudgetPositive ∧ schedContextsWellFormed ∧ replenishQueueValid ∧ schedContextBindingConsistent ∧ effectiveParamsMatchRunQueue`, Z4)
 
 Extraction theorems:
 
@@ -128,6 +129,23 @@ Preservation shape:
 - `remove_preserves_wellFormed` (S3-F / U-M09 — RunQueue.lean)
 - `isBetterCandidate_transitive` (WS-H6 / A-17)
 - `bucketFirst_fullScan_equivalence` (WS-H6 / A-17)
+- `timerTickBudget_unbound_nopreempt_scheduler_eq` (Z4-Q1 — unbound frame)
+- `timerTickBudget_unbound_preempt_replenishQueue_eq` (Z4-Q2 — unbound replenishQueue frame)
+- `popDueReplenishments_sorted` (Z4-R1 — replenishment queue sortedness)
+- `popDueReplenishments_sizeConsistent` (Z4-R2 — replenishment queue size)
+- `refillSchedContext_noop` (Z4-S1 — defensive no-op)
+- `chooseThreadEffective_state_unchanged` (Z4-T1 — effective selection read-only)
+- `effectivePriority_unbound_legacy` (Z4-U — backward compatibility)
+- `hasSufficientBudget_unbound_legacy` (Z4-U — backward compatibility)
+- `budget_decrement_stays_positive` (Z4-Q1 — CBS arithmetic)
+- `consumeBudget_positive_of_gt_one` (Z4-Q2 — SchedContext budget positivity)
+- `timerTickBudget_unbound_nopreempt_objects_key` (Z4-S1a — TCB-only object frame)
+- `timerTickBudget_unbound_preempt_objects_key` (Z4-S1b — TCB-only object frame)
+- `consumeBudget_preserves_wf` (Z4-S2a — per-object wellFormed bridge)
+- `consumeBudget_preserves_schedContextWellFormed_full` (Z4-S2b — 4-conjunct composition)
+- `scheduleReplenishment_preserves_schedContextWellFormed_full` (Z4-S3 — 4-conjunct with preconditions)
+- `cbsUpdateDeadline_preserves_wf` (Z4-S4 — deadline update wellFormed)
+- `budgetPositive_subset` (Z4-T2 — dequeue-on-dispatch domain shrinkage)
 
 Documented semantics:
 

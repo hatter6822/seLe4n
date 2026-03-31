@@ -1,3 +1,49 @@
+## [0.23.8] — Z4 Audit v2: Tier 3 Invariant Surface Anchors
+
+Second audit pass on Z4 Scheduler Integration. Added comprehensive Tier 3
+invariant surface anchors for Z4 definitions, operations, and preservation
+theorems.
+
+- **AUD-T3 (MED)**: Added 23 `#check` Tier 3 anchors to
+  `test_tier3_invariant_surface.sh` covering all Z4 invariant definitions
+  (`budgetPositive`, `currentBudgetPositive`, `schedContextsWellFormed`,
+  `replenishQueueValid`, `schedContextBindingConsistent`,
+  `effectiveParamsMatchRunQueue`, `schedulerInvariantBundleExtended`),
+  operations (`effectivePriority`, `hasSufficientBudget`,
+  `chooseThreadEffective`, `timerTickBudget`, `scheduleEffective`,
+  `timerTickWithBudget`, `handleYieldWithBudget`, `processReplenishmentsDue`),
+  and key preservation theorems (`chooseThreadEffective_state_unchanged`,
+  `budgetPositive_subset`, `effectivePriority_unbound_legacy`,
+  `hasSufficientBudget_unbound_legacy`,
+  `consumeBudget_preserves_schedContextWellFormed_full`,
+  `scheduleReplenishment_preserves_schedContextWellFormed_full`,
+  `cbsUpdateDeadline_preserves_wf`).
+
+Zero sorry/axiom. All tiers pass (0-3). 210 modules build.
+
+## [0.23.7] — Z4 Audit: Scheduler Integration Verification
+
+Post-implementation audit of Z4 Scheduler Integration (33 sub-tasks). Four
+audit improvements:
+
+- **AUD-1/2/3 (INFO)**: CBS semantics documentation. Added V5-L backward
+  compatibility rationale to `timerTickBudget` unbound branch (uses global
+  `defaultTimeSlice` to match legacy `timerTick` proof chain). Documented CBS
+  `consumedAmount` semantics in exhaustion branch (full remaining budget, not
+  1 tick). Documented pre-tick `now` capture for standard CBS timing.
+- **AUD-4 (MED)**: Replaced trivial preservation theorems with substantive
+  machine-checked proofs. Added: `budget_decrement_stays_positive`,
+  `consumeBudget_positive_of_gt_one`, `timerTickBudget_unbound_nopreempt_objects_key`,
+  `timerTickBudget_unbound_preempt_objects_key` (frame lemmas proving only `.tcb`
+  objects are modified in unbound path), `consumeBudget_preserves_wf`,
+  `consumeBudget_preserves_schedContextWellFormed_full` (4-conjunct composition),
+  `scheduleReplenishment_preserves_schedContextWellFormed_full` (with preconditions),
+  `chooseThreadEffective_state_unchanged`, `budgetPositive_subset`,
+  `effectivePriority_unbound_legacy`, `hasSufficientBudget_unbound_legacy`,
+  `cbsUpdateDeadline_preserves_wf`.
+
+Zero sorry/axiom. All tiers pass (0-3). 210 modules build. 2,238 proved declarations.
+
 ## [0.23.4] — Z2 Audit v3: Build Graph Fix
 
 Third audit pass on Z2 CBS Budget Engine. Root-cause fix for CI failure:

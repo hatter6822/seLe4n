@@ -1035,6 +1035,29 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.remove_sizeConsistent
 #check @SeLe4n.Kernel.empty_sorted
 #check @SeLe4n.Kernel.empty_consistent
+-- WS-Z Phase Z4: Scheduler Integration invariants, operations, and preservation
+#check @SeLe4n.Kernel.budgetPositive
+#check @SeLe4n.Kernel.currentBudgetPositive
+#check @SeLe4n.Kernel.schedContextsWellFormed
+#check @SeLe4n.Kernel.replenishQueueValid
+#check @SeLe4n.Kernel.schedContextBindingConsistent
+#check @SeLe4n.Kernel.effectiveParamsMatchRunQueue
+#check @SeLe4n.Kernel.schedulerInvariantBundleExtended
+#check @SeLe4n.Kernel.effectivePriority
+#check @SeLe4n.Kernel.hasSufficientBudget
+#check @SeLe4n.Kernel.chooseThreadEffective
+#check @SeLe4n.Kernel.timerTickBudget
+#check @SeLe4n.Kernel.scheduleEffective
+#check @SeLe4n.Kernel.timerTickWithBudget
+#check @SeLe4n.Kernel.handleYieldWithBudget
+#check @SeLe4n.Kernel.processReplenishmentsDue
+#check @SeLe4n.Kernel.chooseThreadEffective_state_unchanged
+#check @SeLe4n.Kernel.budgetPositive_subset
+#check @SeLe4n.Kernel.effectivePriority_unbound_legacy
+#check @SeLe4n.Kernel.hasSufficientBudget_unbound_legacy
+#check @SeLe4n.Kernel.consumeBudget_preserves_schedContextWellFormed_full
+#check @SeLe4n.Kernel.scheduleReplenishment_preserves_schedContextWellFormed_full
+#check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_wf
 EOF'
 
 finalize_report
