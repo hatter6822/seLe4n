@@ -583,9 +583,10 @@ Invariants (`Kernel/SchedContext/Invariant/Defs.lean`):
 - `schedContextWellFormed`: 4-conjunct bundle (`wellFormed ∧ budgetWithinBounds ∧
   replenishmentListWellFormed ∧ replenishmentAmountsBounded`)
 
-16 preservation theorems (4 per sub-invariant) prove that all CBS operations
-maintain the invariant bundle, composed into
-`cbsBudgetCheck_preserves_schedContextWellFormed`.
+16 preservation theorems (4 operations × 4 sub-invariants) prove that all CBS
+operations maintain the invariant bundle, composed into
+`cbsBudgetCheck_preserves_schedContextWellFormed` (bundled) and
+`cbsBudgetCheck_preserves_replenishmentAmountsBounded` (standalone).
 Bandwidth isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`)
 bound total consumption by `maxReplenishments × budget`.
 

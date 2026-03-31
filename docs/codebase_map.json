@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-cbs-budget-engine-O4kIv",
-      "commit_sha": "f17da7c0a9f72d56f95a1173d71e3eea004c55c0",
-      "tree_sha": "142569b0968b26a13e44f00b174954a1e420c73e",
-      "committed_at_utc": "2026-03-31T01:26:08+00:00"
+      "commit_sha": "d2aeee91c48bc22de19b17bdbf6258e0bf1ba2b4",
+      "tree_sha": "c1adc905b2d9ed1cee9535cddef38357a63986bc",
+      "committed_at_utc": "2026-03-31T01:34:21+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3a92dd003a1e49ecdabc3926f13df0de6720ab93f26d0c3778d231a6be2283e5"
+    "source_digest": "c13025254c391d819776e25c965127f5fbeba0be011cb5a804ee03f8c4d91019"
   },
   "summary": {
     "module_count": 118,
     "declaration_count": 3870
   },
   "readme_sync": {
-    "version": "0.23.2",
+    "version": "0.23.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 108,
-    "production_loc": 75169,
+    "production_loc": 75173,
     "test_files": 10,
     "test_loc": 8687,
     "proved_theorem_lemma_decls": 2179,
@@ -28817,13 +28817,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 32,
+          "line": 36,
           "called": []
         },
         {
           "kind": "def",
           "name": "budgetWithinBounds",
-          "line": 40,
+          "line": 44,
           "called": [
             "SchedContext"
           ]
@@ -28831,7 +28831,7 @@
         {
           "kind": "def",
           "name": "replenishmentListWellFormed",
-          "line": 50,
+          "line": 54,
           "called": [
             "SchedContext",
             "maxReplenishments"
@@ -28840,7 +28840,7 @@
         {
           "kind": "def",
           "name": "replenishmentAmountsBounded",
-          "line": 61,
+          "line": 65,
           "called": [
             "SchedContext"
           ]
@@ -28848,7 +28848,7 @@
         {
           "kind": "def",
           "name": "schedContextWellFormed",
-          "line": 73,
+          "line": 77,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -28860,7 +28860,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_budgetWithinBounds",
-          "line": 83,
+          "line": 87,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -28871,7 +28871,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_budgetWithinBounds",
-          "line": 100,
+          "line": 104,
           "called": [
             "SchedContext",
             "applyRefill",
@@ -28882,7 +28882,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_replenishmentListWellFormed",
-          "line": 116,
+          "line": 120,
           "called": [
             "Budget",
             "SchedContext",
@@ -28896,7 +28896,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_wellFormed",
-          "line": 140,
+          "line": 144,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -28908,7 +28908,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_replenishmentListWellFormed",
-          "line": 149,
+          "line": 153,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -28918,7 +28918,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_wellFormed",
-          "line": 160,
+          "line": 164,
           "called": [
             "SchedContext",
             "applyRefill",
@@ -28930,7 +28930,7 @@
         {
           "kind": "theorem",
           "name": "filter_mem_of_mem",
-          "line": 171,
+          "line": 175,
           "called": [
             "filter"
           ]
@@ -28938,7 +28938,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_replenishmentListWellFormed",
-          "line": 185,
+          "line": 189,
           "called": [
             "SchedContext",
             "partitionEligible",
@@ -28949,7 +28949,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_budgetWithinBounds",
-          "line": 203,
+          "line": 207,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -28959,7 +28959,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_wellFormed",
-          "line": 210,
+          "line": 214,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
@@ -28969,7 +28969,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_replenishmentListWellFormed",
-          "line": 217,
+          "line": 221,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
@@ -28979,7 +28979,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_wellFormed",
-          "line": 229,
+          "line": 233,
           "called": [
             "Budget",
             "SchedContext",
@@ -28991,7 +28991,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_budgetWithinBounds",
-          "line": 237,
+          "line": 241,
           "called": [
             "Budget",
             "SchedContext",
@@ -29002,7 +29002,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_replenishmentAmountsBounded",
-          "line": 249,
+          "line": 253,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -29012,7 +29012,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_replenishmentAmountsBounded",
-          "line": 257,
+          "line": 261,
           "called": [
             "SchedContext",
             "partitionEligible",
@@ -29023,7 +29023,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_replenishmentAmountsBounded",
-          "line": 268,
+          "line": 272,
           "called": [
             "Budget",
             "SchedContext",
@@ -29036,7 +29036,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_replenishmentAmountsBounded",
-          "line": 283,
+          "line": 287,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
@@ -29046,7 +29046,7 @@
         {
           "kind": "theorem",
           "name": "cbsBudgetCheck_preserves_schedContextWellFormed",
-          "line": 297,
+          "line": 301,
           "called": [
             "SchedContext",
             "cbsBudgetCheck",
@@ -29072,7 +29072,7 @@
         {
           "kind": "def",
           "name": "totalConsumed",
-          "line": 349,
+          "line": 353,
           "called": [
             "SchedContext",
             "filter",
@@ -29082,7 +29082,7 @@
         {
           "kind": "theorem",
           "name": "cbsBudgetCheck_preserves_replenishmentAmountsBounded",
-          "line": 357,
+          "line": 361,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -29097,7 +29097,7 @@
         {
           "kind": "theorem",
           "name": "sumReplenishments_filter_le",
-          "line": 380,
+          "line": 384,
           "called": [
             "ReplenishmentEntry",
             "filter",
@@ -29107,7 +29107,7 @@
         {
           "kind": "theorem",
           "name": "sumReplenishments_le_count_mul_max",
-          "line": 392,
+          "line": 396,
           "called": [
             "ReplenishmentEntry",
             "sumReplenishments"
@@ -29116,7 +29116,7 @@
         {
           "kind": "theorem",
           "name": "totalConsumed_le_max_budget",
-          "line": 412,
+          "line": 416,
           "called": [
             "SchedContext",
             "filter",
@@ -29132,7 +29132,7 @@
         {
           "kind": "theorem",
           "name": "cbs_single_period_bound",
-          "line": 437,
+          "line": 441,
           "called": [
             "SchedContext",
             "maxReplenishments",
@@ -29145,7 +29145,7 @@
         {
           "kind": "theorem",
           "name": "cbs_bandwidth_bounded",
-          "line": 460,
+          "line": 464,
           "called": [
             "Kernel",
             "SchedContext",

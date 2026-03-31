@@ -1,3 +1,24 @@
+## [0.23.3] — Z2 Audit v2: Bundle Completion & Surface Anchors
+
+Second audit pass on Z2 CBS Budget Engine. Four improvements:
+
+- **AUD-6 (LOW)**: `schedContextWellFormed` promoted to 4-conjunct bundle
+  incorporating `replenishmentAmountsBounded` as the 4th conjunct. The bundled
+  preservation proof `cbsBudgetCheck_preserves_schedContextWellFormed` now
+  composes all 4 sub-invariants in both exhausted and non-exhausted branches.
+- **AUD-7 (LOW)**: Module doc header in `Invariant/Defs.lean` updated to
+  accurately list all 4 invariants, all 16 per-operation preservation theorems,
+  and both composite theorems.
+- **AUD-8 (MED)**: Added 13 Tier 3 invariant surface anchors for Z2 proof
+  surface (`#check` for all invariant definitions, composite preservation
+  theorems, bandwidth theorems, and representative per-operation theorems).
+  Prevents accidental theorem deletion.
+- **AUD-9 (LOW)**: Documentation theorem counts corrected across spec, gitbook,
+  and CLAUDE.md to reflect the precise inventory: 16 per-operation + 2
+  composite + 2 bandwidth + 7 operation correctness = 27 public theorems.
+
+Zero sorry/axiom. All tiers pass.
+
 ## [0.23.2] — Z2 Audit: CBS Budget Engine Correctness Fixes
 
 Post-implementation audit of Z2 CBS Budget Engine. Three correctness fixes:

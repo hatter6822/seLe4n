@@ -16,17 +16,21 @@ budget operations preserve them.
 ## Invariants:
 - `budgetWithinBounds`: remaining ≤ configured ≤ period
 - `replenishmentListWellFormed`: bounded list, no zero-amount entries
-- `schedContextWellFormed`: conjunction of all per-object invariants
+- `replenishmentAmountsBounded`: each entry's amount ≤ configured budget
+- `schedContextWellFormed`: 4-conjunct bundle (wellFormed ∧ budgetWithinBounds
+  ∧ replenishmentListWellFormed ∧ replenishmentAmountsBounded)
 
-## Preservation theorems:
-- `consumeBudget` preserves all invariants
-- `processReplenishments` preserves budget bounds
-- `scheduleReplenishment` preserves replenishment list well-formedness
-- `cbsBudgetCheck` preserves the full bundle
+## Preservation theorems (16 per-operation + 2 composite):
+- `consumeBudget` preserves all 4 sub-invariants
+- `processReplenishments` preserves all 4 sub-invariants
+- `scheduleReplenishment` preserves all 4 sub-invariants
+- `cbsUpdateDeadline` preserves all 4 sub-invariants
+- `cbsBudgetCheck_preserves_schedContextWellFormed` — full bundle composite
+- `cbsBudgetCheck_preserves_replenishmentAmountsBounded` — standalone
 
 ## Bandwidth theorems:
-- Single-period consumption bound
-- Multi-period CBS bandwidth isolation
+- `cbs_single_period_bound` — single-period consumption bound
+- `cbs_bandwidth_bounded` — multi-period CBS bandwidth isolation
 -/
 
 namespace SeLe4n.Kernel
