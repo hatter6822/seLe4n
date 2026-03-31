@@ -2316,21 +2316,30 @@ SchedContext's budget becomes eligible for refill.
 - `replenishQueueConsistent` — every entry references an active SchedContext
   in the object store (parameterized by lookup function for decoupling).
 
-**Preservation theorems** (3 core + 2 size):
+**Preservation theorems** (3 sorted + 3 size):
 - `insert_preserves_sorted` — sorted insertion maintains sortedness.
 - `popDue_preserves_sorted` — prefix removal preserves sorted suffix.
 - `remove_preserves_sorted` — filter preserves sortedness.
 - `insert_sizeConsistent` — insert increments size correctly.
+- `popDue_sizeConsistent` — popDue preserves size consistency (safe under Nat saturation).
 - `remove_sizeConsistent` — remove recomputes size from filtered list.
 
-**Membership theorems** (2):
+**Length and membership theorems** (4):
+- `insertSorted_length` — insertSorted increases list length by exactly 1.
+- `splitDue_length_additive` — due.length + remaining.length = entries.length.
 - `mem_insertSorted` — inserted entry is in the result.
 - `subset_insertSorted` — existing entries preserved by insertion.
 
 **Empty queue theorems** (3):
 - `empty_sorted`, `empty_sizeConsistent`, `empty_consistent`.
 
-**Helper infrastructure**: `pairwiseSortedBy_head_le_all` (head ≤ all),
-`pairwiseSortedBy_cons` (cons construction), `insertSorted_head_ge` (lower
-bound on inserted elements), `filter_preserves_pairwiseSortedBy` (general
-filter sortedness), `filter_head_time_ge` (filtered head time bound).
+**Public helper lemmas**: `pairwiseSortedBy_cons` (cons construction),
+`pairwiseSortedBy_head_le_second` (head ≤ second element),
+`pairwiseSortedBy_tail` (tail of sorted is sorted),
+`pairwiseSortedBy_nil`/`pairwiseSortedBy_singleton` (simp lemmas),
+`filter_preserves_pairwiseSortedBy` (general filter sortedness).
+
+**Private helper infrastructure**: `pairwiseSortedBy_head_le_all` (head ≤ all
+via induction), `insertSorted_head_ge` (lower bound on inserted elements),
+`insertSorted_head_time_ge` (head? lower bound), `filter_head_time_ge`
+(filtered head time bound).

@@ -907,6 +907,7 @@ import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.SchedContext.Invariant
+import SeLe4n.Kernel.SchedContext.ReplenishQueue
 
 #check @SeLe4n.Kernel.schedule_preserves_schedulerInvariantBundle
 #check @SeLe4n.Kernel.timerTick_preserves_schedulerInvariantBundle
@@ -1020,6 +1021,20 @@ import SeLe4n.Kernel.SchedContext.Invariant
 #check @SeLe4n.Kernel.processReplenishments_preserves_budgetWithinBounds
 #check @SeLe4n.Kernel.scheduleReplenishment_preserves_replenishmentListWellFormed
 #check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_budgetWithinBounds
+-- WS-Z Phase Z3: Replenishment Queue invariants and preservation
+#check @SeLe4n.Kernel.replenishQueueSorted
+#check @SeLe4n.Kernel.replenishQueueSizeConsistent
+#check @SeLe4n.Kernel.replenishQueueConsistent
+#check @SeLe4n.Kernel.insert_preserves_sorted
+#check @SeLe4n.Kernel.popDue_preserves_sorted
+#check @SeLe4n.Kernel.popDue_sizeConsistent
+#check @SeLe4n.Kernel.remove_preserves_sorted
+#check @SeLe4n.Kernel.filter_preserves_pairwiseSortedBy
+#check @SeLe4n.Kernel.insertSorted_length
+#check @SeLe4n.Kernel.insert_sizeConsistent
+#check @SeLe4n.Kernel.remove_sizeConsistent
+#check @SeLe4n.Kernel.empty_sorted
+#check @SeLe4n.Kernel.empty_consistent
 EOF'
 
 finalize_report

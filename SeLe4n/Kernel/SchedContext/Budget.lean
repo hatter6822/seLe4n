@@ -203,7 +203,13 @@ def cbsBudgetCheck (sc : SchedContext) (currentTime : Nat)
 
 /-- CBS admission control. Checks whether adding `candidate` to the set of
 existing SchedContexts would exceed total utilization of 1000 per-mille
-(100% bandwidth). Uses integer arithmetic only. -/
+(100% bandwidth). Uses integer arithmetic only.
+
+**Truncation note**: `utilizationPerMille` uses integer division (`budget * 1000 / period`),
+which truncates down. Each context's utilization is underestimated by at most 1 per-mille.
+With n active contexts, the aggregate error is at most n per-mille. This is standard CBS
+practice — per-context budget bounds (`budgetWithinBounds`) still hold regardless of
+admission control precision, so marginal over-admission cannot cause budget overrun. -/
 def admissionCheck (existing : List SchedContext) (candidate : SchedContext)
     : Bool :=
   let existingUtil := existing.foldl (fun acc sc => acc + sc.utilizationPerMille) 0

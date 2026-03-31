@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-z3-replenishment-3qRpd",
-      "commit_sha": "ae2a45c33d6f286fd8cbf7379f9c0e4039f4df49",
-      "tree_sha": "922a8609365af2671bc15bdefbd3d917cdcbd2e4",
-      "committed_at_utc": "2026-03-31T02:50:51+00:00"
+      "commit_sha": "ab2bdda62cf58f9da393404ace1005aba41ba664",
+      "tree_sha": "317add85201f949ee5e051435420e456fbf62915",
+      "committed_at_utc": "2026-03-31T03:05:47+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "210f3d0ecea91e563036197691c9769fa33516c14a761410f4affe125e631766"
+    "source_digest": "0631ce93d240e6940028f973c0eb8cdefc82dd5e1cde48f6b8aa4bc614d11425"
   },
   "summary": {
     "module_count": 119,
     "declaration_count": 3911
   },
   "readme_sync": {
-    "version": "0.23.5",
+    "version": "0.23.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 109,
-    "production_loc": 75669,
+    "production_loc": 75675,
     "test_files": 10,
     "test_loc": 8687,
     "proved_theorem_lemma_decls": 2204,
@@ -28815,7 +28815,7 @@
         {
           "kind": "def",
           "name": "admissionCheck",
-          "line": 207,
+          "line": 213,
           "called": [
             "Kernel",
             "SchedContext",
