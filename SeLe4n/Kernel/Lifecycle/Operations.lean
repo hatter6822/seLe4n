@@ -151,10 +151,13 @@ theorem cleanupDonatedSchedContext_scheduler_eq
 
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.
     Removes the ThreadId from:
-    1. Donated SchedContext bindings (`cleanupDonatedSchedContext`, Z7-P)
-    2. The scheduler run queue (`removeRunnable`)
-    3. All endpoint send/receive queues (`removeFromAllEndpointQueues`)
-    4. All notification waiting lists (`removeFromAllNotificationWaitLists`)
+    1. The scheduler run queue (`removeRunnable`)
+    2. All endpoint send/receive queues (`removeFromAllEndpointQueues`)
+    3. All notification waiting lists (`removeFromAllNotificationWaitLists`)
+    Note: Donated SchedContext cleanup (`cleanupDonatedSchedContext`) is handled
+    separately in `lifecyclePreRetypeCleanup` BEFORE this function is called,
+    because `storeObject` modifies lifecycle metadata and `cleanupTcbReferences`
+    must preserve lifecycle for its proofs.
     This prevents dangling-reference scenarios after a TCB is retyped. -/
 def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   let st := removeRunnable st tid

@@ -28,6 +28,7 @@ import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 import SeLe4n.Kernel.SchedContext.Operations
+import SeLe4n.Kernel.IPC.Operations.Donation
 
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.Invariant
@@ -558,17 +559,26 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Z7: Determine receiver before call pops it from receiveQ
+        let maybeReceiver := match st.objects[epId]? with
+          | some (.endpoint ep) => ep.receiveQ.head
+          | _ => none
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        | .ok (_, st') =>
+          -- Z7: Apply SchedContext donation to passive server if applicable
+          match maybeReceiver with
+          | some receiverTid => .ok ((), applyCallDonation st' tid receiverTid)
+          | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
   | .reply =>
     match cap.target with
     | .replyCap targetTid =>
       let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge }
+      -- Z7: Use donation-aware reply wrapper to return SchedContext
+      endpointReplyWithDonation tid targetTid { registers := body, caps := #[], badge := cap.badge }
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
@@ -668,7 +678,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       | .ok args =>
           let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
           let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
-          match endpointReplyRecv epId tid args.replyTarget msg st with
+          -- Z7: Use donation-aware replyRecv wrapper
+          match endpointReplyRecvWithDonation epId tid args.replyTarget msg st with
           | .error e => .error e
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
@@ -743,10 +754,18 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Z7: Determine receiver before call pops it from receiveQ
+        let maybeReceiver := match st.objects[epId]? with
+          | some (.endpoint ep) => ep.receiveQ.head
+          | _ => none
         match endpointCallChecked ctx epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        | .ok (_, st') =>
+          -- Z7: Apply SchedContext donation to passive server if applicable
+          match maybeReceiver with
+          | some receiverTid => .ok ((), applyCallDonation st' tid receiverTid)
+          | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
   -- In seL4, the reply capability is single-use authority consumed upon use.
@@ -756,7 +775,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
     match cap.target with
     | .replyCap targetTid =>
       let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge }
+      -- Z7: Apply donation return after checked reply
+      fun st =>
+        match endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge } st with
+        | .error e => .error e
+        | .ok ((), st') => .ok ((), applyReplyDonation st' tid)
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -848,9 +871,10 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       | .ok args =>
           let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
           let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
+          -- Z7: Apply donation return after checked replyRecv
           match endpointReplyRecvChecked ctx epId tid args.replyTarget msg st with
           | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+          | .ok ((), st') => .ok ((), applyReplyDonation st' tid)
     | _ => fun _ => .error .invalidCapability
   -- V8-H: Remaining capability-only arms are unreachable — handled by
   -- dispatchCapabilityOnly returning `some` above.
@@ -1374,10 +1398,17 @@ theorem dispatchWithCap_call_uses_withCaps
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- Z7: Donation post-processing after call with caps
+        let maybeReceiver := match st.objects[epId]? with
+          | some (.endpoint ep) => ep.receiveQ.head
+          | _ => none
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st') := by
+        | .ok (_, st') =>
+          match maybeReceiver with
+          | some receiverTid => .ok ((), applyCallDonation st' tid receiverTid)
+          | none => .ok ((), st') := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E: When reply dispatch is invoked, the IPC message body is populated
@@ -1389,7 +1420,8 @@ theorem dispatchWithCap_reply_populates_msg
     (hTarget : cap.target = .replyCap targetTid) :
     dispatchWithCap decoded tid gate cap =
       let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      endpointReply tid targetTid { registers := body, caps := #[], badge := cap.badge } := by
+      -- Z7: Donation-aware reply
+      endpointReplyWithDonation tid targetTid { registers := body, caps := #[], badge := cap.badge } := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================

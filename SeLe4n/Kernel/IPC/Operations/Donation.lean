@@ -230,19 +230,24 @@ def endpointReplyWithDonation
       .ok ((), applyReplyDonation st' replier)
 
 /-- Z7: Donation-aware endpointReplyRecv. Composes:
-1. Return old donation from replier
-2. Standard endpointReplyRecv (reply + receive)
-3. (New donation from incoming caller is handled by the Call path) -/
+1. Standard endpointReplyRecv (reply + receive) — server still holds donated SC during reply
+2. Return old donation from replier AFTER the reply completes
+3. (New donation from incoming caller is handled by the Call path)
+
+**Ordering rationale (AUD-3)**: The donation return happens AFTER `endpointReplyRecv`
+completes, not before. The server needs the donated SchedContext while replying
+(it's the currently running thread with that SC's budget). After the reply delivers
+the message and the server enters the receive path, the SC is returned. -/
 def endpointReplyRecvWithDonation
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
     (replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
-    -- Z7-D1: Return old donation before the reply+receive
-    let st_clean := applyReplyDonation st receiver
-    match endpointReplyRecv endpointId receiver replyTarget msg st_clean with
+    match endpointReplyRecv endpointId receiver replyTarget msg st with
     | .error e => .error e
-    | .ok ((), st') => .ok ((), st')
+    | .ok ((), st') =>
+      -- Z7-D1: Return old donation AFTER reply+receive completes
+      .ok ((), applyReplyDonation st' receiver)
 
 end SeLe4n.Kernel

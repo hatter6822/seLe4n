@@ -1,3 +1,33 @@
+## [0.23.15] — Z7: SchedContext Donation / Passive Servers
+
+Implement SchedContext lending during IPC Call/Reply, enabling passive servers
+that consume zero CPU when idle (seL4 MCS passive server pattern).
+
+- **Core operations**: `donateSchedContext`, `returnDonatedSchedContext`,
+  `cleanupDonatedSchedContext`, `cleanupActiveDonation` (Endpoint.lean)
+- **Post-processing helpers**: `applyCallDonation`, `applyReplyDonation`,
+  `cleanupPreReceiveDonation` (Donation.lean)
+- **Donation-aware wrappers**: `endpointCallWithDonation`,
+  `endpointReplyWithDonation`, `endpointReplyRecvWithDonation` (Donation.lean)
+- **API dispatch wiring**: Both unchecked and checked dispatch arms (`.call`,
+  `.reply`, `.replyRecv`) apply donation post-processing
+- **4 new invariants** (ipcInvariantFull extended from 10 to 14 conjuncts):
+  `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`,
+  `donationBudgetTransfer`
+- **Lifecycle integration**: `cleanupDonatedSchedContext` in
+  `lifecyclePreRetypeCleanup` ensures donated SchedContexts are returned
+  before TCB destruction
+- **Boot safety**: `bootObjectSafe` extended with `schedContextBinding = .unbound`
+- **Proof ripple**: Structural.lean (10 composition theorems), Capability
+  Invariant/Preservation.lean (5 extractors), Architecture/Invariant.lean
+  (timer advancement + default state), Platform/Boot.lean (14-conjunct bundle)
+- **Preservation theorems**: `donateSchedContext_scheduler_eq`,
+  `returnDonatedSchedContext_scheduler_eq`, `applyCallDonation_scheduler_eq`,
+  `cleanupDonatedSchedContext_scheduler_eq`
+- **8 trace tests**: Z7D-001 through Z7D-008
+- **New file**: `SeLe4n/Kernel/IPC/Operations/Donation.lean`
+- Zero sorry/axiom
+
 ## [0.23.14] — Z6 Audit Pass 2: Edge Case Test Coverage
 
 Second comprehensive audit of Phase Z6 Timeout Endpoints.
