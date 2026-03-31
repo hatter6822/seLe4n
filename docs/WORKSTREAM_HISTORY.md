@@ -34,6 +34,18 @@ WS-Z Phases Z1–Z6 complete. **WS-Z IN PROGRESS.**
 
 - **Phase Z6 COMPLETE** (v0.23.12, audit v0.23.13): Timeout Endpoints — 26 sub-tasks (Z6-A through Z6-P2). Budget-driven timeout for IPC blocking operations. `timeoutBudget : Option SchedContextId` field on TCB (design optimization: TCB-level instead of per-ThreadIpcState variant, avoiding ~200 pattern match changes). `endpointQueueRemove` (mid-queue splice-out with `endpointQueueRemove_preserves_objects_invExt` proof). `timeoutThread` (queue removal + IPC state reset + error code write + RunQueue re-enqueue). `timeoutAwareReceive` (timeout-detecting receive wrapper). `IpcTimeoutResult` type (`.completed msg | .timedOut`). `timeoutBlockedThreads` (scan via `schedContextBinding.scId?` match — zero changes to existing IPC operations). Timer tick integration: `timerTickBudget` Z4-F3 branch calls `timeoutBlockedThreads` on budget exhaustion. `blockedThreadTimeoutConsistent` invariant (10th conjunct of `ipcInvariantFull`). Transport lemmas: `endpointQueueRemove_scheduler_eq`, `endpointQueueRemove_cdt_eq`, `endpointQueueRemove_lifecycle_eq`, `endpointQueueRemove_services_eq`. Boot safety extended with `timeoutBudget = none` requirement. Full bundle ripple fix across 6 files (~15 construction sites). New file: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`. Audit (v0.23.13): AUD-Z6-1 `endpointQueueRemove` defensive fallback invariant documentation, AUD-Z6-2 `timeoutThread` precondition documentation, AUD-Z6-3 12 trace tests (SCO-020 through SCO-031), AUD-Z6-4 `timeoutAwareReceive` docstring correction. Audit 2 (v0.23.14): AUD-Z6-5 4 edge-case tests (SCO-032–SCO-035: mid-queue removal, receiveQ removal, blockedOnCall timeout, multi-thread timeout), cross-subsystem 10-tuple verification, transport lemma coverage verification, documentation accuracy audit. Zero sorry/axiom.
 
+### WS-Z Phase Z7: SchedContext Donation / Passive Servers (COMPLETE)
+- **Sub-tasks**: Z7-A through Z7-Q2 (26 atomic units)
+- **New files**: `SeLe4n/Kernel/IPC/Operations/Donation.lean`
+- **Modified files**: `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, `SeLe4n/Kernel/IPC/Invariant/Defs.lean`, `SeLe4n/Kernel/IPC/Invariant/Structural.lean`, `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`, `SeLe4n/Kernel/Architecture/Invariant.lean`, `SeLe4n/Kernel/Lifecycle/Operations.lean`, `SeLe4n/Platform/Boot.lean`, `SeLe4n/Testing/MainTraceHarness.lean`
+- **Key operations**: `donateSchedContext`, `returnDonatedSchedContext`, `applyCallDonation`, `applyReplyDonation`, `cleanupPreReceiveDonation`, `cleanupDonatedSchedContext`
+- **Donation-aware wrappers**: `endpointCallWithDonation`, `endpointReplyWithDonation`, `endpointReplyRecvWithDonation`
+- **Invariants**: `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`
+- **ipcInvariantFull**: Extended from 10 to 14 conjuncts
+- **Tests**: 8 trace tests (Z7D-001 through Z7D-008)
+- **Architecture**: Donation as post-processing wrappers preserving all existing IPC invariant proofs unchanged
+- **Sorry/axiom**: Zero
+
 ### WS-Y workstream (v0.22.22 Final Audit Remediation) — COMPLETE
 
 WS-Y addresses 14 unique actionable findings from a comprehensive full-kernel

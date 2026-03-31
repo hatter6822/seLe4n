@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n
+import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Testing.RuntimeContractFixtures
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
@@ -2712,6 +2713,131 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     | _ => false
   IO.println s!"[SCO-035] timeoutBlockedThreads multi: tid1_ready={t1Ready} tid2_ready={t2Ready}"
 
+-- ============================================================================
+-- Z7: SchedContext Donation / Passive Server trace tests
+-- ============================================================================
+
+private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  -- Z7D-001: donateSchedContext — successful donation
+  let callerTid : SeLe4n.ThreadId := ⟨7001⟩
+  let serverTid : SeLe4n.ThreadId := ⟨7002⟩
+  let scId : SeLe4n.SchedContextId := ⟨7000⟩
+  let callerTcb : KernelObject := .tcb {
+    tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .bound scId }
+  let serverTcb : KernelObject := .tcb {
+    tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .unbound }  -- passive server
+  let sc : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty scId with
+    budget := ⟨1000⟩, budgetRemaining := ⟨800⟩,
+    boundThread := some callerTid, priority := ⟨100⟩ }
+  let stDon := { st1 with
+    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc) }
+  match SeLe4n.Kernel.donateSchedContext stDon callerTid serverTid scId with
+  | .error err =>
+    IO.println s!"[Z7D-001] donateSchedContext: error {reprStr err}"
+  | .ok stAfter =>
+    let serverBound := match stAfter.objects[serverTid.toObjId]? with
+      | some (.tcb t) => t.schedContextBinding.isBound
+      | _ => false
+    let scPointsToServer := match stAfter.objects[scId.toObjId]? with
+      | some (.schedContext s) => s.boundThread == some serverTid
+      | _ => false
+    IO.println s!"[Z7D-001] donateSchedContext: server_bound={serverBound} sc_points_server={scPointsToServer}"
+
+  -- Z7D-002: returnDonatedSchedContext — successful return
+  let serverDonated : KernelObject := .tcb {
+    tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .donated scId callerTid }
+  let scDonated : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty scId with
+    budget := ⟨1000⟩, budgetRemaining := ⟨500⟩,
+    boundThread := some serverTid, priority := ⟨100⟩ }
+  let stRet := { st1 with
+    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
+  match SeLe4n.Kernel.returnDonatedSchedContext stRet serverTid scId callerTid with
+  | .error err =>
+    IO.println s!"[Z7D-002] returnDonatedSchedContext: error {reprStr err}"
+  | .ok stReturned =>
+    let serverUnbound := match stReturned.objects[serverTid.toObjId]? with
+      | some (.tcb t) => !t.schedContextBinding.isBound
+      | _ => false
+    let callerRebound := match stReturned.objects[callerTid.toObjId]? with
+      | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+      | _ => false
+    let scPointsCaller := match stReturned.objects[scId.toObjId]? with
+      | some (.schedContext s) => s.boundThread == some callerTid
+      | _ => false
+    IO.println s!"[Z7D-002] returnDonatedSchedContext: server_unbound={serverUnbound} caller_rebound={callerRebound} sc_points_caller={scPointsCaller}"
+
+  -- Z7D-003: applyCallDonation — passive server gets SchedContext
+  let stApply := { st1 with
+    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc) }
+  let stAfterCall := SeLe4n.Kernel.applyCallDonation stApply callerTid serverTid
+  let serverGotSc := match stAfterCall.objects[serverTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding.isBound
+    | _ => false
+  IO.println s!"[Z7D-003] applyCallDonation passive: server_got_sc={serverGotSc}"
+
+  -- Z7D-004: applyCallDonation — active server skips donation
+  let activeServer : KernelObject := .tcb {
+    tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .bound ⟨9999⟩ }  -- already has SC
+  let stActive := { st1 with
+    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId activeServer).insert scId.toObjId (.schedContext sc) }
+  let stAfterActive := SeLe4n.Kernel.applyCallDonation stActive callerTid serverTid
+  let schedulerUnchanged := stAfterActive.scheduler.current == stActive.scheduler.current
+  IO.println s!"[Z7D-004] applyCallDonation active-server: scheduler_unchanged={schedulerUnchanged}"
+
+  -- Z7D-005: applyReplyDonation — donated server returns SchedContext
+  let stReplyDon := { st1 with
+    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
+  let stAfterReply := SeLe4n.Kernel.applyReplyDonation stReplyDon serverTid
+  let callerGotBack := match stAfterReply.objects[callerTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+    | _ => false
+  let serverPassive := match stAfterReply.objects[serverTid.toObjId]? with
+    | some (.tcb t) => !t.schedContextBinding.isBound
+    | _ => false
+  IO.println s!"[Z7D-005] applyReplyDonation: caller_got_back={callerGotBack} server_passive={serverPassive}"
+
+  -- Z7D-006: applyReplyDonation — non-donated server is noop
+  let stReplyNormal := { st1 with
+    objects := (st1.objects.insert serverTid.toObjId serverTcb) }
+  let stAfterNormal := SeLe4n.Kernel.applyReplyDonation stReplyNormal serverTid
+  let unchanged := stAfterNormal.scheduler.current == stReplyNormal.scheduler.current
+  IO.println s!"[Z7D-006] applyReplyDonation non-donated: unchanged={unchanged}"
+
+  -- Z7D-007: cleanupDonatedSchedContext — lifecycle cleanup returns SC
+  let stCleanup := { st1 with
+    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
+  let stCleaned := SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid
+  let callerRecovered := match stCleaned.objects[callerTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+    | _ => false
+  IO.println s!"[Z7D-007] cleanupDonatedSchedContext: caller_recovered={callerRecovered}"
+
+  -- Z7D-008: cleanupPreReceiveDonation — stale donation cleaned up
+  let stStale := { st1 with
+    objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
+      serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
+  let stPreRecv := SeLe4n.Kernel.cleanupPreReceiveDonation stStale serverTid
+  let callerBack := match stPreRecv.objects[callerTid.toObjId]? with
+    | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
+    | _ => false
+  IO.println s!"[Z7D-008] cleanupPreReceiveDonation: caller_back={callerBack}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   let counter ← IO.mkRef (0 : Nat)
@@ -2748,6 +2874,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runMultiEndpointInterleavingTrace counter st1
   runSchedContextOpsTrace counter st1
   runTimeoutEndpointTrace counter st1
+  runDonationTrace counter st1
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"

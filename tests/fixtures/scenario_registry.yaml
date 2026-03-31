@@ -1196,3 +1196,43 @@ scenarios:
     function: runTimeoutEndpointTrace
     subsystem: IPC
     description: "Z6-AUD-2: timeoutBlockedThreads multi-thread — both threads timed out"
+  Z7D-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: donateSchedContext — successful donation to passive server"
+  Z7D-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: returnDonatedSchedContext — successful return after reply"
+  Z7D-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: applyCallDonation — passive server gets SchedContext"
+  Z7D-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: applyCallDonation — active server skips donation"
+  Z7D-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: applyReplyDonation — donated server returns SchedContext"
+  Z7D-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: applyReplyDonation — non-donated server noop"
+  Z7D-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: cleanupDonatedSchedContext — lifecycle cleanup returns SC"
+  Z7D-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runDonationTrace
+    subsystem: SchedContext
+    description: "Z7: cleanupPreReceiveDonation — stale donation cleaned up"

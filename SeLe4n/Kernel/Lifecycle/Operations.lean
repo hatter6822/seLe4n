@@ -116,11 +116,48 @@ def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId
       { acc with objects := acc.objects.insert oid (.notification notif') }
     | _ => acc
 
+/-- Z7-P: Return donated SchedContext before destroying a thread.
+If the thread has `.donated` binding, return the SchedContext to the original
+owner. Otherwise, return the state unchanged. Only modifies `objects`. -/
+def cleanupDonatedSchedContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match lookupTcb st tid with
+  | none => st
+  | some tcb =>
+    match tcb.schedContextBinding with
+    | .donated scId originalOwner =>
+      match returnDonatedSchedContext st tid scId originalOwner with
+      | .error _ => st
+      | .ok st' => st'
+    | _ => st
+
+/-- Z7-P: cleanupDonatedSchedContext preserves the scheduler. -/
+theorem cleanupDonatedSchedContext_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (cleanupDonatedSchedContext st tid).scheduler = st.scheduler := by
+  unfold cleanupDonatedSchedContext
+  cases lookupTcb st tid with
+  | none => rfl
+  | some tcb =>
+    simp only []
+    cases hBinding : tcb.schedContextBinding with
+    | unbound => rfl
+    | bound _ => rfl
+    | donated scId originalOwner =>
+      simp only []
+      cases hReturn : returnDonatedSchedContext st tid scId originalOwner with
+      | error _ => rfl
+      | ok st' => exact returnDonatedSchedContext_scheduler_eq st st' tid scId originalOwner hReturn
+
+
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.
     Removes the ThreadId from:
     1. The scheduler run queue (`removeRunnable`)
     2. All endpoint send/receive queues (`removeFromAllEndpointQueues`)
     3. All notification waiting lists (`removeFromAllNotificationWaitLists`)
+    Note: Donated SchedContext cleanup (`cleanupDonatedSchedContext`) is handled
+    separately in `lifecyclePreRetypeCleanup` BEFORE this function is called,
+    because `storeObject` modifies lifecycle metadata and `cleanupTcbReferences`
+    must preserve lifecycle for its proofs.
     This prevents dangling-reference scenarios after a TCB is retyped. -/
 def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   let st := removeRunnable st tid
@@ -305,6 +342,10 @@ theorem detachCNodeSlots_lifecycle_eq
       CDT slot mappings to prevent orphaned derivation tree references. -/
 def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) : SystemState :=
+  -- Z7-P: Return donated SchedContext before destroying TCB
+  let st := match currentObj with
+    | .tcb tcb => cleanupDonatedSchedContext st tcb.tid
+    | _ => st
   let st := match currentObj with
     | .tcb tcb => cleanupTcbReferences st tcb.tid
     | _ => st
@@ -363,8 +404,11 @@ private theorem lifecyclePreRetypeCleanup_flat_subset
   cases currentObj with
   | tcb tcb =>
     simp only [] at h
+    -- cleanupDonatedSchedContext preserves scheduler, so we can rewrite through it
+    have hDonSched : (cleanupDonatedSchedContext st tcb.tid).scheduler = st.scheduler :=
+      cleanupDonatedSchedContext_scheduler_eq st tcb.tid
     rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
-    unfold removeRunnable at h; simp only [] at h
+    unfold removeRunnable at h; rw [hDonSched] at h; simp only [] at h
     exact (List.mem_filter.mp h).1
   | cnode cn =>
     simp only [] at h
@@ -1155,7 +1199,7 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     rw [hSchedEq, scrubObjectMemory_scheduler_eq]
     unfold lifecyclePreRetypeCleanup
     simp only []
-    exact cleanupTcbReferences_removes_from_runnable st tcb.tid
+    exact cleanupTcbReferences_removes_from_runnable (cleanupDonatedSchedContext st tcb.tid) tcb.tid
 
 -- ============================================================================
 -- WS-K-D: Lifecycle syscall dispatch helpers
