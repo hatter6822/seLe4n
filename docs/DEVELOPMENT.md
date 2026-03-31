@@ -313,6 +313,14 @@ Optional nightly/staged checks:
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh
 ```
 
+Module-specific build targets (SchedContext):
+
+```bash
+# SchedContext module
+source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Types
+source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext
+```
+
 Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 
 - if a third-party apt mirror is temporarily unavailable, the setup script now retries `apt-get update` with primary distro sources only so required tool installs (`shellcheck`, `ripgrep`) remain reproducible.

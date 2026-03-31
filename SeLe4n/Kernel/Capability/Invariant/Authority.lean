@@ -31,6 +31,7 @@ private theorem cspaceDeleteSlotCore_authority_reduction
       | notification ntfn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
       | untyped _ => simp [hObj] at hStep
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           have hUniq := hSlotUniq cnodeId cn hObj
           simp [hObj] at hStep
@@ -79,6 +80,7 @@ theorem cspaceRevoke_local_target_reduction
       | notification ntfn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
       | untyped _ => simp [hObj] at hStep
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
           let storedState : SystemState :=
@@ -167,6 +169,7 @@ private theorem cspaceInsertSlot_lookup_eq
       | notification ntfn => simp [cspaceInsertSlot, hObj] at hStep
       | vspaceRoot root => simp [cspaceInsertSlot, hObj] at hStep
       | untyped _ => simp [cspaceInsertSlot, hObj] at hStep
+      | schedContext _ => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
           have hUniq := hSlotUniq cnodeId cn hObj
           simp [cspaceInsertSlot, hObj] at hStep
@@ -210,6 +213,7 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
       | notification ntfn => simp [hObj] at hStep
       | vspaceRoot root => simp [hObj] at hStep
       | untyped _ => simp [hObj] at hStep
+      | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
           have hUniq := hSlotUniq cnodeId cn hObj
           simp [hObj] at hStep
@@ -254,6 +258,7 @@ theorem cspaceRevoke_preserves_source
           | notification ntfn => simp [hLookup, hObj] at hStep
           | vspaceRoot root => simp [hLookup, hObj] at hStep
           | untyped _ => simp [hLookup, hObj] at hStep
+          | schedContext _ => simp [hLookup, hObj] at hStep
           | cnode cn =>
               have hUniq := hSlotUniq addr.cnode cn hObj
               let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
@@ -532,7 +537,7 @@ theorem notificationWait_recovers_pending_badge
                       simp only [Except.ok.injEq, Prod.mk.injEq]
                       intro ⟨hBadgeEq, _⟩
                       exact hBadgeEq
-      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ => simp [hObj] at hWait
+      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hWait
 
 /-- (H-03) End-to-end badge routing consistency.
 

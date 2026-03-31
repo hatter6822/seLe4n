@@ -2286,6 +2286,7 @@ inductive KernelObject where
   | cnode (c : CNode)
   | vspaceRoot (v : VSpaceRoot)
   | untyped (u : UntypedObject)
+  | schedContext (sc : SeLe4n.Kernel.SchedContext)
   deriving Repr
 
 /-- WS-G5: Manual `BEq` for `KernelObject` dispatching to constituent `BEq`
@@ -2298,6 +2299,7 @@ instance : BEq KernelObject where
     | .cnode a, .cnode b => a == b
     | .vspaceRoot a, .vspaceRoot b => a == b
     | .untyped a, .untyped b => a == b
+    | .schedContext a, .schedContext b => a == b
     | _, _ => false
 
 inductive KernelObjectType where
@@ -2307,6 +2309,7 @@ inductive KernelObjectType where
   | cnode
   | vspaceRoot
   | untyped
+  | schedContext
   deriving Repr, DecidableEq
 
 namespace KernelObjectType
@@ -2320,6 +2323,7 @@ def toNat : KernelObjectType → Nat
   | .cnode => 3
   | .vspaceRoot => 4
   | .untyped => 5
+  | .schedContext => 6
 
 /-- R7-E/L-10: Decode a numeric type tag to `KernelObjectType`.
     Returns `none` for unrecognized tags, ensuring only valid types are accepted. -/
@@ -2330,7 +2334,8 @@ def ofNat? : Nat → Option KernelObjectType
   | 3 => some .cnode
   | 4 => some .vspaceRoot
   | 5 => some .untyped
-  | _ + 6 => none
+  | 6 => some .schedContext
+  | _ + 7 => none
 
 /-- R7-E/L-10: `ofNat?` is a left inverse of `toNat`. -/
 theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
@@ -2351,6 +2356,7 @@ def objectType : KernelObject → KernelObjectType
   | .cnode _ => .cnode
   | .vspaceRoot _ => .vspaceRoot
   | .untyped _ => .untyped
+  | .schedContext _ => .schedContext
 
 /-- T5-C (M-NEW-5): Object well-formedness predicate parameterized by the object store.
 
@@ -2375,6 +2381,7 @@ def wellFormed (obj : KernelObject)
   | .notification _ => True
   | .vspaceRoot _ => True
   | .untyped _ => True
+  | .schedContext _ => True
 
 /-- T5-C: `wellFormed` is decidable for all object kinds, enabling runtime validation. -/
 instance (obj : KernelObject)
@@ -2384,9 +2391,34 @@ instance (obj : KernelObject)
   match obj with
   | .tcb _ => exact instDecidableAnd
   | .cnode _ => exact inferInstance
-  | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _ =>
+  | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _
+  | .schedContext _ =>
     exact instDecidableTrue
 
 end KernelObject
+
+-- ============================================================================
+-- Z1-N: ThreadSchedulingParams — effective scheduling parameter resolution
+-- ============================================================================
+
+/-- Resolve effective scheduling parameters for a thread.
+
+If the thread has `schedContextBinding = .bound scId` or `.donated scId _`,
+look up the SchedContext from the object store and return its params.
+Otherwise fall back to the TCB's legacy fields (priority, deadline, domain)
+with a synthetic budget from timeSlice.
+
+This is the migration bridge between monolithic TCB scheduling and
+first-class SchedContext objects. -/
+def threadSchedulingParams (tcb : TCB)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId × Nat :=
+  match tcb.schedContextBinding.scId? with
+  | none => (tcb.priority, tcb.deadline, tcb.domain, tcb.timeSlice)
+  | some scId =>
+    match objects[scId.toObjId]? with
+    | some (.schedContext sc) =>
+      (sc.priority, sc.deadline, sc.domain, sc.budgetRemaining.val)
+    | _ => (tcb.priority, tcb.deadline, tcb.domain, tcb.timeSlice)
 
 end SeLe4n.Model

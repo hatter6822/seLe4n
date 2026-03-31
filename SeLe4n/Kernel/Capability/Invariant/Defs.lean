@@ -327,7 +327,7 @@ private theorem cspaceSlotCountBounded_of_storeObject_nonCNode
     rw [this] at hObj
     cases obj with
     | cnode cn' => exact absurd rfl (hNotCNode cn')
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
   · have hPre := storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore
     rw [hPre] at hObj
     exact hBounded cnodeId cn hObj
@@ -586,7 +586,7 @@ private theorem cspaceDepthConsistent_of_storeObject_nonCNode
     have := storeObject_objects_eq st st' cnodeId obj hObjInv hStore
     rw [this] at hObj; cases obj with
     | cnode cn' => exact absurd rfl (hNotCNode cn')
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ => cases hObj
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
   · rw [storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore] at hObj
     exact hDepth cnodeId cn hObj
 

@@ -323,6 +323,51 @@ theorem ofNat_toNat (id : InterfaceId) : InterfaceId.ofNat id.toNat = id := by
 
 end InterfaceId
 
+/-- Scheduling context identifier. SchedContexts are first-class kernel objects
+containing CPU budget, period, and replenishment parameters for CBS (Constant
+Bandwidth Server) scheduling. Threads are bound to SchedContexts via capabilities. -/
+structure SchedContextId where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+@[inline] instance : Hashable SchedContextId where
+  hash a := hash a.val
+
+namespace SchedContextId
+
+@[inline] def ofNat (n : Nat) : SchedContextId := ⟨n⟩
+@[inline] def toNat (id : SchedContextId) : Nat := id.val
+
+/-- Convert SchedContextId to ObjId for object store lookups. -/
+@[inline] def toObjId (id : SchedContextId) : ObjId := ObjId.ofNat id.toNat
+
+/-- Convert ObjId to SchedContextId. -/
+@[inline] def ofObjId (oid : ObjId) : SchedContextId := ⟨oid.toNat⟩
+
+instance : ToString SchedContextId where
+  toString id := toString id.toNat
+
+@[inline] def isReserved (id : SchedContextId) : Bool := id.val = 0
+@[inline] def sentinel : SchedContextId := ⟨0⟩
+
+/-- A SchedContextId is valid (non-sentinel). -/
+@[inline] def valid (id : SchedContextId) : Bool := !id.isReserved
+
+/-- Round-trip: ofNat then toNat is identity. -/
+theorem toNat_ofNat (n : Nat) : (SchedContextId.ofNat n).toNat = n := rfl
+
+/-- Round-trip: toNat then ofNat is identity. -/
+theorem ofNat_toNat (id : SchedContextId) : SchedContextId.ofNat id.toNat = id := by
+  cases id; rfl
+
+/-- toObjId is injective. -/
+theorem toObjId_injective (a b : SchedContextId) (h : a.toObjId = b.toObjId) : a = b := by
+  cases a with | mk va => cases b with | mk vb =>
+  simp [toObjId, toNat, ObjId.ofNat] at h
+  subst h; rfl
+
+end SchedContextId
+
 /-- Capability-space pointer value. -/
 structure CPtr where
   val : Nat
@@ -735,6 +780,9 @@ instance : LawfulHashable VAddr where
 instance : LawfulHashable PAddr where
   hash_eq _ _ h := by cases eq_of_beq h; rfl
 
+instance : LawfulHashable SchedContextId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
 -- ============================================================================
 -- WS-H14a: EquivBEq and LawfulBEq instances for typed identifiers
 -- ============================================================================
@@ -752,6 +800,7 @@ instance : EquivBEq Badge := ⟨⟩
 instance : EquivBEq ASID := ⟨⟩
 instance : EquivBEq VAddr := ⟨⟩
 instance : EquivBEq PAddr := ⟨⟩
+instance : EquivBEq SchedContextId := ⟨⟩
 
 instance : LawfulBEq ObjId where
   eq_of_beq h := eq_of_beq h
@@ -790,6 +839,9 @@ instance : LawfulBEq VAddr where
   eq_of_beq h := eq_of_beq h
   rfl := beq_self_eq_true _
 instance : LawfulBEq PAddr where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq SchedContextId where
   eq_of_beq h := eq_of_beq h
   rfl := beq_self_eq_true _
 

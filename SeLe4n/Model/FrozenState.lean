@@ -169,6 +169,7 @@ inductive FrozenKernelObject where
   | cnode (c : FrozenCNode)
   | vspaceRoot (v : FrozenVSpaceRoot)
   | untyped (u : UntypedObject)
+  | schedContext (sc : SeLe4n.Kernel.SchedContext)
 
 /-- Q5-B: Extract the object type from a frozen kernel object. -/
 def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
@@ -178,6 +179,7 @@ def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
   | .cnode _ => .cnode
   | .vspaceRoot _ => .vspaceRoot
   | .untyped _ => .untyped
+  | .schedContext _ => .schedContext
 
 /-- Q5-B: Frozen kernel object preserves the type tag of the source object. -/
 theorem FrozenKernelObject.objectType_tcb (t : TCB) :
@@ -192,6 +194,8 @@ theorem FrozenKernelObject.objectType_vspaceRoot (v : FrozenVSpaceRoot) :
     (FrozenKernelObject.vspaceRoot v).objectType = .vspaceRoot := rfl
 theorem FrozenKernelObject.objectType_untyped (u : UntypedObject) :
     (FrozenKernelObject.untyped u).objectType = .untyped := rfl
+theorem FrozenKernelObject.objectType_schedContext (sc : SeLe4n.Kernel.SchedContext) :
+    (FrozenKernelObject.schedContext sc).objectType = .schedContext := rfl
 
 -- ============================================================================
 -- Q5-B: FrozenSchedulerState
@@ -306,6 +310,7 @@ def freezeObject (obj : KernelObject) : FrozenKernelObject :=
   | .cnode cn => .cnode (freezeCNode cn)
   | .vspaceRoot vs => .vspaceRoot (freezeVSpaceRoot vs)
   | .untyped u => .untyped u
+  | .schedContext sc => .schedContext sc
 
 /-- Q5-C: `freezeObject` preserves the object type tag. -/
 theorem freezeObject_preserves_type (obj : KernelObject) :
@@ -477,6 +482,10 @@ theorem freezeObject_notification_passthrough (n : Notification) :
 /-- Q5-C: `freezeObject` passes through UntypedObject unchanged. -/
 theorem freezeObject_untyped_passthrough (u : UntypedObject) :
     freezeObject (.untyped u) = .untyped u := rfl
+
+/-- Z1-O: `freezeObject` passes through SchedContext unchanged (no internal RHTables). -/
+theorem freezeObject_schedContext_passthrough (sc : SeLe4n.Kernel.SchedContext) :
+    freezeObject (.schedContext sc) = .schedContext sc := rfl
 
 /-- Q5-C: `FrozenMap.set` preserves `data.size`. -/
 theorem frozenMap_set_preserves_size [BEq κ] [Hashable κ] [LawfulBEq κ]

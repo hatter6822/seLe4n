@@ -66,6 +66,10 @@ SeLe4n/Kernel/RobinHood/Core.lean
 SeLe4n/Kernel/RobinHood/Bridge.lean
 SeLe4n/Kernel/RobinHood/Invariant.lean
 
+# SchedContext
+SeLe4n/Kernel/SchedContext/Types.lean
+SeLe4n/Kernel/SchedContext.lean
+
 # Architecture
 SeLe4n/Kernel/Architecture/VSpace.lean
 SeLe4n/Kernel/Architecture/VSpaceBackend.lean

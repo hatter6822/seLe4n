@@ -2016,7 +2016,7 @@ Key theorems:
 
 - `FrozenCNode` — uses `CNodeRadix` (from Q4) for O(1) zero-hash slot lookup,
 - `FrozenVSpaceRoot` — uses `FrozenMap VAddr (PAddr × PagePermissions)`,
-- `FrozenKernelObject` — 6-variant inductive matching `KernelObject`,
+- `FrozenKernelObject` — 7-variant inductive matching `KernelObject` (incl. `schedContext`),
 - `FrozenSchedulerState` — FrozenMap-based RunQueue fields + scalar metadata
   including `configDefaultTimeSlice` (Y1-A, preserves platform-tuned value),
 - `FrozenSystemState` — 19 fields mirroring `SystemState` with all `RHTable`
@@ -2188,3 +2188,46 @@ trust boundary specification.
 - `DeviceTree.fromBoardConstants` — static construction from hardcoded constants.
 - `DeviceTree.fromDtb` — stub for future DTB parsing (WS-T).
 - `rpi5DeviceTree` — RPi5 instance with validation proof (`rpi5DeviceTree_valid`).
+
+## 24. SchedContext type foundation (WS-Z Phase Z1)
+
+**Scheduling Context** (`Kernel/SchedContext/Types.lean`) — first-class kernel
+object for Constant Bandwidth Server (CBS) scheduling. Threads bind to a
+SchedContext to receive CPU bandwidth reservations independent of thread priority.
+
+**Typed identifiers** (`Prelude.lean`):
+- `SchedContextId` — typed wrapper with `Hashable`, `LawfulHashable`,
+  `EquivBEq`, `LawfulBEq` instances.
+- `toObjId`/`ofObjId` — round-trip conversions with `toObjId_injective` proof.
+- `sentinel`/`isReserved`/`valid` — sentinel value 0, reservation predicate.
+
+**CBS primitives** (`Kernel/SchedContext/Types.lean`):
+- `Budget` — CPU time in ticks with saturating decrement (`consume`) and
+  ceiling refill (`refill`).
+- `Period` — replenishment period (must be > 0).
+- `Bandwidth` — budget/period pair with `utilizationPerMille` accessor.
+- `ReplenishmentEntry` — (amount, eligibleAt) for CBS replenishment queue.
+- `maxReplenishments` = 8 — bounded replenishment list.
+
+**SchedContext structure** — 11 fields: `scId`, `budget`, `period`, `priority`,
+`deadline`, `domain`, `budgetRemaining`, `periodStart`, `replenishments`,
+`boundThread`, `isActive`.
+- `SchedContext.wellFormed` — period > 0 ∧ budget ≤ period ∧
+  budgetRemaining ≤ budget ∧ replenishments.length ≤ maxReplenishments.
+- `SchedContext.empty` — default constructor satisfying `wellFormed`.
+- `SchedContext.mkChecked` — validated constructor returning `Option`.
+
+**Thread binding** (`Model/Object/Types.lean`):
+- `SchedContextBinding` — `unbound | bound scId | donated scId originalOwner`.
+- `TCB.schedContextBinding` field (defaults to `.unbound`).
+- `threadSchedulingParams` — migration bridge accessor resolving effective
+  scheduling parameters from bound SchedContext or falling back to legacy
+  TCB fields.
+
+**Kernel object integration** (`Model/Object/Structures.lean`, `FrozenState.lean`):
+- `KernelObject.schedContext` — 7th variant (tag 6).
+- `KernelObjectType.schedContext` — type enum extension.
+- `FrozenKernelObject.schedContext` — frozen representation (passthrough).
+- `freezeObject_schedContext_passthrough` — freeze is identity for SchedContext.
+- `objectTypeAllocSize` — 256 bytes for SchedContext.
+- Pattern match exhaustiveness updated across ~24 files (~150 match arms).

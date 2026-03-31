@@ -600,7 +600,7 @@ theorem notificationWait_preserves_uniqueWaiters
     | none => simp [hLookup] at hStep
     | some obj =>
       cases obj with
-      | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hLookup] at hStep
+      | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hLookup] at hStep
       | notification ntfnOrig =>
         simp only [hLookup] at hStep
         cases hPend : ntfnOrig.pendingBadge with

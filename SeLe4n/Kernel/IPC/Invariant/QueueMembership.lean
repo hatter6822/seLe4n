@@ -427,7 +427,7 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hWaiters : ntfn.waitingThreads with
@@ -474,7 +474,7 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hBadge : ntfn.pendingBadge with
@@ -972,7 +972,7 @@ theorem endpointQueueEnqueue_preserves_ipcStateQueueMembershipConsistent
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hEnqueue
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hEnqueue
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hEnqueue
     | endpoint ep =>
       simp only [hObj] at hEnqueue
       -- Extract DQWF
@@ -1334,7 +1334,7 @@ theorem endpointQueueEnqueue_thread_reachable
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hEnqueue
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hEnqueue
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hEnqueue
     | endpoint ep =>
       simp only [hObj] at hEnqueue
       cases hLookup : lookupTcb st tid with
@@ -1443,7 +1443,7 @@ theorem endpointQueuePopHead_preserves_non_head_queueNext
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       have hNeEp : prev.toObjId ≠ endpointId := by

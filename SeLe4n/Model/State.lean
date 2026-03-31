@@ -950,7 +950,8 @@ theorem storeObject_asidTable_vspaceRoot_ne
     | vspaceRoot oldRoot =>
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
-    | tcb _ | cnode _ | endpoint _ | notification _ | untyped _ =>
+    | tcb _ | cnode _ | endpoint _ | notification _ | untyped _
+    | schedContext _ =>
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
 
@@ -972,6 +973,7 @@ theorem storeObject_asidTable_non_vspaceRoot
   | endpoint _ => rfl
   | notification _ => rfl
   | untyped _ => rfl
+  | schedContext _ => rfl
 
 /-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
 def objectIndexSetSync (st : SystemState) : Prop :=

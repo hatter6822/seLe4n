@@ -1,6 +1,6 @@
 # WS-Z: Composable Performance Objects — EDF+CBS, Scheduling Contexts, Capability-Controlled Thread Creation
 
-**Status**: PLANNED
+**Status**: IN PROGRESS (Phase Z1 COMPLETE)
 **Created**: 2026-03-30
 **Baseline version**: 0.22.25
 **Prior portfolios**: WS-B through WS-Y (all COMPLETE or IN PROGRESS)
