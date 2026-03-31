@@ -553,6 +553,43 @@ Key types: `Budget` (CPU time in ticks), `Period` (replenishment period),
 `Bandwidth` (budget/period pair for admission control), `ReplenishmentEntry`
 (CBS replenishment event), `SchedContextBinding` (thread ↔ SchedContext relationship).
 
+#### 8.12.1 CBS Budget Engine (WS-Z Phase Z2)
+
+The CBS budget engine (`Kernel/SchedContext/Budget.lean`) provides pure-function
+budget management operations with machine-checked invariants:
+
+- **Budget consumption**: `consumeBudget` decrements `budgetRemaining` with
+  saturating arithmetic (cannot go negative). `isBudgetExhausted` detects
+  zero remaining budget.
+- **Replenishment scheduling**: `scheduleReplenishment` creates a
+  `ReplenishmentEntry` eligible one period in the future and truncates the
+  replenishment list to `maxReplenishments` (= 8).
+- **Replenishment processing**: `processReplenishments` partitions the
+  replenishment list by eligibility time, sums eligible amounts, and refills
+  `budgetRemaining` capped at the configured `budget` ceiling via `applyRefill`.
+  `applyRefill` also synchronizes `isActive` to reflect whether budget is positive.
+- **CBS deadline rule**: `cbsUpdateDeadline` assigns `deadline := currentTime +
+  period` when a SchedContext is replenished after budget exhaustion.
+- **Combined entry point**: `cbsBudgetCheck` composes consume → exhaust check →
+  replenishment scheduling → processing → deadline update into a single
+  atomic step returning `(updatedSc, wasPreempted)`.
+- **Admission control**: `admissionCheck` verifies that adding a new SchedContext
+  does not exceed total utilization of 1000 per-mille (100% bandwidth).
+
+Invariants (`Kernel/SchedContext/Invariant/Defs.lean`):
+- `budgetWithinBounds`: `budgetRemaining ≤ budget ≤ period`
+- `replenishmentListWellFormed`: bounded length, no zero-amount entries
+- `replenishmentAmountsBounded`: each entry's amount ≤ configured budget
+- `schedContextWellFormed`: 4-conjunct bundle (`wellFormed ∧ budgetWithinBounds ∧
+  replenishmentListWellFormed ∧ replenishmentAmountsBounded`)
+
+16 preservation theorems (4 operations × 4 sub-invariants) prove that all CBS
+operations maintain the invariant bundle, composed into
+`cbsBudgetCheck_preserves_schedContextWellFormed` (bundled) and
+`cbsBudgetCheck_preserves_replenishmentAmountsBounded` (standalone).
+Bandwidth isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`)
+bound total consumption by `maxReplenishments × budget`.
+
 ---
 
 ## 9. Non-Negotiable Baseline Contracts

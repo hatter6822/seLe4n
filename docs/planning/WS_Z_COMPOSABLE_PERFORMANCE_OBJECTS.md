@@ -1,6 +1,6 @@
 # WS-Z: Composable Performance Objects — EDF+CBS, Scheduling Contexts, Capability-Controlled Thread Creation
 
-**Status**: IN PROGRESS (Phase Z1 COMPLETE)
+**Status**: IN PROGRESS (Phases Z1–Z2 COMPLETE)
 **Created**: 2026-03-30
 **Baseline version**: 0.22.25
 **Prior portfolios**: WS-B through WS-Y (all COMPLETE or IN PROGRESS)
@@ -286,7 +286,7 @@ yet — this phase builds the budget engine in isolation.
 | Z2-G | **Define `admissionCheck` predicate.** `def admissionCheck (existing : List SchedContext) (candidate : SchedContext) : Bool`. CBS admission control: total utilization must not exceed 1.0 (or configurable threshold). Computes `Σ(budget_i/period_i) + candidate.budget/candidate.period ≤ threshold`. Uses integer arithmetic (per-mille) to avoid rationals. ~20 lines | `Budget.lean` | Small |
 | Z2-H | **Define `SchedContext` invariant: `budgetWithinBounds`.** `def budgetWithinBounds (sc : SchedContext) : Prop := sc.budgetRemaining.val ≤ sc.budget.val ∧ sc.budget.val ≤ sc.period.val`. The fundamental CBS bandwidth constraint: remaining ≤ configured ≤ period. ~8 lines | `Invariant/Defs.lean` | Trivial |
 | Z2-I | **Define `replenishmentListWellFormed` invariant.** `def replenishmentListWellFormed (sc : SchedContext) : Prop := sc.replenishments.length ≤ maxReplenishments ∧ ∀ r ∈ sc.replenishments, r.amount.val > 0`. No zero-amount entries, bounded list length. ~10 lines | `Invariant/Defs.lean` | Trivial |
-| Z2-J | **Define `schedContextWellFormed` bundle.** Conjunction: `sc.wellFormed ∧ budgetWithinBounds sc ∧ replenishmentListWellFormed sc`. This is the per-object invariant for SchedContext, analogous to `CNode.wellFormed`. ~8 lines | `Invariant/Defs.lean` | Trivial |
+| Z2-J | **Define `schedContextWellFormed` bundle.** 4-conjunct: `sc.wellFormed ∧ budgetWithinBounds sc ∧ replenishmentListWellFormed sc ∧ replenishmentAmountsBounded sc`. This is the per-object invariant for SchedContext, analogous to `CNode.wellFormed`. ~8 lines | `Invariant/Defs.lean` | Trivial |
 | Z2-K | **Prove `consumeBudget_preserves_budgetWithinBounds`.** If `budgetWithinBounds sc`, then `budgetWithinBounds (consumeBudget sc ticks)`. Core preservation theorem. Proof by `Nat.sub_le` and transitivity. ~15 lines | `Invariant/Defs.lean` | Small |
 | Z2-L | **Prove `processReplenishments_preserves_budgetWithinBounds`.** Refill is capped at `budget` (configured ceiling), so `budgetRemaining ≤ budget` is maintained. Proof by `Nat.min_le_left`. ~20 lines | `Invariant/Defs.lean` | Small |
 | Z2-M | **Prove `scheduleReplenishment_preserves_replenishmentListWellFormed`.** New entry has `consumed > 0` (only called when budget was actually consumed), and list is truncated to `maxReplenishments`. ~15 lines | `Invariant/Defs.lean` | Small |

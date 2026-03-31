@@ -906,6 +906,7 @@ import SeLe4n.Kernel.Service.Invariant.Acyclicity
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.SchedContext.Invariant
 
 #check @SeLe4n.Kernel.schedule_preserves_schedulerInvariantBundle
 #check @SeLe4n.Kernel.timerTick_preserves_schedulerInvariantBundle
@@ -1005,6 +1006,20 @@ import SeLe4n.Kernel.API
 #check @SeLe4n.Kernel.cspaceRevoke_preserves_projection
 #check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_projection
 #check @SeLe4n.Kernel.lifecycleRevokeDeleteRetype_preserves_lowEquivalent
+-- WS-Z Phase Z2: CBS Budget Engine invariants and preservation
+#check @SeLe4n.Kernel.budgetWithinBounds
+#check @SeLe4n.Kernel.replenishmentListWellFormed
+#check @SeLe4n.Kernel.replenishmentAmountsBounded
+#check @SeLe4n.Kernel.schedContextWellFormed
+#check @SeLe4n.Kernel.cbsBudgetCheck_preserves_schedContextWellFormed
+#check @SeLe4n.Kernel.cbsBudgetCheck_preserves_replenishmentAmountsBounded
+#check @SeLe4n.Kernel.cbs_single_period_bound
+#check @SeLe4n.Kernel.cbs_bandwidth_bounded
+#check @SeLe4n.Kernel.consumeBudget_preserves_budgetWithinBounds
+#check @SeLe4n.Kernel.consumeBudget_preserves_replenishmentAmountsBounded
+#check @SeLe4n.Kernel.processReplenishments_preserves_budgetWithinBounds
+#check @SeLe4n.Kernel.scheduleReplenishment_preserves_replenishmentListWellFormed
+#check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_budgetWithinBounds
 EOF'
 
 finalize_report

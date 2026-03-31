@@ -1,3 +1,97 @@
+## [0.23.4] — Z2 Audit v3: Build Graph Fix
+
+Third audit pass on Z2 CBS Budget Engine. Root-cause fix for CI failure:
+
+- **AUD-10 (HIGH)**: `Object/Types.lean` imported only `SchedContext.Types`,
+  leaving `Budget.lean` and `Invariant/Defs.lean` outside the default build
+  graph (`lake build` = executable target only). Changed import to the full
+  re-export hub `SeLe4n.Kernel.SchedContext`, ensuring all Z2 modules compile
+  as part of the default `lake build`. This fixes Tier 3 CI failures where
+  `lake env lean` couldn't find SchedContext.Invariant olean files.
+- Reverted fragile `lake build` workaround in `test_tier3_invariant_surface.sh`.
+
+Verified via `lake clean && lake build` (208 jobs). Zero sorry/axiom. All tiers pass.
+
+## [0.23.3] — Z2 Audit v2: Bundle Completion & Surface Anchors
+
+Second audit pass on Z2 CBS Budget Engine. Four improvements:
+
+- **AUD-6 (LOW)**: `schedContextWellFormed` promoted to 4-conjunct bundle
+  incorporating `replenishmentAmountsBounded` as the 4th conjunct. The bundled
+  preservation proof `cbsBudgetCheck_preserves_schedContextWellFormed` now
+  composes all 4 sub-invariants in both exhausted and non-exhausted branches.
+- **AUD-7 (LOW)**: Module doc header in `Invariant/Defs.lean` updated to
+  accurately list all 4 invariants, all 16 per-operation preservation theorems,
+  and both composite theorems.
+- **AUD-8 (MED)**: Added 13 Tier 3 invariant surface anchors for Z2 proof
+  surface (`#check` for all invariant definitions, composite preservation
+  theorems, bandwidth theorems, and representative per-operation theorems).
+  Prevents accidental theorem deletion.
+- **AUD-9 (LOW)**: Documentation theorem counts corrected across spec, gitbook,
+  and CLAUDE.md to reflect the precise inventory: 16 per-operation + 2
+  composite + 2 bandwidth + 7 operation correctness = 27 public theorems.
+
+Zero sorry/axiom. All tiers pass.
+
+## [0.23.2] — Z2 Audit: CBS Budget Engine Correctness Fixes
+
+Post-implementation audit of Z2 CBS Budget Engine. Three correctness fixes:
+
+- **AUD-1 (MED)**: `applyRefill` now updates `isActive` after budget refill.
+  Previously, `isActive` remained stale (`false`) after successful replenishment
+  because only `consumeBudget` updated it. The `isActive` flag must reflect
+  `budgetRemaining > 0` at all times for correct scheduler preemption decisions.
+- **AUD-2 (MED)**: Added 6 preservation theorems for `replenishmentAmountsBounded`:
+  `consumeBudget_preserves_replenishmentAmountsBounded`,
+  `processReplenishments_preserves_replenishmentAmountsBounded`,
+  `scheduleReplenishment_preserves_replenishmentAmountsBounded`,
+  `cbsUpdateDeadline_preserves_replenishmentAmountsBounded`,
+  `cbsBudgetCheck_preserves_replenishmentAmountsBounded`.
+  Without these, the bandwidth theorems (`cbs_single_period_bound`,
+  `cbs_bandwidth_bounded`) required an invariant hypothesis that was never
+  proven to be maintained across CBS operations — now fully closed.
+- **AUD-3 (LOW)**: Refactored `cbs_single_period_bound` and `cbs_bandwidth_bounded`
+  to share a common `totalConsumed_le_max_budget` lemma and document the
+  relationship between the proven bound (`maxReplenishments × budget`) and the
+  tighter theoretical bound (`budget × ⌈window/period⌉`).
+
+Zero sorry/axiom. All tiers pass.
+
+## [0.23.1] — Z2: CBS Budget Engine
+
+Phase Z2 of WS-Z Composable Performance Objects. Implements the Constant
+Bandwidth Server budget management algorithm as pure functions with
+machine-checked invariants. Budget engine in isolation — no scheduler
+integration yet.
+
+- **Z2-A**: `consumeBudget` operation with saturating decrement and
+  `consumeBudget_budgetRemaining_le` proof.
+- **Z2-B**: `isBudgetExhausted` predicate.
+- **Z2-C1/C2/C3**: `mkReplenishmentEntry` constructor, `truncateReplenishments`
+  (bounded list via `List.drop`), `scheduleReplenishment` composition. Proofs:
+  `mkReplenishmentEntry_amount_eq`, `truncateReplenishments_length_le`.
+- **Z2-D1/D2/D3/D4**: `partitionEligible` (partition by eligibility time),
+  `sumReplenishments` (recursive sum), `applyRefill` (capped at budget ceiling),
+  `processReplenishments` composition. Proofs: `partitionEligible_eligible_sublist`,
+  `sumReplenishments_nil`/`_cons`, `applyRefill_le_budget`.
+- **Z2-E**: `cbsUpdateDeadline` — CBS deadline assignment rule (deadline updated
+  on replenishment after exhaustion).
+- **Z2-F**: `cbsBudgetCheck` — combined per-tick budget accounting entry point
+  returning `(updatedSc, wasPreempted)`.
+- **Z2-G**: `admissionCheck` — CBS admission control predicate (total utilization
+  ≤ 1000 per-mille).
+- **Z2-H/I/J**: Invariant definitions: `budgetWithinBounds` (remaining ≤ budget ≤
+  period), `replenishmentListWellFormed` (bounded length, no zero-amount entries),
+  `schedContextWellFormed` bundle, `replenishmentAmountsBounded`.
+- **Z2-K through Z2-N**: 12 preservation theorems: `consumeBudget`, `processReplenishments`,
+  `scheduleReplenishment`, `cbsUpdateDeadline` each preserve `wellFormed`,
+  `budgetWithinBounds`, and `replenishmentListWellFormed`. Composed into
+  `cbsBudgetCheck_preserves_schedContextWellFormed`.
+- **Z2-O1/O2/O3**: Bandwidth theorems: `totalConsumed` accumulator,
+  `cbs_single_period_bound` (single-period consumption ≤ maxReplenishments × budget),
+  `cbs_bandwidth_bounded` (multi-period isolation guarantee).
+- **Z2-P/Q**: Re-export hubs, build verification. Zero sorry/axiom. All tiers pass.
+
 ## [0.23.0] — Z1: SchedContext Type Foundation
 
 Phase Z1 of WS-Z Composable Performance Objects. Introduces the `SchedContext`

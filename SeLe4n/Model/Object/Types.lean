@@ -8,7 +8,7 @@
 
 import SeLe4n.Machine
 import SeLe4n.Kernel.RobinHood
-import SeLe4n.Kernel.SchedContext.Types
+import SeLe4n.Kernel.SchedContext
 
 namespace SeLe4n.Model
 

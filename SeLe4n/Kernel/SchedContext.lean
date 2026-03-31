@@ -6,9 +6,11 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
+import SeLe4n.Kernel.SchedContext.Types
+import SeLe4n.Kernel.SchedContext.Budget
+import SeLe4n.Kernel.SchedContext.Invariant
+
 /-! # SchedContext — Re-export hub
 
 Follows the re-export hub pattern used throughout the codebase.
 All existing `import SeLe4n.Kernel.SchedContext` statements resolve here. -/
-
-import SeLe4n.Kernel.SchedContext.Types

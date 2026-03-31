@@ -129,8 +129,11 @@ SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
     Invariant/Defs.lean          Invariant definitions, empty table proofs, probeChainDominant
     Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops), helpers
     Invariant/Lookup.lean        Functional correctness (get after insert/erase), key absence
-SeLe4n/Kernel/SchedContext/*      Scheduling context types (Z1)
+SeLe4n/Kernel/SchedContext/*      Scheduling context types and CBS budget engine (Z1–Z2)
   Types.lean                     Budget, Period, SchedContext, SchedContextBinding, BEq instances
+  Budget.lean                    CBS budget operations: consume, replenish, admission control
+  Invariant.lean                 Re-export hub (Z2)
+    Invariant/Defs.lean          Invariant definitions, preservation proofs, bandwidth theorems
 SeLe4n/Kernel/SchedContext.lean  Re-export hub
 SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
   Core.lean                      CNodeRadix type, extractBits, O(1) lookup/insert/erase/fold/toList
@@ -475,7 +478,8 @@ under `docs/` and `docs/gitbook/`.
 - **WS-V Phase V1 COMPLETE**: Rust ABI Hardening — 12 sub-tasks (V1-A through V1-L), all complete (v0.22.0). See `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md`
 - **All prior workstreams completed**: WS-B through WS-U (see `docs/WORKSTREAM_HISTORY.md`)
 - **WS-Z Phase Z1 COMPLETE**: SchedContext Type Foundation — 18 sub-tasks (Z1-A through Z1-R), all complete. SchedContextId typed wrapper, Budget/Period/Bandwidth/ReplenishmentEntry types, SchedContext structure with wellFormed/bandwidth/default, SchedContextBinding enum, TCB schedContextBinding field, KernelObject/KernelObjectType .schedContext variant (7th object type), FrozenKernelObject extension, threadSchedulingParams accessor, objectTypeAllocSize entry, all BEq instances, re-export hub. Full codebase ripple fix (24 files, ~150 match arms). Zero sorry/axiom. See `docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`
-- **Next milestone**: WS-Z Phase Z2 (CBS Budget Engine) / Raspberry Pi 5 hardware binding
+- **WS-Z Phase Z2 COMPLETE**: CBS Budget Engine — 24 sub-tasks (Z2-A through Z2-Q), all complete (v0.23.1, audit v0.23.2, audit v0.23.3, audit v0.23.4). Pure-function CBS budget management: consumeBudget, isBudgetExhausted, mkReplenishmentEntry/truncateReplenishments/scheduleReplenishment, partitionEligible/sumReplenishments/applyRefill/processReplenishments, cbsUpdateDeadline, cbsBudgetCheck, admissionCheck. Invariants: budgetWithinBounds, replenishmentListWellFormed, replenishmentAmountsBounded, schedContextWellFormed (4-conjunct bundle). 16 per-operation preservation theorems (4 ops × 4 sub-invariants) composing into cbsBudgetCheck_preserves_schedContextWellFormed + standalone cbsBudgetCheck_preserves_replenishmentAmountsBounded. Bandwidth theorems: cbs_single_period_bound, cbs_bandwidth_bounded. Tier 3 invariant surface anchors (13 #check). Audit fixes: applyRefill isActive sync, replenishmentAmountsBounded bundle integration, module doc header, doc theorem count accuracy. New files: Budget.lean, Invariant/Defs.lean, Invariant.lean. Zero sorry/axiom.
+- **Next milestone**: WS-Z Phase Z3 (Replenishment Queue) / Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
