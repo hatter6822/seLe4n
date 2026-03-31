@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-cbs-budget-engine-O4kIv",
-      "commit_sha": "3f2a5562d5166d143064851bbe5c52c11bf5fa4a",
-      "tree_sha": "11282b980c68167d3d2144a6fd6e4c5cc0a661e1",
-      "committed_at_utc": "2026-03-31T02:10:30+00:00"
+      "branch": "claude/optimize-z3-replenishment-3qRpd",
+      "commit_sha": "0126a0c4ad05245eaa3094e00f76e2b694d32ece",
+      "tree_sha": "7b0e28c00e9e1c18495acded9686654e938f94b5",
+      "committed_at_utc": "2026-03-30T22:24:45-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3f309e409576f31ec8fca0503d893050969b33669db620198bccb84ae695299a"
+    "source_digest": "be4f63aefc2e416a9592a3a5f1f695fc1fd10cfd19e6129a0ae02aeb18ea9049"
   },
   "summary": {
-    "module_count": 118,
-    "declaration_count": 3870
+    "module_count": 119,
+    "declaration_count": 3909
   },
   "readme_sync": {
-    "version": "0.23.4",
+    "version": "0.23.5",
     "lean_toolchain": "v4.28.0",
-    "production_files": 108,
-    "production_loc": 75173,
+    "production_files": 109,
+    "production_loc": 75632,
     "test_files": 10,
     "test_loc": 8687,
-    "proved_theorem_lemma_decls": 2179,
+    "proved_theorem_lemma_decls": 2202,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -7410,6 +7410,7 @@
             "CSpaceAddr",
             "SystemState",
             "childrenOf",
+            "isEmpty",
             "lookupCdtNodeOfSlot",
             "none"
           ]
@@ -9205,6 +9206,7 @@
             "bor",
             "frozenStoreTcbIpcState",
             "get",
+            "isEmpty",
             "none",
             "notificationId",
             "ofNatMasked",
@@ -10465,6 +10467,7 @@
             "endpointId",
             "endpointSendDual",
             "ipcUnwrapCaps",
+            "isEmpty",
             "lookupCspaceRoot",
             "mem",
             "none"
@@ -10484,6 +10487,7 @@
             "endpointId",
             "endpointReceiveDual",
             "ipcUnwrapCaps",
+            "isEmpty",
             "lookupCspaceRoot",
             "mem",
             "none",
@@ -10505,6 +10509,7 @@
             "endpointCall",
             "endpointId",
             "ipcUnwrapCaps",
+            "isEmpty",
             "lookupCspaceRoot",
             "mem",
             "none"
@@ -11476,6 +11481,7 @@
           "line": 726,
           "called": [
             "ThreadId",
+            "isEmpty",
             "none",
             "notificationQueueWellFormed"
           ]
@@ -12324,6 +12330,7 @@
             "ensureRunnable_preserves_objects",
             "invExt",
             "ipcInvariant",
+            "isEmpty",
             "none",
             "notificationId",
             "notificationSignal",
@@ -12354,6 +12361,7 @@
             "ensureRunnable_preserves_objects",
             "ensureRunnable_scheduler_current",
             "invExt",
+            "isEmpty",
             "none",
             "notificationId",
             "notificationSignal",
@@ -12450,6 +12458,7 @@
             "ensureRunnable_preserves_objects",
             "invExt",
             "ipcSchedulerContractPredicates",
+            "isEmpty",
             "none",
             "notificationId",
             "notificationSignal",
@@ -12781,6 +12790,7 @@
             "empty",
             "ensureRunnable_preserves_objects",
             "invExt",
+            "isEmpty",
             "none",
             "notificationId",
             "notificationSignal",
@@ -15142,6 +15152,7 @@
             "empty_bounded",
             "ensureRunnable_preserves_allPendingMessagesBounded",
             "invExt",
+            "isEmpty",
             "none",
             "notificationId",
             "notificationSignal",
@@ -15212,6 +15223,7 @@
             "empty",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "invExt",
+            "isEmpty",
             "none",
             "notificationId",
             "notificationSignal",
@@ -16528,6 +16540,7 @@
             "endpointSendDual_preserves_objects_invExt",
             "invExt",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
+            "isEmpty",
             "lookupCspaceRoot",
             "none"
           ]
@@ -16552,6 +16565,7 @@
             "endpointReceiveDual_preserves_objects_invExt",
             "invExt",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
+            "isEmpty",
             "lookupCspaceRoot",
             "none",
             "toObjId"
@@ -17513,6 +17527,7 @@
             "bor",
             "empty",
             "ensureRunnable",
+            "isEmpty",
             "none",
             "notificationId",
             "ofNatMasked",
@@ -29165,6 +29180,408 @@
       "declarations": []
     },
     {
+      "module": "SeLe4n.Kernel.SchedContext.ReplenishQueue",
+      "path": "SeLe4n/Kernel/SchedContext/ReplenishQueue.lean",
+      "declaration_count": 39,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 29,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "ReplenishQueue",
+          "line": 38,
+          "called": [
+            "SchedContextId",
+            "size"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "ReplenishQueue",
+          "line": 45,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 52,
+          "called": [
+            "ReplenishQueue",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insertSorted",
+          "line": 62,
+          "called": [
+            "SchedContextId",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insert",
+          "line": 73,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "insertSorted",
+            "scId",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "splitDue",
+          "line": 85,
+          "called": [
+            "SchedContextId",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "popDue",
+          "line": 98,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "size",
+            "splitDue"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "remove",
+          "line": 109,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "filter",
+            "scId",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "peek",
+          "line": 120,
+          "called": [
+            "ReplenishQueue",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isEmpty",
+          "line": 126,
+          "called": [
+            "ReplenishQueue"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "hasDue",
+          "line": 130,
+          "called": [
+            "ReplenishQueue"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pairwiseSortedBy",
+          "line": 143,
+          "called": [
+            "SchedContextId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replenishQueueSorted",
+          "line": 150,
+          "called": [
+            "ReplenishQueue",
+            "pairwiseSortedBy"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replenishQueueSizeConsistent",
+          "line": 154,
+          "called": [
+            "ReplenishQueue",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pairwiseSortedBy_nil",
+          "line": 161,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pairwiseSortedBy_singleton",
+          "line": 164,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pairwiseSortedBy_head_le_second",
+          "line": 169,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pairwiseSortedBy_tail",
+          "line": 176,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pairwiseSortedBy_cons",
+          "line": 184,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pairwiseSortedBy_head_le_all",
+          "line": 200,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy",
+            "pairwiseSortedBy_head_le_second",
+            "pairwiseSortedBy_tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertSorted_head_ge",
+          "line": 215,
+          "called": [
+            "SchedContextId",
+            "insertSorted",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertSorted_head_time_ge",
+          "line": 240,
+          "called": [
+            "SchedContextId",
+            "insertSorted",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertSorted_preserves_sorted",
+          "line": 261,
+          "called": [
+            "SchedContextId",
+            "insertSorted",
+            "insertSorted_head_time_ge",
+            "pairwiseSortedBy",
+            "pairwiseSortedBy_cons",
+            "pairwiseSortedBy_head_le_all",
+            "pairwiseSortedBy_tail",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_preserves_sorted",
+          "line": 284,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "insert",
+            "insertSorted_preserves_sorted",
+            "replenishQueueSorted",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "splitDue_remaining_sorted",
+          "line": 294,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy",
+            "pairwiseSortedBy_tail",
+            "scId",
+            "splitDue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "popDue_preserves_sorted",
+          "line": 311,
+          "called": [
+            "ReplenishQueue",
+            "popDue",
+            "replenishQueueSorted",
+            "splitDue_remaining_sorted"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_head_time_ge",
+          "line": 321,
+          "called": [
+            "SchedContextId",
+            "filter",
+            "pairwiseSortedBy",
+            "pairwiseSortedBy_head_le_all"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "filter_preserves_pairwiseSortedBy",
+          "line": 339,
+          "called": [
+            "SchedContextId",
+            "filter",
+            "filter_head_time_ge",
+            "pairwiseSortedBy",
+            "pairwiseSortedBy_cons",
+            "pairwiseSortedBy_tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_preserves_sorted",
+          "line": 359,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "filter_preserves_pairwiseSortedBy",
+            "remove",
+            "replenishQueueSorted",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replenishQueueConsistent",
+          "line": 376,
+          "called": [
+            "ReplenishQueue",
+            "SchedContext",
+            "SchedContextId",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_sorted",
+          "line": 388,
+          "called": [
+            "empty",
+            "replenishQueueSorted"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_sizeConsistent",
+          "line": 392,
+          "called": [
+            "empty",
+            "replenishQueueSizeConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "empty_consistent",
+          "line": 396,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "empty",
+            "lookup",
+            "replenishQueueConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertSorted_length",
+          "line": 402,
+          "called": [
+            "SchedContextId",
+            "insertSorted",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insert_sizeConsistent",
+          "line": 416,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "insert",
+            "insertSorted_length",
+            "replenishQueueSizeConsistent",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "remove_sizeConsistent",
+          "line": 424,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "remove",
+            "replenishQueueSizeConsistent",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_insertSorted",
+          "line": 429,
+          "called": [
+            "SchedContextId",
+            "insertSorted",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "subset_insertSorted",
+          "line": 441,
+          "called": [
+            "Kernel",
+            "SchedContextId",
+            "insertSorted",
+            "scId"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.SchedContext.Types",
       "path": "SeLe4n/Kernel/SchedContext/Types.lean",
       "declaration_count": 40,
@@ -31961,6 +32378,7 @@
             "RHTable",
             "ThreadId",
             "fold",
+            "isEmpty",
             "none",
             "toNat"
           ]
@@ -32001,6 +32419,7 @@
             "insert",
             "insert_preserves_invExtK",
             "invExtK",
+            "isEmpty",
             "none",
             "recomputeMaxPriority",
             "size"
@@ -37912,6 +38331,7 @@
             "get",
             "insert",
             "isChildOf",
+            "isEmpty",
             "isParentOf",
             "none"
           ]
@@ -38267,7 +38687,8 @@
             "erase",
             "filter",
             "get",
-            "insert"
+            "insert",
+            "isEmpty"
           ]
         },
         {
@@ -42768,6 +43189,7 @@
           "called": [
             "FdtNode",
             "findProperty",
+            "isEmpty",
             "none",
             "ofList",
             "ofNat",
@@ -42856,6 +43278,7 @@
             "extractTimerFrequency",
             "fdtRegionsToMemoryRegions",
             "findMemoryRegProperty",
+            "isEmpty",
             "none",
             "parseAndValidateFdtHeader",
             "parseFdtNodes",
@@ -42884,6 +43307,7 @@
             "extractMemoryRegions",
             "fdtRegionsToMemoryRegions",
             "findMemoryRegProperty",
+            "isEmpty",
             "parseAndValidateFdtHeader"
           ]
         }
@@ -46794,7 +47218,8 @@
           "name": "notificationQueueWellFormedB",
           "line": 72,
           "called": [
-            "Notification"
+            "Notification",
+            "isEmpty"
           ]
         },
         {
@@ -46895,6 +47320,7 @@
             "ObjId",
             "SystemState",
             "filter",
+            "isEmpty",
             "none",
             "toNat"
           ]
@@ -46987,7 +47413,8 @@
             "KernelObject",
             "ObjId",
             "SystemState",
-            "ThreadId"
+            "ThreadId",
+            "isEmpty"
           ]
         },
         {
@@ -47073,6 +47500,7 @@
             "SystemState",
             "failedChecks",
             "invariant",
+            "isEmpty",
             "pure",
             "stateInvariantChecksFor",
             "syncThreadStates",
@@ -47098,6 +47526,7 @@
             "SystemState",
             "failedChecks",
             "invariant",
+            "isEmpty",
             "pure",
             "stateInvariantChecksFor",
             "throw"
@@ -47762,6 +48191,7 @@
             "defaultLabelingContext",
             "empty",
             "invariant",
+            "isEmpty",
             "modify",
             "none",
             "ofList",
@@ -47941,6 +48371,7 @@
             "ServiceId",
             "buildParameterizedTopology",
             "invariant",
+            "isEmpty",
             "none",
             "stateInvariantChecksFor",
             "syncThreadStates",
@@ -50764,6 +51195,7 @@
             "endpointSendDualWithCaps",
             "expect",
             "expectOkSt",
+            "isEmpty",
             "lookup",
             "none",
             "ofList",
@@ -51948,6 +52380,7 @@
           "called": [
             "SystemState",
             "invariant",
+            "isEmpty",
             "none",
             "probeInvariantObjectIds",
             "stateInvariantChecksFor",
@@ -52057,6 +52490,7 @@
           "called": [
             "ProbeStats",
             "default",
+            "isEmpty",
             "pickThreadCount",
             "probeBaseState",
             "runProbeLoop"
