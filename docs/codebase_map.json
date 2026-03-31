@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-z7-workstream-I9z5x",
-      "commit_sha": "f9326fdfde5445ef659a01f6527ed19602424f85",
-      "tree_sha": "9f9455d361ae5ed62bda461e75f515d05f9665c8",
-      "committed_at_utc": "2026-03-31T14:07:42+00:00"
+      "commit_sha": "55f3e9e757b9174a9e99c6071dad3ba9fa28249f",
+      "tree_sha": "526cc8a07329b5ed52b195173276699ef8a8cdda",
+      "committed_at_utc": "2026-03-31T14:13:44+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "233fba5af67c2e5e090c34c14263a9dd83e79cf23fe181d6dd36a04c47aa6607"
+    "source_digest": "75fbce4fe00ecdc68162d9874b14ad3bfb22b373dbfb484ab38e2f3fc27757a6"
   },
   "summary": {
     "module_count": 123,
-    "declaration_count": 4052
+    "declaration_count": 4054
   },
   "readme_sync": {
     "version": "0.23.15",
     "lean_toolchain": "v4.28.0",
     "production_files": 113,
-    "production_loc": 79020,
+    "production_loc": 79143,
     "test_files": 10,
     "test_loc": 8687,
-    "proved_theorem_lemma_decls": 2276,
+    "proved_theorem_lemma_decls": 2278,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -17926,7 +17926,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Donation",
       "path": "SeLe4n/Kernel/IPC/Operations/Donation.lean",
-      "declaration_count": 10,
+      "declaration_count": 12,
       "declarations": [
         {
           "kind": "namespace",
@@ -18054,6 +18054,44 @@
             "applyReplyDonation",
             "endpointId",
             "endpointReplyRecv"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "donateSchedContext_server_binding",
+          "line": 262,
+          "called": [
+            "RHTable.getElem",
+            "RHTable_insert_preserves_invExt",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "donateSchedContext",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "returnDonatedSchedContext_server_unbound",
+          "line": 304,
+          "called": [
+            "Kernel",
+            "RHTable.getElem",
+            "RHTable_insert_preserves_invExt",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "returnDonatedSchedContext",
+            "scId",
+            "storeObject",
+            "toObjId"
           ]
         }
       ]

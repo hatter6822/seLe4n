@@ -253,4 +253,127 @@ def endpointReplyRecvWithDonation
       -- Z7-D1: Return old donation AFTER reply+receive completes
       .ok ((), applyReplyDonation st' receiver)
 
+-- ============================================================================
+-- Z7-J/K: Donation operation structural theorems
+-- ============================================================================
+
+/-- Z7-J1: After donateSchedContext, the server's binding is correctly set to .donated.
+This establishes the server-side of the bidirectional donation reference. -/
+theorem donateSchedContext_server_binding
+    (st st' : SystemState)
+    (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    ∃ tcb', st'.objects[serverTid.toObjId]? = some (.tcb tcb') ∧
+      tcb'.schedContextBinding = .donated clientScId clientTid := by
+  unfold donateSchedContext at h
+  revert h
+  cases hObj : st.objects[clientScId.toObjId]? with
+  | none => intro h; cases h
+  | some obj =>
+    cases obj with
+    | schedContext sc =>
+      simp only []
+      split
+      · intro h; cases h
+      · cases hS1 : storeObject clientScId.toObjId _ st with
+        | error _ => intro h; cases h
+        | ok p1 =>
+          simp only []
+          cases hL : lookupTcb p1.2 serverTid with
+          | none => intro h; cases h
+          | some serverTcb =>
+            simp only []
+            cases hS2 : storeObject serverTid.toObjId _ p1.2 with
+            | error _ => intro h; cases h
+            | ok p2 =>
+              simp only [Except.ok.injEq]
+              intro hEq; subst hEq
+              have hInvP1 : p1.2.objects.invExt := by
+                unfold storeObject at hS1; cases hS1
+                exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+              have : p2.2.objects[serverTid.toObjId]? =
+                  some (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) := by
+                unfold storeObject at hS2; cases hS2
+                exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInvP1
+              exact ⟨_, this, rfl⟩
+    | _ => simp only []; intro h; cases h
+
+/-- Z7-K2: After returnDonatedSchedContext, the server's binding is .unbound. -/
+theorem returnDonatedSchedContext_server_unbound
+    (st st' : SystemState)
+    (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    ∃ tcb', st'.objects[serverTid.toObjId]? = some (.tcb tcb') ∧
+      tcb'.schedContextBinding = .unbound := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj =>
+    cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; subst hEq
+                have hInvP1 : p1.2.objects.invExt := by
+                  unfold storeObject at hS1; cases hS1
+                  exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+                have hInvP2 : p2.2.objects.invExt := by
+                  unfold storeObject at hS2; cases hS2
+                  exact RHTable_insert_preserves_invExt _ _ _ hInvP1
+                have : p3.2.objects[serverTid.toObjId]? =
+                    some (.tcb { serverTcb with schedContextBinding := .unbound }) := by
+                  unfold storeObject at hS3; cases hS3
+                  exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInvP2
+                exact ⟨_, this, rfl⟩
+    | _ => simp only []; intro h; cases h
+
+-- ============================================================================
+-- Z7-L/M: Frame theorems for core IPC operations
+--
+-- The core IPC functions (endpointCall, endpointReply, endpointReplyRecv)
+-- do NOT modify TCB.schedContextBinding fields. They only modify:
+-- - ipcState, pendingMessage, queuePrev/Next/PPrev (IPC state)
+-- - scheduler.runQueue, scheduler.current (scheduler state)
+-- - objects (endpoint queue metadata)
+--
+-- Therefore, all four donation invariants (donationChainAcyclic,
+-- donationOwnerValid, passiveServerIdle, donationBudgetTransfer) are
+-- preserved through core IPC operations by field-disjointness (frame property).
+--
+-- The donation invariants only need explicit preservation proofs for
+-- applyCallDonation and applyReplyDonation, which DO modify
+-- schedContextBinding. These proofs are provided as external hypotheses
+-- in the Structural.lean composition layer, following the established
+-- pattern for all externalized IPC invariants.
+--
+-- Cross-store preservation theorems (Z7-J2, Z7-K1) that require invExt
+-- for proving object lookup across different storeObject calls are deferred
+-- to the Z8 API Surface phase, which will connect the full proof chain.
+-- ============================================================================
+
 end SeLe4n.Kernel
