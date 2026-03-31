@@ -174,6 +174,9 @@ def donateSchedContext
   -- Step 1: Look up the SchedContext
   match st.objects[clientScId.toObjId]? with
   | some (.schedContext sc) =>
+    -- AUD-3b: Defense-in-depth — verify SchedContext is bound to the caller
+    if sc.boundThread != some clientTid then .error .invalidArgument
+    else
     -- Step 2: Update SchedContext to point to server
     let sc' := { sc with boundThread := some serverTid }
     match storeObject clientScId.toObjId (.schedContext sc') st with

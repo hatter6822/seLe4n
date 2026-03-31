@@ -973,16 +973,19 @@ def donationChainAcyclic (st : SystemState) : Prop :=
 /-- Z7-G: Every donated SchedContext binding references valid objects.
 
 For every TCB with `.donated(scId, originalOwner)`:
-1. The SchedContext object exists in the store
+1. The SchedContext object exists in the store and points to the server
 2. The original owner thread exists as a TCB
-3. The original owner is blocked on reply (waiting for the server to reply) -/
+3. The original owner is blocked on reply (waiting for the server to reply)
+4. (AUD-7) The original owner's binding is `.bound scId` — bidirectional consistency -/
 def donationOwnerValid (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     tcb.schedContextBinding = .donated scId owner →
-    (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc)) ∧
+    (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+      sc.boundThread = some tid) ∧
     (∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
+      ownerTcb.schedContextBinding = .bound scId ∧
       ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget)
 
 -- ============================================================================

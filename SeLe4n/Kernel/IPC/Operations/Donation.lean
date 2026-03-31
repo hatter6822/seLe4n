@@ -102,22 +102,25 @@ theorem donateSchedContext_scheduler_eq
     cases obj with
     | schedContext sc =>
       simp only []
-      cases hS1 : storeObject clientScId.toObjId _ st with
-      | error _ => intro h; cases h
-      | ok p1 =>
-        simp only []
-        cases hLookup : lookupTcb p1.2 serverTid with
-        | none => intro h; cases h
-        | some _ =>
+      -- AUD-3b: Handle the boundThread validation branch
+      split
+      · intro h; cases h  -- boundThread != clientTid → error → contradiction
+      · cases hS1 : storeObject clientScId.toObjId _ st with
+        | error _ => intro h; cases h
+        | ok p1 =>
           simp only []
-          cases hS2 : storeObject serverTid.toObjId _ p1.2 with
-          | error _ => intro h; cases h
-          | ok p2 =>
-            simp only [Except.ok.injEq]
-            intro hEq; subst hEq
-            have h1 := storeObject_scheduler_eq_local st _ _ _ hS1
-            have h2 := storeObject_scheduler_eq_local p1.2 _ _ _ hS2
-            exact h2.trans h1
+          cases hLookup : lookupTcb p1.2 serverTid with
+          | none => intro h; cases h
+          | some _ =>
+            simp only []
+            cases hS2 : storeObject serverTid.toObjId _ p1.2 with
+            | error _ => intro h; cases h
+            | ok p2 =>
+              simp only [Except.ok.injEq]
+              intro hEq; subst hEq
+              have h1 := storeObject_scheduler_eq_local st _ _ _ hS1
+              have h2 := storeObject_scheduler_eq_local p1.2 _ _ _ hS2
+              exact h2.trans h1
     | _ => simp only []; intro h; cases h
 
 /-- Z7-B: applyCallDonation preserves the scheduler exactly. -/

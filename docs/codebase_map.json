@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-z7-workstream-I9z5x",
-      "commit_sha": "a6dc94ff379c6ae8d2c60bdfa53583d8d9dc2321",
-      "tree_sha": "9e3b64c01cddf98f6b551c907a6125d6f7c41bae",
-      "committed_at_utc": "2026-03-31T08:53:24+00:00"
+      "commit_sha": "f9326fdfde5445ef659a01f6527ed19602424f85",
+      "tree_sha": "9f9455d361ae5ed62bda461e75f515d05f9665c8",
+      "committed_at_utc": "2026-03-31T14:07:42+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4d6825fcb186e82d781d3321c7f8448fc503539809a00d9c797868d6230f20ef"
+    "source_digest": "233fba5af67c2e5e090c34c14263a9dd83e79cf23fe181d6dd36a04c47aa6607"
   },
   "summary": {
     "module_count": 123,
@@ -27,7 +27,7 @@
     "version": "0.23.15",
     "lean_toolchain": "v4.28.0",
     "production_files": 113,
-    "production_loc": 79011,
+    "production_loc": 79020,
     "test_files": 10,
     "test_loc": 8687,
     "proved_theorem_lemma_decls": 2276,
@@ -12034,7 +12034,7 @@
         {
           "kind": "def",
           "name": "donationOwnerValid",
-          "line": 979,
+          "line": 980,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -12047,7 +12047,7 @@
         {
           "kind": "def",
           "name": "passiveServerIdle",
-          "line": 997,
+          "line": 1000,
           "called": [
             "SystemState",
             "TCB",
@@ -12058,7 +12058,7 @@
         {
           "kind": "def",
           "name": "donationBudgetTransfer",
-          "line": 1016,
+          "line": 1019,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -12071,7 +12071,7 @@
         {
           "kind": "theorem",
           "name": "donationChainAcyclic_of_no_donated",
-          "line": 1031,
+          "line": 1034,
           "called": [
             "SystemState",
             "TCB",
@@ -12084,7 +12084,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerValid_of_no_donated",
-          "line": 1041,
+          "line": 1044,
           "called": [
             "SystemState",
             "TCB",
@@ -12097,7 +12097,7 @@
         {
           "kind": "theorem",
           "name": "donationBudgetTransfer_of_no_shared",
-          "line": 1051,
+          "line": 1054,
           "called": [
             "SystemState",
             "TCB",
@@ -12110,7 +12110,7 @@
         {
           "kind": "def",
           "name": "ipcInvariantFull",
-          "line": 1072,
+          "line": 1075,
           "called": [
             "Kernel",
             "SystemState",
@@ -17976,7 +17976,7 @@
         {
           "kind": "theorem",
           "name": "applyCallDonation_scheduler_eq",
-          "line": 124,
+          "line": 127,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17991,7 +17991,7 @@
         {
           "kind": "def",
           "name": "applyReplyDonation",
-          "line": 159,
+          "line": 162,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18005,7 +18005,7 @@
         {
           "kind": "def",
           "name": "cleanupPreReceiveDonation",
-          "line": 179,
+          "line": 182,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18018,7 +18018,7 @@
         {
           "kind": "def",
           "name": "endpointCallWithDonation",
-          "line": 201,
+          "line": 204,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -18033,7 +18033,7 @@
         {
           "kind": "def",
           "name": "endpointReplyWithDonation",
-          "line": 222,
+          "line": 225,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -18045,7 +18045,7 @@
         {
           "kind": "def",
           "name": "endpointReplyRecvWithDonation",
-          "line": 241,
+          "line": 244,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -18250,7 +18250,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContext",
-          "line": 205,
+          "line": 208,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -18266,7 +18266,7 @@
         {
           "kind": "def",
           "name": "cleanupActiveDonation",
-          "line": 242,
+          "line": 245,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -18279,7 +18279,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq_z7",
-          "line": 250,
+          "line": 253,
           "called": [
             "KernelObject",
             "ObjId",
@@ -18290,7 +18290,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_scheduler_eq",
-          "line": 257,
+          "line": 260,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18307,7 +18307,7 @@
         {
           "kind": "def",
           "name": "notificationSignal",
-          "line": 313,
+          "line": 316,
           "called": [
             "Badge",
             "IpcMessage",
@@ -18330,7 +18330,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 368,
+          "line": 371,
           "called": [
             "Badge",
             "Kernel",
@@ -18349,7 +18349,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 412,
+          "line": 415,
           "called": [
             "ObjId",
             "SystemState",
@@ -18367,7 +18367,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 437,
+          "line": 440,
           "called": [
             "Notification",
             "ObjId",
@@ -18385,7 +18385,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 457,
+          "line": 460,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18395,7 +18395,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 464,
+          "line": 467,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18405,7 +18405,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 474,
+          "line": 477,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18421,7 +18421,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 495,
+          "line": 498,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18439,7 +18439,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 515,
+          "line": 518,
           "called": [
             "CNode",
             "ObjId",
@@ -18458,7 +18458,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 535,
+          "line": 538,
           "called": [
             "ObjId",
             "SystemState",
@@ -18476,7 +18476,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 556,
+          "line": 559,
           "called": [
             "CNode",
             "ObjId",
@@ -18496,7 +18496,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 583,
+          "line": 586,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18516,7 +18516,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 610,
+          "line": 613,
           "called": [
             "Notification",
             "ObjId",
@@ -18536,7 +18536,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 639,
+          "line": 642,
           "called": [
             "Notification",
             "ObjId",
@@ -18551,7 +18551,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 655,
+          "line": 658,
           "called": [
             "Badge",
             "Notification",
@@ -18574,7 +18574,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 726,
+          "line": 729,
           "called": [
             "Notification",
             "ObjId",
