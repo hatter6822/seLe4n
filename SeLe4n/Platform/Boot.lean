@@ -774,7 +774,8 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   (∀ tcb, obj = .tcb tcb →
     tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
     tcb.queueNext = none ∧ tcb.queuePrev = none ∧
-    tcb.timeoutBudget = none) ∧
+    tcb.timeoutBudget = none ∧
+    tcb.schedContextBinding = .unbound) ∧
   -- VSpaceRoots excluded (require asidTable registration not available at boot)
   (∀ vs, obj ≠ .vspaceRoot vs)
 
@@ -957,9 +958,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
     lifecycleInvariantBundle_of_metadata_consistent _
       (bootFromPlatform config).hLifecycleConsistent
-  -- 3. ipcInvariantFull (10 sub-components)
+  -- 3. ipcInvariantFull (14 sub-components)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -1042,7 +1043,23 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- blockedThreadTimeoutConsistent
       intro tid tcb scId hObj hTimeout
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
-      rw [hTcb.2.2.2.2] at hTimeout; exact absurd hTimeout (by simp)
+      rw [hTcb.2.2.2.2.1] at hTimeout; exact absurd hTimeout (by simp)
+    · -- Z7: donationChainAcyclic (vacuous: boot TCBs have .unbound binding)
+      intro tid1 _ tcb1 _ _ _ h1 _ hB1 _
+      have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
+      rw [hTcb1.2.2.2.2.2] at hB1; cases hB1
+    · -- Z7: donationOwnerValid (vacuous: no donated bindings at boot)
+      intro tid tcb _ _ h hBinding
+      have hTcb := (hBS tid.toObjId _ h).2.2.2.1 tcb rfl
+      rw [hTcb.2.2.2.2.2] at hBinding; cases hBinding
+    · -- Z7: passiveServerIdle (boot TCBs have ipcState = .ready)
+      intro tid tcb h _ _ _
+      have hTcb := (hBS tid.toObjId _ h).2.2.2.1 tcb rfl
+      left; exact hTcb.2.1
+    · -- Z7: donationBudgetTransfer (vacuous: all TCBs have .unbound → scId? = none)
+      intro tid1 _ tcb1 _ _ h1 _ _ hB1 _
+      have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
+      simp [hTcb1.2.2.2.2.2, SchedContextBinding.scId?] at hB1
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

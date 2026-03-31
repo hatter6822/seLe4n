@@ -579,6 +579,8 @@ servers that consume zero CPU when idle. When a client calls a server, the
 client's SchedContext is temporarily donated to the server. The server runs
 on the client's budget and returns the SchedContext when it replies.
 
+**Status**: All 26 sub-tasks (Z7-A through Z7-Q2) complete. Zero sorry/axiom.
+
 **Modified files**:
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (endpointCall donation, endpointReply return, endpointReplyRecv swap)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (donation cleanup helpers)

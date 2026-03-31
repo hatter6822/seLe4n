@@ -9,6 +9,9 @@
 import SeLe4n.Kernel.IPC.Operations.Endpoint
 import SeLe4n.Kernel.IPC.Operations.SchedulerLemmas
 import SeLe4n.Kernel.IPC.Operations.CapTransfer
+-- Note: Donation.lean is NOT re-exported here to avoid import cycles.
+-- It imports Transport.lean which depends on this module.
+-- Import SeLe4n.Kernel.IPC.Operations.Donation directly where needed.
 
 /-! # IPC Operations — Re-export Hub
 

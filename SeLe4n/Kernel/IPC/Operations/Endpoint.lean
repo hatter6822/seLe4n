@@ -151,6 +151,151 @@ theorem lookupTcb_preserved_by_storeObject_notification
   rw [hPreserved]
   exact hLookup
 
+-- ============================================================================
+-- Z7: SchedContext Donation Helpers
+-- ============================================================================
+
+/-- Z7-B2: Transfer a client's SchedContext to a passive server during IPC Call.
+
+Performs the bidirectional binding:
+1. Server TCB gets `schedContextBinding := .donated(clientScId, clientTid)`
+2. SchedContext `boundThread` updated to point to server
+
+**Preconditions** (enforced by caller `endpointCall`):
+- Server has `schedContextBinding = .unbound` (passive)
+- Client has `schedContextBinding = .bound clientScId`
+- SchedContext `sc.boundThread = some clientTid`
+
+Returns the updated state or error if lookups fail. -/
+def donateSchedContext
+    (st : SystemState)
+    (clientTid : SeLe4n.ThreadId) (serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId) : Except KernelError SystemState :=
+  -- Step 1: Look up the SchedContext
+  match st.objects[clientScId.toObjId]? with
+  | some (.schedContext sc) =>
+    -- Step 2: Update SchedContext to point to server
+    let sc' := { sc with boundThread := some serverTid }
+    match storeObject clientScId.toObjId (.schedContext sc') st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+      -- Step 3: Look up and update server TCB with donated binding
+      match lookupTcb st1 serverTid with
+      | none => .error .objectNotFound
+      | some serverTcb =>
+        let serverTcb' := { serverTcb with
+          schedContextBinding := .donated clientScId clientTid }
+        match storeObject serverTid.toObjId (.tcb serverTcb') st1 with
+        | .error e => .error e
+        | .ok ((), st2) => .ok st2
+  | _ => .error .objectNotFound
+
+/-- Z7-C2: Return a donated SchedContext from a server back to the original
+client after reply.
+
+Performs the reverse binding:
+1. SchedContext `boundThread` updated to point back to original client
+2. Client TCB gets `schedContextBinding := .bound scId`
+3. Server TCB gets `schedContextBinding := .unbound`
+
+**Preconditions** (enforced by caller `endpointReply`):
+- Server has `schedContextBinding = .donated(scId, originalOwner)`
+
+Returns the updated state or error if lookups fail. -/
+def returnDonatedSchedContext
+    (st : SystemState)
+    (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) : Except KernelError SystemState :=
+  -- Step 1: Look up and update SchedContext to point back to original owner
+  match st.objects[scId.toObjId]? with
+  | some (.schedContext sc) =>
+    let sc' := { sc with boundThread := some originalOwner }
+    match storeObject scId.toObjId (.schedContext sc') st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+      -- Step 2: Look up and update client TCB with bound binding
+      match lookupTcb st1 originalOwner with
+      | none => .error .objectNotFound
+      | some clientTcb =>
+        let clientTcb' := { clientTcb with
+          schedContextBinding := .bound scId }
+        match storeObject originalOwner.toObjId (.tcb clientTcb') st1 with
+        | .error e => .error e
+        | .ok ((), st2) =>
+          -- Step 3: Look up and update server TCB to unbound
+          match lookupTcb st2 serverTid with
+          | none => .error .objectNotFound
+          | some serverTcb =>
+            let serverTcb' := { serverTcb with
+              schedContextBinding := .unbound }
+            match storeObject serverTid.toObjId (.tcb serverTcb') st2 with
+            | .error e => .error e
+            | .ok ((), st3) => .ok st3
+  | _ => .error .objectNotFound
+
+/-- Z7-E: Clean up an active donation when a server with `.donated` binding
+blocks on receive without replying first (abnormal path).
+
+Returns the SchedContext to the original owner and sets the server to unbound.
+This prevents resource leaks when a server drops a call without replying. -/
+def cleanupActiveDonation
+    (st : SystemState)
+    (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) : Except KernelError SystemState :=
+  returnDonatedSchedContext st serverTid scId originalOwner
+
+/-- Z7: storeObject preserves the scheduler field. -/
+private theorem storeObject_scheduler_eq_z7 (st : SystemState) (oid : SeLe4n.ObjId)
+    (obj : KernelObject) (pair : Unit × SystemState)
+    (h : storeObject oid obj st = .ok pair) :
+    pair.2.scheduler = st.scheduler := by
+  unfold storeObject at h; cases h; rfl
+
+/-- Z7-C: returnDonatedSchedContext only modifies objects — scheduler preserved. -/
+theorem returnDonatedSchedContext_scheduler_eq
+    (st st' : SystemState)
+    (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj =>
+    cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some _ =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; subst hEq
+                have h1 := storeObject_scheduler_eq_z7 st _ _ _ hS1
+                have h2 := storeObject_scheduler_eq_z7 p1.2 _ _ _ hS2
+                have h3 := storeObject_scheduler_eq_z7 p2.2 _ _ _ hS3
+                exact h3.trans (h2.trans h1)
+    | _ => simp only []; intro h; cases h
+
 /-- Signal a notification: wake one waiter or mark one pending badge.
 
 **U5-J/U-M29: Wake-path pendingMessage overwrite**: When a waiter is present,

@@ -945,15 +945,137 @@ theorem blockedThreadTimeoutConsistent_of_all_none
   cases hBudget
 
 -- ============================================================================
--- Full IPC invariant bundle (10 conjuncts)
+-- Z7-F: Donation chain acyclicity
 -- ============================================================================
 
-/-- Full IPC invariant: conjunction of all ten IPC sub-invariants. -/
+/-- Z7-F: No circular SchedContext donation chains.
+
+If thread A has `.donated(scId, B)` binding (A borrowed B's SchedContext),
+then B must NOT have a `.donated(_, A)` binding. This prevents resource leaks
+from circular donation where no thread can return the SchedContext.
+
+Formalized as: for every pair of threads with donated bindings, the donation
+edges do not form a cycle of length 2. Longer cycles are prevented by the
+IPC structure: a thread blocked on reply cannot initiate another Call. -/
+def donationChainAcyclic (st : SystemState) : Prop :=
+  ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
+    (scId1 scId2 : SeLe4n.SchedContextId),
+    st.objects[tid1.toObjId]? = some (.tcb tcb1) →
+    st.objects[tid2.toObjId]? = some (.tcb tcb2) →
+    tcb1.schedContextBinding = .donated scId1 tid2 →
+    tcb2.schedContextBinding = .donated scId2 tid1 →
+    False
+
+-- ============================================================================
+-- Z7-G: Donation owner validity
+-- ============================================================================
+
+/-- Z7-G: Every donated SchedContext binding references valid objects.
+
+For every TCB with `.donated(scId, originalOwner)`:
+1. The SchedContext object exists in the store
+2. The original owner thread exists as a TCB
+3. The original owner is blocked on reply (waiting for the server to reply) -/
+def donationOwnerValid (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.schedContextBinding = .donated scId owner →
+    (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc)) ∧
+    (∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
+      ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget)
+
+-- ============================================================================
+-- Z7-H: Passive server idle invariant
+-- ============================================================================
+
+/-- Z7-H: Unbound threads not in the RunQueue are passive servers.
+
+An unbound thread that is not runnable and not the current thread must be
+either blocked on receive (waiting for a client call) or inactive. It must
+not be blocked on send/call (which requires a SchedContext for timeout). -/
+def passiveServerIdle (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.schedContextBinding = .unbound →
+    tid ∉ st.scheduler.runQueue →
+    st.scheduler.current ≠ some tid →
+    (tcb.ipcState = .ready ∨
+     ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+             tcb.ipcState = .blockedOnNotification epId)
+
+-- ============================================================================
+-- Z7-I: Donation budget transfer consistency
+-- ============================================================================
+
+/-- Z7-I: At most one thread holds a given SchedContext at any time.
+
+If a SchedContext is donated (some thread has `.donated(scId, _)` binding),
+then no other thread has `.bound(scId)` or `.donated(scId, _)` binding for
+the same SchedContext. This prevents double-spending of CPU budget. -/
+def donationBudgetTransfer (st : SystemState) : Prop :=
+  ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
+    (scId : SeLe4n.SchedContextId),
+    st.objects[tid1.toObjId]? = some (.tcb tcb1) →
+    st.objects[tid2.toObjId]? = some (.tcb tcb2) →
+    tid1 ≠ tid2 →
+    tcb1.schedContextBinding.scId? = some scId →
+    tcb2.schedContextBinding.scId? = some scId →
+    False
+
+-- ============================================================================
+-- Z7: Default state proofs for donation invariants
+-- ============================================================================
+
+/-- Z7: donationChainAcyclic holds trivially when no TCBs have donated bindings. -/
+theorem donationChainAcyclic_of_no_donated
+    (st : SystemState)
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ∀ scId owner, tcb.schedContextBinding ≠ .donated scId owner) :
+    donationChainAcyclic st := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 _
+  exact absurd hB1 (hNone tid1 tcb1 h1 scId1 tid2)
+
+/-- Z7: donationOwnerValid holds vacuously when no TCBs have donated bindings. -/
+theorem donationOwnerValid_of_no_donated
+    (st : SystemState)
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ∀ scId owner, tcb.schedContextBinding ≠ .donated scId owner) :
+    donationOwnerValid st := by
+  intro tid tcb scId owner hTcb hBinding
+  exact absurd hBinding (hNone tid tcb hTcb scId owner)
+
+/-- Z7: donationBudgetTransfer holds trivially when no two threads share a SchedContext. -/
+theorem donationBudgetTransfer_of_no_shared
+    (st : SystemState)
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding = .unbound) :
+    donationBudgetTransfer st := by
+  intro tid1 tid2 tcb1 tcb2 scId h1 h2 _ hB1 _
+  have := hNone tid1 tcb1 h1
+  simp [this, SchedContextBinding.scId?] at hB1
+
+-- ============================================================================
+-- Full IPC invariant bundle (14 conjuncts)
+-- ============================================================================
+
+/-- Full IPC invariant: conjunction of all fourteen IPC sub-invariants.
+
+Z7 extends the bundle with 4 donation invariants:
+- `donationChainAcyclic`: no circular donation chains
+- `donationOwnerValid`: donated bindings reference valid objects
+- `passiveServerIdle`: unbound non-runnable threads are idle/receiving
+- `donationBudgetTransfer`: at most one thread per SchedContext -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
   endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
   queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
-  blockedThreadTimeoutConsistent st
+  blockedThreadTimeoutConsistent st ∧
+  donationChainAcyclic st ∧ donationOwnerValid st ∧
+  passiveServerIdle st ∧ donationBudgetTransfer st
 
 end SeLe4n.Kernel
