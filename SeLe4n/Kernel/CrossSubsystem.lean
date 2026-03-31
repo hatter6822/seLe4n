@@ -26,7 +26,10 @@ modified.
 | `noStaleNotificationWaitReferences` | Every ThreadId in a notification wait list has a live TCB (T5-H) |
 | `registryDependencyConsistent` | Every dependency graph edge references a registered service |
 | `serviceGraphInvariant` | Service dependency acyclicity + count bound (U4-G) |
-| `crossSubsystemInvariant` | Composed bundle of all cross-subsystem predicates |
+| `schedContextStoreConsistent` | Every SchedContext referenced by a TCB binding exists in the store (Z9-A) |
+| `schedContextNotDualBound` | At most one thread references any given SchedContext (Z9-B) |
+| `schedContextRunQueueConsistent` | Runnable SC-bound threads have live SC with positive budget (Z9-C) |
+| `crossSubsystemInvariant` | Composed 8-predicate bundle of all cross-subsystem predicates (Z9-D) |
 -/
 
 namespace SeLe4n.Kernel
@@ -178,9 +181,10 @@ def schedContextStoreConsistent (st : SystemState) : Prop :=
 -- Z9-B: schedContextNotDualBound predicate
 -- ============================================================================
 
-/-- Z9-B: No SchedContext is simultaneously `.bound` by one thread and
-    `.donated` to another. At most one thread references any given SchedContext
-    at any time. Prevents resource aliasing across threads. -/
+/-- Z9-B: At most one thread references any given SchedContext at any time.
+    If two TCBs both have `schedContextBinding.scId? = some scId`, they must
+    be the same thread. This prevents resource aliasing regardless of whether
+    the binding is `.bound` or `.donated`. -/
 def schedContextNotDualBound (st : SystemState) : Prop :=
   ∀ (tid₁ tid₂ : SeLe4n.ThreadId) (tcb₁ tcb₂ : TCB) (scId : SeLe4n.SchedContextId),
     st.objects[tid₁.toObjId]? = some (.tcb tcb₁) →
@@ -917,6 +921,7 @@ theorem crossSubsystemInvariant_services_change
     - `schedContextNotDualBound` (objects) ↔ `registryDependencyConsistent` (services)
     - `schedContextNotDualBound` (objects) ↔ `serviceGraphInvariant` (services+objectIndex)
     - `schedContextRunQueueConsistent` (scheduler+objects) ↔ `registryDependencyConsistent` (services)
+    - `schedContextRunQueueConsistent` (scheduler+objects) ↔ `serviceGraphInvariant` (services+objectIndex)
 
     All sharing pairs between objects-reading predicates are covered by
     the `*_frame` lemmas (Z9-F) when `objects` is unchanged. -/
@@ -951,10 +956,14 @@ theorem crossSubsystemInvariant_composition_complete :
     (fieldsDisjoint serviceGraphInvariant_fields
                     schedContextStoreConsistent_fields = true) ∧
     (fieldsDisjoint serviceGraphInvariant_fields
-                    schedContextNotDualBound_fields = true) := by
+                    schedContextNotDualBound_fields = true) ∧
+    (fieldsDisjoint registryDependencyConsistent_fields
+                    schedContextRunQueueConsistent_fields = true) ∧
+    (fieldsDisjoint serviceGraphInvariant_fields
+                    schedContextRunQueueConsistent_fields = true) := by
   exact ⟨by decide, by decide, by decide, by decide, by decide,
          by decide, by decide, by decide, by decide, by decide,
-         by decide, by decide, by decide, by decide⟩
+         by decide, by decide, by decide, by decide, by decide, by decide⟩
 
 -- ============================================================================
 -- Z9-L/M/N/O: Operation-specific cross-subsystem preservation
@@ -1007,12 +1016,12 @@ theorem schedule_preserves_schedContextPredicates
    schedContextNotDualBound_frame st st' hObjects hInv.2.2.2.2.2.2.1,
    schedContextRunQueueConsistent_frame st st' hRunnable hObjects hInv.2.2.2.2.2.2.2⟩
 
-/-- Z9-N1: Donation preserves `schedContextNotDualBound`.
-    During donation, the old client's binding is cleared (client is blocked on
-    reply) before the server receives the donation. The frame lemma applies when
-    objects are preserved; for in-place mutations, the predicate must be
-    re-established by the donation operation. This theorem provides the frame
-    case. -/
+/-- Z9-N1: Frame case — donation preserves `schedContextNotDualBound` when
+    `objects` is unchanged. For the actual mutation case (where donation modifies
+    TCB `schedContextBinding` fields in-place), operation-specific preservation
+    must re-establish the predicate by showing that the old client binding is
+    cleared before the server receives the donation, maintaining the uniqueness
+    invariant through the intermediate state. -/
 theorem donation_frame_preserves_schedContextNotDualBound
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)
@@ -1020,10 +1029,11 @@ theorem donation_frame_preserves_schedContextNotDualBound
     schedContextNotDualBound st' :=
   schedContextNotDualBound_frame st st' hObjects hInv
 
-/-- Z9-N2: Donation preserves `schedContextStoreConsistent`.
-    SchedContext objects are not created/destroyed during donation — only
-    `boundThread` and TCB `schedContextBinding` fields are modified.
-    Frame preservation when objects identity holds. -/
+/-- Z9-N2: Frame case — donation preserves `schedContextStoreConsistent` when
+    `objects` is unchanged. For the actual mutation case (where donation modifies
+    `boundThread` and TCB `schedContextBinding` fields), the SchedContext object
+    itself is not created or destroyed, so store consistency is maintained through
+    the binding field updates. -/
 theorem donation_frame_preserves_schedContextStoreConsistent
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)
@@ -1031,8 +1041,12 @@ theorem donation_frame_preserves_schedContextStoreConsistent
     schedContextStoreConsistent st' :=
   schedContextStoreConsistent_frame st st' hObjects hInv
 
-/-- Z9-O1: SchedContext cleanup on destroy — when objects are preserved
-    (frame case), all SchedContext cross-subsystem predicates are preserved. -/
+/-- Z9-O1: Frame case — SchedContext cleanup on destroy preserves all 3 new
+    cross-subsystem predicates when `objects` is unchanged. For the actual
+    mutation case (where `lifecycleRetypeWithCleanup` clears bound thread
+    bindings and removes objects), operation-specific preservation in the
+    lifecycle subsystem must show that binding cleanup precedes object removal,
+    maintaining store consistency and uniqueness through the cleanup sequence. -/
 theorem cleanup_frame_preserves_schedContextPredicates
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)
@@ -1043,10 +1057,13 @@ theorem cleanup_frame_preserves_schedContextPredicates
     schedContextRunQueueConsistent st' :=
   schedule_preserves_schedContextPredicates st st' hObjects hRunnable hInv
 
-/-- Z9-O2: Thread cleanup returns donated SchedContext — frame case.
-    When a thread with `.donated` binding is destroyed, the `cleanupDonatedSchedContext`
-    operation returns the SchedContext to its original owner. If objects identity holds,
-    all predicates are frame-preserved. -/
+/-- Z9-O2: Frame case — thread cleanup (returning donated SchedContext) preserves
+    all 3 new cross-subsystem predicates when `objects` is unchanged. For the
+    actual mutation case, `cleanupDonatedSchedContext` returns the SchedContext
+    to its original owner by modifying both TCBs' `schedContextBinding` fields.
+    Operation-specific preservation must show that the return operation maintains
+    the uniqueness invariant (Z9-B) by clearing the dying thread's binding before
+    or atomically with updating the owner's binding. -/
 theorem threadCleanup_frame_preserves_schedContextPredicates
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)

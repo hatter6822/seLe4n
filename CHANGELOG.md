@@ -1,3 +1,21 @@
+## [0.23.20] — Z9 Audit: Documentation Accuracy & Disjointness Completeness
+
+Post-implementation audit of Z9 Invariant Composition & Cross-Subsystem phase.
+
+- **AUD-1**: Module docstring in `CrossSubsystem.lean` updated to list all 8
+  predicates (was missing 3 new SchedContext predicates).
+- **AUD-2**: `schedContextNotDualBound` docstring corrected — first sentence
+  now accurately describes the predicate's semantics (prevents ANY two threads
+  from referencing the same SchedContext, not just bound+donated).
+- **AUD-3**: `crossSubsystemInvariant_composition_complete` extended from 14
+  to 16 conjuncts — added 2 missing disjointness witnesses:
+  `schedContextRunQueueConsistent` ↔ `registryDependencyConsistent` and
+  `schedContextRunQueueConsistent` ↔ `serviceGraphInvariant`.
+- **AUD-4**: Z9-N/O frame-lemma docstrings clarified as frame-case building
+  blocks, documenting what full mutation-level preservation would require.
+- Regenerated `docs/codebase_map.json`.
+- Zero sorry/axiom. All tests pass (smoke + full).
+
 ## [0.23.19] — Z9: Invariant Composition & Cross-Subsystem
 
 Complete cross-subsystem invariant integration for SchedContext objects.

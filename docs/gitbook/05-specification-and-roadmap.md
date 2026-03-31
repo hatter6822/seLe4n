@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.23.19` |
+| Version | `0.23.20` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 79,419 across 113 Lean files |
 | Test LoC | 8,759 across 10 suites |
 | Proved declarations | 2,281 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| Active workstream | **All workstreams COMPLETE** (WS-B through WS-Z). WS-Z Phases Z1–Z9 complete (v0.23.0–v0.23.19): SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, donation for passive servers, full API surface, and invariant composition. **Next: Raspberry Pi 5 hardware binding.** |
+| Active workstream | **All workstreams COMPLETE** (WS-B through WS-Z). WS-Z Phases Z1–Z9 complete (v0.23.0–v0.23.20): SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, donation for passive servers, full API surface, and invariant composition. **Next: Raspberry Pi 5 hardware binding.** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -83,9 +83,9 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-W (Pre-release audit remediation, v0.22.11–v0.22.17) — PORTFOLIO COMPLETE.** →
 **WS-X (Documentation & hardening, v0.22.18–v0.22.22) — PORTFOLIO COMPLETE.** →
 **WS-Y (Cross-subsystem hardening, v0.22.23–v0.22.26) — PORTFOLIO COMPLETE.** →
-**WS-Z (Composable performance objects, v0.23.0–v0.23.19) — PORTFOLIO COMPLETE.**
+**WS-Z (Composable performance objects, v0.23.0–v0.23.20) — PORTFOLIO COMPLETE.**
 
-## Completed: WS-Z Composable Performance Objects (v0.23.0–v0.23.19, PORTFOLIO COMPLETE)
+## Completed: WS-Z Composable Performance Objects (v0.23.0–v0.23.20, PORTFOLIO COMPLETE)
 
 9 phases (Z1–Z9) delivering the complete SchedContext subsystem — CBS budget
 engine, replenishment queue, scheduler integration, capability-controlled thread
@@ -100,7 +100,7 @@ API surface with frozen operations, and cross-subsystem invariant composition.
 - **Z6** (v0.23.12–v0.23.14): Timeout endpoints — budget-driven IPC timeout, `endpointQueueRemove`, `blockedThreadTimeoutConsistent` invariant.
 - **Z7** (v0.23.15–v0.23.16): SchedContext donation — `donateSchedContext`, donation-aware IPC wrappers, 4 new invariants, `ipcInvariantFull` extended to 14 conjuncts.
 - **Z8** (v0.23.17–v0.23.18): API surface — 3 error-exclusivity theorems, 4 frozen operations, enforcement boundary 22→25.
-- **Z9** (v0.23.19): Invariant composition — `crossSubsystemInvariant` 5→8 predicates, `proofLayerInvariantBundle` 9→10 conjuncts, 14 disjointness witnesses, 3 frame lemmas, boot/operation preservation.
+- **Z9** (v0.23.20): Invariant composition — `crossSubsystemInvariant` 5→8 predicates, `proofLayerInvariantBundle` 9→10 conjuncts, 14 disjointness witnesses, 3 frame lemmas, boot/operation preservation.
 
 Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
 

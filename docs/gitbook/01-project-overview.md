@@ -73,10 +73,10 @@ M7 (audit remediation).
 
 ### What's next
 
-All workstreams from WS-B through WS-Z are **COMPLETE** (v0.9.0–v0.23.19).
+All workstreams from WS-B through WS-Z are **COMPLETE** (v0.9.0–v0.23.20).
 Key recent completions:
 
-- **WS-Z** (v0.23.0–v0.23.19): Composable Performance Objects — 9 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, full API surface, and invariant composition. **PORTFOLIO COMPLETE.**
+- **WS-Z** (v0.23.0–v0.23.20): Composable Performance Objects — 9 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, full API surface, and invariant composition. **PORTFOLIO COMPLETE.**
 - **WS-Y** (v0.22.23–v0.22.26): Documentation & cross-subsystem hardening. **PORTFOLIO COMPLETE.**
 - **WS-X** (v0.22.18–v0.22.22): Documentation, hardening & low-severity. **PORTFOLIO COMPLETE.**
 - **WS-W** (v0.22.11–v0.22.17): Pre-release audit remediation — 6 phases, 52 sub-tasks. **PORTFOLIO COMPLETE.**

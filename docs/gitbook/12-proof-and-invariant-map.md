@@ -858,7 +858,7 @@ The information-flow subsystem is organized in three architectural layers:
    preserve `lowEquivalent` for unobservable state changes. The composition
    layer (`composedNonInterference_trace`) chains single-step NI proofs into
    trace-level non-interference using the `NonInterferenceStep` inductive type
-   (32 constructors as of v0.23.19).
+   (32 constructors as of v0.23.20).
 
 ### IF-M1 baseline (WS-B7 complete)
 
