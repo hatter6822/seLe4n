@@ -2231,3 +2231,57 @@ SchedContext to receive CPU bandwidth reservations independent of thread priorit
 - `freezeObject_schedContext_passthrough` — freeze is identity for SchedContext.
 - `objectTypeAllocSize` — 256 bytes for SchedContext.
 - Pattern match exhaustiveness updated across ~24 files (~150 match arms).
+
+## 25. CBS Budget Engine (WS-Z Phase Z2)
+
+**CBS operations** (`Kernel/SchedContext/Budget.lean`) — pure-function budget
+management for Constant Bandwidth Server scheduling. All operations are total,
+deterministic, and produce `SchedContext` values suitable for machine-checked
+invariant proofs.
+
+**Budget consumption and exhaustion**:
+- `consumeBudget` — saturating decrement of `budgetRemaining` by `ticks`.
+  Proof: `consumeBudget_budgetRemaining_le` (result ≤ input).
+- `isBudgetExhausted` — predicate for zero remaining budget.
+
+**Replenishment scheduling**:
+- `mkReplenishmentEntry` — creates entry eligible at `currentTime + period`.
+  Proof: `mkReplenishmentEntry_amount_eq`.
+- `truncateReplenishments` — bounds list to `maxReplenishments` via `List.drop`.
+  Proof: `truncateReplenishments_length_le`.
+- `scheduleReplenishment` — composes entry creation + truncation.
+
+**Replenishment processing**:
+- `partitionEligible` — partitions list by `eligibleAt ≤ currentTime`.
+  Proof: `partitionEligible_eligible_sublist`.
+- `sumReplenishments` — recursive sum of entry amounts.
+  Proofs: `sumReplenishments_nil`, `sumReplenishments_cons`.
+- `applyRefill` — adds refill amount capped at budget ceiling.
+  Proof: `applyRefill_le_budget`.
+- `processReplenishments` — composes partition → sum → refill.
+
+**CBS deadline and combined operations**:
+- `cbsUpdateDeadline` — sets `deadline := currentTime + period` on
+  replenishment after exhaustion.
+- `cbsBudgetCheck` — combined per-tick entry point returning
+  `(updatedSc, wasPreempted)`.
+- `admissionCheck` — total utilization ≤ 1000 per-mille.
+
+**Invariant definitions** (`Kernel/SchedContext/Invariant/Defs.lean`):
+- `budgetWithinBounds` — `budgetRemaining ≤ budget ≤ period`.
+- `replenishmentListWellFormed` — bounded length, no zero-amount entries.
+- `schedContextWellFormed` — conjunction of structural + CBS invariants.
+- `replenishmentAmountsBounded` — each entry's amount ≤ configured budget.
+
+**Preservation theorems** (12 total, composing into
+`cbsBudgetCheck_preserves_schedContextWellFormed`):
+- `consumeBudget_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed}`
+- `processReplenishments_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed}`
+- `scheduleReplenishment_preserves_{replenishmentListWellFormed, wellFormed, budgetWithinBounds}`
+- `cbsUpdateDeadline_preserves_{budgetWithinBounds, wellFormed, replenishmentListWellFormed}`
+
+**Bandwidth theorems**:
+- `totalConsumed` — accumulator summing replenishment amounts in a time window.
+- `cbs_single_period_bound` — single-period consumption ≤ `maxReplenishments × budget`.
+- `cbs_bandwidth_bounded` — multi-period isolation: consumption over any window
+  bounded by `maxReplenishments × budget`.

@@ -1,3 +1,38 @@
+## [0.23.1] — Z2: CBS Budget Engine
+
+Phase Z2 of WS-Z Composable Performance Objects. Implements the Constant
+Bandwidth Server budget management algorithm as pure functions with
+machine-checked invariants. Budget engine in isolation — no scheduler
+integration yet.
+
+- **Z2-A**: `consumeBudget` operation with saturating decrement and
+  `consumeBudget_budgetRemaining_le` proof.
+- **Z2-B**: `isBudgetExhausted` predicate.
+- **Z2-C1/C2/C3**: `mkReplenishmentEntry` constructor, `truncateReplenishments`
+  (bounded list via `List.drop`), `scheduleReplenishment` composition. Proofs:
+  `mkReplenishmentEntry_amount_eq`, `truncateReplenishments_length_le`.
+- **Z2-D1/D2/D3/D4**: `partitionEligible` (partition by eligibility time),
+  `sumReplenishments` (recursive sum), `applyRefill` (capped at budget ceiling),
+  `processReplenishments` composition. Proofs: `partitionEligible_eligible_sublist`,
+  `sumReplenishments_nil`/`_cons`, `applyRefill_le_budget`.
+- **Z2-E**: `cbsUpdateDeadline` — CBS deadline assignment rule (deadline updated
+  on replenishment after exhaustion).
+- **Z2-F**: `cbsBudgetCheck` — combined per-tick budget accounting entry point
+  returning `(updatedSc, wasPreempted)`.
+- **Z2-G**: `admissionCheck` — CBS admission control predicate (total utilization
+  ≤ 1000 per-mille).
+- **Z2-H/I/J**: Invariant definitions: `budgetWithinBounds` (remaining ≤ budget ≤
+  period), `replenishmentListWellFormed` (bounded length, no zero-amount entries),
+  `schedContextWellFormed` bundle, `replenishmentAmountsBounded`.
+- **Z2-K through Z2-N**: 12 preservation theorems: `consumeBudget`, `processReplenishments`,
+  `scheduleReplenishment`, `cbsUpdateDeadline` each preserve `wellFormed`,
+  `budgetWithinBounds`, and `replenishmentListWellFormed`. Composed into
+  `cbsBudgetCheck_preserves_schedContextWellFormed`.
+- **Z2-O1/O2/O3**: Bandwidth theorems: `totalConsumed` accumulator,
+  `cbs_single_period_bound` (single-period consumption ≤ maxReplenishments × budget),
+  `cbs_bandwidth_bounded` (multi-period isolation guarantee).
+- **Z2-P/Q**: Re-export hubs, build verification. Zero sorry/axiom. All tiers pass.
+
 ## [0.23.0] — Z1: SchedContext Type Foundation
 
 Phase Z1 of WS-Z Composable Performance Objects. Introduces the `SchedContext`
