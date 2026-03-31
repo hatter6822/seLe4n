@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-documentation-closure-JRW9U",
-      "commit_sha": "cd9ef678207233972e825ad67683191d6f7f248d",
-      "tree_sha": "2cfbf81f990b578ecab5932be1dbfd41510112fa",
-      "committed_at_utc": "2026-03-31T13:31:28-04:00"
+      "branch": "claude/audit-workstream-planning-rwIeJ",
+      "commit_sha": "26ae81b2af4c8fe15ef2069f6586209937358148",
+      "tree_sha": "2cd143c1b65505ad998ce60dfa135ca3bb1aac79",
+      "committed_at_utc": "2026-03-31T23:06:16+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "699d4ae65065867ec32726c1cf2a33a9f7486498192b630ca013a57236c4f404"
+    "source_digest": "75d1072317c588097edce3e9b50a2150443895b9b6722e86aa1de361c8caefe2"
   },
   "summary": {
     "module_count": 123,
-    "declaration_count": 4083
+    "declaration_count": 4084
   },
   "readme_sync": {
     "version": "0.23.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 113,
-    "production_loc": 79743,
+    "production_loc": 79774,
     "test_files": 10,
     "test_loc": 8759,
     "proved_theorem_lemma_decls": 2295,
@@ -7211,7 +7211,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant",
-          "line": 2069,
+          "line": 2070,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -7235,7 +7235,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant",
-          "line": 2101,
+          "line": 2102,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -7249,7 +7249,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_capabilityInvariantBundle",
-          "line": 2124,
+          "line": 2125,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -7273,7 +7273,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMint_preserves_cdtMapsConsistent",
-          "line": 2160,
+          "line": 2161,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -7291,7 +7291,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlotCore_preserves_cdtMapsConsistent",
-          "line": 2182,
+          "line": 2183,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7309,7 +7309,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_preserves_cdtMapsConsistent",
-          "line": 2211,
+          "line": 2212,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7321,7 +7321,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_preserves_cdtMapsConsistent",
-          "line": 2224,
+          "line": 2225,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7332,7 +7332,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_preserves_cdtMapsConsistent",
-          "line": 2232,
+          "line": 2233,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7343,7 +7343,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_preserves_cdtMapsConsistent",
-          "line": 2241,
+          "line": 2242,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -7362,7 +7362,7 @@
         {
           "kind": "theorem",
           "name": "cdtExpandingOp_preserves_bundle_with_hypothesis",
-          "line": 2318,
+          "line": 2319,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
@@ -7373,7 +7373,7 @@
         {
           "kind": "theorem",
           "name": "cdtShrinkingOps_preserve_acyclicity",
-          "line": 2330,
+          "line": 2331,
           "called": [
             "Kernel",
             "SystemState",
@@ -17933,18 +17933,28 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.CapTransfer",
       "path": "SeLe4n/Kernel/IPC/Operations/CapTransfer.lean",
-      "declaration_count": 19,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 29,
+          "line": 35,
           "called": []
         },
         {
           "kind": "def",
+          "name": "fillRemainingNoSlot",
+          "line": 44,
+          "called": [
+            "CapTransferResult",
+            "Capability",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "ipcUnwrapCapsLoop",
-          "line": 36,
+          "line": 57,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -17952,6 +17962,7 @@
             "Kernel",
             "ObjId",
             "Slot",
+            "fillRemainingNoSlot",
             "ipcTransferSingleCap",
             "maxExtraCaps",
             "none",
@@ -17962,7 +17973,7 @@
         {
           "kind": "def",
           "name": "ipcUnwrapCaps",
-          "line": 79,
+          "line": 109,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -17976,7 +17987,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_scheduler",
-          "line": 93,
+          "line": 123,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -17996,7 +18007,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_scheduler",
-          "line": 126,
+          "line": 156,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18010,7 +18021,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_services",
-          "line": 139,
+          "line": 169,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18030,7 +18041,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_services",
-          "line": 172,
+          "line": 202,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18044,7 +18055,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_objects_ne",
-          "line": 185,
+          "line": 215,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18066,7 +18077,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_objects_ne",
-          "line": 223,
+          "line": 253,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18081,7 +18092,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ntfn_objects",
-          "line": 237,
+          "line": 267,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18104,7 +18115,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ntfn_objects",
-          "line": 278,
+          "line": 308,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18120,7 +18131,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_receiverRoot_not_ntfn",
-          "line": 293,
+          "line": 323,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18142,7 +18153,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ep_objects",
-          "line": 330,
+          "line": 360,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18165,7 +18176,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ep_objects",
-          "line": 369,
+          "line": 399,
           "called": [
             "CapTransferSummary",
             "Endpoint",
@@ -18181,7 +18192,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_tcb_objects",
-          "line": 384,
+          "line": 414,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18204,7 +18215,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_tcb_objects",
-          "line": 423,
+          "line": 453,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18220,7 +18231,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_cnode_at_root",
-          "line": 441,
+          "line": 471,
           "called": [
             "CNode",
             "CapTransferResult",
@@ -18243,7 +18254,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_cnode_at_root",
-          "line": 481,
+          "line": 511,
           "called": [
             "CNode",
             "CapTransferSummary",
@@ -18259,7 +18270,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_receiverRoot_not_ntfn",
-          "line": 499,
+          "line": 529,
           "called": [
             "CapTransferSummary",
             "IpcMessage",

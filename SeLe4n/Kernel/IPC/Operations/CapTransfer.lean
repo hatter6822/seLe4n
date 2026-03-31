@@ -23,12 +23,33 @@ rendezvous completes.
 - The sender retains all transferred capabilities (IPC transfer is copy).
 
 **Key operation**: `ipcUnwrapCaps` — iterates over `msg.caps`, threading state
-and advancing the receiver's slot base after each successful insertion.
+and advancing the receiver's slot base only after successful insertion.  On
+error (missing CNode root or insert failure), the slot base is NOT advanced
+and the loop short-circuits: all remaining caps are filled with `.noSlot` via
+`fillRemainingNoSlot`.  This avoids slot gaps in the receiver's CNode and
+aligns with seL4's cursor-preservation semantics, while the short-circuit
+exploits the observation that error conditions persist (the receiver's CSpace
+root hasn't changed, so subsequent transfers would fail identically).
 -/
 
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+
+/-- Pad remaining cap transfer results with `.noSlot` for caps at indices
+`idx, idx+1, ...` up to the fuel bound. Used to short-circuit when a fatal
+error (e.g., receiver CSpace root not a CNode) makes all remaining transfers
+impossible. Mirrors the array-bounds structure of `ipcUnwrapCapsLoop` so that
+the result count matches exactly. -/
+private def fillRemainingNoSlot
+    (caps : Array Capability) (idx : Nat)
+    (acc : Array CapTransferResult) (fuel : Nat) : Array CapTransferResult :=
+  match fuel with
+  | 0 => acc
+  | fuel' + 1 =>
+    match caps[idx]? with
+    | none => acc
+    | some _ => fillRemainingNoSlot caps (idx + 1) (acc.push .noSlot) fuel'
 
 /-- M-D01: Recursive helper for unwrapping caps. Processes caps from index
 `idx` to the end of the array. Termination is structural on `fuel`
@@ -51,9 +72,18 @@ def ipcUnwrapCapsLoop
             { cnode := senderCspaceRoot, slot := SeLe4n.Slot.ofNat 0 }
             receiverCspaceRoot nextBase maxExtraCaps st with
         | .error _e =>
-            ipcUnwrapCapsLoop caps senderCspaceRoot receiverCspaceRoot
-              (idx + 1) (SeLe4n.Slot.ofNat (nextBase.toNat + 1))
-              (accResults.push .noSlot) fuel' st
+            -- Fatal error: receiver CSpace root is not a CNode (or insert
+            -- failed on a slot that findFirstEmptySlot said was empty, which
+            -- is unreachable in the single-threaded model).  The error
+            -- condition persists because state is unmodified, so all
+            -- remaining caps would also fail.  Short-circuit: pad the
+            -- results with `.noSlot` for every remaining cap and return
+            -- immediately with the original state.  This avoids slot gaps
+            -- in the receiver's CNode (no `nextBase` advancement on error)
+            -- and aligns with seL4's cursor-preservation semantics.
+            let finalResults :=
+              fillRemainingNoSlot caps (idx + 1) (accResults.push .noSlot) fuel'
+            .ok ({ results := finalResults }, st)
         | .ok (result, stNext) =>
             let nextBase' := match result with
               | .installed _ _ => SeLe4n.Slot.ofNat (nextBase.toNat + 1)
@@ -112,7 +142,7 @@ theorem ipcUnwrapCapsLoop_preserves_scheduler
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hStep
+        obtain ⟨_, rfl⟩ := hStep; rfl
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hSched := ipcTransferSingleCap_preserves_scheduler cap _ receiverRoot nextBase
@@ -158,7 +188,7 @@ theorem ipcUnwrapCapsLoop_preserves_services
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hStep
+        obtain ⟨_, rfl⟩ := hStep; rfl
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hSvc := ipcTransferSingleCap_preserves_services cap _ receiverRoot nextBase
@@ -206,7 +236,7 @@ theorem ipcUnwrapCapsLoop_preserves_objects_ne
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hObjInv hStep
+        obtain ⟨_, rfl⟩ := hStep; rfl
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
@@ -259,7 +289,7 @@ theorem ipcUnwrapCapsLoop_preserves_ntfn_objects
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hNtfn hObjInv hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hNtfn
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
@@ -314,7 +344,7 @@ theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hNotNtfn hObjInv hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hNotNtfn
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
@@ -352,7 +382,7 @@ theorem ipcUnwrapCapsLoop_preserves_ep_objects
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hEp hObjInv hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hEp
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
@@ -406,7 +436,7 @@ theorem ipcUnwrapCapsLoop_preserves_tcb_objects
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hTcb hObjInv hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hTcb
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
@@ -463,7 +493,7 @@ theorem ipcUnwrapCapsLoop_preserves_cnode_at_root
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ _ hCn hObjInv hStep
+        obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         simp [hTransfer] at hStep

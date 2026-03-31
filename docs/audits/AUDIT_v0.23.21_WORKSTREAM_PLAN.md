@@ -695,23 +695,37 @@ requires receiver to be `.unbound`), but no defense-in-depth guard exists.
 
 **Verification**: `source ~/.elan/env && lake build SeLe4n.Kernel.IPC.Operations.Endpoint`
 
-### AA4-K: Document slot-advance-on-error semantics (L-13)
+### AA4-K: Fix slot-advance-on-error with short-circuit (L-13) — COMPLETE
 
 **Finding**: Failed cap transfer in `ipcUnwrapCapsLoop` still advances the
 receiver slot position. This differs from seL4 which preserves the cursor.
 
-**Files**: `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`
+**Files**: `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean`,
+`SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
 
-**Fix**:
-1. Add a documentation comment at the `| .error _e =>` branch explaining the
-   design decision: slot advance on error prevents retry-based slot exhaustion
-   attacks and simplifies the loop invariant.
-2. Document the divergence from seL4 behavior and the rationale.
+**Implementation** (Design C — don't advance nextBase on error AND short-circuit
+on fatal error):
+1. Added `fillRemainingNoSlot` pure helper: fills remaining cap results with
+   `.noSlot` without touching state or advancing the slot cursor.
+2. Modified `ipcUnwrapCapsLoop` error branch: on `ipcTransferSingleCap` failure,
+   the loop no longer advances `nextBase` and immediately short-circuits via
+   `fillRemainingNoSlot` for all remaining caps. This exploits the observation
+   that error conditions persist (receiver CSpace root unchanged), so subsequent
+   transfers would fail identically.
+3. Fixed all 8 loop-level preservation theorem error branches: replaced recursive
+   `ih ... hStep` with direct `obtain ⟨_, rfl⟩ := hStep; ...` since the error
+   branch now returns state unchanged (no recursion).
+4. Fixed downstream proof in `Preservation.lean:2046`: same pattern — error
+   branch proof simplified from `ih` application to direct extraction.
+5. Updated module docstring to document the new semantics.
 
-**Note**: Changing the behavior to match seL4 would require redesigning the
-loop invariant and is not justified by risk.
+**Benefits**:
+- Aligns with seL4's cursor-preservation semantics (no slot gaps on error).
+- Short-circuit avoids redundant computation for caps that would all fail.
+- Preservation proofs are simpler (direct `rfl` vs. induction hypothesis).
+- Zero sorry/axiom. Full build + smoke tests pass.
 
-**Verification**: Manual review.
+**Verification**: `lake build` (216 modules), `test_smoke.sh` (all tiers pass).
 
 ### AA4-L: Remove unused `_endpointId` parameter from `timeoutAwareReceive` (L-14)
 
