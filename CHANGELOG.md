@@ -1,3 +1,22 @@
+## [0.23.14] — Z6 Audit Pass 2: Edge Case Test Coverage
+
+Second comprehensive audit of Phase Z6 Timeout Endpoints.
+
+- **AUD-Z6-5**: 4 new edge-case trace tests (SCO-032 through SCO-035):
+  - SCO-032: 3-thread mid-queue removal — validates predecessor/successor relinking
+  - SCO-033: receiveQ removal — verifies sendQ remains unchanged
+  - SCO-034: timeoutThread on `blockedOnCall` thread — confirms state reset + error code
+  - SCO-035: multi-thread `timeoutBlockedThreads` — both threads timed out correctly
+- Cross-subsystem ripple verified: all `ipcInvariantFull` 10-tuple construction/
+  destructuring sites confirmed correct (Structural.lean, Boot.lean,
+  Architecture/Invariant.lean, Capability/Invariant/Preservation.lean).
+- Transport lemma coverage verified: 4 subsystem fields (scheduler, cdt, lifecycle,
+  services) have explicit equality proofs.
+- Documentation accuracy verified against code (SELE4N_SPEC.md, gitbook ch.12).
+- Scenario registry updated (4 new entries).
+
+Zero sorry/axiom. All tiers pass (0-3).
+
 ## [0.23.13] — Z6 Audit: Documentation Hardening + Test Coverage
 
 Comprehensive audit of Phase Z6 Timeout Endpoints implementation.

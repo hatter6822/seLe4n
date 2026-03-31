@@ -1176,3 +1176,23 @@ scenarios:
     function: runTimeoutEndpointTrace
     subsystem: IPC
     description: "Z6-AUD: endpointQueueRemove tail removal — queue relinks correctly"
+  SCO-032:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: endpointQueueRemove mid-queue removal — predecessor/successor relinked"
+  SCO-033:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: endpointQueueRemove receiveQ removal — sendQ unchanged"
+  SCO-034:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: timeoutThread on blockedOnCall thread — state reset + error code"
+  SCO-035:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: timeoutBlockedThreads multi-thread — both threads timed out"

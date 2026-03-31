@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-z6-timeouts-tSNkV",
-      "commit_sha": "8dc410ea249b29b6b9fded861907329dfe459e0e",
-      "tree_sha": "591a8141add29c689a74ca1e7a59c0ed09853d69",
-      "committed_at_utc": "2026-03-31T07:17:16+00:00"
+      "commit_sha": "69c12500b89352a539abc4713695ae27987f87c5",
+      "tree_sha": "1c299693483e3a06558ebfb5c44a6dd284dff688",
+      "committed_at_utc": "2026-03-31T07:37:06+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1f4cf6be900a51a7266c2a36875b2cb13fa926271358df53124c97c81b054da5"
+    "source_digest": "c36a15fac321ab43bbbfeabc4e87a5583e6833124d4646ef32d138d0eed31973"
   },
   "summary": {
     "module_count": 122,
     "declaration_count": 4018
   },
   "readme_sync": {
-    "version": "0.23.13",
+    "version": "0.23.14",
     "lean_toolchain": "v4.28.0",
     "production_files": 112,
-    "production_loc": 78036,
+    "production_loc": 78159,
     "test_files": 10,
     "test_loc": 8687,
     "proved_theorem_lemma_decls": 2258,
@@ -49734,7 +49734,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 2592,
+          "line": 2715,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -49776,7 +49776,7 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 2639,
+          "line": 2762,
           "called": [
             "Capability",
             "KernelObject",
@@ -49801,7 +49801,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 2690,
+          "line": 2813,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -49816,7 +49816,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2705,
+          "line": 2828,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -49824,7 +49824,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2716,
+          "line": 2839,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -49852,7 +49852,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2771,
+          "line": 2894,
           "called": [
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",

@@ -478,7 +478,7 @@ the SchedContext. This means:
 
 ---
 
-### Phase Z6: Timeout Endpoints (26 sub-tasks) — COMPLETE (v0.23.12, audit v0.23.13)
+### Phase Z6: Timeout Endpoints (26 sub-tasks) — COMPLETE (v0.23.12, audit v0.23.13, audit v0.23.14)
 
 **Goal**: Add budget-driven timeout to all blocking IPC operations. When a
 thread's SchedContext budget expires while the thread is blocked on IPC, the

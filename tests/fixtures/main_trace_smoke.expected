@@ -196,6 +196,10 @@
 [SCO-029] timeoutAwareReceive timeout-detect: timedOut=true
 [SCO-030] timeoutAwareReceive normal: completed=true
 [SCO-031] endpointQueueRemove tail: head=tid1:true tail=tid1:true
+[SCO-032] endpointQueueRemove mid: head=tid1:true tail=tid3:true tid1.next=tid3:true tid3.prev=tid1:true
+[SCO-033] endpointQueueRemove receiveQ: head=tid2:true sendQ_unchanged:true
+[SCO-034] timeoutThread blockedOnCall: ready=true errCode=true
+[SCO-035] timeoutBlockedThreads multi: tid1_ready=true tid2_ready=true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
