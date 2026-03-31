@@ -102,7 +102,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Bridge.lean` — `buildCNodeRadix` (RHTable → CNodeRadix conversion via fold),
     `CNodeConfig`/`CNodeRadix.ofCNode`, parameter preservation theorems.
   - Re-export hub: `SeLe4n/Kernel/RadixTree.lean`.
-- `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.18):
+- `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.19):
   - `Types.lean` — `SchedContextId`, `Budget`, `Period`, `Bandwidth`, `ReplenishmentEntry`, `SchedContext`, `SchedContextBinding` (unbound/bound/donated), BEq instances.
   - `Budget.lean` — CBS budget operations: `consumeBudget`, `isBudgetExhausted`, replenishment scheduling/processing, `cbsBudgetCheck`, `admissionCheck`.
   - `ReplenishQueue.lean` — sorted replenishment queue: `insert`, `popDue`, `remove`, `peek`, `hasDue` with `pairwiseSortedBy` invariant.

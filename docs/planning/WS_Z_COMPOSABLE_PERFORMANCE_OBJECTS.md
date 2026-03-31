@@ -1,6 +1,6 @@
 # WS-Z: Composable Performance Objects — EDF+CBS, Scheduling Contexts, Capability-Controlled Thread Creation
 
-**Status**: IN PROGRESS (Phases Z1–Z4 COMPLETE)
+**Status**: COMPLETE (Phases Z1–Z9, all 186+ sub-tasks delivered)
 **Created**: 2026-03-30
 **Baseline version**: 0.22.25
 **Prior portfolios**: WS-B through WS-Y (all COMPLETE or IN PROGRESS)
@@ -683,7 +683,7 @@ on Z8-J. Z8-L independent of Z8-J. Z8-M depends on Z5-O. Z8-N terminal.
 
 ---
 
-### Phase Z9: Invariant Composition & Cross-Subsystem (20 sub-tasks)
+### Phase Z9: Invariant Composition & Cross-Subsystem (20 sub-tasks) — COMPLETE
 
 **Goal**: Prove that all new invariants compose correctly with existing
 cross-subsystem invariants. Extend `proofLayerInvariantBundle` with

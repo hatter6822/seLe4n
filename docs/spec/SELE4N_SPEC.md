@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.23.18` (`lakefile.toml`) |
+| **Package version** | `0.23.19` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 79,419 across 113 Lean files |
 | **Test LoC** | 8,759 across 10 Lean test suites |
 | **Proved declarations** | 2,281 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-Z Phases Z1–Z8 COMPLETE** (v0.23.0–v0.23.18). Z8: API Surface & Syscall Wiring — 17 sub-tasks, 3 error-exclusivity theorems, 4 frozen SchedContext operations (configure/bind/unbind + budget-aware timer tick), enforcement boundary expanded 22→25 entries, 6 budget lifecycle trace scenarios, 8 negative-state tests. Z8 audit (v0.23.18): AUD-1 frozenSchedContextUnbind defense-in-depth fix. Z9 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-Z Phases Z1–Z9 COMPLETE** (v0.23.0–v0.23.19). Z9: Invariant Composition & Cross-Subsystem — `crossSubsystemInvariant` extended to 8 predicates (+ `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`), `proofLayerInvariantBundle` extended to 10 conjuncts (+ `schedulerInvariantBundleExtended`), `bootSafeObject` extended to 6 conjuncts (+ SchedContext `schedContextWellFormed`), `crossSubsystemFieldSets` extended to 8 entries, 14 pairwise disjointness witnesses (was 10), 3 new frame lemmas. Z8: API Surface & Syscall Wiring — 17 sub-tasks, 3 error-exclusivity theorems, 4 frozen SchedContext operations (configure/bind/unbind + budget-aware timer tick), enforcement boundary expanded 22→25 entries, 6 budget lifecycle trace scenarios, 8 negative-state tests. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -134,7 +134,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 
 | Area | seL4 | seLe4n Improvement |
 |------|------|-------------------|
-| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle in `proofLayerInvariantBundle` |
+| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle (8 predicates, Z9-extended) in `proofLayerInvariantBundle` (10 conjuncts, Z9-extended) |
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |

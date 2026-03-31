@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.23.18-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.23.19-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -70,7 +70,7 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.23.18` |
+| **Version** | `0.23.19` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 79,419 across 113 files |
 | **Test Lean LoC** | 8,759 across 10 test suites |
@@ -329,7 +329,7 @@ tests/                           10 test suites (negative-state, info-flow, trac
 Current priorities and the full workstream history are maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md). Summary:
 
-- **WS-Z** — Composable Performance Objects (8 phases, Z1–Z8) **COMPLETE** (v0.23.0–v0.23.18). SchedContext type foundation, CBS budget engine with 16 preservation theorems, replenishment queue, scheduler integration, capability-controlled thread binding, timeout endpoints, SchedContext donation for passive servers, API surface with 3 error-exclusivity theorems and 4 frozen operations. Enforcement boundary expanded 22→25 entries. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
+- **WS-Z** — Composable Performance Objects (8 phases, Z1–Z8) **COMPLETE** (v0.23.0–v0.23.19). SchedContext type foundation, CBS budget engine with 16 preservation theorems, replenishment queue, scheduler integration, capability-controlled thread binding, timeout endpoints, SchedContext donation for passive servers, API surface with 3 error-exclusivity theorems and 4 frozen operations. Enforcement boundary expanded 22→25 entries. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
 - **WS-Y** — Documentation & Cross-Subsystem Hardening (3 phases, Y1–Y3) **PORTFOLIO COMPLETE** (v0.22.23–v0.22.26).
 - **WS-X** — Documentation, Hardening & Low-Severity (5 phases, X1–X5) **PORTFOLIO COMPLETE** (v0.22.18–v0.22.22).
 - **WS-W** — Pre-Release Audit Remediation (6 phases, W1–W6, 52 sub-tasks) **PORTFOLIO COMPLETE** (v0.22.11–v0.22.17).

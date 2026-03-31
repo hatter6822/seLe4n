@@ -304,7 +304,7 @@ transformation. Three intermediate composition lemmas:
 
 The end-to-end bridge for the empty config is fully proved. For general
 configs, the gap is that builder operations (`registerIrq`, `createObject`)
-only preserve 4 structural invariants, not the full 9-component
+only preserve 4 structural invariants, not the full 10-component
 `proofLayerInvariantBundle`. Extending to general configs requires proving
 that each builder operation preserves all 9 components — deferred to WS-V
 where the full runtime semantics are exercised on hardware.
@@ -370,6 +370,7 @@ invariant components of `proofLayerInvariantBundle`. Each cell is either
 | 7. vspaceInvariantBundle    | vacuous     | vacuous†     |
 | 8. crossSubsystemInvariant  | vacuous     | vacuous†     |
 | 9. tlbConsistent            | vacuous     | vacuous      |
+| 10. schedInvariantExtended  | vacuous     | vacuous†     |
 
 † The component reads `objects`, which `createObject` modifies. However, the
   component's predicates are quantified over OTHER state fields (scheduler
@@ -436,7 +437,7 @@ private theorem registerIrq_state_fields_eq (ist : IntermediateState)
 **Strategy**: Rather than proving per-operation frame lemmas that transfer
 `proofLayerInvariantBundle` through each builder operation (which requires
 deep unfolding of 9×N invariant components), we prove the result directly:
-the post-boot state satisfies the full 9-component bundle.
+the post-boot state satisfies the full 10-component bundle.
 
 The key insight is that `bootFromPlatform` only modifies 4 fields from
 default: `objects`, `irqHandlers`, `objectIndex`/`objectIndexSet`, and
@@ -754,7 +755,7 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     preconditions for a freshly-booted state. During boot, there are no
     scheduler queues, no CDT edges, no service registrations, and no
     ASID mappings. Objects must satisfy IPC, queue, and structural
-    constraints for the full 9-component `proofLayerInvariantBundle`. -/
+    constraints for the full 10-component `proofLayerInvariantBundle`. -/
 def bootSafeObject (obj : KernelObject) : Prop :=
   -- Endpoints must have empty queues (no thread references)
   (∀ ep, obj = .endpoint ep →
@@ -777,7 +778,10 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.timeoutBudget = none ∧
     tcb.schedContextBinding = .unbound) ∧
   -- VSpaceRoots excluded (require asidTable registration not available at boot)
-  (∀ vs, obj ≠ .vspaceRoot vs)
+  (∀ vs, obj ≠ .vspaceRoot vs) ∧
+  -- Z9-I: SchedContexts must be well-formed and unbound at boot
+  (∀ sc, obj = .schedContext sc →
+    schedContextWellFormed sc ∧ sc.boundThread = none)
 
 /-- V4-A4: A PlatformConfig is boot-safe if all initial objects satisfy
     boot safety constraints. This is the standard precondition for
@@ -926,7 +930,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   -- No VSpaceRoots in boot state (bootSafe excludes them)
   have hNoVSpace : ∀ oid vs,
       (bootFromPlatform config).state.objects[oid]? ≠ some (KernelObject.vspaceRoot vs) :=
-    fun oid vs hObj => (hBS oid _ hObj).2.2.2.2 vs rfl
+    fun oid vs hObj => (hBS oid _ hObj).2.2.2.2.1 vs rfl
   -- lookupService returns none (services empty)
   have hLookupSvcNone : ∀ sid,
       lookupService (bootFromPlatform config).state sid = none := by
@@ -1117,9 +1121,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
     · intro oidA _ _ _ hObjA; exact absurd hObjA (hNoVSpace oidA _)
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
-  -- 8. crossSubsystemInvariant
+  -- 8. crossSubsystemInvariant (Z9-D: 8 predicates)
   have hCrossBundle : crossSubsystemInvariant (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
@@ -1162,13 +1166,53 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         · intro sid hLookup; exact absurd (hLookupSvcNone sid) hLookup
         · intro sid hMem; contradiction
         · simp [serviceBfsFuel]
+    · -- Z9-A: schedContextStoreConsistent — all TCBs have .unbound binding at boot
+      intro tid tcb hObj scId hBinding
+      have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      rw [hTcbProps.2.2.2.2.2] at hBinding
+      simp [SchedContextBinding.scId?] at hBinding
+    · -- Z9-B: schedContextNotDualBound — all TCBs have .unbound at boot, so no scId matches
+      intro tid₁ tid₂ tcb₁ tcb₂ scId h₁ h₂ hB₁ hB₂
+      have hTcb₁ := (hBS tid₁.toObjId _ h₁).2.2.2.1 tcb₁ rfl
+      rw [hTcb₁.2.2.2.2.2] at hB₁
+      simp [SchedContextBinding.scId?] at hB₁
+    · -- Z9-C: schedContextRunQueueConsistent — empty runnable list at boot
+      intro tid hMem; rw [hRun] at hMem; simp at hMem
   -- 9. tlbConsistent
   have hTlbBundle : Architecture.tlbConsistent (bootFromPlatform config).state
       (bootFromPlatform config).state.tlb := by
     rw [hTlb]; exact Architecture.tlbConsistent_empty _
-  -- Compose all 9 components
+  -- 10. schedulerInvariantBundleExtended (Z9-G: SchedContext invariants at boot)
+  have hExtBundle : schedulerInvariantBundleExtended (bootFromPlatform config).state := by
+    refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · -- budgetPositive: empty runnable list at boot
+      intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · -- currentBudgetPositive: current = none at boot
+      simp [currentBudgetPositive, hCur]
+    · -- schedContextsWellFormed: boot-safe SchedContexts are well-formed (Z9-I)
+      intro oid sc hObj
+      exact ((hBS oid _ hObj).2.2.2.2.2 sc rfl).1
+    · -- replenishQueueValid: default scheduler has empty queue
+      simp only [replenishQueueValid, hSch]
+      exact ⟨empty_sorted, empty_sizeConsistent⟩
+    · -- schedContextBindingConsistent: all TCBs have .unbound at boot
+      constructor
+      · intro tid tcb hTcb scId hBound
+        have hTcbProps := (hBS tid.toObjId _ hTcb).2.2.2.1 tcb rfl
+        rw [hTcbProps.2.2.2.2.2] at hBound; cases hBound
+      · intro scId sc hSc tid hBound
+        -- At boot, all SchedContexts have boundThread = none (Z9-I bootSafeObject)
+        have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2 sc rfl).2
+        rw [hNone] at hBound; cases hBound
+    · -- effectiveParamsMatchRunQueue: empty runQueue at boot
+      intro tid hMem
+      have hFlat : (bootFromPlatform config).state.scheduler.runQueue.flat = [] := by
+        rw [hSch]; decide
+      have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
+      simp [RunQueue.toList, hFlat] at hInFlat
+  -- Compose all 10 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
-         hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle⟩
+         hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs
