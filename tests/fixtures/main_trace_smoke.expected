@@ -165,11 +165,30 @@
 [MEI-004] multi-ep ep3 out-of-order recv registers: some [55, 66]
 [MEI-005] multi-ep ep1 FIFO second recv registers: some [77, 88]
 [MEI-006] multi-ep all 3 endpoints drained: true
+[SCO-001] validateSchedContextParams valid: Except.ok ()
+[SCO-002] validateSchedContextParams zero-period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-006] schedContextConfigure success budget=100 period=1000
+[SCO-007] schedContextBind success: sc.boundThread=true tcb.bound=true
+[SCO-008] schedContextBind already-bound: SeLe4n.Model.KernelError.illegalState
+[SCO-009] schedContextUnbind success: sc.cleared=true tcb.unbound=true
+[SCO-010] schedContextUnbind not-bound: SeLe4n.Model.KernelError.illegalState
+[SCO-011] schedContextYieldTo from=0 target=180
+[SCO-012] admission without-exclude=true with-exclude=true
+[SCO-013] schedContextBind runqueue-reinsert: inQueue=true prio=200
+[SCO-014] schedContextUnbind current-thread: current_cleared=true
+[SCO-015] schedContextUnbind runqueue-removal: removed=true
+[SCO-016] schedContextYieldTo starved-enqueue: enqueued=true budget=100
+[SCO-017] admission-failure: admitted=false
+[SCO-018] schedContextBind tcb-already-bound: SeLe4n.Model.KernelError.illegalState
+[SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty=true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 [PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
 [XVAL-001] MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
-[XVAL-002] SyscallId roundtrip ok: all 17 variants
+[XVAL-002] SyscallId roundtrip ok: all 20 variants
 [XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]
 [XVAL-004] MessageInfo bit layout ok: len=42 caps=384 label=2560

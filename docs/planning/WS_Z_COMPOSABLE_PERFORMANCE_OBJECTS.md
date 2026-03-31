@@ -412,11 +412,13 @@ is explicitly bound to a SchedContext via capability operations (Phase Z5).
 
 ---
 
-### Phase Z5: Capability-Controlled Thread Binding (25 sub-tasks)
+### Phase Z5: Capability-Controlled Thread Binding (25 sub-tasks) — COMPLETE (v0.23.9)
 
 **Goal**: Implement capability-gated operations to bind threads to scheduling
 contexts, configure scheduling parameters, and enforce admission control.
 This is where execution becomes a capability-controlled resource.
+
+**Status**: All 25 sub-tasks (Z5-A through Z5-P2) complete. Zero sorry/axiom.
 
 **New files**:
 - `SeLe4n/Kernel/SchedContext/Operations.lean`

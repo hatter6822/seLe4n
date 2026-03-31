@@ -2158,6 +2158,284 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
 
   checkInvariants counter "post-multi-endpoint-interleaving-trace" st1
 
+-- ============================================================================
+-- Z5-AUD: SchedContext operations trace
+-- ============================================================================
+
+private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  -- Z5-AUD-01: validateSchedContextParams — valid params
+  let validResult := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 0
+  IO.println s!"[SCO-001] validateSchedContextParams valid: {reprStr validResult}"
+  -- Z5-AUD-02: validateSchedContextParams — zero period rejected
+  let zeroPeriod := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 0 50 0 0
+  IO.println s!"[SCO-002] validateSchedContextParams zero-period: {reprStr zeroPeriod}"
+  -- Z5-AUD-03: validateSchedContextParams — budget > period rejected
+  let budgetOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 2000 1000 50 0 0
+  IO.println s!"[SCO-003] validateSchedContextParams budget>period: {reprStr budgetOver}"
+  -- Z5-AUD-04: validateSchedContextParams — priority > max rejected
+  let prioOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 256 0 0
+  IO.println s!"[SCO-004] validateSchedContextParams priority>max: {reprStr prioOver}"
+  -- Z5-AUD-05: validateSchedContextParams — domain >= numDomains rejected
+  let domainOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 16
+  IO.println s!"[SCO-005] validateSchedContextParams domain>=16: {reprStr domainOver}"
+
+  -- Z5-AUD-06: schedContextConfigure — success path
+  let scId : SeLe4n.ObjId := ⟨5000⟩
+  let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨5000⟩)
+  let stWithSc := { st1 with
+    objects := st1.objects.insert scId scObj
+    objectIndex := scId :: st1.objectIndex
+    objectIndexSet := st1.objectIndexSet.insert scId }
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scId 100 1000 50 0 0 stWithSc with
+  | .error err =>
+    IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
+  | .ok ((), stConfigured) =>
+    match stConfigured.objects[scId]? with
+    | some (.schedContext sc) =>
+      IO.println s!"[SCO-006] schedContextConfigure success budget={sc.budget.val} period={sc.period.val}"
+    | _ => IO.println s!"[SCO-006] schedContextConfigure success: object not found"
+
+  -- Z5-AUD-07: schedContextBind — success path
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scForBind : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩, budgetRemaining := ⟨100⟩ }
+  let stForBind := { st1 with
+    objects := st1.objects.insert scId (.schedContext scForBind) }
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId tid stForBind with
+  | .error err =>
+    IO.println s!"[SCO-007] schedContextBind success: error {reprStr err}"
+  | .ok ((), stBound) =>
+    let scBound := match stBound.objects[scId]? with
+      | some (.schedContext sc) => sc.boundThread == some tid
+      | _ => false
+    let tcbBound := match stBound.objects[tid.toObjId]? with
+      | some (.tcb tcb) => tcb.schedContextBinding.isBound
+      | _ => false
+    IO.println s!"[SCO-007] schedContextBind success: sc.boundThread={scBound} tcb.bound={tcbBound}"
+
+  -- Z5-AUD-08: schedContextBind — already bound rejected
+  let scAlreadyBound : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with boundThread := some ⟨99⟩ }
+  let stAlreadyBound := { st1 with
+    objects := st1.objects.insert scId (.schedContext scAlreadyBound) }
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId ⟨2⟩ stAlreadyBound with
+  | .error err => IO.println s!"[SCO-008] schedContextBind already-bound: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-008] schedContextBind already-bound: unexpected success"
+
+  -- Z5-AUD-09: schedContextUnbind — success path
+  let scBoundForUnbind : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    boundThread := some tid, isActive := true }
+  let tcbBoundForUnbind : KernelObject := .tcb {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
+    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    schedContextBinding := .bound ⟨5000⟩ }
+  let stForUnbind := { st1 with
+    objects := (st1.objects.insert scId (.schedContext scBoundForUnbind)).insert
+      tid.toObjId tcbBoundForUnbind }
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stForUnbind with
+  | .error err =>
+    IO.println s!"[SCO-009] schedContextUnbind success: error {reprStr err}"
+  | .ok ((), stUnbound) =>
+    let scCleared := match stUnbound.objects[scId]? with
+      | some (.schedContext sc) => sc.boundThread.isNone
+      | _ => false
+    let tcbCleared := match stUnbound.objects[tid.toObjId]? with
+      | some (.tcb tcb) => !tcb.schedContextBinding.isBound
+      | _ => false
+    IO.println s!"[SCO-009] schedContextUnbind success: sc.cleared={scCleared} tcb.unbound={tcbCleared}"
+
+  -- Z5-AUD-10: schedContextUnbind — not bound rejected
+  let scNotBound : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty ⟨5000⟩
+  let stNotBound := { st1 with
+    objects := st1.objects.insert scId (.schedContext scNotBound) }
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stNotBound with
+  | .error err => IO.println s!"[SCO-010] schedContextUnbind not-bound: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-010] schedContextUnbind not-bound: unexpected success"
+
+  -- Z5-AUD-11: schedContextYieldTo — budget transfer
+  let fromSc : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5001⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨150⟩ }
+  let targetSc : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨30⟩ }
+  let fromId : SeLe4n.ObjId := ⟨5001⟩
+  let targetId : SeLe4n.ObjId := ⟨5002⟩
+  let stYield := { st1 with
+    objects := (st1.objects.insert fromId (.schedContext fromSc)).insert
+      targetId (.schedContext targetSc) }
+  let stAfterYield := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
+    stYield ⟨5001⟩ ⟨5002⟩
+  let fromRemaining := match stAfterYield.objects[fromId]? with
+    | some (.schedContext sc) => sc.budgetRemaining.val
+    | _ => 9999
+  let targetRemaining := match stAfterYield.objects[targetId]? with
+    | some (.schedContext sc) => sc.budgetRemaining.val
+    | _ => 9999
+  IO.println s!"[SCO-011] schedContextYieldTo from={fromRemaining} target={targetRemaining}"
+
+  -- Z5-AUD-12: admission control — excludeId prevents double-counting
+  let scSmall : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    budget := ⟨500⟩, period := ⟨1000⟩ }
+  let stAdmission := { st1 with
+    objects := st1.objects.insert scId (.schedContext scSmall)
+    objectIndex := scId :: st1.objectIndex
+    objectIndexSet := st1.objectIndexSet.insert scId }
+  -- Without exclusion: existing 50% + candidate 50% = 100% ≤ 1000 per-mille → ok
+  let withoutExclude := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmission scSmall none
+  -- With exclusion: 0% + 50% = 50% → ok
+  let withExclude := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmission scSmall (some scId)
+  IO.println s!"[SCO-012] admission without-exclude={withoutExclude} with-exclude={withExclude}"
+
+  -- Z5-AUD-13: schedContextBind — thread in RunQueue triggers re-insertion
+  -- Tests Z5-G3: when a thread is already in RunQueue, bind must remove and
+  -- re-insert it at the SchedContext's priority (not the old TCB priority).
+  let tidRQ : SeLe4n.ThreadId := ⟨1⟩
+  let scForRQ : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨200⟩, budgetRemaining := ⟨100⟩ }
+  let stForRQ := { st1 with
+    objects := st1.objects.insert scId (.schedContext scForRQ)
+    scheduler := { st1.scheduler with
+      runQueue := mkRunQueue [tidRQ]   -- thread in RunQueue at default prio 0
+      current := none } }
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId tidRQ stForRQ with
+  | .error err =>
+    IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: error {reprStr err}"
+  | .ok ((), stBoundRQ) =>
+    let inQueue := stBoundRQ.scheduler.runQueue.contains tidRQ
+    let newPrio := match stBoundRQ.scheduler.runQueue.threadPriority.get? tidRQ with
+      | some p => p.toNat
+      | none => 9999
+    IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: inQueue={inQueue} prio={newPrio}"
+
+  -- Z5-AUD-14: schedContextUnbind — current thread triggers preemption guard
+  -- Tests Z5-H1: when the bound thread IS the current thread, unbind must
+  -- clear scheduler.current to force rescheduling.
+  let tidCur : SeLe4n.ThreadId := ⟨1⟩
+  let scBoundCur : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    boundThread := some tidCur, isActive := true }
+  let tcbBoundCur : KernelObject := .tcb {
+    tid := tidCur, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
+    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    schedContextBinding := .bound ⟨5000⟩ }
+  let stForCur := { st1 with
+    objects := (st1.objects.insert scId (.schedContext scBoundCur)).insert
+      tidCur.toObjId tcbBoundCur
+    scheduler := { st1.scheduler with current := some tidCur } }
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stForCur with
+  | .error err =>
+    IO.println s!"[SCO-014] schedContextUnbind current-thread: error {reprStr err}"
+  | .ok ((), stUnboundCur) =>
+    let curCleared := stUnboundCur.scheduler.current.isNone
+    IO.println s!"[SCO-014] schedContextUnbind current-thread: current_cleared={curCleared}"
+
+  -- Z5-AUD-15: schedContextUnbind — thread in RunQueue removed
+  -- Tests Z5-H2: when the bound thread is in RunQueue (but not current),
+  -- unbind must remove it from the RunQueue.
+  let tidInRQ : SeLe4n.ThreadId := ⟨1⟩
+  let scBoundRQ : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    boundThread := some tidInRQ, isActive := true }
+  let tcbBoundRQ : KernelObject := .tcb {
+    tid := tidInRQ, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
+    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    schedContextBinding := .bound ⟨5000⟩ }
+  let stForRQUnbind := { st1 with
+    objects := (st1.objects.insert scId (.schedContext scBoundRQ)).insert
+      tidInRQ.toObjId tcbBoundRQ
+    scheduler := { st1.scheduler with
+      runQueue := mkRunQueue [tidInRQ]
+      current := none } }
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stForRQUnbind with
+  | .error err =>
+    IO.println s!"[SCO-015] schedContextUnbind runqueue-removal: error {reprStr err}"
+  | .ok ((), stUnboundRQ) =>
+    let removed := !stUnboundRQ.scheduler.runQueue.contains tidInRQ
+    IO.println s!"[SCO-015] schedContextUnbind runqueue-removal: removed={removed}"
+
+  -- Z5-AUD-16: schedContextYieldTo — budget-starved target gets enqueued
+  -- Tests Z5-I2: when target's budgetRemaining was 0 and transfer makes it > 0,
+  -- the target's bound thread must be enqueued in the RunQueue.
+  let tidTarget : SeLe4n.ThreadId := ⟨12⟩
+  let fromScStarve : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5001⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨100⟩ }
+  let targetScStarve : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨0⟩,   -- budget-starved!
+    boundThread := some tidTarget, priority := ⟨80⟩ }
+  let fromIdS : SeLe4n.ObjId := ⟨5001⟩
+  let targetIdS : SeLe4n.ObjId := ⟨5002⟩
+  let stYieldStarve := { st1 with
+    objects := (st1.objects.insert fromIdS (.schedContext fromScStarve)).insert
+      targetIdS (.schedContext targetScStarve)
+    scheduler := { st1.scheduler with
+      runQueue := SeLe4n.Kernel.RunQueue.empty
+      current := none } }
+  let stAfterYieldStarve := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
+    stYieldStarve ⟨5001⟩ ⟨5002⟩
+  let targetEnqueued := stAfterYieldStarve.scheduler.runQueue.contains tidTarget
+  let targetBudget := match stAfterYieldStarve.objects[targetIdS]? with
+    | some (.schedContext sc) => sc.budgetRemaining.val
+    | _ => 9999
+  IO.println s!"[SCO-016] schedContextYieldTo starved-enqueue: enqueued={targetEnqueued} budget={targetBudget}"
+
+  -- Z5-AUD-17: admission control — failure when bandwidth exceeds 100%
+  -- Tests that checkAdmission returns false when total > 1000 per-mille.
+  let scHeavy : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    budget := ⟨900⟩, period := ⟨1000⟩ }  -- 90% bandwidth
+  let scIdHeavy : SeLe4n.ObjId := ⟨5000⟩
+  let stAdmissionFail := { st1 with
+    objects := st1.objects.insert scIdHeavy (.schedContext scHeavy)
+    objectIndex := scIdHeavy :: st1.objectIndex
+    objectIndexSet := st1.objectIndexSet.insert scIdHeavy }
+  let candidateHeavy : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5003⟩ with
+    budget := ⟨200⟩, period := ⟨1000⟩ }  -- 20% bandwidth → total 110% > 100%
+  let admissionFailed := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmissionFail candidateHeavy none
+  IO.println s!"[SCO-017] admission-failure: admitted={admissionFailed}"
+
+  -- Z5-AUD-18: schedContextBind — TCB already bound to different SC rejected
+  -- Tests the case where tcb.schedContextBinding is not .unbound.
+  let scForBind2 : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩ }
+  let tcbAlreadyBound : KernelObject := .tcb {
+    tid := ⟨1⟩, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
+    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    schedContextBinding := .bound ⟨9999⟩ }  -- already bound to SC 9999
+  let stBind2 := { st1 with
+    objects := (st1.objects.insert scId (.schedContext scForBind2)).insert
+      (SeLe4n.ThreadId.ofNat 1).toObjId tcbAlreadyBound }
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId ⟨1⟩ stBind2 with
+  | .error err => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: unexpected success"
+
+  -- Z5-AUD-19: schedContextYieldTo — target with no bound thread (no enqueue)
+  -- Tests Z5-I2 none branch: even if budget-starved, no enqueue when no boundThread.
+  let fromScNoBound : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5001⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨100⟩ }
+  let targetScNoBound : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨0⟩ }  -- starved but no bound thread
+  let stYieldNoBound := { st1 with
+    objects := (st1.objects.insert fromIdS (.schedContext fromScNoBound)).insert
+      targetIdS (.schedContext targetScNoBound)
+    scheduler := { st1.scheduler with
+      runQueue := SeLe4n.Kernel.RunQueue.empty
+      current := none } }
+  let stAfterNoBound := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
+    stYieldNoBound ⟨5001⟩ ⟨5002⟩
+  let rqEmpty := stAfterNoBound.scheduler.runQueue.toList.length == 0
+  IO.println s!"[SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty={rqEmpty}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   let counter ← IO.mkRef (0 : Nat)
@@ -2192,6 +2470,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runReplyRecvRoundtripTrace counter st1
   runEndpointLifecycleTrace counter st1
   runMultiEndpointInterleavingTrace counter st1
+  runSchedContextOpsTrace counter st1
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"
@@ -2292,13 +2571,14 @@ private def runRustXvalVectors : IO Unit := do
       throw <| IO.userError "[XVAL-001] MessageInfo roundtrip FAILED"
   | none => throw <| IO.userError "[XVAL-001] MessageInfo decode returned none"
 
-  -- RUST-XVAL: SyscallId roundtrip (all 17)
+  -- RUST-XVAL: SyscallId roundtrip (all 20)
   let allSyscalls : List SyscallId := [
     .send, .receive, .call, .reply,
     .cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete,
     .lifecycleRetype, .vspaceMap, .vspaceUnmap,
     .serviceRegister, .serviceRevoke, .serviceQuery,
-    .notificationSignal, .notificationWait, .replyRecv
+    .notificationSignal, .notificationWait, .replyRecv,
+    .schedContextConfigure, .schedContextBind, .schedContextUnbind
   ]
   let mut syscallOk := true
   for s in allSyscalls do
@@ -2306,7 +2586,7 @@ private def runRustXvalVectors : IO Unit := do
     | some s' => if s != s' then syscallOk := false
     | none => syscallOk := false
   if syscallOk then
-    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 17 variants"
+    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 20 variants"
   else
     throw <| IO.userError "[XVAL-002] SyscallId roundtrip FAILED"
 

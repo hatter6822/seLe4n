@@ -1,3 +1,88 @@
+## [0.23.11] — Z5 Audit Pass 2: Test Coverage Completion
+
+Second audit pass of Z5 Capability-Controlled Thread Binding. Found 7 untested
+critical code paths (scheduler integration behaviors) and 1 stale doc comment.
+
+- **AUD-8 (LOW)**: API.lean line 522 comment said "17 SyscallId variants"
+  when the actual count is 20. Fixed.
+- **AUD-9 (HIGH)**: 5 critical code paths had zero test coverage:
+  - Z5-G3: `schedContextBind` RunQueue re-insertion (SCO-013)
+  - Z5-H1: `schedContextUnbind` preemption guard when thread is current (SCO-014)
+  - Z5-H2: `schedContextUnbind` RunQueue removal of bound thread (SCO-015)
+  - Z5-I2: `schedContextYieldTo` budget-starved target enqueue (SCO-016)
+  - Admission control failure path when bandwidth > 100% (SCO-017)
+- **AUD-10 (MED)**: 2 additional untested error paths:
+  - `schedContextBind` when TCB is already bound to different SC (SCO-018)
+  - `schedContextYieldTo` when target has no bound thread (SCO-019)
+- **Testing**: 7 new trace tests SCO-013 through SCO-019. All 19 SCO tests pass.
+- **Operations.lean deep review**: No correctness or security issues found.
+  All scheduler integration logic (RunQueue, preemption, admission) verified.
+
+Zero sorry/axiom. All tiers pass (0-3). Metrics: 77,424 production LoC,
+111 files, 2,251 proved declarations.
+
+## [0.23.10] — Z5 Audit: SchedContext Operations Hardening
+
+Post-implementation audit of Z5 Capability-Controlled Thread Binding. Seven
+audit findings fixed, 4 new preservation theorems, 12 new trace tests.
+
+- **AUD-1 (HIGH)**: `schedContextBind` missing RunQueue re-insertion (Z5-G3).
+  After bind, thread in RunQueue is now removed and re-inserted at
+  SchedContext-derived priority to maintain `effectiveParamsMatchRunQueue`.
+- **AUD-2 (HIGH)**: `schedContextUnbind` missing preemption guard (Z5-H1).
+  If bound thread is the current thread, `current` is now cleared to force
+  rescheduling. Prevents unbinding the running thread without preemption.
+- **AUD-3 (HIGH)**: `schedContextUnbind` missing RunQueue removal (Z5-H2).
+  Runnable threads are now removed from RunQueue before unbinding.
+- **AUD-4 (MED)**: `schedContextYieldTo` missing re-enqueue logic (Z5-I2).
+  When budget transfer reactivates a budget-starved target, its bound thread
+  is now enqueued in the RunQueue at the SchedContext's priority.
+- **AUD-5 (MED)**: 4 missing preservation theorems added:
+  `schedContextBind_output_bidirectional` (Z5-K),
+  `schedContextUnbind_output_cleared` (Z5-L),
+  `schedContextBind_runQueue_insert_uses_sc_priority` (Z5-N1/N2),
+  `schedContextConfigure_admission_excludes_eq` (Z5-M admission).
+- **AUD-6 (LOW)**: 4 stale doc comments in `API.lean` updated from "6
+  capability-only arms" to "9 capability-only arms".
+- **AUD-7 (MED)**: `schedContextConfigure` admission control double-counted
+  the SchedContext being reconfigured. `collectSchedContexts` now accepts
+  `excludeId` parameter; configure passes the SchedContext's own ObjId.
+- **Testing**: 12 new `SCO-001` through `SCO-012` trace tests covering
+  parameter validation (5 tests), configure success, bind/unbind
+  success+rejection, yieldTo budget transfer, and admission exclusion.
+
+Zero sorry/axiom. All tiers pass (0-3). 212 modules build.
+
+## [0.23.9] — Z5: Capability-Controlled Thread Binding
+
+Phase Z5 of WS-Z Composable Performance Objects. 25 sub-tasks (Z5-A through
+Z5-P2) implementing capability-gated SchedContext operations.
+
+- **Z5-A/B/C**: 3 new `SyscallArgDecode` structures
+  (`SchedContextConfigureArgs`, `SchedContextBindArgs`,
+  `SchedContextUnbindArgs`) with decode/encode functions and round-trip proofs.
+- **Z5-D**: 3 new `SyscallId` variants (`.schedContextConfigure`,
+  `.schedContextBind`, `.schedContextUnbind`). Codec and injectivity proofs
+  updated. Count 17→20.
+- **Z5-E/J**: API dispatch wiring — 3 new `syscallRequiredRight` entries
+  (all `.write`), 3 new `dispatchCapabilityOnly` arms, 3 structural
+  equivalence theorems.
+- **Z5-F/G/H/I**: Core operations in new `Operations.lean` —
+  `validateSchedContextParams`, `collectSchedContexts`, `checkAdmission`,
+  `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`,
+  `schedContextYieldTo`.
+- **Z5-K/L/M/N**: Preservation theorems in new `Preservation.lean` —
+  `validateSchedContextParams_implies_wellFormed`,
+  `schedContextConfigure_output_wellFormed`,
+  `schedContextYieldTo_target_bounded`.
+- **Z5-O**: Information-flow enforcement via `dispatchCapabilityOnly` shared
+  path (capability-only, no separate wrappers needed). Structural equivalence
+  proven.
+- **Z5-P1/P2**: Build verification + smoke tests passing.
+
+New files: `SchedContext/Operations.lean`, `SchedContext/Invariant/Preservation.lean`.
+Zero sorry/axiom. All tiers pass (0-2). 212 modules build.
+
 ## [0.23.8] — Z4 Audit v2: Tier 3 Invariant Surface Anchors
 
 Second audit pass on Z4 Scheduler Integration. Added comprehensive Tier 3

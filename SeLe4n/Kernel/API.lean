@@ -27,6 +27,8 @@ import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
+import SeLe4n.Kernel.SchedContext.Operations
+
 import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Kernel.Architecture.VSpace
@@ -375,6 +377,9 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .notificationSignal => .write
   | .notificationWait   => .read
   | .replyRecv          => .read
+  | .schedContextConfigure => .write
+  | .schedContextBind      => .write
+  | .schedContextUnbind    => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -402,11 +407,12 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
         | none => acc
         | some cap => acc.push cap) #[]
 
-/-- V8-H: Shared dispatch for capability-only syscalls — these 6 arms derive
-authority entirely from capability possession and require no information-flow
-checks. Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to this
-helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`, `.vspaceUnmap`,
-`.serviceRevoke`, `.serviceQuery`.
+/-- V8-H/Z5-J: Shared dispatch for capability-only syscalls — these 9 arms
+derive authority entirely from capability possession and require no
+information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
+delegate to this helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
+`.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
+`.schedContextBind`, `.schedContextUnbind`.
 
 Returns `none` if the syscall ID is not a capability-only arm (i.e., it
 requires IPC/cross-domain handling). -/
@@ -464,6 +470,33 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .ok (_, st') => .ok ((), st')
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- Z5-J: SchedContext configure — decode args, validate, configure
+  | .schedContextConfigure =>
+    some <| match cap.target with
+    | .object scId =>
+      fun st => match decodeSchedContextConfigureArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          SchedContextOps.schedContextConfigure scId args.budget args.period
+            args.priority args.deadline args.domain st
+    | _ => fun _ => .error .invalidCapability
+  -- Z5-J: SchedContext bind — decode threadId, bind thread to SchedContext
+  | .schedContextBind =>
+    some <| match cap.target with
+    | .object scId =>
+      fun st => match decodeSchedContextBindArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          SchedContextOps.schedContextBind scId (ThreadId.ofNat args.threadId) st
+    | _ => fun _ => .error .invalidCapability
+  -- Z5-J: SchedContext unbind — no extra args, SchedContext from cap target
+  | .schedContextUnbind =>
+    some <| match cap.target with
+    | .object scId =>
+      fun st => match decodeSchedContextUnbindArgs decoded with
+      | .error e => .error e
+      | .ok _ => SchedContextOps.schedContextUnbind scId st
+    | _ => fun _ => .error .invalidCapability
   | _ => none
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
@@ -486,7 +519,7 @@ and no additional decoded arguments) and this explicit match (handles syscalls
 requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 1. Shares a single checked/unchecked dispatch implementation (V8-H)
 2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
-   showing all 17 `SyscallId` variants are handled by one of the two tiers
+   showing all 20 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -578,7 +611,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             cspaceMove src dst st
     | _ => fun _ => .error .invalidCapability
   -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
-  -- serviceQuery are all handled by dispatchCapabilityOnly above.
+  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind
+  -- are all handled by dispatchCapabilityOnly above.
   -- WS-Q1-D: Service register — decode interface spec from message registers,
   -- construct ServiceRegistration, and register the service.
   | .serviceRegister =>
@@ -639,7 +673,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- V8-H: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
-  -- serviceRevoke, serviceQuery) are unreachable here — handled by
+  -- serviceRevoke, serviceQuery, schedContextConfigure, schedContextBind,
+  -- schedContextUnbind) are unreachable here — handled by
   -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
   -- Lean's exhaustiveness checker.
   | _ => fun _ => .error .illegalState
@@ -761,7 +796,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             cspaceMoveChecked ctx src dst st
     | _ => fun _ => .error .invalidCapability
   -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
-  -- serviceQuery are all handled by dispatchCapabilityOnly above.
+  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind
+  -- are all handled by dispatchCapabilityOnly above.
   -- T6-I: Service register — checked for thread→service flow
   | .serviceRegister =>
     match cap.target with
@@ -868,13 +904,14 @@ def syscallEntryChecked (ctx : LabelingContext)
 -- U5-A/U5-D: Dispatch structural equivalence theorems
 -- ============================================================================
 
-/-- U5-A/U-M02/V8-H: The 6 capability-only syscalls are handled identically by
+/-- U5-A/U-M02/V8-H: The 9 capability-only syscalls are handled identically by
 both checked and unchecked dispatch paths, since both delegate to
 `dispatchCapabilityOnly`. These arms derive authority entirely from
 capability possession and do not cross security domains.
 
 The shared arms are: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
-`.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`.
+`.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
+`.schedContextBind`, `.schedContextUnbind`.
 
 V8-H: With the shared helper extraction, each per-arm theorem follows
 directly from the shared `dispatchCapabilityOnly` delegation. -/
@@ -931,11 +968,38 @@ theorem checkedDispatch_serviceQuery_eq_unchecked
     dispatchWithCap decoded tid gate cap := by
   simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-D/U-L20/V8-H: Complete dispatch equivalence — for ALL capability-only
+/-- Z5-J: Structural equivalence for `.schedContextConfigure`. -/
+theorem checkedDispatch_schedContextConfigure_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .schedContextConfigure) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- Z5-J: Structural equivalence for `.schedContextBind`. -/
+theorem checkedDispatch_schedContextBind_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .schedContextBind) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- Z5-J: Structural equivalence for `.schedContextUnbind`. -/
+theorem checkedDispatch_schedContextUnbind_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .schedContextUnbind) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- U5-D/U-L20/V8-H/Z5-J: Complete dispatch equivalence — for ALL capability-only
 syscalls, the checked and unchecked dispatch paths produce identical results.
 
 Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to the shared
-`dispatchCapabilityOnly` helper for these 6 arms, making structural identity
+`dispatchCapabilityOnly` helper for these 9 arms, making structural identity
 trivial.
 
 **Production recommendation**: Use `syscallEntryChecked` for user-space entry.
@@ -949,10 +1013,13 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
                 decoded.syscallId = .vspaceMap ∨
                 decoded.syscallId = .vspaceUnmap ∨
                 decoded.syscallId = .serviceRevoke ∨
-                decoded.syscallId = .serviceQuery) :
+                decoded.syscallId = .serviceQuery ∨
+                decoded.syscallId = .schedContextConfigure ∨
+                decoded.syscallId = .schedContextBind ∨
+                decoded.syscallId = .schedContextUnbind) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  rcases hCapOnly with h | h | h | h | h | h <;>
+  rcases hCapOnly with h | h | h | h | h | h | h | h | h <;>
     simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
 -- ============================================================================
@@ -964,9 +1031,10 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
     arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
     wildcard arm is unreachable at runtime.
 
-    The proof enumerates all 17 `SyscallId` constructors: 6 are routed to
+    The proof enumerates all 20 `SyscallId` constructors: 9 are routed to
     `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
-    `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`), and the remaining 11
+    `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
+    `.schedContextBind`, `.schedContextUnbind`), and the remaining 11
     (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
     `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
     `.replyRecv`) are handled by explicit match arms in `dispatchWithCap`. -/
@@ -974,7 +1042,9 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
             .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
             .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
-            .notificationSignal, .notificationWait, .replyRecv] : List SyscallId) := by
+            .notificationSignal, .notificationWait, .replyRecv,
+            .schedContextConfigure, .schedContextBind,
+            .schedContextUnbind] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

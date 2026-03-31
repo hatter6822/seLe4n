@@ -885,6 +885,94 @@ def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
   let r0 ← requireMsgReg decoded.msgRegs 0
   pure { replyTarget := ThreadId.ofNat r0.val }
 
+-- ============================================================================
+-- Z5-A/B/C: SchedContext argument structures
+-- ============================================================================
+
+/-- Z5-A: Per-syscall argument structure for `schedContextConfigure`.
+    Register mapping: x2=budget, x3=period, x4=priority, x5=deadline, x6=domain. -/
+structure SchedContextConfigureArgs where
+  budget   : Nat
+  period   : Nat
+  priority : Nat
+  deadline : Nat
+  domain   : Nat
+  deriving Repr, DecidableEq
+
+/-- Z5-B: Per-syscall argument structure for `schedContextBind`.
+    Register mapping: x2=threadId (thread to bind to this SchedContext). -/
+structure SchedContextBindArgs where
+  threadId : Nat
+  deriving Repr, DecidableEq
+
+/-- Z5-C: Per-syscall argument structure for `schedContextUnbind`.
+    No additional arguments — the SchedContext comes from the capability target. -/
+structure SchedContextUnbindArgs where
+  deriving Repr, DecidableEq
+
+-- ============================================================================
+-- Z5-A/B/C: SchedContext decode functions
+-- ============================================================================
+
+/-- Z5-A: Decode schedContextConfigure arguments from message registers.
+    Requires 5 message registers (budget, period, priority, deadline, domain). -/
+def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SchedContextConfigureArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let r1 ← requireMsgReg decoded.msgRegs 1
+  let r2 ← requireMsgReg decoded.msgRegs 2
+  let r3 ← requireMsgReg decoded.msgRegs 3
+  let r4 ← requireMsgReg decoded.msgRegs 4
+  pure { budget := r0.val, period := r1.val, priority := r2.val,
+         deadline := r3.val, domain := r4.val }
+
+/-- Z5-B: Decode schedContextBind arguments from message registers.
+    Requires 1 message register (threadId). -/
+def decodeSchedContextBindArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SchedContextBindArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { threadId := r0.val }
+
+/-- Z5-C: Decode schedContextUnbind arguments. No message registers needed. -/
+def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
+    : Except KernelError SchedContextUnbindArgs :=
+  pure {}
+
+-- ============================================================================
+-- Z5-A/B/C: SchedContext encode functions
+-- ============================================================================
+
+/-- Z5-A: Encode schedContextConfigure arguments into message registers. -/
+@[inline] def encodeSchedContextConfigureArgs (args : SchedContextConfigureArgs) : Array RegValue :=
+  #[⟨args.budget⟩, ⟨args.period⟩, ⟨args.priority⟩, ⟨args.deadline⟩, ⟨args.domain⟩]
+
+/-- Z5-B: Encode schedContextBind arguments into message registers. -/
+@[inline] def encodeSchedContextBindArgs (args : SchedContextBindArgs) : Array RegValue :=
+  #[⟨args.threadId⟩]
+
+/-- Z5-C: Encode schedContextUnbind arguments (empty — no message registers). -/
+@[inline] def encodeSchedContextUnbindArgs (_args : SchedContextUnbindArgs) : Array RegValue :=
+  #[]
+
+-- ============================================================================
+-- Z5-A/B/C: SchedContext round-trip proofs
+-- ============================================================================
+
+/-- Z5-A: SchedContextConfigureArgs decode round-trip. -/
+theorem decodeSchedContextConfigureArgs_roundtrip (args : SchedContextConfigureArgs) :
+    decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args := by
+  rcases args with ⟨b, p, pr, d, dm⟩; rfl
+
+/-- Z5-B: SchedContextBindArgs decode round-trip. -/
+theorem decodeSchedContextBindArgs_roundtrip (args : SchedContextBindArgs) :
+    decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args := by
+  rcases args with ⟨t⟩; rfl
+
+/-- Z5-C: SchedContextUnbindArgs decode round-trip (trivial). -/
+theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
+    decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args := by
+  rcases args; rfl
+
 /-- V2-I: Encode notification signal arguments into message registers. -/
 @[inline] def encodeNotificationSignalArgs (args : NotificationSignalArgs) : Array RegValue :=
   #[⟨args.badge.val⟩]
@@ -917,7 +1005,7 @@ theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
     decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args := by
   rcases args with ⟨t⟩; rfl
 
-/-- Composed round-trip: all 12 argument structures satisfy the encode-decode
+/-- Composed round-trip: all 15 argument structures satisfy the encode-decode
     round-trip property. R6-B: CSpaceMintArgs and NotificationSignalArgs require
     badge validity for lossless roundtrip through `ofNatMasked`. Y1-D:
     CSpaceMintArgs additionally requires rights validity for lossless roundtrip
@@ -940,7 +1028,10 @@ theorem decode_layer2_roundtrip_all :
     (∀ args, args.badge.valid →
       decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
-    (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) :=
+    (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) ∧
+    (∀ args, decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args) ∧
+    (∀ args, decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args) ∧
+    (∀ args, decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args) :=
   ⟨fun args hR hB => decodeCSpaceMintArgs_roundtrip args hR hB,
    decodeCSpaceCopyArgs_roundtrip,
    decodeCSpaceMoveArgs_roundtrip,
@@ -952,7 +1043,10 @@ theorem decode_layer2_roundtrip_all :
    decodeServiceRevokeArgs_roundtrip,
    fun args h => decodeNotificationSignalArgs_roundtrip args h,
    decodeNotificationWaitArgs_roundtrip,
-   decodeReplyRecvArgs_roundtrip⟩
+   decodeReplyRecvArgs_roundtrip,
+   decodeSchedContextConfigureArgs_roundtrip,
+   decodeSchedContextBindArgs_roundtrip,
+   decodeSchedContextUnbindArgs_roundtrip⟩
 
 /-- V2-I: NotificationSignalArgs error exclusivity. -/
 theorem decodeNotificationSignalArgs_error_iff (d : SyscallDecodeResult) :

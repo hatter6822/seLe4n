@@ -321,6 +321,8 @@ source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Types
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Budget
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant.Defs
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant
+source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Invariant.Preservation
+source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext.Operations
 source ~/.elan/env && lake build SeLe4n.Kernel.SchedContext
 ```
 
