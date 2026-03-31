@@ -208,6 +208,12 @@
 [Z7D-006] applyReplyDonation non-donated: unchanged=true
 [Z7D-007] cleanupDonatedSchedContext: caller_recovered=true
 [Z7D-008] cleanupPreReceiveDonation: caller_back=true
+[Z8J-001] SchedContext create+configure: budget=5 period=100 remaining=5
+[Z8J-002] SchedContext bind: bound=true
+[Z8J-003] budget after 1 tick: remaining=4 preempted=false
+[Z8J-004] budget after 4 ticks: remaining=1 preempted=false
+[Z8J-005] budget exhausted: remaining=0 preempted=true
+[Z8J-006] after replenishment: remaining=1 restored=true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)

@@ -302,18 +302,18 @@ theorem enforcementSoundness_registerServiceChecked
 -- WS-H8/Q1: Updated enforcement boundary classification
 -- ============================================================================
 
-/-- W2-G (M-3) / WS-H8/Q1/V6-L: `enforcementBoundaryExtended` is now a definitional alias for
-    `enforcementBoundary`, eliminating the maintenance debt of keeping two
-    identical 22-entry lists in sync. Previously, the two lists contained the
-    same operations in different order with only a cardinality correspondence
-    proof. Now they are definitionally equal, making element-wise correspondence
-    trivial by `rfl`. -/
+/-- W2-G (M-3) / WS-H8/Q1/V6-L/Z8-M: `enforcementBoundaryExtended` is now a definitional
+    alias for `enforcementBoundary`, eliminating the maintenance debt of keeping two
+    identical lists in sync. Previously, the two lists contained the same operations
+    in different order with only a cardinality correspondence proof. Now they are
+    definitionally equal, making element-wise correspondence trivial by `rfl`.
+    Z8-M expanded from 22 to 25 entries with SchedContext capability-only operations. -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
-/-- V6-L (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 22 entries, matching the canonical `enforcementBoundary`. -/
+/-- V6-L/Z8-M (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
+    has exactly 25 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 22 := by rfl
+    enforcementBoundaryExtended.length = 25 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

@@ -1,3 +1,42 @@
+## [0.23.18] — Z8 Audit: Defense-in-Depth Hardening
+
+Post-implementation audit of Z8 API Surface & Syscall Wiring phase.
+
+- **AUD-1**: `frozenSchedContextUnbind` — replaced silent fallback on
+  `FrozenMap.set` failure with explicit `.error .objectNotFound`. Prevents
+  theoretical inconsistent state where TCB is unbound but SC retains stale
+  binding. Aligns with `frozenSchedContextBind` error-handling pattern.
+- Regenerated `docs/codebase_map.json`.
+- Zero sorry/axiom. All tests pass (smoke + full).
+
+## [0.23.17] — Z8: API Surface & Syscall Wiring
+
+Complete public API surface for SchedContext operations. Wire new operations
+through decode → dispatch → invoke pipeline. Add frozen operation variants.
+Expand enforcement boundary. Update test harness and fixtures.
+
+- **Z8-B**: 3 error-exclusivity theorems: `decodeSchedContextConfigureArgs_error_iff`
+  (fails iff `< 5` MRs), `decodeSchedContextBindArgs_error_iff` (fails iff `< 1` MR),
+  `decodeSchedContextUnbindArgs_error_iff` (never fails — no MRs required)
+- **Z8-H**: 3 frozen SchedContext operations: `frozenSchedContextConfigure`,
+  `frozenSchedContextBind`, `frozenSchedContextUnbind` — passthrough-frozen
+  (no internal RHTables), operate via `FrozenMap.get?`/`FrozenMap.set`
+- **Z8-I**: `frozenTimerTickBudget` — CBS budget-aware timer tick in frozen
+  state, mirrors `timerTickBudget` (Z4-F) with dequeue-on-dispatch semantics
+- **Z8-M**: `enforcementBoundary` expanded from 22 to 25 entries (3 new
+  `.capabilityOnly` entries for schedContextConfigure/Bind/Unbind)
+- **Z8-J**: 6 budget lifecycle trace scenarios (Z8J-001 through Z8J-006):
+  create+configure, bind, per-tick decrement, 4-tick partial, exhaustion
+  with preemption, replenishment with budget restoration
+- **Z8-L**: 8 negative-state tests (Z8-L-01 through Z8-L-08): configure
+  non-existent, zero period, budget>period, bind non-existent, double-bind,
+  TCB already bound, unbind no bound thread, unbind non-existent
+- **Frozen op coverage**: 12 → 15 SyscallId arms (SchedContext operations
+  now frozen-phase capable); `frozenOpCoverage_count` updated
+- **Test ripple**: InformationFlowSuite enforcement boundary count assertions
+  updated (22→25 total, 7→10 capability-only)
+- Zero sorry/axiom. All tests pass (smoke + full).
+
 ## [0.23.16] — Z7 Audit: Documentation Hardening + Verification
 
 Comprehensive audit pass 2 of Phase Z7 SchedContext Donation.

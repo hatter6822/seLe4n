@@ -2838,6 +2838,67 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     | _ => false
   IO.println s!"[Z7D-008] cleanupPreReceiveDonation: caller_back={callerBack}"
 
+-- ============================================================================
+-- Z8-J: SchedContext budget lifecycle trace
+-- ============================================================================
+
+private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  -- Z8-J1: Create a SchedContext and configure it with budget=5 / period=100
+  let scId : SeLe4n.ObjId := ⟨8000⟩
+  let scIdTyped : SeLe4n.SchedContextId := ⟨8000⟩
+  let tid : SeLe4n.ThreadId := ⟨8001⟩
+  let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty scIdTyped)
+  let tcb0 : TCB := {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    ipcState := .ready }
+  let stSetup := { st1 with
+    objects := (st1.objects.insert scId scObj).insert tid.toObjId (.tcb tcb0)
+    objectIndex := scId :: tid.toObjId :: st1.objectIndex
+    objectIndexSet := (st1.objectIndexSet.insert scId).insert tid.toObjId }
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scId 5 100 50 0 0 stSetup with
+  | .error err =>
+    IO.println s!"[Z8J-001] SchedContext create+configure: error {reprStr err}"
+  | .ok ((), stConfigured) =>
+    match stConfigured.objects[scId]? with
+    | some (.schedContext sc) =>
+      IO.println s!"[Z8J-001] SchedContext create+configure: budget={sc.budget.val} period={sc.period.val} remaining={sc.budgetRemaining.val}"
+    | _ => IO.println s!"[Z8J-001] SchedContext create+configure: not found"
+
+    -- Z8-J2: Bind thread to SchedContext, verify binding
+    match SeLe4n.Kernel.SchedContextOps.schedContextBind scId tid stConfigured with
+    | .error err =>
+      IO.println s!"[Z8J-002] SchedContext bind: error {reprStr err}"
+    | .ok ((), stBound) =>
+      let tcbBound := match stBound.objects[tid.toObjId]? with
+        | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scIdTyped
+        | _ => false
+      IO.println s!"[Z8J-002] SchedContext bind: bound={tcbBound}"
+
+      -- Z8-J2 cont: Decrement budget via cbsBudgetCheck (simulating 1 tick)
+      match stBound.objects[scId]? with
+      | some (.schedContext scBound) =>
+        let (scTick1, preempt1) := SeLe4n.Kernel.cbsBudgetCheck scBound 10 1
+        IO.println s!"[Z8J-003] budget after 1 tick: remaining={scTick1.budgetRemaining.val} preempted={preempt1}"
+
+        -- Z8-J2 cont: Decrement 3 more ticks (budget 5 → after 4 ticks = 1 remaining)
+        let (scTick2, _) := SeLe4n.Kernel.cbsBudgetCheck scTick1 11 1
+        let (scTick3, _) := SeLe4n.Kernel.cbsBudgetCheck scTick2 12 1
+        let (scTick4, preempt4) := SeLe4n.Kernel.cbsBudgetCheck scTick3 13 1
+        IO.println s!"[Z8J-004] budget after 4 ticks: remaining={scTick4.budgetRemaining.val} preempted={preempt4}"
+
+        -- Z8-J3: Exhaust budget on 5th tick (budget=5, consumed=5 → exhausted)
+        let (scExhausted, preemptExhaust) := SeLe4n.Kernel.cbsBudgetCheck scTick4 14 1
+        IO.println s!"[Z8J-005] budget exhausted: remaining={scExhausted.budgetRemaining.val} preempted={preemptExhaust}"
+
+        -- Z8-J3 cont: After exhaustion, replenishment was scheduled at time 14 + period(100) = 114.
+        -- Advance past the replenishment due time to trigger budget refill.
+        let (scReplenished, _) := SeLe4n.Kernel.cbsBudgetCheck scExhausted 115 0
+        let budgetRestored := scReplenished.budgetRemaining.val != 0
+        IO.println s!"[Z8J-006] after replenishment: remaining={scReplenished.budgetRemaining.val} restored={budgetRestored}"
+
+      | _ => IO.println s!"[Z8J-003] SchedContext lookup after bind: not found"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   let counter ← IO.mkRef (0 : Nat)
@@ -2875,6 +2936,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runSchedContextOpsTrace counter st1
   runTimeoutEndpointTrace counter st1
   runDonationTrace counter st1
+  runBudgetLifecycleTrace counter st1
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-z7-workstream-I9z5x",
-      "commit_sha": "7dbf65e3259aed07c8a833fcff4224932a5db3ce",
-      "tree_sha": "693f1b7e91f5ca9276029f8885e0bf27f8ea1d39",
-      "committed_at_utc": "2026-03-31T14:20:07+00:00"
+      "branch": "claude/optimize-api-syscall-wiring-8F1QL",
+      "commit_sha": "ffa71c27ab2e9e3b5a16bdcfc768ac7d4babbaca",
+      "tree_sha": "1e2a9ddd32f35fb0474adf766d7bcdcac9da14c6",
+      "committed_at_utc": "2026-03-31T15:46:28+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "75fbce4fe00ecdc68162d9874b14ad3bfb22b373dbfb484ab38e2f3fc27757a6"
+    "source_digest": "2516490c877b2d139cde9a9041c9c25ce38a152934eaf4722ba3a5ec13724b04"
   },
   "summary": {
     "module_count": 123,
-    "declaration_count": 4054
+    "declaration_count": 4063
   },
   "readme_sync": {
-    "version": "0.23.16",
+    "version": "0.23.18",
     "lean_toolchain": "v4.28.0",
     "production_files": 113,
-    "production_loc": 79143,
+    "production_loc": 79419,
     "test_files": 10,
-    "test_loc": 8687,
-    "proved_theorem_lemma_decls": 2278,
+    "test_loc": 8759,
+    "proved_theorem_lemma_decls": 2281,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2335,7 +2335,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
       "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
-      "declaration_count": 91,
+      "declaration_count": 94,
       "declarations": [
         {
           "kind": "namespace",
@@ -3396,9 +3396,48 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "decodeSchedContextConfigureArgs_error_iff",
+          "line": 1090,
+          "called": [
+            "SyscallDecodeResult",
+            "bind",
+            "decodeSchedContextConfigureArgs",
+            "pure",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "requireMsgReg_unfold_ok",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSchedContextBindArgs_error_iff",
+          "line": 1123,
+          "called": [
+            "SyscallDecodeResult",
+            "bind",
+            "decodeSchedContextBindArgs",
+            "pure",
+            "requireMsgReg",
+            "requireMsgReg_unfold_err",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSchedContextUnbindArgs_error_iff",
+          "line": 1140,
+          "called": [
+            "SyscallDecodeResult",
+            "decodeSchedContextUnbindArgs",
+            "pure"
+          ]
+        },
+        {
           "kind": "def",
           "name": "decodeExtraCapAddrs",
-          "line": 1099,
+          "line": 1160,
           "called": [
             "CPtr",
             "SyscallDecodeResult",
@@ -3409,7 +3448,7 @@
         {
           "kind": "theorem",
           "name": "arm64_regCount_valid",
-          "line": 1120,
+          "line": 1181,
           "called": [
             "arm64GPRCount"
           ]
@@ -3417,7 +3456,7 @@
         {
           "kind": "theorem",
           "name": "machineConfig_registerCount_default_eq_arm64GPRCount",
-          "line": 1127,
+          "line": 1188,
           "called": [
             "MachineConfig",
             "arm64GPRCount"
@@ -9440,18 +9479,18 @@
     {
       "module": "SeLe4n.Kernel.FrozenOps.Operations",
       "path": "SeLe4n/Kernel/FrozenOps/Operations.lean",
-      "declaration_count": 22,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.FrozenOps",
-          "line": 41,
+          "line": 46,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenChooseThread",
-          "line": 83,
+          "line": 88,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -9465,7 +9504,7 @@
         {
           "kind": "def",
           "name": "frozenSchedule",
-          "line": 108,
+          "line": 113,
           "called": [
             "FrozenKernel",
             "frozenChooseThread",
@@ -9480,7 +9519,7 @@
         {
           "kind": "def",
           "name": "frozenHandleYield",
-          "line": 140,
+          "line": 145,
           "called": [
             "FrozenKernel",
             "frozenSchedule",
@@ -9490,13 +9529,13 @@
         {
           "kind": "def",
           "name": "frozenDefaultTimeSlice",
-          "line": 152,
+          "line": 157,
           "called": []
         },
         {
           "kind": "def",
           "name": "frozenTimerTick",
-          "line": 161,
+          "line": 166,
           "called": [
             "FrozenKernel",
             "frozenSchedule",
@@ -9510,7 +9549,7 @@
         {
           "kind": "def",
           "name": "frozenNotificationSignal",
-          "line": 201,
+          "line": 206,
           "called": [
             "Badge",
             "FrozenKernel",
@@ -9531,7 +9570,7 @@
         {
           "kind": "def",
           "name": "frozenNotificationWait",
-          "line": 238,
+          "line": 243,
           "called": [
             "Badge",
             "FrozenKernel",
@@ -9549,7 +9588,7 @@
         {
           "kind": "def",
           "name": "frozenQueuePopHead",
-          "line": 282,
+          "line": 287,
           "called": [
             "FrozenSystemState",
             "IntrusiveQueue",
@@ -9568,7 +9607,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointSend",
-          "line": 327,
+          "line": 332,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -9589,7 +9628,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReceive",
-          "line": 368,
+          "line": 373,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -9606,7 +9645,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointCall",
-          "line": 414,
+          "line": 419,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -9627,7 +9666,7 @@
         {
           "kind": "def",
           "name": "frozenEndpointReply",
-          "line": 464,
+          "line": 469,
           "called": [
             "FrozenKernel",
             "IpcMessage",
@@ -9640,7 +9679,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookup",
-          "line": 489,
+          "line": 494,
           "called": [
             "CPtr",
             "Capability",
@@ -9658,7 +9697,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceLookupSlot",
-          "line": 501,
+          "line": 506,
           "called": [
             "CPtr",
             "Capability",
@@ -9670,7 +9709,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceMint",
-          "line": 515,
+          "line": 520,
           "called": [
             "Capability",
             "FrozenCNode",
@@ -9687,7 +9726,7 @@
         {
           "kind": "def",
           "name": "frozenCspaceDelete",
-          "line": 533,
+          "line": 538,
           "called": [
             "FrozenCNode",
             "FrozenKernel",
@@ -9702,7 +9741,7 @@
         {
           "kind": "def",
           "name": "frozenVspaceLookup",
-          "line": 552,
+          "line": 557,
           "called": [
             "ASID",
             "FrozenKernel",
@@ -9716,7 +9755,7 @@
         {
           "kind": "def",
           "name": "frozenLookupServiceByCap",
-          "line": 573,
+          "line": 578,
           "called": [
             "FrozenKernel",
             "ObjId",
@@ -9727,8 +9766,72 @@
         },
         {
           "kind": "def",
+          "name": "frozenSchedContextConfigure",
+          "line": 600,
+          "called": [
+            "FrozenKernel",
+            "ObjId",
+            "SchedContext",
+            "admissionCheck",
+            "fold",
+            "get",
+            "none",
+            "scId",
+            "set",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenSchedContextBind",
+          "line": 636,
+          "called": [
+            "FrozenKernel",
+            "ObjId",
+            "SchedContextId",
+            "ThreadId",
+            "get",
+            "none",
+            "scId",
+            "set",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenSchedContextUnbind",
+          "line": 666,
+          "called": [
+            "FrozenKernel",
+            "ObjId",
+            "get",
+            "none",
+            "scId",
+            "set",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenTimerTickBudget",
+          "line": 702,
+          "called": [
+            "FrozenKernel",
+            "cbsBudgetCheck",
+            "frozenTimerTick",
+            "get",
+            "none",
+            "scId",
+            "set",
+            "tick",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 599,
+          "line": 748,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -9744,7 +9847,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 625,
+          "line": 773,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -9761,7 +9864,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 635,
+          "line": 783,
           "called": [
             "SyscallId",
             "frozenOpCoverage"
@@ -20037,7 +20140,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundary",
-          "line": 183,
+          "line": 184,
           "called": [
             "EnforcementClass",
             "readOnly"
@@ -20046,7 +20149,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_denied_preserves_state",
-          "line": 219,
+          "line": 224,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20064,7 +20167,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_denied_preserves_state",
-          "line": 235,
+          "line": 240,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20078,7 +20181,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_endpointSendDual",
-          "line": 252,
+          "line": 257,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20097,7 +20200,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_cspaceMint",
-          "line": 273,
+          "line": 278,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20112,7 +20215,7 @@
         {
           "kind": "def",
           "name": "notificationSignalChecked",
-          "line": 309,
+          "line": 314,
           "called": [
             "Badge",
             "Kernel",
@@ -20127,7 +20230,7 @@
         {
           "kind": "def",
           "name": "cspaceCopyChecked",
-          "line": 330,
+          "line": 335,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -20139,7 +20242,7 @@
         {
           "kind": "def",
           "name": "cspaceMoveChecked",
-          "line": 346,
+          "line": 351,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -20151,7 +20254,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDualChecked",
-          "line": 365,
+          "line": 370,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20165,7 +20268,7 @@
         {
           "kind": "def",
           "name": "registerServiceChecked",
-          "line": 390,
+          "line": 395,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20178,7 +20281,7 @@
         {
           "kind": "def",
           "name": "endpointCallChecked",
-          "line": 415,
+          "line": 420,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -20196,7 +20299,7 @@
         {
           "kind": "def",
           "name": "endpointReplyChecked",
-          "line": 447,
+          "line": 452,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -20209,7 +20312,7 @@
         {
           "kind": "def",
           "name": "notificationWaitChecked",
-          "line": 468,
+          "line": 473,
           "called": [
             "Badge",
             "Kernel",
@@ -20224,7 +20327,7 @@
         {
           "kind": "def",
           "name": "endpointReplyRecvChecked",
-          "line": 488,
+          "line": 493,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -49435,7 +49538,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 52,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -50280,8 +50383,32 @@
         },
         {
           "kind": "def",
+          "name": "runBudgetLifecycleTrace",
+          "line": 2845,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "bind",
+            "cbsBudgetCheck",
+            "empty",
+            "insert",
+            "lookup",
+            "scId",
+            "schedContextBind",
+            "schedContextConfigure",
+            "tick",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 2841,
+          "line": 2902,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -50297,6 +50424,7 @@
             "rootPathAlias",
             "rootSlot",
             "runBoundedMessageExtendedTrace",
+            "runBudgetLifecycleTrace",
             "runCapabilityAndArchitectureTrace",
             "runCapabilityIpcTrace",
             "runCheckedPipelineTrace",
@@ -50324,7 +50452,7 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 2889,
+          "line": 2951,
           "called": [
             "Capability",
             "KernelObject",
@@ -50349,7 +50477,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 2940,
+          "line": 3002,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -50364,7 +50492,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2955,
+          "line": 3017,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -50372,7 +50500,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2966,
+          "line": 3028,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -50400,7 +50528,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 3021,
+          "line": 3083,
           "called": [
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",
@@ -51879,7 +52007,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 49,
+      "declaration_count": 50,
       "declarations": [
         {
           "kind": "instance",
@@ -52726,8 +52854,29 @@
         },
         {
           "kind": "def",
+          "name": "runZ8SchedContextNegativeChecks",
+          "line": 3225,
+          "called": [
+            "ObjId",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "default",
+            "empty",
+            "expectErr",
+            "insert",
+            "scId",
+            "schedContextBind",
+            "schedContextConfigure",
+            "schedContextUnbind",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 3220,
+          "line": 3291,
           "called": [
             "runAuditCoverageChecks",
             "runH2NegativeChecks",
@@ -52747,7 +52896,8 @@
             "runWSM4ResolveEdgeCaseChecks",
             "runWSR2RevocationChecks",
             "runWSR4CoherenceChecks",
-            "runX2RuntimeInvariantTests"
+            "runX2RuntimeInvariantTests",
+            "runZ8SchedContextNegativeChecks"
           ]
         }
       ]
