@@ -74,7 +74,7 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
   - `Operations/Timeout.lean` — budget-driven IPC timeout unblocking (WS-Z6).
   - `Operations/Donation.lean` — SchedContext donation wrappers + preservation (WS-Z7).
   - `DualQueue/WithCaps.lean` — DualQueue with capability transfer.
-- `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.18):
+- `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.20):
   - `Types.lean` — SchedContextId, Budget, Period, SchedContext, SchedContextBinding.
   - `Budget.lean` — CBS budget operations: consume, replenish, admission control.
   - `ReplenishQueue.lean` — sorted replenishment queue: insert, popDue, remove.

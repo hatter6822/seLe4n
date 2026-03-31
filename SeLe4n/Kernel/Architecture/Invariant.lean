@@ -64,7 +64,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     serviceLifecycleCapabilityInvariantBundle st ∧
     vspaceInvariantBundle st ∧
     crossSubsystemInvariant st ∧
-    tlbConsistent st st.tlb
+    tlbConsistent st st.tlb ∧
+    schedulerInvariantBundleExtended st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -457,7 +458,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -493,10 +494,15 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
     · intro oidA oidB rA rB hObjA; exact default_objects_absurd hObjA
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
-  -- 8. crossSubsystemInvariant (R4-E + T5-J: registry ∧ dependency ∧ queue refs ∧ notification refs)
+  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D: 8 predicates)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)
   · exact tlbConsistent_empty (default : SystemState)
+  -- 10. schedulerInvariantBundleExtended (Z9-G: SchedContext invariants)
+  · exact ⟨default_schedulerInvariantBundleFull,
+           default_budgetPositive, default_currentBudgetPositive,
+           default_schedContextsWellFormed, default_replenishQueueValid,
+           default_schedContextBindingConsistent, default_effectiveParamsMatchRunQueue⟩
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -691,10 +697,10 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
     proofLayerInvariantBundle (advanceTimerState ticks st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb⟩
+         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,
@@ -713,9 +719,10 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
            by exact hR⟩
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
-  -- crossSubsystemInvariant (T5-J + U4-G: 5 conjuncts, all only depend on objects/services/serviceRegistry)
-  · obtain ⟨h1, h2, h3, h4, h5⟩ := hCross
-    exact ⟨h1, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5⟩
+  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D: 8 conjuncts)
+  · obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := hCross
+    exact ⟨h1, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
+           h6, h7, h8⟩
 
 -- ============================================================================
 -- WS-J1-D: Register decode consistency predicate

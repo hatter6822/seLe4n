@@ -1,3 +1,42 @@
+## [0.23.20] — Z9 Audit: Documentation Accuracy & Disjointness Completeness
+
+Post-implementation audit of Z9 Invariant Composition & Cross-Subsystem phase.
+
+- **AUD-1**: Module docstring in `CrossSubsystem.lean` updated to list all 8
+  predicates (was missing 3 new SchedContext predicates).
+- **AUD-2**: `schedContextNotDualBound` docstring corrected — first sentence
+  now accurately describes the predicate's semantics (prevents ANY two threads
+  from referencing the same SchedContext, not just bound+donated).
+- **AUD-3**: `crossSubsystemInvariant_composition_complete` extended from 14
+  to 16 conjuncts — added 2 missing disjointness witnesses:
+  `schedContextRunQueueConsistent` ↔ `registryDependencyConsistent` and
+  `schedContextRunQueueConsistent` ↔ `serviceGraphInvariant`.
+- **AUD-4**: Z9-N/O frame-lemma docstrings clarified as frame-case building
+  blocks, documenting what full mutation-level preservation would require.
+- Regenerated `docs/codebase_map.json`.
+- Zero sorry/axiom. All tests pass (smoke + full).
+
+## [0.23.19] — Z9: Invariant Composition & Cross-Subsystem
+
+Complete cross-subsystem invariant integration for SchedContext objects.
+Extends all invariant bundles, boot proofs, and operation preservation
+to cover SchedContext consistency. **WS-Z PORTFOLIO COMPLETE.**
+
+- **Z9-A/B/C**: 3 new cross-subsystem predicates: `schedContextStoreConsistent`
+  (TCB→SC object exists), `schedContextNotDualBound` (unique SC binding),
+  `schedContextRunQueueConsistent` (runnable threads have positive budget)
+- **Z9-D**: `crossSubsystemInvariant` extended from 5 to 8 predicates
+- **Z9-E**: Field-disjointness analysis: 14 pairwise witnesses for 8 predicates
+- **Z9-F**: 3 frame lemmas for new predicates
+- **Z9-G**: `proofLayerInvariantBundle` extended from 9 to 10 conjuncts
+  (added `schedulerInvariantBundleExtended`)
+- **Z9-I**: `bootSafeObject` extended with SchedContext wellFormedness (6th conjunct)
+- **Z9-J**: Boot-time proofs for all 10 bundle components
+- **Z9-L/M/N/O**: Operation preservation theorems (timerTick, schedule,
+  donation, cleanup/destroy)
+- Test fixture updated (`crossSubsystemFieldSets` 5→8)
+- Zero sorry/axiom. All tests pass (smoke + full).
+
 ## [0.23.18] — Z8 Audit: Defense-in-Depth Hardening
 
 Post-implementation audit of Z8 API Surface & Syscall Wiring phase.

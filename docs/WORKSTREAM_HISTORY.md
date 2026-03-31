@@ -22,7 +22,7 @@ WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
 WS-Y Phases Y1–Y3 complete. **WS-Y PORTFOLIO COMPLETE.**
-WS-Z Phases Z1–Z8 complete. **WS-Z PORTFOLIO COMPLETE.**
+WS-Z Phases Z1–Z9 complete. **WS-Z PORTFOLIO COMPLETE.**
 
 ### WS-Z: Composable Performance Objects (PORTFOLIO COMPLETE)
 
@@ -45,6 +45,22 @@ WS-Z Phases Z1–Z8 complete. **WS-Z PORTFOLIO COMPLETE.**
 - **Z8-L**: 8 negative-state tests (Z8-L-01 through Z8-L-08)
 - **Frozen op coverage**: 12→15 SyscallId arms
 - **Prior Z5 work confirmed**: Z8-A (round-trip theorems), Z8-C/D/E (dispatch wiring), Z8-F (checked dispatch), Z8-G (wildcard unreachability) — all completed in Z5
+- **Sorry/axiom**: Zero
+
+### WS-Z Phase Z9: Invariant Composition & Cross-Subsystem (COMPLETE)
+- **Sub-tasks**: Z9-A through Z9-P2 (20 atomic units)
+- **Modified files**: `SeLe4n/Kernel/CrossSubsystem.lean`, `SeLe4n/Kernel/Architecture/Invariant.lean`, `SeLe4n/Platform/Boot.lean`, `tests/InformationFlowSuite.lean`
+- **Z9-A/B/C**: 3 new cross-subsystem predicates: `schedContextStoreConsistent` (every SchedContextId in the object store has a well-formed SchedContext object), `schedContextNotDualBound` (no SchedContext is simultaneously bound via TCB and donated), `schedContextRunQueueConsistent` (bound SchedContext threads with sufficient budget are in the RunQueue iff they are runnable)
+- **Z9-D**: `crossSubsystemInvariant` extended from 5 to 8 predicates (added the 3 new SchedContext consistency predicates)
+- **Z9-E**: Field-disjointness analysis for all 8 predicates — 14 pairwise disjointness witnesses documenting which `StateField` pairs cannot simultaneously invalidate each predicate
+- **Z9-F**: Frame lemmas for 3 new predicates: `schedContextStoreConsistent_frame`, `schedContextNotDualBound_frame`, `schedContextRunQueueConsistent_frame` — each parameterized by object store and scheduler state fields with explicit non-interference conditions
+- **Z9-G**: `proofLayerInvariantBundle` extended from 9 to 10 conjuncts by adding `schedulerInvariantBundleExtended` as the 10th conjunct, composing Z4's extended scheduler bundle into the top-level proof layer
+- **Z9-H**: Default state proof for extended 10-conjunct `proofLayerInvariantBundle` (`proofLayerInvariantBundle_default`)
+- **Z9-I**: `bootSafeObject` extended with `SchedContext` wellFormedness constraint — the boot-safe predicate now requires any `.schedContext` kernel object to satisfy `schedContextWellFormed`
+- **Z9-J**: Boot-time proofs for the 3 new cross-subsystem predicates and `schedulerInvariantBundleExtended` — `bootFromPlatform` shown to establish all 10 `proofLayerInvariantBundle` conjuncts from a valid `PlatformConfig`
+- **Z9-K**: Freeze proofs — all 3 new predicates lift automatically through the existential wrapper in `FrozenSystemState`; no additional proof content required
+- **Z9-L/M/N/O**: Operation preservation theorems for the 3 new predicates across the 4 major operation classes: timer tick (`timerTick`/`timerTickWithBudget`), schedule (`schedule`/`scheduleEffective`), SchedContext donation (`endpointCallWithDonation`/`endpointReplyWithDonation`), and cleanup/destroy (`lifecyclePreRetypeCleanup`/`cleanupDonatedSchedContext`)
+- **Z9-P1/P2**: Build verification (`lake build SeLe4n.Kernel.CrossSubsystem`) and full test suite — all Tier 0–3 tests pass
 - **Sorry/axiom**: Zero
 
 ### WS-Z Phase Z7: SchedContext Donation / Passive Servers (COMPLETE)

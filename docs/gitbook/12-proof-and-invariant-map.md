@@ -618,7 +618,7 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - `noStaleEndpointQueueReferences` — every endpoint queue head/tail and interior member has a live TCB (T5-I: extended from head/tail-only to full `collectQueueMembers` traversal)
   - `noStaleNotificationWaitReferences` — every ThreadId in notification `waitingThreads` has a live TCB (T5-H)
   - `registryDependencyConsistent` — every dependency edge references a registered service
-  - `crossSubsystemInvariant` — composed 5-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added)
+  - `crossSubsystemInvariant` — composed 8-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`)
   - **X3-C/X3-D (v0.22.20)**: 10 predicate interaction pairs fully covered:
     - 6 disjoint pairs with field-disjointness witnesses (V6-A3)
     - 4 sharing pairs with frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`)
@@ -858,7 +858,7 @@ The information-flow subsystem is organized in three architectural layers:
    preserve `lowEquivalent` for unobservable state changes. The composition
    layer (`composedNonInterference_trace`) chains single-step NI proofs into
    trace-level non-interference using the `NonInterferenceStep` inductive type
-   (32 constructors as of v0.23.18).
+   (32 constructors as of v0.23.20).
 
 ### IF-M1 baseline (WS-B7 complete)
 
@@ -986,7 +986,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `niStepCoverage_operational`, `niStepCoverage_injective`, `niStepCoverage_count` — NI coverage documentation (V6-I),
 - `acceptedCovertChannel_scheduling` — documented scheduling covert channel (V6-J),
 - `defaultLabelingContext_insecure` — warning that default labeling provides no security (V6-K),
-- `StateField` enum + 10 pairwise disjointness/overlap witnesses (6 disjoint + 4 non-disjoint) + `registryDependencyConsistent_frame`, `serviceGraphInvariant_frame` (V6-A),
+- `StateField` enum + 14 pairwise disjointness/overlap witnesses (10 disjoint + 4 non-disjoint) + `registryDependencyConsistent_frame`, `serviceGraphInvariant_frame`, and 3 new SchedContext frame lemmas (`schedContextStoreConsistent_frame`, `schedContextNotDualBound_frame`, `schedContextRunQueueConsistent_frame`) (V6-A, Z9),
 - `serviceCountBounded_of_eq`, `serviceCountBounded_monotone`, `serviceGraphInvariant_monotone` (V6-B).
 
 **WS-H10/C-05/A-38 — MachineState projection & security lattice:**
@@ -1247,7 +1247,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12) | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches TCB priority |
 | `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (5-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, and `waitingThreadsPendingMessageNone` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
-| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle` | Top-level proof surface includes all 7 scheduler conjuncts |
+| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle`; extended from 9 to 10 conjuncts (Z9: + `schedulerInvariantBundleExtended`) | Top-level proof surface includes all 7 scheduler conjuncts plus full CBS scheduler extension |
 
 ### New proofs and definitions
 
@@ -2002,6 +2002,9 @@ normalization to convert between `[k]?` and `.get?` notations.
 - `IrqEntry` — `(irq : Irq, handler : ObjId)`.
 - `ObjectEntry` — `(id : ObjId, obj : KernelObject)` + proof obligations for
   CNode `slotsUnique` and VSpaceRoot `mappings.invExt`.
+- `bootSafeObject` — 6-conjunct boot-safety predicate per object (Z9: extended
+  from 5 conjuncts by adding SchedContext `schedContextWellFormed` requirement
+  alongside the existing TCB, CNode, VSpaceRoot, Endpoint, Notification checks).
 - `bootFromPlatform` — folds IRQs then objects over empty `IntermediateState`.
 - `bootFromPlatform_valid` — master validity: all 4 invariant witnesses hold
   after boot.
@@ -2425,3 +2428,28 @@ Structural equivalence between checked and unchecked dispatch proven.
 
 **FrozenOps coverage**: 3 SchedContext `frozenOpCoverage` arms updated to `true`
 (Z8-H: frozen operations added). `frozenOpCoverage_count` increased from 12 to 15.
+
+## 29. Invariant Composition & Cross-Subsystem (WS-Z Phase Z9)
+
+Phase Z9 composes SchedContext invariants into the cross-subsystem and top-level
+proof surfaces, closing the gap between per-subsystem CBS proofs (Z2–Z8) and the
+kernel-wide invariant bundle.
+
+**Cross-subsystem invariant extension** (`CrossSubsystem.lean`):
+- `schedContextStoreConsistent` — every SchedContext in the object store satisfies `schedContextWellFormed`
+- `schedContextNotDualBound` — no SchedContext is simultaneously bound to two different threads
+- `schedContextRunQueueConsistent` — all threads in the RunQueue have a bound SchedContext with positive budget (or are legacy-unbound)
+- `crossSubsystemInvariant` extended from 5 to **8 predicates** (Z9 adds the three above)
+
+**Top-level bundle extension**:
+- `proofLayerInvariantBundle` extended from 9 to **10 conjuncts**: added `schedulerInvariantBundleExtended` (the 15-conjunct CBS-aware scheduler bundle from Z4)
+- Preservation theorems updated for all kernel operations that touch SchedContext state
+
+**Boot safety extension** (`Platform/Boot.lean`):
+- `bootSafeObject` extended from 5 to **6 conjuncts**: added SchedContext `schedContextWellFormed`
+  check, ensuring all SchedContext objects supplied in `PlatformConfig` are well-formed at boot time
+
+**Field-disjointness expansion** (`CrossSubsystem.lean`):
+- `crossSubsystemFieldSets` extended from 5 to **8 entries** (added `schedContextStore`, `replenishQueue`, `schedContextBinding` field sets)
+- Pairwise disjointness witnesses increased from 10 to **14** (4 new witnesses covering SchedContext field interactions with scheduler, IPC, lifecycle, and service fields)
+- 3 new frame lemmas: `schedContextStoreConsistent_frame`, `schedContextNotDualBound_frame`, `schedContextRunQueueConsistent_frame`

@@ -182,9 +182,9 @@ Every kernel subsystem has complete invariant preservation coverage:
 | Lifecycle | `lifecycleInvariantBundle` | 4 | retype, retypeFromUntyped, cleanup, scrub | None |
 | VSpace | `vspaceInvariantBundle` | 7 | map, unmap, lookup (+ TLB flush variants) | None |
 | Service | `serviceInvariantBundle` | 3 | register, revoke, cleanup, dependency add | None |
-| Cross-Sub | `crossSubsystemInvariant` | 5 | All operations via frame lemmas | Composition gap (INFO-06, documented) |
+| Cross-Sub | `crossSubsystemInvariant` | 8 | All operations via frame lemmas | Composition gap (INFO-06, documented) |
 | RobinHood | `invExtK` | 5 | insert, erase, resize, filter | None |
-| Boot→Runtime | `proofLayerInvariantBundle` | 9 | bootFromPlatform, freeze, adapter ops | None |
+| Boot→Runtime | `proofLayerInvariantBundle` | 10 | bootFromPlatform, freeze, adapter ops | None |
 
 ---
 
