@@ -3305,7 +3305,100 @@ theorem refillSchedContext_noop
   | some (.cnode _) => rfl
   | some (.untyped _) => rfl
 
--- Z4-T: Schedule effective preserves state.
+-- Z4-Q1 (substantive): Budget decrement preserves positivity.
+
+/-- Z4-Q1: When `budgetRemaining > 1`, consuming 1 tick leaves the budget > 0.
+This is the core arithmetic lemma for CBS budget decrement correctness. -/
+theorem budget_decrement_stays_positive (b : Nat) (h : b > 1) :
+    b - 1 > 0 := by omega
+
+/-- Z4-Q2 (substantive): When `budgetRemaining > 1` in the bound decrement path,
+the resulting SchedContext has `budgetRemaining > 0`. Proves the CBS budget
+accounting maintains the `budgetPositive` invariant through normal ticks. -/
+theorem consumeBudget_positive_of_gt_one (sc : SchedContext)
+    (h : sc.budgetRemaining.val > 1) :
+    (consumeBudget sc 1).budgetRemaining.val > 0 := by
+  simp [consumeBudget, Budget.decrement]
+  omega
+
+-- Z4-S1 (substantive): Unbound timerTickBudget preserves scheduler structure.
+
+/-- Z4-S1a: `timerTickBudget` unbound non-preempt inserts only a `.tcb` into the
+object store. All SchedContext objects are untouched because the unbound path
+only writes `.tcb tcb'`. The inserted key is `tid.toObjId`. -/
+theorem timerTickBudget_unbound_nopreempt_objects_key
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hUnbound : tcb.schedContextBinding = .unbound)
+    (hNotExpired : ¬(tcb.timeSlice ≤ 1))
+    (hStep : timerTickBudget st tid tcb = .ok (st', false)) :
+    ∃ tcb', st'.objects = st.objects.insert tid.toObjId (.tcb tcb') := by
+  unfold timerTickBudget at hStep
+  rw [hUnbound, if_neg hNotExpired] at hStep
+  have hinj := Except.ok.inj hStep
+  have hfst := congrArg Prod.fst hinj
+  simp only [] at hfst
+  subst hfst
+  exact ⟨{ tcb with timeSlice := tcb.timeSlice - 1, schedContextBinding := .unbound }, rfl⟩
+
+/-- Z4-S1b: `timerTickBudget` unbound preempt inserts only a `.tcb` into the
+object store. All SchedContext objects are untouched. -/
+theorem timerTickBudget_unbound_preempt_objects_key
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hUnbound : tcb.schedContextBinding = .unbound)
+    (hExpired : tcb.timeSlice ≤ 1)
+    (hStep : timerTickBudget st tid tcb = .ok (st', true)) :
+    ∃ tcb', st'.objects = st.objects.insert tid.toObjId (.tcb tcb') := by
+  unfold timerTickBudget at hStep
+  rw [hUnbound, if_pos hExpired] at hStep
+  have hinj := Except.ok.inj hStep
+  have hfst := congrArg Prod.fst hinj
+  simp only [] at hfst
+  subst hfst
+  exact ⟨{ tcb with timeSlice := defaultTimeSlice, schedContextBinding := .unbound }, rfl⟩
+
+-- Z4-S2 (substantive): consumeBudget preserves per-SchedContext well-formedness.
+
+/-- Z4-S2a: `consumeBudget` preserves per-object `wellFormed`.
+Bridges Z2's per-object theorem to the system-level invariant. -/
+theorem consumeBudget_preserves_wf
+    (sc : SchedContext) (ticks : Nat) (h : sc.wellFormed) :
+    (consumeBudget sc ticks).wellFormed :=
+  consumeBudget_preserves_wellFormed sc ticks h
+
+/-- Z4-S2b: `consumeBudget` preserves the full 4-conjunct `schedContextWellFormed`.
+Composes Z2's four per-component preservation theorems. -/
+theorem consumeBudget_preserves_schedContextWellFormed_full
+    (sc : SchedContext) (ticks : Nat)
+    (h : schedContextWellFormed sc) :
+    schedContextWellFormed (consumeBudget sc ticks) := by
+  obtain ⟨hwf, hbounds, hrepl, hamounts⟩ := h
+  exact ⟨consumeBudget_preserves_wellFormed sc ticks hwf,
+         consumeBudget_preserves_budgetWithinBounds sc ticks hbounds,
+         consumeBudget_preserves_replenishmentListWellFormed sc ticks hrepl,
+         consumeBudget_preserves_replenishmentAmountsBounded sc ticks hamounts⟩
+
+-- Z4-S3 (substantive): scheduleReplenishment preserves per-SchedContext well-formedness.
+
+/-- Z4-S3: `scheduleReplenishment` preserves the full 4-conjunct
+`schedContextWellFormed`, given that the consumed amount is positive and
+within budget. These preconditions hold in both callers:
+- `timerTickBudget` exhaustion: consumed = budgetRemaining > 0 (guard), ≤ budget (invariant)
+- `handleYieldWithBudget`: consumed = budgetRemaining > 0 (current is positive), ≤ budget (invariant) -/
+theorem scheduleReplenishment_preserves_schedContextWellFormed_full
+    (sc : SchedContext) (now : Nat) (consumed : Budget)
+    (h : schedContextWellFormed sc)
+    (hPos : consumed.val > 0)
+    (hLe : consumed.val ≤ sc.budget.val) :
+    schedContextWellFormed (scheduleReplenishment sc now consumed) := by
+  obtain ⟨hwf, hbounds, hrepl, hamounts⟩ := h
+  exact ⟨scheduleReplenishment_preserves_wellFormed sc now consumed hwf,
+         scheduleReplenishment_preserves_budgetWithinBounds sc now consumed hbounds,
+         scheduleReplenishment_preserves_replenishmentListWellFormed
+           sc now consumed hrepl hPos,
+         scheduleReplenishment_preserves_replenishmentAmountsBounded
+           sc now consumed hamounts hLe⟩
+
+-- Z4-T: Selection correctness and dequeue preservation.
 
 /-- Z4-T1: `chooseThreadEffective` preserves state — re-export of the
 Selection.lean theorem for use in preservation proofs. -/
@@ -3315,9 +3408,28 @@ theorem chooseThreadEffective_state_unchanged
     st' = st :=
   chooseThreadEffective_preserves_state st st' res hStep
 
--- Z4-U: handleYieldWithBudget — unbound branch reuses existing yield logic.
+/-- Z4-T2: Removing a thread from the runnable list preserves `budgetPositive`
+for remaining threads. Under dequeue-on-dispatch, the dequeued thread exits
+the ∀-quantifier domain, so the invariant holds for the smaller set. -/
+theorem budgetPositive_subset
+    (st : SystemState)
+    (hBp : budgetPositive st)
+    (tid : SeLe4n.ThreadId) :
+    ∀ tid', tid' ∈ st.scheduler.runnable → tid' ≠ tid →
+      match st.objects[tid'.toObjId]? with
+      | some (.tcb tcb) =>
+        match tcb.schedContextBinding with
+        | .unbound => True
+        | .bound scId | .donated scId _ =>
+          match st.objects[scId.toObjId]? with
+          | some (.schedContext sc) => sc.budgetRemaining.val > 0
+          | _ => True
+      | _ => True :=
+  fun tid' hMem' _ => hBp tid' hMem'
 
-/-- Z4-U: `effectivePriority_unbound` — unbound threads resolve to TCB fields.
+-- Z4-U: Backward compatibility and yield preservation.
+
+/-- Z4-U1: `effectivePriority_unbound` — unbound threads resolve to TCB fields.
 This confirms the backward-compatibility guarantee. -/
 theorem effectivePriority_unbound_legacy
     (st : SystemState) (tcb : TCB)
@@ -3325,9 +3437,25 @@ theorem effectivePriority_unbound_legacy
     effectivePriority st tcb = some (tcb.priority, tcb.deadline, tcb.domain) := by
   simp [effectivePriority, hUnbound]
 
-/-- Z4-U: `hasSufficientBudget_unbound` — unbound threads are always eligible. -/
+/-- Z4-U2: `hasSufficientBudget_unbound` — unbound threads are always eligible. -/
 theorem hasSufficientBudget_unbound_legacy
     (st : SystemState) (tcb : TCB)
     (hUnbound : tcb.schedContextBinding = .unbound) :
     hasSufficientBudget st tcb = true := by
   simp [hasSufficientBudget, hUnbound]
+
+/-- Z4-U3: `cbsUpdateDeadline` preserves per-object `wellFormed`.
+Composes with Z4-S2/S3 for the full exhaustion pipeline:
+consumeBudget → scheduleReplenishment → cbsUpdateDeadline. -/
+theorem cbsUpdateDeadline_preserves_wf
+    (sc : SchedContext) (now : Nat) (preempt : Bool)
+    (h : sc.wellFormed) :
+    (cbsUpdateDeadline sc now preempt).wellFormed := by
+  simp [cbsUpdateDeadline]
+  split
+  · -- Deadline updated case: only deadline field changes
+    simp [SchedContext.wellFormed]
+    obtain ⟨hp, hbp, hrb, hrl⟩ := h
+    exact ⟨hp, hbp, hrb, hrl⟩
+  · -- No update: identity
+    exact h

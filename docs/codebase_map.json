@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-scheduler-integration-XNStJ",
-      "commit_sha": "06bd5fe470bdb7d78f4eb51fcacbb189eacafa74",
-      "tree_sha": "e21cd7beb83278316ec754860b67e77ced89c4a5",
-      "committed_at_utc": "2026-03-30T23:23:04-04:00"
+      "commit_sha": "492d0dcdd9c12d881f15c6e83fb737760b16e956",
+      "tree_sha": "551f01ef335c98587835ccee41f0c05eac83e23e",
+      "committed_at_utc": "2026-03-31T04:01:02+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "86debee25db23046726aac82d7e217cf301357f96b03f529e7aeabdeda947f0f"
+    "source_digest": "633e19cb31016f50ff677ccd4c3b921217385c36f9dcc623a7f7db5fd14e9460"
   },
   "summary": {
     "module_count": 119,
-    "declaration_count": 3957
+    "declaration_count": 3966
   },
   "readme_sync": {
-    "version": "0.23.6",
+    "version": "0.23.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 109,
-    "production_loc": 76420,
+    "production_loc": 76554,
     "test_files": 10,
     "test_loc": 8687,
-    "proved_theorem_lemma_decls": 2229,
+    "proved_theorem_lemma_decls": 2238,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -30717,7 +30717,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 519,
+          "line": 525,
           "called": [
             "Kernel",
             "chooseThreadEffective",
@@ -30732,7 +30732,7 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 553,
+          "line": 559,
           "called": [
             "Kernel",
             "none",
@@ -30746,7 +30746,7 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 589,
+          "line": 595,
           "called": [
             "Budget",
             "Kernel",
@@ -30763,7 +30763,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 635,
+          "line": 641,
           "called": [
             "Kernel",
             "ThreadId",
@@ -30773,7 +30773,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 652,
+          "line": 658,
           "called": [
             "Kernel",
             "insert",
@@ -30786,7 +30786,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 691,
+          "line": 697,
           "called": [
             "DomainScheduleEntry",
             "schedule"
@@ -30795,7 +30795,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 703,
+          "line": 709,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -30806,7 +30806,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 713,
+          "line": 719,
           "called": [
             "SystemState",
             "invExt",
@@ -30817,7 +30817,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 729,
+          "line": 735,
           "called": [
             "Kernel",
             "schedule",
@@ -30827,7 +30827,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 751,
+          "line": 757,
           "called": [
             "SystemState",
             "TCB",
@@ -30838,7 +30838,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 766,
+          "line": 772,
           "called": [
             "SystemState",
             "fold",
@@ -30850,7 +30850,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 778,
+          "line": 784,
           "called": [
             "Kernel",
             "ObjId",
@@ -30865,7 +30865,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Preservation",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean",
-      "declaration_count": 100,
+      "declaration_count": 109,
       "declarations": [
         {
           "kind": "namespace",
@@ -32468,8 +32468,91 @@
         },
         {
           "kind": "theorem",
-          "name": "chooseThreadEffective_state_unchanged",
+          "name": "budget_decrement_stays_positive",
           "line": 3312,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "consumeBudget_positive_of_gt_one",
+          "line": 3318,
+          "called": [
+            "SchedContext",
+            "consumeBudget",
+            "decrement"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickBudget_unbound_nopreempt_objects_key",
+          "line": 3329,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "insert",
+            "timerTickBudget",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickBudget_unbound_preempt_objects_key",
+          "line": 3345,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "defaultTimeSlice",
+            "insert",
+            "timerTickBudget",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "consumeBudget_preserves_wf",
+          "line": 3363,
+          "called": [
+            "SchedContext",
+            "consumeBudget",
+            "consumeBudget_preserves_wellFormed",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "consumeBudget_preserves_schedContextWellFormed_full",
+          "line": 3370,
+          "called": [
+            "SchedContext",
+            "consumeBudget",
+            "consumeBudget_preserves_budgetWithinBounds",
+            "consumeBudget_preserves_replenishmentAmountsBounded",
+            "consumeBudget_preserves_replenishmentListWellFormed",
+            "consumeBudget_preserves_wellFormed",
+            "schedContextWellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleReplenishment_preserves_schedContextWellFormed_full",
+          "line": 3387,
+          "called": [
+            "Budget",
+            "SchedContext",
+            "schedContextWellFormed",
+            "scheduleReplenishment",
+            "scheduleReplenishment_preserves_budgetWithinBounds",
+            "scheduleReplenishment_preserves_replenishmentAmountsBounded",
+            "scheduleReplenishment_preserves_replenishmentListWellFormed",
+            "scheduleReplenishment_preserves_wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffective_state_unchanged",
+          "line": 3405,
           "called": [
             "SystemState",
             "ThreadId",
@@ -32479,8 +32562,21 @@
         },
         {
           "kind": "theorem",
+          "name": "budgetPositive_subset",
+          "line": 3414,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "budgetPositive",
+            "runnable",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "effectivePriority_unbound_legacy",
-          "line": 3322,
+          "line": 3434,
           "called": [
             "SystemState",
             "TCB",
@@ -32490,11 +32586,21 @@
         {
           "kind": "theorem",
           "name": "hasSufficientBudget_unbound_legacy",
-          "line": 3329,
+          "line": 3441,
           "called": [
             "SystemState",
             "TCB",
             "hasSufficientBudget"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cbsUpdateDeadline_preserves_wf",
+          "line": 3450,
+          "called": [
+            "SchedContext",
+            "cbsUpdateDeadline",
+            "wellFormed"
           ]
         }
       ]

@@ -462,7 +462,9 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     : Except KernelError (SystemState × Bool) :=
   match tcb.schedContextBinding with
   | .unbound =>
-    -- Z4-F1: Legacy path — use existing time-slice mechanism
+    -- Z4-F1: Legacy path — mirrors `timerTick` exactly for backward compatibility.
+    -- V5-L: Uses global `defaultTimeSlice` (not `configDefaultTimeSlice`) to match
+    -- the legacy `timerTick` proof chain. See `timerTick` comment at line 372.
     if tcb.timeSlice ≤ 1 then
       let tcb' := { tcb with timeSlice := defaultTimeSlice }
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
@@ -478,7 +480,11 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     match st.objects[scId.toObjId]? with
     | some (.schedContext sc) =>
       if sc.budgetRemaining.val ≤ 1 then
-        -- Z4-F3: Budget exhausted — schedule replenishment and preempt
+        -- Z4-F3: Budget exhausted — schedule replenishment and preempt.
+        -- CBS semantics: `consumedAmount` is the full remaining budget (not 1 tick),
+        -- because the entire period's consumed budget is recorded for replenishment.
+        -- `now` is captured pre-tick: replenishment is scheduled relative to when
+        -- budget was consumed, not after the timer advances (standard CBS timing).
         let now := st.machine.timer
         let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
         let sc' := consumeBudget sc 1

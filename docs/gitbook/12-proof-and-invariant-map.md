@@ -137,6 +137,15 @@ Preservation shape:
 - `chooseThreadEffective_state_unchanged` (Z4-T1 — effective selection read-only)
 - `effectivePriority_unbound_legacy` (Z4-U — backward compatibility)
 - `hasSufficientBudget_unbound_legacy` (Z4-U — backward compatibility)
+- `budget_decrement_stays_positive` (Z4-Q1 — CBS arithmetic)
+- `consumeBudget_positive_of_gt_one` (Z4-Q2 — SchedContext budget positivity)
+- `timerTickBudget_unbound_nopreempt_objects_key` (Z4-S1a — TCB-only object frame)
+- `timerTickBudget_unbound_preempt_objects_key` (Z4-S1b — TCB-only object frame)
+- `consumeBudget_preserves_wf` (Z4-S2a — per-object wellFormed bridge)
+- `consumeBudget_preserves_schedContextWellFormed_full` (Z4-S2b — 4-conjunct composition)
+- `scheduleReplenishment_preserves_schedContextWellFormed_full` (Z4-S3 — 4-conjunct with preconditions)
+- `cbsUpdateDeadline_preserves_wf` (Z4-S4 — deadline update wellFormed)
+- `budgetPositive_subset` (Z4-T2 — dequeue-on-dispatch domain shrinkage)
 
 Documented semantics:
 
