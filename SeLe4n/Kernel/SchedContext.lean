@@ -9,6 +9,7 @@
 import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.SchedContext.Invariant
+import SeLe4n.Kernel.SchedContext.ReplenishQueue
 
 /-! # SchedContext — Re-export hub
 

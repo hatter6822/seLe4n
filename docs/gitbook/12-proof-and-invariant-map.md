@@ -2289,3 +2289,57 @@ composing into `cbsBudgetCheck_preserves_schedContextWellFormed` and
   bounded by `maxReplenishments × budget`.
 - Design note: the tighter bound `budget × ⌈window/period⌉` requires temporal
   ordering across scheduler ticks (deferred to Z4 scheduler integration).
+
+## 26. Replenishment Queue (WS-Z Phase Z3)
+
+**ReplenishQueue** (`Kernel/SchedContext/ReplenishQueue.lean`) — system-wide
+timer-driven replenishment queue for CBS scheduling. Tracks when each
+SchedContext's budget becomes eligible for refill.
+
+**Structure**:
+- `ReplenishQueue` — sorted list of `(SchedContextId, eligibleAt)` pairs with
+  cached `size` field. Entries sorted ascending by eligibility time for O(1)
+  peek and O(k) prefix split.
+
+**Operations**:
+- `empty` — empty queue constructor.
+- `insert` — sorted insertion by eligibility time, O(n).
+- `popDue` — collect all entries due at `currentTime` via prefix split, O(k).
+- `remove` — cancel all replenishments for a SchedContext via filter, O(n).
+- `peek` — next due eligibility time, O(1).
+- `hasDue` — check if any entries are due, O(1).
+
+**Invariant definitions**:
+- `pairwiseSortedBy` — recursive adjacency predicate on pair lists.
+- `replenishQueueSorted` — queue entries sorted by eligibility time.
+- `replenishQueueSizeConsistent` — cached size matches list length.
+- `replenishQueueConsistent` — every entry references an active SchedContext
+  in the object store (parameterized by lookup function for decoupling).
+
+**Preservation theorems** (3 sorted + 3 size):
+- `insert_preserves_sorted` — sorted insertion maintains sortedness.
+- `popDue_preserves_sorted` — prefix removal preserves sorted suffix.
+- `remove_preserves_sorted` — filter preserves sortedness.
+- `insert_sizeConsistent` — insert increments size correctly.
+- `popDue_sizeConsistent` — popDue preserves size consistency (safe under Nat saturation).
+- `remove_sizeConsistent` — remove recomputes size from filtered list.
+
+**Length and membership theorems** (4):
+- `insertSorted_length` — insertSorted increases list length by exactly 1.
+- `splitDue_length_additive` — due.length + remaining.length = entries.length.
+- `mem_insertSorted` — inserted entry is in the result.
+- `subset_insertSorted` — existing entries preserved by insertion.
+
+**Empty queue theorems** (3):
+- `empty_sorted`, `empty_sizeConsistent`, `empty_consistent`.
+
+**Public helper lemmas**: `pairwiseSortedBy_cons` (cons construction),
+`pairwiseSortedBy_head_le_second` (head ≤ second element),
+`pairwiseSortedBy_tail` (tail of sorted is sorted),
+`pairwiseSortedBy_nil`/`pairwiseSortedBy_singleton` (simp lemmas),
+`filter_preserves_pairwiseSortedBy` (general filter sortedness).
+
+**Private helper infrastructure**: `pairwiseSortedBy_head_le_all` (head ≤ all
+via induction), `insertSorted_head_ge` (lower bound on inserted elements),
+`insertSorted_head_time_ge` (head? lower bound), `filter_head_time_ge`
+(filtered head time bound).
