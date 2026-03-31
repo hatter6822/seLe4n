@@ -34,6 +34,19 @@ WS-Z Phases Z1–Z6 complete. **WS-Z IN PROGRESS.**
 
 - **Phase Z6 COMPLETE** (v0.23.12, audit v0.23.13): Timeout Endpoints — 26 sub-tasks (Z6-A through Z6-P2). Budget-driven timeout for IPC blocking operations. `timeoutBudget : Option SchedContextId` field on TCB (design optimization: TCB-level instead of per-ThreadIpcState variant, avoiding ~200 pattern match changes). `endpointQueueRemove` (mid-queue splice-out with `endpointQueueRemove_preserves_objects_invExt` proof). `timeoutThread` (queue removal + IPC state reset + error code write + RunQueue re-enqueue). `timeoutAwareReceive` (timeout-detecting receive wrapper). `IpcTimeoutResult` type (`.completed msg | .timedOut`). `timeoutBlockedThreads` (scan via `schedContextBinding.scId?` match — zero changes to existing IPC operations). Timer tick integration: `timerTickBudget` Z4-F3 branch calls `timeoutBlockedThreads` on budget exhaustion. `blockedThreadTimeoutConsistent` invariant (10th conjunct of `ipcInvariantFull`). Transport lemmas: `endpointQueueRemove_scheduler_eq`, `endpointQueueRemove_cdt_eq`, `endpointQueueRemove_lifecycle_eq`, `endpointQueueRemove_services_eq`. Boot safety extended with `timeoutBudget = none` requirement. Full bundle ripple fix across 6 files (~15 construction sites). New file: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`. Audit (v0.23.13): AUD-Z6-1 `endpointQueueRemove` defensive fallback invariant documentation, AUD-Z6-2 `timeoutThread` precondition documentation, AUD-Z6-3 12 trace tests (SCO-020 through SCO-031), AUD-Z6-4 `timeoutAwareReceive` docstring correction. Audit 2 (v0.23.14): AUD-Z6-5 4 edge-case tests (SCO-032–SCO-035: mid-queue removal, receiveQ removal, blockedOnCall timeout, multi-thread timeout), cross-subsystem 10-tuple verification, transport lemma coverage verification, documentation accuracy audit. Zero sorry/axiom.
 
+### WS-Z Phase Z8: API Surface & Syscall Wiring (COMPLETE)
+- **Sub-tasks**: Z8-A through Z8-N2 (17 atomic units)
+- **Modified files**: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`, `SeLe4n/Kernel/FrozenOps/Operations.lean`, `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean`, `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean`, `SeLe4n/Testing/MainTraceHarness.lean`, `tests/NegativeStateSuite.lean`, `tests/InformationFlowSuite.lean`, `tests/fixtures/main_trace_smoke.expected`
+- **Z8-B**: 3 error-exclusivity theorems for SchedContext decode (configure: `< 5` MRs, bind: `< 1` MR, unbind: never fails)
+- **Z8-H**: 3 frozen SchedContext operations (`frozenSchedContextConfigure`, `frozenSchedContextBind`, `frozenSchedContextUnbind`) — passthrough-frozen via `FrozenMap.get?`/`FrozenMap.set`
+- **Z8-I**: `frozenTimerTickBudget` — CBS budget-aware timer tick in frozen state
+- **Z8-M**: `enforcementBoundary` expanded 22→25 entries (3 new `.capabilityOnly` SchedContext operations)
+- **Z8-J**: 6 budget lifecycle trace scenarios (Z8J-001 through Z8J-006)
+- **Z8-L**: 8 negative-state tests (Z8-L-01 through Z8-L-08)
+- **Frozen op coverage**: 12→15 SyscallId arms
+- **Prior Z5 work confirmed**: Z8-A (round-trip theorems), Z8-C/D/E (dispatch wiring), Z8-F (checked dispatch), Z8-G (wildcard unreachability) — all completed in Z5
+- **Sorry/axiom**: Zero
+
 ### WS-Z Phase Z7: SchedContext Donation / Passive Servers (COMPLETE)
 - **Sub-tasks**: Z7-A through Z7-Q2 (26 atomic units)
 - **New files**: `SeLe4n/Kernel/IPC/Operations/Donation.lean`

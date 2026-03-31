@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 2,251 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-Z Phases Z1–Z7 COMPLETE** (v0.23.0–v0.23.15). Z7: SchedContext Donation / Passive Servers — 26 sub-tasks, donation-aware IPC wrappers, 4 new invariants, API dispatch wiring. Z8 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-Z Phases Z1–Z8 COMPLETE** (v0.23.0–v0.23.17). Z8: API Surface & Syscall Wiring — 17 sub-tasks, 3 error-exclusivity theorems, 4 frozen SchedContext operations (configure/bind/unbind + budget-aware timer tick), enforcement boundary expanded 22→25 entries, 6 budget lifecycle trace scenarios, 8 negative-state tests. Z9 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

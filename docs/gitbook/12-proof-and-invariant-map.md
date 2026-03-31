@@ -962,10 +962,10 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 22-entry classification table (11 policy-gated, 7 capability-only, 4 read-only),
+- `enforcementBoundary` — exhaustive 25-entry classification table (11 policy-gated, 10 capability-only, 4 read-only; Z8-M added 3 SchedContext capability-only operations),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
-- `enforcementBoundaryComplete_counts` — compile-time count witness (11+7+4=22, V6-F),
+- `enforcementBoundaryComplete_counts` — compile-time count witness (11+10+4=25, V6-F/Z8-M),
 - `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
 - `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
 - `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 11 policy-gated operations.
@@ -2117,11 +2117,12 @@ builder→execution phase transition.
 switch helpers. Theorems: `frozenLookupObject_state_unchanged`,
 `frozenStoreObject_preserves_scheduler`, `frozenStoreObject_preserves_machine`.
 
-**Q7-B/C**: 14 per-subsystem frozen operations (`Operations.lean`) across 5
-subsystems: Scheduler (`frozenSchedule`, `frozenHandleYield`, `frozenTimerTick`),
-IPC (`frozenNotificationSignal/Wait`, `frozenEndpointSend/Receive/Call/Reply`),
-Capability (`frozenCspaceLookup/Mint/Delete`), VSpace (`frozenVspaceLookup`),
-Service (`frozenLookupServiceByCap`).
+**Q7-B/C/Z8-H/I**: 18 per-subsystem frozen operations (`Operations.lean`) across 6
+subsystems: Scheduler (`frozenSchedule`, `frozenHandleYield`, `frozenTimerTick`,
+`frozenTimerTickBudget`), IPC (`frozenNotificationSignal/Wait`,
+`frozenEndpointSend/Receive/Call/Reply`), Capability (`frozenCspaceLookup/Mint/Delete`),
+VSpace (`frozenVspaceLookup`), Service (`frozenLookupServiceByCap`),
+SchedContext (`frozenSchedContextConfigure/Bind/Unbind`).
 
 **Q7-D**: FrozenMap set/get? commutativity proofs (`Commutativity.lean`) —
 roundtrip properties, frame lemmas, structural composition theorems.
@@ -2422,5 +2423,5 @@ scheduling parameters, and enforce admission control.
 (no cross-domain flows). Routed through `dispatchCapabilityOnly` shared path.
 Structural equivalence between checked and unchecked dispatch proven.
 
-**FrozenOps coverage**: 3 new `frozenOpCoverage` arms (all `false` —
-builder-only operations).
+**FrozenOps coverage**: 3 SchedContext `frozenOpCoverage` arms updated to `true`
+(Z8-H: frozen operations added). `frozenOpCoverage_count` increased from 12 to 15.

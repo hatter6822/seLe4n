@@ -7,32 +7,37 @@
 -/
 
 import SeLe4n.Kernel.FrozenOps.Core
+import SeLe4n.Kernel.SchedContext.Budget
 
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
-Implements 14 frozen kernel operations that operate on `FrozenSystemState`
+Implements 18 frozen kernel operations that operate on `FrozenSystemState`
 using O(1) array-indexed lookups. Each mirrors a builder-phase operation
 but uses `FrozenMap.get?`/`FrozenMap.set` instead of `RHTable` operations.
 
 ## Operation Table
 
-| # | Frozen Operation              | Builder Counterpart      | Subsystem  |
-|---|------------------------------|--------------------------|------------|
-| 1 | `frozenSchedule`             | `schedule`               | Scheduler  |
-| 2 | `frozenHandleYield`          | `handleYield`            | Scheduler  |
-| 3 | `frozenTimerTick`            | `timerTick`              | Scheduler  |
-| 4 | `frozenNotificationSignal`   | `notificationSignal`     | IPC        |
-| 5 | `frozenNotificationWait`     | `notificationWait`       | IPC        |
-| 6 | `frozenEndpointSend`         | `endpointSendDual`       | IPC        |
-| 7 | `frozenEndpointReceive`      | `endpointReceiveDual`    | IPC        |
-| 8 | `frozenEndpointCall`         | `endpointCall`           | IPC        |
-| 9 | `frozenEndpointReply`        | `endpointReply`          | IPC        |
-|10 | `frozenCspaceLookup`         | `cspaceLookupSlot`       | Capability |
-|11 | `frozenCspaceMint`           | `cspaceMint`             | Capability |
-|12 | `frozenCspaceDelete`         | `cspaceDeleteSlot`       | Capability |
-|13 | `frozenVspaceLookup`         | `vspaceLookupFull`       | VSpace     |
-|14 | `frozenLookupServiceByCap`   | `lookupServiceByCap`     | Service    |
+| # | Frozen Operation              | Builder Counterpart        | Subsystem    |
+|---|------------------------------|----------------------------|--------------|
+| 1 | `frozenSchedule`             | `schedule`                 | Scheduler    |
+| 2 | `frozenHandleYield`          | `handleYield`              | Scheduler    |
+| 3 | `frozenTimerTick`            | `timerTick`                | Scheduler    |
+| 4 | `frozenTimerTickBudget`      | `timerTickBudget`          | Scheduler    |
+| 5 | `frozenNotificationSignal`   | `notificationSignal`       | IPC          |
+| 6 | `frozenNotificationWait`     | `notificationWait`         | IPC          |
+| 7 | `frozenEndpointSend`         | `endpointSendDual`         | IPC          |
+| 8 | `frozenEndpointReceive`      | `endpointReceiveDual`      | IPC          |
+| 9 | `frozenEndpointCall`         | `endpointCall`             | IPC          |
+|10 | `frozenEndpointReply`        | `endpointReply`            | IPC          |
+|11 | `frozenCspaceLookup`         | `cspaceLookupSlot`         | Capability   |
+|12 | `frozenCspaceMint`           | `cspaceMint`               | Capability   |
+|13 | `frozenCspaceDelete`         | `cspaceDeleteSlot`         | Capability   |
+|14 | `frozenVspaceLookup`         | `vspaceLookupFull`         | VSpace       |
+|15 | `frozenLookupServiceByCap`   | `lookupServiceByCap`       | Service      |
+|16 | `frozenSchedContextConfigure`| `schedContextConfigure`    | SchedContext |
+|17 | `frozenSchedContextBind`     | `schedContextBind`         | SchedContext |
+|18 | `frozenSchedContextUnbind`   | `schedContextUnbind`       | SchedContext |
 
 **Lifecycle operations** (`lifecycleRetype`) are builder-only — they add new
 keys, which is incompatible with the frozen map's fixed key set.
@@ -585,6 +590,150 @@ def frozenLookupServiceByCap (epId : SeLe4n.ObjId)
     | none => .error .objectNotFound
 
 -- ============================================================================
+-- Z8-H: Frozen SchedContext Operations
+-- ============================================================================
+
+/-- Z8-H: Frozen SchedContext configure — update scheduling parameters.
+Mirrors `schedContextConfigure` in frozen state. SchedContext is passthrough-
+frozen (no internal RHTables), so this is a straightforward lookup + store.
+Validates parameters and checks admission control against frozen state. -/
+def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
+    (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
+  fun st =>
+    -- Parameter validation (mirrors SchedContextOps.validateSchedContextParams)
+    if period == 0 then .error .invalidArgument
+    else if budget > period then .error .invalidArgument
+    else if priority > 255 then .error .invalidArgument
+    else if domain ≥ 16 then .error .invalidArgument
+    else
+      match st.objects.get? scId with
+      | some (.schedContext sc) =>
+        let updated : SeLe4n.Kernel.SchedContext :=
+          { sc with
+            budget := ⟨budget⟩
+            period := ⟨period⟩
+            priority := ⟨priority⟩
+            deadline := ⟨deadline⟩
+            domain := ⟨domain⟩
+            budgetRemaining := ⟨budget⟩ }
+        -- Admission control: collect all SchedContexts from frozen store
+        let allScs := st.objects.fold (init := []) fun acc _id obj =>
+          match obj with
+          | .schedContext sc' => if sc'.scId.toObjId == scId then acc else sc' :: acc
+          | _ => acc
+        if SeLe4n.Kernel.admissionCheck allScs updated then
+          match st.objects.set scId (.schedContext updated) with
+          | some objects' => .ok ((), { st with objects := objects' })
+          | none => .error .objectNotFound
+        else
+          .error .resourceExhausted
+      | _ => .error .objectNotFound
+
+/-- Z8-H: Frozen SchedContext bind — bind a thread to a SchedContext.
+Mirrors `schedContextBind` in frozen state. In the frozen phase, there is no
+RunQueue re-insertion (frozen scheduler uses membership FrozenSet + dequeue-on-
+dispatch), so the bind only updates bidirectional references. -/
+def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
+    : FrozenKernel Unit :=
+  fun st =>
+    match st.objects.get? scId with
+    | some (.schedContext sc) =>
+      if sc.boundThread.isSome then .error .illegalState
+      else
+        match st.objects.get? threadId.toObjId with
+        | some (.tcb tcb) =>
+          match tcb.schedContextBinding with
+          | .unbound =>
+            let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩
+            let updatedSc := { sc with boundThread := some threadId }
+            let updatedTcb := { tcb with
+              schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped }
+            match st.objects.set scId (.schedContext updatedSc) with
+            | some objs1 =>
+              match objs1.set threadId.toObjId (.tcb updatedTcb) with
+              | some objs2 => .ok ((), { st with objects := objs2 })
+              | none => .error .objectNotFound
+            | none => .error .objectNotFound
+          | _ => .error .illegalState
+        | _ => .error .objectNotFound
+    | _ => .error .objectNotFound
+
+/-- Z8-H: Frozen SchedContext unbind — unbind a thread from a SchedContext.
+Mirrors `schedContextUnbind` in frozen state. No RunQueue or replenish queue
+manipulation (frozen phase uses fixed membership set). Clears bidirectional
+binding and, if the bound thread is current, clears current to force
+rescheduling. -/
+def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
+  fun st =>
+    match st.objects.get? scId with
+    | some (.schedContext sc) =>
+      match sc.boundThread with
+      | none => .error .illegalState
+      | some tid =>
+        -- Clear current if bound thread is current (force rescheduling)
+        let st0 := if st.scheduler.current == some tid then
+          { st with scheduler := { st.scheduler with current := none } }
+        else st
+        let updatedSc := { sc with boundThread := none, isActive := false }
+        let st1Objs := match st0.objects.set scId (.schedContext updatedSc) with
+          | some objs => objs
+          | none => st0.objects
+        match st1Objs.get? tid.toObjId with
+        | some (.tcb tcb) =>
+          let updatedTcb := { tcb with
+            schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+          match st1Objs.set tid.toObjId (.tcb updatedTcb) with
+          | some objs2 => .ok ((), { st0 with objects := objs2 })
+          | none => .error .objectNotFound
+        | _ =>
+          -- TCB not found — clear SC side only
+          .ok ((), { st0 with objects := st1Objs })
+    | _ => .error .objectNotFound
+
+-- ============================================================================
+-- Z8-I: Frozen timer tick with budget awareness
+-- ============================================================================
+
+/-- Z8-I: Frozen timer tick with CBS budget awareness.
+Mirrors `timerTickBudget` (Z4-F) in frozen state. On each tick, if the current
+thread has a bound SchedContext, decrements its budget. On budget exhaustion,
+clears current to force rescheduling (frozen equivalent of preemption).
+Falls back to legacy time-slice behavior for unbound threads. -/
+def frozenTimerTickBudget : FrozenKernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none =>
+        .ok ((), { st with machine := tick st.machine })
+    | some tid =>
+        match st.objects.get? tid.toObjId with
+        | some (.tcb tcb) =>
+          match tcb.schedContextBinding with
+          | .bound scId | .donated scId _ =>
+            -- CBS path: decrement SchedContext budget
+            match st.objects.get? scId.toObjId with
+            | some (.schedContext sc) =>
+              let result := SeLe4n.Kernel.cbsBudgetCheck sc st.machine.timer 1
+              let updatedSc := result.1
+              let wasPreempted := result.2
+              match st.objects.set scId.toObjId (.schedContext updatedSc) with
+              | some objs1 =>
+                let st' := { st with objects := objs1, machine := tick st.machine }
+                if wasPreempted == true then
+                  -- Budget exhausted: clear current to force rescheduling
+                  .ok ((), { st' with scheduler :=
+                    { st'.scheduler with current := none } })
+                else
+                  .ok ((), st')
+              | none => .error .objectNotFound
+            | _ =>
+              -- SchedContext not found — fall back to legacy behavior
+              frozenTimerTick st
+          | .unbound =>
+            -- Legacy path: use time-slice
+            frozenTimerTick st
+        | _ => .error .schedulerInvariantViolation
+
+-- ============================================================================
 -- S3-L/U-M29: Frozen operation exhaustiveness check
 -- ============================================================================
 
@@ -614,21 +763,20 @@ def frozenOpCoverage : SyscallId → Bool
   | .notificationSignal => true  -- V2-A: notification signal (frozen-phase badge merge)
   | .notificationWait => true    -- V2-A: notification wait (frozen-phase consume/block)
   | .replyRecv => true           -- V2-C: compound reply + receive
-  | .schedContextConfigure => false  -- Z5-D: builder-only (configure SchedContext)
-  | .schedContextBind => false       -- Z5-D: builder-only (bind thread to SchedContext)
-  | .schedContextUnbind => false     -- Z5-D: builder-only (unbind thread from SchedContext)
+  | .schedContextConfigure => true   -- Z8-H: frozenSchedContextConfigure
+  | .schedContextBind => true        -- Z8-H: frozenSchedContextBind
+  | .schedContextUnbind => true      -- Z8-H: frozenSchedContextUnbind
 
-/-- S3-L: Exactly 12 SyscallId arms have frozen operation coverage.
-    The 8 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
-    lifecycleRetype, serviceRegister, serviceRevoke, schedContextConfigure,
-    schedContextBind, schedContextUnbind). -/
+/-- S3-L/Z8-H: Exactly 15 SyscallId arms have frozen operation coverage.
+    The 5 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
+    lifecycleRetype, serviceRegister, serviceRevoke). -/
 theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
        .notificationSignal, .notificationWait, .replyRecv,
        .schedContextConfigure, .schedContextBind, .schedContextUnbind].filter
-         frozenOpCoverage).length = 12) := by
+         frozenOpCoverage).length = 15) := by
   decide
 
 /-- S3-L: All 20 SyscallId arms are accounted for (either covered or documented as builder-only). -/

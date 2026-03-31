@@ -1083,6 +1083,67 @@ theorem decodeReplyRecvArgs_error_iff (d : SyscallDecodeResult) :
     rw [requireMsgReg_unfold_err _ _ (by omega)]
 
 -- ============================================================================
+-- Z8-B: SchedContext error-exclusivity theorems
+-- ============================================================================
+
+/-- Z8-B: SchedContextConfigureArgs decode fails iff fewer than 5 message registers. -/
+theorem decodeSchedContextConfigureArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeSchedContextConfigureArgs d = .error e) ↔ d.msgRegs.size < 5 := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 5
+    · exact hlt
+    · exfalso
+      simp only [decodeSchedContextConfigureArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        dif_pos (show 1 < d.msgRegs.size by omega),
+        dif_pos (show 2 < d.msgRegs.size by omega),
+        dif_pos (show 3 < d.msgRegs.size by omega),
+        dif_pos (show 4 < d.msgRegs.size by omega),
+        pure, Except.pure] at he
+      nomatch he
+  · intro h
+    refine ⟨.invalidMessageInfo, ?_⟩
+    simp only [decodeSchedContextConfigureArgs, bind, Except.bind]
+    by_cases h0 : 0 < d.msgRegs.size
+    · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+      by_cases h1 : 1 < d.msgRegs.size
+      · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+        by_cases h2 : 2 < d.msgRegs.size
+        · rw [requireMsgReg_unfold_ok _ _ h2]; simp
+          by_cases h3 : 3 < d.msgRegs.size
+          · rw [requireMsgReg_unfold_ok _ _ h3]; simp
+            rw [requireMsgReg_unfold_err _ _ (by omega)]
+          · rw [requireMsgReg_unfold_err _ _ h3]
+        · rw [requireMsgReg_unfold_err _ _ h2]
+      · rw [requireMsgReg_unfold_err _ _ h1]
+    · rw [requireMsgReg_unfold_err _ _ h0]
+
+/-- Z8-B: SchedContextBindArgs decode fails iff fewer than 1 message register. -/
+theorem decodeSchedContextBindArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeSchedContextBindArgs d = .error e) ↔ d.msgRegs.size < 1 := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 1
+    · exact hlt
+    · exfalso
+      simp only [decodeSchedContextBindArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        pure, Except.pure] at he
+      nomatch he
+  · intro h
+    refine ⟨.invalidMessageInfo, ?_⟩
+    simp only [decodeSchedContextBindArgs, bind, Except.bind]
+    rw [requireMsgReg_unfold_err _ _ (by omega)]
+
+/-- Z8-B: SchedContextUnbindArgs decode never fails (no message registers required). -/
+theorem decodeSchedContextUnbindArgs_error_iff (d : SyscallDecodeResult) :
+    ¬(∃ e, decodeSchedContextUnbindArgs d = .error e) := by
+  intro ⟨e, he⟩
+  simp only [decodeSchedContextUnbindArgs, pure, Except.pure] at he
+  nomatch he
+
+-- ============================================================================
 -- IPC extra capability address decode (M-D01)
 -- ============================================================================
 

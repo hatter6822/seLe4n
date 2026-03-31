@@ -3215,6 +3215,77 @@ private def runX2RuntimeInvariantTests : IO Unit := do
 
   IO.println "all X2 runtime invariant tests passed"
 
+-- ============================================================================
+-- Z8-L: SchedContext negative-state tests
+-- ============================================================================
+
+/-- Z8-L: Negative tests for SchedContext operations — covers error paths for
+bind to non-existent SC, double-bind, configure with zero period, admission
+control rejection, and unbind of unbound SC. -/
+def runZ8SchedContextNegativeChecks : IO Unit := do
+  let st0 : SystemState := default
+
+  -- Z8-L-01: Configure non-existent SchedContext
+  expectErr "Z8-L-01 configure non-existent SC"
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨9900⟩ 100 1000 50 0 0 st0)
+    .objectNotFound
+
+  -- Z8-L-02: Configure with zero period
+  let scId : SeLe4n.ObjId := ⟨9901⟩
+  let scIdTyped : SeLe4n.SchedContextId := ⟨9901⟩
+  let sc0 := SeLe4n.Kernel.SchedContext.empty scIdTyped
+  let stWithSc := { st0 with
+    objects := st0.objects.insert scId (.schedContext sc0)
+    objectIndex := scId :: st0.objectIndex
+    objectIndexSet := st0.objectIndexSet.insert scId }
+  expectErr "Z8-L-02 configure zero period"
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure scId 100 0 50 0 0 stWithSc)
+    .invalidArgument
+
+  -- Z8-L-03: Configure with budget > period
+  expectErr "Z8-L-03 configure budget>period"
+    (SeLe4n.Kernel.SchedContextOps.schedContextConfigure scId 200 100 50 0 0 stWithSc)
+    .invalidArgument
+
+  -- Z8-L-04: Bind to non-existent SchedContext
+  let tid : SeLe4n.ThreadId := ⟨9902⟩
+  expectErr "Z8-L-04 bind non-existent SC"
+    (SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨9999⟩ tid st0)
+    .objectNotFound
+
+  -- Z8-L-05: Bind when SC already has a bound thread (double-bind)
+  let scBound := { sc0 with boundThread := some ⟨1⟩ }
+  let stBound := { st0 with
+    objects := st0.objects.insert scId (.schedContext scBound)
+    objectIndex := scId :: st0.objectIndex
+    objectIndexSet := st0.objectIndexSet.insert scId }
+  expectErr "Z8-L-05 double-bind SC"
+    (SeLe4n.Kernel.SchedContextOps.schedContextBind scId tid stBound)
+    .illegalState
+
+  -- Z8-L-06: Bind when TCB is already bound to another SC
+  let tcbAlreadyBound : TCB := {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .bound ⟨8888⟩ }
+  let stTcbBound := { stWithSc with
+    objects := stWithSc.objects.insert tid.toObjId (.tcb tcbAlreadyBound) }
+  expectErr "Z8-L-06 bind TCB already bound"
+    (SeLe4n.Kernel.SchedContextOps.schedContextBind scId tid stTcbBound)
+    .illegalState
+
+  -- Z8-L-07: Unbind when SC has no bound thread
+  expectErr "Z8-L-07 unbind no bound thread"
+    (SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stWithSc)
+    .illegalState
+
+  -- Z8-L-08: Unbind non-existent SchedContext
+  expectErr "Z8-L-08 unbind non-existent SC"
+    (SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨9999⟩ st0)
+    .objectNotFound
+
+  IO.println "all Z8 SchedContext negative tests passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -3237,3 +3308,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runS2GCapabilityErrorTests
   SeLe4n.Testing.runS2HLifecycleErrorTests
   SeLe4n.Testing.runX2RuntimeInvariantTests
+  SeLe4n.Testing.runZ8SchedContextNegativeChecks
