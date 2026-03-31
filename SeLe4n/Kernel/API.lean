@@ -611,7 +611,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             cspaceMove src dst st
     | _ => fun _ => .error .invalidCapability
   -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
-  -- serviceQuery are all handled by dispatchCapabilityOnly above.
+  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind
+  -- are all handled by dispatchCapabilityOnly above.
   -- WS-Q1-D: Service register — decode interface spec from message registers,
   -- construct ServiceRegistration, and register the service.
   | .serviceRegister =>
@@ -672,7 +673,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- V8-H: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
-  -- serviceRevoke, serviceQuery) are unreachable here — handled by
+  -- serviceRevoke, serviceQuery, schedContextConfigure, schedContextBind,
+  -- schedContextUnbind) are unreachable here — handled by
   -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
   -- Lean's exhaustiveness checker.
   | _ => fun _ => .error .illegalState
@@ -794,7 +796,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             cspaceMoveChecked ctx src dst st
     | _ => fun _ => .error .invalidCapability
   -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
-  -- serviceQuery are all handled by dispatchCapabilityOnly above.
+  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind
+  -- are all handled by dispatchCapabilityOnly above.
   -- T6-I: Service register — checked for thread→service flow
   | .serviceRegister =>
     match cap.target with
@@ -901,13 +904,14 @@ def syscallEntryChecked (ctx : LabelingContext)
 -- U5-A/U5-D: Dispatch structural equivalence theorems
 -- ============================================================================
 
-/-- U5-A/U-M02/V8-H: The 6 capability-only syscalls are handled identically by
+/-- U5-A/U-M02/V8-H: The 9 capability-only syscalls are handled identically by
 both checked and unchecked dispatch paths, since both delegate to
 `dispatchCapabilityOnly`. These arms derive authority entirely from
 capability possession and do not cross security domains.
 
 The shared arms are: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
-`.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`.
+`.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
+`.schedContextBind`, `.schedContextUnbind`.
 
 V8-H: With the shared helper extraction, each per-arm theorem follows
 directly from the shared `dispatchCapabilityOnly` delegation. -/

@@ -165,6 +165,18 @@
 [MEI-004] multi-ep ep3 out-of-order recv registers: some [55, 66]
 [MEI-005] multi-ep ep1 FIFO second recv registers: some [77, 88]
 [MEI-006] multi-ep all 3 endpoints drained: true
+[SCO-001] validateSchedContextParams valid: Except.ok ()
+[SCO-002] validateSchedContextParams zero-period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-006] schedContextConfigure success budget=100 period=1000
+[SCO-007] schedContextBind success: sc.boundThread=true tcb.bound=true
+[SCO-008] schedContextBind already-bound: SeLe4n.Model.KernelError.illegalState
+[SCO-009] schedContextUnbind success: sc.cleared=true tcb.unbound=true
+[SCO-010] schedContextUnbind not-bound: SeLe4n.Model.KernelError.illegalState
+[SCO-011] schedContextYieldTo from=0 target=180
+[SCO-012] admission without-exclude=true with-exclude=true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)

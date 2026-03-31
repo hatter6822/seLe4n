@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.SchedContext.ReplenishQueue
+import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Model.State
 
 /-! # SchedContext Operations — WS-Z Phase Z5
@@ -60,17 +61,23 @@ def validateSchedContextParams (budget period priority _deadline domain : Nat)
 -- ============================================================================
 
 /-- Z5-F2: Collect all SchedContext objects from the object store for admission
-control. Uses the object index to iterate. -/
-def collectSchedContexts (st : SystemState) : List SchedContext :=
+control, optionally excluding a specific SchedContext (used when reconfiguring
+an existing SchedContext to avoid double-counting its bandwidth). -/
+def collectSchedContexts (st : SystemState) (excludeId : Option ObjId := none)
+    : List SchedContext :=
   st.objectIndex.filterMap fun oid =>
-    match (st.objects[oid]? : Option KernelObject) with
+    if excludeId == some oid then none
+    else match (st.objects[oid]? : Option KernelObject) with
     | some (KernelObject.schedContext sc) => some sc
     | _ => none
 
 /-- Z5-F2: Check admission control — total bandwidth including candidate
-must not exceed 100% (1000 per-mille). -/
-def checkAdmission (st : SystemState) (candidate : SchedContext) : Bool :=
-  admissionCheck (collectSchedContexts st) candidate
+must not exceed 100% (1000 per-mille). When reconfiguring an existing
+SchedContext, `excludeId` prevents the old configuration from being
+double-counted. -/
+def checkAdmission (st : SystemState) (candidate : SchedContext)
+    (excludeId : Option ObjId := none) : Bool :=
+  admissionCheck (collectSchedContexts st excludeId) candidate
 
 -- ============================================================================
 -- Z5-F3: schedContextConfigure
@@ -96,7 +103,7 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
             deadline := ⟨deadline⟩
             domain := ⟨domain⟩
             budgetRemaining := ⟨budget⟩ }
-        if checkAdmission st updated then
+        if checkAdmission st updated (some scId) then
           storeObject scId (KernelObject.schedContext updated) st
         else
           .error .resourceExhausted
@@ -109,7 +116,9 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
 /-- Z5-G1/G2/G3: Bind a thread to a SchedContext.
 1. Precondition: SchedContext has no bound thread, TCB is unbound
 2. Set bidirectional binding (sc.boundThread, tcb.schedContextBinding)
-3. Write both updated objects to store -/
+3. Write both updated objects to store
+4. If thread is in RunQueue, remove and re-insert at SchedContext priority
+   to maintain `effectiveParamsMatchRunQueue` invariant -/
 def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
   fun st =>
     match (st.objects[scId]? : Option KernelObject) with
@@ -129,7 +138,17 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
             -- Write both updated objects
             let st1 := { st with objects := st.objects.insert scId (KernelObject.schedContext updatedSc) }
             let st2 := { st1 with objects := st1.objects.insert threadId.toObjId (KernelObject.tcb updatedTcb) }
-            .ok ((), st2)
+            -- Z5-G3: If thread is in RunQueue, remove and re-insert at
+            -- SchedContext-derived priority. Under dequeue-on-dispatch, only
+            -- runnable-but-not-current threads are in the RunQueue. After bind,
+            -- the effective priority resolves from the SchedContext, so we must
+            -- update the RunQueue entry to match.
+            let st3 := if threadId ∈ st2.scheduler.runQueue then
+              let rqRemoved := st2.scheduler.runQueue.remove threadId
+              let rqInserted := rqRemoved.insert threadId sc.priority
+              { st2 with scheduler := { st2.scheduler with runQueue := rqInserted } }
+            else st2
+            .ok ((), st3)
           | _ => .error .illegalState
         | _ => .error .objectNotFound
     | _ => .error .objectNotFound
@@ -140,8 +159,12 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
 
 /-- Z5-H1/H2/H3: Unbind a thread from a SchedContext.
 1. Verify the SchedContext has a bound thread
-2. Clear both sides of the bidirectional binding
-3. Remove SchedContext from replenish queue -/
+2. (H1) If bound thread is the current thread, clear current to trigger
+   rescheduling — prevents unbinding the running thread without preemption
+3. (H2) If thread is in RunQueue, remove it (it will be re-enqueued at
+   legacy TCB priority by the next schedule call if still runnable)
+4. Clear both sides of the bidirectional binding
+5. (H3) Remove SchedContext from replenish queue -/
 def schedContextUnbind (scId : ObjId) : Kernel Unit :=
   fun st =>
     match (st.objects[scId]? : Option KernelObject) with
@@ -151,16 +174,29 @@ def schedContextUnbind (scId : ObjId) : Kernel Unit :=
       | some tid =>
         match (st.objects[tid.toObjId]? : Option KernelObject) with
         | some (KernelObject.tcb tcb) =>
-          -- Z5-H2: Clear both sides of the binding
+          -- Z5-H1: Preemption guard — if bound thread is current, clear current
+          -- to force rescheduling. Under dequeue-on-dispatch, the current thread
+          -- is not in the RunQueue, so clearing current is sufficient.
+          let st0 := if st.scheduler.current == some tid then
+            { st with scheduler := { st.scheduler with current := none } }
+          else st
+          -- Z5-H2: If thread is in RunQueue (runnable but not current), remove it.
+          -- After unbind the thread reverts to legacy priority; the next schedule
+          -- call will re-enqueue it correctly if still runnable.
+          let st1 := if tid ∈ st0.scheduler.runQueue then
+            { st0 with scheduler := { st0.scheduler with
+                runQueue := st0.scheduler.runQueue.remove tid } }
+          else st0
+          -- Z5-H2 cont: Clear both sides of the binding
           let updatedSc := { sc with boundThread := none, isActive := false }
           let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
-          let st1 := { st with objects := st.objects.insert scId (KernelObject.schedContext updatedSc) }
-          let st2 := { st1 with objects := st1.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
+          let st2 := { st1 with objects := st1.objects.insert scId (KernelObject.schedContext updatedSc) }
+          let st3 := { st2 with objects := st2.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
           -- Z5-H3: Remove SchedContext from replenish queue
           let scIdTyped : SchedContextId := ⟨scId.toNat⟩
-          let cleanedQueue := ReplenishQueue.remove st2.scheduler.replenishQueue scIdTyped
-          let st3 := { st2 with scheduler := { st2.scheduler with replenishQueue := cleanedQueue } }
-          .ok ((), st3)
+          let cleanedQueue := ReplenishQueue.remove st3.scheduler.replenishQueue scIdTyped
+          let st4 := { st3 with scheduler := { st3.scheduler with replenishQueue := cleanedQueue } }
+          .ok ((), st4)
         -- Bound thread's TCB not found — clear SC side anyway
         | _ =>
           let updatedSc := { sc with boundThread := none, isActive := false }
@@ -178,7 +214,8 @@ def schedContextUnbind (scId : ObjId) : Kernel Unit :=
 /-- Z5-I1/I2: Transfer budget from one SchedContext to another.
 Kernel-internal helper for hierarchical scheduling. Not a userspace syscall.
 Transfers `budgetRemaining` from source to target, capped at target's
-configured `budget`. -/
+configured `budget`. If the target's bound thread was budget-starved
+(budget was 0, now > 0), enqueue it in the RunQueue. -/
 def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId)
     : SystemState :=
   match (st.objects[fromScId.toObjId]? : Option KernelObject) with
@@ -188,12 +225,24 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
       -- Z5-I1: Transfer budget from source to target
       let transferAmount := fromSc.budgetRemaining.val
       let newTargetBudget := min (targetSc.budgetRemaining.val + transferAmount) targetSc.budget.val
+      let wasBudgetStarved := targetSc.budgetRemaining.val == 0
       let updatedFrom := { fromSc with budgetRemaining := Budget.zero, isActive := false }
       let updatedTarget := { targetSc with
         budgetRemaining := ⟨newTargetBudget⟩
         isActive := newTargetBudget > 0 }
       let st1 := { st with objects := st.objects.insert fromScId.toObjId (KernelObject.schedContext updatedFrom) }
-      { st1 with objects := st1.objects.insert targetScId.toObjId (KernelObject.schedContext updatedTarget) }
+      let st2 := { st1 with objects := st1.objects.insert targetScId.toObjId (KernelObject.schedContext updatedTarget) }
+      -- Z5-I2: If target's bound thread was budget-starved and now has budget,
+      -- enqueue it in RunQueue so it becomes schedulable again.
+      if wasBudgetStarved && newTargetBudget > 0 then
+        match targetSc.boundThread with
+        | some tid =>
+          if tid ∉ st2.scheduler.runQueue && st2.scheduler.current != some tid then
+            { st2 with scheduler := { st2.scheduler with
+                runQueue := st2.scheduler.runQueue.insert tid targetSc.priority } }
+          else st2
+        | none => st2
+      else st2
     | _ => st
   | _ => st
 

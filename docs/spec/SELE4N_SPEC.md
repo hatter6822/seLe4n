@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.23.9` (`lakefile.toml`) |
+| **Package version** | `0.23.10` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 76,554 across 109 Lean files |
 | **Test LoC** | 8,687 across 10 Lean test suites |
 | **Proved declarations** | 2,238 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-Z Phases Z1–Z5 COMPLETE** (v0.23.0–v0.23.9). Z5: Capability-Controlled Thread Binding — 25 sub-tasks, 3 new syscalls, capability-gated SchedContext operations, preservation theorems. Z6 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-Z Phases Z1–Z5 COMPLETE** (v0.23.0–v0.23.10). Z5: Capability-Controlled Thread Binding — 25 sub-tasks, 3 new syscalls, capability-gated SchedContext operations, preservation theorems. Z5 audit (v0.23.10): 7 findings fixed — RunQueue re-insertion in bind, preemption guard + RunQueue removal in unbind, re-enqueue in yieldTo, 4 new preservation theorems, admission control double-count fix. Z6 planned. Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md). Prior: WS-Y–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

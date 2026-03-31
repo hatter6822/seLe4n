@@ -2383,12 +2383,16 @@ scheduling parameters, and enforce admission control.
 **Core operations** (`Kernel/SchedContext/Operations.lean`):
 - `validateSchedContextParams` — parameter validation: period > 0, budget ≤ period,
   priority ≤ maxPriority, domain < numDomains.
-- `collectSchedContexts` — gather all SchedContext objects from object store.
+- `collectSchedContexts` — gather all SchedContext objects from object store
+  (with `excludeId` parameter to prevent admission double-counting).
 - `checkAdmission` — bandwidth admission control (total utilization ≤ threshold).
-- `schedContextConfigure` — validate + admit + store SchedContext update.
-- `schedContextBind` — bidirectional TCB↔SchedContext binding.
-- `schedContextUnbind` — unbind + cleanup.
-- `schedContextYieldTo` — kernel-internal budget transfer between SchedContexts.
+- `schedContextConfigure` — validate + admit + store SchedContext update
+  (passes `excludeId` to prevent self-counting).
+- `schedContextBind` — bidirectional TCB↔SchedContext binding + RunQueue
+  re-insertion at SchedContext priority.
+- `schedContextUnbind` — unbind + preemption guard + RunQueue removal + cleanup.
+- `schedContextYieldTo` — kernel-internal budget transfer between SchedContexts
+  + re-enqueue on budget restoration.
 
 **Preservation theorems** (`Kernel/SchedContext/Invariant/Preservation.lean`):
 - `validateSchedContextParams_implies_wellFormed` — period > 0 ∧ budget ≤ period.
@@ -2397,6 +2401,14 @@ scheduling parameters, and enforce admission control.
   bounded replenishments.
 - `schedContextYieldTo_target_bounded` — target `budgetRemaining` ≤ configured
   `budget` after transfer.
+- `schedContextBind_output_bidirectional` (Z5-K) — after bind, SC.boundThread =
+  target thread ∧ TCB.schedContextBinding = .bound scId.
+- `schedContextUnbind_output_cleared` (Z5-L) — after unbind, SC.boundThread =
+  none ∧ SC.isActive = false ∧ TCB.schedContextBinding = .unbound.
+- `schedContextBind_runQueue_insert_uses_sc_priority` (Z5-N1/N2) — RunQueue
+  insertion stores SchedContext priority in threadPriority map.
+- `schedContextConfigure_admission_excludes_eq` (Z5-M) — `excludeId` guard
+  correctly filters out the SchedContext being reconfigured.
 
 **API dispatch** (`Kernel/API.lean`):
 - 3 new arms in `dispatchCapabilityOnly` routing SchedContext syscalls.

@@ -1,3 +1,35 @@
+## [0.23.10] — Z5 Audit: SchedContext Operations Hardening
+
+Post-implementation audit of Z5 Capability-Controlled Thread Binding. Seven
+audit findings fixed, 4 new preservation theorems, 12 new trace tests.
+
+- **AUD-1 (HIGH)**: `schedContextBind` missing RunQueue re-insertion (Z5-G3).
+  After bind, thread in RunQueue is now removed and re-inserted at
+  SchedContext-derived priority to maintain `effectiveParamsMatchRunQueue`.
+- **AUD-2 (HIGH)**: `schedContextUnbind` missing preemption guard (Z5-H1).
+  If bound thread is the current thread, `current` is now cleared to force
+  rescheduling. Prevents unbinding the running thread without preemption.
+- **AUD-3 (HIGH)**: `schedContextUnbind` missing RunQueue removal (Z5-H2).
+  Runnable threads are now removed from RunQueue before unbinding.
+- **AUD-4 (MED)**: `schedContextYieldTo` missing re-enqueue logic (Z5-I2).
+  When budget transfer reactivates a budget-starved target, its bound thread
+  is now enqueued in the RunQueue at the SchedContext's priority.
+- **AUD-5 (MED)**: 4 missing preservation theorems added:
+  `schedContextBind_output_bidirectional` (Z5-K),
+  `schedContextUnbind_output_cleared` (Z5-L),
+  `schedContextBind_runQueue_insert_uses_sc_priority` (Z5-N1/N2),
+  `schedContextConfigure_admission_excludes_eq` (Z5-M admission).
+- **AUD-6 (LOW)**: 4 stale doc comments in `API.lean` updated from "6
+  capability-only arms" to "9 capability-only arms".
+- **AUD-7 (MED)**: `schedContextConfigure` admission control double-counted
+  the SchedContext being reconfigured. `collectSchedContexts` now accepts
+  `excludeId` parameter; configure passes the SchedContext's own ObjId.
+- **Testing**: 12 new `SCO-001` through `SCO-012` trace tests covering
+  parameter validation (5 tests), configure success, bind/unbind
+  success+rejection, yieldTo budget transfer, and admission exclusion.
+
+Zero sorry/axiom. All tiers pass (0-3). 212 modules build.
+
 ## [0.23.9] — Z5: Capability-Controlled Thread Binding
 
 Phase Z5 of WS-Z Composable Performance Objects. 25 sub-tasks (Z5-A through

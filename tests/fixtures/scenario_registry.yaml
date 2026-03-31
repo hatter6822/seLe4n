@@ -1020,3 +1020,64 @@ scenarios:
     function: chain22NotificationBadgeDelivery
     subsystem: IPC
     description: "R3-A/M-16: wait→signal badge delivery to woken thread pendingMessage"
+  # Z5-AUD: SchedContext operations audit tests
+  SCO-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-F1: validateSchedContextParams valid parameters accepted"
+  SCO-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-F1: validateSchedContextParams zero period rejected"
+  SCO-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-F1: validateSchedContextParams budget>period rejected"
+  SCO-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-F1: validateSchedContextParams priority>max rejected"
+  SCO-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-F1: validateSchedContextParams domain>=numDomains rejected"
+  SCO-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-F3: schedContextConfigure success path"
+  SCO-007:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-G1/G2: schedContextBind bidirectional binding"
+  SCO-008:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-G1: schedContextBind already-bound rejected"
+  SCO-009:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-H2: schedContextUnbind clears both sides"
+  SCO-010:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-H2: schedContextUnbind not-bound rejected"
+  SCO-011:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-I1: schedContextYieldTo budget transfer"
+  SCO-012:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "Z5-AUD-7: admission control exclude prevents double-counting"

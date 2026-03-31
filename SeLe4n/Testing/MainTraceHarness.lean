@@ -2158,6 +2158,138 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
 
   checkInvariants counter "post-multi-endpoint-interleaving-trace" st1
 
+-- ============================================================================
+-- Z5-AUD: SchedContext operations trace
+-- ============================================================================
+
+private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  -- Z5-AUD-01: validateSchedContextParams — valid params
+  let validResult := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 0
+  IO.println s!"[SCO-001] validateSchedContextParams valid: {reprStr validResult}"
+  -- Z5-AUD-02: validateSchedContextParams — zero period rejected
+  let zeroPeriod := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 0 50 0 0
+  IO.println s!"[SCO-002] validateSchedContextParams zero-period: {reprStr zeroPeriod}"
+  -- Z5-AUD-03: validateSchedContextParams — budget > period rejected
+  let budgetOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 2000 1000 50 0 0
+  IO.println s!"[SCO-003] validateSchedContextParams budget>period: {reprStr budgetOver}"
+  -- Z5-AUD-04: validateSchedContextParams — priority > max rejected
+  let prioOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 256 0 0
+  IO.println s!"[SCO-004] validateSchedContextParams priority>max: {reprStr prioOver}"
+  -- Z5-AUD-05: validateSchedContextParams — domain >= numDomains rejected
+  let domainOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 16
+  IO.println s!"[SCO-005] validateSchedContextParams domain>=16: {reprStr domainOver}"
+
+  -- Z5-AUD-06: schedContextConfigure — success path
+  let scId : SeLe4n.ObjId := ⟨5000⟩
+  let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨5000⟩)
+  let stWithSc := { st1 with
+    objects := st1.objects.insert scId scObj
+    objectIndex := scId :: st1.objectIndex
+    objectIndexSet := st1.objectIndexSet.insert scId }
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scId 100 1000 50 0 0 stWithSc with
+  | .error err =>
+    IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
+  | .ok ((), stConfigured) =>
+    match stConfigured.objects[scId]? with
+    | some (.schedContext sc) =>
+      IO.println s!"[SCO-006] schedContextConfigure success budget={sc.budget.val} period={sc.period.val}"
+    | _ => IO.println s!"[SCO-006] schedContextConfigure success: object not found"
+
+  -- Z5-AUD-07: schedContextBind — success path
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scForBind : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩, budgetRemaining := ⟨100⟩ }
+  let stForBind := { st1 with
+    objects := st1.objects.insert scId (.schedContext scForBind) }
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId tid stForBind with
+  | .error err =>
+    IO.println s!"[SCO-007] schedContextBind success: error {reprStr err}"
+  | .ok ((), stBound) =>
+    let scBound := match stBound.objects[scId]? with
+      | some (.schedContext sc) => sc.boundThread == some tid
+      | _ => false
+    let tcbBound := match stBound.objects[tid.toObjId]? with
+      | some (.tcb tcb) => tcb.schedContextBinding.isBound
+      | _ => false
+    IO.println s!"[SCO-007] schedContextBind success: sc.boundThread={scBound} tcb.bound={tcbBound}"
+
+  -- Z5-AUD-08: schedContextBind — already bound rejected
+  let scAlreadyBound : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with boundThread := some ⟨99⟩ }
+  let stAlreadyBound := { st1 with
+    objects := st1.objects.insert scId (.schedContext scAlreadyBound) }
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId ⟨2⟩ stAlreadyBound with
+  | .error err => IO.println s!"[SCO-008] schedContextBind already-bound: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-008] schedContextBind already-bound: unexpected success"
+
+  -- Z5-AUD-09: schedContextUnbind — success path
+  let scBoundForUnbind : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    boundThread := some tid, isActive := true }
+  let tcbBoundForUnbind : KernelObject := .tcb {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
+    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    schedContextBinding := .bound ⟨5000⟩ }
+  let stForUnbind := { st1 with
+    objects := (st1.objects.insert scId (.schedContext scBoundForUnbind)).insert
+      tid.toObjId tcbBoundForUnbind }
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stForUnbind with
+  | .error err =>
+    IO.println s!"[SCO-009] schedContextUnbind success: error {reprStr err}"
+  | .ok ((), stUnbound) =>
+    let scCleared := match stUnbound.objects[scId]? with
+      | some (.schedContext sc) => sc.boundThread.isNone
+      | _ => false
+    let tcbCleared := match stUnbound.objects[tid.toObjId]? with
+      | some (.tcb tcb) => !tcb.schedContextBinding.isBound
+      | _ => false
+    IO.println s!"[SCO-009] schedContextUnbind success: sc.cleared={scCleared} tcb.unbound={tcbCleared}"
+
+  -- Z5-AUD-10: schedContextUnbind — not bound rejected
+  let scNotBound : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty ⟨5000⟩
+  let stNotBound := { st1 with
+    objects := st1.objects.insert scId (.schedContext scNotBound) }
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stNotBound with
+  | .error err => IO.println s!"[SCO-010] schedContextUnbind not-bound: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-010] schedContextUnbind not-bound: unexpected success"
+
+  -- Z5-AUD-11: schedContextYieldTo — budget transfer
+  let fromSc : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5001⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨150⟩ }
+  let targetSc : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
+    budget := ⟨200⟩, budgetRemaining := ⟨30⟩ }
+  let fromId : SeLe4n.ObjId := ⟨5001⟩
+  let targetId : SeLe4n.ObjId := ⟨5002⟩
+  let stYield := { st1 with
+    objects := (st1.objects.insert fromId (.schedContext fromSc)).insert
+      targetId (.schedContext targetSc) }
+  let stAfterYield := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
+    stYield ⟨5001⟩ ⟨5002⟩
+  let fromRemaining := match stAfterYield.objects[fromId]? with
+    | some (.schedContext sc) => sc.budgetRemaining.val
+    | _ => 9999
+  let targetRemaining := match stAfterYield.objects[targetId]? with
+    | some (.schedContext sc) => sc.budgetRemaining.val
+    | _ => 9999
+  IO.println s!"[SCO-011] schedContextYieldTo from={fromRemaining} target={targetRemaining}"
+
+  -- Z5-AUD-12: admission control — excludeId prevents double-counting
+  let scSmall : SeLe4n.Kernel.SchedContext := {
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
+    budget := ⟨500⟩, period := ⟨1000⟩ }
+  let stAdmission := { st1 with
+    objects := st1.objects.insert scId (.schedContext scSmall)
+    objectIndex := scId :: st1.objectIndex
+    objectIndexSet := st1.objectIndexSet.insert scId }
+  -- Without exclusion: existing 50% + candidate 50% = 100% ≤ 1000 per-mille → ok
+  let withoutExclude := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmission scSmall none
+  -- With exclusion: 0% + 50% = 50% → ok
+  let withExclude := SeLe4n.Kernel.SchedContextOps.checkAdmission stAdmission scSmall (some scId)
+  IO.println s!"[SCO-012] admission without-exclude={withoutExclude} with-exclude={withExclude}"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   let counter ← IO.mkRef (0 : Nat)
@@ -2192,6 +2324,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runReplyRecvRoundtripTrace counter st1
   runEndpointLifecycleTrace counter st1
   runMultiEndpointInterleavingTrace counter st1
+  runSchedContextOpsTrace counter st1
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"
