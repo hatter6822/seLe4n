@@ -1,3 +1,80 @@
+## [0.23.14] — Z6 Audit Pass 2: Edge Case Test Coverage
+
+Second comprehensive audit of Phase Z6 Timeout Endpoints.
+
+- **AUD-Z6-5**: 4 new edge-case trace tests (SCO-032 through SCO-035):
+  - SCO-032: 3-thread mid-queue removal — validates predecessor/successor relinking
+  - SCO-033: receiveQ removal — verifies sendQ remains unchanged
+  - SCO-034: timeoutThread on `blockedOnCall` thread — confirms state reset + error code
+  - SCO-035: multi-thread `timeoutBlockedThreads` — both threads timed out correctly
+- Cross-subsystem ripple verified: all `ipcInvariantFull` 10-tuple construction/
+  destructuring sites confirmed correct (Structural.lean, Boot.lean,
+  Architecture/Invariant.lean, Capability/Invariant/Preservation.lean).
+- Transport lemma coverage verified: 4 subsystem fields (scheduler, cdt, lifecycle,
+  services) have explicit equality proofs.
+- Documentation accuracy verified against code (SELE4N_SPEC.md, gitbook ch.12).
+- Scenario registry updated (4 new entries).
+
+Zero sorry/axiom. All tiers pass (0-3).
+
+## [0.23.13] — Z6 Audit: Documentation Hardening + Test Coverage
+
+Comprehensive audit of Phase Z6 Timeout Endpoints implementation.
+
+- **AUD-Z6-1**: `endpointQueueRemove` defensive coding documented — `| _ => objs`
+  fallback on predecessor/successor lookup explained as invariant-guaranteed dead
+  code under `ipcStateQueueMembershipConsistent` and `queueNextBlockingConsistent`.
+  Relationship to existing `endpointQueueRemoveDual` (Transport.lean) documented.
+- **AUD-Z6-2**: `timeoutThread` precondition documented — caller
+  `timeoutBlockedThreads` validates ipcState via `tcbBlockingInfo` before calling.
+- **AUD-Z6-3**: 12 new trace tests (SCO-020 through SCO-031) covering:
+  endpointQueueRemove head/tail/error paths, timeoutThread success/error/re-enqueue,
+  timeoutBlockedThreads matching/non-matching SC, timeoutAwareReceive timeout
+  detection/normal path.
+- **AUD-Z6-4**: `timeoutAwareReceive` docstring corrected — describes actual
+  timeout detection semantics, `_endpointId` reserved-for-future-use documented.
+- Scenario registry updated (12 new entries in `scenario_registry.yaml`).
+- `codebase_map.json` regenerated.
+
+Zero sorry/axiom. All tiers pass (0-3).
+
+## [0.23.12] — Z6: Timeout Endpoints
+
+Phase Z6 implements budget-driven timeout for IPC blocking operations. When a
+thread's SchedContext budget expires while blocked on send/receive/call/reply,
+the thread is unblocked with a timeout error code and re-enqueued in the RunQueue.
+
+- **Z6-A**: Added `timeoutBudget : Option SchedContextId` field to TCB struct
+  for tracking which SchedContext governs a blocking IPC operation's timeout.
+- **Z6-C**: `timeoutThread` operation: removes thread from endpoint queue,
+  resets IPC state to `.ready`, clears pending message and timeout budget,
+  writes timeout error code (`0xFFFFFFFF`) to register x0, re-enqueues via
+  `ensureRunnable`. `timeoutAwareReceive` wrapper detects prior timeout.
+- **Z6-D**: `endpointQueueRemove` mid-queue splice-out: O(1) removal of any
+  thread from an intrusive dual-queue endpoint. Patches predecessor/successor
+  links, updates head/tail pointers, clears removed thread's queue fields.
+  `endpointQueueRemove_preserves_objects_invExt` proven.
+- **Z6-E/F**: Integrated timeout into `timerTickBudget`: on budget exhaustion
+  (Z4-F3 branch), calls `timeoutBlockedThreads` to unblock all threads bound
+  to the exhausted SchedContext. `processReplenishmentsDue` documented as
+  not requiring timeout action.
+- **Z6-G**: Design optimization — timeout scan uses `schedContextBinding.scId?`
+  match in timer tick handler instead of modifying IPC store functions. Zero
+  changes to existing IPC operations, zero existing proof breakage.
+- **Z6-H**: `IpcTimeoutResult` inductive type (`.completed msg | .timedOut`).
+- **Z6-J**: `blockedThreadTimeoutConsistent` invariant: threads with
+  `timeoutBudget = some scId` must reference a valid SchedContext and be in a
+  blocking IPC state. Extended `ipcInvariantFull` from 9 to 10 conjuncts.
+  Full ripple fix across Structural.lean (~12 sites), Boot.lean,
+  Architecture/Invariant.lean, Capability/Invariant/Preservation.lean.
+- **Z6-K/M**: Transport lemmas for `endpointQueueRemove`: scheduler, CDT,
+  lifecycle, and services backward preservation theorems.
+- **New file**: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`
+- **Boot safety**: Extended `bootSafeObject` TCB clause with
+  `timeoutBudget = none` requirement.
+
+Zero sorry/axiom. All tiers pass (0-3).
+
 ## [0.23.11] — Z5 Audit Pass 2: Test Coverage Completion
 
 Second audit pass of Z5 Capability-Controlled Thread Binding. Found 7 untested

@@ -9,14 +9,16 @@
 import SeLe4n.Kernel.IPC.DualQueue.Core
 import SeLe4n.Kernel.IPC.DualQueue.Transport
 import SeLe4n.Kernel.IPC.DualQueue.WithCaps
+import SeLe4n.Kernel.IPC.Operations.Timeout
 
 /-! # IPC Dual-Queue — Re-export Hub
 
 Decomposed into:
 - **Core**: Dual-queue endpoint operations (storeTcbQueueLinks, endpointQueuePopHead,
-  endpointQueueEnqueue, endpointQueueRemoveDual).
+  endpointQueueEnqueue, endpointQueueRemove).
 - **Transport**: Transport lemmas proving scheduler/object/endpoint/notification
   backward preservation for all dual-queue primitives.
+- **Timeout**: Z6 timeout-driven IPC unblocking (timeoutThread, timeoutAwareReceive).
 - **WithCaps**: IPC cap transfer wrappers (M-D01/WS-M3) — compose existing
   dual-queue operations with `ipcUnwrapCaps` for capability transfer during
   rendezvous.

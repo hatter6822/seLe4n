@@ -423,3 +423,110 @@ theorem endpointQueueEnqueue_preserves_objects_invExt
                     intro hStep
                     exact storeTcbQueueLinks_preserves_objects_invExt _ _ tid _ _ _ hInv2 hStep
 
+-- ============================================================================
+-- Z6-D: Mid-queue thread removal for timeout unblocking
+-- ============================================================================
+
+/-- Z6-D1/D2: Remove a specific thread from an endpoint's send or receive queue.
+
+Unlike `endpointQueuePopHead` which only dequeues the head, this operation
+removes an arbitrary thread from anywhere in the queue (head, middle, or tail).
+Used by `timeoutThread` to unblock a timed-out thread that may not be at the
+head of the wait queue.
+
+This is the pure-function counterpart to `endpointQueueRemoveDual` (Transport.lean).
+`endpointQueueRemoveDual` uses `queuePPrev` back-pointers and `storeObject` with
+full consistency validation. This function uses direct `RHTable.insert` for simpler
+proof obligations (see `endpointQueueRemove_preserves_objects_invExt`).
+
+The operation:
+1. Looks up the endpoint and verifies the thread exists
+2. Patches the predecessor's `queueNext` to skip over the removed thread
+3. Patches the successor's `queuePrev` to skip over the removed thread
+4. Updates the endpoint's head/tail pointers if the removed thread was at
+   either boundary
+5. Clears the removed thread's queue linkage fields (including `queuePPrev`)
+
+**Invariant assumption (AUD-Z6-1):** Steps 2 and 3 use `| _ => objs` as a
+defensive fallback when predecessor/successor lookup fails or returns a
+non-TCB object. Under `ipcStateQueueMembershipConsistent` and
+`queueNextBlockingConsistent` invariants, queue-linked thread IDs always
+resolve to valid TCB objects, so the fallback is unreachable in well-formed
+states. The fallback is retained (rather than returning an error) because:
+- The timeout path must be non-failing for threads that are genuinely queued
+- Returning an error would abort the entire timeout scan in `timeoutBlockedThreads`
+- The invariant proofs guarantee this branch is dead code in practice
+
+Returns the updated state, or an error if the endpoint or thread is not found. -/
+def endpointQueueRemove
+    (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId)
+    (st : SystemState) : Except KernelError SystemState :=
+  match st.objects[endpointId]? with
+  | some (.endpoint ep) =>
+    match lookupTcb st tid with
+    | none => .error .objectNotFound
+    | some tcb =>
+      let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+      -- Step 1: Patch predecessor's queueNext to skip tid
+      let objs := st.objects
+      let objs := match tcb.queuePrev with
+        | none => objs  -- tid is head; no predecessor to patch
+        | some prevTid =>
+          match objs[prevTid.toObjId]? with
+          | some (.tcb prevTcb) =>
+            objs.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+          | _ => objs
+      -- Step 2: Patch successor's queuePrev to skip tid
+      let objs := match tcb.queueNext with
+        | none => objs  -- tid is tail; no successor to patch
+        | some nextTid =>
+          match objs[nextTid.toObjId]? with
+          | some (.tcb nextTcb) =>
+            objs.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+          | _ => objs
+      -- Step 3: Update endpoint head/tail pointers
+      let q' : IntrusiveQueue := {
+        head := if q.head = some tid then tcb.queueNext else q.head,
+        tail := if q.tail = some tid then tcb.queuePrev else q.tail }
+      let ep' := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+      let objs := objs.insert endpointId (.endpoint ep')
+      -- Step 4: Clear removed thread's queue links
+      let objs := objs.insert tid.toObjId (.tcb { tcb with
+        queuePrev := none, queuePPrev := none, queueNext := none })
+      .ok { st with objects := objs }
+  | some _ => .error .invalidCapability
+  | none => .error .objectNotFound
+
+/-- Z6-D: `endpointQueueRemove` preserves `objects.invExt`.
+
+The operation performs up to 4 `RHTable.insert` calls (predecessor patch,
+successor patch, endpoint update, TCB link clear). Each insert preserves
+`invExt` by `RHTable.insert_preserves_invExt`. -/
+theorem endpointQueueRemove_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    st'.objects.invExt := by
+  unfold endpointQueueRemove at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        simp only [Except.ok.injEq] at hStep
+        rw [← hStep]; simp only []
+        -- Result objects = st.objects with up to 4 conditional inserts.
+        -- Each insert preserves invExt via RobinHood.insert_preserves_invExt.
+        -- Chain through all branch combinations:
+        have ins := @SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt
+        repeat (first | exact hObjInv | apply ins | split)
+

@@ -339,6 +339,18 @@ structure CapTransferSummary where
   results : Array CapTransferResult := #[]
   deriving Repr, DecidableEq
 
+/-- WS-Z/Z6-H: Result of a timeout-aware IPC operation.
+Distinguishes successful message delivery from budget-driven timeout.
+Used by `timeoutAwareReceive` and related timeout-aware IPC wrappers. -/
+inductive IpcTimeoutResult where
+  /-- IPC completed successfully with a delivered message. -/
+  | completed (msg : IpcMessage)
+  /-- The thread's SchedContext budget expired while blocked — IPC timed out.
+      The thread has been unblocked, removed from the endpoint queue, and
+      re-enqueued in the RunQueue with a timeout error code. -/
+  | timedOut
+  deriving Repr, DecidableEq
+
 /-- Per-thread IPC scheduler-visible status.
 
 WS-E3/H-09: Endpoint-local blocking states for deterministic handshake.
@@ -443,6 +455,13 @@ structure TCB where
       uses legacy TCB scheduling fields or a first-class SchedContext object.
       Default `.unbound` preserves backward compatibility. -/
   schedContextBinding : SeLe4n.Kernel.SchedContextBinding := .unbound
+  /-- WS-Z/Z6-A: Timeout budget reference for IPC blocking operations.
+      When a thread blocks on IPC (send/receive/call/reply), this records which
+      SchedContext's budget bounds the blocking duration. When the SchedContext's
+      budget expires, the thread is unblocked with a timeout error.
+      `none` = no timeout (legacy unbounded blocking). Cleared on unblock.
+      Invariant: `timeoutBudget = some _` implies `ipcState` is a blocking state. -/
+  timeoutBudget : Option SeLe4n.SchedContextId := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -464,7 +483,8 @@ instance : BEq TCB where
     a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
     a.registerContext == b.registerContext &&
     a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification &&
-    a.schedContextBinding == b.schedContextBinding
+    a.schedContextBinding == b.schedContextBinding &&
+    a.timeoutBudget == b.timeoutBudget
 
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.

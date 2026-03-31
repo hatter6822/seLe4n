@@ -770,10 +770,11 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     (∀ slot cap badge, cn.lookup slot = some cap →
       cap.badge = some badge → badge.valid)) ∧
   -- TCBs must have clean boot state: no pending messages, ready IPC state,
-  -- no queue links (queueNext/queuePrev = none)
+  -- no queue links (queueNext/queuePrev = none), no timeout budget
   (∀ tcb, obj = .tcb tcb →
     tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
-    tcb.queueNext = none ∧ tcb.queuePrev = none) ∧
+    tcb.queueNext = none ∧ tcb.queuePrev = none ∧
+    tcb.timeoutBudget = none) ∧
   -- VSpaceRoots excluded (require asidTable registration not available at boot)
   (∀ vs, obj ≠ .vspaceRoot vs)
 
@@ -956,9 +957,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
     lifecycleInvariantBundle_of_metadata_consistent _
       (bootFromPlatform config).hLifecycleConsistent
-  -- 3. ipcInvariantFull (9 sub-components)
+  -- 3. ipcInvariantFull (10 sub-components)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -994,7 +995,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
           rw [hTcb.2.2.1] at hNext; exact absurd hNext (by simp)
         · intro b tcbB hObj a hPrev
           have hTcb := (hBS b.toObjId _ hObj).2.2.2.1 tcbB rfl
-          rw [hTcb.2.2.2] at hPrev; exact absurd hPrev (by simp)
+          rw [hTcb.2.2.2.1] at hPrev; exact absurd hPrev (by simp)
       · -- tcbQueueChainAcyclic: all boot TCBs have queueNext = none
         exact tcbQueueChainAcyclic_of_allNextNone (fun tid tcb hObj => by
           exact ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.1)
@@ -1038,6 +1039,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       constructor
       · intro hRecv; rw [hEp.2.2.1] at hRecv; exact absurd hRecv (by simp)
       · intro hSend; rw [hEp.1] at hSend; exact absurd hSend (by simp)
+    · -- blockedThreadTimeoutConsistent
+      intro tid tcb scId hObj hTimeout
+      have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      rw [hTcb.2.2.2.2] at hTimeout; exact absurd hTimeout (by simp)
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

@@ -184,6 +184,22 @@
 [SCO-017] admission-failure: admitted=false
 [SCO-018] schedContextBind tcb-already-bound: SeLe4n.Model.KernelError.illegalState
 [SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty=true
+[SCO-020] endpointQueueRemove head: newHead=tid2:true newTail=tid2:true
+[SCO-021] endpointQueueRemove not-found: SeLe4n.Model.KernelError.objectNotFound
+[SCO-022] endpointQueueRemove no-endpoint: SeLe4n.Model.KernelError.objectNotFound
+[SCO-023] timeoutThread blocked: ready=true threadReady=true budgetCleared=true errCode=true linksCleared=true
+[SCO-024] timeoutThread not-found: SeLe4n.Model.KernelError.objectNotFound
+[SCO-025] timeoutThread re-enqueue: in_runQueue=true
+[SCO-026] endpointQueueRemove non-endpoint: SeLe4n.Model.KernelError.invalidCapability
+[SCO-027] timeoutBlockedThreads: tid1_timed_out=true
+[SCO-028] timeoutBlockedThreads non-matching: still_blocked=true
+[SCO-029] timeoutAwareReceive timeout-detect: timedOut=true
+[SCO-030] timeoutAwareReceive normal: completed=true
+[SCO-031] endpointQueueRemove tail: head=tid1:true tail=tid1:true
+[SCO-032] endpointQueueRemove mid: head=tid1:true tail=tid3:true tid1.next=tid3:true tid3.prev=tid1:true
+[SCO-033] endpointQueueRemove receiveQ: head=tid2:true sendQ_unchanged:true
+[SCO-034] timeoutThread blockedOnCall: ready=true errCode=true
+[SCO-035] timeoutBlockedThreads multi: tid1_ready=true tid2_ready=true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)

@@ -1116,3 +1116,83 @@ scenarios:
     function: runSchedContextOpsTrace
     subsystem: SchedContext
     description: "Z5-AUD-10: schedContextYieldTo no bound thread — no enqueue"
+  SCO-020:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: endpointQueueRemove head removal — queue relinks correctly"
+  SCO-021:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: endpointQueueRemove thread not found — objectNotFound error"
+  SCO-022:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: endpointQueueRemove endpoint not found — objectNotFound error"
+  SCO-023:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: timeoutThread successfully unblocks thread with state reset + error code"
+  SCO-024:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: timeoutThread thread not found — objectNotFound error"
+  SCO-025:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: timeoutThread re-enqueues timed-out thread in RunQueue"
+  SCO-026:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: endpointQueueRemove non-endpoint object — invalidCapability error"
+  SCO-027:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: timeoutBlockedThreads scans and times out matching SC threads"
+  SCO-028:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: timeoutBlockedThreads skips threads with non-matching SC"
+  SCO-029:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: timeoutAwareReceive detects timeout via error code in x0"
+  SCO-030:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: timeoutAwareReceive normal path — returns completed"
+  SCO-031:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD: endpointQueueRemove tail removal — queue relinks correctly"
+  SCO-032:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: endpointQueueRemove mid-queue removal — predecessor/successor relinked"
+  SCO-033:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: endpointQueueRemove receiveQ removal — sendQ unchanged"
+  SCO-034:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: timeoutThread on blockedOnCall thread — state reset + error code"
+  SCO-035:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runTimeoutEndpointTrace
+    subsystem: IPC
+    description: "Z6-AUD-2: timeoutBlockedThreads multi-thread — both threads timed out"
