@@ -1,3 +1,24 @@
+## [0.23.13] — Z6 Audit: Documentation Hardening + Test Coverage
+
+Comprehensive audit of Phase Z6 Timeout Endpoints implementation.
+
+- **AUD-Z6-1**: `endpointQueueRemove` defensive coding documented — `| _ => objs`
+  fallback on predecessor/successor lookup explained as invariant-guaranteed dead
+  code under `ipcStateQueueMembershipConsistent` and `queueNextBlockingConsistent`.
+  Relationship to existing `endpointQueueRemoveDual` (Transport.lean) documented.
+- **AUD-Z6-2**: `timeoutThread` precondition documented — caller
+  `timeoutBlockedThreads` validates ipcState via `tcbBlockingInfo` before calling.
+- **AUD-Z6-3**: 12 new trace tests (SCO-020 through SCO-031) covering:
+  endpointQueueRemove head/tail/error paths, timeoutThread success/error/re-enqueue,
+  timeoutBlockedThreads matching/non-matching SC, timeoutAwareReceive timeout
+  detection/normal path.
+- **AUD-Z6-4**: `timeoutAwareReceive` docstring corrected — describes actual
+  timeout detection semantics, `_endpointId` reserved-for-future-use documented.
+- Scenario registry updated (12 new entries in `scenario_registry.yaml`).
+- `codebase_map.json` regenerated.
+
+Zero sorry/axiom. All tiers pass (0-3).
+
 ## [0.23.12] — Z6: Timeout Endpoints
 
 Phase Z6 implements budget-driven timeout for IPC blocking operations. When a

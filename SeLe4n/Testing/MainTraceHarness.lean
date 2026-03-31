@@ -2436,6 +2436,159 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let rqEmpty := stAfterNoBound.scheduler.runQueue.toList.length == 0
   IO.println s!"[SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty={rqEmpty}"
 
+-- ============================================================================
+-- Z6-AUD: Timeout endpoint trace tests
+-- ============================================================================
+
+private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
+  -- SCO-020: endpointQueueRemove — successful removal of a thread from a 2-thread queue.
+  -- Build a 2-thread send queue: thread 6001 → thread 6002
+  let epId : SeLe4n.ObjId := ⟨6000⟩
+  let tid1 : SeLe4n.ThreadId := ⟨6001⟩
+  let tid2 : SeLe4n.ThreadId := ⟨6002⟩
+  let tcb1 : TCB := {
+    tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    ipcState := .blockedOnSend epId,
+    queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
+  let tcb2 : TCB := {
+    tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    ipcState := .blockedOnSend epId,
+    queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
+  let ep : Endpoint := { sendQ := { head := some tid1, tail := some tid2 }, receiveQ := {} }
+  let stQ := { st1 with
+    objects := (st1.objects.insert epId (.endpoint ep))
+      |>.insert tid1.toObjId (.tcb tcb1)
+      |>.insert tid2.toObjId (.tcb tcb2) }
+  match SeLe4n.Kernel.endpointQueueRemove epId false tid1 stQ with
+  | .error err =>
+    IO.println s!"[SCO-020] endpointQueueRemove head: error {reprStr err}"
+  | .ok stRm =>
+    -- After removing head (tid1), head should now be tid2
+    match stRm.objects[epId]? with
+    | some (.endpoint ep') =>
+      let newHead := ep'.sendQ.head == some tid2
+      let newTail := ep'.sendQ.tail == some tid2
+      IO.println s!"[SCO-020] endpointQueueRemove head: newHead=tid2:{newHead} newTail=tid2:{newTail}"
+    | _ => IO.println s!"[SCO-020] endpointQueueRemove head: endpoint not found"
+
+  -- SCO-021: endpointQueueRemove — thread not found error
+  let badTid : SeLe4n.ThreadId := ⟨9999⟩
+  match SeLe4n.Kernel.endpointQueueRemove epId false badTid stQ with
+  | .error err => IO.println s!"[SCO-021] endpointQueueRemove not-found: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-021] endpointQueueRemove not-found: unexpected success"
+
+  -- SCO-022: endpointQueueRemove — endpoint not found error
+  match SeLe4n.Kernel.endpointQueueRemove ⟨9998⟩ false tid1 stQ with
+  | .error err => IO.println s!"[SCO-022] endpointQueueRemove no-endpoint: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-022] endpointQueueRemove no-endpoint: unexpected success"
+
+  -- SCO-023: timeoutThread — successful timeout of a blocked thread
+  -- Thread tid1 is blockedOnSend, in the send queue — should be unblocked
+  match SeLe4n.Kernel.timeoutThread epId false tid1 stQ with
+  | .error err =>
+    IO.println s!"[SCO-023] timeoutThread blocked: error {reprStr err}"
+  | .ok stTimeout =>
+    match stTimeout.objects[tid1.toObjId]? with
+    | some (.tcb tcbAfter) =>
+      let stateReady := tcbAfter.ipcState == .ready
+      let threadReady := tcbAfter.threadState == .Ready
+      let budgetCleared := tcbAfter.timeoutBudget == none
+      let errCode := tcbAfter.registerContext.gpr ⟨0⟩ == SeLe4n.Kernel.timeoutErrorCode
+      let linksCleared := tcbAfter.queuePrev == none && tcbAfter.queueNext == none
+      IO.println s!"[SCO-023] timeoutThread blocked: ready={stateReady} threadReady={threadReady} budgetCleared={budgetCleared} errCode={errCode} linksCleared={linksCleared}"
+    | _ => IO.println s!"[SCO-023] timeoutThread blocked: tcb not found after timeout"
+
+  -- SCO-024: timeoutThread — thread not found returns error
+  match SeLe4n.Kernel.timeoutThread epId false ⟨9999⟩ stQ with
+  | .error err => IO.println s!"[SCO-024] timeoutThread not-found: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-024] timeoutThread not-found: unexpected success"
+
+  -- SCO-025: timeoutThread — after timeout, thread is in RunQueue
+  match SeLe4n.Kernel.timeoutThread epId false tid1 stQ with
+  | .error err =>
+    IO.println s!"[SCO-025] timeoutThread re-enqueue: error {reprStr err}"
+  | .ok stTimeout =>
+    let inRq := stTimeout.scheduler.runQueue.contains tid1
+    IO.println s!"[SCO-025] timeoutThread re-enqueue: in_runQueue={inRq}"
+
+  -- SCO-026: endpointQueueRemove — non-endpoint object returns invalidCapability
+  let stNonEp := { stQ with objects := stQ.objects.insert ⟨6050⟩ (.tcb tcb1) }
+  match SeLe4n.Kernel.endpointQueueRemove ⟨6050⟩ false tid1 stNonEp with
+  | .error err => IO.println s!"[SCO-026] endpointQueueRemove non-endpoint: {reprStr err}"
+  | .ok _ => IO.println s!"[SCO-026] endpointQueueRemove non-endpoint: unexpected success"
+
+  -- SCO-027: timeoutBlockedThreads — scans and times out matching threads
+  -- Build state: tid1 is blockedOnSend with schedContextBinding matching scId 6010
+  let scId : SeLe4n.SchedContextId := ⟨6010⟩
+  let sc : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty scId
+  let tcb1Bound : TCB := { tcb1 with
+    schedContextBinding := .bound scId }
+  let stBound := { stQ with
+    objects := (stQ.objects.insert scId.toObjId (.schedContext sc))
+      |>.insert tid1.toObjId (.tcb tcb1Bound) }
+  let stAfterTimeout := SeLe4n.Kernel.timeoutBlockedThreads stBound scId
+  match stAfterTimeout.objects[tid1.toObjId]? with
+  | some (.tcb tcbAfter) =>
+    let wasTimedOut := tcbAfter.ipcState == .ready
+    IO.println s!"[SCO-027] timeoutBlockedThreads: tid1_timed_out={wasTimedOut}"
+  | _ => IO.println s!"[SCO-027] timeoutBlockedThreads: tcb1 not found"
+
+  -- SCO-028: timeoutBlockedThreads — skips threads with non-matching SchedContext
+  let otherScId : SeLe4n.SchedContextId := ⟨6011⟩
+  let stAfterOther := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId
+  match stAfterOther.objects[tid1.toObjId]? with
+  | some (.tcb tcbAfter) =>
+    let stillBlocked := tcbAfter.ipcState == .blockedOnSend epId
+    IO.println s!"[SCO-028] timeoutBlockedThreads non-matching: still_blocked={stillBlocked}"
+  | _ => IO.println s!"[SCO-028] timeoutBlockedThreads non-matching: tcb1 not found"
+
+  -- SCO-029: timeoutAwareReceive — detects timeout via error code
+  -- Build a thread with timeout error code in x0 and ready state
+  let rcvTid : SeLe4n.ThreadId := ⟨6003⟩
+  let regsWithErr := SeLe4n.writeReg (default : SeLe4n.RegisterFile) ⟨0⟩ SeLe4n.Kernel.timeoutErrorCode
+  let tcbTimedOut : TCB := {
+    tid := rcvTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+    ipcState := .ready, registerContext := regsWithErr }
+  let stRcv := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbTimedOut) }
+  match SeLe4n.Kernel.timeoutAwareReceive epId rcvTid stRcv with
+  | .error err =>
+    IO.println s!"[SCO-029] timeoutAwareReceive timeout-detect: error {reprStr err}"
+  | .ok (result, _) =>
+    let isTimeout := match result with
+      | .timedOut => true
+      | _ => false
+    IO.println s!"[SCO-029] timeoutAwareReceive timeout-detect: timedOut={isTimeout}"
+
+  -- SCO-030: timeoutAwareReceive — normal path (no timeout, no pending message)
+  let tcbNormal : TCB := {
+    tid := rcvTid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+    ipcState := .ready }
+  let stNorm := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbNormal) }
+  match SeLe4n.Kernel.timeoutAwareReceive epId rcvTid stNorm with
+  | .error err =>
+    IO.println s!"[SCO-030] timeoutAwareReceive normal: error {reprStr err}"
+  | .ok (result, _) =>
+    let isCompleted := match result with
+      | .completed _ => true
+      | _ => false
+    IO.println s!"[SCO-030] timeoutAwareReceive normal: completed={isCompleted}"
+
+  -- SCO-031: endpointQueueRemove — tail removal (remove tid2 from 2-thread queue)
+  match SeLe4n.Kernel.endpointQueueRemove epId false tid2 stQ with
+  | .error err =>
+    IO.println s!"[SCO-031] endpointQueueRemove tail: error {reprStr err}"
+  | .ok stRm =>
+    match stRm.objects[epId]? with
+    | some (.endpoint ep') =>
+      let headStill := ep'.sendQ.head == some tid1
+      let newTail := ep'.sendQ.tail == some tid1
+      IO.println s!"[SCO-031] endpointQueueRemove tail: head=tid1:{headStill} tail=tid1:{newTail}"
+    | _ => IO.println s!"[SCO-031] endpointQueueRemove tail: endpoint not found"
+
 def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   assertStateInvariantsFor "main trace entry" bootstrapInvariantObjectIds st1 bootstrapServiceIds
   let counter ← IO.mkRef (0 : Nat)
@@ -2471,6 +2624,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runEndpointLifecycleTrace counter st1
   runMultiEndpointInterleavingTrace counter st1
   runSchedContextOpsTrace counter st1
+  runTimeoutEndpointTrace counter st1
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"

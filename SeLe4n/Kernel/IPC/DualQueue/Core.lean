@@ -434,13 +434,28 @@ removes an arbitrary thread from anywhere in the queue (head, middle, or tail).
 Used by `timeoutThread` to unblock a timed-out thread that may not be at the
 head of the wait queue.
 
+This is the pure-function counterpart to `endpointQueueRemoveDual` (Transport.lean).
+`endpointQueueRemoveDual` uses `queuePPrev` back-pointers and `storeObject` with
+full consistency validation. This function uses direct `RHTable.insert` for simpler
+proof obligations (see `endpointQueueRemove_preserves_objects_invExt`).
+
 The operation:
 1. Looks up the endpoint and verifies the thread exists
 2. Patches the predecessor's `queueNext` to skip over the removed thread
 3. Patches the successor's `queuePrev` to skip over the removed thread
 4. Updates the endpoint's head/tail pointers if the removed thread was at
    either boundary
-5. Clears the removed thread's queue linkage fields
+5. Clears the removed thread's queue linkage fields (including `queuePPrev`)
+
+**Invariant assumption (AUD-Z6-1):** Steps 2 and 3 use `| _ => objs` as a
+defensive fallback when predecessor/successor lookup fails or returns a
+non-TCB object. Under `ipcStateQueueMembershipConsistent` and
+`queueNextBlockingConsistent` invariants, queue-linked thread IDs always
+resolve to valid TCB objects, so the fallback is unreachable in well-formed
+states. The fallback is retained (rather than returning an error) because:
+- The timeout path must be non-failing for threads that are genuinely queued
+- Returning an error would abort the entire timeout scan in `timeoutBlockedThreads`
+- The invariant proofs guarantee this branch is dead code in practice
 
 Returns the updated state, or an error if the endpoint or thread is not found. -/
 def endpointQueueRemove

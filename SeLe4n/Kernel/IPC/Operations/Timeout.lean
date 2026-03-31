@@ -25,10 +25,10 @@ def timeoutErrorCode : SeLe4n.RegValue := ⟨0xFFFFFFFF⟩
 SchedContext budget expiry.
 
 This operation:
-1. **IPC state reset** (Z6-C1): Sets `tcb.ipcState := .ready` and clears
-   `tcb.pendingMessage := none` and `tcb.timeoutBudget := none`.
-2. **Queue removal** (Z6-C2): Removes the thread from the endpoint's send
+1. **Queue removal** (Z6-C2): Removes the thread from the endpoint's send
    or receive queue using `endpointQueueRemove`.
+2. **IPC state reset** (Z6-C1): Sets `tcb.ipcState := .ready` and clears
+   `tcb.pendingMessage := none` and `tcb.timeoutBudget := none`.
 3. **Scheduler re-enqueue** (Z6-C3): Sets the timeout error code in the
    thread's register context (`gpr 0 := timeoutErrorCode`) and re-enqueues
    the thread in the RunQueue at its current priority.
@@ -36,6 +36,13 @@ This operation:
 The `isReceiveQ` parameter indicates which queue the thread is blocked on:
 - `true`: thread was in `blockedOnReceive` on the endpoint's receiveQ
 - `false`: thread was in `blockedOnSend`/`blockedOnCall` on the endpoint's sendQ
+
+**Precondition (AUD-Z6-2):** The caller must ensure `tid` refers to a thread
+in a blocking IPC state (`blockedOnSend`, `blockedOnReceive`, `blockedOnCall`,
+or `blockedOnReply`) on the endpoint identified by `endpointId`. The sole caller
+`timeoutBlockedThreads` validates this via `tcbBlockingInfo`, which returns
+`none` for non-blocking states. Calling this on a non-blocked thread would
+incorrectly reset its state and write the timeout error code.
 
 Returns updated state or error if endpoint/thread lookup fails. -/
 def timeoutThread
@@ -67,19 +74,17 @@ def timeoutThread
 
 /-- Z6-I: Timeout-aware receive wrapper.
 
-Wraps `endpointReceiveDual` with timeout semantics. The actual timeout
-detection happens asynchronously in the timer tick path (`timerTickBudget`).
-This function sets up the timeout metadata (`tcb.timeoutBudget`) so that
-the timer tick handler knows which SchedContext bounds this blocking operation.
+Checks whether a thread was timed out by the scheduler during a prior
+blocking receive. The actual timeout is applied asynchronously by
+`timeoutBlockedThreads` in the timer tick path (`timerTickBudget`), which
+sets the timeout error code in register x0 and resets ipcState to `.ready`.
 
-If the receive completes synchronously (sender already waiting), returns
-`.completed msg`. If the receiver blocks (no sender waiting), the thread
-enters `blockedOnReceive` with `timeoutBudget` set. The timeout handler
-will call `timeoutThread` if the budget expires, and the thread will
-observe `.timedOut` via the error code in its register context on resume.
+Detection: if `gpr x0 = timeoutErrorCode ∧ ipcState = .ready`, the thread
+was timed out → returns `.timedOut` and clears the error code. Otherwise,
+returns `.completed msg` with any pending message (or `IpcMessage.empty`).
 
-For the synchronous case, this is a thin wrapper. The asynchronous timeout
-is handled by `timeoutBlockedThreads` in the scheduler path. -/
+The `endpointId` parameter is reserved for future validation (confirming the
+timeout applies to the expected endpoint). It is not currently used. -/
 def timeoutAwareReceive
     (_endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     : Kernel IpcTimeoutResult :=

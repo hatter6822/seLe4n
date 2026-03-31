@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-z6-timeouts-tSNkV",
-      "commit_sha": "5fe979231430560e8f498a2641bd014315ba40e1",
-      "tree_sha": "980fdcc5e16930e329a3960404f2cf70611a65e2",
-      "committed_at_utc": "2026-03-31T02:21:33-04:00"
+      "commit_sha": "8dc410ea249b29b6b9fded861907329dfe459e0e",
+      "tree_sha": "591a8141add29c689a74ca1e7a59c0ed09853d69",
+      "committed_at_utc": "2026-03-31T07:17:16+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f9400915e67b44e97c77ea75335006127197e1599ea21503e3f1a27a83821971"
+    "source_digest": "1f4cf6be900a51a7266c2a36875b2cb13fa926271358df53124c97c81b054da5"
   },
   "summary": {
     "module_count": 122,
-    "declaration_count": 4017
+    "declaration_count": 4018
   },
   "readme_sync": {
-    "version": "0.23.12",
+    "version": "0.23.13",
     "lean_toolchain": "v4.28.0",
     "production_files": 112,
-    "production_loc": 77862,
+    "production_loc": 78036,
     "test_files": 10,
     "test_loc": 8687,
     "proved_theorem_lemma_decls": 2258,
@@ -9958,7 +9958,7 @@
         {
           "kind": "def",
           "name": "endpointQueueRemove",
-          "line": 446,
+          "line": 461,
           "called": [
             "IntrusiveQueue",
             "KernelError",
@@ -9975,7 +9975,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_preserves_objects_invExt",
-          "line": 492,
+          "line": 507,
           "called": [
             "ObjId",
             "RHTable.insert_preserves_invExt",
@@ -18721,7 +18721,7 @@
         {
           "kind": "def",
           "name": "timeoutThread",
-          "line": 41,
+          "line": 48,
           "called": [
             "KernelError",
             "ObjId",
@@ -18742,7 +18742,7 @@
         {
           "kind": "def",
           "name": "timeoutAwareReceive",
-          "line": 83,
+          "line": 88,
           "called": [
             "IpcTimeoutResult",
             "Kernel",
@@ -48911,7 +48911,7 @@
     {
       "module": "SeLe4n.Testing.MainTraceHarness",
       "path": "SeLe4n/Testing/MainTraceHarness.lean",
-      "declaration_count": 50,
+      "declaration_count": 51,
       "declarations": [
         {
           "kind": "namespace",
@@ -49705,8 +49705,36 @@
         },
         {
           "kind": "def",
+          "name": "runTimeoutEndpointTrace",
+          "line": 2443,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "RegisterFile",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "contains",
+            "default",
+            "empty",
+            "endpointQueueRemove",
+            "insert",
+            "none",
+            "scId",
+            "timeoutAwareReceive",
+            "timeoutBlockedThreads",
+            "timeoutErrorCode",
+            "timeoutThread",
+            "toObjId",
+            "writeReg"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 2439,
+          "line": 2592,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -49741,13 +49769,14 @@
             "runServiceAndStressTrace",
             "runSyscallDispatchTrace",
             "runSyscallGateTrace",
+            "runTimeoutEndpointTrace",
             "runUntypedMemoryTrace"
           ]
         },
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 2485,
+          "line": 2639,
           "called": [
             "Capability",
             "KernelObject",
@@ -49772,7 +49801,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 2536,
+          "line": 2690,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -49787,7 +49816,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 2551,
+          "line": 2705,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -49795,7 +49824,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 2562,
+          "line": 2716,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -49823,7 +49852,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 2617,
+          "line": 2771,
           "called": [
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",
