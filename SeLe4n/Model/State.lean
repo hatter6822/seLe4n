@@ -9,6 +9,7 @@
 import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Kernel.Scheduler.RunQueue
+import SeLe4n.Kernel.SchedContext.ReplenishQueue
 import SeLe4n.Kernel.Service.Interface
 import SeLe4n.Kernel.RobinHood.Set
 
@@ -97,6 +98,10 @@ structure SchedulerState where
       `timerTick` to reset time-slices on preemption. Thread-level time
       slices are deferred to a future MCS scheduling extension. -/
   configDefaultTimeSlice : Nat := 5
+  /-- Z4-A: System-wide CBS replenishment queue. Tracks when each active
+      SchedContext's budget becomes eligible for refill. Sorted by eligibility
+      time for O(1) peek and O(k) prefix split on timer tick. -/
+  replenishQueue : SeLe4n.Kernel.ReplenishQueue := SeLe4n.Kernel.ReplenishQueue.empty
   deriving Repr
 
 /-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained

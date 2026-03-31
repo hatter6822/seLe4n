@@ -3234,3 +3234,100 @@ theorem scheduleDomain_preserves_schedulerInvariantBundleFull
     · exact hPM
     · unfold domainTimeRemainingPositive at *; simp; omega
     · exact hEntries
+
+-- ============================================================================
+-- Z4-Q/R/S/T/U: SchedContext-aware preservation theorems
+-- ============================================================================
+
+-- Z4-Q1: timerTickBudget unbound branch preserves scheduler state structure.
+-- The unbound path delegates to legacy time-slice logic, modifying only the TCB
+-- object and machine timer. The scheduler's runQueue, replenishQueue, and all
+-- SchedContext objects are unchanged (frame reasoning).
+
+/-- Z4-Q1: `timerTickBudget` unbound non-preempt preserves scheduler fields. -/
+theorem timerTickBudget_unbound_nopreempt_scheduler_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hUnbound : tcb.schedContextBinding = .unbound)
+    (hNotExpired : ¬(tcb.timeSlice ≤ 1))
+    (hStep : timerTickBudget st tid tcb = .ok (st', false)) :
+    st'.scheduler = st.scheduler := by
+  simp [timerTickBudget, hUnbound, hNotExpired] at hStep
+  cases hStep; rfl
+
+/-- Z4-Q2: `timerTickBudget` unbound preempt preserves replenishQueue. -/
+theorem timerTickBudget_unbound_preempt_replenishQueue_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hUnbound : tcb.schedContextBinding = .unbound)
+    (hExpired : tcb.timeSlice ≤ 1)
+    (hStep : timerTickBudget st tid tcb = .ok (st', true)) :
+    st'.scheduler.replenishQueue = st.scheduler.replenishQueue := by
+  simp [timerTickBudget, hUnbound, hExpired] at hStep
+  cases hStep; rfl
+
+-- Z4-R: Replenishment queue preservation.
+
+/-- Z4-R1: `popDueReplenishments` returns a sorted queue (prefix removal
+preserves sortedness). Delegates to Z3's `popDue_preserves_sorted`. -/
+theorem popDueReplenishments_sorted
+    (st : SystemState) (now : Nat)
+    (hSorted : replenishQueueSorted st.scheduler.replenishQueue) :
+    replenishQueueSorted (popDueReplenishments st now).1 := by
+  unfold popDueReplenishments
+  exact popDue_preserves_sorted hSorted
+
+/-- Z4-R2: `popDueReplenishments` preserves size consistency.
+Delegates to Z3's `popDue_sizeConsistent`. -/
+theorem popDueReplenishments_sizeConsistent
+    (st : SystemState) (now : Nat)
+    (hSize : replenishQueueSizeConsistent st.scheduler.replenishQueue) :
+    replenishQueueSizeConsistent (popDueReplenishments st now).1 := by
+  unfold popDueReplenishments
+  exact popDue_sizeConsistent hSize
+
+-- Z4-S: Legacy path preserves new SchedContext invariants.
+
+/-- Z4-S1: `refillSchedContext` is a no-op when the ObjId doesn't map to a
+SchedContext (defensive fallback). -/
+theorem refillSchedContext_noop
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (now : Nat)
+    (hNone : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
+    refillSchedContext st scId now = st := by
+  unfold refillSchedContext
+  simp only [GetElem?.getElem?]
+  match h : st.objects.get? scId.toObjId with
+  | none => rfl
+  | some (.schedContext sc) =>
+    exfalso; exact hNone sc (by simp [GetElem?.getElem?, h])
+  | some (.tcb _) => rfl
+  | some (.endpoint _) => rfl
+  | some (.notification _) => rfl
+  | some (.vspaceRoot _) => rfl
+  | some (.cnode _) => rfl
+  | some (.untyped _) => rfl
+
+-- Z4-T: Schedule effective preserves state.
+
+/-- Z4-T1: `chooseThreadEffective` preserves state — re-export of the
+Selection.lean theorem for use in preservation proofs. -/
+theorem chooseThreadEffective_state_unchanged
+    (st : SystemState) (res : Option SeLe4n.ThreadId) (st' : SystemState)
+    (hStep : chooseThreadEffective st = .ok (res, st')) :
+    st' = st :=
+  chooseThreadEffective_preserves_state st st' res hStep
+
+-- Z4-U: handleYieldWithBudget — unbound branch reuses existing yield logic.
+
+/-- Z4-U: `effectivePriority_unbound` — unbound threads resolve to TCB fields.
+This confirms the backward-compatibility guarantee. -/
+theorem effectivePriority_unbound_legacy
+    (st : SystemState) (tcb : TCB)
+    (hUnbound : tcb.schedContextBinding = .unbound) :
+    effectivePriority st tcb = some (tcb.priority, tcb.deadline, tcb.domain) := by
+  simp [effectivePriority, hUnbound]
+
+/-- Z4-U: `hasSufficientBudget_unbound` — unbound threads are always eligible. -/
+theorem hasSufficientBudget_unbound_legacy
+    (st : SystemState) (tcb : TCB)
+    (hUnbound : tcb.schedContextBinding = .unbound) :
+    hasSufficientBudget st tcb = true := by
+  simp [hasSufficientBudget, hUnbound]
