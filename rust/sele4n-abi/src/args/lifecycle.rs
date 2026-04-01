@@ -27,7 +27,7 @@ impl LifecycleRetypeArgs {
     /// Decode from message registers. Requires 3 registers.
     ///
     /// V1-C: Validates `regs[1]` through `TypeTag::from_u64()`, which rejects
-    /// values > 5. Returns `InvalidTypeTag` for invalid type tags,
+    /// values > 6. Returns `InvalidTypeTag` for invalid type tags,
     /// `InvalidMessageInfo` for insufficient registers.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 3 { return Err(KernelError::InvalidMessageInfo); }
@@ -58,14 +58,14 @@ mod tests {
     // V1-C: Invalid type tag values must be rejected
     #[test]
     fn invalid_type_tag_rejected() {
-        assert_eq!(LifecycleRetypeArgs::decode(&[42, 6, 0]), Err(KernelError::InvalidTypeTag));
+        assert_eq!(LifecycleRetypeArgs::decode(&[42, 7, 0]), Err(KernelError::InvalidTypeTag));
         assert_eq!(LifecycleRetypeArgs::decode(&[42, 100, 0]), Err(KernelError::InvalidTypeTag));
         assert_eq!(LifecycleRetypeArgs::decode(&[42, u64::MAX, 0]), Err(KernelError::InvalidTypeTag));
     }
 
     #[test]
     fn all_valid_type_tags() {
-        for i in 0..=5u64 {
+        for i in 0..=6u64 {
             let args = LifecycleRetypeArgs::decode(&[1, i, 0]).unwrap();
             assert_eq!(args.new_type.to_u64(), i);
         }

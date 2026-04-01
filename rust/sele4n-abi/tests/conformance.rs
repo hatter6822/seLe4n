@@ -448,34 +448,34 @@ fn message_info_exhaustive_bounds() {
     }
 }
 
-/// Verify SyscallId roundtrip for all 17 variants (V2-A/V2-C).
+/// Verify SyscallId roundtrip for all 20 variants (AA1: +SchedContext ops).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
-    for i in 0..17u64 {
+    for i in 0..20u64 {
         let sid = SyscallId::from_u64(i).expect("valid syscall id");
         assert_eq!(sid.to_u64(), i);
     }
-    assert!(SyscallId::from_u64(17).is_none());
+    assert!(SyscallId::from_u64(20).is_none());
 }
 
-/// Verify KernelError roundtrip for all 42 variants (X5-E: InvalidSyscallArgument at 41).
+/// Verify KernelError roundtrip for all 43 variants (Z6: IpcTimeout at 42).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=41u32 {
+    for i in 0..=42u32 {
         let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(42).is_none());
+    assert!(KernelError::from_u32(43).is_none());
 }
 
-/// Verify TypeTag roundtrip for all 6 variants.
+/// Verify TypeTag roundtrip for all 7 variants (0–6, including SchedContext).
 #[test]
 fn type_tag_exhaustive_roundtrip() {
-    for i in 0..=5u64 {
+    for i in 0..=6u64 {
         let tag = TypeTag::from_u64(i).expect("valid type tag");
         assert_eq!(tag.to_u64(), i);
     }
-    assert!(TypeTag::from_u64(6).is_err());
+    assert!(TypeTag::from_u64(7).is_err());
 }
 
 /// Verify all CSpace arg structures roundtrip.
@@ -723,13 +723,13 @@ fn u3de_access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn u3f_kernel_error_non_exhaustive() {
-    // All 42 variants (0–41) roundtrip (X5-E: +InvalidSyscallArgument)
-    for i in 0..=41u32 {
+    // All 43 variants (0–42) roundtrip (Z6: +IpcTimeout at 42)
+    for i in 0..=42u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(42).is_none());
+    assert!(KernelError::from_u32(43).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -786,9 +786,9 @@ fn v1a_decode_response_u64_overflow() {
 /// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
 #[test]
 fn v1c_lifecycle_retype_invalid_type_tag() {
-    // Type tag 6 (first invalid)
+    // Type tag 7 (first invalid, after SchedContext = 6)
     assert_eq!(
-        lifecycle::LifecycleRetypeArgs::decode(&[42, 6, 0]),
+        lifecycle::LifecycleRetypeArgs::decode(&[42, 7, 0]),
         Err(KernelError::InvalidTypeTag)
     );
 
@@ -798,8 +798,8 @@ fn v1c_lifecycle_retype_invalid_type_tag() {
         Err(KernelError::InvalidTypeTag)
     );
 
-    // All valid tags (0-5) must succeed
-    for i in 0..=5u64 {
+    // All valid tags (0-6, including SchedContext) must succeed
+    for i in 0..=6u64 {
         assert!(lifecycle::LifecycleRetypeArgs::decode(&[42, i, 0]).is_ok());
     }
 }
@@ -906,11 +906,11 @@ fn v1h_identifier_validation() {
 // W1 — Critical Rust ABI Fix conformance tests
 // ============================================================================
 
-/// W1-H: KernelError variant count matches Lean (42 variants, 0-41).
+/// W1-H / AA1: KernelError variant count matches Lean (43 variants, 0-42).
 /// Detects Lean-Rust enum divergence automatically.
 #[test]
 fn w1h_kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 42;
+    const KERNEL_ERROR_COUNT: u32 = 43;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -925,10 +925,10 @@ fn w1h_kernel_error_variant_count() {
     );
 }
 
-/// W1-H: SyscallId variant count matches Lean (17 variants, 0-16).
+/// W1-H / AA1: SyscallId variant count matches Lean (20 variants, 0-19).
 #[test]
 fn w1h_syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 17;
+    const SYSCALL_COUNT: u64 = 20;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1025,4 +1025,201 @@ fn w1e_endpoint_reply_recv_register_layout() {
     assert_eq!(regs[3], user_data_0, "x3=MR[1] must be user data[0]");
     assert_eq!(regs[4], user_data_1, "x4=MR[2] must be user data[1]");
     assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv");
+}
+
+// ============================================================================
+// AA1 — Rust ABI Type Synchronization conformance tests
+// ============================================================================
+
+// --- AA1-B: SyscallId SchedContext variant conformance ---
+
+/// AA1-B-1: SchedContextConfigure roundtrip (discriminant 17).
+#[test]
+fn aa1b_sched_context_configure_discriminant() {
+    let sid = SyscallId::from_u64(17).expect("SchedContextConfigure must exist");
+    assert_eq!(sid, SyscallId::SchedContextConfigure);
+    assert_eq!(sid.to_u64(), 17);
+}
+
+/// AA1-B-2: SchedContextBind roundtrip (discriminant 18).
+#[test]
+fn aa1b_sched_context_bind_discriminant() {
+    let sid = SyscallId::from_u64(18).expect("SchedContextBind must exist");
+    assert_eq!(sid, SyscallId::SchedContextBind);
+    assert_eq!(sid.to_u64(), 18);
+}
+
+/// AA1-B-3: SchedContextUnbind roundtrip (discriminant 19).
+#[test]
+fn aa1b_sched_context_unbind_discriminant() {
+    let sid = SyscallId::from_u64(19).expect("SchedContextUnbind must exist");
+    assert_eq!(sid, SyscallId::SchedContextUnbind);
+    assert_eq!(sid.to_u64(), 19);
+}
+
+/// AA1-B-4: Boundary — discriminant 20 is out of range.
+#[test]
+fn aa1b_sched_context_boundary() {
+    assert!(SyscallId::from_u64(20).is_none());
+}
+
+/// AA1-B-5: COUNT is updated to 20.
+#[test]
+fn aa1b_syscall_count_updated() {
+    assert_eq!(SyscallId::COUNT, 20);
+}
+
+/// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
+#[test]
+fn aa1b_sched_context_required_rights() {
+    use sele4n_types::rights::AccessRight;
+    assert_eq!(SyscallId::SchedContextConfigure.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::SchedContextBind.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::SchedContextUnbind.required_right(), AccessRight::Write);
+}
+
+// --- AA1-F: SchedContext arg decode conformance ---
+
+/// AA1-F-1: SchedContextConfigureArgs encode/decode roundtrip.
+#[test]
+fn aa1f_sched_context_configure_roundtrip() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    let args = SchedContextConfigureArgs {
+        budget: 1000, period: 5000, priority: 200, deadline: 10000, domain: 3,
+    };
+    let encoded = args.encode();
+    let decoded = SchedContextConfigureArgs::decode(&encoded).unwrap();
+    assert_eq!(decoded, args);
+}
+
+/// AA1-F-2: SchedContextBindArgs encode/decode roundtrip.
+#[test]
+fn aa1f_sched_context_bind_roundtrip() {
+    use sele4n_abi::args::sched_context::SchedContextBindArgs;
+    let args = SchedContextBindArgs { thread_id: 42 };
+    let encoded = args.encode();
+    let decoded = SchedContextBindArgs::decode(&encoded).unwrap();
+    assert_eq!(decoded, args);
+}
+
+/// AA1-F-3: SchedContextUnbindArgs encode/decode roundtrip.
+#[test]
+fn aa1f_sched_context_unbind_roundtrip() {
+    use sele4n_abi::args::sched_context::SchedContextUnbindArgs;
+    assert_eq!(SchedContextUnbindArgs::decode(&[]).unwrap(), SchedContextUnbindArgs);
+}
+
+/// AA1-F-4: SchedContextConfigureArgs boundary — insufficient registers.
+#[test]
+fn aa1f_sched_context_configure_insufficient_regs() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    assert_eq!(SchedContextConfigureArgs::decode(&[1, 2, 3, 4]), Err(KernelError::InvalidMessageInfo));
+}
+
+/// AA1-F-5: SchedContextConfigureArgs boundary — invalid priority.
+#[test]
+fn aa1f_sched_context_configure_invalid_priority() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    assert_eq!(
+        SchedContextConfigureArgs::decode(&[1000, 5000, 256, 10000, 0]),
+        Err(KernelError::InvalidSyscallArgument)
+    );
+}
+
+/// AA1-F-6: SchedContextBindArgs boundary — empty registers.
+#[test]
+fn aa1f_sched_context_bind_insufficient_regs() {
+    use sele4n_abi::args::sched_context::SchedContextBindArgs;
+    assert_eq!(SchedContextBindArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+}
+
+/// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain (256).
+#[test]
+fn aa1f_sched_context_configure_invalid_domain() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    assert_eq!(
+        SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 256]),
+        Err(KernelError::InvalidSyscallArgument)
+    );
+}
+
+/// AA1-F-8: SchedContextConfigureArgs — max valid priority and domain (255).
+#[test]
+fn aa1f_sched_context_configure_max_valid() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 255]).unwrap();
+    assert_eq!(args.priority, 255);
+    assert_eq!(args.domain, 255);
+    assert_eq!(args.budget, 1000);
+    assert_eq!(args.period, 5000);
+    assert_eq!(args.deadline, 10000);
+}
+
+/// AA1-F-9: SchedContextConfigureArgs — zero-valued fields accepted.
+#[test]
+fn aa1f_sched_context_configure_zero_values() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    let args = SchedContextConfigureArgs::decode(&[0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(args.budget, 0);
+    assert_eq!(args.period, 0);
+    assert_eq!(args.priority, 0);
+    assert_eq!(args.deadline, 0);
+    assert_eq!(args.domain, 0);
+}
+
+// --- AA1-G: SchedContext TypeTag retype conformance ---
+
+/// AA1-G-1: LifecycleRetypeArgs with TypeTag::SchedContext (discriminant 6).
+#[test]
+fn aa1g_lifecycle_retype_sched_context() {
+    let args = lifecycle::LifecycleRetypeArgs {
+        target_obj: ObjId::from(42u64),
+        new_type: TypeTag::SchedContext,
+        size: 0,
+    };
+    let encoded = args.encode();
+    assert_eq!(encoded[1], 6, "TypeTag::SchedContext must encode as 6");
+    let decoded = lifecycle::LifecycleRetypeArgs::decode(&encoded).unwrap();
+    assert_eq!(decoded.new_type, TypeTag::SchedContext);
+}
+
+/// AA1-G-2: TypeTag boundary — 7 is first invalid value.
+#[test]
+fn aa1g_type_tag_boundary() {
+    assert_eq!(TypeTag::from_u64(7), Err(KernelError::InvalidTypeTag));
+    assert_eq!(TypeTag::from_u64(u64::MAX), Err(KernelError::InvalidTypeTag));
+}
+
+// --- AA1-H: IpcTimeout error handling conformance ---
+
+/// AA1-H-1: KernelError::IpcTimeout roundtrip (discriminant 42).
+#[test]
+fn aa1h_ipc_timeout_roundtrip() {
+    let err = KernelError::from_u32(42).expect("IpcTimeout must exist at discriminant 42");
+    assert_eq!(err, KernelError::IpcTimeout);
+    assert_eq!(err as u32, 42);
+}
+
+/// AA1-H-2: KernelError::IpcTimeout is distinct from all other variants.
+#[test]
+fn aa1h_ipc_timeout_distinct() {
+    let timeout = KernelError::IpcTimeout;
+    for i in 0..42u32 {
+        let other = KernelError::from_u32(i).unwrap();
+        assert_ne!(timeout, other, "IpcTimeout must be distinct from discriminant {i}");
+    }
+}
+
+/// AA1-H-3: KernelResult correctly wraps IpcTimeout.
+#[test]
+fn aa1h_ipc_timeout_result() {
+    let result: KernelResult<()> = Err(KernelError::IpcTimeout);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err(), KernelError::IpcTimeout);
+}
+
+/// AA1-H-4: Boundary — discriminant 43 is out of range.
+#[test]
+fn aa1h_error_boundary_after_ipc_timeout() {
+    assert!(KernelError::from_u32(43).is_none());
 }

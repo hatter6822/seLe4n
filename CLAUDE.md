@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.23.20.
+Lean 4.28.0 toolchain, Lake build system, version 0.23.22.
 
 ## Build and run
 
@@ -514,6 +514,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-Z Phase Z9 COMPLETE**: Invariant Composition & Cross-Subsystem — 20 sub-tasks (Z9-A through Z9-P2), all complete (v0.23.20). 3 new cross-subsystem predicates (`schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`). `crossSubsystemInvariant` extended from 5 to 8 predicates. Field-disjointness analysis: 16 pairwise witnesses for 8 predicates. 3 frame lemmas. `proofLayerInvariantBundle` extended from 9 to 10 conjuncts (added `schedulerInvariantBundleExtended`). `bootSafeObject` extended with SchedContext wellFormedness constraint (6th conjunct). Boot-time proofs for all 10 bundle components. Operation preservation theorems for timerTick, schedule, donation, cleanup/destroy. Test fixture updated (`crossSubsystemFieldSets` 5→8). Zero sorry/axiom. See `docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`
 - **WS-Z Phase Z10 COMPLETE**: Documentation & Closure — 12 sub-tasks (Z10-A1 through Z10-J2), all complete (v0.23.21). Spec updated with 5 new subsections (§8.12.2–§8.12.6). Development docs, workstream history, claims, codebase map, GitBook, README, CLAUDE.md, and website manifest synchronized. Key claims documented: CBS bandwidth isolation (`cbs_bandwidth_bounded`), donation chain acyclicity (`donationChainAcyclic`), timeout termination (`blockedThreadTimeoutConsistent`), admission control soundness (`admissionCheck` + `schedContextConfigure_admission_excludes_eq`). Zero sorry/axiom. See `docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`
 - **WS-Z PORTFOLIO COMPLETE**: All 10 phases (Z1–Z10, 213 sub-tasks) delivered. Composable Performance Objects — SchedContext types, CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation, API surface, invariant composition, and documentation closure. See `docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`
+- **WS-AA Phase AA1 COMPLETE**: Rust ABI Type Synchronization — 8 sub-tasks (AA1-A through AA1-H), all complete (v0.23.22). SyscallId +3 variants (SchedContextConfigure=17, SchedContextBind=18, SchedContextUnbind=19; COUNT 17→20). KernelError +IpcTimeout=42 (43 variants total). TypeTag +SchedContext=6 (7 variants total). New `sched_context.rs` module (Configure/Bind/Unbind arg structs with priority/domain validation). Updated doc comments, stale boundary tests, 200 Rust tests pass. Findings addressed: H-1, H-2, H-3, L-25, L-29. Zero sorry/axiom. See `docs/audits/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
 - **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 

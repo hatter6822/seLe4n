@@ -1,6 +1,6 @@
 //! Safe high-level syscall wrappers for the seLe4n verified microkernel.
 //!
-//! This crate provides ergonomic, fully safe wrappers around all 17 seLe4n
+//! This crate provides ergonomic, fully safe wrappers around all 20 seLe4n
 //! syscalls. Each wrapper encodes typed arguments into the ARM64 register ABI,
 //! invokes the syscall via `sele4n_abi::invoke_syscall`, and decodes the result.
 //!

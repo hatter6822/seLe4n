@@ -6,7 +6,7 @@
 //! - `raw_syscall`: inline ARM64 `svc #0` (the **single** `unsafe` block)
 //! - `invoke_syscall`: safe wrapper
 //! - Per-syscall typed argument structures with encode/decode
-//! - `TypeTag` enum (6 retype variants) and `PagePerms` bitmask
+//! - `TypeTag` enum (7 retype variants, including SchedContext) and `PagePerms` bitmask
 //! - `IpcBuffer` for messages exceeding the 4 inline ARM64 registers
 //!
 //! # Safety

@@ -1,3 +1,33 @@
+## [0.23.22] — AA1: Rust ABI Type Synchronization
+
+Phase AA1 of WS-AA Comprehensive Audit Remediation. Synchronized Rust ABI types
+with the Lean model, closing three HIGH-severity Lean-Rust desync gaps that made
+the entire SchedContext subsystem unreachable from Rust userspace.
+
+- **AA1-A**: Added `SchedContextConfigure` (17), `SchedContextBind` (18),
+  `SchedContextUnbind` (19) to `SyscallId` enum. COUNT updated 17→20.
+  All three require `.write` access (matching Lean API.lean:381-383).
+- **AA1-B**: 6 SyscallId conformance tests (roundtrip, boundary, required_rights).
+- **AA1-C**: Added `IpcTimeout = 42` to `KernelError` enum (43 variants total).
+  Updated `from_u32`, `Display`, decode boundary, all inline tests.
+- **AA1-D**: Added `SchedContext = 6` to `TypeTag` enum (7 variants total).
+  Updated `from_u64`, inline tests, lifecycle retype boundary tests (6→7).
+- **AA1-E**: Updated `lib.rs` doc comments ("34-variant" → "43-variant",
+  "14-variant" → "20-variant").
+- **AA1-F**: Created `sched_context.rs` module with `SchedContextConfigureArgs`
+  (5 fields: budget, period, priority, deadline, domain; priority/domain ≤ 255
+  validation), `SchedContextBindArgs` (1 field: threadId),
+  `SchedContextUnbindArgs` (empty). 7 inline + 9 conformance tests.
+- **AA1-G**: 2 conformance tests for `TypeTag::SchedContext` retype integration.
+- **AA1-H**: 4 conformance tests for `KernelError::IpcTimeout` (roundtrip,
+  distinctness, result wrapping, boundary).
+- **Audit fixes**: Stale comment in `lifecycle.rs` ("values > 5" → "> 6"),
+  stale TypeTag count in `sele4n-abi/src/lib.rs` (6→7), stale syscall count
+  in `sele4n-sys/src/lib.rs` (17→20), stale `decode.rs` boundary (42→43).
+- Findings addressed: H-1, H-2, H-3, L-25, L-29.
+- 200 Rust tests pass (77 abi + 76 conformance + 12 sys + 35 types).
+- Zero sorry/axiom. `test_smoke.sh` green.
+
 ## [0.23.21] — Z10: Documentation & Closure — WS-Z PORTFOLIO COMPLETE
 
 Final documentation synchronization for the WS-Z Composable Performance Objects

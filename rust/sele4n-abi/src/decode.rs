@@ -36,8 +36,8 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
         if regs[0] > u32::MAX as u64 {
             return Err(KernelError::InvalidSyscallNumber);
         }
-        // Kernel error codes are 0–40 (T1-G, V1-B fix, W1-D: +MmioUnaligned).
-        // Unrecognized codes (≥41) map to InvalidSyscallNumber (protocol violation).
+        // Kernel error codes are 0–42 (Z6: +IpcTimeout at 42).
+        // Unrecognized codes (≥43) map to InvalidSyscallNumber (protocol violation).
         let err = KernelError::from_u32(regs[0] as u32)
             .unwrap_or(KernelError::InvalidSyscallNumber);
         return Err(err);
@@ -101,8 +101,8 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // error code 42 is beyond the 0-41 range (X5-E: InvalidSyscallArgument added at 41)
-        let regs = [42, 0, 0, 0, 0, 0, 0];
+        // error code 43 is beyond the 0-42 range (Z6: IpcTimeout added at 42)
+        let regs = [43, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
     }
 
