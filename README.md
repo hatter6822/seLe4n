@@ -76,7 +76,7 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.23.21` |
+| **Version** | `0.23.22` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 79,743 across 113 files |
 | **Test Lean LoC** | 8,759 across 10 test suites |
