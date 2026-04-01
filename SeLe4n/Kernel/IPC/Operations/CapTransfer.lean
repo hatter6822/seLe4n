@@ -19,7 +19,7 @@ rendezvous completes.
 - The endpoint capability must have `Grant` right for any cap transfer to occur.
 - If `Grant` is absent, all caps are silently dropped (`.grantDenied`).
 - Each cap is independently transferred via `ipcTransferSingleCap`.
-- Failures on individual caps do NOT abort remaining transfers.
+- Non-fatal failures (`.noSlot`, `.grantDenied`) do NOT abort remaining transfers.
 - The sender retains all transferred capabilities (IPC transfer is copy).
 
 **Key operation**: `ipcUnwrapCaps` — iterates over `msg.caps`, threading state
@@ -105,6 +105,8 @@ seL4 semantics:
   insertion to avoid overwriting.
 - Failures on individual caps (`.noSlot`) do NOT abort the remaining
   transfers — each cap is independently processed.
+- Fatal errors (receiver CSpace root not a CNode) short-circuit the loop:
+  remaining caps are filled with `.noSlot` and state is returned unchanged.
 - The sender retains all transferred capabilities (IPC transfer is copy). -/
 def ipcUnwrapCaps
     (msg : IpcMessage)

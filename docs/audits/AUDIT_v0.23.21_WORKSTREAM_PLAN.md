@@ -725,7 +725,22 @@ on fatal error):
 - Preservation proofs are simpler (direct `rfl` vs. induction hypothesis).
 - Zero sorry/axiom. Full build + smoke tests pass.
 
-**Verification**: `lake build` (216 modules), `test_smoke.sh` (all tiers pass).
+**Post-implementation audit** (completed):
+- Verified only reachable error from `ipcTransferSingleCap` is `.objectNotFound`
+  (line 1027) — `targetSlotOccupied` is unreachable per `findFirstEmptySlot_spec`.
+- Confirmed error persistence: state unchanged on error, subsequent caps would
+  fail identically in single-threaded model.
+- Fixed docstring inaccuracy: "Failures on individual caps do NOT abort" changed
+  to "Non-fatal failures (`.noSlot`, `.grantDenied`) do NOT abort" — fatal
+  errors now correctly documented as triggering short-circuit.
+- Added `ipcUnwrapCaps` docstring bullet for fatal error short-circuit behavior.
+- Added 3 negative test cases in `tests/NegativeStateSuite.lean`:
+  - L13-01: 3 caps with receiver root = TCB → all `.noSlot`
+  - L13-02: State (objects, services) unchanged after short-circuit
+  - L13-03: 1 cap with missing receiver root → `.noSlot`, state unchanged
+
+**Verification**: `lake build` (216 modules), `test_full.sh` (all tiers pass),
+zero warnings/sorry/axiom.
 
 ### AA4-L: Remove unused `_endpointId` parameter from `timeoutAwareReceive` (L-14)
 

@@ -2375,6 +2375,110 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   IO.println "all WS-M3-G3 cap transfer negative tests passed"
 
 -- ============================================================================
+-- L-13: Cap transfer short-circuit on fatal error (Design C)
+-- ============================================================================
+
+/-- L-13 (Design C): When receiver CSpace root is not a CNode,
+ipcUnwrapCapsLoop short-circuits: the current cap gets `.noSlot` and all
+remaining caps are filled with `.noSlot` via `fillRemainingNoSlot`.  State
+is returned unchanged.
+
+Scenarios:
+- L13-01: 3 caps, receiver root is a TCB (not CNode) → all 3 get `.noSlot`
+- L13-02: State unchanged after short-circuit
+- L13-03: 1 cap, receiver root missing entirely → `.noSlot`, state unchanged
+-/
+def runL13CapTransferShortCircuitChecks : IO Unit := do
+  IO.println "\n=== L-13: Cap transfer short-circuit on fatal error ==="
+
+  let receiverRoot : SeLe4n.ObjId := ⟨5050⟩
+  let senderRoot : SeLe4n.ObjId := ⟨5051⟩
+  let targetObj : SeLe4n.ObjId := ⟨5060⟩
+
+  let cap : Capability := {
+    target := .object targetObj,
+    rights := AccessRightSet.ofList [.read],
+    badge := none
+  }
+
+  -- Receiver root is a TCB, not a CNode → ipcTransferSingleCap will error
+  let tcbObj : TCB := {
+    tid := ⟨5050⟩,
+    priority := ⟨100⟩,
+    domain := ⟨0⟩,
+    cspaceRoot := senderRoot,
+    vspaceRoot := senderRoot,
+    ipcBuffer := ⟨0⟩,
+    timeSlice := 5,
+    ipcState := .ready,
+    schedContextBinding := .unbound
+  }
+
+  let senderCNode : CNode := {
+    depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap), (⟨1⟩, cap), (⟨2⟩, cap)]
+  }
+
+  let st0 :=
+    (BootstrapBuilder.empty
+      |>.withObject receiverRoot (.tcb tcbObj)
+      |>.withObject senderRoot (.cnode senderCNode)
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.buildChecked)
+
+  let caps : Array Capability := #[cap, cap, cap]
+
+  -- L13-01: 3 caps with receiver root = TCB → short-circuit, all .noSlot
+  let result := SeLe4n.Kernel.ipcUnwrapCapsLoop caps senderRoot receiverRoot
+    0 ⟨0⟩ #[] caps.size st0
+  match result with
+  | .ok (summary, st') =>
+    if summary.results.size != 3 then
+      throw <| IO.userError s!"L13-01: expected 3 results, got {summary.results.size}"
+    let allNoSlot := summary.results.all fun r => match r with
+      | .noSlot => true
+      | _ => false
+    if !allNoSlot then
+      throw <| IO.userError "L13-01: expected all results to be .noSlot"
+    IO.println "L13-01 check passed [3 caps, receiver root is TCB → all .noSlot]"
+
+    -- L13-02: State unchanged after short-circuit
+    if st'.objects != st0.objects then
+      throw <| IO.userError "L13-02: objects should be unchanged after short-circuit"
+    if st'.services != st0.services then
+      throw <| IO.userError "L13-02: services should be unchanged after short-circuit"
+    IO.println "L13-02 check passed [state unchanged after short-circuit]"
+  | .error e =>
+    throw <| IO.userError s!"L13-01: ipcUnwrapCapsLoop returned error: {toString e}"
+
+  -- L13-03: 1 cap with receiver root missing entirely (no object at that OID)
+  let missingRoot : SeLe4n.ObjId := ⟨9999⟩
+  let st1 :=
+    (BootstrapBuilder.empty
+      |>.withObject senderRoot (.cnode senderCNode)
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.buildChecked)
+
+  let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[cap] senderRoot missingRoot
+    0 ⟨0⟩ #[] 1 st1
+  match result1 with
+  | .ok (summary1, st1') =>
+    if summary1.results.size != 1 then
+      throw <| IO.userError s!"L13-03: expected 1 result, got {summary1.results.size}"
+    let isNoSlot := match summary1.results[0]? with
+      | some .noSlot => true
+      | _ => false
+    if !isNoSlot then
+      throw <| IO.userError "L13-03: expected .noSlot for missing receiver root"
+    if st1'.objects != st1.objects then
+      throw <| IO.userError "L13-03: state should be unchanged"
+    IO.println "L13-03 check passed [1 cap, missing receiver root → .noSlot, state unchanged]"
+  | .error e =>
+    throw <| IO.userError s!"L13-03: ipcUnwrapCapsLoop returned error: {toString e}"
+
+  IO.println "all L-13 cap transfer short-circuit tests passed"
+
+-- ============================================================================
 -- WS-M4-A: Multi-level resolveCapAddress edge case tests (M-T01)
 -- ============================================================================
 
@@ -3302,6 +3406,7 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSKGChecks
   SeLe4n.Testing.runWSL4BlockedThreadChecks
   SeLe4n.Testing.runWSM3CapTransferNegativeChecks
+  SeLe4n.Testing.runL13CapTransferShortCircuitChecks
   SeLe4n.Testing.runWSM4ResolveEdgeCaseChecks
   SeLe4n.Testing.runWSR2RevocationChecks
   SeLe4n.Testing.runWSR4CoherenceChecks

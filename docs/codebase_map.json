@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-workstream-planning-rwIeJ",
-      "commit_sha": "26ae81b2af4c8fe15ef2069f6586209937358148",
-      "tree_sha": "2cd143c1b65505ad998ce60dfa135ca3bb1aac79",
-      "committed_at_utc": "2026-03-31T23:06:16+00:00"
+      "commit_sha": "052131b8263ad06929dc923c7a433170ac7e2647",
+      "tree_sha": "3d0ed685f90887f24b574d4efae743621f93d22b",
+      "committed_at_utc": "2026-03-31T23:44:18+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "75d1072317c588097edce3e9b50a2150443895b9b6722e86aa1de361c8caefe2"
+    "source_digest": "fc243138c34883727a7b5e6e28007a87d05dc476fe753f0134104b0d44d17eec"
   },
   "summary": {
     "module_count": 123,
-    "declaration_count": 4084
+    "declaration_count": 4085
   },
   "readme_sync": {
     "version": "0.23.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 113,
-    "production_loc": 79774,
+    "production_loc": 79776,
     "test_files": 10,
-    "test_loc": 8759,
+    "test_loc": 8864,
     "proved_theorem_lemma_decls": 2295,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -17973,7 +17973,7 @@
         {
           "kind": "def",
           "name": "ipcUnwrapCaps",
-          "line": 109,
+          "line": 111,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -17987,7 +17987,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_scheduler",
-          "line": 123,
+          "line": 125,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18007,7 +18007,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_scheduler",
-          "line": 156,
+          "line": 158,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18021,7 +18021,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_services",
-          "line": 169,
+          "line": 171,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18041,7 +18041,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_services",
-          "line": 202,
+          "line": 204,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18055,7 +18055,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_objects_ne",
-          "line": 215,
+          "line": 217,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18077,7 +18077,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_objects_ne",
-          "line": 253,
+          "line": 255,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18092,7 +18092,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ntfn_objects",
-          "line": 267,
+          "line": 269,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18115,7 +18115,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ntfn_objects",
-          "line": 308,
+          "line": 310,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18131,7 +18131,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_receiverRoot_not_ntfn",
-          "line": 323,
+          "line": 325,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18153,7 +18153,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ep_objects",
-          "line": 360,
+          "line": 362,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18176,7 +18176,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ep_objects",
-          "line": 399,
+          "line": 401,
           "called": [
             "CapTransferSummary",
             "Endpoint",
@@ -18192,7 +18192,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_tcb_objects",
-          "line": 414,
+          "line": 416,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18215,7 +18215,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_tcb_objects",
-          "line": 453,
+          "line": 455,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18231,7 +18231,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_cnode_at_root",
-          "line": 471,
+          "line": 473,
           "called": [
             "CNode",
             "CapTransferResult",
@@ -18254,7 +18254,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_cnode_at_root",
-          "line": 511,
+          "line": 513,
           "called": [
             "CNode",
             "CapTransferSummary",
@@ -18270,7 +18270,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_receiverRoot_not_ntfn",
-          "line": 529,
+          "line": 531,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -52272,7 +52272,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 50,
+      "declaration_count": 51,
       "declarations": [
         {
           "kind": "instance",
@@ -52964,8 +52964,29 @@
         },
         {
           "kind": "def",
+          "name": "runL13CapTransferShortCircuitChecks",
+          "line": 2391,
+          "called": [
+            "CNode",
+            "Capability",
+            "ObjId",
+            "RHTable.ofList",
+            "TCB",
+            "all",
+            "buildChecked",
+            "empty",
+            "ipcUnwrapCapsLoop",
+            "none",
+            "ofList",
+            "size",
+            "throw",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
-          "line": 2389,
+          "line": 2493,
           "called": [
             "CPtr",
             "ObjId",
@@ -52986,7 +53007,7 @@
         {
           "kind": "def",
           "name": "runWSR2RevocationChecks",
-          "line": 2735,
+          "line": 2839,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -53009,7 +53030,7 @@
         {
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
-          "line": 2836,
+          "line": 2940,
           "called": [
             "Capability",
             "InterfaceId",
@@ -53036,7 +53057,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 2947,
+          "line": 3051,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -53063,7 +53084,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3074,
+          "line": 3178,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -53093,7 +53114,7 @@
         {
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
-          "line": 3151,
+          "line": 3255,
           "called": [
             "DomainScheduleEntry",
             "IntermediateState",
@@ -53120,7 +53141,7 @@
         {
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
-          "line": 3225,
+          "line": 3329,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -53141,10 +53162,11 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 3291,
+          "line": 3395,
           "called": [
             "runAuditCoverageChecks",
             "runH2NegativeChecks",
+            "runL13CapTransferShortCircuitChecks",
             "runNegativeChecks",
             "runS2GCapabilityErrorTests",
             "runS2HLifecycleErrorTests",
