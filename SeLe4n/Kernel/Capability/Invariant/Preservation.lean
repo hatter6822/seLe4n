@@ -2043,7 +2043,8 @@ theorem ipcUnwrapCapsLoop_preserves_capabilityInvariantBundle
           receiverRoot nextBase maxExtraCaps st with
       | error e =>
         simp [hTransfer] at hStep
-        exact ih _ _ _ _ hInv hStep
+        obtain ⟨_, rfl⟩ := hStep
+        exact hInv
       | ok pair =>
         rcases pair with ⟨result, stNext⟩
         have hInvNext := ipcTransferSingleCap_preserves_capabilityInvariantBundle
