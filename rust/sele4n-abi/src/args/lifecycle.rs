@@ -27,7 +27,7 @@ impl LifecycleRetypeArgs {
     /// Decode from message registers. Requires 3 registers.
     ///
     /// V1-C: Validates `regs[1]` through `TypeTag::from_u64()`, which rejects
-    /// values > 5. Returns `InvalidTypeTag` for invalid type tags,
+    /// values > 6. Returns `InvalidTypeTag` for invalid type tags,
     /// `InvalidMessageInfo` for insufficient registers.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 3 { return Err(KernelError::InvalidMessageInfo); }

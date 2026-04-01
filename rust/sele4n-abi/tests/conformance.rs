@@ -1133,6 +1133,40 @@ fn aa1f_sched_context_bind_insufficient_regs() {
     assert_eq!(SchedContextBindArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
 }
 
+/// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain (256).
+#[test]
+fn aa1f_sched_context_configure_invalid_domain() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    assert_eq!(
+        SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 256]),
+        Err(KernelError::InvalidSyscallArgument)
+    );
+}
+
+/// AA1-F-8: SchedContextConfigureArgs — max valid priority and domain (255).
+#[test]
+fn aa1f_sched_context_configure_max_valid() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 255]).unwrap();
+    assert_eq!(args.priority, 255);
+    assert_eq!(args.domain, 255);
+    assert_eq!(args.budget, 1000);
+    assert_eq!(args.period, 5000);
+    assert_eq!(args.deadline, 10000);
+}
+
+/// AA1-F-9: SchedContextConfigureArgs — zero-valued fields accepted.
+#[test]
+fn aa1f_sched_context_configure_zero_values() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    let args = SchedContextConfigureArgs::decode(&[0, 0, 0, 0, 0]).unwrap();
+    assert_eq!(args.budget, 0);
+    assert_eq!(args.period, 0);
+    assert_eq!(args.priority, 0);
+    assert_eq!(args.deadline, 0);
+    assert_eq!(args.domain, 0);
+}
+
 // --- AA1-G: SchedContext TypeTag retype conformance ---
 
 /// AA1-G-1: LifecycleRetypeArgs with TypeTag::SchedContext (discriminant 6).
