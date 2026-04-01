@@ -152,10 +152,11 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       # AA2-A (H-4): SHA-pinned Rust toolchain action replaces curl-pipe install.
-      # Pin: dtolnay/rust-toolchain v1 (2025-04-11 release)
-      # To update: verify the new commit hash at https://github.com/dtolnay/rust-toolchain/commits
+      # Pin: dtolnay/rust-toolchain master (must be a master-branch commit per
+      # the action's docs — non-master SHAs get garbage-collected).
+      # To update: git ls-remote https://github.com/dtolnay/rust-toolchain.git master
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8211 # v1
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: 1.82.0
 

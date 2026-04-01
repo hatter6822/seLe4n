@@ -45,6 +45,7 @@ ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43
 # This variable documents the pinned version for consistency with the Lean toolchain
 # SHA-pinning above. Update this when bumping the Rust version in
 # .github/workflows/lean_action_ci.yml (the `toolchain:` field).
+# shellcheck disable=SC2034  # documentation-only variable, not consumed by this script
 RUST_TOOLCHAIN_VERSION="1.82.0"
 
 # R8-A (I-M01): Pin elan binary release version for direct download path.
