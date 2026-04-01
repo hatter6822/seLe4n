@@ -1305,8 +1305,8 @@ Wrappers). It delivers `libsele4n`, a `no_std` Rust userspace library with safe
 syscall wrappers for all 14 seLe4n syscalls. Key changes:
 
 - **Q8-A**: `sele4n-types` crate — 14 newtype identifiers (`ObjId`, `ThreadId`,
-  `CPtr`, `Slot`, etc.), 34-variant `KernelError` enum, 5-variant `AccessRight`
-  enum + `AccessRights` bitmask, 14-variant `SyscallId` enum. Zero `unsafe`,
+  `CPtr`, `Slot`, etc.), 43-variant `KernelError` enum (AA1: +IpcTimeout), 5-variant `AccessRight`
+  enum + `AccessRights` bitmask, 20-variant `SyscallId` enum (AA1: +SchedContext×3). Zero `unsafe`,
   `#![no_std]`, zero external dependencies.
 - **Q8-B**: `sele4n-abi` crate — `MessageInfo` bitfield encode/decode (seL4
   convention: 7-bit length, 2-bit extraCaps, label), `SyscallRequest`/

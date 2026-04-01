@@ -7,7 +7,7 @@ use sele4n_types::{KernelError, KernelResult};
 
 /// Kernel object type tag for retype operations.
 ///
-/// 6 variants (0–5), matching `KernelObjectType` in Lean.
+/// 7 variants (0–6), matching `KernelObjectType` in Lean.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u64)]
 pub enum TypeTag {
@@ -17,10 +17,12 @@ pub enum TypeTag {
     CNode = 3,
     VSpaceRoot = 4,
     Untyped = 5,
+    /// Z1: Scheduling context object type
+    SchedContext = 6,
 }
 
 impl TypeTag {
-    /// Convert from a raw u64. Returns `InvalidTypeTag` for values > 5.
+    /// Convert from a raw u64. Returns `InvalidTypeTag` for values > 6.
     pub const fn from_u64(v: u64) -> KernelResult<Self> {
         match v {
             0 => Ok(Self::Tcb),
@@ -29,6 +31,7 @@ impl TypeTag {
             3 => Ok(Self::CNode),
             4 => Ok(Self::VSpaceRoot),
             5 => Ok(Self::Untyped),
+            6 => Ok(Self::SchedContext),
             _ => Err(KernelError::InvalidTypeTag),
         }
     }
@@ -44,7 +47,7 @@ mod tests {
 
     #[test]
     fn roundtrip() {
-        for i in 0..=5u64 {
+        for i in 0..=6u64 {
             let tag = TypeTag::from_u64(i).unwrap();
             assert_eq!(tag.to_u64(), i);
         }
@@ -52,6 +55,12 @@ mod tests {
 
     #[test]
     fn out_of_range() {
-        assert_eq!(TypeTag::from_u64(6), Err(KernelError::InvalidTypeTag));
+        assert_eq!(TypeTag::from_u64(7), Err(KernelError::InvalidTypeTag));
+    }
+
+    #[test]
+    fn sched_context_discriminant() {
+        assert_eq!(TypeTag::SchedContext.to_u64(), 6);
+        assert_eq!(TypeTag::from_u64(6).unwrap(), TypeTag::SchedContext);
     }
 }

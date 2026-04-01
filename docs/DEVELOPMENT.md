@@ -131,8 +131,8 @@ proofs, 18 frozenStoreObject preservation theorems. 15-scenario test suite
 covering TPH-005 through TPH-014. Zero sorry/axiom.
 **WS-Q8** (v0.17.13) — Rust syscall wrappers — **COMPLETED**:
 `libsele4n` — 3 `no_std` Rust crates (`sele4n-types`, `sele4n-abi`, `sele4n-sys`)
-encoding the finalized ABI surface (17 syscalls, V2-A/D). 14 newtype identifiers,
-34-variant `KernelError`, `MessageInfo` bitfield, ARM64 `svc #0` trap (single
+encoding the finalized ABI surface (20 syscalls, V2-A/D + Z5). 14 newtype identifiers,
+43-variant `KernelError`, `MessageInfo` bitfield, ARM64 `svc #0` trap (single
 `unsafe` block), safe high-level wrappers for all syscalls, phantom-typed
 `Cap<Obj, Rts>` handles with sealed traits. 64 unit tests + 25 conformance tests.
 Lean trace harness cross-validation (XVAL-001..004). Zero Lean regression.

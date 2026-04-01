@@ -4,7 +4,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 17 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 20 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,11 +34,15 @@ pub enum SyscallId {
     NotificationWait = 15,
     // Compound IPC (V2-C)
     ReplyRecv = 16,
+    // SchedContext (WS-Z, Z5-J)
+    SchedContextConfigure = 17,
+    SchedContextBind = 18,
+    SchedContextUnbind = 19,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 17;
+    pub const COUNT: usize = 20;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -61,6 +65,9 @@ impl SyscallId {
             14 => Some(Self::NotificationSignal),
             15 => Some(Self::NotificationWait),
             16 => Some(Self::ReplyRecv),
+            17 => Some(Self::SchedContextConfigure),
+            18 => Some(Self::SchedContextBind),
+            19 => Some(Self::SchedContextUnbind),
             _ => None,
         }
     }
@@ -85,6 +92,7 @@ impl SyscallId {
             Self::NotificationSignal => AccessRight::Write,
             Self::NotificationWait => AccessRight::Read,
             Self::ReplyRecv => AccessRight::Read,
+            Self::SchedContextConfigure | Self::SchedContextBind | Self::SchedContextUnbind => AccessRight::Write,
         }
     }
 }
@@ -95,7 +103,7 @@ mod tests {
 
     #[test]
     fn from_u64_roundtrip() {
-        for i in 0..17u64 {
+        for i in 0..20u64 {
             let sid = SyscallId::from_u64(i).unwrap();
             assert_eq!(sid.to_u64(), i);
         }
@@ -103,15 +111,15 @@ mod tests {
 
     #[test]
     fn from_u64_out_of_range() {
-        assert!(SyscallId::from_u64(17).is_none());
+        assert!(SyscallId::from_u64(20).is_none());
         assert!(SyscallId::from_u64(255).is_none());
     }
 
     #[test]
     fn injective() {
-        // All 17 variants produce distinct values
-        let mut seen = [false; 17];
-        for i in 0..17u64 {
+        // All 20 variants produce distinct values
+        let mut seen = [false; 20];
+        for i in 0..20u64 {
             let sid = SyscallId::from_u64(i).unwrap();
             let idx = sid.to_u64() as usize;
             assert!(!seen[idx]);
@@ -163,5 +171,20 @@ mod tests {
     #[test]
     fn required_right_reply_recv() {
         assert_eq!(SyscallId::ReplyRecv.required_right(), AccessRight::Read);
+    }
+
+    #[test]
+    fn required_right_sched_context() {
+        // Z5-J: All SchedContext operations require Write (API.lean:381-383)
+        assert_eq!(SyscallId::SchedContextConfigure.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::SchedContextBind.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::SchedContextUnbind.required_right(), AccessRight::Write);
+    }
+
+    #[test]
+    fn sched_context_discriminants() {
+        assert_eq!(SyscallId::SchedContextConfigure.to_u64(), 17);
+        assert_eq!(SyscallId::SchedContextBind.to_u64(), 18);
+        assert_eq!(SyscallId::SchedContextUnbind.to_u64(), 19);
     }
 }

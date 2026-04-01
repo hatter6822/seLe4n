@@ -48,7 +48,7 @@ toolchain installation.
 
 | Phase | Name | Sub-tasks | Priority | Gate | Status |
 |-------|------|-----------|----------|------|--------|
-| AA1 | Rust ABI Type Synchronization | 8 | CRITICAL | Rust tests pass, conformance tests green | NOT STARTED |
+| AA1 | Rust ABI Type Synchronization | 8 | CRITICAL | Rust tests pass, conformance tests green | **COMPLETE** |
 | AA2 | CI & Infrastructure Hardening | 6 | HIGH | CI workflows pass, pre-commit hook functional | NOT STARTED |
 | AA3 | Rust ABI Semantic Alignment | 4 | MEDIUM | Rust tests pass, no Lean-Rust semantic divergence | NOT STARTED |
 | AA4 | IPC Timeout & Kernel Hardening | 13 | MEDIUM | Module builds pass, `test_smoke.sh` green | NOT STARTED |
@@ -147,16 +147,28 @@ are recorded in AA6-D documentation sub-task for audit trail completeness.
 
 ---
 
-## 3. Phase AA1 — Rust ABI Type Synchronization
+## 3. Phase AA1 — Rust ABI Type Synchronization — **COMPLETE**
 
 **Priority**: CRITICAL (release-blocking)
 **Gate**: `cargo test` passes in all 3 crates, conformance tests green
 **Findings addressed**: H-1, H-2, H-3, L-25, L-29
+**Status**: COMPLETE — All 8 sub-tasks delivered. 197 Rust tests pass (77 unit + 73 conformance + 12 sele4n-sys + 35 sele4n-types). Zero warnings. `test_smoke.sh` green.
 
 The entire WS-Z SchedContext subsystem (10 phases, 213 sub-tasks of kernel work)
-is unreachable from Rust userspace due to three Lean-Rust type desync gaps. This
-phase synchronizes the Rust ABI types with the Lean model and adds conformance
+was unreachable from Rust userspace due to three Lean-Rust type desync gaps. This
+phase synchronized the Rust ABI types with the Lean model and added conformance
 tests to prevent future drift.
+
+**Implementation summary**:
+- **AA1-A**: Added `SchedContextConfigure` (17), `SchedContextBind` (18), `SchedContextUnbind` (19) to `SyscallId`. COUNT 17→20. All require `.write` access.
+- **AA1-B**: 6 conformance tests for new SyscallId variants (roundtrip, boundary, required_rights).
+- **AA1-C**: Added `IpcTimeout = 42` to `KernelError`. 43 variants total. Updated `from_u32`, `Display`, all inline tests.
+- **AA1-D**: Added `SchedContext = 6` to `TypeTag`. 7 variants total. Updated `from_u64`, all inline tests. Fixed lifecycle retype boundary test (6→7).
+- **AA1-E**: Updated `lib.rs` doc comments: "34-variant error" → "43-variant", "14-variant syscall" → "20-variant".
+- **AA1-F**: Created `sched_context.rs` module with `SchedContextConfigureArgs` (5 fields, priority/domain validation), `SchedContextBindArgs` (1 field), `SchedContextUnbindArgs` (empty). 7 inline tests + 6 conformance tests.
+- **AA1-G**: 2 conformance tests for `TypeTag::SchedContext` retype integration.
+- **AA1-H**: 4 conformance tests for `KernelError::IpcTimeout` (roundtrip, distinctness, result wrapping, boundary).
+- **Ripple fixes**: Updated `decode.rs` stale comment and unknown-error-code test (42→43). Fixed 8 existing conformance tests that checked old boundaries.
 
 ### AA1-A: Add `SyscallId` SchedContext variants (H-1)
 
