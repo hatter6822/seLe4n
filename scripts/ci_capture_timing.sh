@@ -30,10 +30,13 @@ end_epoch="$(date -u +%s)"
 end_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 duration_s="$((end_epoch - start_epoch))"
 
+# AA2-F (L-30): JSON-escape both lane and command to prevent invalid JSON
+# from quotes or backslashes in either value.
+lane_json="$(printf '%s\n' "$lane" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")))')"
 command_json="$(printf '%s\n' "$*" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")))')"
 
-printf '{"lane":"%s","command":%s,"start":"%s","end":"%s","duration_seconds":%s,"exit_code":%s}\n' \
-  "$lane" "$command_json" "$start_iso" "$end_iso" "$duration_s" "$exit_code" >> "$log_path"
+printf '{"lane":%s,"command":%s,"start":"%s","end":"%s","duration_seconds":%s,"exit_code":%s}\n' \
+  "$lane_json" "$command_json" "$start_iso" "$end_iso" "$duration_s" "$exit_code" >> "$log_path"
 
 if [[ "$exit_code" -ne 0 ]]; then
   echo "[CI-TELEMETRY] lane=${lane} command failed with exit=${exit_code}" >&2

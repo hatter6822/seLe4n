@@ -23,6 +23,12 @@ WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**
 WS-Y Phases Y1–Y3 complete. **WS-Y PORTFOLIO COMPLETE.**
 WS-Z Phases Z1–Z10 complete. **WS-Z PORTFOLIO COMPLETE.**
+WS-AA Phase AA1 complete. Phase AA2 complete.
+
+### WS-AA: Comprehensive Audit Remediation v0.23.21 (IN PROGRESS)
+
+- **Phase AA1 COMPLETE** (v0.23.22): Rust ABI Type Synchronization — 8 sub-tasks (AA1-A through AA1-H). SyscallId +3 variants (SchedContextConfigure=17, SchedContextBind=18, SchedContextUnbind=19; COUNT 17→20). KernelError +IpcTimeout=42 (43 variants total). TypeTag +SchedContext=6 (7 variants total). New `sched_context.rs` module (Configure/Bind/Unbind arg structs with priority/domain validation). Updated doc comments, stale boundary tests, 200 Rust tests pass. Findings addressed: H-1, H-2, H-3, L-25, L-29. Zero sorry/axiom.
+- **Phase AA2 COMPLETE** (v0.23.23): CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F). AA2-A: Replaced `curl | sh` Rust toolchain install with SHA-pinned `dtolnay/rust-toolchain` action (v1, toolchain 1.82.0). AA2-B: Added `RUST_TOOLCHAIN_VERSION` documentation variable in `setup_lean_env.sh`. AA2-C: Fixed `$STAGED_LEAN_FILES` word-splitting vulnerability in pre-commit hook (unquoted string → bash array via `mapfile`). AA2-D: Made SHA-256 verification fail-closed for unrecognized architectures (`return 0` → `return 1` with error message). AA2-E: Added git-tracked file validation for `TRACE_FIXTURE_PATH` to prevent CI fixture override attacks. AA2-F: JSON-escaped `lane` variable in `ci_capture_timing.sh` to prevent invalid JSON from special characters. Findings addressed: H-4, H-5, M-7, M-8, L-30. Zero sorry/axiom. `test_smoke.sh` green.
 
 ### WS-Z: Composable Performance Objects (PORTFOLIO COMPLETE)
 

@@ -1,3 +1,27 @@
+## [0.23.23] — AA2: CI & Infrastructure Hardening
+
+Phase AA2 of WS-AA Comprehensive Audit Remediation. Hardened CI supply chain,
+fixed shell scripting vulnerabilities, and locked down test fixture injection.
+
+- **AA2-A**: Replaced `curl | sh` Rust toolchain install in CI with SHA-pinned
+  `dtolnay/rust-toolchain` action (v1, commit `a54c7afa`), toolchain `1.82.0`.
+  Eliminates supply-chain risk from unverified installer script (H-4).
+- **AA2-B**: Added `RUST_TOOLCHAIN_VERSION="1.82.0"` documentation variable in
+  `setup_lean_env.sh` for consistency with existing Lean toolchain SHA-pinning.
+- **AA2-C**: Fixed `$STAGED_LEAN_FILES` word-splitting vulnerability in
+  `pre-commit-lean-build.sh`. Replaced unquoted variable with `mapfile -t`
+  bash array and array-safe iteration `"${STAGED_LEAN_FILES[@]}"` (H-5).
+- **AA2-D**: Made `verify_toolchain_sha256` fail-closed for unrecognized
+  architectures. Changed `return 0` (silent skip) to `return 1` with error
+  message (M-7).
+- **AA2-E**: Added `git ls-files --error-unmatch` validation for
+  `TRACE_FIXTURE_PATH` in `test_tier2_trace.sh` to reject non-tracked fixture
+  files (M-8).
+- **AA2-F**: JSON-escaped `$lane` variable in `ci_capture_timing.sh` via
+  Python `json.dumps`, preventing invalid JSON from special characters (L-30).
+- Findings addressed: H-4, H-5, M-7, M-8, L-30.
+- Zero sorry/axiom. `test_smoke.sh` green.
+
 ## [0.23.22] — AA1: Rust ABI Type Synchronization
 
 Phase AA1 of WS-AA Comprehensive Audit Remediation. Synchronized Rust ABI types
