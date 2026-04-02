@@ -96,7 +96,8 @@ x7  → Syscall number (SyscallId)
 - **197 unit tests** across 3 crates (77 abi + 73 conformance + 12 sys + 35 types)
 - **73 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
-- CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2)
+- CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
+  AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.82.0)
 - AA1 ABI drift detection: variant count assertions for KernelError (43) and
   SyscallId (20), TypeTag (7), compile-time constant checks for MAX_LABEL,
   MAX_MSG_LENGTH, MAX_EXTRA_CAPS

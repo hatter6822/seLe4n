@@ -15,6 +15,14 @@ cd "${REPO_ROOT}"
 
 ensure_lake_available
 
+# AA2-E (M-8): Validate TRACE_FIXTURE_PATH is a git-tracked file to prevent
+# CI fixture override attacks via environment variable injection.
+if [ -n "${TRACE_FIXTURE_PATH:-}" ]; then
+  if ! git ls-files --error-unmatch "${TRACE_FIXTURE_PATH}" >/dev/null 2>&1; then
+    echo "ERROR: TRACE_FIXTURE_PATH must be a git-tracked file (got: ${TRACE_FIXTURE_PATH})" >&2
+    exit 1
+  fi
+fi
 TRACE_FIXTURE="${TRACE_FIXTURE_PATH:-tests/fixtures/main_trace_smoke.expected}"
 TRACE_OUTPUT="$(mktemp)"
 MISSING_REPORT="$(mktemp)"

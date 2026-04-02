@@ -41,6 +41,13 @@ ELAN_INSTALLER_URL="https://raw.githubusercontent.com/leanprover/elan/87f5ec2f56
 # WS-B9 hardening anchor: commit-pinned installer URL + hash must be updated together intentionally.
 ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43eda9264"
 
+# AA2-B (H-4): Rust toolchain version pinned in CI via dtolnay/rust-toolchain action.
+# This variable documents the pinned version for consistency with the Lean toolchain
+# SHA-pinning above. Update this when bumping the Rust version in
+# .github/workflows/lean_action_ci.yml (the `toolchain:` field).
+# shellcheck disable=SC2034  # documentation-only variable, not consumed by this script
+RUST_TOOLCHAIN_VERSION="1.82.0"
+
 # R8-A (I-M01): Pin elan binary release version for direct download path.
 # Replaces /releases/latest/ with a specific tag to prevent silent upgrades.
 # SHA-256 hashes for the elan binary tarballs — update these together with the version.
@@ -179,9 +186,13 @@ verify_toolchain_sha256() {
       ;;
   esac
 
+  # AA2-D (M-7): Fail-closed on unrecognized architectures — do not silently
+  # skip hash verification, as this would allow unverified toolchain binaries.
   if [ -z "${expected_sha}" ]; then
-    log_elapsed "warning: no SHA-256 hash configured for toolchain archive; skipping verification"
-    return 0
+    echo "error: no SHA-256 hash configured for architecture $(uname -m); aborting" >&2
+    echo "  Add the appropriate hash to the LEAN_TOOLCHAIN_SHA256_* variables" >&2
+    echo "  in scripts/setup_lean_env.sh before installing on this platform." >&2
+    return 1
   fi
 
   local actual_sha

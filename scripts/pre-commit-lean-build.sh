@@ -32,10 +32,10 @@ if ! command -v lake &>/dev/null; then
     exit 0
 fi
 
-# Get staged .lean files (Added, Modified, Copied, Renamed)
-STAGED_LEAN_FILES=$(git diff --cached --name-only --diff-filter=ACMR -- '*.lean' | grep -v '^\.lake/' || true)
+# AA2-C (H-5): Use bash array to avoid word-splitting on filenames with spaces.
+mapfile -t STAGED_LEAN_FILES < <(git diff --cached --name-only --diff-filter=ACMR -- '*.lean' | grep -v '^\.lake/' || true)
 
-if [ -z "$STAGED_LEAN_FILES" ]; then
+if [ "${#STAGED_LEAN_FILES[@]}" -eq 0 ]; then
     exit 0
 fi
 
@@ -53,7 +53,7 @@ trap 'rm -f "${BUILD_LOG}"' EXIT
 echo ""
 echo "[1/2] Checking for sorry in staged Lean files..."
 
-for file in $STAGED_LEAN_FILES; do
+for file in "${STAGED_LEAN_FILES[@]}"; do
     # Check the staged content (not working tree) for sorry
     # Use git show :file to get staged version
     if git show ":$file" 2>/dev/null | grep -n '^\([^-].*\)\?\bsorry\b' | grep -v '^\([^-].*\)\?--.*sorry' | grep -v '^\([^-].*\)\?/-' | grep -qv '^\([^-].*\)\?".*sorry'; then
@@ -78,7 +78,7 @@ echo "[2/2] Building staged Lean modules..."
 BUILD_ERRORS=0
 MODULES_CHECKED=0
 
-for file in $STAGED_LEAN_FILES; do
+for file in "${STAGED_LEAN_FILES[@]}"; do
     # Skip test files and non-source files
     case "$file" in
         tests/*|.lake/*|scripts/*) continue ;;

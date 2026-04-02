@@ -151,10 +151,14 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      # AA2-A (H-4): SHA-pinned Rust toolchain action replaces curl-pipe install.
+      # Pin: dtolnay/rust-toolchain master (must be a master-branch commit per
+      # the action's docs — non-master SHAs get garbage-collected).
+      # To update: git ls-remote https://github.com/dtolnay/rust-toolchain.git master
       - name: Install Rust toolchain
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: 1.82.0
 
       - name: Cache Cargo registry and build artifacts
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4

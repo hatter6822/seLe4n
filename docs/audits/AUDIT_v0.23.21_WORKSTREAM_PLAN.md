@@ -49,7 +49,7 @@ toolchain installation.
 | Phase | Name | Sub-tasks | Priority | Gate | Status |
 |-------|------|-----------|----------|------|--------|
 | AA1 | Rust ABI Type Synchronization | 8 | CRITICAL | Rust tests pass, conformance tests green | **COMPLETE** |
-| AA2 | CI & Infrastructure Hardening | 6 | HIGH | CI workflows pass, pre-commit hook functional | NOT STARTED |
+| AA2 | CI & Infrastructure Hardening | 6 | HIGH | CI workflows pass, pre-commit hook functional | **COMPLETE** |
 | AA3 | Rust ABI Semantic Alignment | 4 | MEDIUM | Rust tests pass, no Lean-Rust semantic divergence | NOT STARTED |
 | AA4 | IPC Timeout & Kernel Hardening | 13 | MEDIUM | Module builds pass, `test_smoke.sh` green | NOT STARTED |
 | AA5 | Information Flow & Safety Guards | 7 | MEDIUM | Module builds pass, `test_full.sh` green | NOT STARTED |
@@ -298,14 +298,23 @@ do not exist yet, this sub-task creates them (matching Lean's
 
 ---
 
-## 4. Phase AA2 — CI & Infrastructure Hardening
+## 4. Phase AA2 — CI & Infrastructure Hardening — **COMPLETE**
 
 **Priority**: HIGH
 **Gate**: CI workflows pass, pre-commit hook functional on filenames with spaces
 **Findings addressed**: H-4, H-5, M-7, M-8, L-30
+**Status**: COMPLETE — All 6 sub-tasks delivered. `test_smoke.sh` green. Zero sorry/axiom.
 
 This phase addresses supply chain and scripting vulnerabilities in the build
 infrastructure. All sub-tasks are independent and can be parallelized.
+
+**Implementation summary**:
+- **AA2-A**: Replaced `curl | sh` Rust install with SHA-pinned `dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8211` (v1), toolchain pinned to `1.82.0`.
+- **AA2-B**: Added `RUST_TOOLCHAIN_VERSION="1.82.0"` documentation variable in `setup_lean_env.sh` alongside existing Lean SHA-pinning docs.
+- **AA2-C**: Replaced unquoted `$STAGED_LEAN_FILES` with `mapfile -t` bash array in both `for` loops (lines 36, 56, 81). Array-safe iteration via `"${STAGED_LEAN_FILES[@]}"`.
+- **AA2-D**: Changed `verify_toolchain_sha256` empty-hash fallback from `return 0` (fail-open) to `return 1` (fail-closed) with descriptive error message.
+- **AA2-E**: Added `git ls-files --error-unmatch` validation for `TRACE_FIXTURE_PATH` to reject non-git-tracked fixture files.
+- **AA2-F**: Added `lane_json` Python JSON-escaping (matching existing `command_json` pattern) and changed `printf` format from `"%s"` to `%s` for lane field.
 
 ### AA2-A: Pin Rust toolchain version in CI (H-4)
 
