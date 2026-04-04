@@ -222,9 +222,143 @@ verified for every modified `.lean` file.
 - Resume preservation: D1-H → D1-N
 - API integration: D1-G + D1-H + D1-A + D1-B → D1-O → D1-P (ops + types → dispatch → frozen)
 - Testing: D1-O → D1-Q → D1-R
- 
+
+### 4.1 Detailed Task Decomposition
+
+The following breaks down each Medium-complexity D1 task into atomic
+implementation steps. Each step is independently verifiable via
+`lake build SeLe4n.Kernel.Lifecycle.Suspend`.
+
+**D1-C: `cancelIpcBlocking` — Per-IPC-State Handlers (6 steps)**
+
+| Step | Scope | Key Operation | Verifiable Output |
+|------|-------|---------------|-------------------|
+| D1-C1 | Handle `.ready` state | Guard: if `ipcState = .ready`, return state unchanged (no-op) | Pattern match compiles; trivial base case |
+| D1-C2 | Handle `.blockedOnSend epId` | Call `endpointQueueRemove st epId tid` on send queue (DualQueue/Core.lean:461); patches predecessor `queueNext` and successor `queuePrev`; clears `queuePrev`/`queuePPrev`/`queueNext` on removed thread; reset `ipcState := .ready` | Reuse Z6-B removal; verify send queue head/tail updated |
+| D1-C3 | Handle `.blockedOnReceive epId` | Mirror D1-C2 for receive queue; call `endpointQueueRemove` on recv side; reset `ipcState := .ready` | Symmetric to D1-C2; validate recv queue consistency |
+| D1-C4 | Handle `.blockedOnCall epId` | Call `endpointQueueRemove` on send queue (Call uses send queue semantics); clear `pendingMessage := none`; reset `ipcState := .ready` | Also clear reply tracking to prevent stale Reply |
+| D1-C5 | Handle `.blockedOnReply epId replyTarget` | **No queue removal** — reply-waiting threads are NOT in endpoint queues (they wait for a specific server Reply, not queued in endpoint). Clear `replyTarget`; reset `ipcState := .ready` | Verify zero queue mutation; only TCB field update |
+| D1-C6 | Handle `.blockedOnNotification notifId` | Look up notification object; filter `tid` from `notif.waitList` (simple `List.filter`); store updated notification; reset `ipcState := .ready` | Notification wait list is `List ThreadId`; filter preserves ordering of remaining waiters |
+
+*Implementation order*: D1-C1 first (trivial base case validates function
+signature and return type), then D1-C2 through D1-C6 in any order (independent
+match arms). Compose all cases into the final `match tcb.ipcState` expression
+last. Each step compiles independently as a standalone helper function before
+integration.
+
+**D1-D: `cancelDonation` — Per-Binding-State Handlers (3 steps)**
+
+| Step | Scope | Key Operation |
+|------|-------|---------------|
+| D1-D1 | Handle `.unbound` | No-op — thread has no SchedContext to clean up. Return state unchanged. |
+| D1-D2 | Handle `.bound scId` | Unbind: set `sc.boundThread := none` on the SchedContext object; clear `tcb.schedContextBinding := .unbound`. If thread was in replenishment queue, leave it (replenishment queue cleanup is handled by SchedContext lifecycle, not suspend). |
+| D1-D3 | Handle `.donated scId originalOwner` | Call `cleanupDonatedSchedContext` (Donation.lean Z7-D pattern): return SchedContext to `originalOwner` by setting `ownerTcb.schedContextBinding := .bound scId`; set `sc.boundThread := some originalOwner`; clear suspended thread's binding to `.unbound`. |
+
+*Key invariant*: After D1-D completes, the suspended thread's
+`schedContextBinding = .unbound`. The SchedContext (if any) is consistently
+owned by exactly one thread (`schedContextNotDualBound` preserved).
+
+**D1-G: `suspendThread` Composite — Sequential Pipeline (7 steps)**
+
+| Step | Operation | Input | Output | Failure Mode |
+|------|-----------|-------|--------|-------------|
+| D1-G1 | TCB lookup + state validation | `SystemState × ThreadId` | `TCB` or error | `.invalidArgument` if ObjId not found or not a TCB; `.invalidState` if `threadState = .Inactive` |
+| D1-G2 | `cancelIpcBlocking` (D1-C) | State after G1 | IPC queues cleaned | Infallible — all 6 IPC states handled exhaustively |
+| D1-G3 | `cancelDonation` (D1-D) | State after G2 | SchedContext bindings cleaned | Infallible — all 3 binding states handled |
+| D1-G4 | `removeFromRunQueue` (D1-E) | State after G3 | Run queue updated | Infallible — no-op if thread not in queue |
+| D1-G5 | `clearPendingState` (D1-F) | State after G4 | TCB fields zeroed | Infallible — pure field clear |
+| D1-G6 | Set `threadState := .Inactive` | State after G5 | Thread marked inactive | Infallible |
+| D1-G7 | Conditional `schedule` | State after G6 | New current thread selected | Only triggers if suspended thread was `scheduler.current`; reuses existing `schedule` (Core.lean) |
+
+*Step ordering rationale*: G2 (IPC cleanup) before G3 (donation cleanup)
+ensures no stale IPC references to donated SchedContexts. G4 (run queue
+removal) before G6 (state transition) ensures the run queue never contains an
+Inactive thread, even transiently. G7 must be last because it reads the final
+run queue state to select the next thread.
+
+**D1-H: `resumeThread` — Sequential Pipeline (5 steps)**
+
+| Step | Operation | Validation |
+|------|-----------|-----------|
+| D1-H1 | TCB lookup | `.invalidArgument` if not found or not a TCB |
+| D1-H2 | State validation | `.invalidState` if `threadState ≠ .Inactive` (cannot resume an active/blocked thread) |
+| D1-H3 | Set `threadState := .Ready`, `ipcState := .ready` | Clean state for newly runnable thread |
+| D1-H4 | `ensureRunnable tid` — insert into run queue at `effectivePriority` | Reuse `ensureRunnable` from SchedulerLemmas.lean; inserts into correct priority bucket via `RunQueue.insert` |
+| D1-H5 | Conditional preemption check | If `effectivePriority(resumed) > effectivePriority(current)`, call `schedule` for immediate preemption. Uses `effectivePriority` resolution (Selection.lean:218) |
+
+**D1-J: `cancelIpcBlocking` Preserves `ipcInvariantFull` — Grouped by
+Conjunct Category (4 proof groups)**
+
+The 14-conjunct `ipcInvariantFull` (Defs.lean:1075) decomposes into 4 proof
+groups by modification relevance:
+
+| Group | Conjuncts (by number) | Strategy | Difficulty |
+|-------|----------------------|----------|-----------|
+| J-G1: Queue structure (3) | `dualQueueSystemInvariant`, `endpointQueueNoDup`, `queueNextBlockingConsistent` | Reuse `endpointQueueRemove` well-formedness lemma from Z6-B (DualQueue/Core.lean:461). Removal patches `queuePrev`/`queueNext` maintaining doubly-linked invariant. `endpointQueueNoDup`: removed thread exits queue → NoDup preserved. `queueNextBlockingConsistent`: removed thread's links cleared → no dangling `queueNext`. | Low — direct Z6-B lemma reuse |
+| J-G2: Blocking consistency (4) | `ipcInvariant` (base), `waitingThreadsPendingMessageNone`, `ipcStateQueueMembershipConsistent`, `queueHeadBlockedConsistent` | Removed thread transitions to `.ready` → blocking predicates vacuously satisfied for `tid`. Other threads unchanged (frame). `ipcStateQueueMembershipConsistent`: removed thread not in queue and not blocked → consistent. `queueHeadBlockedConsistent`: if removed thread was head, new head (if any) was `queueNext` which is still blocked. | Medium — per-thread case split: `tid` vs others |
+| J-G3: Notification (2) | `allPendingMessagesBounded`, `badgeWellFormed` | Only the `.blockedOnNotification` case modifies notification object. `allPendingMessagesBounded`: `pendingMessage` cleared → vacuously bounded. `badgeWellFormed`: notification badge field untouched by wait list filter. Remaining 4 IPC states: pure frame (notification objects unchanged). | Low |
+| J-G4: Donation & transfer (5) | `blockedThreadTimeoutConsistent`, `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer` | `blockedThreadTimeoutConsistent`: `timeoutBudget` cleared in D1-F → predicate satisfied (no timeout on non-blocked thread). Donation invariants (4 conjuncts from Z7): IPC state change does NOT modify `schedContextBinding` → donation chain frame. `passiveServerIdle`: thread moves to Inactive (not running) → still satisfies idle condition. | Medium — donation frame requires `schedContextBinding` unchanged by IPC cleanup |
+
+*Proof skeleton*: Prove 4 bundle lemmas (`cancelIpc_ipcInv_queueStructure`,
+`cancelIpc_ipcInv_blockingConsistency`, `cancelIpc_ipcInv_notification`,
+`cancelIpc_ipcInv_donationTransfer`). Compose:
+`cancelIpc_preserves_ipcInvariantFull := ⟨g1.1, g1.2, g1.3, g2.1, ..., g4.5⟩`.
+
+**D1-K/L: Scheduler Invariant Preservation — Per-Component Proof Map**
+
+| Component | Bundle | Suspend Modifies? | Proof Approach |
+|-----------|--------|-------------------|----------------|
+| `queueCurrentConsistent` | Base (K) | Yes — clears current if suspended | If `scheduler.current = some tid`: set `current := none`, restores consistency. Else: frame. Pattern from `timerTick` (Core.lean:362). |
+| `runQueueUnique` | Base (K) | Yes — removes from queue | `RunQueue.remove` preserves NoDup (RunQueue.lean:135). Direct import of `remove_preserves_nodup`. |
+| `currentThreadValid` | Base (K) | Yes — clears current | `current := none` → trivially valid. If current was different thread: frame (that thread still in queue). |
+| `timeSlicePositive` | Base (K) | No | Frame: only suspended thread's TCB modified; other threads' `timeSlice` unchanged. Suspended thread leaves queue → predicate not checked for non-queued threads. |
+| `domainTimeRemainingPositive` | Base (K) | No | Frame: domain scheduler state untouched by `suspendThread`. |
+| `replenishQueueSorted` | Extended (L) | No | Frame: suspend does NOT modify replenishment queue (it modifies SchedContext *binding*, not *budget/period*). |
+| `replenishQueueSizeConsistent` | Extended (L) | No | Frame: same as above. |
+| `replenishQueueConsistent` | Extended (L) | No | Frame: replenishment entries reference SchedContextIds, not thread state. |
+| `budgetPositive` | Extended (L) | No | Frame: SchedContext `budget.remaining` field unchanged by donation cleanup (D1-D changes binding, not budget). |
+| `currentBudgetPositive` | Extended (L) | Conditional | If current cleared → vacuously true (no current thread to check). Else: frame. |
+| `effectivePriorityConsistent` | Extended (L) | Yes — thread removed | Suspended thread exits run queue → predicate not checked. Remaining threads: effective priority unchanged (their SchedContexts untouched). |
+
+*Optimization*: D1-L's 6 extended conjuncts are ALL frame proofs. Implement as
+a single `suspend_extendedBundle_frame` lemma using backward transport: since
+extended fields (replenishment queue, budgets, periods) are unchanged in state,
+the extended invariant transfers directly from pre-state to post-state.
+
+**D1-M: Cross-Subsystem Invariant — Per-Predicate Proof Plan**
+
+The 8-predicate `crossSubsystemInvariant` (CrossSubsystem.lean:236)
+decomposes by modification:
+
+| Predicate | Modified? | Proof Strategy |
+|-----------|-----------|----------------|
+| `noStaleEndpointQueueReferences` | Yes | Thread removed from queues → no stale ref from `tid`. Other threads: frame (their queue links untouched). |
+| `noStaleNotificationWaitReferences` | Yes | Thread filtered from wait lists → no stale ref. Others: frame. |
+| `schedContextStoreConsistent` | Yes | After D1-D cleanup: binding cleared → no stale SchedContext reference. SchedContext object updated to reflect unbind. |
+| `schedContextNotDualBound` | Yes | Cleared binding cannot be dual-bound. Donation return (D1-D3) restores single-owner. Others: frame. |
+| `schedContextRunQueueConsistent` | Yes | Thread removed from run queue → predicate vacuously satisfied for `tid`. Others: frame (their SchedContexts unchanged). |
+| `registryEndpointValid` | No | Pure frame — suspend doesn't touch service registry. |
+| `registryDependencyConsistent` | No | Pure frame. |
+| `serviceGraphInvariant` | No | Pure frame. |
+
+*Optimization*: Group the 5 modified predicates into
+`suspend_crossSubsystem_modified`, the 3 frame predicates into
+`suspend_crossSubsystem_frame`. Compose:
+`suspend_preserves_crossSubsystemInvariant := ⟨mod.1, ..., mod.5, frame.1, frame.2, frame.3⟩`.
+
+### 4.2 Verification Checkpoints
+
+| Checkpoint | After Tasks | Validation Command | What It Proves |
+|-----------|-------------|-------------------|---------------|
+| CP-D1a | D1-A, D1-B | `lake build SeLe4n.Model.Object.Types && lake build SeLe4n.Kernel.Architecture.SyscallArgDecode` | Type foundation compiles; all exhaustive matches updated |
+| CP-D1b | D1-C through D1-F | `lake build SeLe4n.Kernel.Lifecycle.Suspend` | All helper functions compile; no `sorry` |
+| CP-D1c | D1-G, D1-H | `lake build SeLe4n.Kernel.Lifecycle.Suspend` | Composite operations compile and compose correctly |
+| CP-D1d | D1-I through D1-N | `lake build SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation` | All preservation proofs compile without `sorry` |
+| CP-D1e | D1-O, D1-P | `lake build SeLe4n.Kernel.API && lake build SeLe4n.Kernel.FrozenOps.Operations` | API dispatch and frozen ops compile |
+| CP-D1f | D1-Q | `./scripts/test_smoke.sh` | All tests pass including new SuspendResumeSuite |
+
 ---
- 
+
 ## 5. Phase D2 — Priority Management (v0.24.1)
  
 **Scope**: Implement `setPriority` and `setMCPriority` as capability-controlled
@@ -277,9 +411,68 @@ theorems compile. No `sorry`/`axiom`. Module builds verified.
 - D2-G/H/I/J are independent proof tasks (can run in parallel)
 - API: D2-E + D2-F + D2-B + D2-C → D2-K → D2-L (ops + types → dispatch → frozen)
 - Testing: D2-K → D2-M → D2-N
- 
+
+### 5.1 Detailed Task Decomposition
+
+**D2-E: `setPriorityOp` — Branching Pipeline (5 steps)**
+
+| Step | Operation | Branch Condition | Key Detail |
+|------|-----------|-----------------|-----------|
+| D2-E1 | Caller TCB lookup + MCP authority check | — | Call `validatePriorityAuthority` (D2-D): `newPriority.toNat ≤ callerTcb.maxControlledPriority.toNat`. Fail with `.rangeError` on violation. |
+| D2-E2 | Target TCB lookup | — | Look up target thread. If `callerTid = targetTid`, self-modification is allowed (seL4 permits setting own priority within MCP). |
+| D2-E3 | Determine priority update path | `tcb.schedContextBinding` | If `.bound scId` or `.donated scId _`: update `SchedContext.priority` (the SchedContext owns the scheduling priority). If `.unbound`: update `TCB.priority` directly (legacy path for unbound threads). |
+| D2-E4 | Run queue bucket migration | Thread in run queue? | If target `tid ∈ runQueue.membership`: call `RunQueue.remove` (RunQueue.lean:135), then `RunQueue.insert` at new priority. This is O(k+n) removal + O(k'+n) insertion. If not in queue (blocked/inactive): skip migration. |
+| D2-E5 | Conditional preemption check | Priority decreased + is current? | If target is `scheduler.current` AND new priority < old priority: call `schedule` to check if a higher-priority thread should preempt. If priority increased: no preemption needed (current thread is now higher). |
+
+*Edge case*: If target has `.donated scId originalOwner`, modifying the
+SchedContext priority affects BOTH the target (current user) and the original
+owner (who will reclaim it on Reply). This is correct seL4 behavior: the
+SchedContext is a shared resource, and priority changes apply to the object.
+
+**D2-F: `setMCPriorityOp` — MCP Authority Chain (4 steps)**
+
+| Step | Operation | Key Detail |
+|------|-----------|-----------|
+| D2-F1 | Caller MCP authority validation | `newMCP.toNat ≤ callerTcb.maxControlledPriority.toNat` — caller cannot grant higher MCP than it possesses. This ensures monotonic authority reduction. |
+| D2-F2 | Target TCB lookup + MCP update | Set `targetTcb.maxControlledPriority := newMCP`. Pure field update. |
+| D2-F3 | Priority capping (conditional) | If `targetTcb.priority > newMCP`: reduce priority to MCP ceiling. `targetTcb.priority := newMCP`. This prevents a thread from holding a priority above its new MCP. seL4 behavior: reducing MCP retroactively caps existing priority. |
+| D2-F4 | Run queue migration (conditional) | If priority was capped in D2-F3 AND thread is in run queue: perform remove-then-insert bucket migration (same as D2-E4). If priority was capped AND thread is current: trigger `schedule` for preemption check. |
+
+*Security property*: After D2-F completes,
+`targetTcb'.priority ≤ targetTcb'.maxControlledPriority` (invariant). This
+follows from D2-F3: if priority was already ≤ newMCP, it remains so; if it
+was >, it's capped to newMCP.
+
+**D2-G: `setPriorityOp` Preserves Scheduler Invariants — Decomposed Proof
+Strategy (5 component lemmas)**
+
+| Lemma | Invariant Component | Proof |
+|-------|-------------------|-------|
+| `setPrio_queueCurrentConsistent` | `queueCurrentConsistent` | Remove-then-insert: thread leaves queue, then re-enters at new bucket. `current` unchanged (we don't modify `scheduler.current` except in preemption path). If preemption triggers `schedule`, reuse existing `schedule` preservation. |
+| `setPrio_runQueueUnique` | `runQueueUnique` | `remove_preserves_nodup` (removes from membership set + priority bucket), then `insert_preserves_nodup` (fresh insert after removal guarantees no duplicate). Compose: `NoDup (remove ∘ insert)`. |
+| `setPrio_timeSlicePositive` | `timeSlicePositive` | Frame: `timeSlice` field untouched by priority change. |
+| `setPrio_budgetPositive` | `budgetPositive` (extended) | If SchedContext priority changed: budget/period fields are distinct from priority field → frame. If TCB priority changed: SchedContext untouched → frame. |
+| `setPrio_priorityMatch` | `effectivePriorityConsistent` | After bucket migration, thread is in the bucket matching its new `effectivePriority`. Prove: `RunQueue.insert` places thread in `byPriority[newPrio]`, and `effectivePriority` resolves to `newPrio` after the priority update. |
+
+**D2-J: Authority Non-Escalation — Two Key Theorems**
+
+| Theorem | Statement | Proof Sketch |
+|---------|-----------|-------------|
+| `setPriority_authority_bounded` | `∀ st st' callerTid targetTid newPrio, setPriorityOp st callerTid targetTid newPrio = .ok st' → targetPriority st' targetTid ≤ callerMCP st callerTid` | Direct from D2-E1 validation: `newPriority ≤ caller.maxControlledPriority` is checked before any state modification. If check fails, operation returns error. If succeeds, `targetPriority` after update = `newPriority ≤ caller.mcp`. |
+| `setMCPriority_authority_bounded` | `∀ st st' callerTid targetTid newMCP, setMCPriorityOp st callerTid targetTid newMCP = .ok st' → targetMCP st' targetTid ≤ callerMCP st callerTid` | Direct from D2-F1 validation: `newMCP ≤ caller.maxControlledPriority`. These two theorems together prove the authority hierarchy is monotonically non-increasing: no thread can create a more-privileged thread than itself. |
+
+### 5.2 Verification Checkpoints
+
+| Checkpoint | After Tasks | Validation Command |
+|-----------|-------------|-------------------|
+| CP-D2a | D2-A, D2-B, D2-C | `lake build SeLe4n.Model.Object.Types && lake build SeLe4n.Kernel.Architecture.SyscallArgDecode` |
+| CP-D2b | D2-D, D2-E, D2-F | `lake build SeLe4n.Kernel.SchedContext.PriorityManagement` |
+| CP-D2c | D2-G through D2-J | `lake build SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation` |
+| CP-D2d | D2-K, D2-L | `lake build SeLe4n.Kernel.API && lake build SeLe4n.Kernel.FrozenOps.Operations` |
+| CP-D2e | D2-M | `./scripts/test_smoke.sh` |
+
 ---
- 
+
 ## 6. Phase D3 — IPC Buffer Configuration (v0.24.2)
  
 **Scope**: Implement `setIPCBuffer` as a capability-controlled operation that
@@ -325,9 +518,57 @@ Preservation proofs compile. No `sorry`/`axiom`.
   - D3-F and D3-G are independent (can run in parallel)
 - API: D3-E + D3-A + D3-B → D3-H → D3-I (op + types → dispatch → frozen)
 - Testing: D3-H → D3-J → D3-L
- 
+
+### 6.1 Detailed Task Decomposition
+
+D3 is the lowest-complexity phase (most tasks are Small/Trivial). The following
+expands the two tasks that benefit from further granularity.
+
+**D3-D: `validateIpcBufferAddress` — 5-Step Validation Pipeline**
+
+| Step | Check | Error on Failure | seL4 Equivalent |
+|------|-------|-----------------|-----------------|
+| D3-D1 | Alignment: `addr.toNat % ipcBufferAlignment = 0` | `.alignmentError` | `seL4_AlignmentError` — IPC buffer must be 512-byte aligned (2^9, matching `seL4_IPCBufferSizeBits`) |
+| D3-D2 | Physical bound: `addr.toNat < physicalAddressBound` | `.invalidArgument` | Prevents addresses that exceed ARM64 LPA physical address space (Architecture/Assumptions.lean) |
+| D3-D3 | VSpace root validity: look up `tcb.vspaceRoot`, confirm it resolves to a `VSpaceRoot` object | `.invalidArgument` | Thread must have a valid VSpace assigned |
+| D3-D4 | Mapping check: call `vspaceLookupFull asid addr` (VSpace.lean:126) — verify address is mapped | `.vmFault` | Address must be present in the thread's page table; unmapped addresses would cause kernel fault on IPC |
+| D3-D5 | Write permission: check `permissions.write = true` from the `PagePermissions` returned by D3-D4 | `.vmFault` | IPC buffer is written by kernel during message delivery; read-only pages are insufficient. No W^X conflict since IPC buffers are data pages, not executable. |
+
+*Dependency on D3-K*: Step D3-D4 requires `vspaceLookupFull` (VSpace.lean:126).
+The codebase already provides this function. D3-K is therefore a **pre-check**
+rather than an implementation task: verify the function signature matches
+expectations, then proceed directly to D3-D.
+
+**D3-F: Frame Preservation — Single Theorem with Per-Invariant Justification**
+
+The `setIPCBufferOp` modifies exactly ONE TCB field: `tcb.ipcBuffer : VAddr`.
+This field is not referenced by any invariant predicate in the entire kernel
+proof surface:
+
+| Invariant Bundle | References `ipcBuffer`? | Proof |
+|-----------------|------------------------|-------|
+| `schedulerInvariantBundleExtended` (15-tuple) | No — scheduler predicates reference `priority`, `domain`, `timeSlice`, `budget`, run queue membership | Backward transport: `∀ p ∈ schedulerPredicates, p st = p st'` because modified fields are disjoint |
+| `ipcInvariantFull` (14 conjuncts) | No — IPC predicates reference `ipcState`, queue linkage (`queuePrev`/`queueNext`), `pendingMessage`, `schedContextBinding` | Same disjoint-field argument |
+| `crossSubsystemInvariant` (8 predicates) | No — cross-subsystem predicates reference `schedContextBinding`, queue membership, service registry | Same argument |
+| `capabilityInvariant` | No — capability predicates reference CNode slots, CDT | Same argument |
+
+*Implementation*: A single theorem `setIPCBuffer_preserves_proofLayerInvariantBundle`
+with proof body: `⟨sched_frame, ipc_frame, cross_frame, cap_frame⟩` where each
+component is a 1-line backward transport citing field disjointness. This is the
+simplest preservation proof in the entire workstream.
+
+### 6.2 Verification Checkpoints
+
+| Checkpoint | After Tasks | Validation Command |
+|-----------|-------------|-------------------|
+| CP-D3a | D3-A, D3-B, D3-C | `lake build SeLe4n.Model.Object.Types && lake build SeLe4n.Kernel.Architecture.SyscallArgDecode` |
+| CP-D3b | D3-K (pre-check), D3-D, D3-E | `lake build SeLe4n.Kernel.Architecture.IpcBufferValidation` |
+| CP-D3c | D3-F, D3-G | Preservation proofs compile: `lake build SeLe4n.Kernel.Architecture.IpcBufferValidation` |
+| CP-D3d | D3-H, D3-I | `lake build SeLe4n.Kernel.API && lake build SeLe4n.Kernel.FrozenOps.Operations` |
+| CP-D3e | D3-J | `./scripts/test_smoke.sh` |
+
 ---
- 
+
 ## 7. Phase D4 — Priority Inheritance Protocol (v0.24.3)
  
 **Scope**: Implement a deterministic priority inheritance protocol (PIP) that
@@ -399,9 +640,159 @@ chain depth × WCRT. No `sorry`/`axiom`.
   - D4-O and D4-P are independent
 - Bounded inversion: D4-D + D4-E + D4-J → D4-Q → D4-R
 - Infrastructure: D4-R → D4-S → D4-T
- 
+
+### 7.1 Detailed Task Decomposition
+
+D4 is the most complex phase in WS-AB. The following decomposes each Medium
+task into atomic, independently verifiable steps grounded in the actual
+codebase structures.
+
+**D4-C: Blocking Graph Definition — 3 Independent Definitions + 2 Helpers**
+
+| Step | Definition | Signature | Key Detail |
+|------|-----------|-----------|-----------|
+| D4-C1 | `blockedOnThread` (predicate) | `(st : SystemState) (waiter server : ThreadId) : Prop` | True when `waiter` has `ipcState = .blockedOnReply epId (some server)` (direct blocking) OR `ipcState = .blockedOnCall epId` where the endpoint's receive-side head is `server`. The first case is the primary PIP path (Call → Reply pattern). |
+| D4-C2 | `waitersOf` (direct dependents) | `(st : SystemState) (tid : ThreadId) : List ThreadId` | Collects all `waiter` where `blockedOnThread st waiter tid`. Implementation: fold over all TCB objects, filter by `blockedOnThread`. O(n) in thread count — acceptable because PIP propagation happens on the Call path, not the hot scheduler path. |
+| D4-C3 | `blockingChain` (transitive closure) | `(st : SystemState) (tid : ThreadId) (fuel : Nat := st.objects.size) : List ThreadId` | Walks upward: start at `tid`, if `tid` has `ipcState = .blockedOnReply _ (some server)`, prepend `server` and recurse on `server` with `fuel - 1`. Terminate when `fuel = 0` or thread is not in `blockedOnReply` state. Returns the list of servers in the transitive blocking chain. |
+| D4-C4 | `chainContains` (helper) | `(chain : List ThreadId) (tid : ThreadId) : Bool` | Simple `List.elem`. Used in acyclicity proof to check whether a thread appears twice. |
+| D4-C5 | `blockingGraphEdges` (helper) | `(st : SystemState) : List (ThreadId × ThreadId)` | All `(waiter, server)` pairs where `blockedOnThread st waiter server`. Used in visualization/testing, not in proofs. |
+
+*Design note*: `blockingChain` uses fuel (not well-founded recursion on a
+decreasing measure) because the chain walks through *arbitrary* thread IDs,
+not structurally decreasing data. The acyclicity proof (D4-D) establishes
+that fuel = `countTCBs st` is always sufficient.
+
+**D4-D: Blocking Graph Acyclicity — 3-Step Proof Structure**
+
+| Step | Lemma | Proof Technique |
+|------|-------|----------------|
+| D4-D1 | `blockedOnReply_not_self` | A thread cannot have `ipcState = .blockedOnReply epId (some tid)` where `tid` is itself. Follows from `tcbQueueChainAcyclic` (IPC/Invariant/Defs.lean:145): no self-loops in IPC queue chains. This is the base case preventing trivial cycles. |
+| D4-D2 | `blockingChain_no_repeat` | No thread appears twice in its blocking chain. Proof by strong induction on the unvisited thread set: each `blockingChain` step follows `blockedOnReply` to a new server; by D4-D1, each server is distinct from the waiter; by the induction hypothesis, the remaining chain has no repeats; therefore the full chain has no repeats. Well-founded on `Finset.card (unvisited)` strictly decreasing. |
+| D4-D3 | `blockingChain_acyclic` | Corollary of D4-D2: if no thread appears twice, the chain cannot form a cycle. Formally: `∀ tid, tid ∉ (blockingChain st tid).tail` (the starting thread does not appear later in its own chain). |
+
+**D4-G: `updatePipBoost` — Single-Thread Priority Update (4 steps)**
+
+| Step | Operation | Detail |
+|------|-----------|--------|
+| D4-G1 | Compute max waiter priority | Call `computeMaxWaiterPriority st tid` (D4-F). Returns `Option Priority`: `some p` if thread has waiters, `none` if no one is blocked on this thread. |
+| D4-G2 | Determine new `pipBoost` | If `some p` and `p > basePriority(tid)`: set `pipBoost := some p`. If `some p` and `p ≤ basePriority(tid)`: clear `pipBoost := none` (base priority already sufficient). If `none`: clear `pipBoost := none`. |
+| D4-G3 | TCB update | Store updated TCB with new `pipBoost` value via `storeTcb`. |
+| D4-G4 | Conditional run queue migration | If thread is in run queue AND `effectivePriority` changed (because `pipBoost` changed the `max(scPrio, pipBoost)` result): perform `RunQueue.remove` then `RunQueue.insert` at new effective priority. Reuses the D2-E4 bucket migration pattern. If thread is not in run queue (blocked/inactive): skip. |
+
+*Invariant*: After D4-G, `tcb.pipBoost = computeMaxWaiterPriority st tid` for
+the updated thread. This is the single-thread correctness property that D4-J
+composes across the chain.
+
+**D4-H: `propagatePriorityInheritance` — Chain Walk Algorithm (4 steps)**
+
+| Step | Operation | Termination Argument |
+|------|-----------|---------------------|
+| D4-H1 | Apply `updatePipBoost st startTid` | Base step: update the directly-involved server. |
+| D4-H2 | Check continuation condition | If `startTid` has `ipcState = .blockedOnReply _ (some nextServer)`: the server is itself blocked on another server. Propagation must continue upward. If not blocked: propagation terminates here. |
+| D4-H3 | Recurse: `propagatePriorityInheritance st' nextServer (fuel - 1)` | `st'` is the state after D4-H1's update. `fuel` decreases by 1 each step. By D4-D (acyclicity) and D4-E (depth bound), `fuel = countTCBs st` is always sufficient. |
+| D4-H4 | Fuel exhaustion guard | If `fuel = 0`: terminate. This is a defensive guard that should never trigger if the chain is acyclic. In practice, chains of depth > 4–5 are extremely rare. |
+
+*Composition with Z7 donation*: When `propagatePriorityInheritance` walks
+through a server that has `schedContextBinding = .donated scId originalOwner`,
+the `effectivePriority` resolution already incorporates the donated
+SchedContext's priority. The `pipBoost` provides an ADDITIONAL boost if the
+transitive client priority exceeds the donated SchedContext priority. The
+`max(scPrio, pipBoost)` computation in `effectivePriority` (D4-B) handles
+this composition automatically.
+
+**D4-I: `revertPriorityInheritance` — Chain Reversion (4 steps)**
+
+| Step | Operation | Key Difference from D4-H |
+|------|-----------|-------------------------|
+| D4-I1 | Recompute `pipBoost` for `tid` | After a client is unblocked (Reply completes), `waitersOf st tid` has one fewer entry. `updatePipBoost` recomputes from remaining waiters. If no waiters remain, `pipBoost := none`. |
+| D4-I2 | Check continuation condition | If `tid` has `ipcState = .blockedOnReply _ (some nextServer)`: reversion must propagate upward because `nextServer`'s max waiter priority may have changed (one of its transitive waiters became unblocked). |
+| D4-I3 | Recurse: `revertPriorityInheritance st' nextServer (fuel - 1)` | Each step recomputes `pipBoost` for a server whose transitive waiters changed. |
+| D4-I4 | Fuel exhaustion guard | Same as D4-H4. |
+
+*Key insight*: Reversion is structurally identical to propagation (same chain
+walk, same `updatePipBoost` at each step). The difference is purely in the
+`waitersOf` computation: during propagation, a new waiter was added; during
+reversion, a waiter was removed. The `updatePipBoost` function handles both
+cases uniformly because it always recomputes from the current `waitersOf`.
+
+**D4-L: Call Path Integration — 3 Steps**
+
+| Step | Location | Modification |
+|------|----------|-------------|
+| D4-L1 | After `endpointCallWithDonation` blocks the client | Insert: `let serverId := <resolved from endpoint receive queue head>`. The server is the thread that will handle the client's request. |
+| D4-L2 | After client enters `blockedOnReply` state | Insert: `let st' ← propagatePriorityInheritance st serverId`. The propagation walks upward from the server, boosting any servers in the server's own blocking chain. |
+| D4-L3 | Return updated state | The state after propagation includes updated `pipBoost` values for all servers on the transitive chain. The Call operation's return state is `st'`. |
+
+*Handshake vs. blocking path*: In the handshake path (server was already
+waiting in receive queue), the server is immediately dequeued and runs. PIP
+propagation still applies because the server may itself be blocked on another
+server via a nested Call. In the blocking path (client blocked, no server
+available), PIP propagation defers until a server arrives — handled by the
+receive-side endpoint wakeup path (not modified here).
+
+**D4-M: Reply Path Integration — 3 Steps**
+
+| Step | Location | Modification |
+|------|----------|-------------|
+| D4-M1 | After `endpointReplyWithDonation` unblocks the client | The client transitions from `blockedOnReply` to `Ready`. The client is no longer a waiter of the replying server. |
+| D4-M2 | After client unblock | Insert: `let st' ← revertPriorityInheritance st replyingServerId`. The reversion recomputes the server's `pipBoost` based on remaining waiters. If no clients remain blocked on this server, `pipBoost` clears to `none`. |
+| D4-M3 | Run queue adjustment | If the server's effective priority decreased (because `pipBoost` was cleared or reduced), and the server is in the run queue, the bucket migration in `updatePipBoost` (D4-G4) handles repositioning automatically. |
+
+**D4-O: Scheduler Preservation — Chain Induction Strategy**
+
+The proof that `propagatePriorityInheritance` preserves
+`schedulerInvariantBundleExtended` requires induction over the blocking chain:
+
+| Induction Step | What to Prove | Key Lemma |
+|---------------|---------------|-----------|
+| Base case | `updatePipBoost st tid` preserves the 15-tuple for a single thread | `updatePipBoost_preserves_schedulerInv`: decompose into (1) `pipBoost` field change preserves time-slice/budget/domain invariants (frame on non-priority fields); (2) conditional bucket migration preserves queue consistency (reuse D2-G `setPrio_runQueueUnique` pattern). |
+| Inductive step | If `propagatePIP st tid (fuel+1)` preserves invariants and applies `updatePipBoost` then recurses, the recursion preserves invariants | `propagatePIP_step_preserves`: compose base case preservation with inductive hypothesis. The inductive state satisfies the invariant (by IH), and the next `updatePipBoost` preserves it (by base case). |
+| Composition | `propagatePriorityInheritance st startTid fuel` preserves invariants | `Nat.rec` on `fuel` with base case (fuel=0, no-op) and step case (base + IH). |
+
+**D4-Q: Bounded Inversion — Layered Proof (3 lemmas)**
+
+| Lemma | Statement | Depends On |
+|-------|-----------|-----------|
+| `pip_single_link_bound` | If thread H is blocked on server S, and S has `effectivePriority ≥ effectivePriority(H)` (from PIP), then S completes within `WCRT(effectivePriority(H))` ticks. | D5-L (parametric) or assumed as hypothesis if D5 not yet complete |
+| `pip_chain_composition` | If blocking chain has depth D, total inversion time ≤ `D × WCRT(effectivePriority(H))`. | D4-E (depth bound) + `pip_single_link_bound` (per-link). Proof by induction on D: each link adds at most one WCRT interval. |
+| `pip_bounded_inversion` | Final theorem: priority inversion for thread H is bounded by `countTCBs(st) × WCRT(effectivePriority(H))`. | D4-E (`blockingChain_bounded` ≤ `countTCBs`) + `pip_chain_composition`. Conservative bound using max possible chain depth. |
+
+*Parametric design*: `pip_single_link_bound` takes `WCRT` as a parameter
+(not computed). This allows D4-Q to be proven before D5 is complete. When D5
+delivers `bounded_scheduling_latency`, the concrete WCRT is substituted via
+`pip_bounded_inversion.instantiate`.
+
+### 7.2 Sub-Phase Decomposition for Schedule Risk Mitigation
+
+D4's 20 tasks can be split into 4 independently deliverable sub-phases:
+
+| Sub-Phase | Tasks | Deliverable | Can Ship Independently? |
+|-----------|-------|-------------|------------------------|
+| D4a: Types & Graph | D4-A, D4-B, D4-C, D4-D, D4-E | `pipBoost` field, updated `effectivePriority`, blocking graph with acyclicity/depth proofs | Yes — no runtime behavior change (field defaults to `none`, `effectivePriority` returns same value when `pipBoost = none`) |
+| D4b: Propagation | D4-F, D4-G, D4-H, D4-I, D4-J, D4-K | `propagatePriorityInheritance`, `revertPriorityInheritance` with correctness proofs | Yes — functions exist but are not called yet |
+| D4c: Integration | D4-L, D4-M, D4-N | PIP hooks in Call/Reply/Suspend paths | No — requires D4a + D4b; activates runtime behavior |
+| D4d: Proofs & Tests | D4-O, D4-P, D4-Q, D4-R, D4-S, D4-T | Preservation theorems, bounded inversion, tests, docs | No — requires D4c for integration proofs |
+
+*Risk mitigation*: If D4 takes longer than expected, D4a and D4b can be
+delivered as intermediate versions. D4a alone is valuable because it adds the
+`pipBoost` TCB field and proves the blocking graph properties that D5 can
+reference parametrically.
+
+### 7.3 Verification Checkpoints
+
+| Checkpoint | After Tasks | Validation Command |
+|-----------|-------------|-------------------|
+| CP-D4a | D4-A, D4-B | `lake build SeLe4n.Model.Object.Types && lake build SeLe4n.Kernel.Scheduler.Operations.Selection` |
+| CP-D4b | D4-C, D4-D, D4-E | `lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph` |
+| CP-D4c | D4-F, D4-G | `lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute && lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate` |
+| CP-D4d | D4-H, D4-I, D4-J, D4-K | `lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate` |
+| CP-D4e | D4-L, D4-M, D4-N | `lake build SeLe4n.Kernel.IPC.Operations.Donation && lake build SeLe4n.Kernel.Lifecycle.Suspend` |
+| CP-D4f | D4-O, D4-P | `lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation` |
+| CP-D4g | D4-Q, D4-R | `lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.BoundedInversion` |
+| CP-D4h | D4-S, D4-T | `./scripts/test_full.sh` |
+
 ---
- 
+
 ## 8. Phase D5 — Bounded Latency Theorem (v0.24.4)
  
 **Scope**: Prove a conditional worst-case response time (WCRT) bound for the
@@ -469,9 +860,128 @@ module builds via `lake build SeLe4n.Kernel.Scheduler.Liveness.WCRT`.
 - D5-D/D5-E and D5-G are independent chains (can run in parallel)
 - D5-I and D5-J are independent (can run in parallel)
 - Infrastructure: D5-M → D5-N → D5-O → D5-P
- 
+
+### 8.1 Detailed Task Decomposition
+
+D5 is proof-only (zero code changes to existing kernel files). Every task
+produces Lean `theorem` or `def` declarations in a new `Scheduler/Liveness/`
+module. The following decomposes the most complex proof tasks.
+
+**D5-A: Trace Model Types — 4 Independent Definitions**
+
+| Step | Definition | Type | Key Detail |
+|------|-----------|------|-----------|
+| D5-A1 | `SchedulerStep` inductive | 9 constructors | `timerTick`, `timerTickBudget`, `schedule`, `scheduleEffective`, `handleYield`, `handleYieldWithBudget`, `switchDomain`, `processReplenishmentsDue`, `ipcTimeoutTick`. Each constructor carries the precondition parameters needed to invoke the corresponding kernel function. |
+| D5-A2 | `SchedulerTrace` type alias | `List (SchedulerStep × SystemState)` | A trace is a sequence of (step, resulting-state) pairs. The first element's state is the initial state; each subsequent state is the result of applying the step to the previous state. |
+| D5-A3 | `stepPrecondition` function | `SchedulerStep → SystemState → Prop` | Maps each step to its precondition: e.g., `timerTickBudget` requires `scheduler.current = some tid ∧ tcb.schedContextBinding ≠ .unbound`. Extracted from the `if` guards in each kernel function (Core.lean). |
+| D5-A4 | `validTrace` predicate | `SchedulerTrace → Prop` | Inductively: empty trace is valid; `step :: rest` is valid if `stepPrecondition step state` holds AND applying the step to `state` produces `nextState` AND `validTrace rest` with `nextState` as initial state. This is the fundamental well-formedness property of scheduler execution sequences. |
+
+**D5-B: Trace Query Predicates — 3 Definitions + 2 Proofs**
+
+| Step | Item | Type | Detail |
+|------|------|------|--------|
+| D5-B1 | `selectedAt` | `SchedulerTrace → Nat → ThreadId → Prop` | Thread `tid` is `scheduler.current` at trace index `k`. Defined as: `(trace.get? k).map (·.2.scheduler.current) = some (some tid)`. |
+| D5-B2 | `runnableAt` | `SchedulerTrace → Nat → ThreadId → Prop` | Thread is in run queue at index `k`: `tid ∈ (trace.get? k).map (·.2.scheduler.runQueue.membership)`. |
+| D5-B3 | `budgetAvailableAt` | `SchedulerTrace → Nat → ThreadId → Prop` | Thread's bound SchedContext has `hasSufficientBudget`: requires resolving `tcb.schedContextBinding` to a SchedContext and checking `sc.budget.remaining > 0`. |
+| D5-B4 | Proof: `selectedAt_implies_not_runnableAt` | `theorem` | Selected thread is current, not in run queue. Follows from `queueCurrentConsistent` (scheduler invariant): current thread is dequeued before dispatch. |
+| D5-B5 | Proof: `selectedAt_implies_budgetAvailableAt` | `theorem` | Selected thread has budget. Follows from `chooseThreadEffective` selection criteria (Selection.lean): threads are only selected if their SchedContext has sufficient budget (Z4 integration). |
+
+**D5-D: Timer-Tick Budget Monotonicity — 2 Theorems from 3 Branches**
+
+`timerTickBudget` (Core.lean:519) has 3 branches (Z4-F). Each branch requires
+a separate monotonicity lemma:
+
+| Branch | Condition | Theorem | Proof |
+|--------|-----------|---------|-------|
+| Z4-F1 (unbound) | `tcb.schedContextBinding = .unbound` | `timerTickBudget_F1_delegates_legacy` | Delegates to `timerTick` which decrements `tcb.timeSlice`. No SchedContext budget involved. |
+| Z4-F2 (budget > 1) | `.bound scId` and `sc.budget.remaining > 1` | `timerTickBudget_F2_decrements` | `consumeBudget` (Budget.lean) sets `remaining := remaining - 1`. Prove: `sc'.budget.remaining = sc.budget.remaining - 1`. Direct from `consumeBudget` definition. |
+| Z4-F3 (budget ≤ 1) | `.bound scId` and `sc.budget.remaining ≤ 1` | `timerTickBudget_F3_preempts` | Budget exhausted: schedules replenishment entry in `replenishQueue`, re-enqueues thread, calls `schedule`. Prove: thread is no longer current AND replenishment entry added. |
+
+*Composition*: `timerTickBudget_decrements_budget` is the disjunction of F2
+(decrement) and F3 (exhaustion). `timerTickBudget_preempts_on_exhaustion` is
+specifically F3.
+
+**D5-H: FIFO Progress Within Priority Band — 3-Stage Induction**
+
+| Stage | Lemma | Statement | Proof Technique |
+|-------|-------|-----------|-----------------|
+| D5-H1 | `fifo_head_selected` (base case, k=0) | Thread at position 0 (head) in priority bucket is selected on next `schedule` call (if no higher-priority thread exists and domain is active) | Direct from `chooseThreadEffective` (Selection.lean): selects highest-priority thread, FIFO within bucket. Head of bucket is first candidate. |
+| D5-H2 | `fifo_position_advance` (step lemma) | If thread at position `k > 0` and thread at `k-1` is preempted (by `timerTickBudget` F2/F3) or yields (`handleYieldWithBudget`), position becomes `k-1` | From `handleYieldWithBudget` (Core.lean:656): yielding thread moves to tail. All threads ahead of position `k` shift forward by one. From `timerTickBudget` F3: preempted thread re-enqueued at tail. Same shift. |
+| D5-H3 | `fifo_progress_in_band` (composition) | Thread at position `k` selected within `k × max_preemption_interval` ticks | Induction on `k`: base case (k=0) from D5-H1; inductive step: thread at `k` waits for thread at `k-1` to be preempted (within `max_preemption_interval` ticks by D5-D/D5-F), then advances to `k-1` (by D5-H2), then IH applies. `max_preemption_interval` for bound threads: `min(timeSlice, budget) + period` (budget exhaustion + one replenishment wait). For unbound: `timeSlice`. |
+
+**D5-L: Main WCRT Theorem — 3-Lemma Composition**
+
+The main `bounded_scheduling_latency` theorem composes 3 independent bounds:
+
+| Component | Bound | Source Lemma | Contribution to WCRT |
+|-----------|-------|-------------|---------------------|
+| Domain rotation | `D × L_max` ticks | `domain_rotation_bound` (D5-J) | Time until the target thread's domain becomes active. `D` = number of domain schedule entries, `L_max` = maximum domain time allocation. |
+| Priority band exhaustion | Implicit | `higher_band_exhaustion` (D5-I) | Higher-priority threads must either be preempted (budget exhaustion), block (IPC), or yield before the target thread's band is reached. Not a direct tick bound — establishes precondition for FIFO progress. |
+| FIFO progress | `N × (B + P)` ticks | `fifo_progress_in_band` (D5-H) | Once domain is active and no higher-effective-priority threads exist, target thread advances through FIFO queue. Each position takes at most `B + P` ticks (budget `B` for current thread + period `P` for replenishment wait). `N` = threads at same or higher effective priority. |
+
+*Theorem statement*:
+```
+theorem bounded_scheduling_latency
+    (hyp : WCRTHypotheses st tid D L_max N B P)
+    (trace : SchedulerTrace)
+    (hvalid : validTrace trace)
+    (hinit : trace.head?.map (·.2) = some st) :
+    ∃ k ≤ D * L_max + N * (B + P),
+      selectedAt trace k tid
+```
+
+*Proof structure*: (1) By `domain_rotation_bound`, ∃ k₁ ≤ D × L_max where
+domain `d` is active at trace index k₁. (2) At k₁, apply
+`higher_band_exhaustion`: all higher-effective-priority threads in domain `d`
+have either consumed their budgets or blocked. (3) Apply `fifo_progress_in_band`:
+thread `tid` is selected within N × (B + P) additional ticks. (4) Compose:
+`k = k₁ + k₂ ≤ D × L_max + N × (B + P)` via `Nat.add_le_add`.
+
+**D5-K: WCRT Hypotheses — Field-by-Field Specification**
+
+| Hypothesis Field | Type | Meaning |
+|-----------------|------|---------|
+| `threadRunnable` | `runnableAt trace 0 tid` | Target thread is in run queue at start of analysis |
+| `threadHasBudget` | `budgetAvailableAt trace 0 tid` | Thread's SchedContext has positive budget |
+| `threadInDomain` | `∃ i, domainSchedule[i] = tid.domain` | Thread's domain appears in the static domain schedule |
+| `higherPriorityBound` | `countHigherOrEqualEffectivePriority tid st ≤ N` | At most N threads with effective priority ≥ target's in same domain |
+| `maxBudgetBound` | `maxBudgetInBand tid st ≤ B` | All same-or-higher-priority threads have budget ≤ B |
+| `maxPeriodBound` | `maxPeriodInBand tid st ≤ P` | All same-or-higher-priority threads have period ≤ P |
+| `domainScheduleAdequate` | `domainLength(tid.domain) ≥ N × (B + P)` | Domain allocation is long enough for all threads in band to execute |
+| `invariantHolds` | `proofLayerInvariantBundle st` | All kernel invariants hold at analysis start |
+
+*Stability lemma*: `wcrt_hypotheses_stable_under_timerTickBudget` proves that
+`WCRTHypotheses` is preserved by `timerTickBudget` steps (budget decrements
+don't change the counting predicates, and replenishment restores budget).
+
+### 8.2 Sub-Phase Decomposition for D5
+
+| Sub-Phase | Tasks | Deliverable | Independent? |
+|-----------|-------|-------------|-------------|
+| D5a: Infrastructure | D5-A, D5-B, D5-C | Trace model types, query predicates, counting functions | Yes — pure definitions with basic properties |
+| D5b: Mechanism Bounds | D5-D, D5-E, D5-F, D5-G | Per-mechanism bounds: budget monotonicity, replenishment, time-slice, yield | Yes — each mechanism bound is self-contained |
+| D5c: Progress Proofs | D5-H, D5-I, D5-J | FIFO progress, band exhaustion, domain rotation | Requires D5a + D5b |
+| D5d: WCRT Composition | D5-K, D5-L, D5-M | Hypotheses, main WCRT theorem, PIP enhancement | Requires D5c |
+
+*Parallelism within D5b*: D5-D/D5-F (timer-tick) and D5-G (yield) are
+independent mechanism proofs that can be developed simultaneously. D5-E
+(replenishment) depends on D5-D (budget exhaustion triggers replenishment).
+
+### 8.3 Verification Checkpoints
+
+| Checkpoint | After Tasks | Validation Command |
+|-----------|-------------|-------------------|
+| CP-D5a | D5-A, D5-B, D5-C | `lake build SeLe4n.Kernel.Scheduler.Liveness.TraceModel` |
+| CP-D5b | D5-D, D5-F | `lake build SeLe4n.Kernel.Scheduler.Liveness.TimerTick` |
+| CP-D5c | D5-E | `lake build SeLe4n.Kernel.Scheduler.Liveness.Replenishment` |
+| CP-D5d | D5-G, D5-H | `lake build SeLe4n.Kernel.Scheduler.Liveness.Yield` |
+| CP-D5e | D5-I | `lake build SeLe4n.Kernel.Scheduler.Liveness.BandExhaustion` |
+| CP-D5f | D5-J | `lake build SeLe4n.Kernel.Scheduler.Liveness.DomainRotation` |
+| CP-D5g | D5-K, D5-L, D5-M | `lake build SeLe4n.Kernel.Scheduler.Liveness.WCRT` |
+| CP-D5h | D5-N, D5-O, D5-P | `./scripts/test_full.sh` |
+
 ---
- 
+
 ## 9. Phase D6 — API Surface Integration & Closure (v0.24.5)
  
 **Scope**: Finalize the public API surface for all deferred operations, ensure
@@ -510,24 +1020,158 @@ Nightly test suite passes.
 - D6-E depends on D6-A/B/C/D (all verifications → comprehensive test)
 - D6-F/G/H/I are documentation tasks, largely independent (parallel after D6-E)
 - D6-J depends on D6-F/H (new paths may need manifest entries)
- 
+
+### 9.1 Detailed Task Decomposition
+
+D6 is an integration and verification phase. The following expands the tasks
+that involve multiple files or complex coordination.
+
+**D6-D: Rust ABI Synchronization — 5 Steps**
+
+| Step | Operation | Validation |
+|------|-----------|-----------|
+| D6-D1 | Add 5 new `SyscallId` enum variants to Rust ABI | `TcbSuspend = 20`, `TcbResume = 21`, `TcbSetPriority = 22`, `TcbSetMCPriority = 23`, `TcbSetIPCBuffer = 24` |
+| D6-D2 | Update `SyscallId::COUNT` constant | From 20 to 25. Update compile-time `static_assert!` (W6-G pattern). |
+| D6-D3 | Add Rust argument decode structures | `SuspendArgs`, `ResumeArgs` (no fields — capability-only), `SetPriorityArgs { new_priority: u8 }`, `SetMCPriorityArgs { new_mcp: u8 }`, `SetIPCBufferArgs { buffer_addr: u64 }` |
+| D6-D4 | Update Rust dispatch match | Add 5 new arms to the syscall dispatch. Map each to its Lean-side operation name for traceability. |
+| D6-D5 | Run Rust compile + sync assertions | `cargo build` in ABI crate. Verify compile-time assertions match Lean-side `SyscallId.COUNT = 25`. |
+
+**D6-F: Spec §5.14 Comprehensive Update — 5 Subsections**
+
+| Subsection | Content | Source |
+|-----------|---------|--------|
+| D6-F1 | §5.14.1 Thread Suspension Semantics | `suspendThread` pipeline (D1-G), state transitions, cleanup sequence, self-suspend behavior |
+| D6-F2 | §5.14.2 Priority Management via MCS | `setPriorityOp`/`setMCPriorityOp`, SchedContext-aware priority path, MCP authority model |
+| D6-F3 | §5.14.3 IPC Buffer Validation | 5-step validation pipeline (D3-D), alignment requirements, VSpace lookup |
+| D6-F4 | §5.14.4 Priority Inheritance Protocol | Blocking graph, propagation/reversion, composition with Z7 donation, bounded inversion |
+| D6-F5 | §5.14.5 Bounded Latency Guarantees | WCRT hypotheses, CBS-aware bound formula, PIP enhancement, domain rotation |
+
+**D6-I: Metrics Regeneration — 4 Independent Updates**
+
+| Step | File | Update |
+|------|------|--------|
+| D6-I1 | `docs/codebase_map.json` | Regenerate with new Lean source files (~19 new files) |
+| D6-I2 | `README.md` | Syscall count 20→25, theorem count increment (~30 new theorems), proof line count, invariant count |
+| D6-I3 | `docs/WORKSTREAM_HISTORY.md` | WS-AB entry: 6 phases, 90 sub-tasks, v0.24.0–v0.24.5, deferred ops + liveness completion |
+| D6-I4 | `CHANGELOG.md` | 6 version entries (v0.24.0 through v0.24.5) with per-phase highlights |
+
+### 9.2 Verification Checkpoints
+
+| Checkpoint | After Tasks | Validation Command |
+|-----------|-------------|-------------------|
+| CP-D6a | D6-A, D6-B, D6-C | `lake build SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers && lake build SeLe4n.Kernel.API && lake build SeLe4n.Kernel.FrozenOps.Operations` |
+| CP-D6b | D6-D | `cargo build` in Rust ABI crate + sync assertion check |
+| CP-D6c | D6-E | `./scripts/test_full.sh && NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh` |
+| CP-D6d | D6-F through D6-J | `./scripts/test_tier0_hygiene.sh` (includes website link manifest check) |
+
 ---
+
+## 10. Execution Strategy & Parallelism Optimization
+
+### 10.1 Wave-Based Execution Model
+
+The 6 phases organize into 4 execution waves based on dependency analysis:
+
+```
+Wave 1 (parallel):  D1 ─────── D2 ─────── D3
+                     │          │
+                     └────┬─────┘
+                          ▼
+Wave 2 (sequential): D4 (depends on D1 suspend cleanup + D2 priority primitives)
+                          │
+                          ▼
+Wave 3 (sequential): D5 (depends on D4 PIP-aware effective priority)
+                          │
+                          ▼
+Wave 4 (sequential): D6 (depends on all prior phases)
+```
+
+**Wave 1 parallelism**: D1, D2, and D3 are fully independent. They modify
+disjoint syscall IDs, create disjoint new files, and add non-conflicting
+constructors to `SyscallId`. Maximum parallelism: 3 concurrent workstreams.
+The only shared file is `Model/Object/Types.lean`, but each phase adds new
+enum constructors (additive, non-conflicting merge).
+
+**Wave 2–3 sequential constraint**: D4 requires D1's suspend cleanup patterns
+(D4-N reuses `revertPriorityInheritance` in suspend path) and D2's priority
+update primitives (D4-G reuses bucket migration). D5 requires D4's
+`effectivePriority` with `pipBoost` for PIP-aware WCRT.
+
+**Wave 3 partial parallelism**: D5-A through D5-C (trace model infrastructure)
+are independent of D4's integration phase. D5a can begin as soon as D4a
+(types and graph) is complete, overlapping with D4b/D4c. This reduces the
+critical path by ~1 sub-phase.
+
+### 10.2 Critical Path Analysis
+
+```
+D1-A ──→ D1-C/D/E/F (parallel) ──→ D1-G ──→ D1-I/J/K/L/M (proofs) ──→ D1-O ──→ D1-Q
+                                                                              ↓
+D4-A ──→ D4-C/D/E (graph) ──→ D4-F/G ──→ D4-H/I (chain walk) ──→ D4-L/M ──→ D4-O/P ──→ D4-S
+                                                                                    ↓
+                         D5-A/B/C ──→ D5-D/E/G (parallel) ──→ D5-H/I/J ──→ D5-K/L/M ──→ D5-P
+                                                                                          ↓
+                                                                                    D6-A/B/C ──→ D6-E ──→ D6-F/G/H/I
+```
+
+**Critical path length**: D1 (18 tasks) → D4 (20 tasks) → D5 (16 tasks) → D6
+(10 tasks) = 64 tasks on the longest dependency chain. The remaining 26 tasks
+(D2: 14 + D3: 12) run in parallel with Wave 1.
+
+### 10.3 Shared File Coordination Protocol
+
+Five shared files receive modifications from multiple phases:
+
+| File | D1 | D2 | D3 | D4 | D6 | Coordination |
+|------|----|----|----|----|-----|-------------|
+| `Model/Object/Types.lean` | +2 SyscallId variants | +2 variants, +1 TCB field (MCP) | +1 variant | +1 TCB field (pipBoost) | — | All additive: new enum constructors and new struct fields. No conflicting edits. Safe for parallel merge. |
+| `Kernel/API.lean` | +2 dispatch arms | +2 dispatch arms | +1 dispatch arm | — | Verification only | Each phase adds new `match` arms. Arms are independent clauses. Git merge: trivial. |
+| `Architecture/SyscallArgDecode.lean` | +2 decode structures | +2 decode structures | +1 decode structure | — | — | All additive. |
+| `InformationFlow/Enforcement/Wrappers.lean` | +2 boundary entries | +2 entries | +1 entry | — | Verification | Additive list extension. |
+| `FrozenOps/Operations.lean` | +2 frozen ops | +2 frozen ops | +1 frozen op | — | Verification | Additive function definitions. |
+
+**Merge strategy**: When Wave 1 phases complete, merge D1 first (it's on the
+critical path), then D2, then D3. Each merge adds non-overlapping content.
+If developed on separate branches, use `git merge` (not rebase) to preserve
+the additive nature of changes.
+
+### 10.4 Proof Reuse Map
+
+Many D1–D5 proofs follow established patterns from prior workstreams. The
+following maps each proof type to its reusable template:
+
+| Proof Pattern | Template Source | Used In |
+|--------------|----------------|---------|
+| Queue removal preserves NoDup | `remove_preserves_nodup` (RunQueue.lean:135) | D1-K, D2-G, D4-O |
+| Endpoint queue remove well-formedness | Z6-B `endpointQueueRemove` (DualQueue/Core.lean:461) | D1-I, D1-J |
+| Frame preservation (disjoint fields) | Z9-A `schedContextStoreConsistent` frame pattern | D1-L, D2-H, D3-F, D4-P |
+| Bucket migration (remove + insert) | `ensureRunnable_nodup` (SchedulerLemmas.lean) | D2-E4, D4-G4 |
+| Chain induction on fuel | Z7-D `donationChainAcyclic` pattern | D4-D, D4-H, D4-I |
+| Bundle composition via ⟨...⟩ | Every prior invariant preservation proof | All phases |
+
+---
+
+## 11. Scope Summary
+
+### 11.1 Sub-task Count by Phase
+
+| Phase | Version | Sub-tasks | Atomic Steps | Complexity | Nature |
+|-------|---------|-----------|-------------|-----------|--------|
+| D1 — Thread Suspend/Resume | v0.24.0 | 18 | ~55 | High | New syscalls + lifecycle transitions + full preservation proofs |
+| D2 — Priority Management | v0.24.1 | 14 | ~38 | Medium | SchedContext priority updates + authority model |
+| D3 — IPC Buffer Configuration | v0.24.2 | 12 | ~25 | Low | VSpace validation + simple field update |
+| D4 — Priority Inheritance Protocol | v0.24.3 | 20 | ~62 | High | Blocking graph + transitive propagation + bounded inversion proofs |
+| D5 — Bounded Latency Theorem | v0.24.4 | 16 | ~48 | High | Proof-only: CBS-aware WCRT bound (zero code changes) |
+| D6 — API Surface & Closure | v0.24.5 | 10 | ~27 | Medium | Integration, verification, documentation |
+| **Total** | | **90** | **~255** | | |
+
+*Note*: "Atomic Steps" counts the individual implementation/proof steps from
+the §X.1 Detailed Task Decomposition subsections. Each atomic step is
+independently compilable and verifiable. The 90 top-level sub-tasks decompose
+into ~255 atomic steps, ensuring no single work unit requires holding complex
+multi-step context in working memory.
  
-## 10. Scope Summary
- 
-### 10.1 Sub-task Count by Phase
- 
-| Phase | Version | Sub-tasks | Complexity | Nature |
-|-------|---------|-----------|-----------|--------|
-| D1 — Thread Suspend/Resume | v0.24.0 | 18 | High | New syscalls + lifecycle transitions + full preservation proofs |
-| D2 — Priority Management | v0.24.1 | 14 | Medium | SchedContext priority updates + authority model |
-| D3 — IPC Buffer Configuration | v0.24.2 | 12 | Low | VSpace validation + simple field update |
-| D4 — Priority Inheritance Protocol | v0.24.3 | 20 | High | Blocking graph + transitive propagation + bounded inversion proofs |
-| D5 — Bounded Latency Theorem | v0.24.4 | 16 | High | Proof-only: CBS-aware WCRT bound (zero code changes) |
-| D6 — API Surface & Closure | v0.24.5 | 10 | Medium | Integration, verification, documentation |
-| **Total** | | **90** | | |
- 
-### 10.2 Deferred Operation Coverage
+### 11.2 Deferred Operation Coverage
  
 | Operation | Phase | SyscallId | Dispatch Path | Key Theorem |
 |-----------|-------|-----------|--------------|-------------|
@@ -537,7 +1181,7 @@ Nightly test suite passes.
 | `setMCPriority` | D2 | `.tcbSetMCPriority` | `dispatchWithCap` | `setMCPriority_authority_bounded` |
 | `setIPCBuffer` | D3 | `.tcbSetIPCBuffer` | `dispatchWithCap` | `validateIpcBufferAddress_implies_mapped` |
  
-### 10.3 Starvation Vector Coverage (Updated)
+### 11.3 Starvation Vector Coverage (Updated)
  
 | ID | Vector | Severity | Addressed In | Resolution |
 |----|--------|----------|-------------|------------|
@@ -551,7 +1195,7 @@ Nightly test suite passes.
 | SV-8 | Replenishment queue delay | LOW | D5 (replenishment bound) | Formal replenishment-within-period bound |
 | SV-9 | Donation chain depth | MEDIUM | D4 (depth bound) | `blockingChain_bounded` proves finite depth |
  
-### 10.4 Files Impacted by Phase
+### 11.4 Files Impacted by Phase
  
 | Phase | New Lean Files | Modified Lean Files | New Test Files | Doc Files |
 |-------|---------------|--------------------|--------------|---------:|
@@ -563,7 +1207,7 @@ Nightly test suite passes.
 | D6 | 0 | ~3 (Wrappers, API, FrozenOps verification) | 0 | 7 |
 | **Total** | **~19** | **~21** | **5** | **27** |
  
-### 10.5 Effort Distribution
+### 11.5 Effort Distribution
  
 | Estimate | D1 | D2 | D3 | D4 | D5 | D6 | Total |
 |----------|----|----|----|----|----|----|-------|
@@ -577,12 +1221,37 @@ All tasks decomposed to ≤ Medium. No individual sub-task requires more than ~1
 day of focused work. The decomposition preserves the project's established
 invariant preservation proof pattern: component lemmas composed into bundle
 proofs via `⟨comp1, comp2, ..., compN⟩`.
- 
+
+### 11.6 Verification Checkpoint Summary
+
+All 6 phases include explicit verification checkpoints (CP-D1a through CP-D6d).
+Total: **30 checkpoints** across the workstream. Each checkpoint specifies:
+- The exact `lake build <Module.Path>` command to run
+- Which sub-tasks must be complete before the checkpoint
+- What the checkpoint validates (compilation, proof correctness, test pass)
+
+Checkpoints enforce the project's mandatory module build verification: no
+commit proceeds without `lake build <Module.Path>` for every modified `.lean`
+file. This catches proof regressions immediately rather than at PR time.
+
+### 11.7 Critical Path Duration Estimate
+
+| Segment | Tasks on Path | Parallelizable? |
+|---------|--------------|----------------|
+| Wave 1 (D1) | D1-A → D1-C..F → D1-G → D1-I..N → D1-O → D1-Q → D1-R | D2/D3 run in parallel; D1 determines wave completion |
+| Wave 2 (D4) | D4-A → D4-C..E → D4-F/G → D4-H/I → D4-L/M → D4-O/P → D4-S/T | D5-A/B/C can overlap with late D4 |
+| Wave 3 (D5) | D5-D..G → D5-H/I/J → D5-K/L/M → D5-N..P | Internal parallelism within mechanism bounds |
+| Wave 4 (D6) | D6-A..C → D6-E → D6-F..J | Short closure phase; mostly verification |
+
+The critical path runs through D1 → D4 → D5 → D6 (64 top-level tasks, ~180
+atomic steps). D2 (14 tasks) and D3 (12 tasks) are fully off the critical path
+and can be completed during Wave 1 without impacting overall delivery.
+
 ---
- 
-## 11. Technical Risks
- 
-### 11.1 Implementation Risks
+
+## 12. Technical Risks
+
+### 12.1 Implementation Risks
  
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
@@ -595,7 +1264,7 @@ proofs via `⟨comp1, comp2, ..., compN⟩`.
 | D5 WCRT proof requires assumptions too strong for practical use | Medium | Low | State hypotheses explicitly in `WCRTHypotheses` structure. A conditional bound with clear assumptions is still valuable — system integrators can verify the hypotheses hold for their specific task sets. Follow V1's approach: the bound is parametric, not absolute. |
 | D5 CBS period variability invalidates simple WCRT formula | Low | Medium | The WCRT formula `N × (B + P)` uses worst-case per-thread values. If actual budgets and periods vary, the bound is conservative but still valid. A tighter analysis (response-time iteration) is deferred to a future real-time analysis framework workstream. |
  
-### 11.2 Schedule Risks
+### 12.2 Schedule Risks
  
 | Risk | Mitigation |
 |------|------------|
@@ -606,9 +1275,9 @@ proofs via `⟨comp1, comp2, ..., compN⟩`.
  
 ---
  
-## 12. Invariant Landscape
+## 13. Invariant Landscape
  
-### 12.1 Invariants Preserved by Each Phase
+### 13.1 Invariants Preserved by Each Phase
  
 | Invariant Bundle | D1 | D2 | D3 | D4 | D5 | D6 |
 |-----------------|----|----|----|----|----|----|
@@ -617,7 +1286,7 @@ proofs via `⟨comp1, comp2, ..., compN⟩`.
 | `crossSubsystemInvariant` (8 predicates) | D1-M: SchedContext cleanup, queue removal | D2-H: `schedContextStoreConsistent` | Frame | D4-P: frame | Read-only | Verify |
 | `proofLayerInvariantBundle` (10 conjuncts) | Composed from above | Composed from above | D3-F: single frame theorem | Composed from above | Read-only | Verify |
  
-### 12.2 New Invariant Predicates Introduced
+### 13.2 New Invariant Predicates Introduced
  
 | Phase | Predicate | Description |
 |-------|-----------|-------------|
@@ -632,7 +1301,7 @@ proofs via `⟨comp1, comp2, ..., compN⟩`.
  
 ---
  
-## 13. Acceptance Criteria Summary
+## 14. Acceptance Criteria Summary
  
 | Phase | Test Gate | Proof Gate | Code Gate |
 |-------|-----------|------------|-----------|
@@ -652,7 +1321,7 @@ proofs via `⟨comp1, comp2, ..., compN⟩`.
  
 ---
  
-## 14. Workstream Naming Convention
+## 15. Workstream Naming Convention
  
 This workstream is designated **WS-AB** (following the alphabetical sequence
 after WS-AA, the Rust ABI Type Synchronization workstream). The designation
@@ -668,7 +1337,7 @@ originally planned in the WS-V starvation prevention workstream.
  
 ---
  
-## 15. Relationship to WS-V Starvation Prevention Plan
+## 16. Relationship to WS-V Starvation Prevention Plan
  
 The file `docs/planning/WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md` is retained
 as historical context. WS-AB supersedes it with the following mapping:
@@ -686,15 +1355,15 @@ D3: 12) and closure (D6: 10), totaling 90 sub-tasks.
  
 ---
  
-## 16. Deferred Items
+## 17. Deferred Items
  
-### 16.1 Deferred Starvation Vectors
+### 17.1 Deferred Starvation Vectors
  
 | ID | Vector | Severity | Reason for Deferral |
 |----|--------|----------|---------------------|
 | SV-4 | Notification LIFO ordering | MEDIUM | seL4 semantic compatibility. Notification LIFO matches seL4's design. Changing to FIFO would break compatibility. Practical impact limited: notification signals typically wake exactly one waiter, and notification-heavy patterns use bounded-badge coalescing. |
  
-### 16.2 Deferred Enhancements
+### 17.2 Deferred Enhancements
  
 | Enhancement | Description | Reason for Deferral |
 |-------------|-------------|---------------------|
@@ -704,7 +1373,7 @@ D3: 12) and closure (D6: 10), totaling 90 sub-tasks.
 | Response-time iteration analysis | Tighter WCRT via iterative fixed-point computation | D5's `N × (B + P)` bound is conservative. Tighter analysis deferred to a dedicated real-time analysis workstream built on D5's trace model. |
 | Non-interference liveness | Prove information-flow policy does not create liveness-visible side channels | Orthogonal to scheduling liveness. Better addressed in a dedicated security workstream extending NI projection with trace-level properties. |
  
-### 16.3 Future Workstream Candidates
+### 17.3 Future Workstream Candidates
  
 | Candidate | Scope | Prerequisite |
 |-----------|-------|-------------|
