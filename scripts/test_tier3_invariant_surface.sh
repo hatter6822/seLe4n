@@ -907,6 +907,7 @@ import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.SchedContext.Invariant
+import SeLe4n.Kernel.Scheduler.Liveness
 import SeLe4n.Kernel.SchedContext.ReplenishQueue
 
 #check @SeLe4n.Kernel.schedule_preserves_schedulerInvariantBundle
@@ -1058,6 +1059,15 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.consumeBudget_preserves_schedContextWellFormed_full
 #check @SeLe4n.Kernel.scheduleReplenishment_preserves_schedContextWellFormed_full
 #check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_wf
+-- D5: Bounded Latency Theorem surface anchors
+#check @SeLe4n.Kernel.Liveness.WCRTHypotheses
+#check @SeLe4n.Kernel.Liveness.wcrtBound
+#check @SeLe4n.Kernel.Liveness.bounded_scheduling_latency
+#check @SeLe4n.Kernel.Liveness.countHigherOrEqual_mono_threshold
+#check @SeLe4n.Kernel.Liveness.pip_enhanced_wcrt_le_base
+#check @SeLe4n.Kernel.Liveness.domainRotationTotal_le_bound
+#check @SeLe4n.Kernel.Liveness.fifoProgressBound
+#check @SeLe4n.Kernel.Liveness.bandExhaustionBound
 EOF'
 
 finalize_report
