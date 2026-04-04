@@ -44,26 +44,31 @@ the head of its priority bucket.
 This is conditional on the liveness of higher-priority threads (they must
 either block, exhaust budget, or be suspended). The condition is trivially
 satisfied when there are no higher-priority threads. -/
-def higherBandExhausted (st : SystemState) (targetPrio : Priority)
-    (targetDomain : DomainId) : Prop :=
+def higherBandExhausted (trace : SchedulerTrace) (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) : Prop :=
   ∀ tid,
     tid ∈ st.scheduler.runQueue.flat →
     (match resolveEffectivePriority st tid with
      | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
      | none => False) →
-    -- Thread will eventually leave (budget exhaust, block, or suspend)
-    True -- placeholder: in full trace model, this becomes eventuallyExits
+    eventuallyExits trace tid startIdx
 
-/-- D5-I: When `higherBandExhausted` holds, only same-or-lower priority threads
-remain in the run queue for the target domain. The target thread's priority
-bucket is the highest active bucket. -/
-theorem band_exhaustion_enables_selection
-    (st : SystemState) (targetPrio : Priority) (targetDomain : DomainId)
-    (_hExhausted : higherBandExhausted st targetPrio targetDomain) :
-    -- All remaining threads in domain have priority ≤ targetPrio
-    -- (this follows from the definition of higherBandExhausted)
-    True := by
-  trivial
+/-- D5-I: When no higher-priority threads exist, the band exhaustion condition
+is trivially satisfied (vacuous quantification over the empty set of
+higher-priority threads). -/
+theorem higherBandExhausted_when_no_higher
+    (trace : SchedulerTrace) (st : SystemState) (targetPrio : Priority)
+    (targetDomain : DomainId) (startIdx : Nat)
+    (hNoHigher : ∀ tid, tid ∈ st.scheduler.runQueue.flat →
+      match resolveEffectivePriority st tid with
+      | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
+      | none => True) :
+    higherBandExhausted trace st targetPrio targetDomain startIdx := by
+  intro tid hMem hMatch
+  exact absurd hMatch (by
+    have := hNoHigher tid hMem
+    revert this hMatch
+    split <;> simp_all)
 
 /-- D5-I: The count of higher-or-equal priority threads is a natural bound
 on the number of preemption cycles before the target thread is selected.

@@ -188,14 +188,25 @@ theorem selectedAt_implies_not_in_runQueue
 -- D5-B5: selectedAt implies budgetAvailableAt (conditional)
 -- ============================================================================
 
-/-- D5-B5: If a thread is selected and its TCB has sufficient budget,
-this fact is trivially witnessed. The substantive content is that
-`chooseThreadEffective` only selects budget-eligible threads. -/
-theorem selectedAt_budget_witness
+/-- D5-B5: Unbound threads always pass the budget check, so they are always
+budget-eligible for scheduling. This follows directly from `hasSufficientBudget`
+returning `true` for unbound threads. -/
+theorem budget_always_available_unbound
     (st : SystemState) (tcb : TCB)
-    (hBudget : hasSufficientBudget st tcb = true) :
-    hasSufficientBudget st tcb = true :=
-  hBudget
+    (hUnbound : tcb.schedContextBinding = .unbound) :
+    hasSufficientBudget st tcb = true := by
+  simp [hasSufficientBudget, hUnbound]
+
+/-- D5-B5: A thread with positive SchedContext budget passes the budget check.
+This connects the concrete budget value to the scheduling eligibility predicate. -/
+theorem budget_available_when_positive
+    (st : SystemState) (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (hBound : tcb.schedContextBinding = .bound scId)
+    (hLookup : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hPos : sc.budgetRemaining.val > 0) :
+    hasSufficientBudget st tcb = true := by
+  simp [hasSufficientBudget, hBound, hLookup, Budget.isPositive]
+  omega
 
 -- ============================================================================
 -- D5-C: Counting predicates

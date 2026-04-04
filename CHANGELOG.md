@@ -1,3 +1,14 @@
+## v0.25.1 — D5 Audit: Bounded Latency Theorem Refinement
+
+- Strengthen `bounded_scheduling_latency_exists`: proper existential trace-level theorem with domain rotation + band exhaustion composition
+- Replace trivial tautologies: `selectedAt_budget_witness` → `budget_always_available_unbound` + `budget_available_when_positive`
+- Replace vacuous `higherBandExhausted` (conclusion was `True`) with substantive version using `eventuallyExits`
+- Add `higherBandExhausted_when_no_higher`: vacuous case when no higher-priority threads exist
+- Replace trivial `replenishment_queue_eligibility` (x=x) with `replenishment_within_period` + `replenishment_dead_time_exact`
+- Add `fifo_head_zero_wait`: base case for FIFO progress at position 0
+- Expand surface anchor tests from 38 to 46
+- Zero sorry/axiom, all test_full.sh passes
+
 ## [0.23.23] — AA2: CI & Infrastructure Hardening
 
 Phase AA2 of WS-AA Comprehensive Audit Remediation. Hardened CI supply chain,

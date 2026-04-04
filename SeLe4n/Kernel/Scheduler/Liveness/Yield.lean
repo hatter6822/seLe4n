@@ -54,6 +54,12 @@ theorem fifoProgressBound_zero (interval : Nat) :
     fifoProgressBound 0 interval = 0 := by
   simp [fifoProgressBound]
 
+/-- D5-H (base case): A thread at position 0 (head) in the highest-priority bucket
+has zero FIFO wait — it is the immediate next selection candidate. -/
+theorem fifo_head_zero_wait (interval : Nat) :
+    fifoProgressBound 0 interval = 0 :=
+  fifoProgressBound_zero interval
+
 /-- D5-H: The FIFO progress bound decomposes into a step + recursive bound. -/
 theorem fifoProgressBound_succ (k : Nat) (interval : Nat) :
     fifoProgressBound (k + 1) interval =

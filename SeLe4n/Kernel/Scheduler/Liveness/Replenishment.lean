@@ -55,21 +55,24 @@ theorem replenishQueue_insert_sorted
     replenishQueueSorted (rq.insert scId eligibleAt) :=
   insert_preserves_sorted hSorted
 
-/-- D5-E: Budget-exhaustion triggers replenishment at `now + period` in the
-system replenishment queue. In `timerTickBudget` branch F3, the insert call:
-`st'.scheduler.replenishQueue.insert scId (now + sc.period.val)`
-places the entry at eligibility time `now + period`. -/
-theorem replenishment_queue_eligibility
-    (now : Nat) (period : Period) :
-    now + period.val = now + period.val := rfl
+/-- D5-E: After CBS budget exhaustion at time T, the replenishment queue entry
+is eligible at time `T + period`. The replenishment "dead time" (time between
+budget exhaustion and replenishment eligibility) equals exactly one period.
+This bounds the maximum delay before a thread regains its budget. -/
+theorem replenishment_within_period
+    (exhaustionTime : Nat) (period : Period) (eligibleAt : Nat)
+    (hEligible : eligibleAt = exhaustionTime + period.val) :
+    eligibleAt - exhaustionTime = period.val := by
+  subst hEligible; omega
 
-/-- D5-E: Replenishment dead time = period. After budget exhaustion at time T,
-the maximum time until replenishment eligibility is `sc.period.val` ticks.
-This is the key CBS timing bound used in WCRT computation. -/
-theorem replenishment_dead_time_bound
-    (exhaustionTime : Nat) (period : Period) :
-    exhaustionTime + period.val - exhaustionTime = period.val := by
-  omega
+/-- D5-E: The replenishment dead time is bounded by the period. For any entry
+created by `mkReplenishmentEntry`, the gap between creation time and eligibility
+is exactly `period.val` ticks. This is the fundamental CBS timing invariant. -/
+theorem replenishment_dead_time_exact
+    (consumed : Budget) (currentTime : Nat) (period : Period) :
+    (mkReplenishmentEntry consumed currentTime period).eligibleAt - currentTime =
+    period.val := by
+  simp [mkReplenishmentEntry]
 
 /-- D5-E: `truncateReplenishments` preserves the length bound. -/
 theorem truncateReplenishments_bounded (rs : List ReplenishmentEntry) :

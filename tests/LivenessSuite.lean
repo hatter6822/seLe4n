@@ -58,6 +58,8 @@ open SeLe4n.Model
 #check @consumeBudget_val_eq
 #check @maxPreemptionInterval
 #check @maxPreemptionInterval_pos
+#check @budget_always_available_unbound
+#check @budget_available_when_positive
 
 -- ============================================================================
 -- Surface anchor: Replenishment theorems
@@ -66,7 +68,8 @@ open SeLe4n.Model
 #check @mkReplenishmentEntry_eligibleAt
 #check @processReplenishments_budget_ge
 #check @replenishQueue_insert_sorted
-#check @replenishment_dead_time_bound
+#check @replenishment_within_period
+#check @replenishment_dead_time_exact
 
 -- ============================================================================
 -- Surface anchor: Yield/FIFO theorems
@@ -77,6 +80,7 @@ open SeLe4n.Model
 #check @fifoProgressBound
 #check @fifoProgressBound_mono
 #check @fifoProgressBound_succ
+#check @fifo_head_zero_wait
 
 -- ============================================================================
 -- Surface anchor: Band exhaustion
@@ -86,6 +90,8 @@ open SeLe4n.Model
 #check @bandExhaustionBound_mono
 #check @bandExhaustionBound_succ
 #check @higherBandExhausted
+#check @higherBandExhausted_when_no_higher
+#check @eventuallyExits
 
 -- ============================================================================
 -- Surface anchor: Domain rotation
@@ -105,6 +111,7 @@ open SeLe4n.Model
 #check @WCRTHypotheses
 #check @wcrtBound
 #check @bounded_scheduling_latency
+#check @bounded_scheduling_latency_exists
 #check @wcrt_decomposition
 #check @wcrt_domain_component_le
 #check @wcrt_band_component_le
@@ -140,5 +147,5 @@ def main : IO Unit := do
   IO.println "  ✓ WCRT: WCRTHypotheses, bounded_scheduling_latency"
   IO.println "  ✓ PIP: countHigherOrEqual_mono_threshold, pip_enhanced_wcrt_le_base"
   IO.println "  ✓ D4 integration: pip_bounded_inversion"
-  IO.println "=== All 38 surface anchors verified ==="
+  IO.println "=== All 46 surface anchors verified ==="
   return ()

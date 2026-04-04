@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-d5-latency-18uQ4",
-      "commit_sha": "f258d45a8450a5efd1276fa86c6982999c19ddfd",
-      "tree_sha": "6da0011596b087a19c72df781cab0f0ac641ba79",
-      "committed_at_utc": "2026-04-04T13:10:32-04:00"
+      "commit_sha": "0e299562ac837ec8f9b4df96442e3cfd901c8abe",
+      "tree_sha": "5115bbc65ea0977129f619ce18fd21d66ff4649d",
+      "committed_at_utc": "2026-04-04T18:14:10+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "11b2f6918b8c4934eb6d1a3a4513dc1568abf4b1e729a5b8a357281487446da0"
+    "source_digest": "a7f19f7a1a7ba80213afef008b421e6813297a6ad25a7df7aedd507c00cb54cc"
   },
   "summary": {
     "module_count": 147,
-    "declaration_count": 4432
+    "declaration_count": 4435
   },
   "readme_sync": {
-    "version": "0.25.0",
+    "version": "0.25.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 132,
-    "production_loc": 83174,
+    "production_loc": 83257,
     "test_files": 15,
-    "test_loc": 10555,
-    "proved_theorem_lemma_decls": 2443,
+    "test_loc": 10562,
+    "proved_theorem_lemma_decls": 2446,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -33053,32 +33053,37 @@
           "called": [
             "DomainId",
             "Priority",
+            "SchedulerTrace",
             "SystemState",
+            "eventuallyExits",
             "none",
             "resolveEffectivePriority"
           ]
         },
         {
           "kind": "theorem",
-          "name": "band_exhaustion_enables_selection",
-          "line": 60,
+          "name": "higherBandExhausted_when_no_higher",
+          "line": 59,
           "called": [
             "DomainId",
             "Priority",
+            "SchedulerTrace",
             "SystemState",
-            "higherBandExhausted"
+            "higherBandExhausted",
+            "none",
+            "resolveEffectivePriority"
           ]
         },
         {
           "kind": "def",
           "name": "bandExhaustionBound",
-          "line": 71,
+          "line": 76,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "bandExhaustionBound_mono",
-          "line": 75,
+          "line": 80,
           "called": [
             "bandExhaustionBound"
           ]
@@ -33086,7 +33091,7 @@
         {
           "kind": "theorem",
           "name": "bandExhaustionBound_zero",
-          "line": 82,
+          "line": 87,
           "called": [
             "bandExhaustionBound"
           ]
@@ -33094,7 +33099,7 @@
         {
           "kind": "theorem",
           "name": "bandExhaustionBound_succ",
-          "line": 87,
+          "line": 92,
           "called": [
             "bandExhaustionBound"
           ]
@@ -33251,7 +33256,7 @@
         },
         {
           "kind": "theorem",
-          "name": "replenishment_queue_eligibility",
+          "name": "replenishment_within_period",
           "line": 62,
           "called": [
             "Period"
@@ -33259,16 +33264,18 @@
         },
         {
           "kind": "theorem",
-          "name": "replenishment_dead_time_bound",
-          "line": 69,
+          "name": "replenishment_dead_time_exact",
+          "line": 71,
           "called": [
-            "Period"
+            "Budget",
+            "Period",
+            "mkReplenishmentEntry"
           ]
         },
         {
           "kind": "theorem",
           "name": "truncateReplenishments_bounded",
-          "line": 75,
+          "line": 78,
           "called": [
             "ReplenishmentEntry",
             "maxReplenishments",
@@ -33398,7 +33405,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Liveness.TraceModel",
       "path": "SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -33550,7 +33557,7 @@
         },
         {
           "kind": "theorem",
-          "name": "selectedAt_budget_witness",
+          "name": "budget_always_available_unbound",
           "line": 194,
           "called": [
             "SystemState",
@@ -33559,9 +33566,24 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "budget_available_when_positive",
+          "line": 202,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "hasSufficientBudget",
+            "isPositive",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "resolveEffectivePriority",
-          "line": 205,
+          "line": 216,
           "called": [
             "Deadline",
             "DomainId",
@@ -33576,7 +33598,7 @@
         {
           "kind": "def",
           "name": "countHigherOrEqualEffectivePriority",
-          "line": 213,
+          "line": 224,
           "called": [
             "DomainId",
             "Priority",
@@ -33589,7 +33611,7 @@
         {
           "kind": "def",
           "name": "maxBudgetInBand",
-          "line": 225,
+          "line": 236,
           "called": [
             "DomainId",
             "Priority",
@@ -33604,7 +33626,7 @@
         {
           "kind": "def",
           "name": "maxPeriodInBand",
-          "line": 246,
+          "line": 257,
           "called": [
             "DomainId",
             "Priority",
@@ -33618,7 +33640,7 @@
         {
           "kind": "def",
           "name": "bucketPosition",
-          "line": 267,
+          "line": 278,
           "called": [
             "SystemState",
             "ThreadId",
@@ -33629,7 +33651,7 @@
         {
           "kind": "theorem",
           "name": "countHigherOrEqual_nonneg",
-          "line": 281,
+          "line": 292,
           "called": [
             "DomainId",
             "Priority",
@@ -33642,7 +33664,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Liveness.WCRT",
       "path": "SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean",
-      "declaration_count": 13,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -33703,8 +33725,28 @@
         },
         {
           "kind": "theorem",
+          "name": "bounded_scheduling_latency_exists",
+          "line": 122,
+          "called": [
+            "SchedulerTrace",
+            "SystemState",
+            "ThreadId",
+            "ValidTrace",
+            "WCRTHypotheses",
+            "bandExhaustionBound",
+            "contains",
+            "domainRotationBound",
+            "maxDomainLength",
+            "none",
+            "selectedAt",
+            "traceStateAt",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "wcrt_decomposition",
-          "line": 112,
+          "line": 170,
           "called": [
             "SystemState",
             "ThreadId",
@@ -33718,7 +33760,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_domain_component_le",
-          "line": 122,
+          "line": 180,
           "called": [
             "domainRotationBound",
             "wcrtBound"
@@ -33727,7 +33769,7 @@
         {
           "kind": "theorem",
           "name": "wcrt_band_component_le",
-          "line": 128,
+          "line": 186,
           "called": [
             "bandExhaustionBound",
             "wcrtBound"
@@ -33736,13 +33778,13 @@
         {
           "kind": "theorem",
           "name": "boolIfMonoLe",
-          "line": 138,
+          "line": 196,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "countHigherOrEqual_mono_threshold",
-          "line": 149,
+          "line": 207,
           "called": [
             "DomainId",
             "Priority",
@@ -33758,7 +33800,7 @@
         {
           "kind": "theorem",
           "name": "pip_enhanced_wcrt_le_base",
-          "line": 189,
+          "line": 247,
           "called": [
             "wcrtBound"
           ]
@@ -33766,7 +33808,7 @@
         {
           "kind": "theorem",
           "name": "pip_wcrt_integration",
-          "line": 200,
+          "line": 258,
           "called": [
             "pipSingleLinkBound"
           ]
@@ -33776,7 +33818,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Liveness.Yield",
       "path": "SeLe4n/Kernel/Scheduler/Liveness/Yield.lean",
-      "declaration_count": 8,
+      "declaration_count": 9,
       "declarations": [
         {
           "kind": "namespace",
@@ -33835,8 +33877,17 @@
         },
         {
           "kind": "theorem",
+          "name": "fifo_head_zero_wait",
+          "line": 59,
+          "called": [
+            "fifoProgressBound",
+            "fifoProgressBound_zero"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "fifoProgressBound_succ",
-          "line": 58,
+          "line": 64,
           "called": [
             "fifoProgressBound"
           ]
@@ -33844,7 +33895,7 @@
         {
           "kind": "theorem",
           "name": "fifoProgressBound_nonneg",
-          "line": 64,
+          "line": 70,
           "called": [
             "fifoProgressBound"
           ]
@@ -55479,7 +55530,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 130,
+          "line": 137,
           "called": []
         }
       ]
