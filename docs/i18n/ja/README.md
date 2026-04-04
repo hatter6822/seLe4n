@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -53,13 +53,13 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネル (microkern
 
 | 属性 | 値 |
 |------|-----|
-| **バージョン** | `0.22.8` |
+| **バージョン** | `0.25.3` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 103 ファイルにわたる 72,569 行 |
-| **テスト Lean コード行数** | 10 テストスイートにわたる 8,437 行 |
-| **証明済み宣言数** | 2,138 件の定理 (theorem) / 補題 (lemma) 宣言（sorry/axiom ゼロ） |
+| **本番 Lean コード行数** | 132 ファイルにわたる 83,286 行 |
+| **テスト Lean コード行数** | 15 テストスイートにわたる 10,564 行 |
+| **証明済み宣言数** | 2,447 件の定理 (theorem) / 補題 (lemma) 宣言（sorry/axiom ゼロ） |
 | **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |
-| **最新監査** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — カーネル全体 + Rust コードベースのプレリリース監査 |
+| **最新監査** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — カーネル全体 Lean + Rust 監査（0 CRIT、5 HIGH、8 MED、30 LOW） |
 | **コードベースマップ** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 機械可読な宣言インベントリ |
 
 メトリクスは `./scripts/generate_codebase_map.py` によってコードベースから導出され、[`docs/codebase_map.json`](../../../docs/codebase_map.json) の `readme_sync` キーに格納されています。

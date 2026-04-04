@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -52,13 +52,13 @@ aux autres micro-noyaux :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.22.8` |
+| **Version** | `0.25.3` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 72 569 réparties sur 103 fichiers |
-| **LoC Lean de test** | 8 437 réparties sur 10 suites de tests |
-| **Déclarations prouvées** | 2 138 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 83 286 réparties sur 132 fichiers |
+| **LoC Lean de test** | 10 564 réparties sur 15 suites de tests |
+| **Déclarations prouvées** | 2 447 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Audit complet pré-publication du noyau et de la base Rust |
+| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — Audit complet du noyau Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |
 
 Les métriques sont extraites de la base de code par `./scripts/generate_codebase_map.py`

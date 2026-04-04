@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -48,13 +48,13 @@ microkernels:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.22.8` |
+| **Versión** | `0.25.3` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 72.569 en 103 archivos |
-| **LoC de pruebas en Lean** | 8.437 en 10 suites de pruebas |
-| **Declaraciones demostradas** | 2.138 declaraciones de teorema/lema (theorem/lemma) (cero sorry/axiom) |
+| **LoC de producción en Lean** | 83.286 en 132 archivos |
+| **LoC de pruebas en Lean** | 10.564 en 15 suites de pruebas |
+| **Declaraciones demostradas** | 2.447 declaraciones de teorema/lema (theorem/lemma) (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Última auditoría** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Auditoría completa pre-lanzamiento del núcleo y código Rust |
+| **Última auditoría** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — Auditoría completa del núcleo Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Mapa del código** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventario de declaraciones legible por máquina |
 
 Las métricas se derivan del código fuente mediante `./scripts/generate_codebase_map.py`

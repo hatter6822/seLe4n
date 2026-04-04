@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -42,13 +42,13 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核（microkernel）。
 
 | 属性 | 值 |
 |------|------|
-| **版本** | `0.22.8` |
+| **版本** | `0.25.3` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 72,569 行，分布于 103 个文件 |
-| **测试代码行数** | 8,437 行，分布于 10 个测试套件 |
-| **已证明的声明** | 2,138 个定理（theorem）/引理（lemma）声明（零 sorry/axiom） |
+| **生产代码行数** | 83,286 行，分布于 132 个文件 |
+| **测试代码行数** | 10,564 行，分布于 15 个测试套件 |
+| **已证明的声明** | 2,447 个定理（theorem）/引理（lemma）声明（零 sorry/axiom） |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **最新审计** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) —— 完整的内核 + Rust 代码库预发布审计 |
+| **最新审计** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) —— 完整的内核 Lean + Rust 审计（0 CRIT、5 HIGH、8 MED、30 LOW） |
 | **代码库映射** | [`docs/codebase_map.json`](../../codebase_map.json) —— 机器可读的声明清单 |
 
 指标由 `./scripts/generate_codebase_map.py` 从代码库中提取，存储在

@@ -65,6 +65,9 @@ architectural improvements compared to other microkernels:
 - **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition). 30-entry enforcement boundary with per-operation non-interference proofs
 - **EDF + CBS priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware temporal partitioning, and a 15-conjunct `schedulerInvariantBundleExtended` covering both legacy and CBS scheduling paths
 - **Two-phase state architecture** — kernel state flows through a builder phase (with 4 invariant witnesses) to a frozen immutable representation. `FrozenMap`/`FrozenSet` provide O(1) lookups with proven equivalence to the live state via `freeze_preserves_*` theorems. 20 frozen operations mirror the live kernel API
+- **Priority Inheritance Protocol** — transitive priority propagation prevents unbounded priority inversion. `BlockingGraph` models the wait-for relation across endpoint queues; `blockingChainAcyclic` proves deadlock freedom; `blockingDepthBound` limits chain length. `computeMaxWaiterPriority` walks the blocking graph to derive effective priority; `propagatePriorityInheritance` pushes boosted priorities transitively through lock holders. The `wcrt_parametric_bound` theorem bounds worst-case response time under priority inversion
+- **Bounded latency theorem** — machine-checked WCRT (Worst-Case Response Time) bound: `WCRT = D × L_max + N × (B + P)`, where D = domain count, L_max = longest non-preemptible section, N = higher-priority thread count, B = maximum blocking time, P = maximum preemption chain length. Proven across 7 liveness modules covering timer-tick budget monotonicity, CBS replenishment timing, yield/rotation semantics, priority-band exhaustion, and domain rotation
+- **Complete deferred operation set** — all 5 seL4 deferred operations implemented with full invariant preservation: `suspendThread`/`resumeThread` (thread lifecycle with run-queue cleanup), `setPriorityOp`/`setMCPriorityOp` (MCP authority validation preventing privilege escalation, run-queue migration on priority change), and `setIPCBufferOp` (IPC buffer address validation with VSpace bounds checking)
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics and proven dependency acyclicity
 - **10-conjunct proof layer** — `proofLayerInvariantBundle` composes scheduler, capability, IPC (14-conjunct), lifecycle, service, VSpace, cross-subsystem (8-predicate), TLB, and extended scheduler invariants into a single top-level proof obligation verified from boot through all kernel operations
 
@@ -82,7 +85,7 @@ architectural improvements compared to other microkernels:
 | **Test Lean LoC** | 10,564 across 15 test suites |
 | **Proved declarations** | 2,447 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
+| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`
@@ -203,6 +206,20 @@ SeLe4n/Kernel/Scheduler/*        Priority-bucketed RunQueue, EDF scheduling, dom
   Operations/Selection.lean      EDF predicates, thread selection, candidate ordering
   Operations/Core.lean           Core transitions (schedule, handleYield, timerTick)
   Operations/Preservation.lean   Scheduler invariant preservation theorems
+  PriorityInheritance/*          D4: Priority Inheritance Protocol
+    BlockingGraph.lean           Blocking relation, chain walk, acyclicity, depth bound
+    Compute.lean                 computeMaxWaiterPriority
+    Propagate.lean               updatePipBoost, propagate/revert priority inheritance
+    Preservation.lean            Frame lemmas (scheduler, IPC, cross-subsystem)
+    BoundedInversion.lean        Parametric WCRT bound, determinism
+  Liveness/*                     D5: Bounded Latency Theorem
+    TraceModel.lean              Trace model types, query predicates, counting functions
+    TimerTick.lean               Timer-tick budget monotonicity, preemption bounds
+    Replenishment.lean           CBS replenishment timing bounds
+    Yield.lean                   Yield/rotation semantics, FIFO progress bounds
+    BandExhaustion.lean          Priority-band exhaustion analysis
+    DomainRotation.lean          Domain rotation bounds
+    WCRT.lean                    WCRT hypotheses, main theorem, PIP enhancement
 SeLe4n/Kernel/Capability/*       CSpace lookup/mint/copy/move/delete/revoke with CDT tracking
   Operations.lean                CSpace operations
   Invariant/Defs.lean            Core invariant definitions, transfer theorems
@@ -225,7 +242,9 @@ SeLe4n/Kernel/IPC/*              Dual-queue IPC subsystem
   Invariant/QueueMembership.lean Queue membership consistency proofs
   Invariant/QueueNextBlocking.lean  queueNext blocking consistency proofs
   Invariant/Structural.lean      Structural invariants, composition theorems
-SeLe4n/Kernel/Lifecycle/*        Object retype with lifecycle metadata preservation
+SeLe4n/Kernel/Lifecycle/*        Object retype, thread suspend/resume (D1)
+  Suspend.lean                   Thread suspension/resumption operations
+  Invariant/SuspendPreservation.lean  Transport lemmas for suspend/resume
 SeLe4n/Kernel/Service/*          Service graph with HashSet-backed DFS cycle detection
   Interface.lean                 Service interface definitions
   Operations.lean                Service operations
@@ -243,10 +262,11 @@ SeLe4n/Kernel/Architecture/*     VSpace, TLB model, register decode, platform ad
   Invariant.lean                 Architecture invariant re-export hub
   RegisterDecode.lean            Total deterministic decode: raw registers → typed kernel IDs
   SyscallArgDecode.lean          Per-syscall typed argument decode (msgRegs → typed structs)
+  IpcBufferValidation.lean       D3: IPC buffer address validation and setIPCBufferOp
 SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 80 NI theorems
   Policy.lean                    Security labels, flow policies, domain flow validation
   Projection.lean                Low-equivalence projection for NI proofs
-  Enforcement/Wrappers.lean      29-entry enforcement boundary, policy-gated wrappers
+  Enforcement/Wrappers.lean      30-entry enforcement boundary, policy-gated wrappers
   Enforcement/Soundness.lean     Correctness theorems, declassification
   Invariant/Helpers.lean         Shared NI proof infrastructure
   Invariant/Operations.lean      Per-operation NI proofs
@@ -268,9 +288,11 @@ SeLe4n/Kernel/SchedContext/*     Scheduling context: CBS budget, replenishment q
   Budget.lean                    CBS budget operations: consume, replenish, admission control
   ReplenishQueue.lean            Sorted replenishment queue: insert, popDue, remove
   Operations.lean                SchedContext configure/bind/unbind/yieldTo operations (Z5)
+  PriorityManagement.lean        D2: setPriorityOp, setMCPriorityOp, MCP authority, run queue migration
   Invariant.lean                 Re-export hub (Z2)
     Invariant/Defs.lean          Invariant definitions, preservation proofs, bandwidth theorems
     Invariant/Preservation.lean  SchedContext operation preservation theorems (Z5)
+    Invariant/PriorityPreservation.lean  D2: Transport lemmas, authority non-escalation proofs
 SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7)
   Core.lean                      FrozenKernel monad, lookup/store primitives
   Operations.lean                15 per-subsystem frozen operations
@@ -300,7 +322,7 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
   MainTraceHarness.lean          Main trace test harness
   RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
-tests/                           11 test suites (negative-state, info-flow, trace, radix, suspend, etc.)
+tests/                           15 test suites (negative-state, info-flow, trace, radix, suspend, priority, liveness, etc.)
 ```
 
 ### Comparison with seL4
@@ -311,13 +333,16 @@ tests/                           11 test suites (negative-state, info-flow, trac
 | **Passive servers** | SchedContext donation via C code paths | Formally verified donation protocol: `donateSchedContext`/`returnDonatedSchedContext` with `donationChainAcyclic` invariant preventing circular chains |
 | **IPC timeout** | Budget-driven timeout in C | `timeoutThread` with mid-queue splice-out, `blockedThreadTimeoutConsistent` invariant, and `endpointQueueRemove` with invExt proof |
 | **IPC mechanism** | Single linked-list endpoint queue | Intrusive dual-queue with `queuePPrev` back-pointers for O(1) mid-queue removal |
-| **Information flow** | Binary high/low partition | N-domain configurable flow policy with 29-entry enforcement boundary and per-operation NI proofs |
+| **Information flow** | Binary high/low partition | N-domain configurable flow policy with 30-entry enforcement boundary and per-operation NI proofs |
 | **Service management** | Not in kernel | First-class service orchestration with dependency graph and DFS cycle detection |
 | **Capability derivation** | CDT with linked-list children | `childMap` HashMap for O(1) children lookup |
 | **Object stores** | Linked lists and arrays | All stores backed by formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with `distCorrect`/`noDupKeys`/`probeChainDominant` invariants |
 | **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with EDF tie-breaking, CBS budget filtering, and 15-conjunct invariant bundle |
+| **Priority inheritance** | C-implemented PIP in MCS branch | Machine-checked transitive PIP with `blockingChainAcyclic` deadlock freedom, `blockingDepthBound` chain limit, and `wcrt_parametric_bound` WCRT theorem |
+| **Bounded latency** | No formal WCRT bound | Machine-checked `WCRT = D × L_max + N × (B + P)` across 7 liveness modules with timer-tick, replenishment, yield, band-exhaustion, and domain-rotation proofs |
+| **Thread lifecycle** | C-implemented suspend/resume/setPriority | Formally verified `suspendThread`/`resumeThread`, `setPriorityOp`/`setMCPriorityOp` with MCP authority validation, `setIPCBufferOp` with VSpace bounds checking |
 | **VSpace** | Hardware page tables | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (2,341 theorems, zero sorry/axiom) |
+| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (2,447 theorems, zero sorry/axiom) |
 | **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ### Comparison with Fiasco.OC (TU Dresden)
@@ -331,8 +356,11 @@ tests/                           11 test suites (negative-state, info-flow, trac
 | **Service management** | Not in kernel (external user-space stacks such as L4Re) | First-class service orchestration with dependency graph and DFS cycle detection |
 | **Capability derivation** | L4 capability/object model | `childMap` HashMap for O(1) children lookup with typed transitions |
 | **Object stores** | Kernel-managed object pools | Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked correctness invariants |
+| **Priority inheritance** | No in-tree PIP mechanism | Machine-checked transitive PIP with deadlock freedom proof and parametric WCRT bound |
+| **Bounded latency** | No formal latency bound | Machine-checked WCRT theorem across 7 liveness modules |
+| **Thread lifecycle** | Standard kernel thread operations | Formally verified suspend/resume, priority management with MCP authority, IPC buffer validation |
 | **VSpace** | Architecture-native page tables/MMU | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with 2,341 theorems co-located with transitions (zero sorry/axiom) |
+| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with 2,447 theorems co-located with transitions (zero sorry/axiom) |
 | **Platform abstraction** | Architecture/board support via kernel + ecosystem engineering | `PlatformBinding` typeclass with typed boundary contracts |
 
 
@@ -341,7 +369,55 @@ tests/                           11 test suites (negative-state, info-flow, trac
 The full workstream history is maintained in
 [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
-### Recently completed: WS-Z — Composable Performance Objects
+### Recently completed: WS-AB — Deferred Operations & Liveness Completion
+
+**6 phases, 90 sub-tasks, v0.24.0–v0.25.3** | [Plan](docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | **PORTFOLIO COMPLETE**
+
+WS-AB completed the remaining seL4 deferred operations and formalized liveness
+guarantees that depend on the SchedContext infrastructure delivered by WS-Z.
+
+**Phase D1 — Thread Suspension/Resumption**: `suspendThread` removes a thread
+from the run queue and sets its state to `.suspended`; `resumeThread` reverses
+the operation with run-queue re-insertion at the thread's effective priority.
+Transport lemmas in `SuspendPreservation.lean` prove all subsystem invariants
+are preserved across suspend/resume transitions.
+
+**Phase D2 — Priority Management**: `setPriorityOp` and `setMCPriorityOp`
+implement capability-controlled priority changes with MCP (Maximum Controlled
+Priority) authority validation — a thread can only set another thread's priority
+up to its own MCP, preventing privilege escalation. On priority change, the
+thread is migrated to the correct run-queue bucket.
+`authority_nonEscalation` proves MCP bounds are never violated.
+
+**Phase D3 — IPC Buffer Configuration**: `setIPCBufferOp` validates IPC buffer
+addresses against VSpace bounds, ensuring the buffer falls within a mapped page
+with appropriate permissions before committing the address to the TCB.
+
+**Phase D4 — Priority Inheritance Protocol**: Transitive priority propagation
+prevents unbounded priority inversion. `BlockingGraph` models the wait-for
+relation across endpoint queues. `blockingChainAcyclic` proves deadlock freedom.
+`blockingDepthBound` limits chain length to a configurable maximum.
+`computeMaxWaiterPriority` walks the blocking graph; `propagatePriorityInheritance`
+pushes boosted priorities transitively. Frame lemmas in `Preservation.lean` prove
+PIP operations preserve scheduler, IPC, and cross-subsystem invariants.
+`wcrt_parametric_bound` in `BoundedInversion.lean` bounds worst-case response
+time under priority inversion.
+
+**Phase D5 — Bounded Latency Theorem**: Machine-checked WCRT bound across 7
+liveness modules: `WCRT = D × L_max + N × (B + P)`. `TimerTick.lean` proves
+budget monotonicity and preemption bounds. `Replenishment.lean` proves CBS
+replenishment timing. `Yield.lean` proves FIFO progress bounds.
+`BandExhaustion.lean` analyzes priority-band exhaustion. `DomainRotation.lean`
+bounds domain rotation. `WCRT.lean` composes the main theorem with PIP
+enhancement from D4.
+
+**Phase D6 — API Surface Integration & Closure**: All 5 deferred operations
+wired into the kernel API (`apiSuspendThread`, `apiResumeThread`,
+`apiSetPriority`, `apiSetMCPriority`, `apiSetIPCBuffer`). Enforcement boundary
+expanded from 25 to 30 entries. Rust ABI synchronized (SyscallId 25 variants,
+KernelError 44 variants). Zero sorry/axiom.
+
+### Previously completed: WS-Z — Composable Performance Objects
 
 **10 phases, 213 sub-tasks, v0.23.0–v0.23.21** | [Plan](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md) | **PORTFOLIO COMPLETE**
 
@@ -430,6 +506,6 @@ pairwise field-disjointness witnesses, 3 frame lemmas.
 ### Next major milestone
 
 **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt
-routing, boot sequence. All software-level workstreams (WS-B through WS-Z) are
+routing, boot sequence. All software-level workstreams (WS-B through WS-AB) are
 complete. Prior audits and milestone closeouts are archived in
 [`docs/dev_history/`](docs/dev_history/README.md).

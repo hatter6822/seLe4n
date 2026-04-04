@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -42,13 +42,13 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널(microkernel)입니
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.22.8` |
+| **버전** | `0.25.3` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 72,569 (103개 파일) |
-| **테스트 Lean LoC** | 8,437 (10개 테스트 스위트) |
-| **증명된 선언** | 2,138개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 83,286 (132개 파일) |
+| **테스트 Lean LoC** | 10,564 (15개 테스트 스위트) |
+| **증명된 선언** | 2,447개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **최신 감사** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — 전체 커널 + Rust 코드베이스 사전 릴리스 감사 |
+| **최신 감사** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — 전체 커널 Lean + Rust 감사 (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **코드베이스 맵** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능한 선언 인벤토리 |
 
 지표는 `./scripts/generate_codebase_map.py`에 의해 코드베이스에서 파생되며,
