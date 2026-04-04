@@ -58,7 +58,13 @@ def validatePriorityAuthority (callerTcb : TCB) (targetPriority : SeLe4n.Priorit
 
 /-- Helper: get the current effective priority value for a thread, resolving
 through SchedContext binding. Returns the TCB priority if unbound, or the
-SchedContext priority if bound/donated. -/
+SchedContext priority if bound/donated.
+
+**Invariant dependency**: For bound/donated threads, this function requires
+`schedContextBindingConsistent` (Invariant/Defs.lean) to guarantee the
+referenced SchedContext exists. If it does not (invariant violation), the
+function defensively falls back to `tcb.priority`. This fallback path is
+dead code when system invariants hold. -/
 def getCurrentPriority (st : SystemState) (tcb : TCB)
     : SeLe4n.Priority :=
   match tcb.schedContextBinding with
@@ -69,7 +75,12 @@ def getCurrentPriority (st : SystemState) (tcb : TCB)
     | _ => tcb.priority
 
 /-- Helper: update the priority of a thread's scheduling source (SchedContext
-or TCB) and store the updated object. Returns the updated state. -/
+or TCB) and store the updated object. Returns the updated state.
+
+**Invariant dependency**: For bound/donated threads, requires
+`schedContextBindingConsistent` to guarantee the SchedContext exists.
+If it does not (invariant violation), the function defensively returns
+the state unchanged. This no-op path is dead code when invariants hold. -/
 def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
   match tcb.schedContextBinding with
@@ -155,11 +166,12 @@ Returns `invalidArgument` if caller or target is not a TCB.
 Returns `illegalAuthority` if `newMCP > caller.maxControlledPriority`. -/
 def setMCPriorityOp (st : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
     (newMCP : SeLe4n.Priority) : Except KernelError SystemState :=
-  -- F1: Caller MCP authority validation
+  -- F1: Caller MCP authority validation (reuses validatePriorityAuthority for consistency)
   match st.objects[callerTid.toObjId]? with
   | some (.tcb callerTcb) =>
-    if newMCP.val > callerTcb.maxControlledPriority.val then .error .illegalAuthority
-    else
+    match validatePriorityAuthority callerTcb newMCP with
+    | .error e => .error e
+    | .ok () =>
       -- F2: Target TCB lookup + MCP update
       match st.objects[targetTid.toObjId]? with
       | some (.tcb targetTcb) =>

@@ -65,6 +65,45 @@ theorem migrateRunQueueBucket_lifecycle_eq
   unfold migrateRunQueueBucket; split <;> rfl
 
 -- ============================================================================
+-- Transport lemmas — updatePrioritySource (additional fields)
+-- ============================================================================
+
+theorem updatePrioritySource_irqHandlers_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPrio : SeLe4n.Priority) :
+    (updatePrioritySource st tid tcb newPrio).irqHandlers = st.irqHandlers := by
+  unfold updatePrioritySource
+  split <;> (first | rfl | (split <;> rfl))
+
+theorem updatePrioritySource_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPrio : SeLe4n.Priority) :
+    (updatePrioritySource st tid tcb newPrio).machine = st.machine := by
+  unfold updatePrioritySource
+  split <;> (first | rfl | (split <;> rfl))
+
+theorem updatePrioritySource_objectIndex_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPrio : SeLe4n.Priority) :
+    (updatePrioritySource st tid tcb newPrio).objectIndex = st.objectIndex := by
+  unfold updatePrioritySource
+  split <;> (first | rfl | (split <;> rfl))
+
+-- ============================================================================
+-- Transport lemmas — migrateRunQueueBucket (additional fields)
+-- ============================================================================
+
+theorem migrateRunQueueBucket_irqHandlers_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
+    (migrateRunQueueBucket st tid newPrio).irqHandlers = st.irqHandlers := by
+  unfold migrateRunQueueBucket; split <;> rfl
+
+theorem migrateRunQueueBucket_machine_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
+    (migrateRunQueueBucket st tid newPrio).machine = st.machine := by
+  unfold migrateRunQueueBucket; split <;> rfl
+
+-- ============================================================================
 -- D2-J: Authority non-escalation theorems
 -- ============================================================================
 
@@ -86,22 +125,15 @@ theorem setPriority_authority_bounded
     (callerTcb : TCB)
     (hCaller : st.objects[callerTid.toObjId]? = some (.tcb callerTcb)) :
     newPriority.val ≤ callerTcb.maxControlledPriority.val := by
+  -- Reduce to the validatePriorityAuthority check
+  have hVal := validatePriorityAuthority_ok_bounded callerTcb newPriority
   unfold setPriorityOp at hOk
   rw [hCaller] at hOk
-  simp only [] at hOk
-  unfold validatePriorityAuthority at hOk
-  -- The if-then-else: if ≤ then .ok () else .error
-  -- If ¬≤, the match on .error would not produce .ok st'
-  -- So the ≤ branch must hold
-  split at hOk
-  · -- validatePriorityAuthority returned .error: hOk : .error _ = .ok _, impossible
-    exact absurd hOk (by intro h; exact nomatch h)
-  · -- validatePriorityAuthority returned .ok (): validation passed
-    -- heq✝ tells us (if newPrio ≤ mcp then .ok else .error) = .ok ()
-    -- which means the if-guard was true
-    rename_i heq
-    simp at heq
-    exact heq
+  -- If validatePriorityAuthority fails, setPriorityOp returns .error,
+  -- so it cannot equal .ok st'. Therefore it must succeed.
+  match hv : validatePriorityAuthority callerTcb newPriority with
+  | .error e => simp [hv] at hOk
+  | .ok () => exact hVal hv
 
 /-- D2-J: After `setMCPriorityOp` succeeds, the new MCP does not exceed
 the caller's MCP. -/
@@ -112,14 +144,16 @@ theorem setMCPriority_authority_bounded
     (callerTcb : TCB)
     (hCaller : st.objects[callerTid.toObjId]? = some (.tcb callerTcb)) :
     newMCP.val ≤ callerTcb.maxControlledPriority.val := by
+  -- Reduce to the validatePriorityAuthority check
+  have hVal := validatePriorityAuthority_ok_bounded callerTcb newMCP
   unfold setMCPriorityOp at hOk
   rw [hCaller] at hOk
-  simp only [] at hOk
-  -- The if guard: if newMCP > caller.mcp then .error else ...
-  split at hOk
-  · -- guard true (newMCP > caller.mcp): .error = .ok is impossible
-    exact absurd hOk (by intro h; exact nomatch h)
-  · -- guard false (¬ newMCP > caller.mcp): proceed
-    rename_i hNotGt; omega
+  -- If validatePriorityAuthority fails, setMCPriorityOp returns .error
+  -- so it cannot equal .ok st'. Therefore it must succeed.
+  match hv : validatePriorityAuthority callerTcb newMCP with
+  | .error e =>
+    simp [hv] at hOk
+  | .ok () =>
+    exact hVal hv
 
 end SeLe4n.Kernel.SchedContext.PriorityManagement

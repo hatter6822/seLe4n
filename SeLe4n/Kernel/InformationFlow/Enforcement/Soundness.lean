@@ -302,13 +302,14 @@ theorem enforcementSoundness_registerServiceChecked
 -- WS-H8/Q1: Updated enforcement boundary classification
 -- ============================================================================
 
-/-- W2-G (M-3) / WS-H8/Q1/V6-L/Z8-M: `enforcementBoundaryExtended` is now a definitional
+/-- W2-G (M-3) / WS-H8/Q1/V6-L/Z8-M/D2: `enforcementBoundaryExtended` is now a definitional
     alias for `enforcementBoundary`, eliminating the maintenance debt of keeping two
     identical lists in sync. Previously, the two lists contained the same operations
     in different order with only a cardinality correspondence proof. Now they are
     definitionally equal, making element-wise correspondence trivial by `rfl`.
     Z8-M expanded from 22 to 25 entries with SchedContext capability-only operations.
-    D1 expanded from 25 to 27 entries with thread lifecycle capability-only operations. -/
+    D1 expanded from 25 to 27 entries with thread lifecycle capability-only operations.
+    D2 expanded from 27 to 29 entries with priority management capability-only operations. -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2 (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`

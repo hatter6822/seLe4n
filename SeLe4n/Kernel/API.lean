@@ -548,7 +548,7 @@ and no additional decoded arguments) and this explicit match (handles syscalls
 requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 1. Shares a single checked/unchecked dispatch implementation (V8-H)
 2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
-   showing all 22 `SyscallId` variants are handled by one of the two tiers
+   showing all 24 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -1131,14 +1131,15 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
     arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
     wildcard arm is unreachable at runtime.
 
-    The proof enumerates all 22 `SyscallId` constructors: 11 are routed to
+    The proof enumerates all 24 `SyscallId` constructors: 11 are routed to
     `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
     `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
     `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`),
-    and the remaining 11
+    and the remaining 13
     (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
     `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
-    `.replyRecv`) are handled by explicit match arms in `dispatchWithCap`. -/
+    `.replyRecv`, `.tcbSetPriority`, `.tcbSetMCPriority`)
+    are handled by explicit match arms in `dispatchWithCap`. -/
 theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
             .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,

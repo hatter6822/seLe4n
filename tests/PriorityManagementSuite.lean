@@ -212,6 +212,37 @@ private def pm010_setPriorityUnboundThread : IO Unit := do
     | _ => throw <| IO.userError "PM-010 target TCB not found"
   | .error e => throw <| IO.userError s!"PM-010 setPriority unbound should succeed, got {repr e}"
 
+/-- PM-010b: setMCPriority caps priority on SchedContext-bound thread. -/
+private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨80⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  -- Target is bound to SchedContext with priority 80, we set MCP to 50
+  -- Priority should be capped: SchedContext priority should become 50
+  let st := mkState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc)
+  ]
+  match setMCPriorityOp st callerTid targetTid ⟨50⟩ with
+  | .ok st' =>
+    -- Verify MCP was updated on TCB
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) =>
+      expect "PM-010b MCP updated to 50" (tcb.maxControlledPriority == ⟨50⟩)
+    | _ => throw <| IO.userError "PM-010b target TCB not found"
+    -- Verify SchedContext priority was capped to 50
+    match st'.objects[scId.toObjId]? with
+    | some (.schedContext sc') =>
+      expect "PM-010b SchedContext priority capped to 50" (sc'.priority == ⟨50⟩)
+    | _ => throw <| IO.userError "PM-010b SchedContext not found after MCP cap"
+  | .error e => throw <| IO.userError s!"PM-010b setMCPriority bound cap should succeed, got {repr e}"
+
 -- ============================================================================
 -- D2-M5: MCP authority transitivity
 -- ============================================================================
@@ -361,6 +392,7 @@ def main : IO Unit := do
   IO.println "--- D2-M4: SchedContext binding ---"
   pm009_setPriorityBoundThread
   pm010_setPriorityUnboundThread
+  pm010b_setMCPriorityCapsSchedContextBound
   IO.println "--- D2-M5: MCP transitivity ---"
   pm011_mcpTransitivity
   IO.println "--- D2-M6: Self-priority ---"
@@ -369,4 +401,4 @@ def main : IO Unit := do
   pm013_frozenSetPriority
   pm014_frozenSetPriorityAboveMCP
   pm015_frozenSetMCPriority
-  IO.println "=== All D2 priority management tests passed (15 tests) ==="
+  IO.println "=== All D2 priority management tests passed (16 tests) ==="

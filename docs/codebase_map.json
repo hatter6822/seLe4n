@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-d2-priority-NN2TF",
-      "commit_sha": "edcf1199f3505450c5d004b177cd7c1162e26b23",
-      "tree_sha": "d84d3262c70c9f36c4ab7aadeb6928c16aecba81",
-      "committed_at_utc": "2026-04-03T23:50:24-04:00"
+      "commit_sha": "9abe8adf1ba179018423b4e6478659e163347420",
+      "tree_sha": "4f7bf858b615cab08f37137326ba58584ced5cbf",
+      "committed_at_utc": "2026-04-04T04:38:49+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fe25e515dc3f23e201ea45a0412d9107b6ff283efffeb96be3e16081e13f2ee4"
+    "source_digest": "dfa87783f403f53bc2c9f144237b4e20d700bf11dae244f5e0981618434203a5"
   },
   "summary": {
     "module_count": 129,
-    "declaration_count": 4196
+    "declaration_count": 4202
   },
   "readme_sync": {
-    "version": "0.24.1",
+    "version": "0.24.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 117,
-    "production_loc": 80850,
+    "production_loc": 80899,
     "test_files": 12,
-    "test_loc": 9655,
-    "proved_theorem_lemma_decls": 2324,
+    "test_loc": 9687,
+    "proved_theorem_lemma_decls": 2329,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -585,7 +585,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_wildcard_unreachable",
-          "line": 1142,
+          "line": 1143,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -601,7 +601,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 1163,
+          "line": 1164,
           "called": [
             "Kernel",
             "SyscallDecodeResult",
@@ -617,7 +617,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 1192,
+          "line": 1193,
           "called": [
             "Kernel",
             "SyscallRegisterLayout",
@@ -630,7 +630,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 1212,
+          "line": 1213,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -642,7 +642,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 1240,
+          "line": 1241,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -660,7 +660,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 1279,
+          "line": 1280,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -678,7 +678,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 1314,
+          "line": 1315,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -689,7 +689,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 1324,
+          "line": 1325,
           "called": [
             "SyscallId",
             "syscallRequiredRight"
@@ -698,7 +698,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 1334,
+          "line": 1335,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -719,7 +719,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 1351,
+          "line": 1352,
           "called": [
             "CSpaceAddr",
             "CSpaceCopyArgs",
@@ -738,7 +738,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 1366,
+          "line": 1367,
           "called": [
             "CSpaceAddr",
             "CSpaceMoveArgs",
@@ -757,7 +757,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 1381,
+          "line": 1382,
           "called": [
             "CSpaceAddr",
             "CSpaceDeleteArgs",
@@ -776,7 +776,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 1400,
+          "line": 1401,
           "called": [
             "Capability",
             "LifecycleRetypeArgs",
@@ -795,7 +795,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 1417,
+          "line": 1418,
           "called": [
             "Capability",
             "ObjId",
@@ -812,7 +812,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 1432,
+          "line": 1433,
           "called": [
             "Capability",
             "ObjId",
@@ -829,7 +829,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 1449,
+          "line": 1450,
           "called": [
             "Capability",
             "IpcMessage",
@@ -848,7 +848,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 1468,
+          "line": 1469,
           "called": [
             "Capability",
             "IpcMessage",
@@ -869,7 +869,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 1494,
+          "line": 1495,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -884,7 +884,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 1510,
+          "line": 1511,
           "called": [
             "Capability",
             "SyscallGate",
@@ -896,7 +896,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 1519,
+          "line": 1520,
           "called": [
             "KernelError",
             "SyscallRegisterLayout",
@@ -908,7 +908,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 1529,
+          "line": 1530,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -921,7 +921,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 1546,
+          "line": 1547,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -934,7 +934,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 1576,
+          "line": 1577,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -945,7 +945,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 1585,
+          "line": 1586,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -960,7 +960,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 1596,
+          "line": 1597,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -975,7 +975,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 1611,
+          "line": 1612,
           "called": [
             "Capability",
             "IfObserver",
@@ -990,7 +990,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 1626,
+          "line": 1627,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1005,7 +1005,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 1649,
+          "line": 1650,
           "called": [
             "IfObserver",
             "KernelError",
@@ -1019,7 +1019,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 1664,
+          "line": 1665,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1036,7 +1036,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1692,
+          "line": 1693,
           "called": [
             "SyscallDecodeResult",
             "decodeCSpaceCopyArgs",
@@ -1052,7 +1052,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1718,
+          "line": 1719,
           "called": [
             "Kernel",
             "dispatchSyscall",
@@ -20173,7 +20173,7 @@
         {
           "kind": "abbrev",
           "name": "enforcementBoundaryExtended",
-          "line": 312,
+          "line": 313,
           "called": [
             "EnforcementClass",
             "enforcementBoundary"
@@ -20182,13 +20182,13 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_count",
-          "line": 316,
+          "line": 317,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_eq_canonical",
-          "line": 323,
+          "line": 324,
           "called": [
             "enforcementBoundary",
             "enforcementBoundaryExtended"
@@ -20197,13 +20197,13 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_matches_canonical",
-          "line": 327,
+          "line": 328,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointSendDualChecked",
-          "line": 341,
+          "line": 342,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20221,7 +20221,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationSignalChecked",
-          "line": 358,
+          "line": 359,
           "called": [
             "Badge",
             "LabelingContext",
@@ -20237,7 +20237,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceCopyChecked",
-          "line": 371,
+          "line": 372,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -20250,7 +20250,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMoveChecked",
-          "line": 383,
+          "line": 384,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -20263,7 +20263,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReceiveDualChecked",
-          "line": 395,
+          "line": 396,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -20278,7 +20278,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointCallChecked",
-          "line": 413,
+          "line": 414,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -20296,7 +20296,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReplyChecked",
-          "line": 429,
+          "line": 430,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20309,7 +20309,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMintChecked",
-          "line": 442,
+          "line": 443,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20323,7 +20323,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationWaitChecked",
-          "line": 455,
+          "line": 456,
           "called": [
             "Badge",
             "LabelingContext",
@@ -20338,7 +20338,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReplyRecvChecked",
-          "line": 468,
+          "line": 469,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20353,7 +20353,7 @@
         {
           "kind": "def",
           "name": "declassifyStore",
-          "line": 509,
+          "line": 510,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20367,7 +20367,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_eq_storeObject_when_authorized",
-          "line": 526,
+          "line": 527,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20382,7 +20382,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_normal_allowed",
-          "line": 540,
+          "line": 541,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20396,7 +20396,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_declass_denied",
-          "line": 553,
+          "line": 554,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20410,7 +20410,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_denied_no_state_change",
-          "line": 567,
+          "line": 568,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20425,7 +20425,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_declassifyStore",
-          "line": 581,
+          "line": 582,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20439,7 +20439,7 @@
         {
           "kind": "structure",
           "name": "InformationFlowConfigInvariant",
-          "line": 628,
+          "line": 629,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -20452,7 +20452,7 @@
         {
           "kind": "theorem",
           "name": "defaultConfigInvariant",
-          "line": 639,
+          "line": 640,
           "called": [
             "DomainFlowPolicy.allowAll_wellFormed",
             "InformationFlowConfigInvariant",
@@ -20464,7 +20464,7 @@
         {
           "kind": "theorem",
           "name": "kernelTransition_preserves_ifConfigInvariant",
-          "line": 656,
+          "line": 657,
           "called": [
             "InformationFlowConfigInvariant",
             "SystemState"
@@ -20473,7 +20473,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_flowDenied_preserves_state",
-          "line": 679,
+          "line": 680,
           "called": [
             "cspaceMintChecked",
             "cspaceMintChecked_denied_preserves_state",
@@ -20486,19 +20486,19 @@
         {
           "kind": "def",
           "name": "checkedDispatchEnforcementCoverage",
-          "line": 701,
+          "line": 702,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "checkedDispatchEnforcementCoverage_complete",
-          "line": 716,
+          "line": 717,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementBridge_to_NonInterferenceStep",
-          "line": 742,
+          "line": 743,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20651,7 +20651,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundary",
-          "line": 185,
+          "line": 186,
           "called": [
             "EnforcementClass",
             "readOnly"
@@ -20660,7 +20660,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_denied_preserves_state",
-          "line": 231,
+          "line": 232,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20678,7 +20678,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_denied_preserves_state",
-          "line": 247,
+          "line": 248,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20692,7 +20692,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_endpointSendDual",
-          "line": 264,
+          "line": 265,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20711,7 +20711,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_cspaceMint",
-          "line": 285,
+          "line": 286,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20726,7 +20726,7 @@
         {
           "kind": "def",
           "name": "notificationSignalChecked",
-          "line": 321,
+          "line": 322,
           "called": [
             "Badge",
             "Kernel",
@@ -20741,7 +20741,7 @@
         {
           "kind": "def",
           "name": "cspaceCopyChecked",
-          "line": 342,
+          "line": 343,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -20753,7 +20753,7 @@
         {
           "kind": "def",
           "name": "cspaceMoveChecked",
-          "line": 358,
+          "line": 359,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -20765,7 +20765,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDualChecked",
-          "line": 377,
+          "line": 378,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20779,7 +20779,7 @@
         {
           "kind": "def",
           "name": "registerServiceChecked",
-          "line": 402,
+          "line": 403,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20792,7 +20792,7 @@
         {
           "kind": "def",
           "name": "endpointCallChecked",
-          "line": 427,
+          "line": 428,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -20810,7 +20810,7 @@
         {
           "kind": "def",
           "name": "endpointReplyChecked",
-          "line": 459,
+          "line": 460,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -20823,7 +20823,7 @@
         {
           "kind": "def",
           "name": "notificationWaitChecked",
-          "line": 480,
+          "line": 481,
           "called": [
             "Badge",
             "Kernel",
@@ -20838,7 +20838,7 @@
         {
           "kind": "def",
           "name": "endpointReplyRecvChecked",
-          "line": 500,
+          "line": 501,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -31088,7 +31088,7 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation",
       "path": "SeLe4n/Kernel/SchedContext/Invariant/PriorityPreservation.lean",
-      "declaration_count": 10,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
@@ -31167,8 +31167,66 @@
         },
         {
           "kind": "theorem",
+          "name": "updatePrioritySource_irqHandlers_eq",
+          "line": 71,
+          "called": [
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "updatePrioritySource"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePrioritySource_machine_eq",
+          "line": 78,
+          "called": [
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "updatePrioritySource"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePrioritySource_objectIndex_eq",
+          "line": 85,
+          "called": [
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "updatePrioritySource"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateRunQueueBucket_irqHandlers_eq",
+          "line": 96,
+          "called": [
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "migrateRunQueueBucket"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateRunQueueBucket_machine_eq",
+          "line": 101,
+          "called": [
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "migrateRunQueueBucket"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "validatePriorityAuthority_ok_bounded",
-          "line": 73,
+          "line": 112,
           "called": [
             "Priority",
             "TCB",
@@ -31178,7 +31236,7 @@
         {
           "kind": "theorem",
           "name": "setPriority_authority_bounded",
-          "line": 82,
+          "line": 121,
           "called": [
             "Priority",
             "SystemState",
@@ -31186,20 +31244,23 @@
             "ThreadId",
             "setPriorityOp",
             "toObjId",
-            "validatePriorityAuthority"
+            "validatePriorityAuthority",
+            "validatePriorityAuthority_ok_bounded"
           ]
         },
         {
           "kind": "theorem",
           "name": "setMCPriority_authority_bounded",
-          "line": 108,
+          "line": 140,
           "called": [
             "Priority",
             "SystemState",
             "TCB",
             "ThreadId",
             "setMCPriorityOp",
-            "toObjId"
+            "toObjId",
+            "validatePriorityAuthority",
+            "validatePriorityAuthority_ok_bounded"
           ]
         }
       ]
@@ -31357,7 +31418,7 @@
         {
           "kind": "def",
           "name": "getCurrentPriority",
-          "line": 62,
+          "line": 68,
           "called": [
             "Priority",
             "SystemState",
@@ -31369,7 +31430,7 @@
         {
           "kind": "def",
           "name": "updatePrioritySource",
-          "line": 73,
+          "line": 84,
           "called": [
             "Priority",
             "SystemState",
@@ -31383,7 +31444,7 @@
         {
           "kind": "def",
           "name": "migrateRunQueueBucket",
-          "line": 90,
+          "line": 101,
           "called": [
             "Priority",
             "SystemState",
@@ -31395,7 +31456,7 @@
         {
           "kind": "def",
           "name": "setPriorityOp",
-          "line": 110,
+          "line": 121,
           "called": [
             "KernelError",
             "Priority",
@@ -31412,7 +31473,7 @@
         {
           "kind": "def",
           "name": "setMCPriorityOp",
-          "line": 156,
+          "line": 167,
           "called": [
             "KernelError",
             "Priority",
@@ -31423,7 +31484,8 @@
             "migrateRunQueueBucket",
             "schedule",
             "toObjId",
-            "updatePrioritySource"
+            "updatePrioritySource",
+            "validatePriorityAuthority"
           ]
         }
       ]
@@ -54892,7 +54954,7 @@
     {
       "module": "tests.PriorityManagementSuite",
       "path": "tests/PriorityManagementSuite.lean",
-      "declaration_count": 22,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -55073,8 +55135,25 @@
         },
         {
           "kind": "def",
+          "name": "pm010b_setMCPriorityCapsSchedContextBound",
+          "line": 216,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "scId",
+            "setMCPriorityOp",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "pm011_mcpTransitivity",
-          "line": 221,
+          "line": 252,
           "called": [
             "ThreadId",
             "expect",
@@ -55088,7 +55167,7 @@
         {
           "kind": "def",
           "name": "pm012_selfSetPriority",
-          "line": 245,
+          "line": 276,
           "called": [
             "ThreadId",
             "expect",
@@ -55102,7 +55181,7 @@
         {
           "kind": "def",
           "name": "emptyFrozenState",
-          "line": 263,
+          "line": 294,
           "called": [
             "FrozenSystemState",
             "RHTable.empty",
@@ -55115,7 +55194,7 @@
         {
           "kind": "def",
           "name": "mkFrozenState",
-          "line": 295,
+          "line": 326,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -55129,7 +55208,7 @@
         {
           "kind": "def",
           "name": "pm013_frozenSetPriority",
-          "line": 300,
+          "line": 331,
           "called": [
             "ThreadId",
             "expect",
@@ -55144,7 +55223,7 @@
         {
           "kind": "def",
           "name": "pm014_frozenSetPriorityAboveMCP",
-          "line": 316,
+          "line": 347,
           "called": [
             "ThreadId",
             "expect",
@@ -55157,7 +55236,7 @@
         {
           "kind": "def",
           "name": "pm015_frozenSetMCPriority",
-          "line": 329,
+          "line": 360,
           "called": [
             "ThreadId",
             "expect",
@@ -55172,7 +55251,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 348,
+          "line": 379,
           "called": [
             "pm001_setPriorityWithinMCP",
             "pm002_setPriorityAtMCP",
@@ -55184,6 +55263,7 @@
             "pm008_setMCPriorityCapsExisting",
             "pm009_setPriorityBoundThread",
             "pm010_setPriorityUnboundThread",
+            "pm010b_setMCPriorityCapsSchedContextBound",
             "pm011_mcpTransitivity",
             "pm012_selfSetPriority",
             "pm013_frozenSetPriority",
