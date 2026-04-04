@@ -217,18 +217,57 @@ determine a thread's scheduling parameters, enabling the migration from
 monolithic TCB fields to first-class SchedContext objects. -/
 def effectivePriority (st : SystemState) (tcb : TCB)
     : Option (SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :=
-  match tcb.schedContextBinding with
-  | .unbound => some (tcb.priority, tcb.deadline, tcb.domain)
-  | .bound scId | .donated scId _ =>
-    match st.objects[scId.toObjId]? with
-    | some (.schedContext sc) => some (sc.priority, sc.deadline, sc.domain)
-    | _ => none
+  let basePrio := match tcb.schedContextBinding with
+    | .unbound => some (tcb.priority, tcb.deadline, tcb.domain)
+    | .bound scId | .donated scId _ =>
+      match st.objects[scId.toObjId]? with
+      | some (.schedContext sc) => some (sc.priority, sc.deadline, sc.domain)
+      | _ => none
+  -- D4-B: Apply PIP boost — effective priority is max(basePrio, pipBoost)
+  match basePrio with
+  | none => none
+  | some (prio, dl, dom) =>
+    match tcb.pipBoost with
+    | none => some (prio, dl, dom)
+    | some boostPrio =>
+      some (⟨Nat.max prio.val boostPrio.val⟩, dl, dom)
 
-/-- Z4-B: For unbound threads, `effectivePriority` always returns the TCB fields. -/
+/-- Z4-B: For unbound threads with no PIP boost, `effectivePriority` returns the TCB fields. -/
 theorem effectivePriority_unbound (st : SystemState) (tcb : TCB)
-    (h : tcb.schedContextBinding = .unbound) :
+    (h : tcb.schedContextBinding = .unbound)
+    (hPip : tcb.pipBoost = none := by rfl) :
     effectivePriority st tcb = some (tcb.priority, tcb.deadline, tcb.domain) := by
-  simp [effectivePriority, h]
+  simp [effectivePriority, h, hPip]
+
+/-- D4-B: If `pipBoost = some p`, effective priority ≥ `p`. -/
+theorem effectivePriority_ge_pipBoost (st : SystemState) (tcb : TCB)
+    (p : SeLe4n.Priority) (prio : SeLe4n.Priority) (dl : SeLe4n.Deadline)
+    (dom : SeLe4n.DomainId)
+    (hPip : tcb.pipBoost = some p)
+    (hEff : effectivePriority st tcb = some (prio, dl, dom)) :
+    prio.val ≥ p.val := by
+  unfold effectivePriority at hEff
+  simp [hPip] at hEff
+  split at hEff
+  · contradiction
+  · simp at hEff
+    obtain ⟨hPrio, _, _⟩ := hEff
+    rw [← hPrio]
+    exact Nat.le_max_right _ _
+
+/-- D4-B: When pipBoost = none, effectivePriority returns the base SchedContext/TCB priority. -/
+theorem effectivePriority_noPip (st : SystemState) (tcb : TCB)
+    (hPip : tcb.pipBoost = none) :
+    effectivePriority st tcb =
+      (match tcb.schedContextBinding with
+        | .unbound => some (tcb.priority, tcb.deadline, tcb.domain)
+        | .bound scId | .donated scId _ =>
+          match st.objects[scId.toObjId]? with
+          | some (.schedContext sc) => some (sc.priority, sc.deadline, sc.domain)
+          | _ => none) := by
+  unfold effectivePriority
+  simp [hPip]
+  split <;> simp_all
 
 -- ============================================================================
 -- Z4-C: Budget eligibility predicate
@@ -266,12 +305,16 @@ For bound threads, uses SchedContext parameters; for unbound threads,
 falls back to TCB legacy fields. -/
 @[inline] def resolveEffectivePrioDeadline (st : SystemState) (tcb : TCB)
     : SeLe4n.Priority × SeLe4n.Deadline :=
-  match tcb.schedContextBinding with
-  | .unbound => (tcb.priority, tcb.deadline)
-  | .bound scId | .donated scId _ =>
-    match st.objects[scId.toObjId]? with
-    | some (.schedContext sc) => (sc.priority, sc.deadline)
-    | _ => (tcb.priority, tcb.deadline)
+  let (basePrio, dl) := match tcb.schedContextBinding with
+    | .unbound => (tcb.priority, tcb.deadline)
+    | .bound scId | .donated scId _ =>
+      match st.objects[scId.toObjId]? with
+      | some (.schedContext sc) => (sc.priority, sc.deadline)
+      | _ => (tcb.priority, tcb.deadline)
+  -- D4-B: Apply PIP boost
+  match tcb.pipBoost with
+  | none => (basePrio, dl)
+  | some boostPrio => (⟨Nat.max basePrio.val boostPrio.val⟩, dl)
 
 /-- Z4-D/E: SchedContext-aware three-level scheduling selection.
 
@@ -483,7 +526,7 @@ theorem chooseBestRunnableEffective_unbound_equiv
     (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
     (hAllUnbound : ∀ tid ∈ runnable, ∀ tcb : TCB,
       st.objects.get? tid.toObjId = some (.tcb tcb) →
-      tcb.schedContextBinding = .unbound) :
+      tcb.schedContextBinding = .unbound ∧ tcb.pipBoost = none) :
     chooseBestRunnableEffective st eligible runnable best =
     chooseBestRunnableBy st.objects.get? eligible runnable best := by
   induction runnable generalizing best with
@@ -496,9 +539,9 @@ theorem chooseBestRunnableEffective_unbound_equiv
       cases obj with
       | tcb tcb =>
         have hMem : tid ∈ tid :: rest := List.mem_cons_self ..
-        have hUnb := hAllUnbound tid hMem tcb hObj
+        have ⟨hUnb, hNoPip⟩ := hAllUnbound tid hMem tcb hObj
         simp [hasSufficientBudget_unbound st tcb hUnb, Bool.and_true,
-              resolveEffectivePrioDeadline, hUnb]
+              resolveEffectivePrioDeadline, hUnb, hNoPip]
         apply ih
         intro t hMemRest
         exact hAllUnbound t (List.mem_cons_of_mem _ hMemRest)

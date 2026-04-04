@@ -85,6 +85,12 @@ SeLe4n/Kernel/Scheduler/*        Scheduler transitions + invariants
     Operations/Selection.lean    EDF predicates, thread selection
     Operations/Core.lean         Core transitions (schedule, handleYield, timerTick)
     Operations/Preservation.lean Scheduler invariant preservation theorems
+  PriorityInheritance.lean       Re-export hub (D4)
+    PriorityInheritance/BlockingGraph.lean   Blocking relation, chain walk, acyclicity, depth bound
+    PriorityInheritance/Compute.lean         computeMaxWaiterPriority
+    PriorityInheritance/Propagate.lean       updatePipBoost, propagate/revert priority inheritance
+    PriorityInheritance/Preservation.lean    Frame lemmas (scheduler, IPC, cross-subsystem)
+    PriorityInheritance/BoundedInversion.lean Parametric WCRT bound, determinism
 SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
   Invariant.lean                 Re-export hub
     Invariant/Defs.lean          Core invariant definitions, transfer theorems
@@ -481,6 +487,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-AB Phase D1 COMPLETE**: Thread Suspension & Resumption (v0.24.0–v0.24.1) — `suspendThread`/`resumeThread` operations, `SyscallId.tcbSuspend`/`.tcbResume`, 12 transport lemmas, `enforcementBoundary` 25→27, frozen equivalents, 21 tests across 7 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AB Phase D2 COMPLETE**: Priority Management (v0.24.1) — `setPriorityOp`/`setMCPriorityOp` operations, MCP authority non-escalation, SchedContext-aware priority update, run queue bucket migration, `SyscallId.tcbSetPriority`/`.tcbSetMCPriority`, `enforcementBoundary` 27→29, frozen equivalents, 15 tests across 7 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AB Phase D3 COMPLETE**: IPC Buffer Configuration (v0.24.2–v0.24.3) — `setIPCBufferOp` with 5-step validation (alignment, canonical, VSpace root, mapping, write permission), `SyscallId.tcbSetIPCBuffer`, `enforcementBoundary` 29→30, frozen equivalent, 7 transport lemmas (scheduler, serviceRegistry, irqHandlers, machine, asidTable, capabilityRefs preservation), validation correctness theorems, 17 tests across 4 categories, XVAL-005 decode roundtrip. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
+- **WS-AB Phase D4 COMPLETE**: Priority Inheritance Protocol (v0.24.3) — `pipBoost` TCB field, `effectivePriority` incorporates `max(scPrio, pipBoost)`, blocking graph (acyclicity, depth bound), `computeMaxWaiterPriority`, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, Call/Reply/Suspend integration, 7 frame preservation theorems, parametric bounded inversion, determinism, 13 tests across 8 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/audits/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
 - **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence
 - **Hardware target**: Raspberry Pi 5 (ARM64)

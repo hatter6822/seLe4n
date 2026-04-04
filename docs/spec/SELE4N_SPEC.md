@@ -729,6 +729,40 @@ returns donated SchedContexts before TCB destruction.
 **Defense-in-depth**: `donateSchedContext` validates `sc.boundThread = some
 clientTid` before transferring ownership.
 
+### 8.13 Priority Inheritance Protocol (WS-AB Phase D4)
+
+Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority
+Inheritance Protocol (PIP). When a client blocks on a server via `Call`, the
+server's effective scheduling priority is transiently elevated to match the
+highest-priority client transitively waiting on it.
+
+**TCB field**: `pipBoost : Option Priority := none`. When `some p`, the
+thread's effective priority is `max(SchedContext.priority, p)`.
+
+**Blocking graph**: `blockedOnThread` (direct blocking via `blockedOnReply`),
+`waitersOf` (all direct waiters), `blockingChain` (transitive upward walk).
+Acyclicity is a system-level invariant (`blockingAcyclic`); chain depth is
+bounded by `objectIndex.length`.
+
+**Operations**:
+- `computeMaxWaiterPriority`: maximum effective priority among direct waiters
+- `updatePipBoost`: single-thread pipBoost recompute + conditional run queue migration
+- `propagatePriorityInheritance`: chain walk applying updatePipBoost at each step
+- `revertPriorityInheritance`: structurally identical to propagation (same updatePipBoost)
+
+**Integration points**:
+- `endpointCallWithDonation`: propagates PIP after Call completes (D4-L)
+- `endpointReplyWithDonation`: reverts PIP after Reply unblocks client (D4-M)
+- `endpointReplyRecvWithDonation`: reverts PIP for ReplyRecv (D4-M)
+- `suspendThread`: reverts PIP before cleanup pipeline (D4-N)
+
+**Composition with SchedContext donation (Z7)**: `effectivePriority` computes
+`max(scPrio, pipBoost)`, so PIP provides an additional boost when the transitive
+client priority exceeds the donated SchedContext priority.
+
+**Bounded inversion**: Priority inversion is bounded by
+`objectIndex.length × WCRT(effectivePriority)` ticks (parametric in WCRT).
+
 ---
 
 ## 9. Non-Negotiable Baseline Contracts

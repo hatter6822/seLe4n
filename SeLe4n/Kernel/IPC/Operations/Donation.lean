@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.DualQueue.Transport
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 
 /-! # Z7: SchedContext Donation / Passive Servers
 
@@ -215,7 +216,11 @@ def endpointCallWithDonation
       match maybeReceiver with
       | some receiverTid =>
         -- Handshake path: a receiver was woken — apply donation
-        .ok ((), applyCallDonation st' caller receiverTid)
+        let st'' := applyCallDonation st' caller receiverTid
+        -- D4-L: Apply PIP — propagate priority inheritance from the server
+        -- upward through the blocking chain. The server may itself be blocked
+        -- on another server, requiring transitive propagation.
+        .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
       | none =>
         -- Blocking path: no receiver was available, caller blocked
         .ok ((), st')
@@ -230,7 +235,11 @@ def endpointReplyWithDonation
     | .error e => .error e
     | .ok ((), st') =>
       -- Apply donation return: if replier has donated SC, return it
-      .ok ((), applyReplyDonation st' replier)
+      let st'' := applyReplyDonation st' replier
+      -- D4-M: Revert PIP — the client (target) is unblocked, so the replier's
+      -- pipBoost must be recomputed from remaining waiters. Propagate reversion
+      -- upward through the chain.
+      .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
 
 /-- Z7: Donation-aware endpointReplyRecv. Composes:
 1. Standard endpointReplyRecv (reply + receive) — server still holds donated SC during reply
@@ -251,7 +260,9 @@ def endpointReplyRecvWithDonation
     | .error e => .error e
     | .ok ((), st') =>
       -- Z7-D1: Return old donation AFTER reply+receive completes
-      .ok ((), applyReplyDonation st' receiver)
+      let st'' := applyReplyDonation st' receiver
+      -- D4-M: Revert PIP for the reply portion
+      .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
 
 -- ============================================================================
 -- Z7-J/K: Donation operation structural theorems

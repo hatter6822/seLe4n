@@ -3433,9 +3433,10 @@ theorem budgetPositive_subset
 This confirms the backward-compatibility guarantee. -/
 theorem effectivePriority_unbound_legacy
     (st : SystemState) (tcb : TCB)
-    (hUnbound : tcb.schedContextBinding = .unbound) :
+    (hUnbound : tcb.schedContextBinding = .unbound)
+    (hNoPip : tcb.pipBoost = none := by rfl) :
     effectivePriority st tcb = some (tcb.priority, tcb.deadline, tcb.domain) := by
-  simp [effectivePriority, hUnbound]
+  simp [effectivePriority, hUnbound, hNoPip]
 
 /-- Z4-U2: `hasSufficientBudget_unbound` — unbound threads are always eligible. -/
 theorem hasSufficientBudget_unbound_legacy
