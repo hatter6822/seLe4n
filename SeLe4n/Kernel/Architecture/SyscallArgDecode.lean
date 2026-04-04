@@ -1233,4 +1233,72 @@ theorem decodeResumeArgs_roundtrip (args : ResumeArgs) :
     decodeResumeArgs (stubDecoded (encodeResumeArgs args)) = .ok args := by
   rcases args; rfl
 
+-- ============================================================================
+-- D2-C: Priority management argument structures
+-- ============================================================================
+
+/-- D2-C: Per-syscall argument structure for `tcbSetPriority`.
+    Register mapping: x2=newPriority. The target thread comes from the
+    capability target. -/
+structure SetPriorityArgs where
+  newPriority : Nat
+  deriving Repr, DecidableEq
+
+/-- D2-C: Per-syscall argument structure for `tcbSetMCPriority`.
+    Register mapping: x2=newMCP. The target thread comes from the
+    capability target. -/
+structure SetMCPriorityArgs where
+  newMCP : Nat
+  deriving Repr, DecidableEq
+
+-- ============================================================================
+-- D2-C: Priority management decode functions
+-- ============================================================================
+
+/-- D2-C: Decode setPriority arguments from message registers.
+    Requires 1 message register (newPriority). Validates that the priority
+    value is within the valid range (≤ 0xFF). -/
+def decodeSetPriorityArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SetPriorityArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  if r0.val > 0xFF then .error .invalidArgument
+  else pure { newPriority := r0.val }
+
+/-- D2-C: Decode setMCPriority arguments from message registers.
+    Requires 1 message register (newMCP). Validates that the MCP
+    value is within the valid range (≤ 0xFF). -/
+def decodeSetMCPriorityArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SetMCPriorityArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  if r0.val > 0xFF then .error .invalidArgument
+  else pure { newMCP := r0.val }
+
+-- ============================================================================
+-- D2-C: Priority management encode functions
+-- ============================================================================
+
+/-- D2-C: Encode setPriority arguments into message registers. -/
+@[inline] def encodeSetPriorityArgs (args : SetPriorityArgs) : Array RegValue :=
+  #[⟨args.newPriority⟩]
+
+/-- D2-C: Encode setMCPriority arguments into message registers. -/
+@[inline] def encodeSetMCPriorityArgs (args : SetMCPriorityArgs) : Array RegValue :=
+  #[⟨args.newMCP⟩]
+
+-- ============================================================================
+-- D2-C: Priority management round-trip theorems
+-- ============================================================================
+
+/-- D2-C: SetPriorityArgs decode round-trip for in-range values. -/
+theorem decodeSetPriorityArgs_roundtrip (args : SetPriorityArgs) (h : args.newPriority ≤ 0xFF) :
+    decodeSetPriorityArgs (stubDecoded (encodeSetPriorityArgs args)) = .ok args := by
+  simp [decodeSetPriorityArgs, encodeSetPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure, show ¬(args.newPriority > 0xFF) from Nat.not_lt.mpr h]
+
+/-- D2-C: SetMCPriorityArgs decode round-trip for in-range values. -/
+theorem decodeSetMCPriorityArgs_roundtrip (args : SetMCPriorityArgs) (h : args.newMCP ≤ 0xFF) :
+    decodeSetMCPriorityArgs (stubDecoded (encodeSetMCPriorityArgs args)) = .ok args := by
+  simp [decodeSetMCPriorityArgs, encodeSetMCPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure, show ¬(args.newMCP > 0xFF) from Nat.not_lt.mpr h]
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

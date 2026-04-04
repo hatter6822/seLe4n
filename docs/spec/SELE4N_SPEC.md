@@ -269,8 +269,8 @@ Each has a documented rationale and prerequisite milestone:
 
 | Operation | seL4 Equivalent | Rationale | Prerequisite | Status |
 |-----------|----------------|-----------|--------------|--------|
-| `setPriority` | `seL4_TCB_SetPriority` | Requires MCS scheduling context model | MCS scheduling (long-horizon) | Deferred |
-| `setMCPriority` | `seL4_TCB_SetMCPriority` | Same MCS prerequisite | MCS scheduling (long-horizon) | Deferred |
+| `setPriority` | `seL4_TCB_SetPriority` | MCP authority validation, SchedContext-aware priority update, run queue migration | MCS scheduling (Z1–Z5) | **Implemented (D2, v0.24.1)** |
+| `setMCPriority` | `seL4_TCB_SetMCPriority` | MCP ceiling update with retroactive priority capping | MCS scheduling (Z1–Z5) | **Implemented (D2, v0.24.1)** |
 | `suspend` | `seL4_TCB_Suspend` | Requires thread lifecycle state machine | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
 | `resume` | `seL4_TCB_Resume` | Inverse of suspend; same prerequisite | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
 | `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | Requires VSpace validation via page walk | H3 (VSpace integration) | Deferred |
@@ -286,6 +286,17 @@ preservation through all suspension sub-operations.
 
 These operations are tracked in `SeLe4n/Kernel/API.lean` (stability table) and
 `docs/CLAIM_EVIDENCE_INDEX.md` (evidence tracking).
+
+**D2 (v0.24.1):** Priority management is now fully implemented. `setPriorityOp`
+validates MCP authority, updates priority on SchedContext (if bound) or TCB
+(if unbound), migrates run queue buckets, and triggers conditional reschedule.
+`setMCPriorityOp` updates the MCP ceiling and retroactively caps the thread's
+current priority if it exceeds the new MCP. Both operations are wired into
+`dispatchWithCap` (`SyscallId.tcbSetPriority`, `.tcbSetMCPriority`) as
+capability-only arms with frozen-phase equivalents. Preservation theorems
+prove authority non-escalation (`setPriority_authority_bounded`,
+`setMCPriority_authority_bounded`) and transport lemmas guarantee scheduler,
+serviceRegistry, and lifecycle field preservation.
 
 ---
 

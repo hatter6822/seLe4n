@@ -359,7 +359,7 @@ decomposes by modification:
 
 ---
 
-## 5. Phase D2 — Priority Management (v0.24.1)
+## 5. Phase D2 — Priority Management (v0.24.1) ✅ COMPLETE
  
 **Scope**: Implement `setPriority` and `setMCPriority` as capability-controlled
 operations that modify thread scheduling priority through the SchedContext

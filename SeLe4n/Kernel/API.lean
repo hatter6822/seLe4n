@@ -29,6 +29,7 @@ import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.IPC.Operations.Donation
 
 import SeLe4n.Kernel.Architecture.Adapter
@@ -384,6 +385,8 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .schedContextUnbind    => .write
   | .tcbSuspend            => .write
   | .tcbResume             => .write
+  | .tcbSetPriority        => .write
+  | .tcbSetMCPriority      => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -545,7 +548,7 @@ and no additional decoded arguments) and this explicit match (handles syscalls
 requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 1. Shares a single checked/unchecked dispatch implementation (V8-H)
 2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
-   showing all 22 `SyscallId` variants are handled by one of the two tiers
+   showing all 24 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -708,7 +711,35 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           | .error e => .error e
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
-  -- V8-H/D1: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
+  -- D2-K: TCB setPriority — priority from message register, target from capability
+  | .tcbSetPriority =>
+    match cap.target with
+    | .object objId =>
+      fun st => match decodeSetPriorityArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        -- Caller is the current thread (tid), target from capability
+        match SchedContext.PriorityManagement.setPriorityOp st tid
+            (ThreadId.ofNat objId.toNat)
+            (Priority.ofNat args.newPriority) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- D2-K: TCB setMCPriority — MCP from message register, target from capability
+  | .tcbSetMCPriority =>
+    match cap.target with
+    | .object objId =>
+      fun st => match decodeSetMCPriorityArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        -- Caller is the current thread (tid), target from capability
+        match SchedContext.PriorityManagement.setMCPriorityOp st tid
+            (ThreadId.ofNat objId.toNat)
+            (Priority.ofNat args.newMCP) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- V8-H/D1/D2: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
   -- serviceRevoke, serviceQuery, schedContextConfigure, schedContextBind,
   -- schedContextUnbind, tcbSuspend, tcbResume) are unreachable here — handled by
   -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
@@ -1100,21 +1131,23 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
     arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
     wildcard arm is unreachable at runtime.
 
-    The proof enumerates all 22 `SyscallId` constructors: 11 are routed to
+    The proof enumerates all 24 `SyscallId` constructors: 11 are routed to
     `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
     `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
     `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`),
-    and the remaining 11
+    and the remaining 13
     (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
     `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
-    `.replyRecv`) are handled by explicit match arms in `dispatchWithCap`. -/
+    `.replyRecv`, `.tcbSetPriority`, `.tcbSetMCPriority`)
+    are handled by explicit match arms in `dispatchWithCap`. -/
 theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
             .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
             .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
             .notificationSignal, .notificationWait, .replyRecv,
             .schedContextConfigure, .schedContextBind,
-            .schedContextUnbind, .tcbSuspend, .tcbResume] : List SyscallId) := by
+            .schedContextUnbind, .tcbSuspend, .tcbResume,
+            .tcbSetPriority, .tcbSetMCPriority] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
