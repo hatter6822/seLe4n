@@ -3083,6 +3083,21 @@ private def runRustXvalVectors : IO Unit := do
   else
     throw <| IO.userError s!"[XVAL-004] MessageInfo bit layout MISMATCH: len={miLen} caps={miCaps} label={miLabel}"
 
+  -- RUST-XVAL: SetIPCBufferArgs encode/decode roundtrip (D3)
+  let ibArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs :=
+    { bufferAddr := ⟨512⟩ }   -- 512 is aligned to ipcBufferAlignment (512)
+  let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
+  let ibStub : SyscallDecodeResult :=
+    { capAddr := ⟨0⟩, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+      syscallId := .tcbSetIPCBuffer, msgRegs := ibEncoded }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs ibStub with
+  | .ok decoded =>
+    if decoded == ibArgs then
+      IO.println s!"[XVAL-005] SetIPCBufferArgs roundtrip ok: regs={reprStr ibEncoded}"
+    else
+      throw <| IO.userError "[XVAL-005] SetIPCBufferArgs roundtrip MISMATCH"
+  | .error e => throw <| IO.userError s!"[XVAL-005] SetIPCBufferArgs decode error: {reprStr e}"
+
 def runMainTrace : IO Unit := do
   assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState bootstrapServiceIds
   match SeLe4n.Kernel.schedule bootstrapState with

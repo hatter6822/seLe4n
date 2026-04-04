@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-ipc-buffer-config-pHus4",
-      "commit_sha": "24fbe6fb7737ce657e7fe2fb30330366ac35a348",
-      "tree_sha": "bfd7d31f3b20fdac87dd8687c7f56a1c8241fa32",
-      "committed_at_utc": "2026-04-04T01:40:05-04:00"
+      "commit_sha": "429537500c5f4694fa527f79a4c78da88a64ff2c",
+      "tree_sha": "f411182534a764bd824a03dbcebc29f401cd494b",
+      "committed_at_utc": "2026-04-04T06:19:13+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "935fd30c2105676a7258eeac97fea37dffccecaad49abc474f4c0e631fd64b97"
+    "source_digest": "e8e0dcd92d1ebb6392c5d6558e39afe0e96fb32f5579f753445cdaffa587a43a"
   },
   "summary": {
     "module_count": 131,
-    "declaration_count": 4240
+    "declaration_count": 4250
   },
   "readme_sync": {
-    "version": "0.24.2",
+    "version": "0.24.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 118,
-    "production_loc": 81215,
+    "production_loc": 81299,
     "test_files": 13,
-    "test_loc": 10010,
-    "proved_theorem_lemma_decls": 2335,
+    "test_loc": 10058,
+    "proved_theorem_lemma_decls": 2341,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2070,7 +2070,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.IpcBufferValidation",
       "path": "SeLe4n/Kernel/Architecture/IpcBufferValidation.lean",
-      "declaration_count": 8,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -2151,20 +2151,87 @@
         },
         {
           "kind": "theorem",
-          "name": "setIPCBufferOp_only_modifies_ipcBuffer",
-          "line": 174,
+          "name": "setIPCBufferOp_success_shape",
+          "line": 168,
           "called": [
             "SystemState",
             "ThreadId",
             "VAddr",
             "setIPCBufferOp",
-            "toObjId"
+            "toObjId",
+            "validateIpcBufferAddress"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setIPCBufferOp_scheduler_eq",
+          "line": 184,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "setIPCBufferOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setIPCBufferOp_serviceRegistry_eq",
+          "line": 196,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "setIPCBufferOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setIPCBufferOp_irqHandlers_eq",
+          "line": 208,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "setIPCBufferOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setIPCBufferOp_machine_eq",
+          "line": 220,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "setIPCBufferOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setIPCBufferOp_asidTable_eq",
+          "line": 232,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "setIPCBufferOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setIPCBufferOp_capabilityRefs_eq",
+          "line": 244,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "setIPCBufferOp"
           ]
         },
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_deterministic",
-          "line": 188,
+          "line": 257,
           "called": [
             "SystemState",
             "ThreadId",
@@ -51761,6 +51828,7 @@
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
+            "SetIPCBufferArgs",
             "SyscallDecodeResult",
             "SyscallId",
             "all",
@@ -51769,8 +51837,10 @@
             "cspaceMove",
             "decode",
             "decodeCSpaceMintArgs",
+            "decodeSetIPCBufferArgs",
             "encode",
             "encodeCSpaceMintArgs",
+            "encodeSetIPCBufferArgs",
             "none",
             "notificationSignal",
             "notificationWait",
@@ -51785,7 +51855,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 3086,
+          "line": 3101,
           "called": [
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",
@@ -53264,7 +53334,7 @@
     {
       "module": "tests.IpcBufferSuite",
       "path": "tests/IpcBufferSuite.lean",
-      "declaration_count": 24,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -53570,8 +53640,62 @@
         },
         {
           "kind": "def",
+          "name": "ib014_frozenUnmapped",
+          "line": 302,
+          "called": [
+            "ThreadId",
+            "expect",
+            "frozenSetIPCBuffer",
+            "mkFrozenState",
+            "mkFrozenVSpaceRoot",
+            "mkTcb",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ib015_frozenMissingThread",
+          "line": 314,
+          "called": [
+            "ThreadId",
+            "expect",
+            "frozenSetIPCBuffer",
+            "mkFrozenState",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ib016_frozenNonCanonical",
+          "line": 322,
+          "called": [
+            "ThreadId",
+            "canonicalBound",
+            "expect",
+            "frozenSetIPCBuffer",
+            "mkFrozenState",
+            "mkFrozenVSpaceRoot",
+            "mkTcb",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ib017_frozenInvalidVSpaceRoot",
+          "line": 335,
+          "called": [
+            "ThreadId",
+            "expect",
+            "frozenSetIPCBuffer",
+            "mkFrozenState",
+            "mkTcb",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 304,
+          "line": 348,
           "called": [
             "ib001_setIPCBufferValidAddress",
             "ib002_setIPCBufferZeroAddress",
@@ -53585,7 +53709,11 @@
             "ib010_fieldPreservation",
             "ib011_frozenSetIPCBuffer",
             "ib012_frozenUnaligned",
-            "ib013_frozenReadOnly"
+            "ib013_frozenReadOnly",
+            "ib014_frozenUnmapped",
+            "ib015_frozenMissingThread",
+            "ib016_frozenNonCanonical",
+            "ib017_frozenInvalidVSpaceRoot"
           ]
         }
       ]

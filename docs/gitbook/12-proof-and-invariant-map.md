@@ -2211,6 +2211,20 @@ trust boundary specification.
 - `DeviceTree.fromDtb` — stub for future DTB parsing (WS-T).
 - `rpi5DeviceTree` — RPi5 instance with validation proof (`rpi5DeviceTree_valid`).
 
+**IPC Buffer Configuration** (`Architecture/IpcBufferValidation.lean`, D3):
+- `validateIpcBufferAddress` — 5-step validation pipeline (alignment → canonical → VSpace root → mapping → write permission).
+- `setIPCBufferOp` — validate then update `tcb.ipcBuffer`.
+- `validateIpcBufferAddress_implies_aligned` — success implies `addr % 512 = 0`.
+- `validateIpcBufferAddress_implies_canonical` — success implies `addr < 2^48`.
+- `validateIpcBufferAddress_implies_mapped_writable` — success implies VSpace mapping with write permission.
+- `setIPCBufferOp_scheduler_eq` — scheduler state preserved.
+- `setIPCBufferOp_serviceRegistry_eq` — service registry preserved.
+- `setIPCBufferOp_irqHandlers_eq` — IRQ handlers preserved.
+- `setIPCBufferOp_machine_eq` — machine state preserved.
+- `setIPCBufferOp_asidTable_eq` — ASID table preserved.
+- `setIPCBufferOp_capabilityRefs_eq` — capability refs preserved.
+- `setIPCBufferOp_deterministic` — pure function determinism.
+
 ## 24. SchedContext type foundation (WS-Z Phase Z1)
 
 **Scheduling Context** (`Kernel/SchedContext/Types.lean`) — first-class kernel

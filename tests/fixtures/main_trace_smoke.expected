@@ -222,3 +222,4 @@
 [XVAL-002] SyscallId roundtrip ok: all 25 variants
 [XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]
 [XVAL-004] MessageInfo bit layout ok: len=42 caps=384 label=2560
+[XVAL-005] SetIPCBufferArgs roundtrip ok: regs=#[{ val := 512 }]

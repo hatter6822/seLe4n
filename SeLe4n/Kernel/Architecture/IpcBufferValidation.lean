@@ -161,26 +161,95 @@ theorem validateIpcBufferAddress_implies_mapped_writable
       · contradiction
 
 -- ============================================================================
--- D3-F: Frame preservation — setIPCBufferOp preserves all invariant bundles
+-- D3-F: Transport lemmas — setIPCBufferOp preserves non-object state fields
 -- ============================================================================
 
-/-- D3-F: `setIPCBufferOp` modifies exactly one TCB field (`ipcBuffer`).
-    This field is not referenced by any scheduler, IPC, cross-subsystem,
-    or capability invariant predicate. Therefore, if the operation succeeds,
-    the only state change is the `ipcBuffer` field of the target TCB.
-
-    This theorem witnesses that the operation is a pure TCB field update:
-    the pre-state and post-state differ only in the target TCB's ipcBuffer. -/
-theorem setIPCBufferOp_only_modifies_ipcBuffer
+/-- D3-F: Helper to extract the success branch of setIPCBufferOp. -/
+private theorem setIPCBufferOp_success_shape
     (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
     (hOk : setIPCBufferOp st tid addr = .ok st') :
-    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) := by
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      validateIpcBufferAddress st tid addr = .ok () := by
+  unfold setIPCBufferOp at hOk
+  split at hOk
+  · contradiction
+  · rename_i hVal
+    split at hOk
+    · exact ⟨_, by assumption, hVal⟩
+    · contradiction
+
+/-- D3-F: `setIPCBufferOp` preserves the scheduler state.
+    The operation only modifies `objects`, `objectIndex`, `objectIndexSet`,
+    and `lifecycle`; all other SystemState fields are untouched. -/
+theorem setIPCBufferOp_scheduler_eq
+    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    st'.scheduler = st.scheduler := by
   unfold setIPCBufferOp at hOk
   split at hOk
   · contradiction
   · split at hOk
-    · rename_i hTcb
-      exact ⟨_, hTcb⟩
+    · cases hOk; rfl
+    · contradiction
+
+/-- D3-F: `setIPCBufferOp` preserves the service registry. -/
+theorem setIPCBufferOp_serviceRegistry_eq
+    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    st'.serviceRegistry = st.serviceRegistry := by
+  unfold setIPCBufferOp at hOk
+  split at hOk
+  · contradiction
+  · split at hOk
+    · cases hOk; rfl
+    · contradiction
+
+/-- D3-F: `setIPCBufferOp` preserves IRQ handlers. -/
+theorem setIPCBufferOp_irqHandlers_eq
+    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    st'.irqHandlers = st.irqHandlers := by
+  unfold setIPCBufferOp at hOk
+  split at hOk
+  · contradiction
+  · split at hOk
+    · cases hOk; rfl
+    · contradiction
+
+/-- D3-F: `setIPCBufferOp` preserves machine state. -/
+theorem setIPCBufferOp_machine_eq
+    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    st'.machine = st.machine := by
+  unfold setIPCBufferOp at hOk
+  split at hOk
+  · contradiction
+  · split at hOk
+    · cases hOk; rfl
+    · contradiction
+
+/-- D3-F: `setIPCBufferOp` preserves the ASID table. -/
+theorem setIPCBufferOp_asidTable_eq
+    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    st'.asidTable = st.asidTable := by
+  unfold setIPCBufferOp at hOk
+  split at hOk
+  · contradiction
+  · split at hOk
+    · cases hOk; rfl
+    · contradiction
+
+/-- D3-F: `setIPCBufferOp` preserves capability refs within lifecycle. -/
+theorem setIPCBufferOp_capabilityRefs_eq
+    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    st'.lifecycle.capabilityRefs = st.lifecycle.capabilityRefs := by
+  unfold setIPCBufferOp at hOk
+  split at hOk
+  · contradiction
+  · split at hOk
+    · cases hOk; rfl
     · contradiction
 
 /-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function

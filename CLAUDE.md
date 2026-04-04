@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.24.2.
+Lean 4.28.0 toolchain, Lake build system, version 0.24.3.
 
 ## Build and run
 
@@ -480,7 +480,7 @@ under `docs/` and `docs/gitbook/`.
 
 - **WS-AB Phase D1 COMPLETE**: Thread Suspension & Resumption (v0.24.0–v0.24.1) — `suspendThread`/`resumeThread` operations, `SyscallId.tcbSuspend`/`.tcbResume`, 12 transport lemmas, `enforcementBoundary` 25→27, frozen equivalents, 21 tests across 7 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AB Phase D2 COMPLETE**: Priority Management (v0.24.1) — `setPriorityOp`/`setMCPriorityOp` operations, MCP authority non-escalation, SchedContext-aware priority update, run queue bucket migration, `SyscallId.tcbSetPriority`/`.tcbSetMCPriority`, `enforcementBoundary` 27→29, frozen equivalents, 15 tests across 7 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
-- **WS-AB Phase D3 COMPLETE**: IPC Buffer Configuration (v0.24.2) — `setIPCBufferOp` with 5-step validation (alignment, canonical, VSpace root, mapping, write permission), `SyscallId.tcbSetIPCBuffer`, `enforcementBoundary` 29→30, frozen equivalent, validation correctness theorems, 13 tests across 4 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
+- **WS-AB Phase D3 COMPLETE**: IPC Buffer Configuration (v0.24.2–v0.24.3) — `setIPCBufferOp` with 5-step validation (alignment, canonical, VSpace root, mapping, write permission), `SyscallId.tcbSetIPCBuffer`, `enforcementBoundary` 29→30, frozen equivalent, 7 transport lemmas (scheduler, serviceRegistry, irqHandlers, machine, asidTable, capabilityRefs preservation), validation correctness theorems, 17 tests across 4 categories, XVAL-005 decode roundtrip. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/audits/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
 - **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence
 - **Hardware target**: Raspberry Pi 5 (ARM64)

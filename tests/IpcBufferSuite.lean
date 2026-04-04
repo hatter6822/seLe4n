@@ -298,6 +298,50 @@ private def ib013_frozenReadOnly : IO Unit := do
   | .ok _ => throw <| IO.userError "IB-013 frozen read-only should fail"
   | .error e => expect "IB-013 frozen read-only returns translationFault" (e == .translationFault)
 
+/-- IB-014: Frozen setIPCBuffer with unmapped address fails. -/
+private def ib014_frozenUnmapped : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let fvs := mkFrozenVSpaceRoot []  -- empty mappings
+  let fst := mkFrozenState [
+    (⟨1⟩, .tcb (mkTcb 1)),
+    (⟨100⟩, .vspaceRoot fvs)
+  ]
+  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  | .ok _ => throw <| IO.userError "IB-014 frozen unmapped should fail"
+  | .error e => expect "IB-014 frozen unmapped returns translationFault" (e == .translationFault)
+
+/-- IB-015: Frozen setIPCBuffer with missing thread fails. -/
+private def ib015_frozenMissingThread : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
+  let fst := mkFrozenState []
+  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  | .ok _ => throw <| IO.userError "IB-015 frozen missing thread should fail"
+  | .error e => expect "IB-015 frozen missing thread returns objectNotFound" (e == .objectNotFound)
+
+/-- IB-016: Frozen setIPCBuffer with non-canonical address fails. -/
+private def ib016_frozenNonCanonical : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let fvs := mkFrozenVSpaceRoot []
+  let fst := mkFrozenState [
+    (⟨1⟩, .tcb (mkTcb 1)),
+    (⟨100⟩, .vspaceRoot fvs)
+  ]
+  let beyondCanonical := VAddr.canonicalBound  -- 2^48, aligned to 512
+  match frozenSetIPCBuffer tid ⟨beyondCanonical⟩ fst with
+  | .ok _ => throw <| IO.userError "IB-016 frozen non-canonical should fail"
+  | .error e => expect "IB-016 frozen non-canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
+
+/-- IB-017: Frozen setIPCBuffer with invalid VSpace root fails. -/
+private def ib017_frozenInvalidVSpaceRoot : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let fst := mkFrozenState [
+    (⟨1⟩, .tcb (mkTcb 1)),
+    (⟨100⟩, .endpoint {})  -- Not a VSpaceRoot
+  ]
+  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  | .ok _ => throw <| IO.userError "IB-017 frozen invalid vspace root should fail"
+  | .error e => expect "IB-017 frozen invalid vspace returns invalidArgument" (e == .invalidArgument)
+
 end SeLe4n.Testing.IpcBufferSuite
 
 open SeLe4n.Testing.IpcBufferSuite in
@@ -320,4 +364,8 @@ def main : IO Unit := do
   ib011_frozenSetIPCBuffer
   ib012_frozenUnaligned
   ib013_frozenReadOnly
-  IO.println "=== All D3 IPC buffer tests passed (13 tests) ==="
+  ib014_frozenUnmapped
+  ib015_frozenMissingThread
+  ib016_frozenNonCanonical
+  ib017_frozenInvalidVSpaceRoot
+  IO.println "=== All D3 IPC buffer tests passed (17 tests) ==="
