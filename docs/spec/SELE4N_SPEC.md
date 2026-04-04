@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.2` (`lakefile.toml`) |
+| **Package version** | `0.25.3` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 83,286 across 132 Lean files |
 | **Test LoC** | 10,564 across 15 Lean test suites |
@@ -345,17 +345,17 @@ kernel code changes (proof-only phase). Key results:
   decrement characterization), `replenishment_within_period` (CBS
   replenishment timing), `fifo_progress_in_band` (FIFO progress within
   priority band), `domainRotationTotal_le_bound` (domain rotation).
-- **WCRT hypotheses**: `WCRTHypotheses` structure with 8 fields
-  (thread runnable, budget available, domain membership, higher-priority
-  bound N, max budget B, max period P, domain schedule adequacy,
-  invariants hold).
+- **WCRT hypotheses**: `WCRTHypotheses` structure with 14 fields
+  (threadRunnable, threadHasBudget, targetPrio, targetDomain, threadInDomain,
+  N, higherPriorityBound, B, maxBudgetBound, P, maxPeriodBound,
+  domainScheduleAdequate, domainEntriesPositive, domainScheduleNonEmpty).
 - **Main theorem**: `bounded_scheduling_latency` proves WCRT =
   D * L_max + N * (B + P), where D = domain schedule entries,
   L_max = maximum domain time, N = higher-priority thread count,
   B = max budget, P = max period.
 - **PIP enhancement**: `pip_enhanced_wcrt_le_base` shows PIP-boosted
   threads have tighter WCRT (fewer higher-priority competitors).
-- 38 surface anchor tests in `LivenessSuite.lean`.
+- 58 surface anchor tests in `LivenessSuite.lean`.
 
 **D6 (v0.25.2):** API Surface Integration & Closure. Rust ABI synchronized
 with 5 new `SyscallId` variants (20→25) and `AlignmentError` (43). All 25
@@ -856,7 +856,7 @@ threads have fewer higher-priority competitors (monotonicity in threshold).
 the base bound. This closes the previously parametric WCRT in D4's bounded
 inversion theorem.
 
-**Evidence**: 38 surface anchor tests in `tests/LivenessSuite.lean`. Zero
+**Evidence**: 58 surface anchor tests in `tests/LivenessSuite.lean`. Zero
 sorry/axiom.
 
 ---

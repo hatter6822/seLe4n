@@ -1,3 +1,17 @@
+## v0.25.3 — D5 Audit: Surface Anchor Count Correction
+
+Comprehensive audit of Phase D5 (Bounded Latency Theorem) implementation.
+
+- **Surface anchor count fix**: `LivenessSuite.lean` correctly has 58 `#check`
+  surface anchors (was incorrectly documented as 38/46/48 across docs).
+  Updated: LivenessSuite output string, CLAUDE.md, DEVELOPMENT.md, SPEC,
+  CLAIM_EVIDENCE_INDEX, WORKSTREAM_HISTORY, GitBook chapter 12, workstream plan.
+- **D5 proof audit**: All 7 Liveness submodules verified — zero sorry/axiom,
+  no vacuous theorems, no shortcuts. `bounded_scheduling_latency_exists` uses
+  genuine decomposition (domain rotation + band exhaustion). `countHigherOrEqual_mono_threshold`
+  proved by induction with accumulator generalization. PIP integration sound.
+- Version bump 0.25.2 → 0.25.3.
+
 ## v0.25.2 — D6: API Surface Integration & Closure (WS-AB Complete)
 
 Phase D6 of WS-AB Deferred Operations workstream. Final integration phase

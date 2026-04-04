@@ -45,7 +45,7 @@ IPC timeout) but two critical formal gaps remain:
  
 | Gap | Original Phase | Status | Why It Matters |
 |-----|---------------|--------|----------------|
-| **No formal WCRT bound** | V1 (Bounded Latency Theorem) | **COMPLETE (D5)** | Resolved by Phase D5: `bounded_scheduling_latency` proves WCRT = D*L_max + N*(B+P). PIP enhancement via `pip_enhanced_wcrt_le_base`. 38 surface anchor tests. Zero sorry/axiom. |
+| **No formal WCRT bound** | V1 (Bounded Latency Theorem) | **COMPLETE (D5)** | Resolved by Phase D5: `bounded_scheduling_latency` proves WCRT = D*L_max + N*(B+P). PIP enhancement via `pip_enhanced_wcrt_le_base`. 58 surface anchor tests. Zero sorry/axiom. |
 | **No transitive priority inheritance** | V3 (Priority Inheritance Protocol) | **COMPLETE (D4)** | Resolved by Phase D4: transitive PIP via blocking graph, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, 16 frame preservation theorems, `pip_bounded_inversion`. Zero sorry/axiom. |
  
 ### 1.3 Audit of WS-V Starvation Prevention Plan
@@ -55,7 +55,7 @@ is now at v0.23.22. Here is the disposition of each phase:
  
 | WS-V Phase | Planned Scope | Actual Disposition | Remaining Work |
 |------------|--------------|-------------------|----------------|
-| **V1** (15 sub-tasks) | Bounded Latency Theorem — proof-only trace model, WCRT bound | **COMPLETE as D5** (v0.25.0). `Scheduler/Liveness/` directory with 7 files + re-export hub. Trace model, CBS-aware WCRT bound, PIP enhancement. 38 surface anchor tests. Zero sorry/axiom. | **No remaining work.** |
+| **V1** (15 sub-tasks) | Bounded Latency Theorem — proof-only trace model, WCRT bound | **COMPLETE as D5** (v0.25.0). `Scheduler/Liveness/` directory with 7 files + re-export hub. Trace model, CBS-aware WCRT bound, PIP enhancement. 58 surface anchor tests. Zero sorry/axiom. | **No remaining work.** |
 | **V2** (18 sub-tasks) | IPC Timeout Mechanism — per-tick countdown on IPC blocking states | **PARTIALLY IMPLEMENTED as Z6**. Budget-driven timeout via `timeoutBudget : Option SchedContextId` on TCB + `timeoutThread`/`timeoutBlockedThreads` in `timerTickBudget`. Achieves SV-3 (bounded IPC blocking) but through budget exhaustion, not independent countdown timers. | **Substantially complete.** Z6 solves the core problem. Optional per-operation timeouts (independent of SchedContext) would be a refinement, not critical. **Absorbed — no dedicated phase needed.** |
 | **V3** (21 sub-tasks) | Priority Inheritance Protocol — blocking graph, transitive propagation, bounded inversion proofs | **COMPLETE as D4** (v0.25.0). Blocking graph (`blockedOnThread`, `waitersOf`, `blockingChain`), acyclicity invariant, depth bound, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, 16 frame preservation theorems, `pip_bounded_inversion`, Call/Reply/Suspend/Timeout integration. Zero sorry/axiom. | **No remaining work.** |
 | **V4** (24 sub-tasks) | MCS Scheduling Contexts — new kernel object type, CBS budget, donation, timeout endpoints | **SUBSTANTIALLY IMPLEMENTED as WS-Z (Z1–Z10)**. SchedContext types (Z1), CBS budget engine (Z2), replenishment queue (Z3), scheduler integration (Z4), capability-controlled binding (Z5), timeout endpoints (Z6), SchedContext donation (Z7), API surface (Z8), invariant composition (Z9). | **Complete. No remaining work.** |

@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.2.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.3.
 
 ## Build and run
 
@@ -207,7 +207,7 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
   RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
-  LivenessSuite.lean             D5: 38 surface anchor tests for liveness/WCRT theorems
+  LivenessSuite.lean             D5: 58 surface anchor tests for liveness/WCRT theorems
 ```
 
 Note: Files marked "Re-export hub" are thin import-only files that preserve
@@ -493,7 +493,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-AB PORTFOLIO COMPLETE** (v0.24.0–v0.25.2): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations implemented: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3). Priority Inheritance Protocol (D4). Bounded Latency Theorem WCRT = D*L_max + N*(B+P) (D5). API Surface Integration & Closure (D6). Rust ABI synchronized (SyscallId 25, KernelError 44). Zero sorry/axiom. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
+- **WS-AB PORTFOLIO COMPLETE** (v0.24.0–v0.25.3): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations implemented: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3). Priority Inheritance Protocol (D4). Bounded Latency Theorem WCRT = D*L_max + N*(B+P) (D5). API Surface Integration & Closure (D6). Rust ABI synchronized (SyscallId 25, KernelError 44). Zero sorry/axiom. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/audits/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
 - **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence
 - **Hardware target**: Raspberry Pi 5 (ARM64)
