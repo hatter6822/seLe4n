@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.24.3` (`lakefile.toml`) |
+| **Package version** | `0.25.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 81,299 across 118 Lean files |
-| **Test LoC** | 10,058 across 13 Lean test suites |
-| **Proved declarations** | 2,341 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 82,196 across 124 Lean files |
+| **Test LoC** | 10,411 across 14 Lean test suites |
+| **Proved declarations** | 2,399 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-AB Deferred Operations** — Phase D1 COMPLETE (v0.24.0–v0.24.1): Thread Suspension & Resumption. Phase D2 COMPLETE (v0.24.1): Priority Management. Phase D3 COMPLETE (v0.24.2–v0.24.3): IPC Buffer Configuration. Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md). Prior: WS-Z (v0.23.0–v0.23.19), WS-AA (v0.23.21–v0.23.23), WS-Y–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-AB Deferred Operations** — Phase D1 COMPLETE (v0.24.0–v0.24.1): Thread Suspension & Resumption. Phase D2 COMPLETE (v0.24.1): Priority Management. Phase D3 COMPLETE (v0.24.2–v0.24.3): IPC Buffer Configuration. Phase D4 COMPLETE (v0.25.0): Priority Inheritance Protocol. Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md). Prior: WS-Z (v0.23.0–v0.23.19), WS-AA (v0.23.21–v0.23.23), WS-Y–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -728,6 +728,44 @@ returns donated SchedContexts before TCB destruction.
 
 **Defense-in-depth**: `donateSchedContext` validates `sc.boundThread = some
 clientTid` before transferring ownership.
+
+### 8.13 Priority Inheritance Protocol (WS-AB Phase D4)
+
+Priority inversion via Call/Reply IPC is mitigated by a deterministic Priority
+Inheritance Protocol (PIP). When a client blocks on a server via `Call`, the
+server's effective scheduling priority is transiently elevated to match the
+highest-priority client transitively waiting on it.
+
+**TCB field**: `pipBoost : Option Priority := none`. When `some p`, the
+thread's effective priority is `max(SchedContext.priority, p)`.
+
+**Blocking graph**: `blockedOnThread` (direct blocking via `blockedOnReply`),
+`waitersOf` (all direct waiters), `blockingChain` (transitive upward walk).
+Acyclicity is a system-level invariant (`blockingAcyclic`); chain depth is
+bounded by `objectIndex.length`.
+
+**Operations**:
+- `computeMaxWaiterPriority`: maximum effective priority among direct waiters
+- `updatePipBoost`: single-thread pipBoost recompute + conditional run queue migration
+- `propagatePriorityInheritance`: chain walk applying updatePipBoost at each step
+- `revertPriorityInheritance`: structurally identical to propagation (same updatePipBoost)
+
+**Integration points**:
+- `endpointCallWithDonation`: propagates PIP after Call completes (D4-L)
+- `endpointReplyWithDonation`: reverts PIP after Reply unblocks client (D4-M)
+- `endpointReplyRecvWithDonation`: reverts PIP for ReplyRecv (D4-M)
+- `suspendThread`: reverts PIP before cleanup pipeline (D4-N)
+- `timeoutThread`: reverts PIP when timed-out client was in `blockedOnReply` (D4-N)
+- API dispatch (Call/Reply/ReplyRecv): PIP propagation/reversion applied inline
+  for both enforced (`dispatchWithCapChecked`) and non-enforced (`dispatchWithCap`)
+  paths, ensuring consistent behavior regardless of information-flow enforcement
+
+**Composition with SchedContext donation (Z7)**: `effectivePriority` computes
+`max(scPrio, pipBoost)`, so PIP provides an additional boost when the transitive
+client priority exceeds the donated SchedContext priority.
+
+**Bounded inversion**: Priority inversion is bounded by
+`objectIndex.length × WCRT(effectivePriority)` ticks (parametric in WCRT).
 
 ---
 

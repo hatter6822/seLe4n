@@ -8,6 +8,7 @@
 
 import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.Scheduler.Operations
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -147,6 +148,9 @@ def suspendThread (st : SystemState) (tid : SeLe4n.ThreadId)
   | some (.tcb tcb) =>
     if tcb.threadState == .Inactive then .error .illegalState
     else
+      -- D4-N: Revert PIP before cleanup — if this thread has pipBoost or is
+      -- in a blocking chain, recompute priorities for upstream servers
+      let st := PriorityInheritance.revertPriorityInheritance st tid
       -- G2: Cancel IPC blocking
       let st := cancelIpcBlocking st tid tcb
       -- Re-lookup TCB after IPC cleanup (state may have changed)

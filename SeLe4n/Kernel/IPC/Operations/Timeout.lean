@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.DualQueue.Core
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 
 namespace SeLe4n.Kernel
 
@@ -58,6 +59,12 @@ def timeoutThread
     match lookupTcb st1 tid with
     | none => .error .objectNotFound
     | some tcb =>
+      -- D4-N: Capture blocking server before clearing ipcState — if the thread
+      -- was in blockedOnReply, the server's pipBoost must be recomputed after
+      -- this client is removed from the blocking graph.
+      let maybeBlockingServer := match tcb.ipcState with
+        | .blockedOnReply _ (some serverId) => some serverId
+        | _ => none
       -- Step 3: Reset IPC state, clear pending message and timeout budget,
       -- set timeout error code in register context, update thread state
       let tcb' : TCB := { tcb with
@@ -70,7 +77,15 @@ def timeoutThread
       | .error e => .error e
       | .ok ((), st2) =>
         -- Step 4: Re-enqueue in RunQueue at current priority
-        .ok (ensureRunnable st2 tid)
+        let st3 := ensureRunnable st2 tid
+        -- D4-N: Revert PIP for the server if the timed-out thread was a waiter.
+        -- Now that the client's ipcState is cleared, waitersOf won't include it,
+        -- so revertPriorityInheritance correctly recomputes the server's pipBoost
+        -- from remaining waiters only.
+        match maybeBlockingServer with
+        | some serverId =>
+          .ok (PriorityInheritance.revertPriorityInheritance st3 serverId)
+        | none => .ok st3
 
 /-- Z6-I: Timeout-aware receive wrapper.
 

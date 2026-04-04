@@ -2502,3 +2502,61 @@ object architecture delivered across phases Z1–Z9 (213 sub-tasks, v0.23.0–v0
 **WS-Z PORTFOLIO COMPLETE**: 10 phases, 213 sub-tasks, 8 new files, ~25
 modified files, 1 new kernel object type, 3 new syscalls, ~14 new invariants,
 ~45 new preservation theorems. Zero sorry/axiom throughout.
+
+---
+
+### 12.14 Priority Inheritance Protocol (WS-AB Phase D4)
+
+**Motivation**: Priority inversion via Call/Reply IPC (SV-2) is the most
+dangerous starvation vector for client-server patterns. SchedContext donation
+(Z7) solves single-level inversion, but transitive inversion (H→S1→S2 where
+S2 runs at S1's priority, not H's) is unmitigated. PIP resolves this by
+walking the blocking chain and elevating each server's effective priority to
+the maximum of all clients transitively waiting for it.
+
+**Design**: The TCB gains a `pipBoost : Option Priority` field. The
+`effectivePriority` function computes `max(scPrio, pipBoost)`, composing
+additively with SchedContext donation — all existing Z4 proofs are preserved
+by construction (field defaults to `none`).
+
+**Blocking graph model** (`PriorityInheritance/BlockingGraph.lean`):
+- `blockedOnThread`: direct blocking via `blockedOnReply _ (some server)`
+- `waitersOf`: all direct waiters (fold over objectIndex)
+- `blockingChain`: fuel-bounded transitive upward walk
+- `blockingAcyclic`: system-level acyclicity invariant
+- `blockingChain_length_le_fuel`: chain depth ≤ fuel (≤ objectIndex.length)
+
+**Operations** (`PriorityInheritance/Compute.lean`, `Propagate.lean`):
+- `computeMaxWaiterPriority`: max effective priority among direct waiters
+- `updatePipBoost`: recompute pipBoost + conditional run queue migration
+- `propagatePriorityInheritance`: chain walk (updatePipBoost at each step)
+- `revertPriorityInheritance`: structurally identical to propagation
+
+**Integration points**:
+- Call path: `endpointCallWithDonation` propagates PIP (D4-L)
+- Reply path: `endpointReplyWithDonation` reverts PIP (D4-M)
+- Suspend path: `suspendThread` reverts PIP before cleanup (D4-N)
+- Timeout path: `timeoutThread` reverts PIP when client was `blockedOnReply` (D4-N)
+- API dispatch: PIP propagation/reversion applied in all 4 Call/Reply/ReplyRecv
+  paths (enforced and non-enforced), ensuring PIP consistency regardless of
+  information-flow enforcement mode
+
+**Preservation** (`PriorityInheritance/Preservation.lean`):
+16 frame lemmas prove PIP operations preserve all non-objects/runQueue
+SystemState fields: `current`, `activeDomain`, `machine`, `lifecycle`,
+`irqHandlers`, `asidTable`, `serviceRegistry`, `objectIndex`,
+`objectIndexSet`, `cdt`, `cdtSlotNode`, `cdtNodeSlot`, `cdtNextNode`,
+`interfaceRegistry`, `services`, `tlb`. Each has both `propagate_preserves_*`
+and `revert_preserves_*` variants. Composed across the chain via induction
+on fuel; revert aliases derived from `revert_eq_propagate`.
+
+**Bounded inversion** (`PriorityInheritance/BoundedInversion.lean`):
+`pip_bounded_inversion`: inversion ≤ `objectIndex.length × WCRT`
+(parametric in WCRT — instantiated when D5 delivers concrete bound).
+
+**Test coverage**: 22 tests across 10 categories (PIP-001 through PIP-022)
+in `tests/PriorityInheritanceSuite.lean`. Covers: default field values,
+effectivePriority with/without boost, SchedContext-bound threads with pipBoost,
+waitersOf, computeMaxWaiterPriority, updatePipBoost with run queue migration,
+blockingChain traversal, blockingGraphEdges, blockingServer, chainContains,
+transitive propagation, reversion, frame preservation, zero-fuel identity.

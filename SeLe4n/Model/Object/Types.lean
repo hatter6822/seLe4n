@@ -467,6 +467,13 @@ structure TCB where
       convention: `setPriority newPrio` requires `newPrio ≤ caller.mcp`.
       Default is maximum priority (0xFF = no restriction). -/
   maxControlledPriority : SeLe4n.Priority := ⟨0xFF⟩
+  /-- D4-A: Priority Inheritance Protocol boost. When `some p`, the thread's
+      effective scheduling priority is boosted to at least `p` regardless of
+      its SchedContext binding. Set by `propagatePriorityInheritance` when
+      the thread holds a pending Reply on behalf of a higher-priority client.
+      Cleared by `revertPriorityInheritance` when the client is unblocked.
+      Default `none` = no PIP boost (existing effective priority behavior). -/
+  pipBoost : Option SeLe4n.Priority := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -490,7 +497,8 @@ instance : BEq TCB where
     a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification &&
     a.schedContextBinding == b.schedContextBinding &&
     a.timeoutBudget == b.timeoutBudget &&
-    a.maxControlledPriority == b.maxControlledPriority
+    a.maxControlledPriority == b.maxControlledPriority &&
+    a.pipBoost == b.pipBoost
 
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.

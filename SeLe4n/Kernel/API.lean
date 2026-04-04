@@ -598,8 +598,11 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .error e => .error e
         | .ok (_, st') =>
           -- Z7: Apply SchedContext donation to passive server if applicable
+          -- D4-L: Propagate PIP upward from the server after Call blocks the caller
           match maybeReceiver with
-          | some receiverTid => .ok ((), applyCallDonation st' tid receiverTid)
+          | some receiverTid =>
+            let st'' := applyCallDonation st' tid receiverTid
+            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
           | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
@@ -833,8 +836,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok (_, st') =>
           -- Z7: Apply SchedContext donation to passive server if applicable
+          -- D4-L: Propagate PIP upward from the server after Call blocks the caller
           match maybeReceiver with
-          | some receiverTid => .ok ((), applyCallDonation st' tid receiverTid)
+          | some receiverTid =>
+            let st'' := applyCallDonation st' tid receiverTid
+            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
           | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -846,10 +852,14 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
     | .replyCap targetTid =>
       let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
       -- Z7: Apply donation return after checked reply
+      -- D4-M: Revert PIP — the client is unblocked, so the replier's pipBoost
+      -- must be recomputed from remaining waiters.
       fun st =>
         match endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge } st with
         | .error e => .error e
-        | .ok ((), st') => .ok ((), applyReplyDonation st' tid)
+        | .ok ((), st') =>
+          let st'' := applyReplyDonation st' tid
+          .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -942,9 +952,12 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
           let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
           -- Z7: Apply donation return after checked replyRecv
+          -- D4-M: Revert PIP for the reply portion
           match endpointReplyRecvChecked ctx epId tid args.replyTarget msg st with
           | .error e => .error e
-          | .ok ((), st') => .ok ((), applyReplyDonation st' tid)
+          | .ok ((), st') =>
+            let st'' := applyReplyDonation st' tid
+            .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
     | _ => fun _ => .error .invalidCapability
   -- D3-H: TCB setIPCBuffer — buffer address from message register, target from capability
   -- Capability-only: no cross-domain flow check needed (authority from cap possession)
@@ -1514,7 +1527,9 @@ theorem dispatchWithCap_call_uses_withCaps
         | .error e => .error e
         | .ok (_, st') =>
           match maybeReceiver with
-          | some receiverTid => .ok ((), applyCallDonation st' tid receiverTid)
+          | some receiverTid =>
+            let st'' := applyCallDonation st' tid receiverTid
+            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
           | none => .ok ((), st') := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
