@@ -755,6 +755,10 @@ bounded by `objectIndex.length`.
 - `endpointReplyWithDonation`: reverts PIP after Reply unblocks client (D4-M)
 - `endpointReplyRecvWithDonation`: reverts PIP for ReplyRecv (D4-M)
 - `suspendThread`: reverts PIP before cleanup pipeline (D4-N)
+- `timeoutThread`: reverts PIP when timed-out client was in `blockedOnReply` (D4-N)
+- API dispatch (Call/Reply/ReplyRecv): PIP propagation/reversion applied inline
+  for both enforced (`dispatchWithCapChecked`) and non-enforced (`dispatchWithCap`)
+  paths, ensuring consistent behavior regardless of information-flow enforcement
 
 **Composition with SchedContext donation (Z7)**: `effectivePriority` computes
 `max(scPrio, pipBoost)`, so PIP provides an additional boost when the transitive

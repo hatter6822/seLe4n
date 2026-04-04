@@ -2536,6 +2536,10 @@ by construction (field defaults to `none`).
 - Call path: `endpointCallWithDonation` propagates PIP (D4-L)
 - Reply path: `endpointReplyWithDonation` reverts PIP (D4-M)
 - Suspend path: `suspendThread` reverts PIP before cleanup (D4-N)
+- Timeout path: `timeoutThread` reverts PIP when client was `blockedOnReply` (D4-N)
+- API dispatch: PIP propagation/reversion applied in all 4 Call/Reply/ReplyRecv
+  paths (enforced and non-enforced), ensuring PIP consistency regardless of
+  information-flow enforcement mode
 
 **Preservation** (`PriorityInheritance/Preservation.lean`):
 16 frame lemmas prove PIP operations preserve all non-objects/runQueue
