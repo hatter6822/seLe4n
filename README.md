@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -62,9 +62,9 @@ architectural improvements compared to other microkernels:
 - **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked `distCorrect`, `noDupKeys`, and `probeChainDominant` invariants
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
 - **Node-stable capability derivation tree** with `childMap` + `parentMap` RHTable indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
-- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition). 29-entry enforcement boundary with per-operation non-interference proofs
+- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition). 30-entry enforcement boundary with per-operation non-interference proofs
 - **EDF + CBS priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware temporal partitioning, and a 15-conjunct `schedulerInvariantBundleExtended` covering both legacy and CBS scheduling paths
-- **Two-phase state architecture** — kernel state flows through a builder phase (with 4 invariant witnesses) to a frozen immutable representation. `FrozenMap`/`FrozenSet` provide O(1) lookups with proven equivalence to the live state via `freeze_preserves_*` theorems. 19 frozen operations mirror the live kernel API
+- **Two-phase state architecture** — kernel state flows through a builder phase (with 4 invariant witnesses) to a frozen immutable representation. `FrozenMap`/`FrozenSet` provide O(1) lookups with proven equivalence to the live state via `freeze_preserves_*` theorems. 20 frozen operations mirror the live kernel API
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics and proven dependency acyclicity
 - **10-conjunct proof layer** — `proofLayerInvariantBundle` composes scheduler, capability, IPC (14-conjunct), lifecycle, service, VSpace, cross-subsystem (8-predicate), TLB, and extended scheduler invariants into a single top-level proof obligation verified from boot through all kernel operations
 
@@ -76,11 +76,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.25.1` |
+| **Version** | `0.25.3` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 82,196 across 124 files |
-| **Test Lean LoC** | 10,411 across 14 test suites |
-| **Proved declarations** | 2,399 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 83,286 across 132 files |
+| **Test Lean LoC** | 10,564 across 15 test suites |
+| **Proved declarations** | 2,447 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |

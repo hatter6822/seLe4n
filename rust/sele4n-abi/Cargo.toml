@@ -12,3 +12,6 @@ std = ["sele4n-types/std"]
 
 [dependencies]
 sele4n-types = { path = "../sele4n-types" }
+
+[dev-dependencies]
+sele4n-sys = { path = "../sele4n-sys" }

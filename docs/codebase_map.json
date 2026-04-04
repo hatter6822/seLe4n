@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-d5-latency-18uQ4",
-      "commit_sha": "d5554602c77b1614dc3a13cd68f08dd789002d87",
-      "tree_sha": "c6829078663dbb92320be687823c72f21c15710a",
-      "committed_at_utc": "2026-04-04T18:41:20+00:00"
+      "branch": "claude/optimize-api-integration-sz9eC",
+      "commit_sha": "411d4df35f002723921741ea00fce4e2f1d1ab3b",
+      "tree_sha": "2c0248885f45462cda0fa4eac94b7f95c52d0eed",
+      "committed_at_utc": "2026-04-04T21:38:13+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "45086accf4ccc0ab9b6f3a68772eadb7ff109272bdc01592517873031922606d"
+    "source_digest": "cac9baa65b8132a3d460c00ac2294956f6e4f746de29ab77495ff1cd59fc3fcc"
   },
   "summary": {
     "module_count": 147,
     "declaration_count": 4436
   },
   "readme_sync": {
-    "version": "0.25.1",
+    "version": "0.25.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 132,
     "production_loc": 83286,

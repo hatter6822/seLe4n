@@ -2579,8 +2579,9 @@ counting functions, `bucketPosition`.
   `maxDomainLength_ge_each` (per-entry upper bound).
 
 **WCRT theorem** (`Liveness/WCRT.lean`):
-- `WCRTHypotheses`: 12-field structure (threadRunnable, threadHasBudget,
-  targetPrio, targetDomain, threadInDomain, N, B, P bounds, domainScheduleAdequate,
+- `WCRTHypotheses`: 14-field structure (threadRunnable, threadHasBudget,
+  targetPrio, targetDomain, threadInDomain, N, higherPriorityBound, B,
+  maxBudgetBound, P, maxPeriodBound, domainScheduleAdequate,
   domainEntriesPositive, domainScheduleNonEmpty).
 - `bounded_scheduling_latency`: wcrtBound = D×L\_max + N×(B+P).
 - `bounded_scheduling_latency_exists`: existential form — ∃ k ≤ bound,
@@ -2590,7 +2591,7 @@ counting functions, `bucketPosition`.
   monotonicity.
 - `pip_enhanced_wcrt_le_base`: PIP-boosted WCRT ≤ base WCRT.
 
-**Test coverage**: 46 surface anchor tests in `tests/LivenessSuite.lean`.
+**Test coverage**: 58 surface anchor tests in `tests/LivenessSuite.lean`.
 
 **Test coverage**: 22 tests across 10 categories (PIP-001 through PIP-022)
 in `tests/PriorityInheritanceSuite.lean`. Covers: default field values,

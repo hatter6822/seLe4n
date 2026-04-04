@@ -101,8 +101,8 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // error code 43 is beyond the 0-42 range (Z6: IpcTimeout added at 42)
-        let regs = [43, 0, 0, 0, 0, 0, 0];
+        // error code 44 is beyond the 0-43 range (D3: AlignmentError added at 43)
+        let regs = [44, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
     }
 

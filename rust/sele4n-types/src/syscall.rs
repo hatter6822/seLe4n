@@ -4,7 +4,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 20 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 25 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -38,11 +38,19 @@ pub enum SyscallId {
     SchedContextConfigure = 17,
     SchedContextBind = 18,
     SchedContextUnbind = 19,
+    // Thread lifecycle (WS-AB, D1)
+    TcbSuspend = 20,
+    TcbResume = 21,
+    // Priority management (WS-AB, D2)
+    TcbSetPriority = 22,
+    TcbSetMCPriority = 23,
+    // IPC buffer configuration (WS-AB, D3)
+    TcbSetIPCBuffer = 24,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 20;
+    pub const COUNT: usize = 25;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -68,6 +76,11 @@ impl SyscallId {
             17 => Some(Self::SchedContextConfigure),
             18 => Some(Self::SchedContextBind),
             19 => Some(Self::SchedContextUnbind),
+            20 => Some(Self::TcbSuspend),
+            21 => Some(Self::TcbResume),
+            22 => Some(Self::TcbSetPriority),
+            23 => Some(Self::TcbSetMCPriority),
+            24 => Some(Self::TcbSetIPCBuffer),
             _ => None,
         }
     }
@@ -93,6 +106,9 @@ impl SyscallId {
             Self::NotificationWait => AccessRight::Read,
             Self::ReplyRecv => AccessRight::Read,
             Self::SchedContextConfigure | Self::SchedContextBind | Self::SchedContextUnbind => AccessRight::Write,
+            Self::TcbSuspend | Self::TcbResume => AccessRight::Write,
+            Self::TcbSetPriority | Self::TcbSetMCPriority => AccessRight::Write,
+            Self::TcbSetIPCBuffer => AccessRight::Write,
         }
     }
 }
@@ -103,7 +119,7 @@ mod tests {
 
     #[test]
     fn from_u64_roundtrip() {
-        for i in 0..20u64 {
+        for i in 0..25u64 {
             let sid = SyscallId::from_u64(i).unwrap();
             assert_eq!(sid.to_u64(), i);
         }
@@ -111,15 +127,15 @@ mod tests {
 
     #[test]
     fn from_u64_out_of_range() {
-        assert!(SyscallId::from_u64(20).is_none());
+        assert!(SyscallId::from_u64(25).is_none());
         assert!(SyscallId::from_u64(255).is_none());
     }
 
     #[test]
     fn injective() {
-        // All 20 variants produce distinct values
-        let mut seen = [false; 20];
-        for i in 0..20u64 {
+        // All 25 variants produce distinct values
+        let mut seen = [false; 25];
+        for i in 0..25u64 {
             let sid = SyscallId::from_u64(i).unwrap();
             let idx = sid.to_u64() as usize;
             assert!(!seen[idx]);
@@ -186,5 +202,42 @@ mod tests {
         assert_eq!(SyscallId::SchedContextConfigure.to_u64(), 17);
         assert_eq!(SyscallId::SchedContextBind.to_u64(), 18);
         assert_eq!(SyscallId::SchedContextUnbind.to_u64(), 19);
+    }
+
+    #[test]
+    fn tcb_lifecycle_discriminants() {
+        assert_eq!(SyscallId::TcbSuspend.to_u64(), 20);
+        assert_eq!(SyscallId::TcbResume.to_u64(), 21);
+    }
+
+    #[test]
+    fn tcb_priority_discriminants() {
+        assert_eq!(SyscallId::TcbSetPriority.to_u64(), 22);
+        assert_eq!(SyscallId::TcbSetMCPriority.to_u64(), 23);
+    }
+
+    #[test]
+    fn tcb_ipc_buffer_discriminant() {
+        assert_eq!(SyscallId::TcbSetIPCBuffer.to_u64(), 24);
+    }
+
+    #[test]
+    fn required_right_tcb_lifecycle() {
+        // D1: Suspend/Resume require Write (API.lean:387-388)
+        assert_eq!(SyscallId::TcbSuspend.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::TcbResume.required_right(), AccessRight::Write);
+    }
+
+    #[test]
+    fn required_right_tcb_priority() {
+        // D2: Priority management requires Write (API.lean:389-390)
+        assert_eq!(SyscallId::TcbSetPriority.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::TcbSetMCPriority.required_right(), AccessRight::Write);
+    }
+
+    #[test]
+    fn required_right_tcb_ipc_buffer() {
+        // D3: IPC buffer configuration requires Write (API.lean:391)
+        assert_eq!(SyscallId::TcbSetIPCBuffer.required_right(), AccessRight::Write);
     }
 }

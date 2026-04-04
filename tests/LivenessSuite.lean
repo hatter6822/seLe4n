@@ -149,5 +149,5 @@ def main : IO Unit := do
   IO.println "  ✓ WCRT: WCRTHypotheses, bounded_scheduling_latency"
   IO.println "  ✓ PIP: countHigherOrEqual_mono_threshold, pip_enhanced_wcrt_le_base"
   IO.println "  ✓ D4 integration: pip_bounded_inversion"
-  IO.println "=== All 48 surface anchors verified ==="
+  IO.println "=== All 58 surface anchors verified ==="
   return ()
