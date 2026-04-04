@@ -1,7 +1,7 @@
-## v0.25.1 — D6: API Surface Integration & Closure (WS-AB Complete)
+## v0.25.2 — D6: API Surface Integration & Closure (WS-AB Complete)
 
 Phase D6 of WS-AB Deferred Operations workstream. Final integration phase
-closing the WS-AB portfolio (6 phases, 90 sub-tasks, v0.24.0–v0.25.1).
+closing the WS-AB portfolio (6 phases, 90 sub-tasks, v0.24.0–v0.25.2).
 
 - **D6-A**: Enforcement boundary completeness verified — 30 entries covering
   all 25 `SyscallId` variants (11 policy-gated, 5 capability-only base,
@@ -16,7 +16,13 @@ closing the WS-AB portfolio (6 phases, 90 sub-tasks, v0.24.0–v0.25.1).
   module: `SuspendArgs`, `ResumeArgs`, `SetPriorityArgs`, `SetMCPriorityArgs`,
   `SetIPCBufferArgs` with encode/decode/roundtrip tests.
   Updated conformance tests across all 3 Rust crates.
-- **D6-E**: Comprehensive test suite green (Lean test_smoke.sh + Rust cargo test).
+  New `rust/sele4n-sys/src/tcb.rs` module: `tcb_suspend`, `tcb_resume`,
+  `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer` high-level wrappers.
+- **D6-D audit fix**: Priority/MCP out-of-range error corrected from
+  `InvalidSyscallArgument` (discriminant 41) to `InvalidArgument` (discriminant
+  39), matching Lean `decodeSetPriorityArgs`/`decodeSetMCPriorityArgs`.
+- **D6-E**: Comprehensive test suite green — Lean Tier 0-3 + Rust 231 tests,
+  zero warnings.
 - **D6-F**: Spec §5.14 updated with D4 (PIP) and D5 (WCRT) subsections.
 - **D6-G**: Claims index updated with D6 closure claim.
 - **D6-H**: CLAUDE.md workstream context updated to WS-AB COMPLETE.

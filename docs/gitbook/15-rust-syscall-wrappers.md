@@ -95,8 +95,8 @@ x7  → Syscall number (SyscallId)
 
 ## Testing
 
-- **230 unit tests** across 3 crates (91 abi + 86 conformance + 12 sys + 41 types)
-- **86 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests)
+- **231 unit tests** across 3 crates (91 abi + 87 conformance + 12 sys + 41 types)
+- **87 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
   AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.82.0)

@@ -1322,9 +1322,9 @@ fn d6_tcb_args_roundtrip() {
 fn d6_tcb_args_errors() {
     use sele4n_abi::args::tcb::*;
 
-    // D2: Priority out of range
-    assert_eq!(SetPriorityArgs::decode(&[256]), Err(KernelError::InvalidSyscallArgument));
-    assert_eq!(SetMCPriorityArgs::decode(&[256]), Err(KernelError::InvalidSyscallArgument));
+    // D2: Priority out of range — Lean returns .invalidArgument (discriminant 39)
+    assert_eq!(SetPriorityArgs::decode(&[256]), Err(KernelError::InvalidArgument));
+    assert_eq!(SetMCPriorityArgs::decode(&[256]), Err(KernelError::InvalidArgument));
 
     // D2: Insufficient registers
     assert_eq!(SetPriorityArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
@@ -1333,4 +1333,17 @@ fn d6_tcb_args_errors() {
     // D3: Unaligned address
     assert_eq!(SetIPCBufferArgs::decode(&[513]), Err(KernelError::AlignmentError));
     assert_eq!(SetIPCBufferArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+}
+
+/// D6-G: sele4n-sys TCB wrapper module exists and exports all 5 operations.
+#[test]
+fn d6_sys_tcb_module_exports() {
+    // Verify that the sele4n-sys crate re-exports the tcb module.
+    // We can't invoke the actual syscalls (no kernel), but we verify the
+    // function signatures exist by referencing them as fn pointers.
+    let _suspend: fn(CPtr) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_suspend;
+    let _resume: fn(CPtr) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_resume;
+    let _set_prio: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_priority;
+    let _set_mcp: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_mcp;
+    let _set_buf: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_ipc_buffer;
 }

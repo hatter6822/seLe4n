@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.1` (`lakefile.toml`) |
+| **Package version** | `0.25.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 82,196 across 124 Lean files |
-| **Test LoC** | 10,411 across 14 Lean test suites |
-| **Proved declarations** | 2,399 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 83,286 across 132 Lean files |
+| **Test LoC** | 10,564 across 15 Lean test suites |
+| **Proved declarations** | 2,447 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
 | **Active workstream** | **WS-AB Deferred Operations** — Phase D1 COMPLETE (v0.24.0–v0.24.1): Thread Suspension & Resumption. Phase D2 COMPLETE (v0.24.1): Priority Management. Phase D3 COMPLETE (v0.24.2–v0.24.3): IPC Buffer Configuration. Phase D4 COMPLETE (v0.25.0): Priority Inheritance Protocol. Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md). Prior: WS-Z (v0.23.0–v0.23.19), WS-AA (v0.23.21–v0.23.23), WS-Y–WS-B — all COMPLETE. |
@@ -357,7 +357,7 @@ kernel code changes (proof-only phase). Key results:
   threads have tighter WCRT (fewer higher-priority competitors).
 - 38 surface anchor tests in `LivenessSuite.lean`.
 
-**D6 (v0.25.1):** API Surface Integration & Closure. Rust ABI synchronized
+**D6 (v0.25.2):** API Surface Integration & Closure. Rust ABI synchronized
 with 5 new `SyscallId` variants (20→25) and `AlignmentError` (43). All 25
 SyscallId variants, 30 enforcement boundary entries, 20 frozen operations,
 and 25 dispatch arms verified. Documentation fully synchronized.

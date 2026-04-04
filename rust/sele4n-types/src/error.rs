@@ -211,6 +211,7 @@ mod tests {
         assert_eq!(KernelError::MmioUnaligned as u32, 40);
         assert_eq!(KernelError::InvalidSyscallArgument as u32, 41);
         assert_eq!(KernelError::IpcTimeout as u32, 42);
+        assert_eq!(KernelError::AlignmentError as u32, 43);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence

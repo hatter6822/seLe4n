@@ -66,10 +66,11 @@ impl SetPriorityArgs {
 
     /// Decode from message registers. Requires 1 register.
     /// Validates priority ≤ 255 at the decode boundary.
+    /// Returns `InvalidArgument` on out-of-range (matches Lean `decodeSetPriorityArgs`).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
         if regs[0] > MAX_PRIORITY {
-            return Err(KernelError::InvalidSyscallArgument);
+            return Err(KernelError::InvalidArgument);
         }
         Ok(Self { new_priority: regs[0] })
     }
@@ -91,10 +92,11 @@ impl SetMCPriorityArgs {
 
     /// Decode from message registers. Requires 1 register.
     /// Validates MCP ≤ 255 at the decode boundary.
+    /// Returns `InvalidArgument` on out-of-range (matches Lean `decodeSetMCPriorityArgs`).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
         if regs[0] > MAX_PRIORITY {
-            return Err(KernelError::InvalidSyscallArgument);
+            return Err(KernelError::InvalidArgument);
         }
         Ok(Self { new_mcp: regs[0] })
     }
@@ -160,7 +162,7 @@ mod tests {
 
     #[test]
     fn set_priority_out_of_range() {
-        assert_eq!(SetPriorityArgs::decode(&[256]), Err(KernelError::InvalidSyscallArgument));
+        assert_eq!(SetPriorityArgs::decode(&[256]), Err(KernelError::InvalidArgument));
     }
 
     #[test]
@@ -176,7 +178,7 @@ mod tests {
 
     #[test]
     fn set_mcp_out_of_range() {
-        assert_eq!(SetMCPriorityArgs::decode(&[256]), Err(KernelError::InvalidSyscallArgument));
+        assert_eq!(SetMCPriorityArgs::decode(&[256]), Err(KernelError::InvalidArgument));
     }
 
     #[test]
