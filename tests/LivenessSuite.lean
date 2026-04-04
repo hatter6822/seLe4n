@@ -80,7 +80,7 @@ open SeLe4n.Model
 #check @fifoProgressBound
 #check @fifoProgressBound_mono
 #check @fifoProgressBound_succ
-#check @fifo_head_zero_wait
+#check @fifoProgressBound_mono_interval
 
 -- ============================================================================
 -- Surface anchor: Band exhaustion
@@ -115,6 +115,8 @@ open SeLe4n.Model
 #check @wcrt_decomposition
 #check @wcrt_domain_component_le
 #check @wcrt_band_component_le
+#check @wcrtBound_stable_across_states
+#check @countHigherOrEqual_empty
 
 -- ============================================================================
 -- Surface anchor: PIP-enhanced WCRT
@@ -147,5 +149,5 @@ def main : IO Unit := do
   IO.println "  ✓ WCRT: WCRTHypotheses, bounded_scheduling_latency"
   IO.println "  ✓ PIP: countHigherOrEqual_mono_threshold, pip_enhanced_wcrt_le_base"
   IO.println "  ✓ D4 integration: pip_bounded_inversion"
-  IO.println "=== All 46 surface anchors verified ==="
+  IO.println "=== All 48 surface anchors verified ==="
   return ()

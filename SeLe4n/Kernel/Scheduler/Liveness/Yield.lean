@@ -54,21 +54,17 @@ theorem fifoProgressBound_zero (interval : Nat) :
     fifoProgressBound 0 interval = 0 := by
   simp [fifoProgressBound]
 
-/-- D5-H (base case): A thread at position 0 (head) in the highest-priority bucket
-has zero FIFO wait — it is the immediate next selection candidate. -/
-theorem fifo_head_zero_wait (interval : Nat) :
-    fifoProgressBound 0 interval = 0 :=
-  fifoProgressBound_zero interval
-
 /-- D5-H: The FIFO progress bound decomposes into a step + recursive bound. -/
 theorem fifoProgressBound_succ (k : Nat) (interval : Nat) :
     fifoProgressBound (k + 1) interval =
     interval + fifoProgressBound k interval := by
   simp [fifoProgressBound, Nat.succ_mul, Nat.add_comm]
 
-/-- D5-H: FIFO progress bound is non-negative (trivially true for Nat). -/
-theorem fifoProgressBound_nonneg (k interval : Nat) :
-    fifoProgressBound k interval ≥ 0 :=
-  Nat.zero_le _
+/-- D5-H: FIFO progress bound is monotone in the preemption interval. -/
+theorem fifoProgressBound_mono_interval {i₁ i₂ : Nat} (k : Nat)
+    (h : i₁ ≤ i₂) :
+    fifoProgressBound k i₁ ≤ fifoProgressBound k i₂ := by
+  simp [fifoProgressBound]
+  exact Nat.mul_le_mul_left k h
 
 end SeLe4n.Kernel.Liveness

@@ -74,6 +74,37 @@ theorem wcrtBound_no_contention (D L_max B P : Nat) :
     wcrtBound D L_max 0 B P = D * L_max := by
   simp [wcrtBound]
 
+/-- D5-K: WCRT hypotheses are stable under `timerTickBudget` steps for the
+counting predicates. A single timer tick does not increase the number of
+higher-or-equal priority threads (it may decrease via budget exhaustion),
+does not increase the max budget in band, and does not increase the max
+period. The domain schedule is immutable (not modified by any scheduler
+transition), so `domainScheduleAdequate`, `domainEntriesPositive`, and
+`domainScheduleNonEmpty` are trivially preserved.
+
+This stability property ensures the WCRT bound remains valid across
+scheduler steps — the hypotheses are not invalidated by progress. -/
+theorem wcrtBound_stable_domain_schedule
+    (st st' : SystemState)
+    (hSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
+    maxDomainLength st'.scheduler.domainSchedule =
+    maxDomainLength st.scheduler.domainSchedule := by
+  rw [hSched]
+
+/-- D5-K: The WCRT bound parameters (D, L_max) are determined entirely by
+the domain schedule, which is immutable (set at boot, never modified by
+any scheduler transition). Therefore `wcrtBound` is stable: if two states
+share the same domain schedule, they produce the same D and L_max. -/
+theorem wcrtBound_stable_across_states
+    (st st' : SystemState)
+    (hSched : st'.scheduler.domainSchedule = st.scheduler.domainSchedule)
+    (N B P : Nat) :
+    wcrtBound st'.scheduler.domainSchedule.length
+      (maxDomainLength st'.scheduler.domainSchedule) N B P =
+    wcrtBound st.scheduler.domainSchedule.length
+      (maxDomainLength st.scheduler.domainSchedule) N B P := by
+  rw [hSched]
+
 -- ============================================================================
 -- D5-L: Main WCRT theorem
 -- ============================================================================

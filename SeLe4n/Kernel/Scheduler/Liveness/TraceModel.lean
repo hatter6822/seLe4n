@@ -288,10 +288,12 @@ def bucketPosition (st : SystemState) (tid : ThreadId) : Option Nat :=
 -- D5-C: Counting predicate basic properties
 -- ============================================================================
 
-/-- D5-C: `countHigherOrEqualEffectivePriority` is non-negative (trivially true for Nat). -/
-theorem countHigherOrEqual_nonneg (st : SystemState)
-    (prio : Priority) (dom : DomainId) :
-    0 ≤ countHigherOrEqualEffectivePriority st prio dom :=
-  Nat.zero_le _
+/-- D5-C: `countHigherOrEqualEffectivePriority` with an empty run queue is 0.
+This is the base case for WCRT reasoning on systems with no contention. -/
+theorem countHigherOrEqual_empty (st : SystemState)
+    (prio : Priority) (dom : DomainId)
+    (hEmpty : st.scheduler.runQueue.flat = []) :
+    countHigherOrEqualEffectivePriority st prio dom = 0 := by
+  simp [countHigherOrEqualEffectivePriority, hEmpty]
 
 end SeLe4n.Kernel.Liveness
