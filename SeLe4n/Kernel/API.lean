@@ -28,6 +28,7 @@ import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 import SeLe4n.Kernel.SchedContext.Operations
+import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.IPC.Operations.Donation
 
 import SeLe4n.Kernel.Architecture.Adapter
@@ -95,8 +96,8 @@ completed before implementation.
 |-----------|---------------|-----------|--------------|
 | `setPriority` | `seL4_TCB_SetPriority` | Requires MCS scheduling context model. Priority is currently set at TCB creation; runtime modification deferred until MCS scheduling contexts (budget/period/replenishment) are modeled. | MCS scheduling (long-horizon) |
 | `setMCPriority` | `seL4_TCB_SetMCPriority` | Maximum controlled priority. Same MCS prerequisite as `setPriority`. | MCS scheduling (long-horizon) |
-| `suspend` | `seL4_TCB_Suspend` | Requires thread lifecycle state machine beyond `ThreadIpcState`. Must handle interactions with run queue removal, IPC blocking state cleanup, and notification wait cancellation. | WS-F6 (thread-lifecycle invariants) |
-| `resume` | `seL4_TCB_Resume` | Inverse of `suspend`. Same lifecycle state machine prerequisite. Must ensure scheduler invariant preservation on thread re-insertion. | WS-F6 (thread-lifecycle invariants) |
+| `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0). `suspendThread` in `Lifecycle/Suspend.lean`, wired as `SyscallId.tcbSuspend`. | Complete |
+| `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0). `resumeThread` in `Lifecycle/Suspend.lean`, wired as `SyscallId.tcbResume`. | Complete |
 | `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | Trivial field update, but VSpace validation of the buffer address (must be mapped, writable, aligned) requires `VSpaceBackend` integration and page table walk. | H3 hardware binding (VSpace validation) |
 -/
 
@@ -381,6 +382,8 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .schedContextConfigure => .write
   | .schedContextBind      => .write
   | .schedContextUnbind    => .write
+  | .tcbSuspend            => .write
+  | .tcbResume             => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -408,7 +411,7 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
         | none => acc
         | some cap => acc.push cap) #[]
 
-/-- V8-H/Z5-J: Shared dispatch for capability-only syscalls — these 9 arms
+/-- V8-H/Z5-J/D1: Shared dispatch for capability-only syscalls — these 11 arms
 derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
 delegate to this helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
@@ -498,6 +501,28 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       | .error e => .error e
       | .ok _ => SchedContextOps.schedContextUnbind scId st
     | _ => fun _ => .error .invalidCapability
+  -- D1: TCB suspend — target thread from capability
+  | .tcbSuspend =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match decodeSuspendArgs decoded with
+      | .error e => .error e
+      | .ok _ =>
+        match Lifecycle.Suspend.suspendThread st (ThreadId.ofNat objId.toNat) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- D1: TCB resume — target thread from capability
+  | .tcbResume =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match decodeResumeArgs decoded with
+      | .error e => .error e
+      | .ok _ =>
+        match Lifecycle.Suspend.resumeThread st (ThreadId.ofNat objId.toNat) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
   | _ => none
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
@@ -520,7 +545,7 @@ and no additional decoded arguments) and this explicit match (handles syscalls
 requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 1. Shares a single checked/unchecked dispatch implementation (V8-H)
 2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
-   showing all 20 `SyscallId` variants are handled by one of the two tiers
+   showing all 22 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -620,9 +645,9 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMove src dst st
     | _ => fun _ => .error .invalidCapability
-  -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
-  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind
-  -- are all handled by dispatchCapabilityOnly above.
+  -- V8-H/D1: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
+  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
+  -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
   -- WS-Q1-D: Service register — decode interface spec from message registers,
   -- construct ServiceRegistration, and register the service.
   | .serviceRegister =>
@@ -683,9 +708,9 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           | .error e => .error e
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
-  -- V8-H: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
+  -- V8-H/D1: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
   -- serviceRevoke, serviceQuery, schedContextConfigure, schedContextBind,
-  -- schedContextUnbind) are unreachable here — handled by
+  -- schedContextUnbind, tcbSuspend, tcbResume) are unreachable here — handled by
   -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
   -- Lean's exhaustiveness checker.
   | _ => fun _ => .error .illegalState
@@ -818,9 +843,9 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             cspaceMoveChecked ctx src dst st
     | _ => fun _ => .error .invalidCapability
-  -- V8-H: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
-  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind
-  -- are all handled by dispatchCapabilityOnly above.
+  -- V8-H/D1: cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap, serviceRevoke,
+  -- serviceQuery, schedContextConfigure, schedContextBind, schedContextUnbind,
+  -- tcbSuspend, tcbResume are all handled by dispatchCapabilityOnly above.
   -- T6-I: Service register — checked for thread→service flow
   | .serviceRegister =>
     match cap.target with
@@ -928,14 +953,14 @@ def syscallEntryChecked (ctx : LabelingContext)
 -- U5-A/U5-D: Dispatch structural equivalence theorems
 -- ============================================================================
 
-/-- U5-A/U-M02/V8-H: The 9 capability-only syscalls are handled identically by
+/-- U5-A/U-M02/V8-H/D1: The 11 capability-only syscalls are handled identically by
 both checked and unchecked dispatch paths, since both delegate to
 `dispatchCapabilityOnly`. These arms derive authority entirely from
 capability possession and do not cross security domains.
 
 The shared arms are: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
-`.schedContextBind`, `.schedContextUnbind`.
+`.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`.
 
 V8-H: With the shared helper extraction, each per-arm theorem follows
 directly from the shared `dispatchCapabilityOnly` delegation. -/
@@ -1019,11 +1044,29 @@ theorem checkedDispatch_schedContextUnbind_eq_unchecked
     dispatchWithCap decoded tid gate cap := by
   simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-D/U-L20/V8-H/Z5-J: Complete dispatch equivalence — for ALL capability-only
+/-- D1: Structural equivalence for `.tcbSuspend`. -/
+theorem checkedDispatch_tcbSuspend_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .tcbSuspend) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- D1: Structural equivalence for `.tcbResume`. -/
+theorem checkedDispatch_tcbResume_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .tcbResume) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- U5-D/U-L20/V8-H/Z5-J/D1: Complete dispatch equivalence — for ALL capability-only
 syscalls, the checked and unchecked dispatch paths produce identical results.
 
 Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to the shared
-`dispatchCapabilityOnly` helper for these 9 arms, making structural identity
+`dispatchCapabilityOnly` helper for these 11 arms, making structural identity
 trivial.
 
 **Production recommendation**: Use `syscallEntryChecked` for user-space entry.
@@ -1040,25 +1083,28 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
                 decoded.syscallId = .serviceQuery ∨
                 decoded.syscallId = .schedContextConfigure ∨
                 decoded.syscallId = .schedContextBind ∨
-                decoded.syscallId = .schedContextUnbind) :
+                decoded.syscallId = .schedContextUnbind ∨
+                decoded.syscallId = .tcbSuspend ∨
+                decoded.syscallId = .tcbResume) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  rcases hCapOnly with h | h | h | h | h | h | h | h | h <;>
+  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h <;>
     simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
 -- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
 -- ============================================================================
 
-/-- W2-C (MED-04): Every `SyscallId` variant is handled by either
+/-- W2-C (MED-04)/D1: Every `SyscallId` variant is handled by either
     `dispatchCapabilityOnly` (returning `some`) or one of the 11 explicit match
     arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
     wildcard arm is unreachable at runtime.
 
-    The proof enumerates all 20 `SyscallId` constructors: 9 are routed to
+    The proof enumerates all 22 `SyscallId` constructors: 11 are routed to
     `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
     `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
-    `.schedContextBind`, `.schedContextUnbind`), and the remaining 11
+    `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`),
+    and the remaining 11
     (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
     `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
     `.replyRecv`) are handled by explicit match arms in `dispatchWithCap`. -/
@@ -1068,7 +1114,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
             .notificationSignal, .notificationWait, .replyRecv,
             .schedContextConfigure, .schedContextBind,
-            .schedContextUnbind] : List SyscallId) := by
+            .schedContextUnbind, .tcbSuspend, .tcbResume] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

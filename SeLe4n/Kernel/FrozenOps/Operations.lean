@@ -12,7 +12,7 @@ import SeLe4n.Kernel.SchedContext.Budget
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
-Implements 18 frozen kernel operations that operate on `FrozenSystemState`
+Implements 20 frozen kernel operations that operate on `FrozenSystemState`
 using O(1) array-indexed lookups. Each mirrors a builder-phase operation
 but uses `FrozenMap.get?`/`FrozenMap.set` instead of `RHTable` operations.
 
@@ -38,6 +38,8 @@ but uses `FrozenMap.get?`/`FrozenMap.set` instead of `RHTable` operations.
 |16 | `frozenSchedContextConfigure`| `schedContextConfigure`    | SchedContext |
 |17 | `frozenSchedContextBind`     | `schedContextBind`         | SchedContext |
 |18 | `frozenSchedContextUnbind`   | `schedContextUnbind`       | SchedContext |
+|19 | `frozenSuspendThread`        | `suspendThread`            | Lifecycle    |
+|20 | `frozenResumeThread`         | `resumeThread`             | Lifecycle    |
 
 **Lifecycle operations** (`lifecycleRetype`) are builder-only — they add new
 keys, which is incompatible with the frozen map's fixed key set.
@@ -734,6 +736,60 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
         | _ => .error .schedulerInvariantViolation
 
 -- ============================================================================
+-- D1: Frozen thread suspension and resumption
+-- ============================================================================
+
+/-- D1: Frozen thread suspend — transition a thread from any non-Inactive state
+to Inactive. Mirrors `suspendThread` in frozen state. In frozen phase, run queue
+manipulation is skipped (fixed membership set); only TCB state is updated. -/
+def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
+  fun st =>
+    match frozenLookupTcb st tid with
+    | none => .error .objectNotFound
+    | some tcb =>
+      if tcb.threadState == .Inactive then .error .illegalState
+      else
+        let tcb' := { tcb with
+          threadState := .Inactive
+          ipcState := .ready
+          pendingMessage := none
+          timeoutBudget := none
+          queuePrev := none
+          queueNext := none
+          queuePPrev := none }
+        match st.objects.set tid.toObjId (.tcb tcb') with
+        | some objs => .ok ((), { st with objects := objs })
+        | none => .error .objectNotFound
+
+/-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
+Mirrors `resumeThread` in frozen state. In frozen phase, run queue insertion
+is skipped (fixed membership set); only TCB state is updated. If the resumed
+thread has higher priority than current, clears current to force rescheduling. -/
+def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
+  fun st =>
+    match frozenLookupTcb st tid with
+    | none => .error .objectNotFound
+    | some tcb =>
+      if tcb.threadState != .Inactive then .error .illegalState
+      else
+        let tcb' := { tcb with threadState := .Ready, ipcState := .ready }
+        match st.objects.set tid.toObjId (.tcb tcb') with
+        | some objs =>
+          let st' := { st with objects := objs }
+          -- If resumed thread has higher priority than current, force reschedule
+          let st' := match st'.scheduler.current with
+            | some curTid =>
+              match st'.objects.get? curTid.toObjId with
+              | some (.tcb curTcb) =>
+                if tcb'.priority.val > curTcb.priority.val then
+                  { st' with scheduler := { st'.scheduler with current := none } }
+                else st'
+              | _ => { st' with scheduler := { st'.scheduler with current := none } }
+            | none => st'
+          .ok ((), st')
+        | none => .error .objectNotFound
+
+-- ============================================================================
 -- S3-L/U-M29: Frozen operation exhaustiveness check
 -- ============================================================================
 
@@ -766,8 +822,10 @@ def frozenOpCoverage : SyscallId → Bool
   | .schedContextConfigure => true   -- Z8-H: frozenSchedContextConfigure
   | .schedContextBind => true        -- Z8-H: frozenSchedContextBind
   | .schedContextUnbind => true      -- Z8-H: frozenSchedContextUnbind
+  | .tcbSuspend => true              -- D1: frozenSuspendThread
+  | .tcbResume => true               -- D1: frozenResumeThread
 
-/-- S3-L/Z8-H: Exactly 15 SyscallId arms have frozen operation coverage.
+/-- S3-L/Z8-H/D1: Exactly 17 SyscallId arms have frozen operation coverage.
     The 5 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
     lifecycleRetype, serviceRegister, serviceRevoke). -/
 theorem frozenOpCoverage_count :
@@ -775,11 +833,12 @@ theorem frozenOpCoverage_count :
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
        .notificationSignal, .notificationWait, .replyRecv,
-       .schedContextConfigure, .schedContextBind, .schedContextUnbind].filter
-         frozenOpCoverage).length = 15) := by
+       .schedContextConfigure, .schedContextBind, .schedContextUnbind,
+       .tcbSuspend, .tcbResume].filter
+         frozenOpCoverage).length = 17) := by
   decide
 
-/-- S3-L: All 20 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1: All 22 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

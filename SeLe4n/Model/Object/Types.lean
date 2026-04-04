@@ -887,6 +887,8 @@ inductive SyscallId where
   | schedContextConfigure  -- Z5-D: configure SchedContext parameters
   | schedContextBind       -- Z5-D: bind thread to SchedContext
   | schedContextUnbind     -- Z5-D: unbind thread from SchedContext
+  | tcbSuspend             -- D1-A: suspend a thread (transition to Inactive)
+  | tcbResume              -- D1-A: resume a suspended thread (transition to Ready)
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -914,9 +916,11 @@ namespace SyscallId
   | .schedContextConfigure => 17
   | .schedContextBind      => 18
   | .schedContextUnbind    => 19
+  | .tcbSuspend            => 20
+  | .tcbResume             => 21
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 20
+def count : Nat := 22
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -941,6 +945,8 @@ def count : Nat := 20
   | 17 => some .schedContextConfigure
   | 18 => some .schedContextBind
   | 19 => some .schedContextUnbind
+  | 20 => some .tcbSuspend
+  | 21 => some .tcbResume
   | _  => none
 
 instance : ToString SyscallId where
@@ -965,6 +971,8 @@ instance : ToString SyscallId where
     | .schedContextConfigure => "schedContextConfigure"
     | .schedContextBind      => "schedContextBind"
     | .schedContextUnbind    => "schedContextUnbind"
+    | .tcbSuspend            => "tcbSuspend"
+    | .tcbResume             => "tcbResume"
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
@@ -985,9 +993,10 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   match n with
   | 0  | 1  | 2  | 3  | 4  | 5  | 6
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
-  | 14 | 15 | 16 | 17 | 18 | 19 =>
+  | 14 | 15 | 16 | 17 | 18 | 19
+  | 20 | 21 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 20 => intro s h; simp [ofNat?] at h
+  | n + 22 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

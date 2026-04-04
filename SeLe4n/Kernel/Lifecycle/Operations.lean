@@ -199,7 +199,7 @@ private theorem spliceOutMidQueueNode_serviceRegistry_eq
 /-- W6-B: removeFromAllEndpointQueues only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. Reduces
     redundancy from 3 near-identical proofs to a single bundled theorem. -/
-private theorem removeFromAllEndpointQueues_preserves
+theorem removeFromAllEndpointQueues_preserves
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).scheduler = st.scheduler ∧
     (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle ∧
@@ -230,26 +230,26 @@ private theorem removeFromAllEndpointQueues_preserves
     unfold removeFromAllEndpointQueues; rw [(epFold _).2.2]; exact hSplice.2.2
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves the scheduler. -/
-private theorem removeFromAllEndpointQueues_scheduler_eq
+theorem removeFromAllEndpointQueues_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).scheduler = st.scheduler :=
   (removeFromAllEndpointQueues_preserves st tid).1
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves lifecycle metadata. -/
-private theorem removeFromAllEndpointQueues_lifecycle_eq
+theorem removeFromAllEndpointQueues_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).lifecycle = st.lifecycle :=
   (removeFromAllEndpointQueues_preserves st tid).2.1
 
 /-- R4-A.1 + T5-E: removeFromAllEndpointQueues preserves serviceRegistry. -/
-private theorem removeFromAllEndpointQueues_serviceRegistry_eq
+theorem removeFromAllEndpointQueues_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllEndpointQueues st tid).serviceRegistry = st.serviceRegistry :=
   (removeFromAllEndpointQueues_preserves st tid).2.2
 
 /-- W6-B: removeFromAllNotificationWaitLists only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. -/
-private theorem removeFromAllNotificationWaitLists_preserves
+theorem removeFromAllNotificationWaitLists_preserves
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler ∧
     (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle ∧
@@ -262,19 +262,19 @@ private theorem removeFromAllNotificationWaitLists_preserves
     (fun acc _ _ hAcc => by split <;> exact hAcc)
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
-private theorem removeFromAllNotificationWaitLists_scheduler_eq
+theorem removeFromAllNotificationWaitLists_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler :=
   (removeFromAllNotificationWaitLists_preserves st tid).1
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves lifecycle metadata. -/
-private theorem removeFromAllNotificationWaitLists_lifecycle_eq
+theorem removeFromAllNotificationWaitLists_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle :=
   (removeFromAllNotificationWaitLists_preserves st tid).2.1
 
 /-- R4-A.2: removeFromAllNotificationWaitLists preserves serviceRegistry. -/
-private theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
+theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry :=
   (removeFromAllNotificationWaitLists_preserves st tid).2.2

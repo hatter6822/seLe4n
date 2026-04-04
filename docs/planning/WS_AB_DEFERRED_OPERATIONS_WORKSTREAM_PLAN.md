@@ -162,7 +162,7 @@ because they add disjoint enum variants.
  
 ---
  
-## 4. Phase D1 — Thread Suspension & Resumption (v0.24.0)
+## 4. Phase D1 — Thread Suspension & Resumption (v0.24.0) — COMPLETE
  
 **Scope**: Implement `suspend` and `resume` as first-class kernel operations with
 full invariant preservation proofs. These are the most complex deferred operations

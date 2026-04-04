@@ -1191,4 +1191,46 @@ theorem machineConfig_registerCount_default_eq_arm64GPRCount :
        maxASID := 65536, memoryMap := [] } : MachineConfig).registerCount
     = RegName.arm64GPRCount := rfl
 
+-- ============================================================================
+-- D1-B: Thread suspend/resume argument structures
+-- ============================================================================
+
+/-- D1-B: Per-syscall argument structure for `tcbSuspend`.
+    No additional arguments — the target thread comes from the capability target.
+    The capability must target a TCB object. -/
+structure SuspendArgs where
+  deriving Repr, DecidableEq
+
+/-- D1-B: Per-syscall argument structure for `tcbResume`.
+    No additional arguments — the target thread comes from the capability target.
+    The capability must target a TCB object. -/
+structure ResumeArgs where
+  deriving Repr, DecidableEq
+
+/-- D1-B: Decode suspend arguments. No message registers needed. -/
+def decodeSuspendArgs (_decoded : SyscallDecodeResult)
+    : Except KernelError SuspendArgs :=
+  pure {}
+
+/-- D1-B: Decode resume arguments. No message registers needed. -/
+def decodeResumeArgs (_decoded : SyscallDecodeResult)
+    : Except KernelError ResumeArgs :=
+  pure {}
+
+/-- D1-B: Encode suspend arguments (empty — no message registers). -/
+@[inline] def encodeSuspendArgs (_args : SuspendArgs) : Array RegValue := #[]
+
+/-- D1-B: Encode resume arguments (empty — no message registers). -/
+@[inline] def encodeResumeArgs (_args : ResumeArgs) : Array RegValue := #[]
+
+/-- D1-B: SuspendArgs decode round-trip (trivial). -/
+theorem decodeSuspendArgs_roundtrip (args : SuspendArgs) :
+    decodeSuspendArgs (stubDecoded (encodeSuspendArgs args)) = .ok args := by
+  rcases args; rfl
+
+/-- D1-B: ResumeArgs decode round-trip (trivial). -/
+theorem decodeResumeArgs_roundtrip (args : ResumeArgs) :
+    decodeResumeArgs (stubDecoded (encodeResumeArgs args)) = .ok args := by
+  rcases args; rfl
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode
