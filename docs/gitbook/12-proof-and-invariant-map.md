@@ -962,10 +962,10 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 25-entry classification table (11 policy-gated, 10 capability-only, 4 read-only; Z8-M added 3 SchedContext capability-only operations),
+- `enforcementBoundary` — exhaustive 30-entry classification table (11 policy-gated, 15 capability-only, 4 read-only; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer capability-only operations),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
-- `enforcementBoundaryComplete_counts` — compile-time count witness (11+10+4=25, V6-F/Z8-M),
+- `enforcementBoundaryComplete_counts` — compile-time count witness (11+15+4=30, V6-F/Z8-M/D1/D2/D3),
 - `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
 - `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
 - `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 11 policy-gated operations.
@@ -1550,7 +1550,7 @@ delivery. See [`AUDIT_v0.14.10_REGISTER_NAMESPACE_WORKSTREAM_PLAN.md`](../dev_hi
 **Completed decode layer (WS-J1-B, v0.15.5):**
 
 Types:
-- `SyscallId` — inductive covering 13 modeled syscalls with `toNat`/`ofNat?` encoding, `toNat_injective`/`ofNat_toNat`/`toNat_ofNat` proofs
+- `SyscallId` — inductive covering 25 modeled syscalls with `toNat`/`ofNat?` encoding, `toNat_injective`/`ofNat_toNat`/`toNat_ofNat` proofs
 - `MessageInfo` — seL4 message-info word bit-field layout with `encode`/`decode`
 - `SyscallRegisterLayout` — ARM64 register-to-argument mapping with `arm64DefaultLayout` (x0–x7), `DecidableEq` (provides `BEq` implicitly)
 - `SyscallDecodeResult` — typed decode output consumed by syscall dispatch
@@ -2211,6 +2211,20 @@ trust boundary specification.
 - `DeviceTree.fromDtb` — stub for future DTB parsing (WS-T).
 - `rpi5DeviceTree` — RPi5 instance with validation proof (`rpi5DeviceTree_valid`).
 
+**IPC Buffer Configuration** (`Architecture/IpcBufferValidation.lean`, D3):
+- `validateIpcBufferAddress` — 5-step validation pipeline (alignment → canonical → VSpace root → mapping → write permission).
+- `setIPCBufferOp` — validate then update `tcb.ipcBuffer`.
+- `validateIpcBufferAddress_implies_aligned` — success implies `addr % 512 = 0`.
+- `validateIpcBufferAddress_implies_canonical` — success implies `addr < 2^48`.
+- `validateIpcBufferAddress_implies_mapped_writable` — success implies VSpace mapping with write permission.
+- `setIPCBufferOp_scheduler_eq` — scheduler state preserved.
+- `setIPCBufferOp_serviceRegistry_eq` — service registry preserved.
+- `setIPCBufferOp_irqHandlers_eq` — IRQ handlers preserved.
+- `setIPCBufferOp_machine_eq` — machine state preserved.
+- `setIPCBufferOp_asidTable_eq` — ASID table preserved.
+- `setIPCBufferOp_capabilityRefs_eq` — capability refs preserved.
+- `setIPCBufferOp_deterministic` — pure function determinism.
+
 ## 24. SchedContext type foundation (WS-Z Phase Z1)
 
 **Scheduling Context** (`Kernel/SchedContext/Types.lean`) — first-class kernel
@@ -2374,8 +2388,10 @@ scheduling parameters, and enforce admission control.
 
 **Syscall registration** (`Model/Object/Types.lean`):
 - `SyscallId.schedContextConfigure` (17), `.schedContextBind` (18),
-  `.schedContextUnbind` (19). `ofNat?`/`toNat` codec. `SyscallId.count` = 20.
-- `toNat_injective`, `toNat_ofNat` proofs updated (20 variants).
+  `.schedContextUnbind` (19), `.tcbSuspend` (20), `.tcbResume` (21),
+  `.tcbSetPriority` (22), `.tcbSetMCPriority` (23), `.tcbSetIPCBuffer` (24).
+  `ofNat?`/`toNat` codec. `SyscallId.count` = 25.
+- `toNat_injective`, `toNat_ofNat` proofs updated (25 variants).
 
 **Syscall argument decode** (`Kernel/Architecture/SyscallArgDecode.lean`):
 - `SchedContextConfigureArgs` — 5 message registers (budget, period, priority,
@@ -2420,7 +2436,7 @@ scheduling parameters, and enforce admission control.
   `checkedDispatch_schedContextBind_eq_unchecked`,
   `checkedDispatch_schedContextUnbind_eq_unchecked`.
 - `checkedDispatch_capabilityOnly_eq_unchecked` extended (6→9 disjuncts).
-- `dispatchWithCap_wildcard_unreachable` updated (17→20 variants).
+- `dispatchWithCap_wildcard_unreachable` updated (17→25 variants).
 
 **Information-flow enforcement**: SchedContext operations are capability-only
 (no cross-domain flows). Routed through `dispatchCapabilityOnly` shared path.

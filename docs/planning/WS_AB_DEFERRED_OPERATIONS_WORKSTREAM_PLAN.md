@@ -473,7 +473,7 @@ Strategy (5 component lemmas)**
 
 ---
 
-## 6. Phase D3 — IPC Buffer Configuration (v0.24.2)
+## 6. Phase D3 — IPC Buffer Configuration (v0.24.2) — COMPLETE
  
 **Scope**: Implement `setIPCBuffer` as a capability-controlled operation that
 changes a thread's IPC buffer virtual address with VSpace validation. The IPC

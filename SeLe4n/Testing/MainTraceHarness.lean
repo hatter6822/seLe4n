@@ -3037,7 +3037,7 @@ private def runRustXvalVectors : IO Unit := do
       throw <| IO.userError "[XVAL-001] MessageInfo roundtrip FAILED"
   | none => throw <| IO.userError "[XVAL-001] MessageInfo decode returned none"
 
-  -- RUST-XVAL: SyscallId roundtrip (all 24)
+  -- RUST-XVAL: SyscallId roundtrip (all 25)
   let allSyscalls : List SyscallId := [
     .send, .receive, .call, .reply,
     .cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete,
@@ -3046,7 +3046,8 @@ private def runRustXvalVectors : IO Unit := do
     .notificationSignal, .notificationWait, .replyRecv,
     .schedContextConfigure, .schedContextBind, .schedContextUnbind,
     .tcbSuspend, .tcbResume,
-    .tcbSetPriority, .tcbSetMCPriority
+    .tcbSetPriority, .tcbSetMCPriority,
+    .tcbSetIPCBuffer
   ]
   let mut syscallOk := true
   for s in allSyscalls do
@@ -3054,7 +3055,7 @@ private def runRustXvalVectors : IO Unit := do
     | some s' => if s != s' then syscallOk := false
     | none => syscallOk := false
   if syscallOk then
-    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 24 variants"
+    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 25 variants"
   else
     throw <| IO.userError "[XVAL-002] SyscallId roundtrip FAILED"
 
@@ -3081,6 +3082,21 @@ private def runRustXvalVectors : IO Unit := do
     IO.println s!"[XVAL-004] MessageInfo bit layout ok: len={miLen} caps={miCaps} label={miLabel}"
   else
     throw <| IO.userError s!"[XVAL-004] MessageInfo bit layout MISMATCH: len={miLen} caps={miCaps} label={miLabel}"
+
+  -- RUST-XVAL: SetIPCBufferArgs encode/decode roundtrip (D3)
+  let ibArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs :=
+    { bufferAddr := ⟨512⟩ }   -- 512 is aligned to ipcBufferAlignment (512)
+  let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
+  let ibStub : SyscallDecodeResult :=
+    { capAddr := ⟨0⟩, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+      syscallId := .tcbSetIPCBuffer, msgRegs := ibEncoded }
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs ibStub with
+  | .ok decoded =>
+    if decoded == ibArgs then
+      IO.println s!"[XVAL-005] SetIPCBufferArgs roundtrip ok: regs={reprStr ibEncoded}"
+    else
+      throw <| IO.userError "[XVAL-005] SetIPCBufferArgs roundtrip MISMATCH"
+  | .error e => throw <| IO.userError s!"[XVAL-005] SetIPCBufferArgs decode error: {reprStr e}"
 
 def runMainTrace : IO Unit := do
   assertStateInvariantsFor "bootstrap state" bootstrapInvariantObjectIds bootstrapState bootstrapServiceIds

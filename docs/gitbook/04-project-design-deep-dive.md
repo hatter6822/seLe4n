@@ -80,7 +80,7 @@ The syscall boundary uses a two-layer decode architecture that converts raw ARM6
 
 A shared `requireMsgReg` helper provides safe indexing with `invalidMessageInfo` on insufficient registers. All decode functions are pure `Except KernelError T` — no state access, no side effects. Ten encode functions provide the inverse mapping for round-trip proofs (`decode_layer2_roundtrip_all`).
 
-**Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 13 syscalls are fully wired — zero `.illegalState` stubs remain.
+**Dispatch integration:** `dispatchWithCap` accepts a full `SyscallDecodeResult` and routes through the appropriate layer-2 decode function before delegating to the kernel operation. All 25 syscalls are fully wired — zero `.illegalState` stubs remain.
 
 **Service registry (WS-Q1):** The service subsystem uses a stateless registry model — services are registered entries with identity, dependencies, and isolation edges. No `ServiceStatus` lifecycle state or `ServiceConfig` policy predicates. Graph invariants (acyclicity, bounded service count) are preserved by `serviceRegisterDependency`.
 

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.24.2"
+version = "0.24.3"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -66,3 +66,8 @@ root = "tests.SuspendResumeSuite"
 [[lean_exe]]
 name = "priority_management_suite"
 root = "tests.PriorityManagementSuite"
+
+# D3: IPC Buffer Configuration test suite
+[[lean_exe]]
+name = "ipc_buffer_suite"
+root = "tests.IpcBufferSuite"

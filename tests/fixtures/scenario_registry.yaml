@@ -979,6 +979,11 @@ scenarios:
     function: runRustXvalVectors
     subsystem: ABI
     description: "MessageInfo bit layout verification"
+  XVAL-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runRustXvalVectors
+    subsystem: ABI
+    description: "SetIPCBufferArgs encode/decode roundtrip (D3)"
   # Q9-A: Two-Phase Architecture Integration Tests
   TPH-001:
     source: tests/TwoPhaseArchSuite.lean

@@ -273,7 +273,7 @@ Each has a documented rationale and prerequisite milestone:
 | `setMCPriority` | `seL4_TCB_SetMCPriority` | MCP ceiling update with retroactive priority capping | MCS scheduling (Z1–Z5) | **Implemented (D2, v0.24.1)** |
 | `suspend` | `seL4_TCB_Suspend` | Requires thread lifecycle state machine | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
 | `resume` | `seL4_TCB_Resume` | Inverse of suspend; same prerequisite | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
-| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | Requires VSpace validation via page walk | H3 (VSpace integration) | Deferred |
+| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | VSpace-validated IPC buffer address update | H3 (VSpace integration) | **Implemented (D3, v0.24.2–v0.24.3)** |
 
 **D1 (v0.24.0):** Thread suspension and resumption are now fully implemented.
 `suspendThread` performs the complete cleanup pipeline (IPC blocking cancellation,
@@ -297,6 +297,17 @@ capability-only arms with frozen-phase equivalents. Preservation theorems
 prove authority non-escalation (`setPriority_authority_bounded`,
 `setMCPriority_authority_bounded`) and transport lemmas guarantee scheduler,
 serviceRegistry, and lifecycle field preservation.
+
+**D3 (v0.24.2):** IPC buffer configuration is now fully implemented.
+`setIPCBufferOp` validates the buffer address through a 5-step pipeline
+(alignment to 512 bytes, canonical address check, VSpace root validity,
+mapping existence via VSpaceRoot.lookup, write permission) before updating
+the TCB's `ipcBuffer` field. The operation is wired into `dispatchWithCap`
+(`SyscallId.tcbSetIPCBuffer`) as a capability-only arm with a frozen-phase
+equivalent (`frozenSetIPCBuffer`). Validation correctness theorems prove that
+successful validation implies alignment and mapped-writable guarantees.
+Frame preservation is trivial since `ipcBuffer` is not referenced by any
+scheduler, IPC, cross-subsystem, or capability invariant predicate.
 
 ---
 

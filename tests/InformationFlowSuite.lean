@@ -390,9 +390,9 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- V2-B/C/Z8-M/D2: Updated from 27 to 29 total classified operations
-  expect "M-07/U5/V2/Z8-M/D2: enforcement boundary: total 29 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 29)
+  -- V2-B/C/Z8-M/D2/D3: Updated from 29 to 30 total classified operations
+  expect "M-07/U5/V2/Z8-M/D2/D3: enforcement boundary: total 30 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 30)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
@@ -896,12 +896,12 @@ def runInformationFlowChecks : IO Unit := do
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
   expect "V6-F: enforcement boundary has 11 policy-gated"
     (pgCount = 11)
-  expect "V6-F/Z8-M/D2: enforcement boundary has 14 capability-only"
-    (coCount = 14)
+  expect "V6-F/Z8-M/D2/D3: enforcement boundary has 15 capability-only"
+    (coCount = 15)
   expect "V6-F: enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "V6-F/Z8-M/D2: enforcement boundary total is 29"
-    (boundary.length = 29)
+  expect "V6-F/Z8-M/D2/D3: enforcement boundary total is 30"
+    (boundary.length = 30)
 
   IO.println "V6-F enforcement boundary completeness verified"
 
@@ -955,8 +955,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "V6-K default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "V6-L/Z8-M/D2: enforcementBoundaryExtended has 29 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 29)
+  expect "V6-L/Z8-M/D2/D3: enforcementBoundaryExtended has 30 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 30)
   expect "V6-L: extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

@@ -588,6 +588,12 @@ instance : ToString VAddr where
 
 end VAddr
 
+/-- D3-C: IPC buffer alignment requirement in bytes.
+    Matches seL4's `seL4_IPCBufferSizeBits = 9` (2^9 = 512 bytes).
+    The IPC buffer must be aligned to this boundary so the kernel can
+    safely read/write message registers without crossing page boundaries. -/
+def ipcBufferAlignment : Nat := 512
+
 /-- Physical-memory address in the abstract model. -/
 structure PAddr where
   val : Nat

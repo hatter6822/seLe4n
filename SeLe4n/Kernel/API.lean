@@ -36,6 +36,7 @@ import SeLe4n.Kernel.Architecture.Adapter
 import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Kernel.Architecture.VSpace
 import SeLe4n.Kernel.Architecture.VSpaceInvariant
+import SeLe4n.Kernel.Architecture.IpcBufferValidation
 
 /-!
 # L-01/WS-E6: Unified Public Kernel API
@@ -95,11 +96,11 @@ completed before implementation.
 
 | Operation | seL4 Reference | Rationale | Prerequisite |
 |-----------|---------------|-----------|--------------|
-| `setPriority` | `seL4_TCB_SetPriority` | Requires MCS scheduling context model. Priority is currently set at TCB creation; runtime modification deferred until MCS scheduling contexts (budget/period/replenishment) are modeled. | MCS scheduling (long-horizon) |
-| `setMCPriority` | `seL4_TCB_SetMCPriority` | Maximum controlled priority. Same MCS prerequisite as `setPriority`. | MCS scheduling (long-horizon) |
+| `setPriority` | `seL4_TCB_SetPriority` | **IMPLEMENTED** (D2, v0.24.1). `setPriorityOp` in `SchedContext/PriorityManagement.lean`, wired as `SyscallId.tcbSetPriority`. | Complete |
+| `setMCPriority` | `seL4_TCB_SetMCPriority` | **IMPLEMENTED** (D2, v0.24.1). `setMCPriorityOp` in `SchedContext/PriorityManagement.lean`, wired as `SyscallId.tcbSetMCPriority`. | Complete |
 | `suspend` | `seL4_TCB_Suspend` | **IMPLEMENTED** (D1, v0.24.0). `suspendThread` in `Lifecycle/Suspend.lean`, wired as `SyscallId.tcbSuspend`. | Complete |
 | `resume` | `seL4_TCB_Resume` | **IMPLEMENTED** (D1, v0.24.0). `resumeThread` in `Lifecycle/Suspend.lean`, wired as `SyscallId.tcbResume`. | Complete |
-| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | Trivial field update, but VSpace validation of the buffer address (must be mapped, writable, aligned) requires `VSpaceBackend` integration and page table walk. | H3 hardware binding (VSpace validation) |
+| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | **IMPLEMENTED** (D3, v0.24.2). `setIPCBufferOp` in `Architecture/IpcBufferValidation.lean`, wired as `SyscallId.tcbSetIPCBuffer`. | Complete |
 -/
 
 namespace SeLe4n.Kernel
@@ -387,6 +388,7 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbResume             => .write
   | .tcbSetPriority        => .write
   | .tcbSetMCPriority      => .write
+  | .tcbSetIPCBuffer       => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -548,7 +550,7 @@ and no additional decoded arguments) and this explicit match (handles syscalls
 requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 1. Shares a single checked/unchecked dispatch implementation (V8-H)
 2. Enables the wildcard unreachability proof (`dispatchWithCap_wildcard_unreachable`)
-   showing all 24 `SyscallId` variants are handled by one of the two tiers
+   showing all 25 `SyscallId` variants are handled by one of the two tiers
 3. Keeps argument-free dispatch arms concise via `dispatchCapabilityOnly`
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -739,7 +741,19 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         | .ok st' => .ok ((), st')
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
-  -- V8-H/D1/D2: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
+  -- D3-H: TCB setIPCBuffer — buffer address from message register, target from capability
+  | .tcbSetIPCBuffer =>
+    match cap.target with
+    | .object objId =>
+      fun st => match decodeSetIPCBufferArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match Architecture.IpcBufferValidation.setIPCBufferOp st
+            (ThreadId.ofNat objId.toNat) args.bufferAddr with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- V8-H/D1/D2/D3: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
   -- serviceRevoke, serviceQuery, schedContextConfigure, schedContextBind,
   -- schedContextUnbind, tcbSuspend, tcbResume) are unreachable here — handled by
   -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
@@ -932,7 +946,20 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           | .error e => .error e
           | .ok ((), st') => .ok ((), applyReplyDonation st' tid)
     | _ => fun _ => .error .invalidCapability
-  -- V8-H: Remaining capability-only arms are unreachable — handled by
+  -- D3-H: TCB setIPCBuffer — buffer address from message register, target from capability
+  -- Capability-only: no cross-domain flow check needed (authority from cap possession)
+  | .tcbSetIPCBuffer =>
+    match cap.target with
+    | .object objId =>
+      fun st => match decodeSetIPCBufferArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match Architecture.IpcBufferValidation.setIPCBufferOp st
+            (ThreadId.ofNat objId.toNat) args.bufferAddr with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- V8-H/D3: Remaining capability-only arms are unreachable — handled by
   -- dispatchCapabilityOnly returning `some` above.
   | _ => fun _ => .error .illegalState
 
@@ -993,7 +1020,7 @@ The shared arms are: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
 `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`.
 
-V8-H: With the shared helper extraction, each per-arm theorem follows
+V8-H/D3: With the shared helper extraction, each per-arm theorem follows
 directly from the shared `dispatchCapabilityOnly` delegation. -/
 theorem checkedDispatch_cspaceDelete_eq_unchecked
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
@@ -1126,19 +1153,19 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
 -- ============================================================================
 
-/-- W2-C (MED-04)/D1: Every `SyscallId` variant is handled by either
-    `dispatchCapabilityOnly` (returning `some`) or one of the 11 explicit match
+/-- W2-C (MED-04)/D1/D3: Every `SyscallId` variant is handled by either
+    `dispatchCapabilityOnly` (returning `some`) or one of the 14 explicit match
     arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
     wildcard arm is unreachable at runtime.
 
-    The proof enumerates all 24 `SyscallId` constructors: 11 are routed to
+    The proof enumerates all 25 `SyscallId` constructors: 11 are routed to
     `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
     `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
     `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`),
-    and the remaining 13
+    and the remaining 14
     (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
     `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
-    `.replyRecv`, `.tcbSetPriority`, `.tcbSetMCPriority`)
+    `.replyRecv`, `.tcbSetPriority`, `.tcbSetMCPriority`, `.tcbSetIPCBuffer`)
     are handled by explicit match arms in `dispatchWithCap`. -/
 theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
@@ -1147,7 +1174,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .notificationSignal, .notificationWait, .replyRecv,
             .schedContextConfigure, .schedContextBind,
             .schedContextUnbind, .tcbSuspend, .tcbResume,
-            .tcbSetPriority, .tcbSetMCPriority] : List SyscallId) := by
+            .tcbSetPriority, .tcbSetMCPriority,
+            .tcbSetIPCBuffer] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

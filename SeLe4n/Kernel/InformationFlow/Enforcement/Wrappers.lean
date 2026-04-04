@@ -175,7 +175,7 @@ inductive EnforcementClass where
   deriving Repr
 
 /-- WS-E5/M-07/Q1-D/U5-B/U5-C/V2-B/C/Z8-M/D1/D2: Canonical enforcement boundary
-classification table (29 entries). V2-B/C added `notificationWaitChecked` and
+classification table (30 entries). V2-B/C added `notificationWaitChecked` and
 `endpointReplyRecvChecked`. Z8-M added 3 SchedContext capability-only operations.
 D1 added 2 thread lifecycle capability-only operations.
 D2 added 2 priority management capability-only operations.
@@ -220,6 +220,8 @@ def enforcementBoundary : List EnforcementClass :=
   -- D2: Priority management capability-only operations (authority from cap + MCP)
   , .capabilityOnly "setPriority"
   , .capabilityOnly "setMCPriority"
+  -- D3: IPC buffer configuration capability-only operation
+  , .capabilityOnly "setIPCBuffer"
   ]
 
 -- ============================================================================

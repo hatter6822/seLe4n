@@ -28,7 +28,7 @@ Core type definitions with zero `unsafe` and zero external dependencies:
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
-- **`SyscallId`**: 20-variant enum (0–19), including notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5)
+- **`SyscallId`**: 25-variant enum (0–24), including notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3)
 
 ### sele4n-abi
 
@@ -99,7 +99,7 @@ x7  → Syscall number (SyscallId)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
   AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.82.0)
 - AA1 ABI drift detection: variant count assertions for KernelError (43) and
-  SyscallId (20), TypeTag (7), compile-time constant checks for MAX_LABEL,
+  SyscallId (25), TypeTag (7), compile-time constant checks for MAX_LABEL,
   MAX_MSG_LENGTH, MAX_EXTRA_CAPS
 
 ## Canonical Sources
