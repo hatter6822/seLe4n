@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.24.1-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.24.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -76,11 +76,11 @@ architectural improvements compared to other microkernels:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.23.22` |
+| **Version** | `0.24.3` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 79,743 across 113 files |
-| **Test Lean LoC** | 9,103 across 11 test suites |
-| **Proved declarations** | 2,312 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 81,299 across 118 files |
+| **Test Lean LoC** | 10,058 across 13 test suites |
+| **Proved declarations** | 2,341 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -317,7 +317,7 @@ tests/                           11 test suites (negative-state, info-flow, trac
 | **Object stores** | Linked lists and arrays | All stores backed by formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with `distCorrect`/`noDupKeys`/`probeChainDominant` invariants |
 | **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with EDF tie-breaking, CBS budget filtering, and 15-conjunct invariant bundle |
 | **VSpace** | Hardware page tables | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (2,312 theorems, zero sorry/axiom) |
+| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (2,341 theorems, zero sorry/axiom) |
 | **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ### Comparison with Fiasco.OC (TU Dresden)
@@ -332,7 +332,7 @@ tests/                           11 test suites (negative-state, info-flow, trac
 | **Capability derivation** | L4 capability/object model | `childMap` HashMap for O(1) children lookup with typed transitions |
 | **Object stores** | Kernel-managed object pools | Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked correctness invariants |
 | **VSpace** | Architecture-native page tables/MMU | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with 2,312 theorems co-located with transitions (zero sorry/axiom) |
+| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with 2,341 theorems co-located with transitions (zero sorry/axiom) |
 | **Platform abstraction** | Architecture/board support via kernel + ecosystem engineering | `PlatformBinding` typeclass with typed boundary contracts |
 
 
