@@ -8,22 +8,24 @@
 
 import SeLe4n.Kernel.Lifecycle.Suspend
 
-/-! # D1-I through D1-N: Suspension & Resumption Preservation Theorems
+/-! # D1-I: Suspension & Resumption Preservation Theorems
 
 Proves that `suspendThread` and `resumeThread` helper functions preserve
-the kernel's scheduler, lifecycle, and serviceRegistry fields when they
-only modify the `objects` store.
+the kernel's scheduler and serviceRegistry fields.
 
 ## Proof structure
 
 ### Transport lemmas (D1-I)
 Each helper function preserves non-object state fields:
-- `cancelIpcBlocking` preserves scheduler, lifecycle, serviceRegistry
-- `cancelDonation` preserves scheduler
-- `clearPendingState` preserves scheduler
+- `cancelIpcBlocking` preserves scheduler, serviceRegistry, lifecycle
+- `cancelDonation` preserves scheduler, serviceRegistry
+- `clearPendingState` preserves scheduler, serviceRegistry, lifecycle
 
-These form the foundation for invariant bundle preservation proofs
-that will compose when the full invariant surface is exercised.
+Note: `cancelDonation` does NOT preserve lifecycle in the `.donated` case
+because `returnDonatedSchedContext` calls `storeObject`, which updates
+`lifecycle.objectTypes` and `lifecycle.capabilityRefs`. The `cancelIpcBlocking`
+and `clearPendingState` helpers DO preserve lifecycle because they only use
+direct record-with updates on the `objects` field.
 -/
 
 namespace SeLe4n.Kernel.Lifecycle.Suspend
@@ -184,5 +186,23 @@ theorem cancelDonation_serviceRegistry_eq
     split <;> (split <;> rfl)
   · -- .donated: delegate to cleanupDonatedSchedContext
     exact cleanupDonatedSchedContext_serviceRegistry_eq st tid
+
+-- ============================================================================
+-- D1-I: Transport lemmas — lifecycle preservation
+-- ============================================================================
+
+/-- D1-I: cancelIpcBlocking preserves lifecycle. -/
+theorem cancelIpcBlocking_lifecycle_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (cancelIpcBlocking st tid tcb).lifecycle = st.lifecycle := by
+  unfold cancelIpcBlocking
+  cases tcb.ipcState with
+  | ready => rfl
+  | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
+    rw [clearTcbIpcFields_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
+  | blockedOnReply _ _ =>
+    rw [clearTcbIpcFields_lifecycle_eq]
+  | blockedOnNotification _ =>
+    rw [clearTcbIpcFields_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 
 end SeLe4n.Kernel.Lifecycle.Suspend

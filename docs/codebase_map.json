@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-thread-suspension-4amYs",
-      "commit_sha": "6046f3be16cbc8743ba30c58804f08dc9898debd",
-      "tree_sha": "d11961bbd5ed413e8b53887c38be09cd1a32ff4d",
-      "committed_at_utc": "2026-04-03T22:27:44-04:00"
+      "commit_sha": "21514c16b7d29291bd5ce2044d3702aefa665369",
+      "tree_sha": "bfaa78774e6578068caa26d191fe36cc977ae9f3",
+      "committed_at_utc": "2026-04-04T03:23:06+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "72d3199996cc2fa51e2ac182b32ad1fd6ec1c90d664e8512a2fc7555445cf0c3"
+    "source_digest": "6637affe97ac6a71acd7d21f2f7ccb2796f6d92ac911f409547c04a35e2d1815"
   },
   "summary": {
     "module_count": 126,
-    "declaration_count": 4136
+    "declaration_count": 4147
   },
   "readme_sync": {
-    "version": "0.24.0",
+    "version": "0.24.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 115,
-    "production_loc": 80338,
+    "production_loc": 80364,
     "test_files": 11,
-    "test_loc": 9103,
-    "proved_theorem_lemma_decls": 2312,
+    "test_loc": 9283,
+    "proved_theorem_lemma_decls": 2313,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -20057,7 +20057,7 @@
         {
           "kind": "abbrev",
           "name": "enforcementBoundaryExtended",
-          "line": 311,
+          "line": 312,
           "called": [
             "EnforcementClass",
             "enforcementBoundary"
@@ -20066,13 +20066,13 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_count",
-          "line": 315,
+          "line": 316,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_eq_canonical",
-          "line": 322,
+          "line": 323,
           "called": [
             "enforcementBoundary",
             "enforcementBoundaryExtended"
@@ -20081,13 +20081,13 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_matches_canonical",
-          "line": 326,
+          "line": 327,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointSendDualChecked",
-          "line": 340,
+          "line": 341,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20105,7 +20105,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationSignalChecked",
-          "line": 357,
+          "line": 358,
           "called": [
             "Badge",
             "LabelingContext",
@@ -20121,7 +20121,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceCopyChecked",
-          "line": 370,
+          "line": 371,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -20134,7 +20134,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMoveChecked",
-          "line": 382,
+          "line": 383,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -20147,7 +20147,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReceiveDualChecked",
-          "line": 394,
+          "line": 395,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -20162,7 +20162,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointCallChecked",
-          "line": 412,
+          "line": 413,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -20180,7 +20180,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReplyChecked",
-          "line": 428,
+          "line": 429,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20193,7 +20193,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMintChecked",
-          "line": 441,
+          "line": 442,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20207,7 +20207,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationWaitChecked",
-          "line": 454,
+          "line": 455,
           "called": [
             "Badge",
             "LabelingContext",
@@ -20222,7 +20222,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReplyRecvChecked",
-          "line": 467,
+          "line": 468,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20237,7 +20237,7 @@
         {
           "kind": "def",
           "name": "declassifyStore",
-          "line": 508,
+          "line": 509,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20251,7 +20251,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_eq_storeObject_when_authorized",
-          "line": 525,
+          "line": 526,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20266,7 +20266,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_normal_allowed",
-          "line": 539,
+          "line": 540,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20280,7 +20280,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_declass_denied",
-          "line": 552,
+          "line": 553,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20294,7 +20294,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_denied_no_state_change",
-          "line": 566,
+          "line": 567,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20309,7 +20309,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_declassifyStore",
-          "line": 580,
+          "line": 581,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20323,7 +20323,7 @@
         {
           "kind": "structure",
           "name": "InformationFlowConfigInvariant",
-          "line": 627,
+          "line": 628,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -20336,7 +20336,7 @@
         {
           "kind": "theorem",
           "name": "defaultConfigInvariant",
-          "line": 638,
+          "line": 639,
           "called": [
             "DomainFlowPolicy.allowAll_wellFormed",
             "InformationFlowConfigInvariant",
@@ -20348,7 +20348,7 @@
         {
           "kind": "theorem",
           "name": "kernelTransition_preserves_ifConfigInvariant",
-          "line": 655,
+          "line": 656,
           "called": [
             "InformationFlowConfigInvariant",
             "SystemState"
@@ -20357,7 +20357,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_flowDenied_preserves_state",
-          "line": 678,
+          "line": 679,
           "called": [
             "cspaceMintChecked",
             "cspaceMintChecked_denied_preserves_state",
@@ -20370,19 +20370,19 @@
         {
           "kind": "def",
           "name": "checkedDispatchEnforcementCoverage",
-          "line": 700,
+          "line": 701,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "checkedDispatchEnforcementCoverage_complete",
-          "line": 715,
+          "line": 716,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementBridge_to_NonInterferenceStep",
-          "line": 741,
+          "line": 742,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20535,7 +20535,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundary",
-          "line": 184,
+          "line": 185,
           "called": [
             "EnforcementClass",
             "readOnly"
@@ -20544,7 +20544,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_denied_preserves_state",
-          "line": 224,
+          "line": 228,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20562,7 +20562,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_denied_preserves_state",
-          "line": 240,
+          "line": 244,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20576,7 +20576,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_endpointSendDual",
-          "line": 257,
+          "line": 261,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20595,7 +20595,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_cspaceMint",
-          "line": 278,
+          "line": 282,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20610,7 +20610,7 @@
         {
           "kind": "def",
           "name": "notificationSignalChecked",
-          "line": 314,
+          "line": 318,
           "called": [
             "Badge",
             "Kernel",
@@ -20625,7 +20625,7 @@
         {
           "kind": "def",
           "name": "cspaceCopyChecked",
-          "line": 335,
+          "line": 339,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -20637,7 +20637,7 @@
         {
           "kind": "def",
           "name": "cspaceMoveChecked",
-          "line": 351,
+          "line": 355,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -20649,7 +20649,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDualChecked",
-          "line": 370,
+          "line": 374,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20663,7 +20663,7 @@
         {
           "kind": "def",
           "name": "registerServiceChecked",
-          "line": 395,
+          "line": 399,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20676,7 +20676,7 @@
         {
           "kind": "def",
           "name": "endpointCallChecked",
-          "line": 420,
+          "line": 424,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -20694,7 +20694,7 @@
         {
           "kind": "def",
           "name": "endpointReplyChecked",
-          "line": 452,
+          "line": 456,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -20707,7 +20707,7 @@
         {
           "kind": "def",
           "name": "notificationWaitChecked",
-          "line": 473,
+          "line": 477,
           "called": [
             "Badge",
             "Kernel",
@@ -20722,7 +20722,7 @@
         {
           "kind": "def",
           "name": "endpointReplyRecvChecked",
-          "line": 493,
+          "line": 497,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -24649,18 +24649,18 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation",
       "path": "SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean",
-      "declaration_count": 11,
+      "declaration_count": 12,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Lifecycle.Suspend",
-          "line": 29,
+          "line": 31,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_scheduler_eq",
-          "line": 43,
+          "line": 45,
           "called": [
             "SystemState",
             "TCB",
@@ -24674,7 +24674,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_scheduler_eq",
-          "line": 58,
+          "line": 60,
           "called": [
             "SystemState",
             "TCB",
@@ -24686,7 +24686,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_scheduler_eq",
-          "line": 69,
+          "line": 71,
           "called": [
             "SystemState",
             "ThreadId",
@@ -24696,7 +24696,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_serviceRegistry_eq",
-          "line": 79,
+          "line": 81,
           "called": [
             "SystemState",
             "TCB",
@@ -24710,7 +24710,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_serviceRegistry_eq",
-          "line": 93,
+          "line": 95,
           "called": [
             "SystemState",
             "ThreadId",
@@ -24720,7 +24720,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_lifecycle_eq",
-          "line": 99,
+          "line": 101,
           "called": [
             "SystemState",
             "ThreadId",
@@ -24730,7 +24730,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_serviceRegistry_eq",
-          "line": 105,
+          "line": 107,
           "called": [
             "KernelObject",
             "ObjId",
@@ -24741,7 +24741,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_serviceRegistry_eq",
-          "line": 113,
+          "line": 115,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -24758,7 +24758,7 @@
         {
           "kind": "theorem",
           "name": "cleanupDonatedSchedContext_serviceRegistry_eq",
-          "line": 154,
+          "line": 156,
           "called": [
             "SystemState",
             "ThreadId",
@@ -24773,13 +24773,27 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_serviceRegistry_eq",
-          "line": 172,
+          "line": 174,
           "called": [
             "SystemState",
             "TCB",
             "ThreadId",
             "cancelDonation",
             "cleanupDonatedSchedContext_serviceRegistry_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlocking_lifecycle_eq",
+          "line": 195,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlocking",
+            "clearTcbIpcFields_lifecycle_eq",
+            "removeFromAllEndpointQueues_lifecycle_eq",
+            "removeFromAllNotificationWaitLists_lifecycle_eq"
           ]
         }
       ]
@@ -24792,13 +24806,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 42,
+          "line": 43,
           "called": []
         },
         {
           "kind": "def",
           "name": "lifecycleIdentityTypeExact",
-          "line": 48,
+          "line": 49,
           "called": [
             "SystemState",
             "objectTypeMetadataConsistent"
@@ -24807,7 +24821,7 @@
         {
           "kind": "def",
           "name": "lifecycleIdentityNoTypeAliasConflict",
-          "line": 58,
+          "line": 59,
           "called": [
             "SystemState",
             "lookupObjectTypeMeta"
@@ -24816,7 +24830,7 @@
         {
           "kind": "def",
           "name": "lifecycleIdentityAliasingInvariant",
-          "line": 70,
+          "line": 71,
           "called": [
             "SystemState",
             "lifecycleIdentityNoTypeAliasConflict",
@@ -24826,7 +24840,7 @@
         {
           "kind": "def",
           "name": "lifecycleCapabilityRefExact",
-          "line": 75,
+          "line": 76,
           "called": [
             "SystemState",
             "capabilityRefMetadataConsistent"
@@ -24835,7 +24849,7 @@
         {
           "kind": "def",
           "name": "lifecycleCapabilityRefObjectTargetBacked",
-          "line": 96,
+          "line": 97,
           "called": [
             "SystemState",
             "lookupCapabilityRefMeta",
@@ -24845,7 +24859,7 @@
         {
           "kind": "def",
           "name": "lifecycleCapabilityReferenceInvariant",
-          "line": 102,
+          "line": 103,
           "called": [
             "SystemState",
             "lifecycleCapabilityRefExact",
@@ -24855,7 +24869,7 @@
         {
           "kind": "def",
           "name": "lifecycleCapabilityRefObjectTargetTypeAligned",
-          "line": 107,
+          "line": 108,
           "called": [
             "SystemState",
             "lookupCapabilityRefMeta",
@@ -24866,7 +24880,7 @@
         {
           "kind": "def",
           "name": "lifecycleCapabilityRefNoTypeAliasConflict",
-          "line": 115,
+          "line": 116,
           "called": [
             "SystemState",
             "lookupCapabilityRefMeta",
@@ -24876,7 +24890,7 @@
         {
           "kind": "def",
           "name": "lifecycleStaleReferenceExclusionInvariant",
-          "line": 123,
+          "line": 124,
           "called": [
             "SystemState",
             "lifecycleCapabilityRefNoTypeAliasConflict",
@@ -24887,7 +24901,7 @@
         {
           "kind": "def",
           "name": "lifecycleIdentityStaleReferenceInvariant",
-          "line": 130,
+          "line": 131,
           "called": [
             "SystemState",
             "lifecycleIdentityAliasingInvariant",
@@ -24897,7 +24911,7 @@
         {
           "kind": "def",
           "name": "lifecycleInvariantBundle",
-          "line": 134,
+          "line": 135,
           "called": [
             "SystemState",
             "lifecycleCapabilityReferenceInvariant",
@@ -24907,7 +24921,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleIdentityNoTypeAliasConflict_of_exact",
-          "line": 137,
+          "line": 138,
           "called": [
             "SystemState",
             "lifecycleIdentityNoTypeAliasConflict",
@@ -24921,7 +24935,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleCapabilityRefObjectTargetBacked_of_exact",
-          "line": 158,
+          "line": 159,
           "called": [
             "SystemState",
             "lifecycleCapabilityRefExact",
@@ -24933,7 +24947,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleInvariantBundle_of_metadata_consistent",
-          "line": 171,
+          "line": 172,
           "called": [
             "SystemState",
             "lifecycleCapabilityRefObjectTargetBacked_of_exact",
@@ -24945,7 +24959,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleMetadataConsistent_of_lifecycleInvariantBundle",
-          "line": 180,
+          "line": 181,
           "called": [
             "SystemState",
             "lifecycleInvariantBundle",
@@ -24955,7 +24969,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleCapabilityRefObjectTargetTypeAligned_of_exact",
-          "line": 189,
+          "line": 190,
           "called": [
             "SystemState",
             "lifecycleCapabilityRefObjectTargetTypeAligned",
@@ -24967,7 +24981,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleCapabilityRefNoTypeAliasConflict_of_identity",
-          "line": 197,
+          "line": 198,
           "called": [
             "SystemState",
             "lifecycleCapabilityRefNoTypeAliasConflict",
@@ -24977,7 +24991,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle",
-          "line": 204,
+          "line": 205,
           "called": [
             "SystemState",
             "lifecycleCapabilityRefNoTypeAliasConflict_of_identity",
@@ -24989,7 +25003,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle",
-          "line": 215,
+          "line": 216,
           "called": [
             "SystemState",
             "lifecycleIdentityStaleReferenceInvariant",
@@ -25000,7 +25014,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleInvariantBundle",
-          "line": 221,
+          "line": 222,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25019,7 +25033,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant",
-          "line": 239,
+          "line": 240,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25036,7 +25050,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant",
-          "line": 253,
+          "line": 254,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25053,7 +25067,7 @@
         {
           "kind": "def",
           "name": "untypedWatermarkInvariant",
-          "line": 273,
+          "line": 274,
           "called": [
             "ObjId",
             "SystemState",
@@ -25064,7 +25078,7 @@
         {
           "kind": "def",
           "name": "untypedChildrenBoundsInvariant",
-          "line": 280,
+          "line": 281,
           "called": [
             "ObjId",
             "SystemState",
@@ -25075,7 +25089,7 @@
         {
           "kind": "def",
           "name": "untypedChildrenNonOverlapInvariant",
-          "line": 287,
+          "line": 288,
           "called": [
             "ObjId",
             "SystemState",
@@ -25086,7 +25100,7 @@
         {
           "kind": "def",
           "name": "untypedChildrenUniqueIdsInvariant",
-          "line": 294,
+          "line": 295,
           "called": [
             "ObjId",
             "SystemState",
@@ -25097,7 +25111,7 @@
         {
           "kind": "def",
           "name": "untypedMemoryInvariant",
-          "line": 300,
+          "line": 301,
           "called": [
             "SystemState",
             "untypedChildrenBoundsInvariant",
@@ -25109,7 +25123,7 @@
         {
           "kind": "theorem",
           "name": "default_systemState_untypedMemoryInvariant",
-          "line": 308,
+          "line": 309,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -25121,7 +25135,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_untypedWatermarkInvariant_ne",
-          "line": 314,
+          "line": 315,
           "called": [
             "KernelObject",
             "ObjId",
@@ -25137,7 +25151,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_lifecycleMetadataConsistent",
-          "line": 333,
+          "line": 334,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25157,7 +25171,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_lifecycleInvariantBundle",
-          "line": 360,
+          "line": 361,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25175,7 +25189,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_untypedMemoryInvariant",
-          "line": 383,
+          "line": 384,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25203,7 +25217,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_childId_ne",
-          "line": 465,
+          "line": 466,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25217,7 +25231,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_childId_fresh",
-          "line": 494,
+          "line": 495,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25231,7 +25245,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_untypedMemoryInvariant_auto",
-          "line": 537,
+          "line": 538,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -25249,7 +25263,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_preserves_lifecycleInvariantBundle",
-          "line": 567,
+          "line": 568,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -25263,7 +25277,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_preserves_lifecycleStaleReferenceExclusionInvariant",
-          "line": 583,
+          "line": 584,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -25275,7 +25289,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_preserves_lifecycleIdentityStaleReferenceInvariant",
-          "line": 590,
+          "line": 591,
           "called": [
             "Kernel",
             "KernelObjectType",
@@ -55083,18 +55097,18 @@
     {
       "module": "tests.SuspendResumeSuite",
       "path": "tests/SuspendResumeSuite.lean",
-      "declaration_count": 18,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SuspendResumeSuite",
-          "line": 20,
+          "line": 21,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 22,
+          "line": 23,
           "called": [
             "throw"
           ]
@@ -55102,7 +55116,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 29,
+          "line": 30,
           "called": [
             "TCB",
             "ThreadState"
@@ -55111,7 +55125,7 @@
         {
           "kind": "def",
           "name": "mkState",
-          "line": 36,
+          "line": 37,
           "called": [
             "BootstrapBuilder",
             "KernelObject",
@@ -55125,7 +55139,7 @@
         {
           "kind": "def",
           "name": "sr001_suspendReady",
-          "line": 49,
+          "line": 50,
           "called": [
             "ThreadId",
             "expect",
@@ -55139,7 +55153,7 @@
         {
           "kind": "def",
           "name": "sr002_suspendInactive",
-          "line": 61,
+          "line": 62,
           "called": [
             "ThreadId",
             "expect",
@@ -55152,7 +55166,7 @@
         {
           "kind": "def",
           "name": "sr003_suspendMissing",
-          "line": 70,
+          "line": 71,
           "called": [
             "ThreadId",
             "expect",
@@ -55165,7 +55179,7 @@
         {
           "kind": "def",
           "name": "sr004_suspendClearsPending",
-          "line": 79,
+          "line": 80,
           "called": [
             "ThreadId",
             "expect",
@@ -55180,7 +55194,7 @@
         {
           "kind": "def",
           "name": "sr005_resumeInactive",
-          "line": 101,
+          "line": 102,
           "called": [
             "ThreadId",
             "expect",
@@ -55194,7 +55208,7 @@
         {
           "kind": "def",
           "name": "sr006_resumeReady",
-          "line": 114,
+          "line": 115,
           "called": [
             "ThreadId",
             "expect",
@@ -55207,7 +55221,7 @@
         {
           "kind": "def",
           "name": "sr007_resumeMissing",
-          "line": 123,
+          "line": 124,
           "called": [
             "ThreadId",
             "expect",
@@ -55220,7 +55234,7 @@
         {
           "kind": "def",
           "name": "sr008_suspendResumeRoundtrip",
-          "line": 132,
+          "line": 133,
           "called": [
             "ThreadId",
             "expect",
@@ -55235,7 +55249,7 @@
         {
           "kind": "def",
           "name": "emptyFrozenState",
-          "line": 151,
+          "line": 152,
           "called": [
             "FrozenSystemState",
             "RHTable.empty",
@@ -55248,7 +55262,7 @@
         {
           "kind": "def",
           "name": "mkFrozenState",
-          "line": 183,
+          "line": 184,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -55262,7 +55276,7 @@
         {
           "kind": "def",
           "name": "sr009_frozenSuspend",
-          "line": 188,
+          "line": 189,
           "called": [
             "ThreadId",
             "expect",
@@ -55277,7 +55291,7 @@
         {
           "kind": "def",
           "name": "sr010_frozenResume",
-          "line": 200,
+          "line": 201,
           "called": [
             "ThreadId",
             "expect",
@@ -55292,7 +55306,7 @@
         {
           "kind": "def",
           "name": "sr011_frozenSuspendInactive",
-          "line": 212,
+          "line": 213,
           "called": [
             "ThreadId",
             "expect",
@@ -55304,8 +55318,157 @@
         },
         {
           "kind": "def",
+          "name": "sr012_suspendBlockedOnSend",
+          "line": 226,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "suspendThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr013_suspendBlockedOnReceive",
+          "line": 243,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "suspendThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr014_suspendBlockedOnCall",
+          "line": 260,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "suspendThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr015_suspendBlockedOnReply",
+          "line": 277,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "none",
+            "suspendThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr016_suspendBlockedOnNotification",
+          "line": 294,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "suspendThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr017_suspendBoundSchedContext",
+          "line": 315,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "ofNat",
+            "scId",
+            "suspendThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr018_suspendEndpoint",
+          "line": 339,
+          "called": [
+            "Endpoint",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "suspendThread",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr019_resumeEndpoint",
+          "line": 349,
+          "called": [
+            "Endpoint",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "resumeThread",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr020_frozenResumeReady",
+          "line": 363,
+          "called": [
+            "ThreadId",
+            "expect",
+            "frozenResumeThread",
+            "mkFrozenState",
+            "mkTcb",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr021_frozenRoundtrip",
+          "line": 372,
+          "called": [
+            "ThreadId",
+            "expect",
+            "frozenResumeThread",
+            "frozenSuspendThread",
+            "get",
+            "mkFrozenState",
+            "mkTcb",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 223,
+          "line": 389,
           "called": [
             "sr001_suspendReady",
             "sr002_suspendInactive",
@@ -55317,7 +55480,17 @@
             "sr008_suspendResumeRoundtrip",
             "sr009_frozenSuspend",
             "sr010_frozenResume",
-            "sr011_frozenSuspendInactive"
+            "sr011_frozenSuspendInactive",
+            "sr012_suspendBlockedOnSend",
+            "sr013_suspendBlockedOnReceive",
+            "sr014_suspendBlockedOnCall",
+            "sr015_suspendBlockedOnReply",
+            "sr016_suspendBlockedOnNotification",
+            "sr017_suspendBoundSchedContext",
+            "sr018_suspendEndpoint",
+            "sr019_resumeEndpoint",
+            "sr020_frozenResumeReady",
+            "sr021_frozenRoundtrip"
           ]
         }
       ]

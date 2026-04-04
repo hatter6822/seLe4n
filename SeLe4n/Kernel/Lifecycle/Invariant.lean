@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations
+import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 
 /-!
 # Lifecycle Invariant Preservation Proofs

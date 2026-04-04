@@ -174,9 +174,10 @@ inductive EnforcementClass where
   | readOnly (name : String)
   deriving Repr
 
-/-- WS-E5/M-07/Q1-D/U5-B/U5-C/V2-B/C/Z8-M: Canonical enforcement boundary
-classification table (25 entries). V2-B/C added `notificationWaitChecked` and
+/-- WS-E5/M-07/Q1-D/U5-B/U5-C/V2-B/C/Z8-M/D1: Canonical enforcement boundary
+classification table (27 entries). V2-B/C added `notificationWaitChecked` and
 `endpointReplyRecvChecked`. Z8-M added 3 SchedContext capability-only operations.
+D1 added 2 thread lifecycle capability-only operations.
 Operations with both policy-gated and capability-only variants are classified
 under their policy-gated variant here (the checked dispatch path uses the
 policy-gated variant; the unchecked dispatch path uses the capability-only
@@ -212,6 +213,9 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "schedContextConfigure"
   , .capabilityOnly "schedContextBind"
   , .capabilityOnly "schedContextUnbind"
+  -- D1: Thread lifecycle capability-only operations (authority from cap possession)
+  , .capabilityOnly "suspendThread"
+  , .capabilityOnly "resumeThread"
   ]
 
 -- ============================================================================

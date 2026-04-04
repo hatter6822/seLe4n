@@ -416,7 +416,7 @@ derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
 delegate to this helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
-`.schedContextBind`, `.schedContextUnbind`.
+`.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`.
 
 Returns `none` if the syscall ID is not a capability-only arm (i.e., it
 requires IPC/cross-domain handling). -/

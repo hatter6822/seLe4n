@@ -11,6 +11,7 @@ import SeLe4n.Testing.StateBuilder
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Model.FrozenState
+import SeLe4n.Kernel.SchedContext.Types
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Lifecycle.Suspend
@@ -217,6 +218,171 @@ private def sr011_frozenSuspendInactive : IO Unit := do
   | .error e =>
     expect "SR-011 frozen error is illegalState" (e == .illegalState)
 
+-- ============================================================================
+-- D1-Q4: IPC blocked state tests
+-- ============================================================================
+
+/-- SR-012: Suspend a thread blocked on send — IPC state cleared to ready. -/
+private def sr012_suspendBlockedOnSend : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := { mkTcb 1 .Ready with
+    ipcState := .blockedOnSend epId
+    threadState := .BlockedSend }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match suspendThread st tid with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "SR-012 thread is Inactive" (tcb'.threadState == .Inactive)
+      expect "SR-012 ipcState is ready" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "SR-012 TCB not found"
+  | .error e => throw <| IO.userError s!"SR-012 suspend should succeed, got {repr e}"
+
+/-- SR-013: Suspend a thread blocked on receive — IPC state cleared. -/
+private def sr013_suspendBlockedOnReceive : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := { mkTcb 1 .Ready with
+    ipcState := .blockedOnReceive epId
+    threadState := .BlockedRecv }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match suspendThread st tid with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "SR-013 thread is Inactive" (tcb'.threadState == .Inactive)
+      expect "SR-013 ipcState is ready" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "SR-013 TCB not found"
+  | .error e => throw <| IO.userError s!"SR-013 suspend should succeed, got {repr e}"
+
+/-- SR-014: Suspend a thread blocked on call — IPC state cleared. -/
+private def sr014_suspendBlockedOnCall : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := { mkTcb 1 .Ready with
+    ipcState := .blockedOnCall epId
+    threadState := .BlockedCall }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match suspendThread st tid with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "SR-014 thread is Inactive" (tcb'.threadState == .Inactive)
+      expect "SR-014 ipcState is ready" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "SR-014 TCB not found"
+  | .error e => throw <| IO.userError s!"SR-014 suspend should succeed, got {repr e}"
+
+/-- SR-015: Suspend a thread blocked on reply — IPC state cleared. -/
+private def sr015_suspendBlockedOnReply : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := { mkTcb 1 .Ready with
+    ipcState := .blockedOnReply epId none
+    threadState := .BlockedReply }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match suspendThread st tid with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "SR-015 thread is Inactive" (tcb'.threadState == .Inactive)
+      expect "SR-015 ipcState is ready" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "SR-015 TCB not found"
+  | .error e => throw <| IO.userError s!"SR-015 suspend should succeed, got {repr e}"
+
+/-- SR-016: Suspend a thread blocked on notification — IPC state cleared. -/
+private def sr016_suspendBlockedOnNotification : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let notifId : SeLe4n.ObjId := ⟨10⟩
+  let tcb := { mkTcb 1 .Ready with
+    ipcState := .blockedOnNotification notifId
+    threadState := .BlockedNotif }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match suspendThread st tid with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "SR-016 thread is Inactive" (tcb'.threadState == .Inactive)
+      expect "SR-016 ipcState is ready" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "SR-016 TCB not found"
+  | .error e => throw <| IO.userError s!"SR-016 suspend should succeed, got {repr e}"
+
+-- ============================================================================
+-- D1-Q5: SchedContext binding tests
+-- ============================================================================
+
+/-- SR-017: Suspend a thread with bound SchedContext — binding cleared. -/
+private def sr017_suspendBoundSchedContext : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 50
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨1000⟩, period := ⟨10000⟩,
+    priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨1000⟩, boundThread := some ⟨1⟩ }
+  let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
+  let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
+  match suspendThread st tid with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "SR-017 thread is Inactive" (tcb'.threadState == .Inactive)
+      expect "SR-017 schedContextBinding is unbound"
+        (tcb'.schedContextBinding == .unbound)
+    | _ => throw <| IO.userError "SR-017 TCB not found"
+  | .error e => throw <| IO.userError s!"SR-017 suspend should succeed, got {repr e}"
+
+-- ============================================================================
+-- D1-Q6: Wrong-object-type negatives
+-- ============================================================================
+
+/-- SR-018: Suspend targeting an Endpoint — should fail with invalidArgument. -/
+private def sr018_suspendEndpoint : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let ep : Endpoint := {}
+  let st := mkState [(⟨1⟩, .endpoint ep)]
+  match suspendThread st tid with
+  | .ok _ => throw <| IO.userError "SR-018 should fail for non-TCB"
+  | .error e =>
+    expect "SR-018 error is invalidArgument" (e == .invalidArgument)
+
+/-- SR-019: Resume targeting an Endpoint — should fail with invalidArgument. -/
+private def sr019_resumeEndpoint : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let ep : Endpoint := {}
+  let st := mkState [(⟨1⟩, .endpoint ep)]
+  match resumeThread st tid with
+  | .ok _ => throw <| IO.userError "SR-019 should fail for non-TCB"
+  | .error e =>
+    expect "SR-019 error is invalidArgument" (e == .invalidArgument)
+
+-- ============================================================================
+-- D1-Q7: Additional frozen operation tests
+-- ============================================================================
+
+/-- SR-020: Frozen resume of Ready thread fails with illegalState. -/
+private def sr020_frozenResumeReady : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
+  match frozenResumeThread tid fst with
+  | .ok _ => throw <| IO.userError "SR-020 frozen resume should fail for Ready"
+  | .error e =>
+    expect "SR-020 frozen error is illegalState" (e == .illegalState)
+
+/-- SR-021: Frozen suspend-resume roundtrip. -/
+private def sr021_frozenRoundtrip : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
+  match frozenSuspendThread tid fst with
+  | .ok ((), fst') =>
+    match frozenResumeThread tid fst' with
+    | .ok ((), fst'') =>
+      match fst''.objects.get? tid.toObjId with
+      | some (.tcb tcb) =>
+        expect "SR-021 frozen roundtrip thread is Ready" (tcb.threadState == .Ready)
+      | _ => throw <| IO.userError "SR-021 frozen TCB not found"
+    | .error e => throw <| IO.userError s!"SR-021 frozen resume failed: {repr e}"
+  | .error e => throw <| IO.userError s!"SR-021 frozen suspend failed: {repr e}"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -236,4 +402,18 @@ def main : IO Unit := do
   sr009_frozenSuspend
   sr010_frozenResume
   sr011_frozenSuspendInactive
-  IO.println "=== All D1 suspend/resume tests passed ==="
+  IO.println "--- D1-Q4: IPC Blocked States ---"
+  sr012_suspendBlockedOnSend
+  sr013_suspendBlockedOnReceive
+  sr014_suspendBlockedOnCall
+  sr015_suspendBlockedOnReply
+  sr016_suspendBlockedOnNotification
+  IO.println "--- D1-Q5: SchedContext Binding ---"
+  sr017_suspendBoundSchedContext
+  IO.println "--- D1-Q6: Wrong-Object-Type Negatives ---"
+  sr018_suspendEndpoint
+  sr019_resumeEndpoint
+  IO.println "--- D1-Q7: Additional Frozen Operations ---"
+  sr020_frozenResumeReady
+  sr021_frozenRoundtrip
+  IO.println "=== All D1 suspend/resume tests passed (21 tests) ==="
