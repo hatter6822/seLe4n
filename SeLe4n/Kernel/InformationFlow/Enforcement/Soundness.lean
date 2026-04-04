@@ -309,13 +309,14 @@ theorem enforcementSoundness_registerServiceChecked
     definitionally equal, making element-wise correspondence trivial by `rfl`.
     Z8-M expanded from 22 to 25 entries with SchedContext capability-only operations.
     D1 expanded from 25 to 27 entries with thread lifecycle capability-only operations.
-    D2 expanded from 27 to 29 entries with priority management capability-only operations. -/
+    D2 expanded from 27 to 29 entries with priority management capability-only operations.
+    D3 expanded from 29 to 30 entries with IPC buffer configuration capability-only operation. -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
-/-- V6-L/Z8-M/D2 (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 29 entries, matching the canonical `enforcementBoundary`. -/
+/-- V6-L/Z8-M/D2/D3 (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
+    has exactly 30 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 29 := by rfl
+    enforcementBoundaryExtended.length = 30 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

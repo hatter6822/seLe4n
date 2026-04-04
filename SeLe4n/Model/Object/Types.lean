@@ -897,6 +897,7 @@ inductive SyscallId where
   | tcbResume              -- D1-A: resume a suspended thread (transition to Ready)
   | tcbSetPriority         -- D2-B: set thread scheduling priority (MCP-bounded)
   | tcbSetMCPriority       -- D2-B: set thread maximum controlled priority
+  | tcbSetIPCBuffer        -- D3-A: set thread IPC buffer address
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -928,9 +929,10 @@ namespace SyscallId
   | .tcbResume             => 21
   | .tcbSetPriority        => 22
   | .tcbSetMCPriority      => 23
+  | .tcbSetIPCBuffer       => 24
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 24
+def count : Nat := 25
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -959,6 +961,7 @@ def count : Nat := 24
   | 21 => some .tcbResume
   | 22 => some .tcbSetPriority
   | 23 => some .tcbSetMCPriority
+  | 24 => some .tcbSetIPCBuffer
   | _  => none
 
 instance : ToString SyscallId where
@@ -987,6 +990,7 @@ instance : ToString SyscallId where
     | .tcbResume             => "tcbResume"
     | .tcbSetPriority        => "tcbSetPriority"
     | .tcbSetMCPriority      => "tcbSetMCPriority"
+    | .tcbSetIPCBuffer       => "tcbSetIPCBuffer"
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
@@ -1008,9 +1012,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 0  | 1  | 2  | 3  | 4  | 5  | 6
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
-  | 20 | 21 | 22 | 23 =>
+  | 20 | 21 | 22 | 23 | 24 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 24 => intro s h; simp [ofNat?] at h
+  | n + 25 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

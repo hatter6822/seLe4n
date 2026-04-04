@@ -1301,4 +1301,43 @@ theorem decodeSetMCPriorityArgs_roundtrip (args : SetMCPriorityArgs) (h : args.n
   simp [decodeSetMCPriorityArgs, encodeSetMCPriorityArgs, stubDecoded, requireMsgReg, Bind.bind,
         Except.bind, Pure.pure, Except.pure, show ¬(args.newMCP > 0xFF) from Nat.not_lt.mpr h]
 
+-- ============================================================================
+-- D3-B: IPC buffer configuration decode
+-- ============================================================================
+
+/-- D3-B: Per-syscall argument structure for `tcbSetIPCBuffer`.
+    Register mapping: x2=bufferAddr. The target thread comes from the
+    capability target. The buffer address must be 512-byte aligned
+    (matching seL4's `seL4_IPCBufferSizeBits = 9`). -/
+structure SetIPCBufferArgs where
+  bufferAddr : SeLe4n.VAddr
+  deriving Repr, DecidableEq
+
+/-- D3-B: Decode setIPCBuffer arguments from message registers.
+    Requires 1 message register (bufferAddr). Validates alignment:
+    `bufferAddr.toNat % ipcBufferAlignment = 0`. -/
+def decodeSetIPCBufferArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SetIPCBufferArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  let addr := SeLe4n.VAddr.ofNat r0.val
+  if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
+  else pure { bufferAddr := addr }
+
+/-- D3-B: Encode setIPCBuffer arguments into message registers. -/
+@[inline] def encodeSetIPCBufferArgs (args : SetIPCBufferArgs) : Array RegValue :=
+  #[⟨args.bufferAddr.toNat⟩]
+
+-- ============================================================================
+-- D3-B: IPC buffer configuration round-trip theorem
+-- ============================================================================
+
+/-- D3-B: SetIPCBufferArgs decode round-trip for aligned addresses. -/
+theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
+    (hAligned : args.bufferAddr.toNat % SeLe4n.ipcBufferAlignment = 0) :
+    decodeSetIPCBufferArgs (stubDecoded (encodeSetIPCBufferArgs args)) = .ok args := by
+  simp only [decodeSetIPCBufferArgs, encodeSetIPCBufferArgs, stubDecoded, requireMsgReg,
+        Bind.bind, Except.bind, Pure.pure, Except.pure,
+        SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat] at *
+  simp [hAligned]
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

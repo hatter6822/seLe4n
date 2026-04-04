@@ -1867,9 +1867,9 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
-  -- D2: SyscallId covers 0..23 (count=24); value 24 is the first invalid number.
-  expectErr "J1 decodeSyscallId invalid (24)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨24⟩)
+  -- D3: SyscallId covers 0..24 (count=25); value 25 is the first invalid number.
+  expectErr "J1 decodeSyscallId invalid (25)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨25⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber

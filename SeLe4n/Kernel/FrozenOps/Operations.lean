@@ -12,7 +12,7 @@ import SeLe4n.Kernel.SchedContext.Budget
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
-Implements 20 frozen kernel operations that operate on `FrozenSystemState`
+Implements 21 frozen kernel operations that operate on `FrozenSystemState`
 using O(1) array-indexed lookups. Each mirrors a builder-phase operation
 but uses `FrozenMap.get?`/`FrozenMap.set` instead of `RHTable` operations.
 
@@ -845,6 +845,40 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
         | none => .error .objectNotFound
 
 -- ============================================================================
+-- D3-I: Frozen IPC buffer configuration
+-- ============================================================================
+
+/-- D3-I: Frozen-phase setIPCBuffer. Validates alignment, canonical address,
+VSpace mapping with write permission, then updates the target TCB's ipcBuffer.
+Mirrors `setIPCBufferOp` in frozen state using FrozenMap lookups. -/
+def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
+    (addr : SeLe4n.VAddr) : FrozenKernel Unit :=
+  fun st =>
+    -- Step 1: Alignment check
+    if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
+    -- Step 2: Canonical address check
+    else if !addr.isCanonical then .error .addressOutOfBounds
+    else
+      match frozenLookupTcb st targetTid with
+      | none => .error .objectNotFound
+      | some tcb =>
+        -- Step 3: VSpace root validity (frozen VSpaceRoot)
+        match st.objects.get? tcb.vspaceRoot with
+        | some (.vspaceRoot vsr) =>
+          -- Step 4: Mapping check via FrozenMap
+          match vsr.mappings.get? addr with
+          | some (_, perms) =>
+            -- Step 5: Write permission check
+            if perms.write then
+              let tcb' := { tcb with ipcBuffer := addr }
+              match st.objects.set targetTid.toObjId (.tcb tcb') with
+              | some objs => .ok ((), { st with objects := objs })
+              | none => .error .objectNotFound
+            else .error .translationFault
+          | none => .error .translationFault
+        | _ => .error .invalidArgument
+
+-- ============================================================================
 -- S3-L/U-M29: Frozen operation exhaustiveness check
 -- ============================================================================
 
@@ -881,8 +915,9 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbResume => true               -- D1: frozenResumeThread
   | .tcbSetPriority => true          -- D2: frozenSetPriority
   | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
+  | .tcbSetIPCBuffer => true         -- D3: frozenSetIPCBuffer
 
-/-- S3-L/Z8-H/D1/D2: Exactly 19 SyscallId arms have frozen operation coverage.
+/-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
     The 5 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
     lifecycleRetype, serviceRegister, serviceRevoke). -/
 theorem frozenOpCoverage_count :
@@ -891,11 +926,12 @@ theorem frozenOpCoverage_count :
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
        .notificationSignal, .notificationWait, .replyRecv,
        .schedContextConfigure, .schedContextBind, .schedContextUnbind,
-       .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority].filter
-         frozenOpCoverage).length = 19) := by
+       .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
+       .tcbSetIPCBuffer].filter
+         frozenOpCoverage).length = 20) := by
   decide
 
-/-- S3-L/D1/D2: All 24 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 25 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

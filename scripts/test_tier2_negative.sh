@@ -36,5 +36,7 @@ run_check "TRACE" lake exe two_phase_arch_suite
 run_check "TRACE" lake exe suspend_resume_suite
 # D2: Priority management tests.
 run_check "TRACE" lake exe priority_management_suite
+# D3: IPC buffer configuration tests.
+run_check "TRACE" lake exe ipc_buffer_suite
 
 finalize_report
