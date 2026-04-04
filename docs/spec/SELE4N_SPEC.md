@@ -267,13 +267,22 @@ critical testing infrastructure recommendations from the v0.14.9 audit.
 The following seL4 operations are intentionally deferred from the current model.
 Each has a documented rationale and prerequisite milestone:
 
-| Operation | seL4 Equivalent | Rationale | Prerequisite |
-|-----------|----------------|-----------|--------------|
-| `setPriority` | `seL4_TCB_SetPriority` | Requires MCS scheduling context model | MCS scheduling (long-horizon) |
-| `setMCPriority` | `seL4_TCB_SetMCPriority` | Same MCS prerequisite | MCS scheduling (long-horizon) |
-| `suspend` | `seL4_TCB_Suspend` | Requires thread lifecycle state machine | WS-F6 (lifecycle invariants) |
-| `resume` | `seL4_TCB_Resume` | Inverse of suspend; same prerequisite | WS-F6 (lifecycle invariants) |
-| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | Requires VSpace validation via page walk | H3 (VSpace integration) |
+| Operation | seL4 Equivalent | Rationale | Prerequisite | Status |
+|-----------|----------------|-----------|--------------|--------|
+| `setPriority` | `seL4_TCB_SetPriority` | Requires MCS scheduling context model | MCS scheduling (long-horizon) | Deferred |
+| `setMCPriority` | `seL4_TCB_SetMCPriority` | Same MCS prerequisite | MCS scheduling (long-horizon) | Deferred |
+| `suspend` | `seL4_TCB_Suspend` | Requires thread lifecycle state machine | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
+| `resume` | `seL4_TCB_Resume` | Inverse of suspend; same prerequisite | WS-F6 (lifecycle invariants) | **Implemented (D1, v0.24.0)** |
+| `setIPCBuffer` | `seL4_TCB_SetIPCBuffer` | Requires VSpace validation via page walk | H3 (VSpace integration) | Deferred |
+
+**D1 (v0.24.0):** Thread suspension and resumption are now fully implemented.
+`suspendThread` performs the complete cleanup pipeline (IPC blocking cancellation,
+SchedContext donation cleanup, run queue removal, pending state clearing, state
+transition to Inactive). `resumeThread` transitions from Inactive to Ready with
+conditional preemption. Both operations are wired into the API dispatch layer
+(`SyscallId.tcbSuspend`, `.tcbResume`) as capability-only arms and have frozen-phase
+equivalents. Transport lemmas prove scheduler, serviceRegistry, and lifecycle
+preservation through all suspension sub-operations.
 
 These operations are tracked in `SeLe4n/Kernel/API.lean` (stability table) and
 `docs/CLAIM_EVIDENCE_INDEX.md` (evidence tracking).

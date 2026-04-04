@@ -307,13 +307,14 @@ theorem enforcementSoundness_registerServiceChecked
     identical lists in sync. Previously, the two lists contained the same operations
     in different order with only a cardinality correspondence proof. Now they are
     definitionally equal, making element-wise correspondence trivial by `rfl`.
-    Z8-M expanded from 22 to 25 entries with SchedContext capability-only operations. -/
+    Z8-M expanded from 22 to 25 entries with SchedContext capability-only operations.
+    D1 expanded from 25 to 27 entries with thread lifecycle capability-only operations. -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
-/-- V6-L/Z8-M (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 25 entries, matching the canonical `enforcementBoundary`. -/
+/-- V6-L/Z8-M/D1 (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
+    has exactly 27 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 25 := by rfl
+    enforcementBoundaryExtended.length = 27 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

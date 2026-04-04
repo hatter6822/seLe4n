@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.23.23"
+version = "0.24.1"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -56,3 +56,8 @@ root = "tests.TwoPhaseArchSuite"
 [[lean_exe]]
 name = "operation_chain_suite"
 root = "tests.OperationChainSuite"
+
+# D1: Suspend/Resume test suite
+[[lean_exe]]
+name = "suspend_resume_suite"
+root = "tests.SuspendResumeSuite"

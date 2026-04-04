@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.23.22.
+Lean 4.28.0 toolchain, Lake build system, version 0.24.1.
 
 ## Build and run
 
@@ -111,6 +111,8 @@ SeLe4n/Kernel/IPC/*              IPC subsystem
     Invariant/QueueNextBlocking.lean V3-J-cross: queueNext blocking consistency proofs
     Invariant/Structural.lean    Structural invariants, composition theorems
 SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
+  Suspend.lean                   D1: Thread suspension/resumption operations
+  Invariant/SuspendPreservation.lean  D1: Transport lemmas for suspend/resume
 SeLe4n/Kernel/Service/*          Service orchestration + policy
   Interface.lean                 Service interface definitions
   Operations.lean                Service operations
@@ -473,7 +475,8 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). AA2-A: SHA-pinned `dtolnay/rust-toolchain` action replacing `curl | sh` (H-4). AA2-B: `RUST_TOOLCHAIN_VERSION` documentation variable. AA2-C: `$STAGED_LEAN_FILES` word-splitting fix via `mapfile` array (H-5). AA2-D: SHA-256 verification fail-closed (M-7). AA2-E: `TRACE_FIXTURE_PATH` git-tracked validation (M-8). AA2-F: `lane` JSON-escaping in timing capture (L-30). Zero sorry/axiom. See `docs/audits/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
+- **WS-AB Phase D1 COMPLETE**: Thread Suspension & Resumption (v0.24.0–v0.24.1) — `suspendThread`/`resumeThread` operations, `SyscallId.tcbSuspend`/`.tcbResume`, 12 transport lemmas, `enforcementBoundary` 25→27, frozen equivalents, 21 tests across 7 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
+- **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/audits/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
 - **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 

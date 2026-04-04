@@ -32,5 +32,7 @@ run_check "TRACE" lake exe freeze_proof_suite
 run_check "TRACE" lake exe frozen_ops_suite
 # Q9-A: Two-Phase Architecture integration tests (builder→freeze→execution).
 run_check "TRACE" lake exe two_phase_arch_suite
+# D1: Thread suspension/resumption tests.
+run_check "TRACE" lake exe suspend_resume_suite
 
 finalize_report
