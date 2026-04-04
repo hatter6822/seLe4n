@@ -3,7 +3,7 @@
 ## Overview
 
 `libsele4n` is a `no_std` Rust userspace library providing safe, typed wrappers
-around all 20 seLe4n syscalls. It mirrors the verified Lean ABI surface exactly,
+around all 25 seLe4n syscalls. It mirrors the verified Lean ABI surface exactly,
 enabling Rust userspace programs to invoke kernel operations with compile-time
 type safety and zero `unsafe` code outside the syscall trap instruction.
 
@@ -23,8 +23,8 @@ Core type definitions with zero `unsafe` and zero external dependencies:
   `Priority`, `Deadline`, `Irq`, `ServiceId`, `InterfaceId`, `Badge`, `Asid`,
   `VAddr`, `PAddr`, `RegValue` — inner fields are `pub(crate)` with `.raw()`
   accessors (R8-E/L-11 encapsulation)
-- **`KernelError`**: 43-variant `#[non_exhaustive]` enum (1:1 with Lean
-  `KernelError`; U3-F, W1-D: +MmioUnaligned, AA1: +IpcTimeout)
+- **`KernelError`**: 44-variant `#[non_exhaustive]` enum (1:1 with Lean
+  `KernelError`; U3-F, W1-D: +MmioUnaligned, AA1: +IpcTimeout, D3: +AlignmentError)
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
@@ -43,7 +43,8 @@ ARM64 register ABI layer with exactly one `unsafe` block:
 - **`RegisterFile`**: Safe bounds-checked wrapper for the 7-element register
   array; `get()`/`set()` return `Option` (U3-G)
 - **Per-syscall argument structures**: CSpace (4), Lifecycle (1), VSpace (2),
-  Service (3), SchedContext (3: Configure, Bind, Unbind)
+  Service (3), SchedContext (3: Configure, Bind, Unbind), TCB (5: Suspend, Resume,
+  SetPriority, SetMCPriority, SetIPCBuffer)
 - **`TypeTag`**: 7 retype variants (TCB=0, Endpoint=1, ..., Untyped=5, SchedContext=6)
 - **`PagePerms`**: Permission bitmask with W^X enforcement
 - **`IpcBuffer`**: Overflow message registers (4–119) for messages exceeding
@@ -52,7 +53,7 @@ ARM64 register ABI layer with exactly one `unsafe` block:
 
 ### sele4n-sys
 
-Safe high-level wrappers for all 20 syscalls:
+Safe high-level wrappers for all 25 syscalls:
 
 | Subsystem | Operations |
 |-----------|-----------|
@@ -61,6 +62,7 @@ Safe high-level wrappers for all 20 syscalls:
 | Lifecycle | `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
 | VSpace | `vspace_map` (W^X pre-check), `vspace_unmap` |
 | Service | `service_register`, `service_revoke`, `service_query` |
+| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer` |
 
 ### Phantom-Typed Capabilities
 
@@ -93,12 +95,12 @@ x7  → Syscall number (SyscallId)
 
 ## Testing
 
-- **197 unit tests** across 3 crates (77 abi + 73 conformance + 12 sys + 35 types)
-- **73 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests)
+- **230 unit tests** across 3 crates (91 abi + 86 conformance + 12 sys + 41 types)
+- **86 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
   AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.82.0)
-- AA1 ABI drift detection: variant count assertions for KernelError (43) and
+- AA1 ABI drift detection: variant count assertions for KernelError (44) and
   SyscallId (25), TypeTag (7), compile-time constant checks for MAX_LABEL,
   MAX_MSG_LENGTH, MAX_EXTRA_CAPS
 

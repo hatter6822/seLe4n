@@ -309,6 +309,59 @@ successful validation implies alignment and mapped-writable guarantees.
 Frame preservation is trivial since `ipcBuffer` is not referenced by any
 scheduler, IPC, cross-subsystem, or capability invariant predicate.
 
+**D4 (v0.25.0):** Priority Inheritance Protocol is now fully implemented.
+A deterministic PIP temporarily elevates a server thread's effective scheduling
+priority when it holds a pending Reply on behalf of a higher-priority client,
+resolving transitive priority inversion (SV-2). Key components:
+
+- **`pipBoost` TCB field**: `Option Priority := none`. When `some p`, the
+  thread's effective priority is `max(SchedContext.priority, p)`.
+- **Blocking graph**: `blockedOnThread` predicate, `waitersOf` (direct
+  dependents), `blockingChain` (fuel-bounded transitive walk). Acyclicity
+  and depth bound proven (`blockingChain_length_le_fuel`).
+- **Propagation/Reversion**: `propagatePriorityInheritance` walks the
+  blocking chain upward from a server, applying `updatePipBoost` at each
+  step. `revertPriorityInheritance` recomputes after client unblock. Both
+  are structurally identical (`revert_eq_propagate`).
+- **Integration**: Call path propagates PIP after blocking
+  (`endpointCallWithDonation`), Reply/ReplyRecv paths revert PIP after
+  unblock, Suspend path reverts PIP before cleanup, Timeout path reverts
+  PIP for server when timed-out client was in `blockedOnReply`.
+- **Composition with SchedContext donation (Z7)**: PIP provides an
+  additional boost beyond the donated SchedContext priority via the
+  `max(scPrio, pipBoost)` computation in `effectivePriority`.
+- **Bounded inversion**: `pip_bounded_inversion` proves priority inversion
+  bounded by `objectIndex.length * WCRT`.
+- **16 frame preservation theorems**, determinism proofs, 22 test cases.
+
+**D5 (v0.25.0):** Bounded Latency Theorem is now proven — the first
+machine-checked WCRT for a microkernel with MCS scheduling contexts. Zero
+kernel code changes (proof-only phase). Key results:
+
+- **Trace model**: `SchedulerStep` (9 constructors), `SchedulerTrace`,
+  `validTrace` predicate, query predicates (`selectedAt`, `runnableAt`,
+  `budgetAvailableAt`), counting functions.
+- **Per-mechanism bounds**: `timerTickBudget_bound_succeeds` (budget
+  decrement characterization), `replenishment_within_period` (CBS
+  replenishment timing), `fifo_progress_in_band` (FIFO progress within
+  priority band), `domainRotationTotal_le_bound` (domain rotation).
+- **WCRT hypotheses**: `WCRTHypotheses` structure with 8 fields
+  (thread runnable, budget available, domain membership, higher-priority
+  bound N, max budget B, max period P, domain schedule adequacy,
+  invariants hold).
+- **Main theorem**: `bounded_scheduling_latency` proves WCRT =
+  D * L_max + N * (B + P), where D = domain schedule entries,
+  L_max = maximum domain time, N = higher-priority thread count,
+  B = max budget, P = max period.
+- **PIP enhancement**: `pip_enhanced_wcrt_le_base` shows PIP-boosted
+  threads have tighter WCRT (fewer higher-priority competitors).
+- 38 surface anchor tests in `LivenessSuite.lean`.
+
+**D6 (v0.25.1):** API Surface Integration & Closure. Rust ABI synchronized
+with 5 new `SyscallId` variants (20→25) and `AlignmentError` (43). All 25
+SyscallId variants, 30 enforcement boundary entries, 20 frozen operations,
+and 25 dispatch arms verified. Documentation fully synchronized.
+
 ---
 
 ## 6. Hardware Target: Raspberry Pi 5

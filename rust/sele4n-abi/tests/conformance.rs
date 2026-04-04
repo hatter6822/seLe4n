@@ -448,24 +448,24 @@ fn message_info_exhaustive_bounds() {
     }
 }
 
-/// Verify SyscallId roundtrip for all 20 variants (AA1: +SchedContext ops).
+/// Verify SyscallId roundtrip for all 25 variants (D6: +D1/D2/D3 TCB ops).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
-    for i in 0..20u64 {
+    for i in 0..25u64 {
         let sid = SyscallId::from_u64(i).expect("valid syscall id");
         assert_eq!(sid.to_u64(), i);
     }
-    assert!(SyscallId::from_u64(20).is_none());
+    assert!(SyscallId::from_u64(25).is_none());
 }
 
-/// Verify KernelError roundtrip for all 43 variants (Z6: IpcTimeout at 42).
+/// Verify KernelError roundtrip for all 44 variants (D3: AlignmentError at 43).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=42u32 {
+    for i in 0..=43u32 {
         let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(43).is_none());
+    assert!(KernelError::from_u32(44).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 7 variants (0–6, including SchedContext).
@@ -723,13 +723,13 @@ fn u3de_access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn u3f_kernel_error_non_exhaustive() {
-    // All 43 variants (0–42) roundtrip (Z6: +IpcTimeout at 42)
-    for i in 0..=42u32 {
+    // All 44 variants (0–43) roundtrip (D3: +AlignmentError at 43)
+    for i in 0..=43u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(43).is_none());
+    assert!(KernelError::from_u32(44).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -910,7 +910,7 @@ fn v1h_identifier_validation() {
 /// Detects Lean-Rust enum divergence automatically.
 #[test]
 fn w1h_kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 43;
+    const KERNEL_ERROR_COUNT: u32 = 44;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -925,10 +925,10 @@ fn w1h_kernel_error_variant_count() {
     );
 }
 
-/// W1-H / AA1: SyscallId variant count matches Lean (20 variants, 0-19).
+/// W1-H / AA1 / D6: SyscallId variant count matches Lean (25 variants, 0-24).
 #[test]
 fn w1h_syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 20;
+    const SYSCALL_COUNT: u64 = 25;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1057,16 +1057,20 @@ fn aa1b_sched_context_unbind_discriminant() {
     assert_eq!(sid.to_u64(), 19);
 }
 
-/// AA1-B-4: Boundary — discriminant 20 is out of range.
+/// AA1-B-4/D6: Boundary — discriminant 20 is now TcbSuspend (D1), not out of range.
+/// SchedContext range ends at 19; D1/D2/D3 TCB ops occupy 20-24.
 #[test]
 fn aa1b_sched_context_boundary() {
-    assert!(SyscallId::from_u64(20).is_none());
+    // SchedContextUnbind is the last SchedContext variant (19)
+    assert_eq!(SyscallId::from_u64(19).unwrap(), SyscallId::SchedContextUnbind);
+    // 20 is now TcbSuspend (D1), not out of range
+    assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
 /// AA1-B-5: COUNT is updated to 20.
 #[test]
 fn aa1b_syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 20);
+    assert_eq!(SyscallId::COUNT, 25);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1218,8 +1222,115 @@ fn aa1h_ipc_timeout_result() {
     assert_eq!(result.unwrap_err(), KernelError::IpcTimeout);
 }
 
-/// AA1-H-4: Boundary — discriminant 43 is out of range.
+/// AA1-H-4/D6: Boundary — discriminant 44 is out of range (AlignmentError at 43).
 #[test]
-fn aa1h_error_boundary_after_ipc_timeout() {
-    assert!(KernelError::from_u32(43).is_none());
+fn aa1h_error_boundary_after_alignment_error() {
+    assert!(KernelError::from_u32(43).is_some()); // AlignmentError
+    assert!(KernelError::from_u32(44).is_none());
+}
+
+// --- D6: TCB operation conformance ---
+
+/// D6-D1: TcbSuspend roundtrip (discriminant 20).
+#[test]
+fn d6_tcb_suspend_roundtrip() {
+    let sid = SyscallId::from_u64(20).expect("TcbSuspend must exist");
+    assert_eq!(sid, SyscallId::TcbSuspend);
+    assert_eq!(sid.to_u64(), 20);
+}
+
+/// D6-D1: TcbResume roundtrip (discriminant 21).
+#[test]
+fn d6_tcb_resume_roundtrip() {
+    let sid = SyscallId::from_u64(21).expect("TcbResume must exist");
+    assert_eq!(sid, SyscallId::TcbResume);
+    assert_eq!(sid.to_u64(), 21);
+}
+
+/// D6-D1: TcbSetPriority roundtrip (discriminant 22).
+#[test]
+fn d6_tcb_set_priority_roundtrip() {
+    let sid = SyscallId::from_u64(22).expect("TcbSetPriority must exist");
+    assert_eq!(sid, SyscallId::TcbSetPriority);
+    assert_eq!(sid.to_u64(), 22);
+}
+
+/// D6-D1: TcbSetMCPriority roundtrip (discriminant 23).
+#[test]
+fn d6_tcb_set_mcp_roundtrip() {
+    let sid = SyscallId::from_u64(23).expect("TcbSetMCPriority must exist");
+    assert_eq!(sid, SyscallId::TcbSetMCPriority);
+    assert_eq!(sid.to_u64(), 23);
+}
+
+/// D6-D1: TcbSetIPCBuffer roundtrip (discriminant 24).
+#[test]
+fn d6_tcb_set_ipc_buffer_roundtrip() {
+    let sid = SyscallId::from_u64(24).expect("TcbSetIPCBuffer must exist");
+    assert_eq!(sid, SyscallId::TcbSetIPCBuffer);
+    assert_eq!(sid.to_u64(), 24);
+}
+
+/// D6-D5: Boundary — discriminant 25 is out of range for SyscallId.
+#[test]
+fn d6_syscall_boundary() {
+    assert!(SyscallId::from_u64(24).is_some()); // Last valid
+    assert!(SyscallId::from_u64(25).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 25);
+}
+
+/// D6-D6: All TCB operations require Write access (API.lean:387-391).
+#[test]
+fn d6_tcb_ops_require_write() {
+    assert_eq!(SyscallId::TcbSuspend.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::TcbResume.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::TcbSetPriority.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::TcbSetMCPriority.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::TcbSetIPCBuffer.required_right(), AccessRight::Write);
+}
+
+/// D6-D3: AlignmentError roundtrip (discriminant 43).
+#[test]
+fn d6_alignment_error_roundtrip() {
+    let err = KernelError::from_u32(43).expect("AlignmentError must exist");
+    assert_eq!(err, KernelError::AlignmentError);
+    assert_eq!(err as u32, 43);
+}
+
+/// D6-F: TCB arg decode conformance.
+#[test]
+fn d6_tcb_args_roundtrip() {
+    use sele4n_abi::args::tcb::*;
+
+    // D1: Suspend/Resume — no arguments
+    assert_eq!(SuspendArgs::decode(&[]).unwrap(), SuspendArgs);
+    assert_eq!(ResumeArgs::decode(&[]).unwrap(), ResumeArgs);
+
+    // D2: SetPriority/SetMCPriority — priority from MR[0]
+    let prio = SetPriorityArgs { new_priority: 128 };
+    assert_eq!(SetPriorityArgs::decode(&prio.encode()).unwrap(), prio);
+    let mcp = SetMCPriorityArgs { new_mcp: 64 };
+    assert_eq!(SetMCPriorityArgs::decode(&mcp.encode()).unwrap(), mcp);
+
+    // D3: SetIPCBuffer — buffer address from MR[0]
+    let buf = SetIPCBufferArgs { buffer_addr: 1024 };
+    assert_eq!(SetIPCBufferArgs::decode(&buf.encode()).unwrap(), buf);
+}
+
+/// D6-F: TCB arg decode error paths.
+#[test]
+fn d6_tcb_args_errors() {
+    use sele4n_abi::args::tcb::*;
+
+    // D2: Priority out of range
+    assert_eq!(SetPriorityArgs::decode(&[256]), Err(KernelError::InvalidSyscallArgument));
+    assert_eq!(SetMCPriorityArgs::decode(&[256]), Err(KernelError::InvalidSyscallArgument));
+
+    // D2: Insufficient registers
+    assert_eq!(SetPriorityArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+    assert_eq!(SetMCPriorityArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+
+    // D3: Unaligned address
+    assert_eq!(SetIPCBufferArgs::decode(&[513]), Err(KernelError::AlignmentError));
+    assert_eq!(SetIPCBufferArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
 }

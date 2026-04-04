@@ -1,3 +1,29 @@
+## v0.25.1 — D6: API Surface Integration & Closure (WS-AB Complete)
+
+Phase D6 of WS-AB Deferred Operations workstream. Final integration phase
+closing the WS-AB portfolio (6 phases, 90 sub-tasks, v0.24.0–v0.25.1).
+
+- **D6-A**: Enforcement boundary completeness verified — 30 entries covering
+  all 25 `SyscallId` variants (11 policy-gated, 5 capability-only base,
+  3 read-only, 3 internal, 3 SchedContext, 2 lifecycle, 2 priority, 1 IPC buffer).
+- **D6-B**: `dispatchWithCap_wildcard_unreachable` covers all 25 variants.
+- **D6-C**: `frozenOpCoverage_count = 20` (20/25 syscalls have frozen
+  equivalents; 5 builder-only excluded).
+- **D6-D**: Rust ABI synchronized — `SyscallId` 20→25 variants
+  (`TcbSuspend`=20, `TcbResume`=21, `TcbSetPriority`=22,
+  `TcbSetMCPriority`=23, `TcbSetIPCBuffer`=24). `KernelError`
+  +`AlignmentError`=43 (44 variants total). New `rust/sele4n-abi/src/args/tcb.rs`
+  module: `SuspendArgs`, `ResumeArgs`, `SetPriorityArgs`, `SetMCPriorityArgs`,
+  `SetIPCBufferArgs` with encode/decode/roundtrip tests.
+  Updated conformance tests across all 3 Rust crates.
+- **D6-E**: Comprehensive test suite green (Lean test_smoke.sh + Rust cargo test).
+- **D6-F**: Spec §5.14 updated with D4 (PIP) and D5 (WCRT) subsections.
+- **D6-G**: Claims index updated with D6 closure claim.
+- **D6-H**: CLAUDE.md workstream context updated to WS-AB COMPLETE.
+- **D6-I**: README metrics, WORKSTREAM_HISTORY, CHANGELOG synchronized.
+- **D6-J**: Website link manifest verified.
+- Zero sorry/axiom. **WS-AB PORTFOLIO COMPLETE.**
+
 ## v0.25.1 — D5 Audit: Bounded Latency Theorem Refinement
 
 - Strengthen `bounded_scheduling_latency_exists`: proper existential trace-level theorem with domain rotation + band exhaustion composition
