@@ -311,10 +311,10 @@ theorem enforcementSoundness_registerServiceChecked
     D1 expanded from 25 to 27 entries with thread lifecycle capability-only operations. -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
-/-- V6-L/Z8-M/D1 (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 27 entries, matching the canonical `enforcementBoundary`. -/
+/-- V6-L/Z8-M/D2 (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
+    has exactly 29 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 27 := by rfl
+    enforcementBoundaryExtended.length = 29 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

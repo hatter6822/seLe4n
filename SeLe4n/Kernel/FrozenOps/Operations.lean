@@ -790,6 +790,61 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
         | none => .error .objectNotFound
 
 -- ============================================================================
+-- D2-L: Frozen priority management operations
+-- ============================================================================
+
+/-- D2-L: Frozen-phase setPriority. Validates MCP authority, updates priority
+on the frozen state (SchedContext if bound, TCB if unbound). -/
+def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority) : FrozenKernel Unit :=
+  fun st =>
+    match frozenLookupTcb st callerTid with
+    | none => .error .objectNotFound
+    | some callerTcb =>
+      if newPriority.val > callerTcb.maxControlledPriority.val then .error .illegalAuthority
+      else match frozenLookupTcb st targetTid with
+      | none => .error .objectNotFound
+      | some targetTcb =>
+        -- Update priority source (SchedContext or TCB)
+        match targetTcb.schedContextBinding with
+        | .unbound =>
+          let tcb' := { targetTcb with priority := newPriority }
+          match st.objects.set targetTid.toObjId (.tcb tcb') with
+          | some objs => .ok ((), { st with objects := objs })
+          | none => .error .objectNotFound
+        | .bound scId | .donated scId _ =>
+          match st.objects.get? scId.toObjId with
+          | some (.schedContext sc) =>
+            let sc' := { sc with priority := newPriority }
+            match st.objects.set scId.toObjId (.schedContext sc') with
+            | some objs => .ok ((), { st with objects := objs })
+            | none => .error .objectNotFound
+          | _ => .error .objectNotFound
+
+/-- D2-L: Frozen-phase setMCPriority. Validates caller has sufficient MCP,
+updates target's maxControlledPriority. If current priority exceeds new MCP,
+caps it. -/
+def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
+    (newMCP : SeLe4n.Priority) : FrozenKernel Unit :=
+  fun st =>
+    match frozenLookupTcb st callerTid with
+    | none => .error .objectNotFound
+    | some callerTcb =>
+      if newMCP.val > callerTcb.maxControlledPriority.val then .error .illegalAuthority
+      else match frozenLookupTcb st targetTid with
+      | none => .error .objectNotFound
+      | some targetTcb =>
+        let targetTcb' := { targetTcb with maxControlledPriority := newMCP }
+        -- Cap priority if it exceeds new MCP
+        let targetTcb' :=
+          if targetTcb'.priority.val > newMCP.val
+          then { targetTcb' with priority := newMCP }
+          else targetTcb'
+        match st.objects.set targetTid.toObjId (.tcb targetTcb') with
+        | some objs => .ok ((), { st with objects := objs })
+        | none => .error .objectNotFound
+
+-- ============================================================================
 -- S3-L/U-M29: Frozen operation exhaustiveness check
 -- ============================================================================
 
@@ -824,8 +879,10 @@ def frozenOpCoverage : SyscallId → Bool
   | .schedContextUnbind => true      -- Z8-H: frozenSchedContextUnbind
   | .tcbSuspend => true              -- D1: frozenSuspendThread
   | .tcbResume => true               -- D1: frozenResumeThread
+  | .tcbSetPriority => true          -- D2: frozenSetPriority
+  | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
 
-/-- S3-L/Z8-H/D1: Exactly 17 SyscallId arms have frozen operation coverage.
+/-- S3-L/Z8-H/D1/D2: Exactly 19 SyscallId arms have frozen operation coverage.
     The 5 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
     lifecycleRetype, serviceRegister, serviceRevoke). -/
 theorem frozenOpCoverage_count :
@@ -834,11 +891,11 @@ theorem frozenOpCoverage_count :
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
        .notificationSignal, .notificationWait, .replyRecv,
        .schedContextConfigure, .schedContextBind, .schedContextUnbind,
-       .tcbSuspend, .tcbResume].filter
-         frozenOpCoverage).length = 17) := by
+       .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority].filter
+         frozenOpCoverage).length = 19) := by
   decide
 
-/-- S3-L/D1: All 22 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2: All 24 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

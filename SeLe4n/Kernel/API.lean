@@ -29,6 +29,7 @@ import SeLe4n.Kernel.Architecture.SyscallArgDecode
 
 import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.IPC.Operations.Donation
 
 import SeLe4n.Kernel.Architecture.Adapter
@@ -384,6 +385,8 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .schedContextUnbind    => .write
   | .tcbSuspend            => .write
   | .tcbResume             => .write
+  | .tcbSetPriority        => .write
+  | .tcbSetMCPriority      => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -708,7 +711,35 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           | .error e => .error e
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
-  -- V8-H/D1: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
+  -- D2-K: TCB setPriority — priority from message register, target from capability
+  | .tcbSetPriority =>
+    match cap.target with
+    | .object objId =>
+      fun st => match decodeSetPriorityArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        -- Caller is the current thread (tid), target from capability
+        match SchedContext.PriorityManagement.setPriorityOp st tid
+            (ThreadId.ofNat objId.toNat)
+            (Priority.ofNat args.newPriority) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- D2-K: TCB setMCPriority — MCP from message register, target from capability
+  | .tcbSetMCPriority =>
+    match cap.target with
+    | .object objId =>
+      fun st => match decodeSetMCPriorityArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        -- Caller is the current thread (tid), target from capability
+        match SchedContext.PriorityManagement.setMCPriorityOp st tid
+            (ThreadId.ofNat objId.toNat)
+            (Priority.ofNat args.newMCP) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- V8-H/D1/D2: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
   -- serviceRevoke, serviceQuery, schedContextConfigure, schedContextBind,
   -- schedContextUnbind, tcbSuspend, tcbResume) are unreachable here — handled by
   -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
@@ -1114,7 +1145,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
             .notificationSignal, .notificationWait, .replyRecv,
             .schedContextConfigure, .schedContextBind,
-            .schedContextUnbind, .tcbSuspend, .tcbResume] : List SyscallId) := by
+            .schedContextUnbind, .tcbSuspend, .tcbResume,
+            .tcbSetPriority, .tcbSetMCPriority] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

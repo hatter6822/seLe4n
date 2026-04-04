@@ -34,5 +34,7 @@ run_check "TRACE" lake exe frozen_ops_suite
 run_check "TRACE" lake exe two_phase_arch_suite
 # D1: Thread suspension/resumption tests.
 run_check "TRACE" lake exe suspend_resume_suite
+# D2: Priority management tests.
+run_check "TRACE" lake exe priority_management_suite
 
 finalize_report

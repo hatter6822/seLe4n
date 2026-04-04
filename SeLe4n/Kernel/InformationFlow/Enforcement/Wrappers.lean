@@ -216,6 +216,9 @@ def enforcementBoundary : List EnforcementClass :=
   -- D1: Thread lifecycle capability-only operations (authority from cap possession)
   , .capabilityOnly "suspendThread"
   , .capabilityOnly "resumeThread"
+  -- D2: Priority management capability-only operations (authority from cap + MCP)
+  , .capabilityOnly "setPriority"
+  , .capabilityOnly "setMCPriority"
   ]
 
 -- ============================================================================

@@ -62,9 +62,9 @@ architectural improvements compared to other microkernels:
 - **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked `distCorrect`, `noDupKeys`, and `probeChainDominant` invariants
 - **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
 - **Node-stable capability derivation tree** with `childMap` + `parentMap` RHTable indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
-- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition). 25-entry enforcement boundary with per-operation non-interference proofs
+- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition). 29-entry enforcement boundary with per-operation non-interference proofs
 - **EDF + CBS priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware temporal partitioning, and a 15-conjunct `schedulerInvariantBundleExtended` covering both legacy and CBS scheduling paths
-- **Two-phase state architecture** — kernel state flows through a builder phase (with 4 invariant witnesses) to a frozen immutable representation. `FrozenMap`/`FrozenSet` provide O(1) lookups with proven equivalence to the live state via `freeze_preserves_*` theorems. 15 frozen operations mirror the live kernel API
+- **Two-phase state architecture** — kernel state flows through a builder phase (with 4 invariant witnesses) to a frozen immutable representation. `FrozenMap`/`FrozenSet` provide O(1) lookups with proven equivalence to the live state via `freeze_preserves_*` theorems. 19 frozen operations mirror the live kernel API
 - **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics and proven dependency acyclicity
 - **10-conjunct proof layer** — `proofLayerInvariantBundle` composes scheduler, capability, IPC (14-conjunct), lifecycle, service, VSpace, cross-subsystem (8-predicate), TLB, and extended scheduler invariants into a single top-level proof obligation verified from boot through all kernel operations
 
@@ -246,7 +246,7 @@ SeLe4n/Kernel/Architecture/*     VSpace, TLB model, register decode, platform ad
 SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 80 NI theorems
   Policy.lean                    Security labels, flow policies, domain flow validation
   Projection.lean                Low-equivalence projection for NI proofs
-  Enforcement/Wrappers.lean      25-entry enforcement boundary, policy-gated wrappers
+  Enforcement/Wrappers.lean      29-entry enforcement boundary, policy-gated wrappers
   Enforcement/Soundness.lean     Correctness theorems, declassification
   Invariant/Helpers.lean         Shared NI proof infrastructure
   Invariant/Operations.lean      Per-operation NI proofs
@@ -311,7 +311,7 @@ tests/                           11 test suites (negative-state, info-flow, trac
 | **Passive servers** | SchedContext donation via C code paths | Formally verified donation protocol: `donateSchedContext`/`returnDonatedSchedContext` with `donationChainAcyclic` invariant preventing circular chains |
 | **IPC timeout** | Budget-driven timeout in C | `timeoutThread` with mid-queue splice-out, `blockedThreadTimeoutConsistent` invariant, and `endpointQueueRemove` with invExt proof |
 | **IPC mechanism** | Single linked-list endpoint queue | Intrusive dual-queue with `queuePPrev` back-pointers for O(1) mid-queue removal |
-| **Information flow** | Binary high/low partition | N-domain configurable flow policy with 25-entry enforcement boundary and per-operation NI proofs |
+| **Information flow** | Binary high/low partition | N-domain configurable flow policy with 29-entry enforcement boundary and per-operation NI proofs |
 | **Service management** | Not in kernel | First-class service orchestration with dependency graph and DFS cycle detection |
 | **Capability derivation** | CDT with linked-list children | `childMap` HashMap for O(1) children lookup |
 | **Object stores** | Linked lists and arrays | All stores backed by formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with `distCorrect`/`noDupKeys`/`probeChainDominant` invariants |

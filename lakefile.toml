@@ -61,3 +61,8 @@ root = "tests.OperationChainSuite"
 [[lean_exe]]
 name = "suspend_resume_suite"
 root = "tests.SuspendResumeSuite"
+
+# D2: Priority Management test suite
+[[lean_exe]]
+name = "priority_management_suite"
+root = "tests.PriorityManagementSuite"

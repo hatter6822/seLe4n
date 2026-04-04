@@ -462,6 +462,11 @@ structure TCB where
       `none` = no timeout (legacy unbounded blocking). Cleared on unblock.
       Invariant: `timeoutBudget = some _` implies `ipcState` is a blocking state. -/
   timeoutBudget : Option SeLe4n.SchedContextId := none
+  /-- D2-A: Maximum Controlled Priority (MCP) ceiling. The maximum priority this
+      thread can assign to other threads (or itself) via `setPriority`. seL4
+      convention: `setPriority newPrio` requires `newPrio ≤ caller.mcp`.
+      Default is maximum priority (0xFF = no restriction). -/
+  maxControlledPriority : SeLe4n.Priority := ⟨0xFF⟩
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -484,7 +489,8 @@ instance : BEq TCB where
     a.registerContext == b.registerContext &&
     a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification &&
     a.schedContextBinding == b.schedContextBinding &&
-    a.timeoutBudget == b.timeoutBudget
+    a.timeoutBudget == b.timeoutBudget &&
+    a.maxControlledPriority == b.maxControlledPriority
 
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.
@@ -889,6 +895,8 @@ inductive SyscallId where
   | schedContextUnbind     -- Z5-D: unbind thread from SchedContext
   | tcbSuspend             -- D1-A: suspend a thread (transition to Inactive)
   | tcbResume              -- D1-A: resume a suspended thread (transition to Ready)
+  | tcbSetPriority         -- D2-B: set thread scheduling priority (MCP-bounded)
+  | tcbSetMCPriority       -- D2-B: set thread maximum controlled priority
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -918,9 +926,11 @@ namespace SyscallId
   | .schedContextUnbind    => 19
   | .tcbSuspend            => 20
   | .tcbResume             => 21
+  | .tcbSetPriority        => 22
+  | .tcbSetMCPriority      => 23
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 22
+def count : Nat := 24
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -947,6 +957,8 @@ def count : Nat := 22
   | 19 => some .schedContextUnbind
   | 20 => some .tcbSuspend
   | 21 => some .tcbResume
+  | 22 => some .tcbSetPriority
+  | 23 => some .tcbSetMCPriority
   | _  => none
 
 instance : ToString SyscallId where
@@ -973,6 +985,8 @@ instance : ToString SyscallId where
     | .schedContextUnbind    => "schedContextUnbind"
     | .tcbSuspend            => "tcbSuspend"
     | .tcbResume             => "tcbResume"
+    | .tcbSetPriority        => "tcbSetPriority"
+    | .tcbSetMCPriority      => "tcbSetMCPriority"
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
@@ -994,9 +1008,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 0  | 1  | 2  | 3  | 4  | 5  | 6
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
-  | 20 | 21 =>
+  | 20 | 21 | 22 | 23 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 22 => intro s h; simp [ofNat?] at h
+  | n + 24 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
