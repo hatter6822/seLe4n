@@ -900,7 +900,7 @@ run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/In
 # D5: The Liveness module is proof-only and not imported from Main.lean,
 # so `lake build` (default target) does not produce its .olean files.
 # Build it explicitly before the inline check to avoid CI cache misses.
-run_check "INVARIANT" lake build SeLe4n.Kernel.Scheduler.Liveness
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Liveness'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
 import SeLe4n.Kernel.Capability.Invariant.Preservation
