@@ -897,6 +897,10 @@ run_check "INVARIANT" rg -n 'lifecycleRevokeDeleteRetype_preserves_lowEquivalent
 run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
+# D5: The Liveness module is proof-only and not imported from Main.lean,
+# so `lake build` (default target) does not produce its .olean files.
+# Build it explicitly before the inline check to avoid CI cache misses.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Liveness'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.Preservation
 import SeLe4n.Kernel.Capability.Invariant.Preservation
@@ -907,6 +911,7 @@ import SeLe4n.Kernel.Architecture.VSpaceInvariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.SchedContext.Invariant
+import SeLe4n.Kernel.Scheduler.Liveness
 import SeLe4n.Kernel.SchedContext.ReplenishQueue
 
 #check @SeLe4n.Kernel.schedule_preserves_schedulerInvariantBundle
@@ -1058,6 +1063,15 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.consumeBudget_preserves_schedContextWellFormed_full
 #check @SeLe4n.Kernel.scheduleReplenishment_preserves_schedContextWellFormed_full
 #check @SeLe4n.Kernel.cbsUpdateDeadline_preserves_wf
+-- D5: Bounded Latency Theorem surface anchors
+#check @SeLe4n.Kernel.Liveness.WCRTHypotheses
+#check @SeLe4n.Kernel.Liveness.wcrtBound
+#check @SeLe4n.Kernel.Liveness.bounded_scheduling_latency
+#check @SeLe4n.Kernel.Liveness.countHigherOrEqual_mono_threshold
+#check @SeLe4n.Kernel.Liveness.pip_enhanced_wcrt_le_base
+#check @SeLe4n.Kernel.Liveness.domainRotationTotal_le_bound
+#check @SeLe4n.Kernel.Liveness.fifoProgressBound
+#check @SeLe4n.Kernel.Liveness.bandExhaustionBound
 EOF'
 
 finalize_report

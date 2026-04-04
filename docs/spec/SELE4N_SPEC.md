@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.0` (`lakefile.toml`) |
+| **Package version** | `0.25.1` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 82,196 across 124 Lean files |
 | **Test LoC** | 10,411 across 14 Lean test suites |
@@ -766,6 +766,45 @@ client priority exceeds the donated SchedContext priority.
 
 **Bounded inversion**: Priority inversion is bounded by
 `objectIndex.length × WCRT(effectivePriority)` ticks (parametric in WCRT).
+
+### 8.14 Bounded Latency Theorem (WS-AB Phase D5)
+
+The kernel's first machine-checked liveness property: a conditional worst-case
+response time (WCRT) bound for the CBS-aware, PIP-enhanced scheduler. This is a
+proof-only phase with zero kernel code changes.
+
+**Trace model** (`Kernel/Scheduler/Liveness/TraceModel.lean`): `SchedulerStep`
+inductive (9 constructors covering all scheduler transitions), `SchedulerTrace`
+(list of step-state pairs), `validTrace` predicate (each step's precondition
+holds and postcondition feeds into the next step). Query predicates:
+`selectedAt`, `runnableAt`, `budgetAvailableAt`. Counting functions:
+`countHigherOrEqualEffectivePriority`, `maxBudgetInBand`, `maxPeriodInBand`.
+
+**Per-mechanism bounds**:
+- Timer-tick budget: `timerTickBudget_bound_succeeds` / `timerTickBudget_donated_succeeds` characterize Z4-F2/F3 budget decrement and exhaustion-preemption branches
+- Replenishment: `replenishment_within_period` bounds the dead time between budget exhaustion and replenishment by `sc.period`
+- Yield/FIFO: `fifo_progress_in_band` proves a thread at position `k` in its priority bucket is selected within `k * max_preemption_interval` ticks
+- Domain rotation: `domainRotationTotal_le_bound` proves every domain receives CPU within `D * L_max` ticks
+
+**WCRT theorem** (`Kernel/Scheduler/Liveness/WCRT.lean`): `WCRTHypotheses`
+structure encodes the preconditions (thread runnable with budget, domain
+membership, higher-priority thread count N, budget bound B, period bound P).
+The main theorem `bounded_scheduling_latency` proves:
+
+> WCRT = D * L_max + N * (B + P)
+
+where D is the domain schedule length, L_max is the maximum domain entry length,
+N is the count of higher-or-equal effective priority threads, B is the maximum
+budget, and P is the maximum period in the priority band.
+
+**PIP enhancement**: `countHigherOrEqual_mono_threshold` proves that PIP-boosted
+threads have fewer higher-priority competitors (monotonicity in threshold).
+`pip_enhanced_wcrt_le_base` proves the PIP-enhanced WCRT bound is tighter than
+the base bound. This closes the previously parametric WCRT in D4's bounded
+inversion theorem.
+
+**Evidence**: 38 surface anchor tests in `tests/LivenessSuite.lean`. Zero
+sorry/axiom.
 
 ---
 

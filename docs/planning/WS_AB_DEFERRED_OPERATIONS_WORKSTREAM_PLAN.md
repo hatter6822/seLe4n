@@ -45,8 +45,8 @@ IPC timeout) but two critical formal gaps remain:
  
 | Gap | Original Phase | Status | Why It Matters |
 |-----|---------------|--------|----------------|
-| **No formal WCRT bound** | V1 (Bounded Latency Theorem) | NOT IMPLEMENTED | The kernel proves no liveness property. Every theorem is safety-only. System integrators cannot prove schedulability. |
-| **No transitive priority inheritance** | V3 (Priority Inheritance Protocol) | PARTIALLY IMPLEMENTED | Z4 provides static effective priority from SchedContext binding. But transitive priority inversion via blocking chains (the Mars Pathfinder scenario) is not mitigated. |
+| **No formal WCRT bound** | V1 (Bounded Latency Theorem) | **COMPLETE (D5)** | Resolved by Phase D5: `bounded_scheduling_latency` proves WCRT = D*L_max + N*(B+P). PIP enhancement via `pip_enhanced_wcrt_le_base`. 38 surface anchor tests. Zero sorry/axiom. |
+| **No transitive priority inheritance** | V3 (Priority Inheritance Protocol) | **COMPLETE (D4)** | Resolved by Phase D4: transitive PIP via blocking graph, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, 16 frame preservation theorems, `pip_bounded_inversion`. Zero sorry/axiom. |
  
 ### 1.3 Audit of WS-V Starvation Prevention Plan
  
@@ -55,9 +55,9 @@ is now at v0.23.22. Here is the disposition of each phase:
  
 | WS-V Phase | Planned Scope | Actual Disposition | Remaining Work |
 |------------|--------------|-------------------|----------------|
-| **V1** (15 sub-tasks) | Bounded Latency Theorem — proof-only trace model, WCRT bound | **NOT IMPLEMENTED**. No `Scheduler/Liveness/` directory, no trace model, no WCRT proofs. WS-Z chose runtime CBS over proof bounds. | **All 15 sub-tasks remain relevant** but must be updated for CBS budget model (budget exhaustion + replenishment cycles affect WCRT). |
+| **V1** (15 sub-tasks) | Bounded Latency Theorem — proof-only trace model, WCRT bound | **COMPLETE as D5** (v0.25.0). `Scheduler/Liveness/` directory with 7 files + re-export hub. Trace model, CBS-aware WCRT bound, PIP enhancement. 38 surface anchor tests. Zero sorry/axiom. | **No remaining work.** |
 | **V2** (18 sub-tasks) | IPC Timeout Mechanism — per-tick countdown on IPC blocking states | **PARTIALLY IMPLEMENTED as Z6**. Budget-driven timeout via `timeoutBudget : Option SchedContextId` on TCB + `timeoutThread`/`timeoutBlockedThreads` in `timerTickBudget`. Achieves SV-3 (bounded IPC blocking) but through budget exhaustion, not independent countdown timers. | **Substantially complete.** Z6 solves the core problem. Optional per-operation timeouts (independent of SchedContext) would be a refinement, not critical. **Absorbed — no dedicated phase needed.** |
-| **V3** (21 sub-tasks) | Priority Inheritance Protocol — blocking graph, transitive propagation, bounded inversion proofs | **PARTIALLY IMPLEMENTED as Z4**. `effectivePriority` function (Selection.lean:218) resolves priority from SchedContext binding. But NO blocking graph, NO `propagatePriorityInheritance`, NO transitive chain walk. Static effective priority from SchedContext handles single-level inversion; transitive chains remain unmitigated. | **Core sub-tasks remain relevant** (blocking graph, propagation, reversion, bounded inversion proofs). Must be updated for SchedContext-aware effective priority and Z7 donation semantics. |
+| **V3** (21 sub-tasks) | Priority Inheritance Protocol — blocking graph, transitive propagation, bounded inversion proofs | **COMPLETE as D4** (v0.25.0). Blocking graph (`blockedOnThread`, `waitersOf`, `blockingChain`), acyclicity invariant, depth bound, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, 16 frame preservation theorems, `pip_bounded_inversion`, Call/Reply/Suspend/Timeout integration. Zero sorry/axiom. | **No remaining work.** |
 | **V4** (24 sub-tasks) | MCS Scheduling Contexts — new kernel object type, CBS budget, donation, timeout endpoints | **SUBSTANTIALLY IMPLEMENTED as WS-Z (Z1–Z10)**. SchedContext types (Z1), CBS budget engine (Z2), replenishment queue (Z3), scheduler integration (Z4), capability-controlled binding (Z5), timeout endpoints (Z6), SchedContext donation (Z7), API surface (Z8), invariant composition (Z9). | **Complete. No remaining work.** |
  
 **Specific WS-V sub-tasks superseded by WS-Z:**
@@ -793,7 +793,7 @@ reference parametrically.
 
 ---
 
-## 8. Phase D5 — Bounded Latency Theorem (v0.24.4)
+## 8. Phase D5 — Bounded Latency Theorem (v0.25.0) — COMPLETE
  
 **Scope**: Prove a conditional worst-case response time (WCRT) bound for the
 existing scheduler — with zero kernel code changes. Establish the trace model

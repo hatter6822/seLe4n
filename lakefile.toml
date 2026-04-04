@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.25.0"
+version = "0.25.1"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -76,3 +76,8 @@ root = "tests.IpcBufferSuite"
 [[lean_exe]]
 name = "priority_inheritance_suite"
 root = "tests.PriorityInheritanceSuite"
+
+# D5: Bounded Latency / Liveness test suite
+[[lean_exe]]
+name = "liveness_suite"
+root = "tests.LivenessSuite"

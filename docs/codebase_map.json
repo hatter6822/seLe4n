@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-priority-inheritance-lYQ1g",
-      "commit_sha": "9400afde87c89762a0c0a300e347df1e095a5cd0",
-      "tree_sha": "34036ecefe41a2723d961af692ae411d9f21f6e8",
-      "committed_at_utc": "2026-04-04T08:33:18+00:00"
+      "branch": "claude/optimize-phase-d5-latency-18uQ4",
+      "commit_sha": "d5554602c77b1614dc3a13cd68f08dd789002d87",
+      "tree_sha": "c6829078663dbb92320be687823c72f21c15710a",
+      "committed_at_utc": "2026-04-04T18:41:20+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8420fe16dab142fbcc4b520c5f15eccb32cc11b3175b491812d943a745e259f2"
+    "source_digest": "45086accf4ccc0ab9b6f3a68772eadb7ff109272bdc01592517873031922606d"
   },
   "summary": {
-    "module_count": 138,
-    "declaration_count": 4355
+    "module_count": 147,
+    "declaration_count": 4436
   },
   "readme_sync": {
-    "version": "0.25.0",
+    "version": "0.25.1",
     "lean_toolchain": "v4.28.0",
-    "production_files": 124,
-    "production_loc": 82226,
-    "test_files": 14,
-    "test_loc": 10411,
-    "proved_theorem_lemma_decls": 2399,
+    "production_files": 132,
+    "production_loc": 83286,
+    "test_files": 15,
+    "test_loc": 10564,
+    "proved_theorem_lemma_decls": 2447,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -33015,6 +33015,910 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.BandExhaustion",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/BandExhaustion.lean",
+      "declaration_count": 9,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 11,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "ThreadExitReason",
+          "line": 24,
+          "called": [
+            "SchedContextId",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "eventuallyExits",
+          "line": 33,
+          "called": [
+            "SchedulerTrace",
+            "ThreadId",
+            "contains",
+            "none",
+            "traceStateAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "higherBandExhausted",
+          "line": 47,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SchedulerTrace",
+            "SystemState",
+            "eventuallyExits",
+            "none",
+            "resolveEffectivePriority"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "higherBandExhausted_when_no_higher",
+          "line": 59,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SchedulerTrace",
+            "SystemState",
+            "higherBandExhausted",
+            "none",
+            "resolveEffectivePriority"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bandExhaustionBound",
+          "line": 76,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "bandExhaustionBound_mono",
+          "line": 80,
+          "called": [
+            "bandExhaustionBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bandExhaustionBound_zero",
+          "line": 87,
+          "called": [
+            "bandExhaustionBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bandExhaustionBound_succ",
+          "line": 92,
+          "called": [
+            "bandExhaustionBound"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.DomainRotation",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/DomainRotation.lean",
+      "declaration_count": 9,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 11,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "domainRotationBound",
+          "line": 20,
+          "called": [
+            "maxDomainLength"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "maxDomainLength",
+          "line": 24,
+          "called": [
+            "DomainScheduleEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "domainRotationTotal",
+          "line": 29,
+          "called": [
+            "DomainScheduleEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_index_advances",
+          "line": 34,
+          "called": [
+            "DomainScheduleEntry",
+            "schedule",
+            "switchDomain_index_in_bounds"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "domainRotationBound_mono",
+          "line": 41,
+          "called": [
+            "domainRotationBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "domainRotationBound_empty",
+          "line": 47,
+          "called": [
+            "domainRotationBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "maxDomainLength_ge_each",
+          "line": 52,
+          "called": [
+            "DomainScheduleEntry",
+            "maxDomainLength",
+            "schedule"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "domainRotationTotal_le_bound",
+          "line": 65,
+          "called": [
+            "DomainScheduleEntry",
+            "domainRotationBound",
+            "domainRotationTotal",
+            "maxDomainLength",
+            "schedule"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.Replenishment",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/Replenishment.lean",
+      "declaration_count": 9,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 11,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "mkReplenishmentEntry_eligibleAt",
+          "line": 21,
+          "called": [
+            "Budget",
+            "Period",
+            "mkReplenishmentEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mkReplenishmentEntry_amount",
+          "line": 28,
+          "called": [
+            "Budget",
+            "Period",
+            "mkReplenishmentEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyRefill_budget_ge_when_wf",
+          "line": 35,
+          "called": [
+            "SchedContext",
+            "applyRefill"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "processReplenishments_budget_ge",
+          "line": 43,
+          "called": [
+            "SchedContext",
+            "applyRefill_budget_ge_when_wf",
+            "processReplenishments"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishQueue_insert_sorted",
+          "line": 52,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "insert",
+            "insert_preserves_sorted",
+            "replenishQueueSorted",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishment_within_period",
+          "line": 62,
+          "called": [
+            "Period"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishment_dead_time_exact",
+          "line": 71,
+          "called": [
+            "Budget",
+            "Period",
+            "mkReplenishmentEntry"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "truncateReplenishments_bounded",
+          "line": 78,
+          "called": [
+            "ReplenishmentEntry",
+            "maxReplenishments",
+            "truncateReplenishments",
+            "truncateReplenishments_length_le"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.TimerTick",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/TimerTick.lean",
+      "declaration_count": 10,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 11,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickBudget_F1_succeeds",
+          "line": 20,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "timerTickBudget"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickBudget_bound_succeeds",
+          "line": 29,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "scId",
+            "timerTickBudget",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickBudget_donated_succeeds",
+          "line": 41,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "scId",
+            "timerTickBudget",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "consumeBudget_val_eq",
+          "line": 54,
+          "called": [
+            "SchedContext",
+            "consumeBudget",
+            "decrement"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "consumeBudget_one_le",
+          "line": 60,
+          "called": [
+            "SchedContext",
+            "consumeBudget",
+            "consumeBudget_budgetRemaining_le"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "maxPreemptionInterval",
+          "line": 71,
+          "called": [
+            "SchedContext",
+            "TCB",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "maxPreemptionInterval_unbound",
+          "line": 79,
+          "called": [
+            "SchedContext",
+            "TCB",
+            "maxPreemptionInterval"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "maxPreemptionInterval_bound",
+          "line": 86,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "TCB",
+            "maxPreemptionInterval",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "maxPreemptionInterval_pos",
+          "line": 95,
+          "called": [
+            "SchedContext",
+            "TCB",
+            "maxPreemptionInterval",
+            "none"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.TraceModel",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean",
+      "declaration_count": 19,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 12,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "SchedulerStep",
+          "line": 23,
+          "called": [
+            "SchedContextId",
+            "TCB",
+            "ThreadId",
+            "handleYield",
+            "handleYieldWithBudget",
+            "processReplenishmentsDue",
+            "scId",
+            "schedule",
+            "scheduleEffective",
+            "switchDomain",
+            "timerTick",
+            "timerTickBudget"
+          ]
+        },
+        {
+          "kind": "abbrev",
+          "name": "SchedulerTrace",
+          "line": 42,
+          "called": [
+            "SchedulerStep",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stepPrecondition",
+          "line": 50,
+          "called": [
+            "SchedulerStep",
+            "SystemState",
+            "handleYield",
+            "handleYieldWithBudget",
+            "hasDue",
+            "isZero",
+            "processReplenishmentsDue",
+            "scId",
+            "schedule",
+            "scheduleEffective",
+            "switchDomain",
+            "timerTick",
+            "timerTickBudget",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stepPost",
+          "line": 73,
+          "called": [
+            "KernelError",
+            "SchedulerStep",
+            "SystemState",
+            "handleYield",
+            "handleYieldWithBudget",
+            "insert",
+            "popDue",
+            "processReplenishments",
+            "processReplenishmentsDue",
+            "scId",
+            "schedule",
+            "scheduleEffective",
+            "switchDomain",
+            "timeoutBlockedThreads",
+            "timerTick",
+            "timerTickBudget",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "ValidTrace",
+          "line": 123,
+          "called": [
+            "SchedulerStep",
+            "SchedulerTrace",
+            "SystemState",
+            "stepPost",
+            "stepPrecondition"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "traceStateAt",
+          "line": 137,
+          "called": [
+            "SchedulerTrace",
+            "SystemState",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "selectedAt",
+          "line": 143,
+          "called": [
+            "SchedulerTrace",
+            "ThreadId",
+            "none",
+            "traceStateAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runnableAt",
+          "line": 153,
+          "called": [
+            "SchedulerTrace",
+            "ThreadId",
+            "contains",
+            "none",
+            "traceStateAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "budgetAvailableAt",
+          "line": 163,
+          "called": [
+            "SchedulerTrace",
+            "ThreadId",
+            "hasSufficientBudget",
+            "none",
+            "toObjId",
+            "traceStateAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "selectedAt_implies_not_in_runQueue",
+          "line": 178,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "queueCurrentConsistent",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "budget_always_available_unbound",
+          "line": 194,
+          "called": [
+            "SystemState",
+            "TCB",
+            "hasSufficientBudget"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "budget_available_when_positive",
+          "line": 202,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "hasSufficientBudget",
+            "isPositive",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "resolveEffectivePriority",
+          "line": 216,
+          "called": [
+            "Deadline",
+            "DomainId",
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "effectivePriority",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "countHigherOrEqualEffectivePriority",
+          "line": 224,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SystemState",
+            "count",
+            "none",
+            "resolveEffectivePriority"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "maxBudgetInBand",
+          "line": 236,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SystemState",
+            "defaultTimeSlice",
+            "none",
+            "resolveEffectivePriority",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "maxPeriodInBand",
+          "line": 257,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SystemState",
+            "none",
+            "resolveEffectivePriority",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bucketPosition",
+          "line": 278,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "get",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "countHigherOrEqual_empty",
+          "line": 293,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SystemState",
+            "countHigherOrEqualEffectivePriority"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.WCRT",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean",
+      "declaration_count": 16,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 11,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "WCRTHypotheses",
+          "line": 22,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "contains",
+            "countHigherOrEqualEffectivePriority",
+            "hasSufficientBudget",
+            "maxBudgetInBand",
+            "maxPeriodInBand",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "wcrtBound",
+          "line": 59,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrtBound_mono",
+          "line": 63,
+          "called": [
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrtBound_no_contention",
+          "line": 73,
+          "called": [
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrtBound_stable_domain_schedule",
+          "line": 87,
+          "called": [
+            "SystemState",
+            "maxDomainLength"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrtBound_stable_across_states",
+          "line": 98,
+          "called": [
+            "SystemState",
+            "maxDomainLength",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bounded_scheduling_latency",
+          "line": 132,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "WCRTHypotheses",
+            "maxDomainLength",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bounded_scheduling_latency_exists",
+          "line": 153,
+          "called": [
+            "SchedulerTrace",
+            "SystemState",
+            "ThreadId",
+            "ValidTrace",
+            "WCRTHypotheses",
+            "bandExhaustionBound",
+            "contains",
+            "domainRotationBound",
+            "maxDomainLength",
+            "none",
+            "selectedAt",
+            "traceStateAt",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrt_decomposition",
+          "line": 201,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "WCRTHypotheses",
+            "bandExhaustionBound",
+            "domainRotationBound",
+            "maxDomainLength",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrt_domain_component_le",
+          "line": 211,
+          "called": [
+            "domainRotationBound",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrt_band_component_le",
+          "line": 217,
+          "called": [
+            "bandExhaustionBound",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "boolIfMonoLe",
+          "line": 227,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "countHigherOrEqual_mono_threshold",
+          "line": 238,
+          "called": [
+            "DomainId",
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "boolIfMonoLe",
+            "count",
+            "countHigherOrEqualEffectivePriority",
+            "none",
+            "resolveEffectivePriority"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pip_enhanced_wcrt_le_base",
+          "line": 278,
+          "called": [
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pip_wcrt_integration",
+          "line": 289,
+          "called": [
+            "pipSingleLinkBound"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.Yield",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/Yield.lean",
+      "declaration_count": 8,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 11,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_preserves_contains",
+          "line": 20,
+          "called": [
+            "RunQueue",
+            "ThreadId",
+            "contains",
+            "rotateToBack",
+            "rotateToBack_contains"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "yield_preserves_membership",
+          "line": 26,
+          "called": [
+            "Priority",
+            "RunQueue",
+            "ThreadId",
+            "contains",
+            "insert",
+            "mem_insert",
+            "rotateToBack",
+            "rotateToBack_contains"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fifoProgressBound",
+          "line": 42,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "fifoProgressBound_mono",
+          "line": 46,
+          "called": [
+            "fifoProgressBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fifoProgressBound_zero",
+          "line": 53,
+          "called": [
+            "fifoProgressBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fifoProgressBound_succ",
+          "line": 58,
+          "called": [
+            "fifoProgressBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fifoProgressBound_mono_interval",
+          "line": 64,
+          "called": [
+            "fifoProgressBound"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness.lean",
+      "declaration_count": 0,
+      "declarations": []
+    },
+    {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Core",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Core.lean",
       "declaration_count": 34,
@@ -54625,6 +55529,19 @@
             "ib016_frozenNonCanonical",
             "ib017_frozenInvalidVSpaceRoot"
           ]
+        }
+      ]
+    },
+    {
+      "module": "tests.LivenessSuite",
+      "path": "tests/LivenessSuite.lean",
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 139,
+          "called": []
         }
       ]
     },

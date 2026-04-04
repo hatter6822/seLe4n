@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.0.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.1.
 
 ## Build and run
 
@@ -91,6 +91,14 @@ SeLe4n/Kernel/Scheduler/*        Scheduler transitions + invariants
     PriorityInheritance/Propagate.lean       updatePipBoost, propagate/revert priority inheritance
     PriorityInheritance/Preservation.lean    Frame lemmas (scheduler, IPC, cross-subsystem)
     PriorityInheritance/BoundedInversion.lean Parametric WCRT bound, determinism
+  Liveness.lean                  Re-export hub (D5)
+    Liveness/TraceModel.lean     Trace model types, query predicates, counting functions
+    Liveness/TimerTick.lean      Timer-tick budget monotonicity, preemption bounds
+    Liveness/Replenishment.lean  CBS replenishment timing bounds
+    Liveness/Yield.lean          Yield/rotation semantics, FIFO progress bounds
+    Liveness/BandExhaustion.lean Priority-band exhaustion analysis
+    Liveness/DomainRotation.lean Domain rotation bounds
+    Liveness/WCRT.lean           WCRT hypotheses, main theorem, PIP enhancement
 SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
   Invariant.lean                 Re-export hub
     Invariant/Defs.lean          Core invariant definitions, transfer theorems
@@ -199,6 +207,7 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
   RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
+  LivenessSuite.lean             D5: 38 surface anchor tests for liveness/WCRT theorems
 ```
 
 Note: Files marked "Re-export hub" are thin import-only files that preserve
@@ -488,6 +497,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-AB Phase D2 COMPLETE**: Priority Management (v0.24.1) — `setPriorityOp`/`setMCPriorityOp` operations, MCP authority non-escalation, SchedContext-aware priority update, run queue bucket migration, `SyscallId.tcbSetPriority`/`.tcbSetMCPriority`, `enforcementBoundary` 27→29, frozen equivalents, 15 tests across 7 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AB Phase D3 COMPLETE**: IPC Buffer Configuration (v0.24.2–v0.24.3) — `setIPCBufferOp` with 5-step validation (alignment, canonical, VSpace root, mapping, write permission), `SyscallId.tcbSetIPCBuffer`, `enforcementBoundary` 29→30, frozen equivalent, 7 transport lemmas (scheduler, serviceRegistry, irqHandlers, machine, asidTable, capabilityRefs preservation), validation correctness theorems, 17 tests across 4 categories, XVAL-005 decode roundtrip. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AB Phase D4 COMPLETE**: Priority Inheritance Protocol (v0.25.0) — `pipBoost` TCB field, `effectivePriority` incorporates `max(scPrio, pipBoost)`, blocking graph (acyclicity, depth bound), `computeMaxWaiterPriority`, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, Call/Reply/Suspend/Timeout integration, PIP propagation/reversion in all API dispatch paths (enforced + non-enforced), 16 frame preservation theorems (propagate + revert × 16 SystemState fields), parametric bounded inversion, determinism, 22 tests across 10 categories. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
+- **WS-AB Phase D5 COMPLETE**: Bounded Latency Theorem (v0.25.0) — proof-only phase, zero kernel code changes. Trace model infrastructure (`SchedulerStep`, `SchedulerTrace`, `validTrace`), query predicates (`selectedAt`, `runnableAt`, `budgetAvailableAt`), counting functions (`countHigherOrEqualEffectivePriority`, `maxBudgetInBand`, `maxPeriodInBand`). Per-mechanism bounds: `timerTickBudget_bound_succeeds`/`timerTickBudget_donated_succeeds` (Z4-F2/F3 characterization), `replenishment_within_period`, `fifo_progress_in_band`. `domainRotationTotal_le_bound` (domain rotation bound). `WCRTHypotheses` structure. Main theorem `bounded_scheduling_latency`: WCRT = D*L_max + N*(B+P). PIP enhancement: `countHigherOrEqual_mono_threshold` + `pip_enhanced_wcrt_le_base` (PIP-boosted threads have tighter WCRT). 38 surface anchor tests in `LivenessSuite.lean`. New directory: `SeLe4n/Kernel/Scheduler/Liveness/`. Zero sorry/axiom. See `docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/audits/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
 - **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk, GIC-400 interrupt routing, boot sequence
 - **Hardware target**: Raspberry Pi 5 (ARM64)

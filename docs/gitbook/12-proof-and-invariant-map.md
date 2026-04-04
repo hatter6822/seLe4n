@@ -2552,7 +2552,45 @@ on fuel; revert aliases derived from `revert_eq_propagate`.
 
 **Bounded inversion** (`PriorityInheritance/BoundedInversion.lean`):
 `pip_bounded_inversion`: inversion ≤ `objectIndex.length × WCRT`
-(parametric in WCRT — instantiated when D5 delivers concrete bound).
+(parametric in WCRT — instantiated by D5 `bounded_scheduling_latency`
+where WCRT = D×L\_max + N×(B+P)).
+
+### Bounded Latency / Liveness (D5)
+
+**Module**: `SeLe4n/Kernel/Scheduler/Liveness/` (8 files, ~950 LoC)
+
+**Trace model** (`Liveness/TraceModel.lean`): `SchedulerStep` inductive (9
+constructors), `SchedulerTrace`, `ValidTrace` inductive, `stepPost` execution,
+`selectedAt`/`runnableAt`/`budgetAvailableAt` query predicates,
+`countHigherOrEqualEffectivePriority`, `maxBudgetInBand`, `maxPeriodInBand`
+counting functions, `bucketPosition`.
+
+**Per-mechanism bounds**:
+- `TimerTick.lean`: `timerTickBudget_bound_succeeds` (Z4-F2/F3 characterization
+  with preemption iff budget ≤ 1), `maxPreemptionInterval` (min of timeSlice and
+  budgetRemaining for bound threads).
+- `Replenishment.lean`: `replenishment_within_period` (dead time = period),
+  `processReplenishments_budget_ge` (budget monotonicity under well-formedness).
+- `Yield.lean`: `yield_preserves_membership`, `fifoProgressBound` = k × interval
+  with monotonicity and decomposition.
+- `BandExhaustion.lean`: `bandExhaustionBound` = N×(B+P), `eventuallyExits`
+  predicate, `higherBandExhausted` with real `eventuallyExits` content.
+- `DomainRotation.lean`: `domainRotationTotal_le_bound` ≤ D×L\_max,
+  `maxDomainLength_ge_each` (per-entry upper bound).
+
+**WCRT theorem** (`Liveness/WCRT.lean`):
+- `WCRTHypotheses`: 12-field structure (threadRunnable, threadHasBudget,
+  targetPrio, targetDomain, threadInDomain, N, B, P bounds, domainScheduleAdequate,
+  domainEntriesPositive, domainScheduleNonEmpty).
+- `bounded_scheduling_latency`: wcrtBound = D×L\_max + N×(B+P).
+- `bounded_scheduling_latency_exists`: existential form — ∃ k ≤ bound,
+  selectedAt trace k tid. Composes domain rotation + band progress hypotheses.
+- `countHigherOrEqual_mono_threshold`: PIP tightens WCRT (higher threshold →
+  fewer competitors). Full inductive proof over thread list with Bool condition
+  monotonicity.
+- `pip_enhanced_wcrt_le_base`: PIP-boosted WCRT ≤ base WCRT.
+
+**Test coverage**: 46 surface anchor tests in `tests/LivenessSuite.lean`.
 
 **Test coverage**: 22 tests across 10 categories (PIP-001 through PIP-022)
 in `tests/PriorityInheritanceSuite.lean`. Covers: default field values,

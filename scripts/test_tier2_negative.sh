@@ -38,5 +38,7 @@ run_check "TRACE" lake exe suspend_resume_suite
 run_check "TRACE" lake exe priority_management_suite
 # D3: IPC buffer configuration tests.
 run_check "TRACE" lake exe ipc_buffer_suite
+# D5: Bounded latency / liveness surface anchor tests.
+run_check "TRACE" lake exe liveness_suite
 
 finalize_report
