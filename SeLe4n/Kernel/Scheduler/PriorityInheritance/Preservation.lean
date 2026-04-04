@@ -81,6 +81,60 @@ theorem updatePipBoost_preserves_serviceRegistry (st : SystemState) (tid : Threa
   updatePipBoost_frame (fun s => s.serviceRegistry) st tid
     (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
 
+/-- D4-P: `updatePipBoost` preserves `objectIndex`. -/
+theorem updatePipBoost_preserves_objectIndex (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).objectIndex = st.objectIndex :=
+  updatePipBoost_frame (fun s => s.objectIndex) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `objectIndexSet`. -/
+theorem updatePipBoost_preserves_objectIndexSet (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).objectIndexSet = st.objectIndexSet :=
+  updatePipBoost_frame (fun s => s.objectIndexSet) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `cdt`. -/
+theorem updatePipBoost_preserves_cdt (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).cdt = st.cdt :=
+  updatePipBoost_frame (fun s => s.cdt) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `cdtSlotNode`. -/
+theorem updatePipBoost_preserves_cdtSlotNode (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).cdtSlotNode = st.cdtSlotNode :=
+  updatePipBoost_frame (fun s => s.cdtSlotNode) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `cdtNodeSlot`. -/
+theorem updatePipBoost_preserves_cdtNodeSlot (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).cdtNodeSlot = st.cdtNodeSlot :=
+  updatePipBoost_frame (fun s => s.cdtNodeSlot) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `cdtNextNode`. -/
+theorem updatePipBoost_preserves_cdtNextNode (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).cdtNextNode = st.cdtNextNode :=
+  updatePipBoost_frame (fun s => s.cdtNextNode) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `interfaceRegistry`. -/
+theorem updatePipBoost_preserves_interfaceRegistry (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).interfaceRegistry = st.interfaceRegistry :=
+  updatePipBoost_frame (fun s => s.interfaceRegistry) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `services`. -/
+theorem updatePipBoost_preserves_services (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).services = st.services :=
+  updatePipBoost_frame (fun s => s.services) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- D4-P: `updatePipBoost` preserves `tlb`. -/
+theorem updatePipBoost_preserves_tlb (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).tlb = st.tlb :=
+  updatePipBoost_frame (fun s => s.tlb) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
 -- ============================================================================
 -- D4-O/P: Chain propagation frame lemmas
 -- ============================================================================
@@ -171,5 +225,183 @@ theorem propagate_preserves_serviceRegistry (st : SystemState) (tid : ThreadId)
     split
     · rw [ih]; exact updatePipBoost_preserves_serviceRegistry st tid
     · exact updatePipBoost_preserves_serviceRegistry st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `objectIndex`. -/
+theorem propagate_preserves_objectIndex (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).objectIndex = st.objectIndex := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_objectIndex st tid
+    · exact updatePipBoost_preserves_objectIndex st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `objectIndexSet`. -/
+theorem propagate_preserves_objectIndexSet (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).objectIndexSet =
+    st.objectIndexSet := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_objectIndexSet st tid
+    · exact updatePipBoost_preserves_objectIndexSet st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `cdt`. -/
+theorem propagate_preserves_cdt (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).cdt = st.cdt := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_cdt st tid
+    · exact updatePipBoost_preserves_cdt st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `cdtSlotNode`. -/
+theorem propagate_preserves_cdtSlotNode (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).cdtSlotNode = st.cdtSlotNode := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_cdtSlotNode st tid
+    · exact updatePipBoost_preserves_cdtSlotNode st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `cdtNodeSlot`. -/
+theorem propagate_preserves_cdtNodeSlot (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).cdtNodeSlot = st.cdtNodeSlot := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_cdtNodeSlot st tid
+    · exact updatePipBoost_preserves_cdtNodeSlot st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `cdtNextNode`. -/
+theorem propagate_preserves_cdtNextNode (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).cdtNextNode = st.cdtNextNode := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_cdtNextNode st tid
+    · exact updatePipBoost_preserves_cdtNextNode st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `interfaceRegistry`. -/
+theorem propagate_preserves_interfaceRegistry (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).interfaceRegistry =
+    st.interfaceRegistry := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_interfaceRegistry st tid
+    · exact updatePipBoost_preserves_interfaceRegistry st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `services`. -/
+theorem propagate_preserves_services (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).services = st.services := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_services st tid
+    · exact updatePipBoost_preserves_services st tid
+
+/-- D4-P: `propagatePriorityInheritance` preserves `tlb`. -/
+theorem propagate_preserves_tlb (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).tlb = st.tlb := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_tlb st tid
+    · exact updatePipBoost_preserves_tlb st tid
+
+-- ============================================================================
+-- D4-P: Revert frame lemmas (derived from revert_eq_propagate)
+-- ============================================================================
+
+/-- D4-P: `revertPriorityInheritance` preserves `scheduler.current`. -/
+theorem revert_preserves_current (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).scheduler.current =
+    st.scheduler.current := by
+  rw [revert_eq_propagate]; exact propagate_preserves_current st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `scheduler.activeDomain`. -/
+theorem revert_preserves_activeDomain (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).scheduler.activeDomain =
+    st.scheduler.activeDomain := by
+  rw [revert_eq_propagate]; exact propagate_preserves_activeDomain st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `machine`. -/
+theorem revert_preserves_machine (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).machine = st.machine := by
+  rw [revert_eq_propagate]; exact propagate_preserves_machine st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `lifecycle`. -/
+theorem revert_preserves_lifecycle (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).lifecycle = st.lifecycle := by
+  rw [revert_eq_propagate]; exact propagate_preserves_lifecycle st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `irqHandlers`. -/
+theorem revert_preserves_irqHandlers (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).irqHandlers = st.irqHandlers := by
+  rw [revert_eq_propagate]; exact propagate_preserves_irqHandlers st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `asidTable`. -/
+theorem revert_preserves_asidTable (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).asidTable = st.asidTable := by
+  rw [revert_eq_propagate]; exact propagate_preserves_asidTable st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `serviceRegistry`. -/
+theorem revert_preserves_serviceRegistry (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).serviceRegistry =
+    st.serviceRegistry := by
+  rw [revert_eq_propagate]; exact propagate_preserves_serviceRegistry st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `objectIndex`. -/
+theorem revert_preserves_objectIndex (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).objectIndex = st.objectIndex := by
+  rw [revert_eq_propagate]; exact propagate_preserves_objectIndex st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `cdt`. -/
+theorem revert_preserves_cdt (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).cdt = st.cdt := by
+  rw [revert_eq_propagate]; exact propagate_preserves_cdt st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `services`. -/
+theorem revert_preserves_services (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).services = st.services := by
+  rw [revert_eq_propagate]; exact propagate_preserves_services st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `tlb`. -/
+theorem revert_preserves_tlb (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).tlb = st.tlb := by
+  rw [revert_eq_propagate]; exact propagate_preserves_tlb st tid fuel
+
+/-- D4-P: `revertPriorityInheritance` preserves `interfaceRegistry`. -/
+theorem revert_preserves_interfaceRegistry (st : SystemState) (tid : ThreadId) (fuel : Nat) :
+    (revertPriorityInheritance st tid fuel).interfaceRegistry =
+    st.interfaceRegistry := by
+  rw [revert_eq_propagate]; exact propagate_preserves_interfaceRegistry st tid fuel
 
 end SeLe4n.Kernel.PriorityInheritance

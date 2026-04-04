@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.24.3` (`lakefile.toml`) |
+| **Package version** | `0.25.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 81,299 across 118 Lean files |
-| **Test LoC** | 10,058 across 13 Lean test suites |
-| **Proved declarations** | 2,341 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 82,196 across 124 Lean files |
+| **Test LoC** | 10,411 across 14 Lean test suites |
+| **Proved declarations** | 2,399 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| **Active workstream** | **WS-AB Deferred Operations** — Phase D1 COMPLETE (v0.24.0–v0.24.1): Thread Suspension & Resumption. Phase D2 COMPLETE (v0.24.1): Priority Management. Phase D3 COMPLETE (v0.24.2–v0.24.3): IPC Buffer Configuration. Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md). Prior: WS-Z (v0.23.0–v0.23.19), WS-AA (v0.23.21–v0.23.23), WS-Y–WS-B — all COMPLETE. |
+| **Active workstream** | **WS-AB Deferred Operations** — Phase D1 COMPLETE (v0.24.0–v0.24.1): Thread Suspension & Resumption. Phase D2 COMPLETE (v0.24.1): Priority Management. Phase D3 COMPLETE (v0.24.2–v0.24.3): IPC Buffer Configuration. Phase D4 COMPLETE (v0.25.0): Priority Inheritance Protocol. Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md). Prior: WS-Z (v0.23.0–v0.23.19), WS-AA (v0.23.21–v0.23.23), WS-Y–WS-B — all COMPLETE. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

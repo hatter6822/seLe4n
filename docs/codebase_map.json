@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-priority-inheritance-lYQ1g",
-      "commit_sha": "0e429dbc6f44af43164b10dfb92387664549644c",
-      "tree_sha": "93132d02a91854145608dd218e5aa224c42f5e4f",
-      "committed_at_utc": "2026-04-04T07:44:48+00:00"
+      "commit_sha": "f6f1b2ac08b96f86e0963e792a62ef724dbe74be",
+      "tree_sha": "12c93ee8bb94585abe33ae6de04bdf6ad2504713",
+      "committed_at_utc": "2026-04-04T07:45:15+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d933982a440099388cae53869e0c3ea87c87cec0268ebddc1ec27d23bf39b475"
+    "source_digest": "c171b4ebd0be4d300799ba44700e747aaa4c4af34b99dbcc385cd3955dbd0e8f"
   },
   "summary": {
     "module_count": 138,
-    "declaration_count": 4316
+    "declaration_count": 4355
   },
   "readme_sync": {
-    "version": "0.24.3",
+    "version": "0.25.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 124,
-    "production_loc": 81964,
+    "production_loc": 82196,
     "test_files": 14,
-    "test_loc": 10273,
-    "proved_theorem_lemma_decls": 2369,
+    "test_loc": 10411,
+    "proved_theorem_lemma_decls": 2399,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -35836,7 +35836,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/Preservation.lean",
-      "declaration_count": 16,
+      "declaration_count": 46,
       "declarations": [
         {
           "kind": "namespace",
@@ -35933,8 +35933,107 @@
         },
         {
           "kind": "theorem",
+          "name": "updatePipBoost_preserves_objectIndex",
+          "line": 85,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_objectIndexSet",
+          "line": 91,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_cdt",
+          "line": 97,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_cdtSlotNode",
+          "line": 103,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_cdtNodeSlot",
+          "line": 109,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_cdtNextNode",
+          "line": 115,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_interfaceRegistry",
+          "line": 121,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_services",
+          "line": 127,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_tlb",
+          "line": 133,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "updatePipBoost",
+            "updatePipBoost_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "propagate_preserves_current",
-          "line": 89,
+          "line": 143,
           "called": [
             "SystemState",
             "ThreadId",
@@ -35946,7 +36045,7 @@
         {
           "kind": "theorem",
           "name": "propagate_preserves_activeDomain",
-          "line": 102,
+          "line": 156,
           "called": [
             "SystemState",
             "ThreadId",
@@ -35958,7 +36057,7 @@
         {
           "kind": "theorem",
           "name": "propagate_preserves_machine",
-          "line": 115,
+          "line": 169,
           "called": [
             "SystemState",
             "ThreadId",
@@ -35970,7 +36069,7 @@
         {
           "kind": "theorem",
           "name": "propagate_preserves_lifecycle",
-          "line": 127,
+          "line": 181,
           "called": [
             "SystemState",
             "ThreadId",
@@ -35982,7 +36081,7 @@
         {
           "kind": "theorem",
           "name": "propagate_preserves_irqHandlers",
-          "line": 139,
+          "line": 193,
           "called": [
             "SystemState",
             "ThreadId",
@@ -35994,7 +36093,7 @@
         {
           "kind": "theorem",
           "name": "propagate_preserves_asidTable",
-          "line": 151,
+          "line": 205,
           "called": [
             "SystemState",
             "ThreadId",
@@ -36006,13 +36105,265 @@
         {
           "kind": "theorem",
           "name": "propagate_preserves_serviceRegistry",
-          "line": 163,
+          "line": 217,
           "called": [
             "SystemState",
             "ThreadId",
             "propagatePriorityInheritance",
             "updatePipBoost_preserves_serviceRegistry",
             "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_objectIndex",
+          "line": 230,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_objectIndex",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_objectIndexSet",
+          "line": 242,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_objectIndexSet",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_cdt",
+          "line": 255,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_cdt",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_cdtSlotNode",
+          "line": 267,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_cdtSlotNode",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_cdtNodeSlot",
+          "line": 279,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_cdtNodeSlot",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_cdtNextNode",
+          "line": 291,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_cdtNextNode",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_interfaceRegistry",
+          "line": 303,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_interfaceRegistry",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_services",
+          "line": 316,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_services",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagate_preserves_tlb",
+          "line": 328,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagatePriorityInheritance",
+            "updatePipBoost_preserves_tlb",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_current",
+          "line": 344,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_current",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_activeDomain",
+          "line": 350,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_activeDomain",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_machine",
+          "line": 356,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_machine",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_lifecycle",
+          "line": 361,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_lifecycle",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_irqHandlers",
+          "line": 366,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_irqHandlers",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_asidTable",
+          "line": 371,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_asidTable",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_serviceRegistry",
+          "line": 376,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_serviceRegistry",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_objectIndex",
+          "line": 382,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_objectIndex",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_cdt",
+          "line": 387,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_cdt",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_services",
+          "line": 392,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_services",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_tlb",
+          "line": 397,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_tlb",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revert_preserves_interfaceRegistry",
+          "line": 402,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "propagate_preserves_interfaceRegistry",
+            "revertPriorityInheritance",
+            "revert_eq_propagate"
           ]
         }
       ]
@@ -56150,7 +56501,7 @@
     {
       "module": "tests.PriorityInheritanceSuite",
       "path": "tests/PriorityInheritanceSuite.lean",
-      "declaration_count": 18,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
@@ -56356,8 +56707,125 @@
         },
         {
           "kind": "def",
+          "name": "pip014_effectivePrioritySchedContextBound",
+          "line": 196,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "TCB",
+            "effectivePriority",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "none",
+            "ofNat",
+            "scId",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip015_blockingGraphEdges",
+          "line": 216,
+          "called": [
+            "blockingGraphEdges",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip016_chainContains",
+          "line": 232,
+          "called": [
+            "ThreadId",
+            "chainContains",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip017_framePreservesCurrent",
+          "line": 238,
+          "called": [
+            "expect",
+            "mkState",
+            "mkTcb",
+            "propagatePriorityInheritance"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip018_framePreservesMachine",
+          "line": 249,
+          "called": [
+            "expect",
+            "mkState",
+            "mkTcb",
+            "revertPriorityInheritance"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip019_runQueueBucketMigration",
+          "line": 258,
+          "called": [
+            "ObjId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "runnable",
+            "throw",
+            "updatePipBoost"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip020_multipleWaitersMax",
+          "line": 276,
+          "called": [
+            "computeMaxWaiterPriority",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip021_propagateZeroFuel",
+          "line": 295,
+          "called": [
+            "ObjId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "none",
+            "propagatePriorityInheritance",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pip022_blockingServer",
+          "line": 310,
+          "called": [
+            "blockingServer",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 198,
+          "line": 327,
           "called": [
             "pip001_defaultPipBoostNone",
             "pip002_effectivePriorityNoPip",
@@ -56371,7 +56839,16 @@
             "pip010_blockingChainFollows",
             "pip011_propagateTransitive",
             "pip012_revertClearsPipBoost",
-            "pip013_doesNotAffectOthers"
+            "pip013_doesNotAffectOthers",
+            "pip014_effectivePrioritySchedContextBound",
+            "pip015_blockingGraphEdges",
+            "pip016_chainContains",
+            "pip017_framePreservesCurrent",
+            "pip018_framePreservesMachine",
+            "pip019_runQueueBucketMigration",
+            "pip020_multipleWaitersMax",
+            "pip021_propagateZeroFuel",
+            "pip022_blockingServer"
           ]
         }
       ]

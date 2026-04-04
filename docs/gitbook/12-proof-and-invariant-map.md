@@ -2538,13 +2538,21 @@ by construction (field defaults to `none`).
 - Suspend path: `suspendThread` reverts PIP before cleanup (D4-N)
 
 **Preservation** (`PriorityInheritance/Preservation.lean`):
-7 frame lemmas prove PIP operations preserve `current`, `activeDomain`,
-`machine`, `lifecycle`, `irqHandlers`, `asidTable`, `serviceRegistry`.
-Composed across the chain via induction on fuel.
+16 frame lemmas prove PIP operations preserve all non-objects/runQueue
+SystemState fields: `current`, `activeDomain`, `machine`, `lifecycle`,
+`irqHandlers`, `asidTable`, `serviceRegistry`, `objectIndex`,
+`objectIndexSet`, `cdt`, `cdtSlotNode`, `cdtNodeSlot`, `cdtNextNode`,
+`interfaceRegistry`, `services`, `tlb`. Each has both `propagate_preserves_*`
+and `revert_preserves_*` variants. Composed across the chain via induction
+on fuel; revert aliases derived from `revert_eq_propagate`.
 
 **Bounded inversion** (`PriorityInheritance/BoundedInversion.lean`):
 `pip_bounded_inversion`: inversion ≤ `objectIndex.length × WCRT`
 (parametric in WCRT — instantiated when D5 delivers concrete bound).
 
-**Test coverage**: 13 tests across 8 categories (PIP-001 through PIP-013)
-in `tests/PriorityInheritanceSuite.lean`.
+**Test coverage**: 22 tests across 10 categories (PIP-001 through PIP-022)
+in `tests/PriorityInheritanceSuite.lean`. Covers: default field values,
+effectivePriority with/without boost, SchedContext-bound threads with pipBoost,
+waitersOf, computeMaxWaiterPriority, updatePipBoost with run queue migration,
+blockingChain traversal, blockingGraphEdges, blockingServer, chainContains,
+transitive propagation, reversion, frame preservation, zero-fuel identity.
