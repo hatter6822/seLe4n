@@ -25,6 +25,11 @@ WS-Y Phases Y1–Y3 complete. **WS-Y PORTFOLIO COMPLETE.**
 WS-Z Phases Z1–Z10 complete. **WS-Z PORTFOLIO COMPLETE.**
 WS-AA Phase AA1 complete. Phase AA2 complete.
 WS-AB Phase D1 complete. Phase D2 complete. Phase D3 complete. Phase D4 complete. Phase D5 complete. Phase D6 complete. **WS-AB PORTFOLIO COMPLETE.**
+WS-AC Phase AC1 complete.
+
+### WS-AC: Comprehensive Audit Remediation v0.25.3 (IN PROGRESS)
+
+- **Phase AC1 COMPLETE** (v0.25.4): High-Severity Fixes — 9 sub-tasks (AC1-A through AC1-I). S-01: `hasSufficientBudget` changed from fail-open to fail-closed (defense-in-depth; `| _ => false` instead of `| _ => true`). I-01: `waitingThreadsPendingMessageNone` preservation theorems cross-referenced in NotificationPreservation.lean with full signatures pointing to machine-checked proofs in Structural.lean (`notificationSignal_preserves_waitingThreadsPendingMessageNone`, `notificationWait_preserves_waitingThreadsPendingMessageNone`, `notificationWake_pendingMessage_was_none`). C-01: `cspaceMint` marked `@[deprecated]` with CDT-untracked documentation; `cspaceMintWithCdt` is the tracked alternative. Internal call sites (`cspaceMintWithCdt`, `cspaceMintChecked`) have deprecation warnings suppressed. Preservation proofs verified (Preservation.lean, WCRT, CrossSubsystem all build unchanged). 5 negative regression tests added (AC1-G: budget fail-closed, AC1-H: CDT tracking). Zero sorry/axiom.
 
 ### WS-AB: Deferred Operations (COMPLETE)
 

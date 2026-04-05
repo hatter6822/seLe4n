@@ -168,11 +168,12 @@ document as an addendum after this workstream completes.
 
 ---
 
-## 3. Phase AC1 — High-Severity Fixes
+## 3. Phase AC1 — High-Severity Fixes ✓ COMPLETE
 
 **Goal**: Resolve all 3 HIGH findings with minimal blast radius.
 **Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh` pass.
 **Dependencies**: None (first phase).
+**Status**: COMPLETE (v0.25.4). All 9 sub-tasks delivered. Zero sorry/axiom.
 
 ### AC1-A: Change `hasSufficientBudget` to fail-closed (S-01)
 

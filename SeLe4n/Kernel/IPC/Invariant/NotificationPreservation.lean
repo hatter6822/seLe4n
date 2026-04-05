@@ -1348,18 +1348,38 @@ theorem frame_preserves_notificationWaiterConsistent
 -- V3-G2/G3 (M-PRF-5): waitingThreadsPendingMessageNone preservation
 -- for notification operations
 -- ============================================================================
-
--- V3-G2 (M-PRF-5): `notificationWait` preserves `waitingThreadsPendingMessageNone`.
--- Machine-checked proof: `notificationWait_preserves_waitingThreadsPendingMessageNone`
--- in Structural.lean (requires primitive lemmas defined there).
-
--- V3-G3 (M-PRF-5): `notificationSignal` preserves `waitingThreadsPendingMessageNone`.
--- Machine-checked proof: `notificationSignal_preserves_waitingThreadsPendingMessageNone`
--- in Structural.lean (requires primitive lemmas defined there).
-
--- ============================================================================
--- V3-I (L-IPC-1): notificationWake_pendingMessage_was_none
--- ============================================================================
-
--- V3-I (L-IPC-1): Machine-checked proof: `notificationWake_pendingMessage_was_none`
--- in Structural.lean (requires `waitingThreadsPendingMessageNone` definition access).
+--
+-- The following three theorems are machine-checked and live in Structural.lean
+-- (which imports this file — adding a reverse import would create a cycle).
+-- They are placed there because their proofs depend on primitive lemmas
+-- (`storeTcbIpcStateAndMessage_preserves_*`, `storeObject_nonTcb_preserves_*`,
+-- `ensureRunnable_preserves_*`) that are defined in the Structural module.
+--
+-- ── V3-G3 (M-PRF-5) ─────────────────────────────────────────────────────
+-- theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
+--     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+--     (hObjInv : st.objects.invExt)
+--     (hInv : waitingThreadsPendingMessageNone st)
+--     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+--     waitingThreadsPendingMessageNone st'
+-- Location: Structural.lean, `notificationSignal_preserves_waitingThreadsPendingMessageNone`
+--
+-- ── V3-G2 (M-PRF-5) ─────────────────────────────────────────────────────
+-- theorem notificationWait_preserves_waitingThreadsPendingMessageNone
+--     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+--     (badge : Option SeLe4n.Badge)
+--     (hObjInv : st.objects.invExt)
+--     (hInv : waitingThreadsPendingMessageNone st)
+--     (hWaiterMsg : ∀ tcb, lookupTcb st waiter = some tcb → tcb.pendingMessage = none)
+--     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+--     waitingThreadsPendingMessageNone st'
+-- Location: Structural.lean, `notificationWait_preserves_waitingThreadsPendingMessageNone`
+--
+-- ── V3-I (L-IPC-1) ──────────────────────────────────────────────────────
+-- theorem notificationWake_pendingMessage_was_none
+--     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (nid : SeLe4n.ObjId)
+--     (hInv : waitingThreadsPendingMessageNone st)
+--     (hLookup : st.objects[tid.toObjId]? = some (.tcb tcb))
+--     (hBlocked : tcb.ipcState = .blockedOnNotification nid) :
+--     tcb.pendingMessage = none
+-- Location: Structural.lean, `notificationWake_pendingMessage_was_none`

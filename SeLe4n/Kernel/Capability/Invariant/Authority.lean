@@ -352,6 +352,7 @@ theorem mintDerivedCap_target_preserved_with_badge_override
   have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
   exact hAtt.1
 
+set_option linter.deprecated false in
 theorem cspaceMint_child_attenuates
     (st st' : SystemState)
     (src dst : CSpaceAddr)
@@ -382,6 +383,7 @@ theorem cspaceMint_child_attenuates
           · rfl
           · exact cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hObjInv hInsert
 
+set_option linter.deprecated false in
 /-- Composed badge-override safety for `cspaceMint`: after a successful mint with
 arbitrary badge override, the derived capability in the destination slot has the
 same target as the parent and attenuated rights.
@@ -421,6 +423,7 @@ theorem mintDerivedCap_badge_propagated
   · cases hMint; rfl
   · exact absurd hMint (by simp)
 
+set_option linter.deprecated false in
 /-- (H-03) `cspaceMint` stores a child capability whose badge equals the requested badge.
 This is the operation-level badge consistency witness. -/
 theorem cspaceMint_child_badge_preserved
@@ -539,6 +542,7 @@ theorem notificationWait_recovers_pending_badge
                       exact hBadgeEq
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hWait
 
+set_option linter.deprecated false in
 /-- (H-03) End-to-end badge routing consistency.
 
 Composition of badge preservation through the full minting → signaling → waiting

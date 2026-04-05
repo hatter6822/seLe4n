@@ -277,16 +277,17 @@ theorem effectivePriority_noPip (st : SystemState) (tcb : TCB)
 
 For unbound threads (legacy mode), returns `true` — they use the existing
 `timeSlice` mechanism and are always budget-eligible. For SchedContext-bound
-threads, returns `true` only if `budgetRemaining > 0`. Returns `true` for
-missing SchedContext objects (fail-open for robustness; the binding consistency
-invariant ensures this is unreachable under normal operation). -/
+threads, returns `true` only if `budgetRemaining > 0`.
+
+Fail-closed: missing SchedContext → insufficient budget (defense-in-depth;
+unreachable under `schedContextStoreConsistent` invariant). -/
 def hasSufficientBudget (st : SystemState) (tcb : TCB) : Bool :=
   match tcb.schedContextBinding with
   | .unbound => true
   | .bound scId | .donated scId _ =>
     match st.objects[scId.toObjId]? with
     | some (.schedContext sc) => sc.budgetRemaining.isPositive
-    | _ => true
+    | _ => false
 
 /-- Z4-C: Unbound threads always have sufficient budget. -/
 theorem hasSufficientBudget_unbound (st : SystemState) (tcb : TCB)

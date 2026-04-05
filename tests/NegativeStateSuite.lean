@@ -1979,6 +1979,7 @@ def runWSJ1DecodeChecks : IO Unit := do
 -- WS-K-G: Comprehensive testing for WS-K syscall dispatch surface
 -- ============================================================================
 
+set_option linter.deprecated false in
 /-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
 dispatch, and error paths introduced in WS-K-A through WS-K-F.
 
@@ -3044,6 +3045,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
 -- S2-G: Capability error-path coverage tests
 -- ============================================================================
 
+set_option linter.deprecated false in
 /-- S2-G: Additional capability operation error-path tests covering:
     - cspaceMint with rights exceeding source (attenuation failure)
     - cspaceCopy to occupied destination slot
@@ -3390,6 +3392,122 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
 
   IO.println "all Z8 SchedContext negative tests passed"
 
+-- ============================================================================
+-- AC1-G: S-01 regression test — hasSufficientBudget fail-closed
+-- ============================================================================
+
+set_option linter.deprecated false in
+def runAC1BudgetFailClosedChecks : IO Unit := do
+  IO.println "── AC1-G: hasSufficientBudget fail-closed checks ──"
+
+  let st0 : SystemState := default
+  let tid : SeLe4n.ThreadId := ⟨5001⟩
+
+  -- AC1-G-01: Unbound thread always has sufficient budget
+  let tcbUnbound : TCB := {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .unbound }
+  if SeLe4n.Kernel.hasSufficientBudget st0 tcbUnbound != true then
+    throw <| IO.userError "AC1-G-01: unbound thread should have sufficient budget"
+
+  -- AC1-G-02: Bound thread with non-existent SchedContext → false (fail-closed)
+  let tcbBoundMissing : TCB := {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .bound ⟨7777⟩ }
+  if SeLe4n.Kernel.hasSufficientBudget st0 tcbBoundMissing != false then
+    throw <| IO.userError "AC1-G-02: missing SchedContext should fail-closed (return false)"
+
+  -- AC1-G-03: Donated binding with non-existent SchedContext → false
+  let tcbDonatedMissing : TCB := {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .donated ⟨8888⟩ ⟨9999⟩ }
+  if SeLe4n.Kernel.hasSufficientBudget st0 tcbDonatedMissing != false then
+    throw <| IO.userError "AC1-G-03: donated missing SchedContext should fail-closed"
+
+  -- AC1-G-04: Bound thread with existing SchedContext, positive budget → true
+  let scId : SeLe4n.ObjId := ⟨6001⟩
+  let sc := SeLe4n.Kernel.SchedContext.empty ⟨6001⟩
+  let scWithBudget := { sc with budgetRemaining := ⟨100⟩ }
+  let stWithSc := { st0 with
+    objects := st0.objects.insert scId (.schedContext scWithBudget) }
+  let tcbBound : TCB := {
+    tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    schedContextBinding := .bound ⟨6001⟩ }
+  if SeLe4n.Kernel.hasSufficientBudget stWithSc tcbBound != true then
+    throw <| IO.userError "AC1-G-04: bound with positive budget should be true"
+
+  -- AC1-G-05: Bound thread with existing SchedContext, zero budget → false
+  let scZeroBudget := { sc with budgetRemaining := ⟨0⟩ }
+  let stZeroBudget := { st0 with
+    objects := st0.objects.insert scId (.schedContext scZeroBudget) }
+  if SeLe4n.Kernel.hasSufficientBudget stZeroBudget tcbBound != false then
+    throw <| IO.userError "AC1-G-05: zero budget should return false"
+
+  IO.println "all AC1-G budget fail-closed checks passed"
+
+-- ============================================================================
+-- AC1-H: C-01 regression test — cspaceMint CDT absence vs cspaceMintWithCdt
+-- ============================================================================
+
+set_option linter.deprecated false in
+def runAC1CdtTrackingChecks : IO Unit := do
+  IO.println "── AC1-H: cspaceMint CDT tracking checks ──"
+
+  let st0 : SystemState := default
+
+  -- Build a minimal CSpace with 2 CNodes and a source capability
+  let srcCnodeId : SeLe4n.ObjId := ⟨100⟩
+  let dstCnodeId : SeLe4n.ObjId := ⟨200⟩
+  let srcSlot : SeLe4n.Slot := ⟨0⟩
+  let dstSlot : SeLe4n.Slot := ⟨1⟩
+  let allRights := AccessRightSet.ofList [.read, .write, .grant, .grantReply, .retype]
+  let cap : Capability := {
+    target := .object ⟨300⟩,
+    rights := allRights,
+    badge := none }
+
+  -- Create CNodes with proper structure
+  let srcSlots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 |>.insert srcSlot cap
+  let srcCnode : CNode := {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := srcSlots }
+  let dstCnode : CNode := {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4,
+    slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+
+  let st1 := { st0 with
+    objects := st0.objects
+      |>.insert srcCnodeId (.cnode srcCnode)
+      |>.insert dstCnodeId (.cnode dstCnode)
+    objectIndex := [srcCnodeId, dstCnodeId] ++ st0.objectIndex
+    objectIndexSet := st0.objectIndexSet.insert srcCnodeId |>.insert dstCnodeId }
+
+  let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := srcCnodeId, slot := srcSlot }
+  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := dstCnodeId, slot := dstSlot }
+
+  -- AC1-H-01: cspaceMint succeeds but CDT has no new edges
+  let edgeCountBefore := st1.cdt.edges.length
+  match SeLe4n.Kernel.cspaceMint srcAddr dstAddr allRights none st1 with
+  | .ok ((), stMint) =>
+    if stMint.cdt.edges.length != edgeCountBefore then
+      throw <| IO.userError "AC1-H-01: cspaceMint should NOT add CDT edges"
+  | .error e =>
+    throw <| IO.userError s!"AC1-H-01: cspaceMint failed unexpectedly: {repr e}"
+
+  -- AC1-H-02: cspaceMintWithCdt succeeds and CDT has a new edge
+  match SeLe4n.Kernel.cspaceMintWithCdt srcAddr dstAddr allRights none st1 with
+  | .ok ((), stMintCdt) =>
+    if stMintCdt.cdt.edges.length <= edgeCountBefore then
+      throw <| IO.userError "AC1-H-02: cspaceMintWithCdt should add a CDT edge"
+  | .error e =>
+    throw <| IO.userError s!"AC1-H-02: cspaceMintWithCdt failed unexpectedly: {repr e}"
+
+  IO.println "all AC1-H CDT tracking checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -3414,3 +3532,5 @@ def main : IO Unit := do
   SeLe4n.Testing.runS2HLifecycleErrorTests
   SeLe4n.Testing.runX2RuntimeInvariantTests
   SeLe4n.Testing.runZ8SchedContextNegativeChecks
+  SeLe4n.Testing.runAC1BudgetFailClosedChecks
+  SeLe4n.Testing.runAC1CdtTrackingChecks

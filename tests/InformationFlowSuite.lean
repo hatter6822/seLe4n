@@ -87,6 +87,7 @@ private def altState : SystemState :=
     |>.withCurrent none
     |>.buildChecked)
 
+set_option linter.deprecated false in
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
   expect "security flow is reflexive"
