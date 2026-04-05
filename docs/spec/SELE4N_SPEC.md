@@ -359,7 +359,7 @@ kernel code changes (proof-only phase). Key results:
 
 **D6 (v0.25.2):** API Surface Integration & Closure. Rust ABI synchronized
 with 5 new `SyscallId` variants (20→25) and `AlignmentError` (43). All 25
-SyscallId variants, 30 enforcement boundary entries, 20 frozen operations,
+SyscallId variants, 33 enforcement boundary entries, 20 frozen operations,
 and 25 dispatch arms verified. Documentation fully synchronized.
 
 ---

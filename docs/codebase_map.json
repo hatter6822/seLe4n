@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-ac4-iY8rl",
-      "commit_sha": "d926cecba46049debf805741f8a4a52b10548ac0",
-      "tree_sha": "68ee5678dff5ae9a9dcdf4df92d6648fff2fc3ae",
-      "committed_at_utc": "2026-04-05T14:13:29-04:00"
+      "commit_sha": "ca8c756b01597fd9e79561aeb71c239dbb545d6f",
+      "tree_sha": "d2513fbfa60bd2fa54e42ac148e9ac007bbcf162",
+      "committed_at_utc": "2026-04-05T18:35:57+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3213c3deac5688cb37e4e7ad7469d9dbe20e55f18e61eda0621031ab0e987462"
+    "source_digest": "e09cdacc052291b6b29f47da38cb9d997d13ec8d183986f9b03ccc61284fe3cd"
   },
   "summary": {
     "module_count": 148,
@@ -27,7 +27,7 @@
     "version": "0.25.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 83813,
+    "production_loc": 83819,
     "test_files": 15,
     "test_loc": 10774,
     "proved_theorem_lemma_decls": 2457,
@@ -20476,7 +20476,7 @@
         {
           "kind": "abbrev",
           "name": "enforcementBoundaryExtended",
-          "line": 314,
+          "line": 315,
           "called": [
             "EnforcementClass",
             "enforcementBoundary"
@@ -20485,13 +20485,13 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_count",
-          "line": 318,
+          "line": 319,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_eq_canonical",
-          "line": 325,
+          "line": 326,
           "called": [
             "enforcementBoundary",
             "enforcementBoundaryExtended"
@@ -20500,13 +20500,13 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_matches_canonical",
-          "line": 329,
+          "line": 330,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointSendDualChecked",
-          "line": 343,
+          "line": 344,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20524,7 +20524,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationSignalChecked",
-          "line": 360,
+          "line": 361,
           "called": [
             "Badge",
             "LabelingContext",
@@ -20540,7 +20540,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceCopyChecked",
-          "line": 373,
+          "line": 374,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -20553,7 +20553,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMoveChecked",
-          "line": 385,
+          "line": 386,
           "called": [
             "CSpaceAddr",
             "LabelingContext",
@@ -20566,7 +20566,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReceiveDualChecked",
-          "line": 397,
+          "line": 398,
           "called": [
             "LabelingContext",
             "ObjId",
@@ -20581,7 +20581,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointCallChecked",
-          "line": 415,
+          "line": 416,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -20599,7 +20599,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReplyChecked",
-          "line": 431,
+          "line": 432,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20612,7 +20612,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_cspaceMintChecked",
-          "line": 444,
+          "line": 445,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -20626,7 +20626,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_notificationWaitChecked",
-          "line": 457,
+          "line": 458,
           "called": [
             "Badge",
             "LabelingContext",
@@ -20641,7 +20641,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_endpointReplyRecvChecked",
-          "line": 470,
+          "line": 471,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -20656,7 +20656,7 @@
         {
           "kind": "def",
           "name": "declassifyStore",
-          "line": 511,
+          "line": 512,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20670,7 +20670,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_eq_storeObject_when_authorized",
-          "line": 528,
+          "line": 529,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20685,7 +20685,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_normal_allowed",
-          "line": 542,
+          "line": 543,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20699,7 +20699,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_error_when_declass_denied",
-          "line": 555,
+          "line": 556,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20713,7 +20713,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_denied_no_state_change",
-          "line": 569,
+          "line": 570,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20728,7 +20728,7 @@
         {
           "kind": "theorem",
           "name": "enforcementSoundness_declassifyStore",
-          "line": 583,
+          "line": 584,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -20742,7 +20742,7 @@
         {
           "kind": "structure",
           "name": "InformationFlowConfigInvariant",
-          "line": 630,
+          "line": 631,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -20755,7 +20755,7 @@
         {
           "kind": "theorem",
           "name": "defaultConfigInvariant",
-          "line": 641,
+          "line": 642,
           "called": [
             "DomainFlowPolicy.allowAll_wellFormed",
             "InformationFlowConfigInvariant",
@@ -20767,7 +20767,7 @@
         {
           "kind": "theorem",
           "name": "kernelTransition_preserves_ifConfigInvariant",
-          "line": 658,
+          "line": 659,
           "called": [
             "InformationFlowConfigInvariant",
             "SystemState"
@@ -20776,7 +20776,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_flowDenied_preserves_state",
-          "line": 681,
+          "line": 682,
           "called": [
             "cspaceMintChecked",
             "cspaceMintChecked_denied_preserves_state",
@@ -20789,19 +20789,19 @@
         {
           "kind": "def",
           "name": "checkedDispatchEnforcementCoverage",
-          "line": 703,
+          "line": 704,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "checkedDispatchEnforcementCoverage_complete",
-          "line": 718,
+          "line": 719,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "enforcementBridge_to_NonInterferenceStep",
-          "line": 744,
+          "line": 745,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -20963,7 +20963,7 @@
         {
           "kind": "def",
           "name": "syscallIdToEnforcementName",
-          "line": 235,
+          "line": 240,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -20979,7 +20979,7 @@
         {
           "kind": "def",
           "name": "enforcementBoundaryComplete",
-          "line": 264,
+          "line": 269,
           "called": [
             "all",
             "readOnly",
@@ -20989,7 +20989,7 @@
         {
           "kind": "theorem",
           "name": "enforcementBoundary_is_complete",
-          "line": 280,
+          "line": 285,
           "called": [
             "enforcementBoundaryComplete"
           ]
@@ -20997,7 +20997,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualChecked_denied_preserves_state",
-          "line": 290,
+          "line": 295,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -21015,7 +21015,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMintChecked_denied_preserves_state",
-          "line": 306,
+          "line": 311,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -21029,7 +21029,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_endpointSendDual",
-          "line": 323,
+          "line": 328,
           "called": [
             "IpcMessage",
             "LabelingContext",
@@ -21048,7 +21048,7 @@
         {
           "kind": "theorem",
           "name": "enforcement_sufficiency_cspaceMint",
-          "line": 344,
+          "line": 349,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -21063,7 +21063,7 @@
         {
           "kind": "def",
           "name": "notificationSignalChecked",
-          "line": 380,
+          "line": 385,
           "called": [
             "Badge",
             "Kernel",
@@ -21078,7 +21078,7 @@
         {
           "kind": "def",
           "name": "cspaceCopyChecked",
-          "line": 401,
+          "line": 406,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -21090,7 +21090,7 @@
         {
           "kind": "def",
           "name": "cspaceMoveChecked",
-          "line": 417,
+          "line": 422,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -21102,7 +21102,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDualChecked",
-          "line": 436,
+          "line": 441,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -21116,7 +21116,7 @@
         {
           "kind": "def",
           "name": "registerServiceChecked",
-          "line": 461,
+          "line": 466,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -21129,7 +21129,7 @@
         {
           "kind": "def",
           "name": "endpointCallChecked",
-          "line": 486,
+          "line": 491,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -21147,7 +21147,7 @@
         {
           "kind": "def",
           "name": "endpointReplyChecked",
-          "line": 518,
+          "line": 523,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -21160,7 +21160,7 @@
         {
           "kind": "def",
           "name": "notificationWaitChecked",
-          "line": 539,
+          "line": 544,
           "called": [
             "Badge",
             "Kernel",
@@ -21175,7 +21175,7 @@
         {
           "kind": "def",
           "name": "endpointReplyRecvChecked",
-          "line": 559,
+          "line": 564,
           "called": [
             "IpcMessage",
             "Kernel",

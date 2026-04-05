@@ -116,9 +116,9 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
     activeDomain, irqHandlers, objectIndex, domainSchedule, machineRegs),
     `lowEquivalent` relation scaffold with refl/symm/trans.
 - `SeLe4n/Kernel/InformationFlow/Enforcement.lean` (re-export hub)
-  - `Enforcement/Wrappers.lean` — 30-entry enforcement boundary (11 policy-gated,
-    15 capability-only, 4 read-only) wiring `securityFlowsTo` policy
-    into enforcement boundaries. Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3).
+  - `Enforcement/Wrappers.lean` — 33-entry enforcement boundary (11 policy-gated,
+    18 capability-only, 4 read-only) wiring `securityFlowsTo` policy
+    into enforcement boundaries. Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace and service ops (AC4-D).
     AC4-D: `enforcementBoundary_is_complete` compile-time completeness witness
     (`native_decide`) ensuring every `SyscallId` variant maps to a boundary entry.
   - `Enforcement/Soundness.lean` — correctness theorems, soundness, declassification.

@@ -962,10 +962,10 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 **M-07 — Enforcement boundary specification:**
 
 - `EnforcementClass` inductive (`policyGated`/`capabilityOnly`/`readOnly`),
-- `enforcementBoundary` — exhaustive 30-entry classification table (11 policy-gated, 15 capability-only, 4 read-only; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer capability-only operations),
+- `enforcementBoundary` — exhaustive 33-entry classification table (11 policy-gated, 18 capability-only, 4 read-only; Z8-M added 3 SchedContext, D1 added 2 thread lifecycle, D2 added 2 priority management, D3 added 1 IPC buffer, AC4-D added 3 VSpace/service capability-only operations),
 - `enforcementBoundaryExtended` — definitional alias of `enforcementBoundary` (W2-G, previously duplicate list),
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
-- `enforcementBoundaryComplete_counts` — compile-time count witness (11+15+4=30, V6-F/Z8-M/D1/D2/D3),
+- `enforcementBoundaryComplete_counts` — compile-time count witness (11+18+4=33, V6-F/Z8-M/D1/D2/D3/AC4-D),
 - `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
 - `SyscallId.all` — exhaustive list of all 25 SyscallId variants (AC4-D),
 - `SyscallId.all_length` — compile-time length check (`all.length = count`, AC4-D),

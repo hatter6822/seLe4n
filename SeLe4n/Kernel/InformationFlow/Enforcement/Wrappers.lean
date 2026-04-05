@@ -175,7 +175,7 @@ inductive EnforcementClass where
   deriving Repr
 
 /-- WS-E5/M-07/Q1-D/U5-B/U5-C/V2-B/C/Z8-M/D1/D2: Canonical enforcement boundary
-classification table (30 entries). V2-B/C added `notificationWaitChecked` and
+classification table (33 entries). V2-B/C added `notificationWaitChecked` and
 `endpointReplyRecvChecked`. Z8-M added 3 SchedContext capability-only operations.
 D1 added 2 thread lifecycle capability-only operations.
 D2 added 2 priority management capability-only operations.
@@ -222,6 +222,11 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "setMCPriority"
   -- D3: IPC buffer configuration capability-only operation
   , .capabilityOnly "setIPCBuffer"
+  -- AC4-D: VSpace operations (capability-only; internally delegate to storeObject)
+  , .capabilityOnly "vspaceMapPageCheckedWithFlushFromState"
+  , .capabilityOnly "vspaceUnmapPageWithFlush"
+  -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
+  , .capabilityOnly "revokeService"
   ]
 
 -- ============================================================================
@@ -242,10 +247,10 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceMove            => "cspaceMoveChecked"
   | .cspaceDelete          => "cspaceDeleteSlot"
   | .lifecycleRetype       => "lifecycleRetypeObject"
-  | .vspaceMap             => "storeObject"
-  | .vspaceUnmap           => "storeObject"
+  | .vspaceMap             => "vspaceMapPageCheckedWithFlushFromState"
+  | .vspaceUnmap           => "vspaceUnmapPageWithFlush"
   | .serviceRegister       => "registerServiceChecked"
-  | .serviceRevoke         => "cspaceRevoke"
+  | .serviceRevoke         => "revokeService"
   | .serviceQuery          => "lookupService"
   | .notificationSignal    => "notificationSignalChecked"
   | .notificationWait      => "notificationWaitChecked"

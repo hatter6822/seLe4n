@@ -71,7 +71,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 ### Security and verification
 
-- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 30-entry enforcement boundary with per-operation non-interference proofs (32-constructor `NonInterferenceStep` inductive)
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (32-constructor `NonInterferenceStep` inductive)
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 10 subsystem invariants (scheduler, capability, IPC, lifecycle, service, VSpace, cross-subsystem, TLB, and CBS extensions) into a single top-level obligation verified from boot through all operations
 - **Two-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 20 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, including the 5 deferred operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
@@ -202,7 +202,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Scheduling** | C-implemented sporadic server (MCS) | CBS with machine-checked `cbs_bandwidth_bounded` theorem; `SchedContext` as capability-controlled kernel object |
 | **Passive servers** | SchedContext donation via C | Verified donation with `donationChainAcyclic` invariant |
 | **IPC** | Single linked-list endpoint queue | Intrusive dual-queue with O(1) mid-queue removal; budget-driven timeouts |
-| **Information flow** | Binary high/low partition | N-domain configurable policy with 30-entry enforcement boundary and per-operation NI proofs |
+| **Information flow** | Binary high/low partition | N-domain configurable policy with 33-entry enforcement boundary and per-operation NI proofs |
 | **Priority inheritance** | C-implemented PIP (MCS branch) | Machine-checked transitive PIP with deadlock freedom and parametric WCRT bound |
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |

@@ -1,7 +1,7 @@
 ## v0.25.8 — WS-AC Phase AC4: Architecture & Platform Tightening
 
-Phase AC4 of WS-AC Comprehensive Audit Remediation. 5 sub-tasks, 8 files
-modified. All tests pass (114-job build + smoke). Zero sorry/axiom.
+Phase AC4 of WS-AC Comprehensive Audit Remediation. 5 sub-tasks, 20 files
+modified. All tests pass (full build + test_full.sh Tier 0-3). Zero sorry/axiom.
 
 - **AC4-A (A-04)**: `physicalAddressBound` documented as proof-layer default
   only — production code uses `vspaceMapPageCheckedWithFlushFromState`
@@ -19,7 +19,11 @@ modified. All tests pass (114-job build + smoke). Zero sorry/axiom.
   checks, `syscallIdToEnforcementName` bridge, `enforcementBoundaryComplete`
   Bool check, `enforcementBoundary_is_complete` (`native_decide` theorem).
   Fails at compile time if any `SyscallId` is missing from enforcement boundary.
-- **AC4-E**: Full build + smoke tests pass.
+  Enforcement boundary expanded 30→33 entries with dedicated VSpace
+  (`vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`) and
+  service (`revokeService`) capability-only entries. All `syscallIdToEnforcementName`
+  mappings verified against API dispatch for semantic accuracy.
+- **AC4-E**: Full build + test_full.sh (Tier 0-3) pass.
 - Audit-driven coding conventions extended (F-02, A-04, IF-01).
 - Version bump 0.25.7 → 0.25.8.
 
