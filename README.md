@@ -223,7 +223,7 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 | **WS-Z** | Composable Performance Objects — `SchedContext` as 7th kernel object, CBS budget engine, replenishment queue, passive server donation, timeout endpoints (10 phases, 213 tasks) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Core kernel subsystems, Robin Hood hash tables, radix trees, frozen state, information flow, service orchestration, platform contracts | v0.9.0–v0.22.x |
 
-Detailed plans: [WS-AB](docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+Detailed plans: [WS-AB](docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### Next major milestone
 

@@ -222,7 +222,7 @@ tests/                           15 test suites
 | **WS-Z** | 조합 가능한 성능 객체 — `SchedContext`를 7번째 커널 객체로, CBS 예산 엔진, 보충 큐, 수동 서버 기부, 타임아웃 엔드포인트 (10단계, 213개 작업) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | 핵심 커널 서브시스템, Robin Hood 해시 테이블, 기수 트리, 동결 상태, 정보 흐름, 서비스 오케스트레이션, 플랫폼 계약 | v0.9.0–v0.22.x |
 
-상세 계획: [WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+상세 계획: [WS-AB](../../../docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### 다음 주요 마일스톤
 

@@ -225,7 +225,7 @@ tests/                           15 test suites
 | **WS-Z** | Композиционные объекты производительности — `SchedContext` как 7-й объект ядра, движок бюджетов CBS, очередь пополнения, донация пассивных серверов, endpoint с таймаутами (10 фаз, 213 задач) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Основные подсистемы ядра, хеш-таблицы Robin Hood, radix-деревья, замороженное состояние, информационный поток, оркестрация сервисов, контракты платформы | v0.9.0–v0.22.x |
 
-Подробные планы: [WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+Подробные планы: [WS-AB](../../../docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### Следующий крупный этап
 

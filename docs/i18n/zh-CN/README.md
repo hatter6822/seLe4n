@@ -213,7 +213,7 @@ tests/                           15 test suites
 | **WS-Z** | 可组合性能对象——`SchedContext` 作为第 7 个内核对象、CBS 预算引擎、补充队列、被动服务器捐赠、超时端点（10 阶段，213 个任务） | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | 核心内核子系统、Robin Hood 哈希表、基数树、冻结状态、信息流、服务编排、平台契约 | v0.9.0–v0.22.x |
 
-详细计划：[WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+详细计划：[WS-AB](../../../docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### 下一个主要里程碑
 
