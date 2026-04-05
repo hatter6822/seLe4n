@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-ac5-infrastructure-jhkeV",
-      "commit_sha": "9904bc0150de937d5954b007360b6b838806ff52",
-      "tree_sha": "35c90aeffd3e286752df21fc6421f36092b9d590",
-      "committed_at_utc": "2026-04-05T20:32:19+00:00"
+      "branch": "claude/optimize-phase-ac6-BVIHr",
+      "commit_sha": "860e2c7c4291744eb9cd5692351a785ec43245ad",
+      "tree_sha": "ea8fb81eb2970a55a98ca32ca0d134adb2d99ade",
+      "committed_at_utc": "2026-04-05T21:48:16+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "7f755062a0a28cc24e6f51e58f585dd883266f6ba03e8abdf5c3761dc993de55"
+    "source_digest": "fbdeb1cb3a4ac4336cf34f4fbff7b189307c3c03528c06fde20b02f460846247"
   },
   "summary": {
-    "module_count": 148,
-    "declaration_count": 4475
+    "module_count": 149,
+    "declaration_count": 4524
   },
   "readme_sync": {
-    "version": "0.25.9",
+    "version": "0.25.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
     "production_loc": 84013,
-    "test_files": 15,
-    "test_loc": 10774,
+    "test_files": 16,
+    "test_loc": 11318,
     "proved_theorem_lemma_decls": 2478,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -52669,6 +52669,7 @@
           "name": "expectCond",
           "line": 24,
           "called": [
+            "tag",
             "throw"
           ]
         },
@@ -54331,6 +54332,550 @@
           "line": 12,
           "called": [
             "runMainTrace"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.DecodingSuite",
+      "path": "tests/DecodingSuite.lean",
+      "declaration_count": 49,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.DecodingSuite",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tag",
+          "line": 34,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 36,
+          "called": [
+            "expectCond",
+            "tag"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isOkEq",
+          "line": 40,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "isErrEq",
+          "line": 46,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "rd001_decodeSyscallIdValid",
+          "line": 56,
+          "called": [
+            "decodeSyscallId",
+            "expect",
+            "isOkEq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd002_decodeSyscallIdInvalid",
+          "line": 68,
+          "called": [
+            "decodeSyscallId",
+            "expect",
+            "isErrEq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd003_decodeSyscallIdBoundary",
+          "line": 77,
+          "called": [
+            "decodeSyscallId",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd004_decodeMsgInfoValid",
+          "line": 84,
+          "called": [
+            "MessageInfo",
+            "decodeMsgInfo",
+            "encodeMsgInfo",
+            "expect",
+            "isOkEq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd005_decodeMsgInfoOverflow",
+          "line": 91,
+          "called": [
+            "MessageInfo",
+            "decodeMsgInfo",
+            "encodeMsgInfo",
+            "expect",
+            "isOkEq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd006_decodeCapPtrValid",
+          "line": 104,
+          "called": [
+            "decodeCapPtr",
+            "expect",
+            "isOkEq",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd007_decodeCapPtrOutOfRange",
+          "line": 113,
+          "called": [
+            "decodeCapPtr",
+            "expect",
+            "isErrEq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd008_validateRegBound",
+          "line": 119,
+          "called": [
+            "expect",
+            "isErrEq",
+            "validateRegBound"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd009_decodeSyscallArgsIntegration",
+          "line": 134,
+          "called": [
+            "MessageInfo",
+            "RegisterFile",
+            "SyscallId",
+            "arm64DefaultLayout",
+            "decodeSyscallArgs",
+            "default",
+            "encodeCapPtr",
+            "encodeMsgInfo",
+            "encodeSyscallId",
+            "expect",
+            "ofNat",
+            "size",
+            "toNat",
+            "writeReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd010_decodeSyscallArgsInsufficientRegs",
+          "line": 162,
+          "called": [
+            "RegisterFile",
+            "arm64DefaultLayout",
+            "decodeSyscallArgs",
+            "default",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rd011_extractMessageRegisters",
+          "line": 169,
+          "called": [
+            "MessageInfo",
+            "RegValue",
+            "expect",
+            "extractMessageRegisters",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRegisterDecodeTests",
+          "line": 185,
+          "called": [
+            "rd001_decodeSyscallIdValid",
+            "rd002_decodeSyscallIdInvalid",
+            "rd003_decodeSyscallIdBoundary",
+            "rd004_decodeMsgInfoValid",
+            "rd005_decodeMsgInfoOverflow",
+            "rd006_decodeCapPtrValid",
+            "rd007_decodeCapPtrOutOfRange",
+            "rd008_validateRegBound",
+            "rd009_decodeSyscallArgsIntegration",
+            "rd010_decodeSyscallArgsInsufficientRegs",
+            "rd011_extractMessageRegisters"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkStub",
+          "line": 204,
+          "called": [
+            "RegValue",
+            "SyscallDecodeResult",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad001_cspaceMint",
+          "line": 213,
+          "called": [
+            "decodeCSpaceMintArgs",
+            "expect",
+            "mkStub",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad002_cspaceMintInsufficient",
+          "line": 225,
+          "called": [
+            "decodeCSpaceMintArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad003_cspaceCopy",
+          "line": 231,
+          "called": [
+            "decodeCSpaceCopyArgs",
+            "expect",
+            "mkStub",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad004_cspaceMove",
+          "line": 242,
+          "called": [
+            "decodeCSpaceMoveArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad005_cspaceDelete",
+          "line": 248,
+          "called": [
+            "decodeCSpaceDeleteArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad006_lifecycleRetype",
+          "line": 259,
+          "called": [
+            "decodeLifecycleRetypeArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad007_lifecycleRetypeInvalidType",
+          "line": 266,
+          "called": [
+            "decodeLifecycleRetypeArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad008_vspaceMap",
+          "line": 274,
+          "called": [
+            "decodeVSpaceMapArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad009_vspaceMapInvalidAsid",
+          "line": 281,
+          "called": [
+            "decodeVSpaceMapArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad010_vspaceMapNonCanonical",
+          "line": 287,
+          "called": [
+            "decodeVSpaceMapArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad011_vspaceMapInvalidPerms",
+          "line": 293,
+          "called": [
+            "decodeVSpaceMapArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad012_vspaceUnmap",
+          "line": 299,
+          "called": [
+            "decodeVSpaceUnmapArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad013_notificationSignal",
+          "line": 310,
+          "called": [
+            "decodeNotificationSignalArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad014_notificationWait",
+          "line": 316,
+          "called": [
+            "decodeNotificationWaitArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad015_replyRecv",
+          "line": 322,
+          "called": [
+            "decodeReplyRecvArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad016_schedContextConfigure",
+          "line": 333,
+          "called": [
+            "decodeSchedContextConfigureArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad017_schedContextConfigureInsufficient",
+          "line": 345,
+          "called": [
+            "decodeSchedContextConfigureArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad018_schedContextBind",
+          "line": 351,
+          "called": [
+            "decodeSchedContextBindArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad019_schedContextUnbind",
+          "line": 360,
+          "called": [
+            "decodeSchedContextUnbindArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad020_suspendResume",
+          "line": 368,
+          "called": [
+            "decodeResumeArgs",
+            "decodeSuspendArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad021_setPriority",
+          "line": 376,
+          "called": [
+            "decodeSetPriorityArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad022_setMCPriority",
+          "line": 393,
+          "called": [
+            "decodeSetMCPriorityArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad023_setIPCBuffer",
+          "line": 403,
+          "called": [
+            "decodeSetIPCBufferArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad024_serviceRegister",
+          "line": 416,
+          "called": [
+            "decodeServiceRegisterArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad025_serviceRegisterInsufficient",
+          "line": 427,
+          "called": [
+            "decodeServiceRegisterArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad026_serviceRevoke",
+          "line": 433,
+          "called": [
+            "decodeServiceRevokeArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad027_noArgDecoders",
+          "line": 444,
+          "called": [
+            "decodeNotificationWaitArgs",
+            "decodeResumeArgs",
+            "decodeSchedContextUnbindArgs",
+            "decodeSuspendArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad028_validateVSpaceMapPermsDeviceExec",
+          "line": 452,
+          "called": [
+            "MemoryRegion",
+            "VSpaceMapArgs",
+            "expect",
+            "ofNat",
+            "size",
+            "validateVSpaceMapPermsForMemoryKind"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad029_decodeExtraCapAddrs",
+          "line": 476,
+          "called": [
+            "SyscallDecodeResult",
+            "decodeExtraCapAddrs",
+            "expect",
+            "ofNat",
+            "size",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSyscallArgDecodeTests",
+          "line": 497,
+          "called": [
+            "sad001_cspaceMint",
+            "sad002_cspaceMintInsufficient",
+            "sad003_cspaceCopy",
+            "sad004_cspaceMove",
+            "sad005_cspaceDelete",
+            "sad006_lifecycleRetype",
+            "sad007_lifecycleRetypeInvalidType",
+            "sad008_vspaceMap",
+            "sad009_vspaceMapInvalidAsid",
+            "sad010_vspaceMapNonCanonical",
+            "sad011_vspaceMapInvalidPerms",
+            "sad012_vspaceUnmap",
+            "sad013_notificationSignal",
+            "sad014_notificationWait",
+            "sad015_replyRecv",
+            "sad016_schedContextConfigure",
+            "sad017_schedContextConfigureInsufficient",
+            "sad018_schedContextBind",
+            "sad019_schedContextUnbind",
+            "sad020_suspendResume",
+            "sad021_setPriority",
+            "sad022_setMCPriority",
+            "sad023_setIPCBuffer",
+            "sad024_serviceRegister",
+            "sad025_serviceRegisterInsufficient",
+            "sad026_serviceRevoke",
+            "sad027_noArgDecoders",
+            "sad028_validateVSpaceMapPermsDeviceExec",
+            "sad029_decodeExtraCapAddrs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 540,
+          "called": [
+            "runRegisterDecodeTests",
+            "runSyscallArgDecodeTests"
           ]
         }
       ]
@@ -56610,6 +57155,7 @@
             "pure",
             "serviceRegisterDependency",
             "size",
+            "tag",
             "throw",
             "vspaceMapPageChecked",
             "vspaceUnmapPage",

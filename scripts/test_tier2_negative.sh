@@ -40,5 +40,7 @@ run_check "TRACE" lake exe priority_management_suite
 run_check "TRACE" lake exe ipc_buffer_suite
 # D5: Bounded latency / liveness surface anchor tests.
 run_check "TRACE" lake exe liveness_suite
+# T-03/AC6-A: Dedicated RegisterDecode + SyscallArgDecode test suite.
+run_check "TRACE" lake exe decoding_suite
 
 finalize_report

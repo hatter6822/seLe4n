@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.9.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.10.
 
 ## Build and run
 
@@ -208,6 +208,7 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
   RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
+  DecodingSuite.lean             T-03/AC6-A: 40 tests for RegisterDecode + SyscallArgDecode
   LivenessSuite.lean             D5: 58 surface anchor tests for liveness/WCRT theorems
 ```
 
@@ -494,10 +495,10 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-AC Comprehensive Audit Remediation** (v0.25.3–v0.25.9): Phase AC1 COMPLETE (high-severity fixes: S-01, I-01, C-01). Phase AC2 COMPLETE (scheduler & SchedContext hardening: S-02/SC-01, S-03, S-04, S-05, S-06, F-04). Phase AC3 COMPLETE (IPC atomicity & invariant strengthening: I-02, I-04, API-01, F-03). Phase AC4 COMPLETE (architecture & platform tightening: A-04, F-01, F-02, IF-01). Phase AC5 COMPLETE (cross-cutting & infrastructure: X-05, X-08, S-05 supplement, F-04 audit, F-02 proofs, F-03/IF-01 verification). Phase AC6 pending. See `docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
+- **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10): Comprehensive Audit Remediation — 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Phase AC6 COMPLETE (documentation, testing & closure: T-03 DecodingSuite, audit errata, workstream history). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
 - **WS-AB PORTFOLIO COMPLETE** (v0.24.0–v0.25.5): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations implemented: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3). Priority Inheritance Protocol (D4). Bounded Latency Theorem WCRT = D*L_max + N*(B+P) (D5). API Surface Integration & Closure (D6). Rust ABI synchronized (SyscallId 25, KernelError 44). Zero sorry/axiom. See `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
-- **Next milestone**: AC6 (Documentation, Testing & Closure), then Raspberry Pi 5 hardware binding
+- **Next milestone**: Raspberry Pi 5 hardware binding
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

@@ -1132,12 +1132,13 @@ surface anchors still pass after the cumulative changes from AC1–AC5.
 
 ---
 
-## 8. Phase AC6 — Documentation, Testing & Closure
+## 8. Phase AC6 — Documentation, Testing & Closure ✓ COMPLETE
 
 **Goal**: Dedicated test suites for decode modules, documentation sync, audit
 addendum, workstream history update, and final validation.
 **Gate**: `./scripts/test_full.sh` pass + documentation sync check.
 **Dependencies**: AC1–AC5 complete.
+**Status**: COMPLETE (v0.25.10). All 7 sub-tasks delivered. Zero sorry/axiom.
 
 ### AC6-A: Create dedicated `DecodingSuite.lean` test file (T-03)
 
@@ -1438,7 +1439,7 @@ The workstream is COMPLETE when all of the following hold:
 | A-04 | LOW | AC4-A | — | ✓ Complete |
 | X-05 | LOW | AC5-A | — | ✓ Complete |
 | X-08 | LOW | AC5-B | — | ✓ Complete |
-| T-03 | LOW | AC6-A | — | Pending |
+| T-03 | LOW | AC6-A | — | ✓ Complete |
 
 **Coverage**: 21 findings (3 HIGH + 9 MEDIUM + 9 LOW) → 42 sub-tasks. All
 actionable findings have at least one primary task. No finding is left
