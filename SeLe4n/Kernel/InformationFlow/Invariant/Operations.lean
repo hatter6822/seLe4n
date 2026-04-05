@@ -2083,7 +2083,7 @@ theorem timerTick_preserves_projection
       split at hStep
       · -- Time-slice expired: insert back into runQueue + schedule
         -- WS-H12b: new timerTick does insert (re-enqueue) then schedule, no if-then-else
-        let tcbReset : KernelObject := KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }
+        let tcbReset : KernelObject := KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
         have hInsertTickProj := insert_tick_preserves_projection ctx observer st
           tid.toObjId tcbReset hTidObjHigh hObjInv
         let stIT : SystemState :=

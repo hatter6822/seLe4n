@@ -370,10 +370,10 @@ def timerTick : Kernel Unit :=
         | some (.tcb tcb) =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset, re-enqueue, reschedule
-              -- V5-L: Uses `defaultTimeSlice` (= 5) for backward compatibility with
-              -- existing proofs. The configurable `st.scheduler.configDefaultTimeSlice`
-              -- field is available for future use when proof chain is updated.
-              let tcb' := { tcb with timeSlice := defaultTimeSlice }
+              -- AC2-C: Now uses configurable `configDefaultTimeSlice` from scheduler
+              -- state (initialized to `defaultTimeSlice` = 5). Preservation proofs
+              -- carry an `hConfigTS` hypothesis requiring `configDefaultTimeSlice > 0`.
+              let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
               -- V5-M (L-SCH-2): The re-enqueue uses `tcb.priority` (pre-reset
@@ -475,10 +475,23 @@ This function scans all TCBs in the object store, finds those with
 `schedContextBinding.scId? = some scId`, and calls `timeoutThread` to
 unblock them from their respective endpoint queues.
 
-The scan is O(n) in the number of objects. This is acceptable because:
-1. Budget expiry is an infrequent event (once per SchedContext period)
-2. The number of threads bound to a single SchedContext is typically small
-3. The alternative (maintaining a per-SC blocked thread list) adds complexity
+**Complexity**: O(n) in the total number of objects in the store, where
+n = `st.objects.size` (up to `maxObjects` = 65536 on RPi5). The fold visits
+every object, not just TCBs, because the `RHTable` does not support type-
+filtered iteration. This cost is incurred only on SchedContext budget
+exhaustion events — typically once per CBS period per active SchedContext,
+not per timer tick.
+
+**Frequency**: Budget exhaustion is rare under well-configured CBS admission
+control. The admission check (`admissionControl` in Budget.lean) ensures
+total bandwidth ≤ 1.0, so exhaustion occurs only when a thread fully consumes
+its allocated budget within a single period.
+
+-- Future optimization (WS-AD/perf): Replace with per-SchedContext bound-thread
+-- index (`HashMap SchedContextId (List ThreadId)`) maintained by bind/unbind/delete
+-- operations. This would reduce timeout scanning from O(n) to O(k) where k is
+-- the number of threads bound to the exhausted SchedContext (typically 1–3).
+-- Deferred until hardware profiling confirms this is a bottleneck on RPi5.
 
 Note: threads in `blockedOnReply` are also timed out. In seL4 MCS, this
 handles the case where a client's donated budget expires while the server
@@ -520,11 +533,11 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     : Except KernelError (SystemState × Bool) :=
   match tcb.schedContextBinding with
   | .unbound =>
-    -- Z4-F1: Legacy path — mirrors `timerTick` exactly for backward compatibility.
-    -- V5-L: Uses global `defaultTimeSlice` (not `configDefaultTimeSlice`) to match
-    -- the legacy `timerTick` proof chain. See `timerTick` comment at line 372.
+    -- Z4-F1: Legacy path — mirrors `timerTick` exactly.
+    -- AC2-C: Now uses configurable `configDefaultTimeSlice` from scheduler state,
+    -- matching the updated `timerTick`. See timerTick for proof chain details.
     if tcb.timeSlice ≤ 1 then
-      let tcb' := { tcb with timeSlice := defaultTimeSlice }
+      let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
                            machine := tick st.machine }
       let st'' := { st' with scheduler := { st'.scheduler with
@@ -715,7 +728,19 @@ so callers do not need to save context before calling. The save occurs before
 thread identity is still known.
 
 Under dequeue-on-dispatch, the outgoing thread must return to the
-runnable pool for its next domain slot. -/
+runnable pool for its next domain slot.
+
+**Dual-state pattern (S-05)**: This function reads scheduler state from `st`
+(the original state) but returns a state based on `stSaved` (after context
+save via `saveOutgoingContext`). This split is correct because:
+- `saveOutgoingContext` only modifies `objects` (saves the outgoing thread's
+  register file into its TCB). It does NOT modify `scheduler`.
+- Therefore `st.scheduler = stSaved.scheduler` — all scheduler field reads
+  from `st` yield the same values as reads from `stSaved`.
+- The result must use `stSaved` (not `st`) as the base because the returned
+  state must include the saved register context in the object store.
+- Formal guarantee: `saveOutgoingContext_scheduler` (Core.lean:19)
+  mechanizes the proof that `(saveOutgoingContext st).scheduler = st.scheduler`. -/
 def switchDomain : Kernel Unit :=
   fun st =>
     let schedule := st.scheduler.domainSchedule

@@ -54,7 +54,27 @@ def waitersOf (st : SystemState) (tid : ThreadId) : List ThreadId :=
 
 /-- D4-C3: Walk the blocking chain upward from `tid`.
 If `tid` has `ipcState = .blockedOnReply _ (some server)`, prepend `server`
-and recurse. Terminates when fuel exhausted or thread not in blockedOnReply. -/
+and recurse. Terminates when fuel exhausted or thread not in blockedOnReply.
+
+**Fuel semantics**: The `fuel` parameter defaults to `st.objectIndex.length`
+(the number of objects in the store). This is sufficient because:
+- Each step of the chain visits a distinct thread (the `server` field).
+- The `blockingAcyclic` invariant (CrossSubsystem.lean) guarantees no cycles
+  in the blocking graph, so the chain length is bounded by the number of
+  threads, which is bounded by `objectIndex.length`.
+- The `blockingDepthBound` theorem (below) further proves the chain is bounded
+  by `maxBlockingDepth` (= 32), which is always ≤ `objectIndex.length`.
+
+**Truncation behavior**: If fuel reaches 0, returns `[]` (silent truncation).
+Under the `blockingAcyclic` invariant this never happens — fuel is always
+sufficient. If the invariant is violated (cyclic blocking graph), PIP
+propagation stops early at the cycle, and threads in the cycle retain stale
+priority boosts until the cycle is broken by an IPC completion or timeout.
+
+**Invariant dependency**: `blockingAcyclic` from `crossSubsystemInvariant`
+(CrossSubsystem.lean) is the critical safety property. Without it, this
+function's correctness guarantee degrades from "complete chain walk" to
+"prefix of chain up to fuel limit". -/
 def blockingChain (st : SystemState) (tid : ThreadId) (fuel : Nat := st.objectIndex.length)
     : List ThreadId :=
   match fuel with

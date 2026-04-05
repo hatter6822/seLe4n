@@ -649,7 +649,7 @@ theorem timerTick_preserves_schedulerInvariantBundle
           have hInsertNodup : (st.scheduler.runQueue.insert tid tcb.priority).toList.Nodup :=
             insert_preserves_nodup st.scheduler.runQueue tid tcb.priority hRQU hNotMem
           -- The intermediate state has (st.objects.insert ...).invExt
-          have hObjInv' : (st.objects.insert tid.toObjId (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice })).invExt :=
+          have hObjInv' : (st.objects.insert tid.toObjId (KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })).invExt :=
             RHTable_insert_preserves_invExt st.objects tid.toObjId _ hObjInv
           -- Compose individual preservation theorems (intermediate state violates QCC)
           exact ⟨
@@ -1024,12 +1024,13 @@ private theorem threadId_ne_objId_beq_false
     cases tid; cases t; simp_all [ThreadId.toObjId, ObjId.ofNat, ThreadId.toNat]
 
 /-- WS-H6/WS-H12b: `timerTick` preserves `timeSlicePositive`.
-Expired case: resets to `defaultTimeSlice` (= 5 > 0), inserts into queue, then schedule.
+Expired case: resets to `configDefaultTimeSlice` (> 0 by `hConfigTS`), inserts into queue, then schedule.
 Not-expired case: decrements, and since `timeSlice > 1`, the result is still > 0. -/
 private theorem timerTick_preserves_timeSlicePositive
     (st st' : SystemState)
     (hInv : timeSlicePositive st)
     (hObjInv : st.objects.invExt)
+    (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     (hStep : timerTick st = .ok ((), st')) :
     timeSlicePositive st' := by
   unfold timerTick at hStep
@@ -1046,12 +1047,12 @@ private theorem timerTick_preserves_timeSlicePositive
       | tcb tcb =>
         simp only [hObj] at hStep
         by_cases hExpire : tcb.timeSlice ≤ 1
-        · -- Time-slice expired: reset to defaultTimeSlice, insert, reschedule
+        · -- Time-slice expired: reset to configDefaultTimeSlice, insert, reschedule
           rw [if_pos hExpire] at hStep
-          have hObjInv' := RHTable_insert_preserves_invExt st.objects tid.toObjId (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }) hObjInv
+          have hObjInv' := RHTable_insert_preserves_invExt st.objects tid.toObjId (KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }) hObjInv
           have hInvMid : timeSlicePositive
               { st with
-                objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := defaultTimeSlice })
+                objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })
                 machine := tick st.machine
                 scheduler := { st.scheduler with
                   runQueue := st.scheduler.runQueue.insert tid tcb.priority } } := by
@@ -1064,12 +1065,12 @@ private theorem timerTick_preserves_timeSlicePositive
             | inl hOld =>
               by_cases hEq : t = tid
               · subst hEq
-                simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [defaultTimeSlice]
+                simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp; exact hConfigTS
               · simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv, threadId_ne_objId_beq_false tid t hEq]
                 exact hInv t (by simp only [SchedulerState.runnable]; exact (RunQueue.mem_toList_iff_mem _ t).mpr hOld)
             | inr hEq =>
               subst hEq
-              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [defaultTimeSlice]
+              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp; exact hConfigTS
           rw [← hCur] at hStep
           exact schedule_preserves_timeSlicePositive _ st' hInvMid hObjInv' hStep
         · -- Time-slice not expired: decrement, timeSlice - 1 > 0
@@ -1228,6 +1229,7 @@ private theorem timerTick_preserves_currentTimeSlicePositive
     (hTS : timeSlicePositive st)
     (_ : currentTimeSlicePositive st)
     (hObjInv : st.objects.invExt)
+    (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     (hStep : timerTick st = .ok ((), st')) :
     currentTimeSlicePositive st' := by
   unfold timerTick at hStep
@@ -1249,7 +1251,7 @@ private theorem timerTick_preserves_currentTimeSlicePositive
           rw [if_pos hExpire] at hStep
           have hInvMid : timeSlicePositive
               { st with
-                objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := defaultTimeSlice })
+                objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })
                 machine := tick st.machine
                 scheduler := { st.scheduler with
                   runQueue := st.scheduler.runQueue.insert tid tcb.priority } } := by
@@ -1261,12 +1263,12 @@ private theorem timerTick_preserves_currentTimeSlicePositive
             cases hMemInsert with
             | inl hOld =>
               by_cases hEq : t = tid
-              · subst hEq; simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [defaultTimeSlice]
+              · subst hEq; simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp; exact hConfigTS
               · simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv, threadId_ne_objId_beq_false tid t hEq]
                 exact hTS t (by simp only [SchedulerState.runnable]; exact (RunQueue.mem_toList_iff_mem _ t).mpr hOld)
             | inr hEq =>
-              subst hEq; simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp [defaultTimeSlice]
-          have hObjInv' := RHTable_insert_preserves_invExt st.objects tid.toObjId (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }) hObjInv
+              subst hEq; simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp; exact hConfigTS
+          have hObjInv' := RHTable_insert_preserves_invExt st.objects tid.toObjId (KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }) hObjInv
           rw [← hCur] at hStep
           exact schedule_preserves_currentTimeSlicePositive _ st' hInvMid hObjInv' hStep
         · -- Not expired: decrement, current stays as tid
@@ -1544,7 +1546,7 @@ theorem timerTick_preserves_runnableThreadsAreTCBs
               by_cases hExp : tcb.timeSlice ≤ 1
               · -- Time-slice expired: reset TCB, re-enqueue, schedule
                 rw [if_pos hExp] at hStep
-                have hObjInv' := RHTable_insert_preserves_invExt st.objects curTid.toObjId (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }) hObjInv
+                have hObjInv' := RHTable_insert_preserves_invExt st.objects curTid.toObjId (KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }) hObjInv
                 apply schedule_preserves_runnableThreadsAreTCBs _ st' _ hObjInv' hStep
                 intro t hMem
                 simp only [SchedulerState.runnable] at hMem
@@ -1821,7 +1823,7 @@ theorem timerTick_preserves_domainTimeRemainingPositive
         · -- Time-slice expired: schedule on modified state
           simp only [hExpire, ite_true] at hStep
           have hObjInv' := RHTable_insert_preserves_invExt st.objects tid.toObjId
-            (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }) hObjInv
+            (KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }) hObjInv
           apply schedule_preserves_domainTimeRemainingPositive _ st' _ hObjInv' hStep
           -- domainTimeRemainingPositive of intermediate state: scheduler unchanged
           unfold domainTimeRemainingPositive at *; simp; exact hInv
@@ -2538,7 +2540,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
             · exact absurd h hNotMem
           have hpm' : schedulerPriorityMatch
               { st with
-                objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := defaultTimeSlice })
+                objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
                 machine := tick st.machine
                 scheduler := { st.scheduler with runQueue := st.scheduler.runQueue.insert curTid curTcb.priority } } := by
             intro t hMem
@@ -2569,10 +2571,10 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               simp only [beq_self_eq_true, ite_true]
           have hAllTcb' : ∀ t, t ∈ { st with
-              objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := defaultTimeSlice })
+              objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
               machine := tick st.machine
               scheduler := { st.scheduler with runQueue := st.scheduler.runQueue.insert curTid curTcb.priority } }.scheduler.runnable →
-              ∃ tcb, (st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := defaultTimeSlice }))[t.toObjId]? = some (.tcb tcb) := by
+              ∃ tcb, (st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice }))[t.toObjId]? = some (.tcb tcb) := by
             intro t hMem
             simp only [SchedulerState.runnable, RunQueue.toList] at hMem
             have hMemIns := (RunQueue.mem_toList_iff_mem _ t).mp hMem
@@ -2588,7 +2590,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
             | inr hEq =>
               subst hEq
               simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]; simp
-          have hObjInv' := RHTable_insert_preserves_invExt st.objects curTid.toObjId (KernelObject.tcb { curTcb with timeSlice := defaultTimeSlice }) hObjInv
+          have hObjInv' := RHTable_insert_preserves_invExt st.objects curTid.toObjId (KernelObject.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice }) hObjInv
           rw [← hCur] at hStep
           exact schedule_preserves_edfCurrentHasEarliestDeadline _ st' hwf' hpm' hAllTcb' hObjInv' hStep
         · -- Time-slice not expired: only timeSlice changes
@@ -2720,7 +2722,7 @@ private theorem timerTick_preserves_contextMatchesCurrent
         by_cases hExpire : tcb.timeSlice ≤ 1
         · -- Time slice expired → re-enqueue + schedule
           simp only [hExpire, ite_true] at hStep
-          have hObjInv' := RHTable_insert_preserves_invExt st.objects curTid.toObjId (KernelObject.tcb { tcb with timeSlice := defaultTimeSlice }) hObjInv
+          have hObjInv' := RHTable_insert_preserves_invExt st.objects curTid.toObjId (KernelObject.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }) hObjInv
           exact schedule_preserves_contextMatchesCurrent _ st' hObjInv' hStep
         · -- Time slice not expired → inline state construction
           simp only [hExpire, ite_false, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -3010,7 +3012,7 @@ private theorem timerTick_preserves_schedulerPriorityMatch
         · -- Expire: reset timeSlice, insert, schedule
           rw [if_pos hExp] at hStep
           have hObjInv' := RHTable_insert_preserves_invExt st.objects curTid.toObjId
-            (KernelObject.tcb { curTcb with timeSlice := defaultTimeSlice }) hObjInv
+            (KernelObject.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice }) hObjInv
           apply schedule_preserves_schedulerPriorityMatch _ st' _ _ hObjInv' hStep
           · -- schedulerPriorityMatch on intermediate state (after insert into runQueue + objects)
             intro t hMem
@@ -3121,7 +3123,8 @@ theorem handleYield_preserves_schedulerInvariantBundleFull
          fun e hMem => hEntries e (handleYield_preserves_domainSchedule st st' hStep ▸ hMem)⟩
 
 /-- WS-H6/WS-H12b: `timerTick` preserves the full scheduler invariant bundle.
-    R6-D: `schedulerPriorityMatch` now extracted from the bundle. -/
+    R6-D: `schedulerPriorityMatch` now extracted from the bundle.
+    AC2-C: Requires `configDefaultTimeSlice > 0` for time-slice positivity proofs. -/
 theorem timerTick_preserves_schedulerInvariantBundleFull
     (st st' : SystemState)
     (hInv : schedulerInvariantBundleFull st)
@@ -3129,13 +3132,14 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
     (hAllTcb : ∀ t, t ∈ st.scheduler.runnable →
       ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb))
     (hObjInv : st.objects.invExt)
+    (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
     (hStep : timerTick st = .ok ((), st')) :
     schedulerInvariantBundleFull st' := by
   rcases hInv with ⟨hBase, hTS, hCurTS, hEDF, hCtx, _hRunnTcb, hPM, hDTR, hEntries⟩
   have hpm := hPM
   exact ⟨timerTick_preserves_schedulerInvariantBundle st st' ⟨hBase.1, hBase.2.1, hBase.2.2⟩ hObjInv hStep,
-         timerTick_preserves_timeSlicePositive st st' hTS hObjInv hStep,
-         timerTick_preserves_currentTimeSlicePositive st st' hTS hCurTS hObjInv hStep,
+         timerTick_preserves_timeSlicePositive st st' hTS hObjInv hConfigTS hStep,
+         timerTick_preserves_currentTimeSlicePositive st st' hTS hCurTS hObjInv hConfigTS hStep,
          timerTick_preserves_edfCurrentHasEarliestDeadline st st' hwf hpm hBase.1 hEDF hAllTcb hObjInv hStep,
          timerTick_preserves_contextMatchesCurrent st st' hCtx hObjInv hStep,
          timerTick_preserves_runnableThreadsAreTCBs st st' hAllTcb hObjInv hStep,
@@ -3354,7 +3358,7 @@ theorem timerTickBudget_unbound_preempt_objects_key
   have hfst := congrArg Prod.fst hinj
   simp only [] at hfst
   subst hfst
-  exact ⟨{ tcb with timeSlice := defaultTimeSlice, schedContextBinding := .unbound }, rfl⟩
+  exact ⟨{ tcb with timeSlice := st.scheduler.configDefaultTimeSlice, schedContextBinding := .unbound }, rfl⟩
 
 -- Z4-S2 (substantive): consumeBudget preserves per-SchedContext well-formedness.
 

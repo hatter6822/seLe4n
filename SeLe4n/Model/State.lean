@@ -17,6 +17,13 @@ namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
 
+/-- F-04: Kernel error codes. This inductive has 44 variants.
+**Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
+patterns when matching on `KernelError`. Lean's exhaustiveness checker will
+flag missing arms at compile time, but catch-all patterns silently swallow
+new variants added in future workstreams, masking potential error-handling
+bugs. Use `| _ =>` only for genuinely uniform error handling (e.g., converting
+any error to a user-facing string) where variant-specific behavior is not needed. -/
 inductive KernelError where
   | invalidCapability
   | objectNotFound
