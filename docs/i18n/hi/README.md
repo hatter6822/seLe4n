@@ -200,7 +200,7 @@ tests/                           15 test suites
 | **WS-Z** | संयोजनीय प्रदर्शन वस्तुएँ — `SchedContext` 7वीं कर्नेल वस्तु के रूप में, CBS बजट इंजन, पुनःपूर्ति क्यू, निष्क्रिय सर्वर दान, टाइमआउट एंडपॉइंट (10 चरण, 213 कार्य) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | मूल कर्नेल उपप्रणालियाँ, Robin Hood हैश टेबल, रेडिक्स ट्री, जमी हुई स्थिति, सूचना प्रवाह, सेवा समन्वय, प्लेटफ़ॉर्म अनुबंध | v0.9.0–v0.22.x |
 
-विस्तृत योजनाएँ: [WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+विस्तृत योजनाएँ: [WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### अगला प्रमुख मील का पत्थर
 

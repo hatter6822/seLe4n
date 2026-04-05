@@ -38,7 +38,7 @@ infrastructure (Z1–Z10, 213 sub-tasks) and V8-G1 delivering the explicit
 ### 1.2 Starvation Prevention Gap
  
 The starvation prevention work originally planned as WS-V
-(`docs/planning/WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md`, baseline v0.20.7)
+(`docs/dev_history/WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md`, baseline v0.20.7)
 identified six starvation vectors (SV-1 through SV-6). WS-Z addressed some of
 these through runtime mechanisms (CBS budgets, SchedContext donation, budget-driven
 IPC timeout) but two critical formal gaps remain:
@@ -1339,7 +1339,7 @@ originally planned in the WS-V starvation prevention workstream.
  
 ## 16. Relationship to WS-V Starvation Prevention Plan
  
-The file `docs/planning/WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md` is retained
+The file `docs/dev_history/WS_V_KERNEL_STARVATION_PREVENTION_PLAN.md` is retained
 as historical context. WS-AB supersedes it with the following mapping:
  
 | WS-V Phase | WS-AB Disposition | Notes |

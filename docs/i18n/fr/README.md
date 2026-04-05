@@ -226,7 +226,7 @@ L'historique complet se trouve dans [`docs/WORKSTREAM_HISTORY.md`](../../../docs
 | **WS-Z** | Objets de performance composables — `SchedContext` comme 7e objet noyau, moteur de budget CBS, file de réapprovisionnement, donation de serveur passif, endpoints avec timeout (10 phases, 213 tâches) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Sous-systèmes centraux du noyau, tables de hachage Robin Hood, arbres radix, état gelé, flux d'information, orchestration de services, contrats de plateforme | v0.9.0–v0.22.x |
 
-Plans détaillés : [WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+Plans détaillés : [WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### Prochain jalon majeur
 

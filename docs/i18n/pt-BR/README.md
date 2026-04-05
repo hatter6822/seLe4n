@@ -224,7 +224,7 @@ histórico completo está em [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKST
 | **WS-Z** | Objetos de Desempenho Composicionais — `SchedContext` como 7o objeto de kernel, motor de budget CBS, fila de reabastecimento, doação de servidor passivo, endpoints com timeout (10 fases, 213 tarefas) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Subsistemas centrais do kernel, tabelas hash Robin Hood, radix trees, estado congelado, fluxo de informação, orquestração de serviços, contratos de plataforma | v0.9.0–v0.22.x |
 
-Planos detalhados: [WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+Planos detalhados: [WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### Próximo marco importante
 

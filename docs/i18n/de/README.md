@@ -226,7 +226,7 @@ Geschichte befindet sich in [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTR
 | **WS-Z** | Komponierbare Leistungsobjekte — `SchedContext` als 7. Kernel-Objekt, CBS-Budget-Engine, Replenishment-Queue, passive Server-Donation, Timeout-Endpoints (10 Phasen, 213 Aufgaben) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Kern-Subsysteme, Robin-Hood-Hashtabellen, Radix Trees, Frozen State, Informationsfluss, Service-Orchestrierung, Plattformverträge | v0.9.0–v0.22.x |
 
-Detaillierte Pläne: [WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+Detaillierte Pläne: [WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### Nächster großer Meilenstein
 

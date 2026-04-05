@@ -213,7 +213,7 @@ tests/                           15 test suites
 | **WS-Z** | 合成可能パフォーマンスオブジェクト――`SchedContext` を第 7 のカーネルオブジェクトとして、CBS バジェットエンジン、補充キュー、パッシブサーバードネーション、タイムアウトエンドポイント（10 フェーズ、213 タスク） | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | コアカーネルサブシステム、Robin Hood ハッシュテーブル、基数木、フリーズ状態、情報フロー、サービスオーケストレーション、プラットフォームコントラクト | v0.9.0–v0.22.x |
 
-詳細な計画：[WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+詳細な計画：[WS-AB](../../../docs/dev_history/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### 次の主要マイルストーン
 
