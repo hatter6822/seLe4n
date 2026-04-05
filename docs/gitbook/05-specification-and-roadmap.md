@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.23.20` |
+| Version | `0.25.3` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 79,419 across 113 Lean files |
-| Test LoC | 8,759 across 10 suites |
-| Proved declarations | 2,281 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
-| Active workstream | **All workstreams COMPLETE** (WS-B through WS-Z). WS-Z Phases Z1–Z9 complete (v0.23.0–v0.23.20): SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, donation for passive servers, full API surface, and invariant composition. **Next: Raspberry Pi 5 hardware binding.** |
+| Production LoC | 83,286 across 132 Lean files |
+| Test LoC | 10,564 across 15 suites |
+| Proved declarations | 2,447 theorem/lemma declarations (zero sorry/axiom) |
+| Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| Active workstream | **All workstreams COMPLETE** (WS-B through WS-AB). WS-AB Phases D1–D6 complete (v0.24.0–v0.25.3): suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem, API surface integration. **Next: Raspberry Pi 5 hardware binding.** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -83,7 +83,23 @@ WS-L4 (test coverage expansion, v0.16.12) →
 **WS-W (Pre-release audit remediation, v0.22.11–v0.22.17) — PORTFOLIO COMPLETE.** →
 **WS-X (Documentation & hardening, v0.22.18–v0.22.22) — PORTFOLIO COMPLETE.** →
 **WS-Y (Cross-subsystem hardening, v0.22.23–v0.22.26) — PORTFOLIO COMPLETE.** →
-**WS-Z (Composable performance objects, v0.23.0–v0.23.20) — PORTFOLIO COMPLETE.**
+**WS-Z (Composable performance objects, v0.23.0–v0.23.20) — PORTFOLIO COMPLETE.** →
+**WS-AA (Comprehensive audit remediation, v0.23.21) — PORTFOLIO COMPLETE.** →
+**WS-AB (Deferred operations & liveness completion, v0.24.0–v0.25.3) — PORTFOLIO COMPLETE.**
+
+## Completed: WS-AB Deferred Operations & Liveness Completion (v0.24.0–v0.25.3, PORTFOLIO COMPLETE)
+
+6 phases (D1–D6) completing all seL4 deferred operations and formalizing liveness
+guarantees that depend on the SchedContext infrastructure from WS-Z.
+
+- **D1** (v0.24.0–v0.24.2): Thread suspension/resumption — `suspendThread`/`resumeThread` with run-queue cleanup, transport lemmas.
+- **D2** (v0.24.3–v0.24.5): Priority management — `setPriorityOp`/`setMCPriorityOp` with MCP authority validation, run-queue migration, `authority_nonEscalation`.
+- **D3** (v0.24.6–v0.24.7): IPC buffer configuration — `setIPCBufferOp` with VSpace bounds checking.
+- **D4** (v0.24.8–v0.25.0): Priority Inheritance Protocol — `BlockingGraph`, `blockingChainAcyclic`, `blockingDepthBound`, transitive propagation, `wcrt_parametric_bound`.
+- **D5** (v0.25.0–v0.25.1): Bounded Latency Theorem — WCRT = D×L_max + N×(B+P) across 7 liveness modules (TimerTick, Replenishment, Yield, BandExhaustion, DomainRotation, WCRT).
+- **D6** (v0.25.2–v0.25.3): API surface integration — 5 deferred operations in kernel API, enforcement boundary 25→30, Rust ABI sync (SyscallId 25, KernelError 44).
+
+Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-Z Composable Performance Objects (v0.23.0–v0.23.20, PORTFOLIO COMPLETE)
 

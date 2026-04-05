@@ -107,8 +107,10 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Budget.lean` — CBS budget operations: `consumeBudget`, `isBudgetExhausted`, replenishment scheduling/processing, `cbsBudgetCheck`, `admissionCheck`.
   - `ReplenishQueue.lean` — sorted replenishment queue: `insert`, `popDue`, `remove`, `peek`, `hasDue` with `pairwiseSortedBy` invariant.
   - `Operations.lean` — `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`.
+  - `PriorityManagement.lean` — D2: `setPriorityOp`, `setMCPriorityOp`, MCP authority validation, run queue migration on priority change.
   - `Invariant/Defs.lean` — `budgetWithinBounds`, `replenishmentListWellFormed`, `schedContextWellFormed`, `replenishmentAmountsBounded`, preservation proofs, bandwidth theorems.
   - `Invariant/Preservation.lean` — operation-level preservation theorems for Z5 operations.
+  - `Invariant/PriorityPreservation.lean` — D2: transport lemmas, `authority_nonEscalation` proofs for priority ops.
   - Re-export hubs: `SeLe4n/Kernel/SchedContext/Invariant.lean`, `SeLe4n/Kernel/SchedContext.lean`.
 - `SeLe4n/Kernel/API.lean` — syscall entry point and dispatch (WS-J1-C; extended WS-K-C/K-D/K-E v0.16.2–v0.16.4):
   - `syscallEntry` — top-level register-sourced user-space entry point,
@@ -166,6 +168,20 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Operations/Selection.lean` — EDF predicates, thread selection, candidate ordering.
   - `Operations/Core.lean` — core transitions (`schedule`, `handleYield`, `timerTick`).
   - `Operations/Preservation.lean` — scheduler invariant preservation theorems.
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/` — D4: Priority Inheritance Protocol (WS-AB, v0.24.8–v0.25.0):
+  - `BlockingGraph.lean` — blocking relation, chain walk, `blockingChainAcyclic`, `blockingDepthBound`.
+  - `Compute.lean` — `computeMaxWaiterPriority`.
+  - `Propagate.lean` — `updatePipBoost`, `propagatePriorityInheritance`, `revertPriorityInheritance`.
+  - `Preservation.lean` — 16 frame lemmas (scheduler, IPC, cross-subsystem).
+  - `BoundedInversion.lean` — `pip_bounded_inversion`, `wcrt_parametric_bound`, determinism.
+- `SeLe4n/Kernel/Scheduler/Liveness/` — D5: Bounded Latency Theorem (WS-AB, v0.25.0–v0.25.1):
+  - `TraceModel.lean` — `SchedulerStep` inductive, `SchedulerTrace`, query predicates.
+  - `TimerTick.lean` — budget monotonicity, preemption bounds.
+  - `Replenishment.lean` — CBS replenishment timing bounds.
+  - `Yield.lean` — yield/rotation semantics, FIFO progress bounds.
+  - `BandExhaustion.lean` — priority-band exhaustion analysis.
+  - `DomainRotation.lean` — domain rotation bounds.
+  - `WCRT.lean` — `bounded_scheduling_latency`: WCRT = D×L\_max + N×(B+P), PIP enhancement.
 
 ### Capability subsystem
 
@@ -229,9 +245,11 @@ and adding `_fromTcb` variants for `storeTcbIpcState`/`storeTcbIpcStateAndMessag
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
   - deterministic lifecycle retype transition (`lifecycleRetypeObject`),
   - explicit illegal-state / illegal-authority error branching and local theorem entrypoints.
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` — D1: `suspendThread`/`resumeThread` with run-queue cleanup and state transitions.
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
   - step-3 lifecycle invariant components and bundle layering,
   - explicit split between identity/aliasing and capability-reference constraints.
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` — D1: transport lemmas for suspend/resume across all subsystem invariants.
 
 ### Service subsystem *(seLe4n extension — not present in seL4)*
 
@@ -293,6 +311,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     theorems, 7 error-exclusivity theorems.
   - WS-K-F: 7 encode functions, 7 round-trip theorems (`rcases + rfl`),
     `decode_layer2_roundtrip_all` composed conjunction. Zero sorry/axiom.
+- `SeLe4n/Kernel/Architecture/IpcBufferValidation.lean` — D3: `setIPCBufferOp` with VSpace bounds checking, page permission validation, determinism and frame lemmas.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,
     composed preservation hooks for success and failure paths.

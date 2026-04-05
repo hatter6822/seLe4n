@@ -8,41 +8,76 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
 
 <p align="center">
-  Un micro-noyau (microkernel) écrit en Lean 4 avec des preuves vérifiées par machine,
+  Un micro-noyau écrit en Lean 4 avec des preuves vérifiées par machine,
   inspiré de l'architecture <a href="https://sel4.systems">seL4</a>. Première cible matérielle :
   <strong>Raspberry Pi 5</strong>.
 </p>
+<p align="center">
+  <div align="center">
+    Conçu avec soin grâce à :
+  </div>
+  <div align="center">
+    claude :robot: :heart: :robot: codex
+  </div>
+  <div align="center">
+    <strong>TRAITEZ CE KERNEL EN CONSÉQUENCE</strong>
+  </div>
+</p>
 
----
-
-🌐 [English](../../../README.md) | [简体中文](../zh-CN/README.md) | [Español](../es/README.md) | [日本語](../ja/README.md) | [한국어](../ko/README.md) | [العربية](../ar/README.md) | **Français** | [Português](../pt-BR/README.md) | [Русский](../ru/README.md) | [Deutsch](../de/README.md) | [हिन्दी](../hi/README.md)
+<p align="center">
+  <a href="../../../README.md">English</a> ·
+  <a href="../zh-CN/README.md">简体中文</a> ·
+  <a href="../es/README.md">Español</a> ·
+  <a href="../ja/README.md">日本語</a> ·
+  <a href="../ko/README.md">한국어</a> ·
+  <a href="../ar/README.md">العربية</a> ·
+  <strong>Français</strong> ·
+  <a href="../pt-BR/README.md">Português</a> ·
+  <a href="../ru/README.md">Русский</a> ·
+  <a href="../de/README.md">Deutsch</a> ·
+  <a href="../hi/README.md">हिन्दी</a>
+</p>
 
 ---
 
 ## Qu'est-ce que seLe4n ?
 
-seLe4n est un micro-noyau (microkernel) conçu de zéro en Lean 4. Chaque
-transition du noyau est une fonction pure exécutable. Chaque invariant est
-vérifié par machine via le vérificateur de types de Lean — zéro `sorry`,
-zéro `axiom`. L'ensemble de la surface de preuve se compile en code natif
-sans aucune preuve admise.
+seLe4n est un micro-noyau conçu de zéro en Lean 4. Chaque transition du noyau
+est une fonction pure exécutable. Chaque invariant est vérifié par machine via
+le vérificateur de types de Lean — zéro `sorry`, zéro `axiom`. L'ensemble de
+la surface de preuve se compile en code natif sans aucune preuve admise.
 
-Le projet utilise un modèle de sécurité basé sur les capacités (capabilities)
-tout en introduisant des améliorations architecturales novatrices par rapport
-aux autres micro-noyaux :
+Le projet conserve le modèle de sécurité par capacités de seL4 tout en
+introduisant des améliorations architecturales rendues possibles par le cadre
+de preuve de Lean 4 :
 
-- **Chemins chauds du noyau en O(1) par hachage** — tous les magasins d'objets (object stores), files d'exécution (run queues), emplacements CNode, projections VSpace et files IPC utilisent des `RHTable`/`RHSet` (tables de hachage Robin Hood avec invariants vérifiés par machine, zéro `Std.HashMap`/`Std.HashSet` dans l'état)
-- **Couche d'orchestration de services** pour la gestion du cycle de vie des composants et des dépendances avec une sémantique déterministe de défaillance partielle
-- **Arbre de dérivation de capacités à nœuds stables** avec des index `childMap` + `parentMap` en RHTable pour le transfert d'emplacements (slots), la révocation, la recherche de parents et la traversée des descendants en O(1)
-- **IPC à double file intrusive** (intrusive dual-queue IPC) avec liens `queuePrev`/`queuePPrev`/`queueNext` par thread pour la mise en file, le retrait et la suppression en milieu de file en O(1)
-- **Cadre de flux d'information paramétré à N domaines** (N-domain information flow) avec politiques de flux configurables, généralisant les étiquettes héritées de confidentialité/intégrité (au-delà du partitionnement binaire de seL4)
-- **Ordonnancement EDF + priorité** (EDF + priority scheduling) avec sémantique de retrait à la distribution (dequeue-on-dispatch), contexte de registres par TCB avec changement de contexte en ligne, `RunQueue` par tranche de priorité, partitionnement par domaine
+### Ordonnancement et garanties temps réel
+
+- **Objets de performance composables** — le temps CPU est un objet noyau de première classe. `SchedContext` encapsule budget, période, priorité, échéance et domaine dans un contexte d'ordonnancement réutilisable auquel les threads se lient via des capacités. L'ordonnancement CBS (Constant Bandwidth Server) fournit un isolement de bande passante prouvé (théorème `cbs_bandwidth_bounded`)
+- **Serveurs passifs** — les serveurs inactifs empruntent le `SchedContext` du client pendant l'IPC, consommant zéro CPU lorsqu'ils ne servent pas. L'invariant `donationChainAcyclic` empêche les chaînes de donation circulaires
+- **Délais d'IPC pilotés par le budget** — les opérations bloquantes sont bornées par le budget de l'appelant. À l'expiration, les threads sont extraits de la file du endpoint et remis en file d'attente
+- **Protocole d'héritage de priorité** — propagation transitive de priorité avec absence d'interblocage vérifiée par machine (`blockingChainAcyclic`) et profondeur de chaîne bornée. Empêche l'inversion de priorité non bornée
+- **Théorème de latence bornée** — borne WCRT vérifiée par machine : `WCRT = D × L_max + N × (B + P)`, prouvée à travers 7 modules de vivacité couvrant la monotonie du budget, la temporisation des réapprovisionnements, la sémantique du yield, l'épuisement de bande et la rotation de domaine
+
+### Structures de données et IPC
+
+- **Chemins chauds en O(1) par hachage** — tous les magasins d'objets, files d'exécution, emplacements CNode, projections VSpace et files IPC utilisent des tables de hachage Robin Hood formellement vérifiées avec les invariants `distCorrect`, `noDupKeys` et `probeChainDominant`
+- **IPC à double file intrusive** — pointeurs inverses par thread pour la mise en file, le retrait et la suppression en milieu de file en O(1)
+- **Arbre de dérivation de capacités à nœuds stables** — index `childMap` + `parentMap` pour le transfert d'emplacements, la révocation et la traversée des descendants en O(1)
+
+### Sécurité et vérification
+
+- **Flux d'information à N domaines** — politiques de flux paramétrées généralisant la partition binaire de seL4. Frontière d'application de 30 entrées avec preuves de non-interférence par opération (inductif `NonInterferenceStep` à 32 constructeurs)
+- **Couche de preuve composée** — `proofLayerInvariantBundle` compose 10 invariants de sous-systèmes (ordonnanceur, capacité, IPC, cycle de vie, service, VSpace, inter-sous-systèmes, TLB et extensions CBS) en une unique obligation de niveau supérieur vérifiée du démarrage à travers toutes les opérations
+- **Architecture d'état en deux phases** — la phase de construction avec témoins d'invariants alimente une représentation immuable gelée avec équivalence de consultation prouvée. 20 opérations gelées reproduisent l'API en temps réel
+- **Ensemble complet d'opérations** — toutes les opérations seL4 implémentées avec préservation d'invariants, y compris les 5 opérations différées (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
+- **Orchestration de services** — cycle de vie des composants au niveau noyau avec graphes de dépendances et preuves d'acyclicité (extension seLe4n, absente de seL4)
 
 ## État actuel
 
@@ -52,13 +87,13 @@ aux autres micro-noyaux :
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.22.8` |
+| **Version** | `0.25.3` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 72 569 réparties sur 103 fichiers |
-| **LoC Lean de test** | 8 437 réparties sur 10 suites de tests |
-| **Déclarations prouvées** | 2 138 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 83 286 réparties sur 132 fichiers |
+| **LoC Lean de test** | 10 564 réparties sur 15 suites de tests |
+| **Déclarations prouvées** | 2 447 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — Audit complet pré-publication du noyau et de la base Rust |
+| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — Audit complet du noyau Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |
 
 Les métriques sont extraites de la base de code par `./scripts/generate_codebase_map.py`
@@ -72,41 +107,30 @@ clé `readme_sync`. Mettez à jour l'ensemble de la documentation à l'aide de
 ./scripts/setup_lean_env.sh   # installer la chaîne d'outils Lean
 lake build                     # compiler tous les modules
 lake exe sele4n                # exécuter le harnais de trace
-./scripts/test_smoke.sh        # valider (hygiène + compilation + trace + état négatif + synchronisation docs)
+./scripts/test_smoke.sh        # valider (hygiène + compilation + trace + état négatif + synchro docs)
 ```
 
-## Parcours d'intégration
+## Documentation
 
-Nouveau sur le projet ? Suivez cet ordre de lecture :
+| Commencez ici | Ensuite |
+|---------------|---------|
+| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — flux de travail, validation, liste de contrôle des PR | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — spécification et jalons |
+| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — manuel complet | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — sémantique de référence seL4 |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — historique des flux de travail et feuille de route |
+| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — modalités de contribution | [`CHANGELOG.md`](../../../CHANGELOG.md) — historique des versions |
 
-1. **Ce README** — identité du projet, architecture et organisation des sources
-2. [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — flux de travail quotidien, boucle de validation, liste de contrôle des PR
-3. [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — manuel complet (architecture approfondie, preuves, chemin matériel)
-4. [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des modules et déclarations
-
-Pour la planification et l'historique des flux de travail (workstreams), consultez [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md).
-
-## Documentation du projet
-
-| Document | Objectif |
-|----------|----------|
-| [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) | Spécification du projet et jalons |
-| [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) | Sémantique de référence seL4 |
-| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) | Flux de travail quotidien, boucle de validation, liste de contrôle des PR |
-| [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md) | Niveaux de tests et contrat CI |
-| [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) | Historique complet des workstreams, feuille de route et index des audits |
-| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) | Manuel complet (architecture, conception, preuves, chemin matériel) |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) | Inventaire lisible par machine de la base de code (synchronisé avec le README) |
-| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) | Modalités de contribution et exigences pour les PR |
-| [`CHANGELOG.md`](../../../CHANGELOG.md) | Historique des versions |
+[`docs/codebase_map.json`](../../../docs/codebase_map.json) est la source de vérité pour
+les métriques du projet. Il alimente [seLe4n.org](https://github.com/hatter6822/hatter6822.github.io)
+et est actualisé automatiquement à chaque merge via CI. Regénérez avec
+`./scripts/generate_codebase_map.py --pretty`.
 
 ## Commandes de validation
 
 ```bash
-./scripts/test_fast.sh      # Niveau 0 + Niveau 1 (hygiène + compilation, profondeur sémantique de preuve L-08)
-./scripts/test_smoke.sh     # + Niveau 2 (trace + état négatif + synchronisation docs)
-./scripts/test_full.sh      # + Niveau 3 (ancres de surface d'invariants + vérification Lean #check)
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Niveau 4 (déterminisme nocturne)
+./scripts/test_fast.sh      # Niveau 0+1 : hygiène + compilation
+./scripts/test_smoke.sh     # + Niveau 2 : trace + état négatif + synchro docs
+./scripts/test_full.sh      # + Niveau 3 : ancres de surface d'invariants + Lean #check
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Niveau 4 : déterminisme nocturne
 ```
 
 Exécutez au minimum `test_smoke.sh` avant toute PR. Exécutez `test_full.sh`
@@ -119,51 +143,96 @@ exécutables et de preuves de préservation d'invariants vérifiées par machine
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                 API du noyau  (SeLe4n/Kernel/API.lean)               │
+│                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│ Ordonnanceur │  Capacités  │    IPC     │ Cycle de  │  Services      │
-│  RunQueue    │  CSpace/CDT │  DualQueue │   vie     │  Orchestration │
+│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│  SchedContext│             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
-│       Flux d'information  (Policy, Projection, Enforcement)          │
+│         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
 │     Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions)      │
 ├──────────────────────────────────────────────────────────────────────┤
-│                     Modèle  (Object, State, CDT)                     │
+│                     Model  (Object, State, CDT)                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│             Fondations  (Prelude, Machine, MachineConfig)            │
+│             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│          Plateforme  (Contract, Sim, RPi5)  ← liaisons H3-prep       │
+│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Chaque sous-système du noyau suit la séparation **Operations/Invariant** :
-les transitions dans `Operations.lean`, les preuves dans `Invariant.lean`.
-Le `apiInvariantBundle` unifié agrège tous les invariants des sous-systèmes
-en une seule obligation de preuve.
+## Structure du code source
+
+```
+SeLe4n/
+├── Prelude.lean                 Typed identifiers, KernelM monad
+├── Machine.lean                 Register file, memory, timer
+├── Model/                       Object types, SystemState, builder/freeze phases
+├── Kernel/
+│   ├── API.lean                 Unified public API + apiInvariantBundle
+│   ├── Scheduler/               RunQueue, EDF selection, PriorityInheritance, Liveness (WCRT)
+│   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
+│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
+│   ├── Lifecycle/               Object retype, thread suspend/resume
+│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
+│   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
+│   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
+│   ├── RadixTree/               CNode radix tree (O(1) flat array)
+│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── FrozenOps/               Frozen-state operations + commutativity proofs
+│   └── CrossSubsystem.lean      Cross-subsystem invariant composition
+├── Platform/
+│   ├── Contract.lean            PlatformBinding typeclass
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Sim/                     Simulation platform (permissive contracts for testing)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+├── Testing/                     Test harness, state builder, invariant checks
+Main.lean                        Executable entry point
+tests/                           15 test suites
+```
+
+Chaque sous-système suit la séparation **Operations/Invariant** : les transitions
+dans `Operations.lean`, les preuves dans `Invariant.lean`. Le
+`apiInvariantBundle` unifié agrège tous les invariants des sous-systèmes en une
+seule obligation de preuve. Pour l'inventaire complet par fichier, consultez
+[`docs/codebase_map.json`](../../../docs/codebase_map.json).
 
 ## Comparaison avec seL4
 
 | Fonctionnalité | seL4 | seLe4n |
 |----------------|------|--------|
-| **Mécanisme IPC** | File d'attente à liste chaînée simple | Double file intrusive avec pointeurs arrière `queuePPrev` pour suppression en milieu de file en O(1) |
-| **Flux d'information** | Partition binaire haut/bas | Politique de flux configurable à N domaines (généralise les étiquettes héritées confidentialité × intégrité) |
-| **Gestion des services** | Hors noyau | Orchestration de services de première classe avec graphe de dépendances et détection de cycles par DFS |
-| **Dérivation de capacités** | CDT avec liste chaînée d'enfants | `childMap` HashMap pour recherche d'enfants en O(1) |
-| **Ordonnanceur** | File de priorité plate | `RunQueue` par tranche de priorité avec suivi inline de `maxPriority` et EDF |
-| **VSpace** | Tables de pages matérielles | `HashMap VAddr (PAddr x PagePermissions)` avec application W^X |
-| **Méthodologie de preuve** | Isabelle/HOL, a posteriori | Vérificateur de types Lean 4, preuves co-localisées avec les transitions |
-| **Abstraction de plateforme** | HAL au niveau C | Classe de types `PlatformBinding` avec contrats de frontière typés |
+| **Ordonnancement** | Serveur sporadique implémenté en C (MCS) | CBS avec théorème `cbs_bandwidth_bounded` vérifié par machine ; `SchedContext` comme objet noyau contrôlé par capacités |
+| **Serveurs passifs** | Donation de SchedContext via C | Donation vérifiée avec invariant `donationChainAcyclic` |
+| **IPC** | File d'attente endpoint à liste chaînée simple | Double file intrusive avec suppression en milieu de file en O(1) ; délais pilotés par le budget |
+| **Flux d'information** | Partition binaire haut/bas | Politique configurable à N domaines avec frontière d'application de 30 entrées et preuves de non-interférence par opération |
+| **Héritage de priorité** | PIP implémenté en C (branche MCS) | PIP transitif vérifié par machine avec absence d'interblocage et borne WCRT paramétrique |
+| **Latence bornée** | Aucune borne WCRT formelle | `WCRT = D × L_max + N × (B + P)` prouvée à travers 7 modules de vivacité |
+| **Magasins d'objets** | Listes chaînées et tableaux | Tables de hachage Robin Hood vérifiées (`RHTable`/`RHSet`) avec chemins chauds en O(1) |
+| **Gestion des services** | Hors noyau | Orchestration de première classe avec graphe de dépendances et preuves d'acyclicité |
+| **Preuves** | Isabelle/HOL, a posteriori | Vérificateur de types Lean 4, co-localisées avec les transitions (2 447 théorèmes, zéro sorry/axiom) |
+| **Plateforme** | HAL au niveau C | Classe de types `PlatformBinding` avec contrats de frontière typés |
 
 ## Prochaines étapes
 
-Les priorités actuelles et l'historique complet des flux de travail sont maintenus dans
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md). En résumé :
+L'ensemble des flux de travail logiciels (WS-B à WS-AB) est terminé.
+L'historique complet se trouve dans [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md).
 
-- **WS-R** — Remédiation d'audit complète (8 phases, R1–R8, 111 sous-tâches). Traite les 82 constats de l'[`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md). R1–R7 terminées (v0.18.0–v0.18.6), R8 en attente. Plan : [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md).
-- **Liaison matérielle Raspberry Pi 5** — parcours de tables de pages ARMv8, routage d'interruptions GIC-400, séquence de démarrage (les contrats de plateforme RPi5 sont désormais substantifs via WS-H15)
+### Flux de travail terminés
 
-Les portefeuilles précédents (WS-B à WS-Q) sont tous terminés. Les audits antérieurs (v0.8.0–v0.9.32),
-les clôtures de jalons et les chapitres GitBook historiques sont archivés dans
+| Flux de travail | Périmètre | Version |
+|-----------------|-----------|---------|
+| **WS-AB** | Opérations différées et vivacité — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Protocole d'Héritage de Priorité, Théorème de Latence Bornée (6 phases, 90 tâches) | v0.24.0–v0.25.3 |
+| **WS-Z** | Objets de performance composables — `SchedContext` comme 7e objet noyau, moteur de budget CBS, file de réapprovisionnement, donation de serveur passif, endpoints avec timeout (10 phases, 213 tâches) | v0.23.0–v0.23.21 |
+| **WS-B – WS-Y** | Sous-systèmes centraux du noyau, tables de hachage Robin Hood, arbres radix, état gelé, flux d'information, orchestration de services, contrats de plateforme | v0.9.0–v0.22.x |
+
+Plans détaillés : [WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+
+### Prochain jalon majeur
+
+**Liaison matérielle Raspberry Pi 5** — parcours de tables de pages ARMv8,
+routage d'interruptions GIC-400, séquence de démarrage. Les audits antérieurs
+et les clôtures de jalons sont archivés dans
 [`docs/dev_history/`](../../../docs/dev_history/README.md).
 
 ---

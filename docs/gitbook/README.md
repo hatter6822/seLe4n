@@ -5,10 +5,10 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.21.7 (Lean v4.28.0).
-- **Codebase metrics:** 64,229 production LoC across 100 files; 8,316 test LoC across 10 suites; 1,878 theorem/lemma declarations (zero sorry/axiom).
-- **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_DEEP_DIVE.md) and [`AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md`](../dev_history/audits/AUDIT_COMPREHENSIVE_v0.19.6_FULL_KERNEL_RUST.md) — dual deep-dive audits (4 HIGH, 52 MEDIUM, 56 LOW, 0 Critical).
-- **Active workstream:** **WS-U Phase U8 COMPLETE** — (v0.21.7). All prior portfolios (WS-B through WS-U U7) completed.
+- **Version:** 0.25.3 (Lean v4.28.0).
+- **Codebase metrics:** 83,286 production LoC across 132 files; 10,564 test LoC across 15 suites; 2,447 theorem/lemma declarations (zero sorry/axiom).
+- **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.23.21`](../audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW).
+- **Active workstream:** **All workstreams COMPLETE** (WS-B through WS-AB, v0.9.0–v0.25.3). WS-AB delivered all 5 deferred seL4 operations, Priority Inheritance Protocol, and Bounded Latency Theorem.
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.

@@ -52,21 +52,30 @@ transition is an executable pure function. Every invariant is machine-checked
 by the Lean type-checker — zero `sorry`, zero `axiom`. The entire proof surface
 compiles to native code with no admitted proofs.
 
-The project utilizes a capability-based security model while introducing novel
-architectural improvements compared to other microkernels:
+The project preserves seL4's capability-based security model while introducing
+architectural improvements enabled by the Lean 4 proof framework:
 
-- **Composable performance objects** — CPU time is a first-class, capability-controlled kernel object. `SchedContext` (the 7th kernel object type) encapsulates budget, period, priority, deadline, and domain into a reusable scheduling context that threads bind to via capability operations. Multiple threads can share scheduling parameters; parameters can be reconfigured dynamically without recreating threads
-- **Constant Bandwidth Server (CBS) scheduling** — each `SchedContext` acts as a sporadic server with proven bandwidth isolation. `consumeBudget` performs saturating per-tick decrements; `processReplenishments` refills budgets from a timer-driven replenishment queue; `admissionCheck` enforces total system utilization cannot exceed 100%. The `cbs_bandwidth_bounded` theorem machine-checks that no SchedContext can exceed `maxReplenishments x budget` consumption over any time window
-- **Passive servers via SchedContext donation** — servers that are idle (`.unbound`) borrow the client's SchedContext during IPC Call/Reply, consuming zero CPU when not actively serving requests. `donateSchedContext` transfers the client's CBS budget to the server during `endpointCall`; `returnDonatedSchedContext` returns it on reply. The `donationChainAcyclic` invariant prevents circular donation chains
-- **Budget-driven IPC timeouts** — IPC blocking operations are bounded by the caller's SchedContext budget. When budget expires during a blocking call, `timeoutThread` splices the thread out of the endpoint queue, resets its IPC state, writes error code `0xFFFFFFFF`, and re-enqueues it. The `blockedThreadTimeoutConsistent` invariant guarantees every timed-out thread references a valid SchedContext
-- **O(1) hash-based kernel hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked `distCorrect`, `noDupKeys`, and `probeChainDominant` invariants
-- **Intrusive dual-queue IPC** with per-thread `queuePrev`/`queuePPrev`/`queueNext` links for O(1) enqueue, dequeue, and mid-queue removal
-- **Node-stable capability derivation tree** with `childMap` + `parentMap` RHTable indices for O(1) slot transfer, revocation, parent lookup, and descendant traversal
-- **Parameterized N-domain information-flow** framework with configurable flow policies, generalizing legacy confidentiality/integrity labels (beyond seL4's binary partition). 30-entry enforcement boundary with per-operation non-interference proofs
-- **EDF + CBS priority scheduling** with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, priority-bucketed `RunQueue`, domain-aware temporal partitioning, and a 15-conjunct `schedulerInvariantBundleExtended` covering both legacy and CBS scheduling paths
-- **Two-phase state architecture** — kernel state flows through a builder phase (with 4 invariant witnesses) to a frozen immutable representation. `FrozenMap`/`FrozenSet` provide O(1) lookups with proven equivalence to the live state via `freeze_preserves_*` theorems. 20 frozen operations mirror the live kernel API
-- **Service orchestration layer** for component lifecycle and dependency management with deterministic partial-failure semantics and proven dependency acyclicity
-- **10-conjunct proof layer** — `proofLayerInvariantBundle` composes scheduler, capability, IPC (14-conjunct), lifecycle, service, VSpace, cross-subsystem (8-predicate), TLB, and extended scheduler invariants into a single top-level proof obligation verified from boot through all kernel operations
+### Scheduling and real-time guarantees
+
+- **Composable performance objects** — CPU time is a first-class kernel object. `SchedContext` encapsulates budget, period, priority, deadline, and domain into a reusable scheduling context that threads bind to via capabilities. CBS (Constant Bandwidth Server) scheduling provides proven bandwidth isolation (`cbs_bandwidth_bounded` theorem)
+- **Passive servers** — idle servers borrow the client's `SchedContext` during IPC, consuming zero CPU when not serving. The `donationChainAcyclic` invariant prevents circular donation chains
+- **Budget-driven IPC timeouts** — blocking operations are bounded by the caller's budget. On expiry, threads are spliced out of the endpoint queue and re-enqueued
+- **Priority Inheritance Protocol** — transitive priority propagation with machine-checked deadlock freedom (`blockingChainAcyclic`) and bounded chain depth. Prevents unbounded priority inversion
+- **Bounded latency theorem** — machine-checked WCRT bound: `WCRT = D × L_max + N × (B + P)`, proven across 7 liveness modules covering budget monotonicity, replenishment timing, yield semantics, band exhaustion, and domain rotation
+
+### Data structures and IPC
+
+- **O(1) hash-based hot paths** — all object stores, run queues, CNode slots, VSpace mappings, and IPC queues use formally verified Robin Hood hash tables with `distCorrect`, `noDupKeys`, and `probeChainDominant` invariants
+- **Intrusive dual-queue IPC** — per-thread back-pointers for O(1) enqueue, dequeue, and mid-queue removal
+- **Node-stable capability derivation tree** — `childMap` + `parentMap` indices for O(1) slot transfer, revocation, and descendant traversal
+
+### Security and verification
+
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 30-entry enforcement boundary with per-operation non-interference proofs (32-constructor `NonInterferenceStep` inductive)
+- **Composed proof layer** — `proofLayerInvariantBundle` composes 10 subsystem invariants (scheduler, capability, IPC, lifecycle, service, VSpace, cross-subsystem, TLB, and CBS extensions) into a single top-level obligation verified from boot through all operations
+- **Two-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 20 frozen operations mirror the live API
+- **Complete operation set** — all seL4 operations implemented with invariant preservation, including the 5 deferred operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
+- **Service orchestration** — kernel-level component lifecycle with dependency graphs and proven acyclicity (seLe4n extension, not in seL4)
 
 ## Current state
 
@@ -82,7 +91,7 @@ architectural improvements compared to other microkernels:
 | **Test Lean LoC** | 10,564 across 15 test suites |
 | **Proved declarations** | 2,447 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.22.17_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md) — pre-release audit remediation (4 CRIT, 9 HIGH, 9 MED, 2 LOW) |
+| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`
@@ -99,62 +108,31 @@ lake exe sele4n                # run trace harness
 ./scripts/test_smoke.sh        # validate (hygiene + build + trace + negative-state + docs sync)
 ```
 
-## Onboarding path
+## Documentation
 
-New to the project? Follow this reading order:
+| Start here | Then |
+|------------|------|
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — workflow, validation, PR checklist | [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) — specification and milestones |
+| [`docs/gitbook/README.md`](docs/gitbook/README.md) — full handbook | [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) — seL4 reference semantics |
+| [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable inventory | [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) — workstream history and roadmap |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution mechanics | [`CHANGELOG.md`](CHANGELOG.md) — version history |
 
-1. **This README** — project identity, architecture, and source layout
-2. [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — day-to-day workflow, validation loop, PR checklist
-3. [`docs/gitbook/README.md`](docs/gitbook/README.md) — full handbook (architecture deep dives, proofs, hardware path)
-4. [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable module and declaration inventory
-
-For workstream planning and history, see [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
-
-## Project documentation
-
-| Document | Purpose |
-|----------|---------|
-| [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md) | Project specification and milestones |
-| [`docs/spec/SEL4_SPEC.md`](docs/spec/SEL4_SPEC.md) | seL4 reference semantics |
-| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Day-to-day workflow, validation loop, PR checklist |
-| [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md) | Tiered test gates and CI contract |
-| [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) | Complete workstream history, roadmap, and audit plan index |
-| [`docs/gitbook/README.md`](docs/gitbook/README.md) | Full handbook (architecture, design, proofs, hardware path) |
-| [`docs/codebase_map.json`](docs/codebase_map.json) | Machine-readable codebase inventory (synced with README) |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution mechanics and PR requirements |
-| [`CHANGELOG.md`](CHANGELOG.md) | Version history |
+[`docs/codebase_map.json`](docs/codebase_map.json) is the source of truth for
+project metrics. It feeds [seLe4n.org](https://github.com/hatter6822/hatter6822.github.io)
+and is auto-refreshed on merge via CI. Regenerate with
+`./scripts/generate_codebase_map.py --pretty`.
 
 ## Validation commands
 
 ```bash
-./scripts/test_fast.sh      # Tier 0 + Tier 1 (hygiene + build, semantic proof-depth L-08)
-./scripts/test_smoke.sh     # + Tier 2 (trace + negative-state + docs sync)
-./scripts/test_full.sh      # + Tier 3 (invariant surface anchors + Lean #check correctness)
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4 (nightly determinism)
+./scripts/test_fast.sh      # Tier 0+1: hygiene + build
+./scripts/test_smoke.sh     # + Tier 2: trace + negative-state + docs sync
+./scripts/test_full.sh      # + Tier 3: invariant surface anchors + Lean #check
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nightly determinism
 ```
 
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
-
-## Codebase map
-
-[`docs/codebase_map.json`](docs/codebase_map.json) is the machine-readable
-inventory of every module and declaration in the project. It feeds the
-[seLe4n.org](https://github.com/hatter6822/hatter6822.github.io) website and
-serves as the unified source of truth for project metrics.
-
-```bash
-./scripts/generate_codebase_map.py --pretty          # regenerate
-./scripts/generate_codebase_map.py --pretty --check   # validate without writing
-```
-
-The map includes:
-- **`readme_sync`** — project-level metrics (version, LoC, theorem count) used by README and docs
-- **`source_sync`** — deterministic SHA256 digest of all Lean sources for cache invalidation
-- **`modules`** — per-module declaration inventory with `called` arrays for internal references
-
-The post-merge `.github/workflows/codebase_map_sync.yml` job auto-refreshes the
-map on main as a backstop for drift.
 
 ## Architecture
 
@@ -181,255 +159,74 @@ machine-checked invariant preservation proofs:
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-Each kernel subsystem follows the **Operations/Invariant split**: transitions in
-`Operations.lean`, proofs in `Invariant.lean`. The unified `apiInvariantBundle`
-aggregates all subsystem invariants into a single proof obligation.
-
 ## Source layout
 
 ```
-SeLe4n/Prelude.lean              Typed identifiers, KernelM monad, Hashable instances
-SeLe4n/Machine.lean              Register file, memory, timer, MachineConfig
-SeLe4n/Model/Object.lean         Re-export hub: TCB, Endpoint, Notification, CNode, VSpaceRoot, CDT
-  Object/Types.lean              Core data types through UntypedObject
-  Object/Structures.lean         VSpaceRoot, CNode, KernelObject, CDT helpers
-SeLe4n/Model/State.lean          SystemState with RHTable-backed stores
-SeLe4n/Model/IntermediateState.lean  Builder-phase state with invariant witnesses
-SeLe4n/Model/Builder.lean        Builder operations (invariant-preserving state construction)
-SeLe4n/Model/FrozenState.lean    FrozenMap, FrozenSet, FrozenSystemState, freeze function
-SeLe4n/Model/FreezeProofs.lean   Freeze correctness proofs (lookup equiv, invariant transfer)
-SeLe4n/Kernel/Scheduler/*        Priority-bucketed RunQueue, EDF scheduling, domain partitioning
-  RunQueue.lean                  RunQueue structure, 13 bridge lemmas
-  Operations/Selection.lean      EDF predicates, thread selection, candidate ordering
-  Operations/Core.lean           Core transitions (schedule, handleYield, timerTick)
-  Operations/Preservation.lean   Scheduler invariant preservation theorems
-SeLe4n/Kernel/Capability/*       CSpace lookup/mint/copy/move/delete/revoke with CDT tracking
-  Operations.lean                CSpace operations
-  Invariant/Defs.lean            Core invariant definitions, transfer theorems
-  Invariant/Authority.lean       Authority reduction, badge routing consistency
-  Invariant/Preservation.lean    Operation preservation, lifecycle integration
-SeLe4n/Kernel/IPC/*              Dual-queue IPC subsystem
-  Operations/Endpoint.lean       Core endpoint/notification ops
-  Operations/CapTransfer.lean    IPC capability transfer
-  Operations/Timeout.lean        Budget-driven IPC timeout unblocking (Z6)
-  Operations/Donation.lean       SchedContext donation wrappers + preservation (Z7)
-  Operations/SchedulerLemmas.lean  Scheduler preservation lemmas
-  DualQueue/Core.lean            Intrusive dual-queue ops with O(1) removal
-  DualQueue/Transport.lean       Dual-queue transport lemmas
-  DualQueue/WithCaps.lean        DualQueue with capability transfer
-  Invariant/Defs.lean            IPC invariant definitions
-  Invariant/EndpointPreservation.lean  Endpoint preservation proofs
-  Invariant/CallReplyRecv.lean   Call/ReplyRecv preservation proofs
-  Invariant/NotificationPreservation.lean  Notification preservation proofs
-  Invariant/QueueNoDup.lean      No self-loops, send/receive head disjointness
-  Invariant/QueueMembership.lean Queue membership consistency proofs
-  Invariant/QueueNextBlocking.lean  queueNext blocking consistency proofs
-  Invariant/Structural.lean      Structural invariants, composition theorems
-SeLe4n/Kernel/Lifecycle/*        Object retype with lifecycle metadata preservation
-SeLe4n/Kernel/Service/*          Service graph with HashSet-backed DFS cycle detection
-  Interface.lean                 Service interface definitions
-  Operations.lean                Service operations
-  Registry.lean                  Service registry
-  Registry/Invariant.lean        Registry invariant proofs
-  Invariant/Policy.lean          Policy surface, bridge theorems
-  Invariant/Acyclicity.lean      Dependency acyclicity proofs
-SeLe4n/Kernel/Architecture/*     VSpace, TLB model, register decode, platform adapter
-  VSpace.lean                    VSpace HashMap map/unmap/lookup, W^X enforcement
-  VSpaceBackend.lean             VSpace backend operations
-  VSpaceInvariant.lean           VSpace invariant proofs
-  TlbModel.lean                  TLB flush model
-  Adapter.lean                   Architecture adapter
-  Assumptions.lean               Architecture assumptions
-  Invariant.lean                 Architecture invariant re-export hub
-  RegisterDecode.lean            Total deterministic decode: raw registers → typed kernel IDs
-  SyscallArgDecode.lean          Per-syscall typed argument decode (msgRegs → typed structs)
-SeLe4n/Kernel/InformationFlow/*  2D security labels, BIBA lattice, 80 NI theorems
-  Policy.lean                    Security labels, flow policies, domain flow validation
-  Projection.lean                Low-equivalence projection for NI proofs
-  Enforcement/Wrappers.lean      29-entry enforcement boundary, policy-gated wrappers
-  Enforcement/Soundness.lean     Correctness theorems, declassification
-  Invariant/Helpers.lean         Shared NI proof infrastructure
-  Invariant/Operations.lean      Per-operation NI proofs
-  Invariant/Composition.lean     Trace composition, 32-constructor NonInterferenceStep
-SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
-  Core.lean                      Types, operations, proofs (N1 complete)
-  Set.lean                       RHSet type (hash-set wrapper over RHTable)
-  Bridge.lean                    Kernel API bridge: instances, bridge lemmas, filter (N3)
-  Invariant.lean                 Re-export hub (N2)
-    Invariant/Defs.lean          Invariant definitions (distCorrect, noDupKeys, probeChainDominant)
-    Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops)
-    Invariant/Lookup.lean        Functional correctness (get after insert/erase), key absence
-SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
-  Core.lean                      Types, operations (O(1) lookup/insert/erase via bit extraction)
-  Invariant.lean                 24 correctness proofs (lookup, WF, size, toList, fold)
-  Bridge.lean                    RHTable→CNodeRadix conversion, freeze integration
-SeLe4n/Kernel/SchedContext/*     Scheduling context: CBS budget, replenishment queue (Z1–Z8)
-  Types.lean                     Budget, Period, SchedContext, SchedContextBinding
-  Budget.lean                    CBS budget operations: consume, replenish, admission control
-  ReplenishQueue.lean            Sorted replenishment queue: insert, popDue, remove
-  Operations.lean                SchedContext configure/bind/unbind/yieldTo operations (Z5)
-  Invariant.lean                 Re-export hub (Z2)
-    Invariant/Defs.lean          Invariant definitions, preservation proofs, bandwidth theorems
-    Invariant/Preservation.lean  SchedContext operation preservation theorems (Z5)
-SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7)
-  Core.lean                      FrozenKernel monad, lookup/store primitives
-  Operations.lean                15 per-subsystem frozen operations
-  Commutativity.lean             FrozenMap set/get? roundtrip proofs, frame lemmas
-  Invariant.lean                 frozenStoreObject preservation theorems
-SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants
-SeLe4n/Kernel/API.lean           Unified public API and apiInvariantBundle
-SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
-SeLe4n/Platform/DeviceTree.lean  FDT parsing with bounds-checked helpers
-SeLe4n/Platform/Boot.lean        Boot sequence (PlatformConfig → IntermediateState)
-SeLe4n/Platform/Sim/*            Simulation platform (permissive contracts for testing)
-  RuntimeContract.lean           Permissive + restrictive runtime contracts
-  BootContract.lean              Boot + interrupt contracts (all True)
-  ProofHooks.lean                AdapterProofHooks for restrictive contract
-  Contract.lean                  PlatformBinding instance (re-export hub)
-SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform (BCM2712)
-  Board.lean                     BCM2712 addresses, MMIO, MachineConfig
-  RuntimeContract.lean           Substantive runtime + restrictive contract
-  BootContract.lean              Boot + interrupt contracts (GIC-400)
-  MmioAdapter.lean               MMIO adapter for RPi5
-  ProofHooks.lean                AdapterProofHooks for restrictive contract
-  Contract.lean                  PlatformBinding instance (re-export hub)
-SeLe4n/Testing/*                 Test harness, state builder, fixtures
-  Helpers.lean                   Shared test helpers (expectError, etc.)
-  StateBuilder.lean              Test state construction
-  InvariantChecks.lean           Runtime invariant check helpers
-  MainTraceHarness.lean          Main trace test harness
-  RuntimeContractFixtures.lean   Platform contract test fixtures
+SeLe4n/
+├── Prelude.lean                 Typed identifiers, KernelM monad
+├── Machine.lean                 Register file, memory, timer
+├── Model/                       Object types, SystemState, builder/freeze phases
+├── Kernel/
+│   ├── API.lean                 Unified public API + apiInvariantBundle
+│   ├── Scheduler/               RunQueue, EDF selection, PriorityInheritance, Liveness (WCRT)
+│   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
+│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
+│   ├── Lifecycle/               Object retype, thread suspend/resume
+│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
+│   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
+│   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
+│   ├── RadixTree/               CNode radix tree (O(1) flat array)
+│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── FrozenOps/               Frozen-state operations + commutativity proofs
+│   └── CrossSubsystem.lean      Cross-subsystem invariant composition
+├── Platform/
+│   ├── Contract.lean            PlatformBinding typeclass
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Sim/                     Simulation platform (permissive contracts for testing)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
-tests/                           11 test suites (negative-state, info-flow, trace, radix, suspend, etc.)
+tests/                           15 test suites
 ```
 
-### Comparison with seL4
+Each subsystem follows the **Operations/Invariant split**: transitions in
+`Operations.lean`, proofs in `Invariant.lean`. The unified `apiInvariantBundle`
+aggregates all subsystem invariants into a single proof obligation. For the full
+per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
+
+## Comparison with seL4
 
 | Feature | seL4 | seLe4n |
 |---------|------|--------|
-| **Scheduling model** | MCS extensions: C-implemented sporadic server with `SchedContext` kernel object | CBS (Constant Bandwidth Server) with machine-checked `cbs_bandwidth_bounded` isolation theorem; `SchedContext` as 7th kernel object type with capability-controlled `configure`/`bind`/`unbind` operations |
-| **Passive servers** | SchedContext donation via C code paths | Formally verified donation protocol: `donateSchedContext`/`returnDonatedSchedContext` with `donationChainAcyclic` invariant preventing circular chains |
-| **IPC timeout** | Budget-driven timeout in C | `timeoutThread` with mid-queue splice-out, `blockedThreadTimeoutConsistent` invariant, and `endpointQueueRemove` with invExt proof |
-| **IPC mechanism** | Single linked-list endpoint queue | Intrusive dual-queue with `queuePPrev` back-pointers for O(1) mid-queue removal |
-| **Information flow** | Binary high/low partition | N-domain configurable flow policy with 29-entry enforcement boundary and per-operation NI proofs |
-| **Service management** | Not in kernel | First-class service orchestration with dependency graph and DFS cycle detection |
-| **Capability derivation** | CDT with linked-list children | `childMap` HashMap for O(1) children lookup |
-| **Object stores** | Linked lists and arrays | All stores backed by formally verified Robin Hood hash tables (`RHTable`/`RHSet`) with `distCorrect`/`noDupKeys`/`probeChainDominant` invariants |
-| **Scheduler** | Flat priority queue | Priority-bucketed `RunQueue` with EDF tie-breaking, CBS budget filtering, and 15-conjunct invariant bundle |
-| **VSpace** | Hardware page tables | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Isabelle/HOL, post-hoc | Lean 4 type-checker, proofs co-located with transitions (2,341 theorems, zero sorry/axiom) |
-| **Platform abstraction** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
-
-### Comparison with Fiasco.OC (TU Dresden)
-
-| Feature | Fiasco.OC (TU Dresden) | seLe4n |
-|---------|-------------------------|--------|
-| **Scheduling model** | Priority-driven real-time scheduler | CBS sporadic server with `SchedContext` kernel objects, capability-controlled binding, and `cbs_bandwidth_bounded` isolation proof |
-| **Passive servers** | No SchedContext donation mechanism | SchedContext donation during IPC Call/Reply with `donationChainAcyclic` invariant |
-| **IPC mechanism** | L4 message-based endpoint IPC | Intrusive dual-queue endpoint IPC with `queuePPrev` back-pointers for O(1) mid-queue removal and budget-driven timeout |
-| **Information flow** | Mechanism/policy isolation (no in-tree machine-checked noninterference layer) | N-domain configurable flow policy with machine-checked low-equivalence/noninterference theorems |
-| **Service management** | Not in kernel (external user-space stacks such as L4Re) | First-class service orchestration with dependency graph and DFS cycle detection |
-| **Capability derivation** | L4 capability/object model | `childMap` HashMap for O(1) children lookup with typed transitions |
-| **Object stores** | Kernel-managed object pools | Robin Hood hash tables (`RHTable`/`RHSet`) with machine-checked correctness invariants |
-| **VSpace** | Architecture-native page tables/MMU | `HashMap VAddr (PAddr x PagePermissions)` with W^X enforcement |
-| **Proof methodology** | Assurance via testing/review/benchmarking | Lean 4 type-checker with 2,341 theorems co-located with transitions (zero sorry/axiom) |
-| **Platform abstraction** | Architecture/board support via kernel + ecosystem engineering | `PlatformBinding` typeclass with typed boundary contracts |
-
+| **Scheduling** | C-implemented sporadic server (MCS) | CBS with machine-checked `cbs_bandwidth_bounded` theorem; `SchedContext` as capability-controlled kernel object |
+| **Passive servers** | SchedContext donation via C | Verified donation with `donationChainAcyclic` invariant |
+| **IPC** | Single linked-list endpoint queue | Intrusive dual-queue with O(1) mid-queue removal; budget-driven timeouts |
+| **Information flow** | Binary high/low partition | N-domain configurable policy with 30-entry enforcement boundary and per-operation NI proofs |
+| **Priority inheritance** | C-implemented PIP (MCS branch) | Machine-checked transitive PIP with deadlock freedom and parametric WCRT bound |
+| **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
+| **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
+| **Service management** | Not in kernel | First-class orchestration with dependency graph and acyclicity proofs |
+| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,447 theorems, zero sorry/axiom) |
+| **Platform** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ## What's next
 
-The full workstream history is maintained in
-[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
+All software-level workstreams (WS-B through WS-AB) are complete. The full
+history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
-### Recently completed: WS-Z — Composable Performance Objects
+### Completed workstreams
 
-**10 phases, 213 sub-tasks, v0.23.0–v0.23.21** | [Plan](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md) | **PORTFOLIO COMPLETE**
+| Workstream | Scope | Version |
+|------------|-------|---------|
+| **WS-AB** | Deferred Operations & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem (6 phases, 90 tasks) | v0.24.0–v0.25.3 |
+| **WS-Z** | Composable Performance Objects — `SchedContext` as 7th kernel object, CBS budget engine, replenishment queue, passive server donation, timeout endpoints (10 phases, 213 tasks) | v0.23.0–v0.23.21 |
+| **WS-B – WS-Y** | Core kernel subsystems, Robin Hood hash tables, radix trees, frozen state, information flow, service orchestration, platform contracts | v0.9.0–v0.22.x |
 
-WS-Z introduced composable performance objects to seLe4n, adapting seL4's MCS
-(Mixed-Criticality System) scheduling extensions with machine-checked proofs.
-The workstream addresses five fundamental limitations of monolithic scheduling
-state: no CPU budget accounting, no scheduling context separation, no passive
-server support, no capability-controlled resource binding, and no timeout-bounded
-IPC.
-
-**Phase Z1 — SchedContext Type Foundation**: `SchedContext` as the 7th kernel
-object type with 11 fields (`scId`, `budget`, `period`, `priority`, `deadline`,
-`domain`, `budgetRemaining`, `periodStart`, `replenishments`, `boundThread`,
-`isActive`). `SchedContextBinding` enum (`.unbound` | `.bound scId` |
-`.donated scId originalOwner`) on every TCB. `threadSchedulingParams` migration
-accessor resolves effective parameters from bound SchedContext or falls back to
-legacy TCB fields. Full codebase ripple fix across 24 files (~150 match arms).
-
-**Phase Z2 — CBS Budget Engine**: Pure-function Constant Bandwidth Server
-operations: `consumeBudget` (saturating decrement), `processReplenishments`
-(partitioning + refill capped at budget ceiling), `cbsUpdateDeadline` (CBS
-deadline rule: `deadline := currentTime + period` on replenishment after
-exhaustion), `admissionCheck` (total utilization cannot exceed 1000 per-mille).
-4-conjunct `schedContextWellFormed` invariant bundle with 16 per-operation
-preservation theorems composing into `cbsBudgetCheck_preserves_schedContextWellFormed`.
-Bandwidth isolation: `cbs_bandwidth_bounded` theorem bounds consumption by
-`maxReplenishments x budget` over any time window.
-
-**Phase Z3 — Replenishment Queue**: System-wide sorted `ReplenishQueue` for
-timer-driven CBS refills. O(1) `peek`/`hasDue`, O(k) `popDue` prefix split,
-O(n) sorted `insert`. `pairwiseSortedBy` recursive adjacency predicate with 13
-preservation and membership theorems.
-
-**Phase Z4 — Scheduler Integration**: CBS budget engine wired into the scheduler.
-`effectivePriority` resolves scheduling parameters from SchedContext if bound.
-`timerTickBudget` implements 3-branch logic: unbound legacy path, bound budget
-decrement, and bound budget exhaustion (schedule replenishment, insert into
-replenish queue, preempt thread, timeout blocked IPC threads).
-`chooseThreadEffective` filters by budget eligibility.
-`schedulerInvariantBundleExtended` (15-tuple) extends the original 9-conjunct
-scheduler bundle with 6 CBS invariants. All 3,236 lines of existing preservation
-proofs pass unchanged.
-
-**Phase Z5 — Capability-Controlled Thread Binding**: 3 new syscalls
-(`.schedContextConfigure`, `.schedContextBind`, `.schedContextUnbind`).
-`schedContextConfigure` validates parameters and checks admission control.
-`schedContextBind` creates bidirectional TCB-SchedContext binding and re-inserts
-into RunQueue at SchedContext priority. `schedContextUnbind` includes preemption
-guard and RunQueue cleanup. `schedContextYieldTo` enables kernel-internal budget
-transfer. 7 preservation theorems including
-`schedContextConfigure_admission_excludes_eq` (prevents admission double-counting).
-
-**Phase Z6 — Timeout Endpoints**: Budget-driven IPC timeout. `timeoutThread`
-splices a thread out of the endpoint queue via `endpointQueueRemove`, resets IPC
-state to `.ready`, writes error code `0xFFFFFFFF`, and re-enqueues in the
-RunQueue. `timeoutBlockedThreads` scans for timed-out threads on budget
-exhaustion during `timerTickBudget`. `blockedThreadTimeoutConsistent` invariant
-ensures every thread with `timeoutBudget` references a valid SchedContext and is
-in a blocking IPC state.
-
-**Phase Z7 — SchedContext Donation / Passive Servers**: Enables servers that
-consume zero CPU when idle. During `endpointCall`, if the receiver is passive
-(`.unbound`) and the caller has a bound SchedContext, `donateSchedContext`
-transfers the caller's CBS budget to the server. The server executes on the
-client's budget. On `endpointReply`, `returnDonatedSchedContext` returns the
-SchedContext to the original owner. 4 new invariants: `donationChainAcyclic`
-(no circular donation chains), `donationOwnerValid` (bidirectional consistency),
-`passiveServerIdle` (unbound non-runnable threads are ready/receiving),
-`donationBudgetTransfer` (at most one thread per SchedContext).
-`ipcInvariantFull` extended from 10 to 14 conjuncts.
-
-**Phase Z8 — API Surface & Syscall Wiring**: 3 error-exclusivity theorems, 4
-frozen SchedContext operations (`frozenSchedContextConfigure`/`Bind`/`Unbind`,
-`frozenTimerTickBudget`), `enforcementBoundary` expanded 22 to 25 entries,
-`frozenOpCoverage_count` 12 to 15.
-
-**Phase Z9 — Invariant Composition & Cross-Subsystem**: 3 new cross-subsystem
-predicates (`schedContextStoreConsistent`, `schedContextNotDualBound`,
-`schedContextRunQueueConsistent`) extending `crossSubsystemInvariant` from 5 to
-8 predicates. `proofLayerInvariantBundle` extended from 9 to 10 conjuncts.
-`bootSafeObject` extended with SchedContext wellFormedness (6th conjunct). 16
-pairwise field-disjointness witnesses, 3 frame lemmas.
-
-**Phase Z10 — Documentation & Closure**: All documentation synchronized.
+Detailed plans: [WS-AB](docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### Next major milestone
 
 **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt
-routing, boot sequence. All software-level workstreams (WS-B through WS-Z) are
-complete. Prior audits and milestone closeouts are archived in
+routing, boot sequence. Prior audits and milestone closeouts are archived in
 [`docs/dev_history/`](docs/dev_history/README.md).

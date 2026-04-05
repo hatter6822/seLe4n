@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state: 79,419 lines of production Lean across 113 files, 8,759 lines across 10 Lean test suites,
-2,281 theorem/lemma declarations, zero unsound constructs.
+Current state: 83,286 lines of production Lean across 132 files, 10,564 lines across 15 Lean test suites,
+2,447 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -73,14 +73,12 @@ M7 (audit remediation).
 
 ### What's next
 
-All workstreams from WS-B through WS-Z are **COMPLETE** (v0.9.0–v0.23.20).
+All workstreams from WS-B through WS-AB are **COMPLETE** (v0.9.0–v0.25.3).
 Key recent completions:
 
-- **WS-Z** (v0.23.0–v0.23.20): Composable Performance Objects — 9 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, full API surface, and invariant composition. **PORTFOLIO COMPLETE.**
-- **WS-Y** (v0.22.23–v0.22.26): Documentation & cross-subsystem hardening. **PORTFOLIO COMPLETE.**
-- **WS-X** (v0.22.18–v0.22.22): Documentation, hardening & low-severity. **PORTFOLIO COMPLETE.**
-- **WS-W** (v0.22.11–v0.22.17): Pre-release audit remediation — 6 phases, 52 sub-tasks. **PORTFOLIO COMPLETE.**
-- **WS-V** (v0.22.0–v0.22.10): Deep audit remediation — 8 phases. **PORTFOLIO COMPLETE.**
+- **WS-AB** (v0.24.0–v0.25.3): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer), Priority Inheritance Protocol with deadlock freedom proof, Bounded Latency Theorem (WCRT = D×L_max + N×(B+P)), API surface integration. **PORTFOLIO COMPLETE.**
+- **WS-AA** (v0.23.21): Comprehensive Audit Remediation — Phases AA1–AA2 complete (Rust ABI type sync, CI hardening). **PORTFOLIO COMPLETE.**
+- **WS-Z** (v0.23.0–v0.23.20): Composable Performance Objects — 10 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, full API surface, and invariant composition. **PORTFOLIO COMPLETE.**
 
 **Next major milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence.

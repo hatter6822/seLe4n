@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.22.8-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -16,20 +16,8 @@
 <p align="center">
   Lean 4 में मशीन-जाँचित प्रमाणों (machine-checked proofs) के साथ लिखा गया एक
   सूक्ष्म नाभिक (microkernel), जो <a href="https://sel4.systems">seL4</a>
-  वास्तुकला (architecture) से प्रेरित है। प्रथम हार्डवेयर लक्ष्य:
+  वास्तुकला से प्रेरित है। प्रथम हार्डवेयर लक्ष्य:
   <strong>Raspberry Pi 5</strong>।
-</p>
-
-<p align="center">
-  <div align="center">
-    इसके निर्माण में सहायक रहे:
-  </div>
-  <div align="center">
-    claude :robot: :heart: :robot: codex
-  </div>
-  <div align="center">
-    <strong>इस कर्नेल के साथ तदनुसार व्यवहार करें</strong>
-  </div>
 </p>
 
 ---
@@ -40,39 +28,55 @@
 
 ## seLe4n क्या है?
 
-seLe4n एक सूक्ष्म नाभिक (microkernel) है जो Lean 4 में शून्य से निर्मित किया गया है। प्रत्येक कर्नेल संक्रमण (kernel transition) एक निष्पादन योग्य शुद्ध फ़ंक्शन (executable pure function) है। प्रत्येक अपरिवर्तनीय (invariant) Lean प्रकार-परीक्षक (type-checker) द्वारा मशीन-जाँचित है — शून्य `sorry`, शून्य `axiom`। सम्पूर्ण प्रमाण सतह (proof surface) बिना किसी स्वीकृत प्रमाण (admitted proof) के मूल कोड (native code) में संकलित होती है।
+seLe4n एक सूक्ष्म नाभिक है जो Lean 4 में शून्य से निर्मित किया गया है। प्रत्येक
+कर्नेल संक्रमण एक निष्पादन योग्य शुद्ध फ़ंक्शन है। प्रत्येक अपरिवर्तनीय (invariant)
+Lean प्रकार-परीक्षक द्वारा मशीन-जाँचित है — शून्य `sorry`, शून्य `axiom`। सम्पूर्ण
+प्रमाण सतह बिना किसी स्वीकृत प्रमाण के मूल कोड में संकलित होती है।
 
-यह परियोजना क्षमता-आधारित सुरक्षा मॉडल (capability-based security model) का उपयोग करती है और अन्य सूक्ष्म नाभिकों की तुलना में नवीन वास्तुशिल्प सुधार (architectural improvements) प्रस्तुत करती है:
+यह परियोजना seL4 के क्षमता-आधारित सुरक्षा मॉडल को बनाए रखते हुए Lean 4 प्रमाण
+ढाँचे द्वारा सक्षम वास्तुशिल्प सुधार प्रस्तुत करती है:
 
-- **O(1) हैश-आधारित कर्नेल हॉट पाथ (hot paths)** — सभी ऑब्जेक्ट स्टोर (object stores), रन क्यू (run queues), CNode स्लॉट (slots), VSpace मैपिंग (mappings), और IPC क्यू (queues) औपचारिक रूप से सत्यापित `RHTable`/`RHSet` (Robin Hood हैश टेबल, मशीन-जाँचित अपरिवर्तनीयों सहित, स्थिति में शून्य `Std.HashMap`/`Std.HashSet`) का उपयोग करते हैं
-- **सेवा समन्वय परत (service orchestration layer)** — घटक जीवनचक्र (component lifecycle) और निर्भरता प्रबंधन (dependency management) के लिए, नियतात्मक आंशिक-विफलता शब्दार्थ (deterministic partial-failure semantics) के साथ
-- **नोड-स्थिर क्षमता व्युत्पत्ति वृक्ष (node-stable capability derivation tree)** — O(1) स्लॉट स्थानांतरण (slot transfer), निरसन (revocation), मूल खोज (parent lookup), और वंशज अन्वेषण (descendant traversal) के लिए `childMap` + `parentMap` RHTable सूचकांकों के साथ
-- **इंट्रूसिव ड्यूअल-क्यू IPC (intrusive dual-queue IPC)** — O(1) एनक्यू (enqueue), डिक्यू (dequeue), और मध्य-क्यू निष्कासन (mid-queue removal) के लिए प्रति-थ्रेड `queuePrev`/`queuePPrev`/`queueNext` लिंक के साथ
-- **पैरामीटरयुक्त N-डोमेन सूचना प्रवाह (parameterized N-domain information-flow)** ढाँचा — विन्यासयोग्य प्रवाह नीतियों (configurable flow policies) के साथ, पुराने गोपनीयता/अखंडता लेबलों (legacy confidentiality/integrity labels) को सामान्यीकृत करते हुए (seL4 के द्विआधारी विभाजन से परे)
-- **EDF + प्राथमिकता शेड्यूलिंग (priority scheduling)** — डिक्यू-ऑन-डिस्पैच शब्दार्थ (dequeue-on-dispatch semantics), प्रति-TCB रजिस्टर संदर्भ (register context) इनलाइन संदर्भ स्विच (inline context switch) के साथ, प्राथमिकता-बकेटेड `RunQueue`, डोमेन-सचेत विभाजन (domain-aware partitioning)
+### शेड्यूलिंग और वास्तविक-समय गारंटी
+
+- **संयोजनीय प्रदर्शन वस्तुएँ (Composable performance objects)** — CPU समय एक प्रथम-श्रेणी कर्नेल वस्तु है। `SchedContext` बजट, अवधि, प्राथमिकता, समय-सीमा, और डोमेन को एक पुनःप्रयोज्य शेड्यूलिंग संदर्भ में समाहित करता है जिससे थ्रेड क्षमताओं के माध्यम से बाइंड होते हैं। CBS (Constant Bandwidth Server) शेड्यूलिंग प्रमाणित बैंडविड्थ पृथक्करण (`cbs_bandwidth_bounded` प्रमेय) प्रदान करता है
+- **निष्क्रिय सर्वर (Passive servers)** — निष्क्रिय सर्वर IPC के दौरान क्लाइंट का `SchedContext` उधार लेते हैं, सेवा न करते समय शून्य CPU उपभोग करते हैं। `donationChainAcyclic` अपरिवर्तनीय चक्रीय दान श्रृंखलाओं को रोकता है
+- **बजट-चालित IPC टाइमआउट** — अवरुद्ध संचालन कॉलर के बजट द्वारा सीमित होते हैं। समाप्ति पर थ्रेड एंडपॉइंट क्यू से निकाले जाते हैं और पुनः सम्मिलित किए जाते हैं
+- **प्राथमिकता वंशानुक्रम प्रोटोकॉल (Priority Inheritance Protocol)** — मशीन-जाँचित गतिरोध स्वतंत्रता (`blockingChainAcyclic`) और सीमित श्रृंखला गहराई के साथ सकर्मक प्राथमिकता प्रसारण। असीमित प्राथमिकता व्युत्क्रम को रोकता है
+- **परिबद्ध विलंबता प्रमेय (Bounded latency theorem)** — मशीन-जाँचित WCRT सीमा: `WCRT = D × L_max + N × (B + P)`, बजट एकदिशता, पुनःपूर्ति समय, यील्ड शब्दार्थ, बैंड थकावट, और डोमेन चक्रण को कवर करने वाले 7 सजीवता मॉड्यूल में प्रमाणित
+
+### डेटा संरचनाएँ और IPC
+
+- **O(1) हैश-आधारित हॉट पाथ** — सभी ऑब्जेक्ट स्टोर, रन क्यू, CNode स्लॉट, VSpace मैपिंग, और IPC क्यू `distCorrect`, `noDupKeys`, और `probeChainDominant` अपरिवर्तनीयों सहित औपचारिक रूप से सत्यापित Robin Hood हैश टेबल का उपयोग करते हैं
+- **इंट्रूसिव ड्यूअल-क्यू IPC** — O(1) एनक्यू, डिक्यू, और मध्य-क्यू निष्कासन के लिए प्रति-थ्रेड बैक-पॉइंटर
+- **नोड-स्थिर क्षमता व्युत्पत्ति वृक्ष** — O(1) स्लॉट स्थानांतरण, निरसन, और वंशज अन्वेषण के लिए `childMap` + `parentMap` सूचकांक
+
+### सुरक्षा और सत्यापन
+
+- **N-डोमेन सूचना प्रवाह** — seL4 के द्विआधारी विभाजन को सामान्यीकृत करने वाली पैरामीटरयुक्त प्रवाह नीतियाँ��� प्रति-संचालन अ-हस्तक्षेप प्रमाणों सहित 30-प्रविष्टि प्रवर्तन सीमा (32-निर्माता `NonInterferenceStep` आगमनात्मक)
+- **संयुक्त प्रमाण परत** — `proofLayerInvariantBundle` 10 उपप्रणाली अपरिवर्तनीयों (शेड्यूलर, क्षमता, IPC, जीवनचक्र, सेवा, VSpace, अंतर-उपप्रणाली, TLB, और CBS विस्तार) को बूट से सभी संचालनों तक सत्यापित एकल शीर्ष-स्तर दायित्व में संयोजित करता है
+- **द्वि-चरण स्थिति वास्तुकला** — अपरिवर्तनीय साक्षियों सहित बिल्डर चरण प्रमाणित लुकअप तुल्यता सहित जमे हुए अपरिवर्तनीय प्रतिनिधित्व में प्रवाहित होता है। 20 जमे हुए संचालन लाइव API को दर्पणित करते हैं
+- **पूर्ण संचालन समूह** — 5 स्थगित संचालनों (suspend/resume, setPriority/setMCPriority, setIPCBuffer) सहित, अपरिवर्तनीय संरक्षण के साथ सभी seL4 संचालन कार्यान्वित
+- **सेवा समन्वय** — निर्भरता ग्राफ़ और प्रमाणित अचक्रीयता सहित कर्नेल-स्तर घटक जीवनचक्र (seLe4n विस्तार, seL4 में नहीं)
 
 ## वर्तमान स्थिति
 
-<!-- मेट्रिक्स docs/codebase_map.json → readme_sync अनुभाग से समन्वयित हैं।
-     पुनः उत्पन्न करें: ./scripts/generate_codebase_map.py --pretty
-     सत्य का स्रोत: docs/codebase_map.json (readme_sync) -->
-
 | विशेषता | मान |
 |----------|------|
-| **संस्करण (Version)** | `0.22.8` |
-| **Lean टूलचेन (Toolchain)** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 103 फ़ाइलों में 72,569 |
-| **परीक्षण Lean LoC** | 10 परीक्षण सुइट्स में 8,437 |
-| **प्रमाणित घोषणाएँ (Proved declarations)** | 2,138 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
-| **लक्ष्य हार्डवेयर (Target hardware)** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **नवीनतम लेखापरीक्षा (Latest audit)** | [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) — पूर्ण कर्नेल + Rust कोडबेस प्री-रिलीज़ लेखापरीक्षा |
-| **कोडबेस मानचित्र (Codebase map)** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय घोषणा सूची |
+| **संस्करण** | `0.25.3` |
+| **Lean टूलचेन** | `v4.28.0` |
+| **उत्पादन Lean LoC** | 132 फ़ाइलों में 83,286 |
+| **परीक्षण Lean LoC** | 15 परीक्षण सुइट्स में 10,564 |
+| **प्रमाणित घोषणाएँ** | 2,447 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **नवीनतम लेखापरीक्षा** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — पूर्ण कर्नेल Lean + Rust लेखापरीक्षा (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **कोडबेस मानचित्र** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय घोषणा सूची |
 
 मेट्रिक्स `./scripts/generate_codebase_map.py` द्वारा कोडबेस से प्राप्त किए जाते हैं
 और [`docs/codebase_map.json`](../../../docs/codebase_map.json) में `readme_sync`
-कुंजी (key) के अंतर्गत संग्रहीत होते हैं।
+कुंजी के अंतर्गत संग्रहीत होते हैं। `./scripts/report_current_state.py` को
+पारस्परिक जाँच के रूप में उपयोग करें।
 
-## त्वरित प्रारंभ (Quick Start)
+## त्वरित प्रारंभ
 
 ```bash
 ./scripts/setup_lean_env.sh   # Lean टूलचेन स्थापित करें
@@ -81,90 +85,127 @@ lake exe sele4n                # ट्रेस हार्नेस चला
 ./scripts/test_smoke.sh        # सत्यापन (स्वच्छता + निर्माण + ट्रेस + नकारात्मक-स्थिति + दस्तावेज़ समन्वय)
 ```
 
-## प्रारंभिक मार्गदर्शन (Onboarding Path)
+## दस्तावेज़ीकरण
 
-परियोजना में नए हैं? इस क्रम में पढ़ें:
+| यहाँ से शुरू करें | फिर |
+|-------------------|------|
+| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — कार्यप्रवाह, सत्यापन, PR चेकलिस्ट | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — विशिष्टता और मील के पत्थर |
+| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — पूर्ण पुस्तिका | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4 संदर्भ शब्दार्थ |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय सूची | [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) — कार्यधारा इतिहास और रोडमैप |
+| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — योगदान तंत्र | [`CHANGELOG.md`](../../../CHANGELOG.md) — संस्करण इतिहास |
 
-1. **यह README** — परियोजना पहचान, वास्तुकला, और स्रोत विन्यास
-2. [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — दैनिक कार्यप्रवाह (workflow), सत्यापन चक्र (validation loop), PR चेकलिस्ट
-3. [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — पूर्ण पुस्तिका (वास्तुकला गहन अध्ययन, प्रमाण, हार्डवेयर पथ)
-4. [`docs/codebase_map.json`](../../../docs/codebase_map.json) — मशीन-पठनीय मॉड्यूल और घोषणा सूची
+[`docs/codebase_map.json`](../../../docs/codebase_map.json) परियोजना मेट्रिक्स का
+एकल सत्य स्रोत है। यह [seLe4n.org](https://github.com/hatter6822/hatter6822.github.io)
+को डेटा प्रदान करता है और मर्ज पर CI के माध्यम से स्वतः नवीनीकृत होता है। पुनः उत्पन्न करें:
+`./scripts/generate_codebase_map.py --pretty`।
 
-कार्यधारा (workstream) योजना और इतिहास के लिए, [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) देखें।
-
-## प्रोजेक्ट दस्तावेज़ (Project Documentation)
-
-| दस्तावेज़ | उद्देश्य |
-|-----------|---------|
-| [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) | परियोजना विशिष्टता (specification) और मील के पत्थर (milestones) |
-| [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) | seL4 संदर्भ शब्दार्थ (reference semantics) |
-| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) | दैनिक कार्यप्रवाह, सत्यापन चक्र, PR चेकलिस्ट |
-| [`docs/TESTING_FRAMEWORK_PLAN.md`](../../../docs/TESTING_FRAMEWORK_PLAN.md) | स्तरीय परीक्षण द्वार (tiered test gates) और CI अनुबंध (contract) |
-| [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) | पूर्ण कार्यधारा इतिहास, रोडमैप, और लेखापरीक्षा योजना सूचकांक |
-| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) | पूर्ण पुस्तिका (वास्तुकला, डिज़ाइन, प्रमाण, हार्डवेयर पथ) |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) | मशीन-पठनीय कोडबेस सूची (README के साथ समन्वयित) |
-| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) | योगदान तंत्र (contribution mechanics) और PR आवश्यकताएँ |
-| [`CHANGELOG.md`](../../../CHANGELOG.md) | संस्करण इतिहास (version history) |
-
-## सत्यापन कमांड (Validation Commands)
+## सत्यापन कमांड
 
 ```bash
-./scripts/test_fast.sh      # टियर 0 + टियर 1 (स्वच्छता + निर्माण, शब्दार्थ प्रमाण-गहराई L-08)
-./scripts/test_smoke.sh     # + टियर 2 (ट्रेस + नकारात्मक-स्थिति + दस्तावेज़ समन्वय)
-./scripts/test_full.sh      # + टियर 3 (अपरिवर्तनीय सतह एंकर + Lean #check शुद्धता)
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + टियर 4 (रात्रिकालीन नियतिवाद)
+./scripts/test_fast.sh      # टियर 0+1: स्वच्छता + निर्माण
+./scripts/test_smoke.sh     # + टियर 2: ट्रेस + नकारात्मक-स्थिति + दस्तावेज़ समन्वय
+./scripts/test_full.sh      # + टियर 3: अपरिवर्तनीय सतह एंकर + Lean #check
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + टियर 4: रात्रिकालीन नियतिवाद
 ```
 
-किसी भी PR से पहले कम से कम `test_smoke.sh` चलाएँ। प्रमेयों (theorems), अपरिवर्तनीयों (invariants), या दस्तावेज़ एंकरों में परिवर्तन करते समय `test_full.sh` चलाएँ।
+किसी भी PR से पहले कम से कम `test_smoke.sh` चलाएँ। प्रमेयों, अपरिवर्तनीयों, या
+दस्तावेज़ एंकरों में परिवर्तन करते समय `test_full.sh` चलाएँ।
 
-## वास्तुकला (Architecture)
+## वास्तुकला
 
-seLe4n स्तरित अनुबंधों (layered contracts) के रूप में संगठित है, प्रत्येक में निष्पादन योग्य संक्रमण (executable transitions) और मशीन-जाँचित अपरिवर्तनीय संरक्षण प्रमाण (machine-checked invariant preservation proofs) हैं:
+seLe4n स्तरित अनुबंधों के रूप में संगठित है, प्रत्येक में निष्पादन योग्य संक्रमण
+और मशीन-जाँचित अपरिवर्तनीय संरक्षण प्रमाण हैं:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                 कर्नेल API  (SeLe4n/Kernel/API.lean)                  │
+│                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│  शेड्यूलर    │  क्षमता      │    IPC     │ जीवनचक्र  │  सेवा (बाह्य)   │
+│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
 │  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│  SchedContext│             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
-│         सूचना प्रवाह  (नीति, प्रक्षेपण, प्रवर्तन)                       │
+│         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
-│     वास्तुकला  (VSpace, VSpaceBackend, Adapter, Assumptions)          │
+│     Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions)      │
 ├──────────────────────────────────────────────────────────────────────┤
-│                     मॉडल  (Object, State, CDT)                       │
+│                     Model  (Object, State, CDT)                      │
 ├──────────────────────────────────────────────────────────────────────┤
-│             आधार  (Prelude, Machine, MachineConfig)                  │
+│             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│          प्लेटफ़ॉर्म  (Contract, Sim, RPi5)  ← H3-prep बाइंडिंग       │
+│          Platform  (Contract, Sim, RPi5)  ← H3-prep bindings         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-प्रत्येक कर्नेल उपप्रणाली (subsystem) **Operations/Invariant विभाजन** का पालन करती है: संक्रमण `Operations.lean` में, प्रमाण `Invariant.lean` में। एकीकृत `apiInvariantBundle` सभी उपप्रणाली अपरिवर्तनीयों को एक एकल प्रमाण दायित्व (proof obligation) में एकत्रित करता है।
+## स्रोत विन्यास
 
-## seL4 से तुलना (Comparison with seL4)
+```
+SeLe4n/
+├── Prelude.lean                 Typed identifiers, KernelM monad
+├── Machine.lean                 Register file, memory, timer
+├── Model/                       Object types, SystemState, builder/freeze phases
+├── Kernel/
+│   ├── API.lean                 Unified public API + apiInvariantBundle
+│   ├── Scheduler/               RunQueue, EDF selection, PriorityInheritance, Liveness (WCRT)
+│   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
+│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
+│   ├── Lifecycle/               Object retype, thread suspend/resume
+│   ├── Service/                 Service orchestration, registry, acyclicity proofs
+│   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
+│   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
+│   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
+│   ├── RadixTree/               CNode radix tree (O(1) flat array)
+│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── FrozenOps/               Frozen-state operations + commutativity proofs
+│   └── CrossSubsystem.lean      Cross-subsystem invariant composition
+├── Platform/
+│   ├── Contract.lean            PlatformBinding typeclass
+│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState)
+│   ├── Sim/                     Simulation platform (permissive contracts for testing)
+│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
+├── Testing/                     Test harness, state builder, invariant checks
+Main.lean                        Executable entry point
+tests/                           15 test suites
+```
+
+प्रत्येक उपप्रणाली **Operations/Invariant विभाजन** का पालन करती है: संक्रमण
+`Operations.lean` में, प्रमाण `Invariant.lean` में। एकीकृत `apiInvariantBundle`
+सभी उपप्रणाली अपरिवर्तनीयों को एकल प्रमाण दायित्व में एकत्रित करता है। पूर्ण
+फ़ाइलवार सूची के लिए [`docs/codebase_map.json`](../../../docs/codebase_map.json) देखें।
+
+## seL4 से तुलना
 
 | विशेषता | seL4 | seLe4n |
 |----------|------|--------|
-| **IPC तंत्र (mechanism)** | एकल लिंक्ड-लिस्ट एंडपॉइंट क्यू | O(1) मध्य-क्यू निष्कासन के लिए `queuePPrev` बैक-पॉइंटर के साथ इंट्रूसिव ड्यूअल-क्यू |
-| **सूचना प्रवाह (Information flow)** | द्विआधारी उच्च/निम्न विभाजन (binary high/low partition) | N-डोमेन विन्यासयोग्य प्रवाह नीति (पुराने गोपनीयता × अखंडता लेबलों को सामान्यीकृत करती है) |
-| **सेवा प्रबंधन (Service management)** | कर्नेल में नहीं | निर्भरता ग्राफ़ और DFS चक्र पहचान के साथ प्रथम-श्रेणी सेवा समन्वय |
-| **क्षमता व्युत्पत्ति (Capability derivation)** | लिंक्ड-लिस्ट चिल्ड्रेन के साथ CDT | O(1) चिल्ड्रेन लुकअप के लिए `childMap` HashMap |
-| **शेड्यूलर (Scheduler)** | फ्लैट प्राथमिकता क्यू | इनलाइन `maxPriority` ट्रैकिंग और EDF के साथ प्राथमिकता-बकेटेड `RunQueue` |
-| **VSpace** | हार्डवेयर पेज टेबल | W^X प्रवर्तन (enforcement) के साथ `HashMap VAddr (PAddr x PagePermissions)` |
-| **प्रमाण पद्धति (Proof methodology)** | Isabelle/HOL, उत्तर-प्रभावी (post-hoc) | Lean 4 प्रकार-परीक्षक, संक्रमणों के साथ सह-स्थित प्रमाण |
-| **प्लेटफ़ॉर्म अमूर्तन (Platform abstraction)** | C-स्तरीय HAL | टाइप्ड सीमा अनुबंधों (typed boundary contracts) के साथ `PlatformBinding` typeclass |
+| **शेड्यूलिंग** | C-कार्यान्वित छिटपुट सर्वर (MCS) | मशीन-जाँचित `cbs_bandwidth_bounded` प्रमेय सहित CBS; `SchedContext` क्षमता-नियंत्रित कर्नेल वस्तु के रूप में |
+| **निष्क्रिय सर्वर** | C के माध्यम से SchedContext दान | `donationChainAcyclic` अपरिवर्तनीय सहित सत्यापित दान |
+| **IPC** | एकल लिंक्ड-लिस्ट एंडपॉइंट क्यू | O(1) मध्य-क्यू निष्कासन सहित इंट्रूसिव ड्यूअल-क्यू; बजट-चालित टाइमआउट |
+| **सूचना प्रवाह** | द्विआधारी उच्च/निम्न विभाजन | 30-प्रविष्टि प्रवर्तन सीमा और प्रति-संचालन NI प्रमाणों सहित N-डोमेन विन्यासयोग्य नीति |
+| **प्राथमिकता वंशानुक्रम** | C-कार्यान्वित PIP (MCS शाखा) | गतिरोध स्वतंत्रता और पैरामीट्रिक WCRT सीमा सहित मशीन-जाँचित सकर्मक PIP |
+| **परिबद्ध विलंबता** | कोई औपचारिक WCRT सीमा नहीं | 7 सजीवता मॉड्यूल में प्रमाणित `WCRT = D × L_max + N × (B + P)` |
+| **ऑब्जेक्ट स्टोर** | लिंक्ड लिस्ट और एरे | O(1) हॉट पाथ सहित सत्यापित Robin Hood हैश टेबल (`RHTable`/`RHSet`) |
+| **सेवा प्रबंधन** | कर्नेल में नहीं | निर्भरता ग्राफ़ और अचक्रीयता प्रमाणों सहित प्रथम-श्रेणी समन्वय |
+| **प्रमाण** | Isabelle/HOL, उत्तर-प्रभावी | Lean 4 प्रकार-परीक्षक, संक्रमणों के साथ सह-स्थित (2,447 प्रमेय, शून्य sorry/axiom) |
+| **प्लेटफ़ॉर्म** | C-स्तरीय HAL | टाइप्ड सीमा अनुबंधों सहित `PlatformBinding` typeclass |
 
-## अगले कदम (What's Next)
+## अगले कदम
 
-वर्तमान प्राथमिकताएँ और पूर्ण कार्यधारा इतिहास
-[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) में बनाए रखे जाते हैं। सारांश:
+सभी सॉफ़्टवेयर-स्तर कार्यधाराएँ (WS-B से WS-AB) पूर्ण हैं। पूर्ण इतिहास
+[`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTREAM_HISTORY.md) में है।
 
-- **WS-R** — व्यापक लेखापरीक्षा उपचार (Comprehensive Audit Remediation) (8 चरण, R1–R8, 111 उप-कार्य)। [`AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md`](../../../docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.17.13_PRE_RELEASE.md) से सभी 82 निष्कर्षों को संबोधित करता है। R1–R7 पूर्ण (v0.18.0–v0.18.6), R8 लंबित। योजना: [`AUDIT_v0.17.14_WORKSTREAM_PLAN.md`](../../../docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md)।
-- **Raspberry Pi 5 हार्डवेयर बाइंडिंग** — ARMv8 पेज टेबल वॉक, GIC-400 इंटरप्ट रूटिंग, बूट अनुक्रम (boot sequence) (WS-H15 के माध्यम से RPi5 प्लेटफ़ॉर्म अनुबंध अब ठोस हैं)
+### पूर्ण कार्यधाराएँ
 
-पूर्व पोर्टफ़ोलियो (WS-B से WS-Q) सभी पूर्ण हैं। पूर्व लेखापरीक्षाएँ (v0.8.0–v0.9.32),
-मील के पत्थर समापन, और पुराने GitBook अध्याय
+| कार्यधारा | दायरा | संस्करण |
+|-----------|-------|---------|
+| **WS-AB** | स्थगित संचालन और सजीवता पूर्णता — suspend/resume, setPriority/setMCPriority, setIPCBuffer, प्राथमिकता वंशानुक्रम प्रोटोकॉल, परिबद्ध विलंबता प्रमेय (6 चरण, 90 कार्य) | v0.24.0–v0.25.3 |
+| **WS-Z** | संयोजनीय प्रदर्शन वस्तुएँ — `SchedContext` 7वीं कर्नेल वस्तु के रूप में, CBS बजट इंजन, पुनःपूर्ति क्यू, निष्क्रिय सर्वर दान, टाइमआउट एंडपॉइंट (10 चरण, 213 कार्य) | v0.23.0–v0.23.21 |
+| **WS-B – WS-Y** | मूल कर्नेल उपप्रणालियाँ, Robin Hood हैश टेबल, रेडिक्स ट्री, जमी हुई स्थिति, सूचना प्रवाह, सेवा समन्वय, प्लेटफ़ॉर्म अनुबंध | v0.9.0–v0.22.x |
+
+विस्तृत योजनाएँ: [WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+
+### अगला प्रमुख मील का पत्थर
+
+**Raspberry Pi 5 हार्डवेयर बाइंडिंग** — ARMv8 पेज टेबल वॉक, GIC-400 इंटरप्ट रूटिंग,
+बूट अनुक्रम। पूर्व लेखापरीक्षाएँ और मील के पत्थर समापन
 [`docs/dev_history/`](../../../docs/dev_history/README.md) में संग्रहीत हैं।
 
 ---
