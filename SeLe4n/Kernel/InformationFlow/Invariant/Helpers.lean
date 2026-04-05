@@ -532,7 +532,6 @@ theorem chooseThread_preserves_lowEquivalent
 -- Non-interference theorem #3: cspaceMint (WS-D2, F-05, TPI-D02)
 -- ============================================================================
 
-set_option linter.deprecated false in
 /-- Minting a capability in a non-observable CNode preserves low-equivalence. -/
 theorem cspaceMint_preserves_lowEquivalent
     (ctx : LabelingContext)

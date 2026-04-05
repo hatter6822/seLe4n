@@ -179,7 +179,6 @@ theorem cspaceInsertSlot_preserves_cdtMapsConsistent
     cdtMapsConsistent st' :=
   cdtMapsConsistent_of_cdt_eq st st' hCon (cspaceInsertSlot_cdt_eq st st' addr cap hStep)
 
-set_option linter.deprecated false in
 theorem cspaceMint_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (src dst : CSpaceAddr)
@@ -587,7 +586,6 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                     cspaceDepthConsistent_of_objects_eq st3 _ hDepth3 hObjEq,
                     hObjEq ▸ hObjInv3⟩
 
-set_option linter.deprecated false in
 /-- WS-E4/C-03: cspaceMintWithCdt preserves capabilityInvariantBundle.
 Composes cspaceMint (already proven) + CDT edge addition. -/
 theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
@@ -1801,7 +1799,6 @@ private theorem badgeWellFormed_of_objects_eq
   ⟨fun oid ntfn badge hLk hP => hInv.1 oid ntfn badge (by rw [hObj] at hLk; exact hLk) hP,
    fun oid cn slot cap badge hLk hS hB => hInv.2 oid cn slot cap badge (by rw [hObj] at hLk; exact hLk) hS hB⟩
 
-set_option linter.deprecated false in
 /-- WS-F5/D1d: `cspaceMint` preserves `badgeWellFormed` when the minted badge
 (if any) is valid. The parent capability's badge validity is inherited from
 the pre-state `capabilityBadgesWellFormed` invariant. -/
@@ -2159,7 +2156,6 @@ theorem ipcUnwrapCaps_preserves_capabilityInvariantBundle
 -- S3-D: cdtMapsConsistent preservation theorems
 -- ============================================================================
 
-set_option linter.deprecated false in
 /-- S3-D: `cspaceMint` preserves `cdtMapsConsistent`. Mint delegates to
     `cspaceInsertSlot` which does not modify the CDT structure. -/
 theorem cspaceMint_preserves_cdtMapsConsistent

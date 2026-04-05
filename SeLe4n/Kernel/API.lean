@@ -530,7 +530,6 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | _ => fun _ => .error .invalidCapability
   | _ => none
 
-set_option linter.deprecated false in
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
 kernel operation using the resolved capability's target. Called after cap
 resolution succeeds inside `syscallInvoke`.
@@ -1371,7 +1370,6 @@ theorem syscallRequiredRight_total (sid : SyscallId) :
 -- WS-K-C: CSpace dispatch delegation theorems
 -- ============================================================================
 
-set_option linter.deprecated false in
 /-- WS-K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMint`
 is invoked with the decoded source slot, destination slot, rights, and badge
 from message registers. -/

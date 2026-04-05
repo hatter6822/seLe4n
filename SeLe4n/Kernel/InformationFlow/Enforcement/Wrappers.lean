@@ -42,7 +42,6 @@ def endpointSendDualChecked
     else
       .error .flowDenied
 
-set_option linter.deprecated false in
 /-- Policy-checked capability mint: verifies that information may flow from
 the source CNode's security domain to the destination CNode's security domain
 before delegating to the underlying `cspaceMint` operation.
@@ -110,7 +109,6 @@ theorem endpointSendDualChecked_flowDenied
   simp only [show ¬(maxExtraCaps < msg.caps.size) from Nat.not_lt.mpr hC, ite_false]
   simp [hDeny]
 
-set_option linter.deprecated false in
 /-- When the policy allows flow, the checked mint behaves identically to the
 unchecked mint. -/
 theorem cspaceMintChecked_eq_cspaceMint_when_allowed
@@ -248,7 +246,6 @@ theorem endpointSendDualChecked_denied_preserves_state
     intro hc; simp [hc] at h, ↓reduceIte] at h
   simp [hDeny] at h
 
-set_option linter.deprecated false in
 /-- When the policy denies flow, `cspaceMintChecked` produces no state change. -/
 theorem cspaceMintChecked_denied_preserves_state
     (ctx : LabelingContext) (src dst : CSpaceAddr)
@@ -287,7 +284,6 @@ theorem enforcement_sufficiency_endpointSendDual
       | true => right; right; left; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
       | false => right; right; right; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
 
-set_option linter.deprecated false in
 /-- `cspaceMintChecked` either delegates to unchecked or returns `flowDenied`. -/
 theorem enforcement_sufficiency_cspaceMint
     (ctx : LabelingContext) (src dst : CSpaceAddr)

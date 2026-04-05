@@ -1543,7 +1543,6 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
 
   checkInvariants counter "post-register-decode-trace" st1
 
-set_option linter.deprecated false in
 /-- WS-K-G: Syscall dispatch trace scenarios exercising the full decode →
 dispatch pipeline for all newly-wired syscalls (K-C through K-E). -/
 private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do

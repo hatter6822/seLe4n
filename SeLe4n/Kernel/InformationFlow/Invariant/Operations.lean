@@ -38,7 +38,6 @@ with CDT-specific frame lemmas.
 -- WS-F3/F-20: Enforcement-NI bridge theorems
 -- ============================================================================
 
-set_option linter.deprecated false in
 /-- WS-F3/F-20: If cspaceMintChecked succeeds, the resulting state transition
 preserves low-equivalence. -/
 theorem cspaceMintChecked_NI

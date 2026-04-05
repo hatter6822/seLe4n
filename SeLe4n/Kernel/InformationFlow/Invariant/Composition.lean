@@ -26,7 +26,6 @@ WS-F3 extends the IF-M4 bundle to cover all 30+ API operations.
 6. `preservesLowEquivalence` — abstract NI predicate for kernel actions.
 -/
 
-set_option linter.deprecated false in
 /-- WS-F3/H-05: Inductive covering all operation families with their
 full parameter sets and domain-separation hypotheses.
 
@@ -308,7 +307,6 @@ inductive NonInterferenceStep
       (hStep : registerServiceChecked ctx caller reg st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
 
-set_option linter.deprecated false in
 /-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
 projection (one-sided version). -/
 theorem step_preserves_projection

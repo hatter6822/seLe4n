@@ -1979,7 +1979,6 @@ def runWSJ1DecodeChecks : IO Unit := do
 -- WS-K-G: Comprehensive testing for WS-K syscall dispatch surface
 -- ============================================================================
 
-set_option linter.deprecated false in
 /-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
 dispatch, and error paths introduced in WS-K-A through WS-K-F.
 
@@ -3045,7 +3044,6 @@ private def runWSR4CoherenceChecks : IO Unit := do
 -- S2-G: Capability error-path coverage tests
 -- ============================================================================
 
-set_option linter.deprecated false in
 /-- S2-G: Additional capability operation error-path tests covering:
     - cspaceMint with rights exceeding source (attenuation failure)
     - cspaceCopy to occupied destination slot
@@ -3396,7 +3394,6 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
 -- AC1-G: S-01 regression test — hasSufficientBudget fail-closed
 -- ============================================================================
 
-set_option linter.deprecated false in
 def runAC1BudgetFailClosedChecks : IO Unit := do
   IO.println "── AC1-G: hasSufficientBudget fail-closed checks ──"
 
@@ -3453,7 +3450,6 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
 -- AC1-H: C-01 regression test — cspaceMint CDT absence vs cspaceMintWithCdt
 -- ============================================================================
 
-set_option linter.deprecated false in
 def runAC1CdtTrackingChecks : IO Unit := do
   IO.println "── AC1-H: cspaceMint CDT tracking checks ──"
 

@@ -44,7 +44,6 @@ private def expectErr
 private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
   assertStateInvariantsFor label st.objectIndex st
 
-set_option linter.deprecated false in
 private def chain1RetypeMintRevoke : IO Unit := do
   let targetId : SeLe4n.ObjId := ⟨200⟩
   let cnodeId : SeLe4n.ObjId := ⟨201⟩
@@ -312,7 +311,6 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
   assertInvariants "chain8: interleaved send/receive queue integrity" st10
 
 -- S2-J: Migrated from deprecated apiCspaceMint to syscallInvoke path.
-set_option linter.deprecated false in
 private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   let targetId : SeLe4n.ObjId := ⟨2900⟩
   let rootCNode : SeLe4n.ObjId := ⟨2901⟩

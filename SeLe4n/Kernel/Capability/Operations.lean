@@ -550,7 +550,6 @@ Direct use should be limited to:
 - Test scaffolding
 
 For CDT-tracked minting, use `cspaceMintWithCdt` instead. -/
-@[deprecated "Use cspaceMintWithCdt for CDT-tracked derivation (C-01)" (since := "2026-04-05")]
 def cspaceMint
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
@@ -794,7 +793,6 @@ def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
 -- WS-E4/C-03: CDT-aware mint
 -- ============================================================================
 
-set_option linter.deprecated false in
 /-- WS-E4/C-03: Mint a derived capability and record a CDT derivation edge. -/
 def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) : Kernel Unit :=
