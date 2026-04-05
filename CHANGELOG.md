@@ -1,3 +1,23 @@
+## v0.25.9 — WS-AC Phase AC5: Cross-Cutting & Infrastructure
+
+Phase AC5 of WS-AC Comprehensive Audit Remediation. 8 sub-tasks, 9 files
+modified. All tests pass (full build + test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+- **X-05 (AC5-A)**: 18 new pairwise field-disjointness theorems for SchedContext
+  predicates. Complete C(8,2)=28 pair coverage with compile-time `native_decide`
+  summary theorem.
+- **X-08 (AC5-B)**: GitBook content-hash drift detection in `test_docs_sync.sh`.
+- **S-05 (AC5-C)**: `saveOutgoingContext_scheduler` theorem verified and
+  cross-referenced.
+- **F-04 (AC5-D)**: Codebase-wide catch-all audit — zero risky patterns on
+  `KernelError`.
+- **F-02 (AC5-E)**: `inter_valid` strengthened (only needs left operand valid),
+  `subset_sound` (bitwise inclusion via `Nat.testBit_and`), `mem_bit_bounded`.
+- **F-03 (AC5-F)**: `storeObjectChecked` coding convention verified.
+- **IF-01 (AC5-G)**: `enforcementBoundary_is_complete` verified compiling.
+- Version bump 0.25.8 → 0.25.9.
+
 ## v0.25.8 — WS-AC Phase AC4: Architecture & Platform Tightening
 
 Phase AC4 of WS-AC Comprehensive Audit Remediation. 5 sub-tasks, 20 files

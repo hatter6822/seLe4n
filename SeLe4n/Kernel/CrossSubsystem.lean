@@ -471,6 +471,154 @@ theorem regDepConsistent_shares_serviceGraph :
     fieldsDisjoint registryDependencyConsistent_fields
                    serviceGraphInvariant_fields = false := by decide
 
+-- Z9-E/AC5-A: Pairwise disjointness/overlap for SchedContext predicates.
+-- The 3 SchedContext predicates (schedContextStoreConsistent,
+-- schedContextNotDualBound, schedContextRunQueueConsistent) all touch `objects`,
+-- so they share fields with every other predicate that reads `objects`.
+-- They are disjoint only from `registryDependencyConsistent` (services) and
+-- `serviceGraphInvariant` (services + objectIndex).
+
+/-- AC5-A: `schedContextStoreConsistent` (objects) is disjoint from
+    `registryDependencyConsistent` (services). -/
+theorem schedCtxStore_disjoint_regDepConsistent :
+    fieldsDisjoint schedContextStoreConsistent_fields
+                   registryDependencyConsistent_fields = true := by decide
+
+/-- AC5-A: `schedContextStoreConsistent` (objects) is disjoint from
+    `serviceGraphInvariant` (services + objectIndex). -/
+theorem schedCtxStore_disjoint_serviceGraph :
+    fieldsDisjoint schedContextStoreConsistent_fields
+                   serviceGraphInvariant_fields = true := by decide
+
+/-- AC5-A: `schedContextNotDualBound` (objects) is disjoint from
+    `registryDependencyConsistent` (services). -/
+theorem schedCtxNotDualBound_disjoint_regDepConsistent :
+    fieldsDisjoint schedContextNotDualBound_fields
+                   registryDependencyConsistent_fields = true := by decide
+
+/-- AC5-A: `schedContextNotDualBound` (objects) is disjoint from
+    `serviceGraphInvariant` (services + objectIndex). -/
+theorem schedCtxNotDualBound_disjoint_serviceGraph :
+    fieldsDisjoint schedContextNotDualBound_fields
+                   serviceGraphInvariant_fields = true := by decide
+
+/-- AC5-A: `schedContextRunQueueConsistent` (scheduler + objects) is disjoint
+    from `registryDependencyConsistent` (services). -/
+theorem schedCtxRunQueue_disjoint_regDepConsistent :
+    fieldsDisjoint schedContextRunQueueConsistent_fields
+                   registryDependencyConsistent_fields = true := by decide
+
+/-- AC5-A: `schedContextRunQueueConsistent` (scheduler + objects) is disjoint
+    from `serviceGraphInvariant` (services + objectIndex). -/
+theorem schedCtxRunQueue_disjoint_serviceGraph :
+    fieldsDisjoint schedContextRunQueueConsistent_fields
+                   serviceGraphInvariant_fields = true := by decide
+
+/-- AC5-A: `schedContextStoreConsistent` (objects) shares `objects` with
+    `registryEndpointValid` (serviceRegistry + objects). -/
+theorem schedCtxStore_shares_regEndpointValid :
+    fieldsDisjoint schedContextStoreConsistent_fields
+                   registryEndpointValid_fields = false := by decide
+
+/-- AC5-A: `schedContextStoreConsistent` (objects) shares `objects` with
+    `noStaleEndpointQueueReferences` (objects). -/
+theorem schedCtxStore_shares_staleEndpoint :
+    fieldsDisjoint schedContextStoreConsistent_fields
+                   noStaleEndpointQueueReferences_fields = false := by decide
+
+/-- AC5-A: `schedContextStoreConsistent` (objects) shares `objects` with
+    `noStaleNotificationWaitReferences` (objects). -/
+theorem schedCtxStore_shares_staleNotification :
+    fieldsDisjoint schedContextStoreConsistent_fields
+                   noStaleNotificationWaitReferences_fields = false := by decide
+
+/-- AC5-A: `schedContextStoreConsistent` (objects) shares `objects` with
+    `schedContextNotDualBound` (objects). -/
+theorem schedCtxStore_shares_schedCtxNotDualBound :
+    fieldsDisjoint schedContextStoreConsistent_fields
+                   schedContextNotDualBound_fields = false := by decide
+
+/-- AC5-A: `schedContextStoreConsistent` (objects) shares `objects` with
+    `schedContextRunQueueConsistent` (scheduler + objects). -/
+theorem schedCtxStore_shares_schedCtxRunQueue :
+    fieldsDisjoint schedContextStoreConsistent_fields
+                   schedContextRunQueueConsistent_fields = false := by decide
+
+/-- AC5-A: `schedContextNotDualBound` (objects) shares `objects` with
+    `registryEndpointValid` (serviceRegistry + objects). -/
+theorem schedCtxNotDualBound_shares_regEndpointValid :
+    fieldsDisjoint schedContextNotDualBound_fields
+                   registryEndpointValid_fields = false := by decide
+
+/-- AC5-A: `schedContextNotDualBound` (objects) shares `objects` with
+    `noStaleEndpointQueueReferences` (objects). -/
+theorem schedCtxNotDualBound_shares_staleEndpoint :
+    fieldsDisjoint schedContextNotDualBound_fields
+                   noStaleEndpointQueueReferences_fields = false := by decide
+
+/-- AC5-A: `schedContextNotDualBound` (objects) shares `objects` with
+    `noStaleNotificationWaitReferences` (objects). -/
+theorem schedCtxNotDualBound_shares_staleNotification :
+    fieldsDisjoint schedContextNotDualBound_fields
+                   noStaleNotificationWaitReferences_fields = false := by decide
+
+/-- AC5-A: `schedContextNotDualBound` (objects) shares `objects` with
+    `schedContextRunQueueConsistent` (scheduler + objects). -/
+theorem schedCtxNotDualBound_shares_schedCtxRunQueue :
+    fieldsDisjoint schedContextNotDualBound_fields
+                   schedContextRunQueueConsistent_fields = false := by decide
+
+/-- AC5-A: `schedContextRunQueueConsistent` (scheduler + objects) shares
+    `objects` with `registryEndpointValid` (serviceRegistry + objects). -/
+theorem schedCtxRunQueue_shares_regEndpointValid :
+    fieldsDisjoint schedContextRunQueueConsistent_fields
+                   registryEndpointValid_fields = false := by decide
+
+/-- AC5-A: `schedContextRunQueueConsistent` (scheduler + objects) shares
+    `objects` with `noStaleEndpointQueueReferences` (objects). -/
+theorem schedCtxRunQueue_shares_staleEndpoint :
+    fieldsDisjoint schedContextRunQueueConsistent_fields
+                   noStaleEndpointQueueReferences_fields = false := by decide
+
+/-- AC5-A: `schedContextRunQueueConsistent` (scheduler + objects) shares
+    `objects` with `noStaleNotificationWaitReferences` (objects). -/
+theorem schedCtxRunQueue_shares_staleNotification :
+    fieldsDisjoint schedContextRunQueueConsistent_fields
+                   noStaleNotificationWaitReferences_fields = false := by decide
+
+/-- AC5-A: Summary — complete pairwise analysis of all 8 cross-subsystem
+    predicates. C(8,2) = 28 pairs total: 12 disjoint + 16 shared.
+
+    Predicate                          Fields
+    ─────────────────────────────────  ────────────────────────
+    registryEndpointValid              serviceRegistry, objects
+    registryDependencyConsistent       services
+    noStaleEndpointQueueReferences     objects
+    noStaleNotificationWaitReferences  objects
+    serviceGraphInvariant              services, objectIndex
+    schedContextStoreConsistent        objects
+    schedContextNotDualBound           objects
+    schedContextRunQueueConsistent     scheduler, objects
+
+    Disjoint pairs: predicates touching only {services, objectIndex, serviceRegistry}
+    vs predicates touching only {objects, scheduler} have no field overlap.
+    Shared pairs: any two predicates that both read `objects` share that field. -/
+theorem crossSubsystem_pairwise_coverage_complete :
+    -- 12 disjoint pairs (all evaluate to true)
+    [ fieldsDisjoint registryDependencyConsistent_fields noStaleEndpointQueueReferences_fields
+    , fieldsDisjoint registryDependencyConsistent_fields noStaleNotificationWaitReferences_fields
+    , fieldsDisjoint serviceGraphInvariant_fields noStaleEndpointQueueReferences_fields
+    , fieldsDisjoint serviceGraphInvariant_fields noStaleNotificationWaitReferences_fields
+    , fieldsDisjoint registryDependencyConsistent_fields registryEndpointValid_fields
+    , fieldsDisjoint serviceGraphInvariant_fields registryEndpointValid_fields
+    , fieldsDisjoint schedContextStoreConsistent_fields registryDependencyConsistent_fields
+    , fieldsDisjoint schedContextStoreConsistent_fields serviceGraphInvariant_fields
+    , fieldsDisjoint schedContextNotDualBound_fields registryDependencyConsistent_fields
+    , fieldsDisjoint schedContextNotDualBound_fields serviceGraphInvariant_fields
+    , fieldsDisjoint schedContextRunQueueConsistent_fields registryDependencyConsistent_fields
+    , fieldsDisjoint schedContextRunQueueConsistent_fields serviceGraphInvariant_fields
+    ].countP id = 12 := by native_decide
+
 -- ============================================================================
 -- W2-A (H-2): Operation modified-field sets
 -- ============================================================================

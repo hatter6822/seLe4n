@@ -24,6 +24,41 @@ python3 "${SCRIPT_DIR}/check_markdown_links.py"
 
 python3 "${SCRIPT_DIR}/generate_codebase_map.py" --pretty --check
 
+# ──────────────────────────────────────────────────────────────────────
+# AC5-B / X-08: GitBook content-hash drift check
+# Compare H1/H2 structural headings between canonical docs/ files and
+# their GitBook chapter mirrors. Emits warnings (not hard failures) for
+# header divergence, since GitBook chapters are summaries and may
+# legitimately have fewer headings than canonical sources.
+# ────────────────────────���────────────────────────��────────────────────
+gitbook_drift_warnings=0
+# Mapping: canonical → gitbook mirror (pairs with known canonical references)
+declare -A CANONICAL_TO_GITBOOK=(
+  ["docs/CLAIM_EVIDENCE_INDEX.md"]="docs/gitbook/31-claim-vs-evidence-index.md"
+  ["docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md"]="docs/gitbook/25-documentation-sync-and-coverage-matrix.md"
+  ["docs/DOCS_DEDUPLICATION_MAP.md"]="docs/gitbook/27-documentation-deduplication-map.md"
+  ["docs/THREAT_MODEL.md"]="docs/gitbook/28-threat-model-and-security-hardening.md"
+  ["docs/CI_TELEMETRY_BASELINE.md"]="docs/gitbook/29-ci-maturity-and-telemetry-baseline.md"
+  ["docs/VSPACE_MEMORY_MODEL_ADR.md"]="docs/gitbook/26-ws-b1-vspace-memory-adr.md"
+)
+
+for canonical in "${!CANONICAL_TO_GITBOOK[@]}"; do
+  gitbook="${CANONICAL_TO_GITBOOK[$canonical]}"
+  if [[ -f "${REPO_ROOT}/${canonical}" ]] && [[ -f "${REPO_ROOT}/${gitbook}" ]]; then
+    # Extract H1/H2 headings (lines starting with # or ##, not ###)
+    canonical_headers=$(grep -E '^#{1,2} ' "${REPO_ROOT}/${canonical}" | head -20 | sha256sum | cut -d' ' -f1)
+    gitbook_headers=$(grep -E '^#{1,2} ' "${REPO_ROOT}/${gitbook}" | head -20 | sha256sum | cut -d' ' -f1)
+    if [[ "${canonical_headers}" != "${gitbook_headers}" ]]; then
+      echo "warning: GitBook header drift detected: ${canonical} ↔ ${gitbook}" >&2
+      gitbook_drift_warnings=$((gitbook_drift_warnings + 1))
+    fi
+  fi
+done
+if [[ ${gitbook_drift_warnings} -gt 0 ]]; then
+  echo "warning: ${gitbook_drift_warnings} GitBook chapter(s) have divergent H1/H2 headers from canonical sources." >&2
+  echo "  Run: diff <(grep -E '^#{1,2} ' docs/FILE.md) <(grep -E '^#{1,2} ' docs/gitbook/CHAPTER.md) to inspect." >&2
+fi
+
 # Prefer an already-installed elan toolchain in non-login shells.
 if [[ -f "${HOME}/.elan/env" ]]; then
   # shellcheck disable=SC1091

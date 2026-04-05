@@ -88,9 +88,11 @@ any order are structurally equal.
     operand; callers requiring validity should apply `ofNat` to the result.
 - **Formal proofs**: `ofNat_valid`, `mk_checked_valid`, `empty_valid`,
   `singleton_valid`, `union_valid`, `inter_valid`, `ofList_valid` collectively
-  prove that all public constructors produce valid sets. AC5-E (pending)
-  will add additional operational safety theorems (`inter_valid_left`,
-  `subset_correct`, `mem_bounded`). -/
+  prove that all public constructors produce valid sets. AC5-E operational
+  safety theorems: `inter_valid` strengthened to require only the left
+  operand's validity (AND clears high bits), `subset_sound` (subset implies
+  per-right inclusion via `Nat.testBit_and`), `mem_bit_bounded` (membership
+  tests bounded to bits 0..4). -/
 structure AccessRightSet where
   bits : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -187,7 +189,7 @@ instance (r : AccessRight) (s : AccessRightSet) : Decidable (r ∈ s) :=
 
 /-- WS-F5/D2a: Intersection of two rights sets (bitwise AND).
     **AC4-B note**: Returns raw `⟨bits⟩` without masking. However, AND naturally
-    clears any bit not set in both operands, so if at least one operand is valid
+    clears any bit not set in both operands, so if the left operand is valid
     (`bits < 32`), the result is also valid (see `inter_valid`). -/
 @[inline] def inter (a b : AccessRightSet) : AccessRightSet := ⟨a.bits &&& b.bits⟩
 
@@ -197,11 +199,46 @@ theorem union_valid (a b : AccessRightSet) (ha : a.valid) (hb : b.valid) :
   simp only [union, valid, maxBits] at *
   exact Nat.or_lt_two_pow ha hb
 
-/-- U2-K: Intersection of two valid rights sets is valid (5-bit closure). -/
-theorem inter_valid (a b : AccessRightSet) (ha : a.valid) (_hb : b.valid) :
+/-- U2-K/AC5-E: Intersection preserves validity when at least the left operand
+    is valid. Bitwise AND cannot set bits that `a` does not have, so the result
+    fits in the same bit range as `a`. The right operand `b` may have arbitrary
+    (even invalid) high bits — they are cleared by the AND operation.
+
+    This is the key property that makes `subset` (which uses AND internally)
+    safe even when the right operand is an invalid `AccessRightSet`. -/
+theorem inter_valid (a b : AccessRightSet) (ha : a.valid) :
     (inter a b).valid := by
   simp only [inter, valid, maxBits] at *
   exact Nat.lt_of_le_of_lt Nat.and_le_left ha
+
+/-- AC5-E: `subset` correctly tests bit-level inclusion for the 5 defined
+    access rights, regardless of whether the operands satisfy `valid`.
+    Bitwise AND is well-defined on all `Nat` values, so `a.subset b = true`
+    implies every right in `a` is also in `b`. -/
+theorem subset_sound (a b : AccessRightSet) (r : AccessRight)
+    (hSub : a.subset b = true) (hMem : a.mem r = true) :
+    b.mem r = true := by
+  simp only [subset, mem] at *
+  -- Convert beq to equality
+  have hEq : a.bits &&& b.bits = a.bits := eq_of_beq hSub
+  -- mem uses (bits >>> toBit) &&& 1, testBit uses 1 &&& (bits >>> toBit)
+  -- Connect via Nat.and_comm
+  have hMemTB : Nat.testBit a.bits r.toBit = true := by
+    simp only [Nat.testBit]
+    rwa [Nat.and_comm]
+  have hAnd := Nat.testBit_and a.bits b.bits r.toBit
+  rw [hEq] at hAnd
+  rw [hMemTB] at hAnd
+  have hBTB : Nat.testBit b.bits r.toBit = true := by simpa using hAnd
+  simp only [Nat.testBit] at hBTB
+  rwa [Nat.and_comm] at hBTB
+
+/-- AC5-E: Membership checks are bounded by the 5 defined access rights.
+    `mem` tests bit `r.toBit` where `r : AccessRight`, and `toBit` returns
+    a value in `{0, 1, 2, 3, 4}`. This proves that out-of-range bit positions
+    are never tested, even for invalid sets. -/
+theorem mem_bit_bounded (r : AccessRight) : r.toBit < 5 := by
+  cases r <;> decide
 
 /-- U2-K/U-L03: Every `AccessRightSet` value constructed through `ofNat`, `ofList`,
     `singleton`, `empty`, or `mk_checked` satisfies the 5-bit invariant.
