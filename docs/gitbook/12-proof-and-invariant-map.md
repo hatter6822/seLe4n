@@ -1254,7 +1254,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 Scheduler preservation (4 updated theorems):
 - `schedule_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation (incl. `runnableThreadsAreTCBs` WS-F6/D3, `schedulerPriorityMatch` R6-D/L-12)
 - `handleYield_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation
-- `timerTick_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation
+- `timerTick_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation (AC2-C: requires `hConfigTS : st.scheduler.configDefaultTimeSlice > 0`)
 - `switchDomain_preserves_schedulerInvariantBundleFull` — 7-conjunct preservation (+ `switchDomain_preserves_schedulerPriorityMatch`)
 
 Backward-compatible extraction theorems (3):

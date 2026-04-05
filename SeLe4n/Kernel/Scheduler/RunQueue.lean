@@ -11,6 +11,30 @@ import SeLe4n.Kernel.RobinHood.Set
 namespace SeLe4n.Kernel
 open SeLe4n
 open SeLe4n.Kernel.RobinHood
+/-- S-06: Priority-indexed run queue with flat-list backing store.
+
+**Complexity characteristics**:
+- O(1): `contains` (via `RHSet` hash membership), `maxPriorityBucket` (via
+  cached `maxPriority` field)
+- O(k): `atPriority` bucket retrieval, where k = bucket size (typically 1–3
+  threads per priority level in real-time workloads)
+- O(n): `insert` (flat-list append + hash insert), `remove` (flat-list filter +
+  bucket filter + hash erase), `rotateToBack` (flat-list erase+append + bucket
+  filter+append), where n = total thread count in the queue
+- O(p): `recomputeMaxPriority` on removal, where p = number of distinct priority
+  levels (≤ 256 on ARM64)
+
+**Design rationale**: The flat `List ThreadId` is maintained alongside the
+priority-indexed `RHTable` for two reasons: (1) global iteration order for
+`fold`/`toList` operations used by invariant checks and cross-subsystem proofs,
+and (2) bidirectional consistency with `membership` (proven by `flat_wf` and
+`flat_wf_rev`).
+
+**Acceptable for target platform**: RPi5 supports ≤ 256 threads at steady state.
+At n = 256, O(n) operations complete in microseconds — well within the
+timer-tick quantum (typically 1ms). Future optimization: replace `flat` with a
+doubly-linked intrusive list or array for O(1) insert/remove when hardware
+profiling indicates run-queue operations are a scheduling latency bottleneck. -/
 structure RunQueue where
   byPriority : RHTable Priority (List ThreadId)
   membership : RHSet ThreadId

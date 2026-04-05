@@ -246,7 +246,9 @@ def maxBudgetInBand (st : SystemState) (targetPrio : Priority)
             match st.objects[scId.toObjId]? with
             | some (.schedContext sc) => Nat.max maxB sc.budget.val
             | _ => maxB
-          | .unbound => Nat.max maxB defaultTimeSlice
+          -- AC2-C: Unbound threads use the system default time-slice as their
+          -- effective budget for liveness analysis.
+          | .unbound => Nat.max maxB st.scheduler.configDefaultTimeSlice
         | _ => maxB
       else maxB
     | none => maxB

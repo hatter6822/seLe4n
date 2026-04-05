@@ -366,13 +366,14 @@ after Phase AC1 changes.
 
 ---
 
-## 4. Phase AC2 — Scheduler & SchedContext Hardening
+## 4. Phase AC2 — Scheduler & SchedContext Hardening ✓ COMPLETE
 
 **Goal**: Address S-02/SC-01 performance concern, S-03 fuel documentation,
 S-04 configurable time slice, S-05 dual-state documentation, S-06 RunQueue
 complexity documentation.
 **Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh` pass.
 **Dependencies**: AC1 complete (S-01 change affects scheduler module).
+**Status**: COMPLETE (v0.25.6). All 7 sub-tasks delivered. Zero sorry/axiom.
 
 ### AC2-A: Document `timeoutBlockedThreads` O(n) cost and add index TODO (S-02/SC-01)
 
@@ -1417,18 +1418,18 @@ The workstream is COMPLETE when all of the following hold:
 | S-01 | HIGH | AC1-A | AC1-E, AC1-F, AC1-G | ✓ Complete |
 | I-01 | HIGH | AC1-B | AC1-C | ✓ Complete |
 | C-01 | HIGH | AC1-D | AC1-H | ✓ Complete |
-| S-02 | MEDIUM | AC2-A | — | Pending |
-| SC-01 | MEDIUM | AC2-A | — (shared with S-02) | Pending |
-| S-03 | MEDIUM | AC2-B | — | Pending |
+| S-02 | MEDIUM | AC2-A | — | ✓ Complete |
+| SC-01 | MEDIUM | AC2-A | — (shared with S-02) | ✓ Complete |
+| S-03 | MEDIUM | AC2-B | — | ✓ Complete |
 | F-01 | MEDIUM | AC4-C | — | Pending |
 | F-02 | MEDIUM | AC4-B | AC5-E | Pending |
 | F-03 | MEDIUM | AC3-E | AC5-F | Pending |
 | IF-01 | MEDIUM | AC4-D | AC5-G | Pending |
 | API-01 | MEDIUM | AC3-D | — | Pending |
-| S-04 | LOW | AC2-C | — | Pending |
-| S-05 | LOW | AC2-D | AC5-C | Pending |
-| S-06 | LOW | AC2-E | — | Pending |
-| F-04 | LOW | AC2-F | AC5-D | Pending |
+| S-04 | LOW | AC2-C | — | ✓ Complete |
+| S-05 | LOW | AC2-D | AC5-C | ✓ Complete |
+| S-06 | LOW | AC2-E | — | ✓ Complete |
+| F-04 | LOW | AC2-F | AC5-D | ✓ Complete |
 | I-02 | MEDIUM | AC3-A | AC3-B | Pending |
 | I-04 | LOW | AC3-C | — | Pending |
 | A-04 | LOW | AC4-A | — | Pending |

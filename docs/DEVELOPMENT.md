@@ -361,6 +361,46 @@ Environment note for `./scripts/setup_lean_env.sh` on apt-based systems:
 
 ---
 
+## 5a) Known performance characteristics (WS-AC/AC2)
+
+The following operations have known complexity characteristics documented for
+hardware deployment planning. All are correct but may require optimization
+when hardware profiling data is available.
+
+| Operation | Complexity | Trigger Frequency | Location |
+|-----------|-----------|-------------------|----------|
+| `timeoutBlockedThreads` | O(n) in object count | Once per CBS period on budget exhaustion | `Core.lean` |
+| `RunQueue.insert` | O(n) in queue size | Every enqueue (preemption, unblock) | `RunQueue.lean` |
+| `RunQueue.remove` | O(k + n), k = bucket size | Every dequeue (dispatch, block) | `RunQueue.lean` |
+| `RunQueue.rotateToBack` | O(k + n) | Round-robin rotation within priority band | `RunQueue.lean` |
+| `recomputeMaxPriority` | O(p), p = priority levels | On removal when max-priority bucket empties | `RunQueue.lean` |
+
+All O(n) operations are acceptable for the RPi5 target (n ≤ 256 threads at
+steady state, ≤ 65536 objects). A dedicated performance workstream (WS-AD)
+will address these with hardware profiling data if needed.
+
+## 5b) Audit-driven coding conventions (WS-AC)
+
+1. **`KernelError` match hygiene (F-04)**: Prefer explicit match arms over
+   `| _ =>` catch-all patterns on `KernelError`. Lean's exhaustiveness checker
+   flags missing arms, but catch-alls silently swallow new variants. Use
+   `| _ =>` only for genuinely uniform error handling (e.g., error-to-string
+   conversion).
+
+2. **Multi-step mutation atomicity (I-02)**: Functions that perform multiple
+   sequential `storeObject` calls (e.g., `donateSchedContext`) operate within
+   the `KernelM` `Except` monad. On `.error`, the monad's bind discards all
+   intermediate state — callers receive only the error value, not a partial
+   state. Document multi-step mutation sequences with the step order and
+   failure semantics.
+
+3. **Identifier `Nat` unboundedness (F-01)**: All typed identifiers (`ThreadId`,
+   `ObjId`, etc.) wrap unbounded `Nat`. This is by design for proof ergonomics.
+   The ABI boundary (`RegisterDecode.lean` + `SyscallArgDecode.lean`) validates
+   all incoming values. Internal kernel code is trusted to produce valid IDs.
+
+---
+
 ## 6) Proof engineering standards
 
 1. Keep proofs local-first; compose afterward.
