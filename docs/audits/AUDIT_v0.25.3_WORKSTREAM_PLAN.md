@@ -580,12 +580,13 @@ prevents missing arms, but `| _ =>` catch-all patterns can mask specific errors.
 
 ---
 
-## 5. Phase AC3 — IPC Atomicity & Invariant Strengthening
+## 5. Phase AC3 — IPC Atomicity & Invariant Strengthening ✓ COMPLETE
 
 **Goal**: Address I-02 atomicity documentation, I-04 badge bounds, API-01
 silent-drop documentation, and strengthen the IPC proof surface.
 **Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh` pass.
 **Dependencies**: AC1 complete (I-01 invariant work is prerequisite context).
+**Status**: COMPLETE (v0.25.7). All 6 sub-tasks delivered. Zero sorry/axiom.
 
 ### AC3-A: Document `donateSchedContext` atomicity contract (I-02)
 

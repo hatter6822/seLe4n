@@ -485,7 +485,17 @@ namespace Badge
 @[inline] def ofNatMasked (n : Nat) : Badge := ⟨n % machineWordMax⟩
 
 /-- WS-F5/D1b: Bitwise OR combiner for badge accumulation. Masks the result
-    to machine word size, matching seL4 notification signal semantics. -/
+    to machine word size, matching seL4 notification signal semantics.
+
+    **AC3-C / I-04 — Unbounded intermediate note**: The expression `a.val ||| b.val`
+    computes the bitwise OR on unbounded Lean `Nat`. The intermediate result may
+    exceed `machineWordMax` (2^64) in the abstract model even though hardware
+    notification words are 64-bit. `ofNatMasked` (defined above) applies
+    `% machineWordMax` to truncate to 64 bits, and the `bor_valid` theorem
+    (below) proves the result satisfies the `valid` predicate. For hardware
+    deployment, the platform binding layer must ensure all `Badge` values
+    entering the model are already within 64-bit range, making the intermediate
+    unboundedness a no-op. -/
 @[inline] def bor (a b : Badge) : Badge := ofNatMasked (a.val ||| b.val)
 
 /-- WS-F5/D1a: `ofNatMasked` always produces a valid badge. -/

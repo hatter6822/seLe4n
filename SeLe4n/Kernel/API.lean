@@ -404,7 +404,16 @@ Returns the resolved capabilities as an array. -/
    count from `MessageInfo.extraCaps`.
    X5-I (L-4): Confirmed v0.22.17 audit — silent dropping matches seL4
    reference semantics. No security impact: caps that fail resolution
-   simply don't transfer. -/
+   simply don't transfer.
+
+   **AC3-D / API-01 — Silent-drop semantics**: The returned `Array Capability`
+   contains only successfully resolved capabilities. Its `.size` equals the
+   count of *successfully resolved* extra caps, which may be strictly less than
+   `capAddrs.size` (the sender's requested count). Receivers should compare
+   the actual resolved count against the expected count from the original
+   `MessageInfo.extraCaps` to detect drops. This is seL4-compatible behavior:
+   `lookupExtraCaps` in the C kernel also silently discards unresolvable
+   capabilities and returns only valid ones in the IPC buffer. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) : Array Capability :=

@@ -5,10 +5,10 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.25.6 (Lean v4.28.0).
+- **Version:** 0.25.7 (Lean v4.28.0).
 - **Codebase metrics:** 83,286 production LoC across 132 files; 10,564 test LoC across 15 suites; 2,447 theorem/lemma declarations (zero sorry/axiom).
 - **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW).
-- **Active workstream:** **WS-AC Comprehensive Audit Remediation** (v0.25.3–v0.25.6). AC1 complete (high-severity fixes), AC2 complete (scheduler hardening). Prior: WS-B through WS-AB complete (v0.9.0–v0.25.5).
+- **Active workstream:** **WS-AC Comprehensive Audit Remediation** (v0.25.3–v0.25.7). AC1 complete (high-severity fixes), AC2 complete (scheduler hardening), AC3 complete (IPC atomicity & invariant strengthening). Prior: WS-B through WS-AB complete (v0.9.0–v0.25.5).
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.

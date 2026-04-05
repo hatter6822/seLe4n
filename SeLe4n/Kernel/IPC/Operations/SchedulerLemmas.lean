@@ -584,4 +584,91 @@ theorem storeTcbPendingMessage_preserves_objects_invExt
       have := Except.ok.inj hStep; subst this
       exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
 
+-- ============================================================================
+-- AC3-B / I-02: donateSchedContext atomicity lemmas
+-- ============================================================================
+
+-- Note: `donateSchedContext_scheduler_eq` is defined in Donation.lean (Z7-B).
+-- The theorems below strengthen the postcondition by extracting witnesses:
+--   1. `donateSchedContext_ok_implies_sc_bound` — precondition witness
+--      (SchedContext found and bound to client in pre-state)
+--   2. `donateSchedContext_ok_server_donated` — postcondition witness
+--      (server TCB has donated binding in post-state)
+
+/-- AC3-B (precondition witness): On success, the SchedContext existed in the
+    pre-state and was bound to the client. -/
+theorem donateSchedContext_ok_implies_sc_bound
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId)
+    (hOk : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    ∃ sc : SchedContext,
+      st.objects[clientScId.toObjId]? = some (.schedContext sc) ∧
+      sc.boundThread = some clientTid := by
+  -- We use the existing donateSchedContext_scheduler_eq to know the function
+  -- succeeds, then unfold to extract the SchedContext witness.
+  unfold donateSchedContext at hOk
+  -- Generalize the object lookup to preserve the equation
+  generalize hLookup : st.objects[clientScId.toObjId]? = optObj at hOk
+  match optObj, hLookup with
+  | none, _ => cases hOk
+  | some (.schedContext sc), hLookup =>
+    simp only [] at hOk
+    refine ⟨sc, rfl, ?_⟩
+    -- Case-split on the bound-thread check (Bool)
+    cases hBne : (sc.boundThread != some clientTid)
+    · -- false branch: bne = false means they are equal
+      simp [bne] at hBne; exact hBne
+    · -- true branch: bne = true → .error, contradicting .ok
+      simp [hBne] at hOk
+  | some (.tcb _), _ => cases hOk
+  | some (.endpoint _), _ => cases hOk
+  | some (.notification _), _ => cases hOk
+  | some (.cnode _), _ => cases hOk
+  | some (.vspaceRoot _), _ => cases hOk
+  | some (.untyped _), _ => cases hOk
+
+/-- AC3-B: On success, `donateSchedContext` establishes the donated binding in
+    the post-state: the server TCB has `schedContextBinding = .donated`. This
+    proves the internal `storeObject` calls all succeeded (postcondition). -/
+theorem donateSchedContext_ok_server_donated
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hOk : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    ∃ serverTcb : TCB,
+      st'.objects[serverTid.toObjId]? = some (.tcb serverTcb) ∧
+      serverTcb.schedContextBinding = .donated clientScId clientTid := by
+  unfold donateSchedContext at hOk
+  generalize hLookup : st.objects[clientScId.toObjId]? = optObj at hOk
+  match optObj, hLookup with
+  | none, _ => cases hOk
+  | some (.schedContext sc), _ =>
+    simp only [] at hOk
+    cases hBne : (sc.boundThread != some clientTid)
+    · simp [hBne] at hOk
+      cases hS1 : storeObject clientScId.toObjId (.schedContext { sc with boundThread := some serverTid }) st with
+      | error _ => simp [hS1] at hOk
+      | ok p1 =>
+        simp [hS1] at hOk
+        cases hL1 : lookupTcb p1.2 serverTid with
+        | none => simp [hL1] at hOk
+        | some serverTcb =>
+          simp [hL1] at hOk
+          cases hS2 : storeObject serverTid.toObjId (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) p1.2 with
+          | error _ => simp [hS2] at hOk
+          | ok p2 =>
+            simp [hS2] at hOk
+            subst hOk
+            -- p2.2 = st', and the last storeObject wrote the server TCB
+            have hInvP1 := storeObject_preserves_objects_invExt' st _ _ _ hObjInv hS1
+            exact ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid },
+                   storeObject_objects_eq' p1.2 _ _ _ hInvP1 hS2, rfl⟩
+    · simp [hBne] at hOk
+  | some (.tcb _), _ => cases hOk
+  | some (.endpoint _), _ => cases hOk
+  | some (.notification _), _ => cases hOk
+  | some (.cnode _), _ => cases hOk
+  | some (.vspaceRoot _), _ => cases hOk
+  | some (.untyped _), _ => cases hOk
+
 end SeLe4n.Kernel

@@ -166,7 +166,21 @@ Performs the bidirectional binding:
 - Client has `schedContextBinding = .bound clientScId`
 - SchedContext `sc.boundThread = some clientTid`
 
-Returns the updated state or error if lookups fail. -/
+Returns the updated state or error if lookups fail.
+
+**Atomicity contract (AC3-A / I-02)**:
+This function performs 2 sequential `storeObject` mutations (through states
+`st` → `st1` → `st2`) with an intermediate lookup:
+  1. `storeObject` SchedContext with `boundThread := some serverTid` → `st1`.
+  2. `lookupTcb st1 serverTid` to find the server TCB (pure read, no mutation).
+  3. `storeObject` server TCB with `schedContextBinding := .donated` → `st2`.
+In the `KernelM` monad (`Except KernelError`), `.error` carries **no state** —
+only the error value. If step 1 succeeds but step 2 or 3 fails, the
+intermediate state `st1` is discarded by the monad's `bind` operation and the
+caller receives `.error` with no access to the partial state. There is no
+"partial state leak" risk in the pure model.
+On hardware, kernel transitions execute with interrupts disabled (single-core
+microkernel), so no concurrent observer can see intermediate states. -/
 def donateSchedContext
     (st : SystemState)
     (clientTid : SeLe4n.ThreadId) (serverTid : SeLe4n.ThreadId)
@@ -204,7 +218,15 @@ Performs the reverse binding:
 **Preconditions** (enforced by caller `endpointReply`):
 - Server has `schedContextBinding = .donated(scId, originalOwner)`
 
-Returns the updated state or error if lookups fail. -/
+Returns the updated state or error if lookups fail.
+
+**Atomicity contract (AC3-A / I-02 / I-03)**:
+This function performs 3 sequential `storeObject` mutations through states
+`st` → `st1` → `st2` → `st3`. The same monad-level atomicity argument as
+`donateSchedContext` applies: on `.error`, no intermediate state is returned
+to the caller. The `Except.bind` combinator discards partial states on
+failure. On hardware, interrupts are disabled throughout kernel transitions,
+providing single-core atomicity for the 3-step update sequence. -/
 def returnDonatedSchedContext
     (st : SystemState)
     (serverTid : SeLe4n.ThreadId)
