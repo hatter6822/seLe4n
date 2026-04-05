@@ -198,7 +198,7 @@ tests/                           15 test suites
 | **WS-Z** | كائنات الأداء القابلة للتركيب — `SchedContext` ككائن نواة سابع، محرك ميزانية CBS، طابور التجديد، تبرع الخادم الخامل، نقاط نهاية المُهَل (10 مراحل، 213 مهمة) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | الأنظمة الفرعية الأساسية للنواة، جداول تجزئة Robin Hood، أشجار الجذر، الحالة المجمّدة، تدفق المعلومات، تنسيق الخدمات، عقود المنصة | v0.9.0–v0.22.x |
 
-الخطط التفصيلية: [WS-AB](../../../docs/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
+الخطط التفصيلية: [WS-AB](../../../docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](../../../docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
 ### المَعلم الرئيسي القادم
 
