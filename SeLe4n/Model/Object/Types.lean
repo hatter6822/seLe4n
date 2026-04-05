@@ -89,9 +89,10 @@ any order are structurally equal.
 - **Formal proofs**: `ofNat_valid`, `mk_checked_valid`, `empty_valid`,
   `singleton_valid`, `union_valid`, `inter_valid`, `ofList_valid` collectively
   prove that all public constructors produce valid sets. AC5-E operational
-  safety theorems: `inter_valid_left` (AND preserves validity from left
-  operand), `subset_sound` (subset implies per-right inclusion),
-  `mem_bit_bounded` (membership bounded to bits 0..4). -/
+  safety theorems: `inter_valid` strengthened to require only the left
+  operand's validity (AND clears high bits), `subset_sound` (subset implies
+  per-right inclusion via `Nat.testBit_and`), `mem_bit_bounded` (membership
+  tests bounded to bits 0..4). -/
 structure AccessRightSet where
   bits : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -188,7 +189,7 @@ instance (r : AccessRight) (s : AccessRightSet) : Decidable (r ∈ s) :=
 
 /-- WS-F5/D2a: Intersection of two rights sets (bitwise AND).
     **AC4-B note**: Returns raw `⟨bits⟩` without masking. However, AND naturally
-    clears any bit not set in both operands, so if at least one operand is valid
+    clears any bit not set in both operands, so if the left operand is valid
     (`bits < 32`), the result is also valid (see `inter_valid`). -/
 @[inline] def inter (a b : AccessRightSet) : AccessRightSet := ⟨a.bits &&& b.bits⟩
 
@@ -198,17 +199,14 @@ theorem union_valid (a b : AccessRightSet) (ha : a.valid) (hb : b.valid) :
   simp only [union, valid, maxBits] at *
   exact Nat.or_lt_two_pow ha hb
 
-/-- U2-K: Intersection of two valid rights sets is valid (5-bit closure). -/
-theorem inter_valid (a b : AccessRightSet) (ha : a.valid) (_hb : b.valid) :
-    (inter a b).valid := by
-  simp only [inter, valid, maxBits] at *
-  exact Nat.lt_of_le_of_lt Nat.and_le_left ha
+/-- U2-K/AC5-E: Intersection preserves validity when at least the left operand
+    is valid. Bitwise AND cannot set bits that `a` does not have, so the result
+    fits in the same bit range as `a`. The right operand `b` may have arbitrary
+    (even invalid) high bits — they are cleared by the AND operation.
 
-/-- AC5-E: Intersection preserves validity when the LEFT operand is valid.
-    Unlike `inter_valid` (which requires both valid), this only needs `a.valid`
-    because AND cannot set bits that `a` does not have. This is the key property
-    that makes `subset` (which uses AND) safe even for invalid right-hand operands. -/
-theorem inter_valid_left (a b : AccessRightSet) (ha : a.valid) :
+    This is the key property that makes `subset` (which uses AND internally)
+    safe even when the right operand is an invalid `AccessRightSet`. -/
+theorem inter_valid (a b : AccessRightSet) (ha : a.valid) :
     (inter a b).valid := by
   simp only [inter, valid, maxBits] at *
   exact Nat.lt_of_le_of_lt Nat.and_le_left ha

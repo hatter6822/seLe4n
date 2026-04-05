@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-ac5-infrastructure-jhkeV",
-      "commit_sha": "ec92bf572ccb918846d99e9cadcc42f1fdab3c85",
-      "tree_sha": "f7e4d574b70b6405a9bb9db89a9ec1db30da56d1",
-      "committed_at_utc": "2026-04-05T16:01:59-04:00"
+      "commit_sha": "9904bc0150de937d5954b007360b6b838806ff52",
+      "tree_sha": "35c90aeffd3e286752df21fc6421f36092b9d590",
+      "committed_at_utc": "2026-04-05T20:32:19+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b1ccead0538d14a321d62e2e4c755b5b99a1eb637d03a0b1f386e452f4fb53b3"
+    "source_digest": "7f755062a0a28cc24e6f51e58f585dd883266f6ba03e8abdf5c3761dc993de55"
   },
   "summary": {
     "module_count": 148,
-    "declaration_count": 4476
+    "declaration_count": 4475
   },
   "readme_sync": {
-    "version": "0.25.8",
+    "version": "0.25.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 84015,
+    "production_loc": 84013,
     "test_files": 15,
     "test_loc": 10774,
-    "proved_theorem_lemma_decls": 2479,
+    "proved_theorem_lemma_decls": 2478,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -44475,7 +44475,7 @@
     {
       "module": "SeLe4n.Model.Object.Types",
       "path": "SeLe4n/Model/Object/Types.lean",
-      "declaration_count": 123,
+      "declaration_count": 122,
       "declarations": [
         {
           "kind": "namespace",
@@ -44532,25 +44532,25 @@
         {
           "kind": "structure",
           "name": "AccessRightSet",
-          "line": 95,
+          "line": 96,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "AccessRightSet",
-          "line": 99,
+          "line": 100,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxBits",
-          "line": 103,
+          "line": 104,
           "called": []
         },
         {
           "kind": "def",
           "name": "valid",
-          "line": 108,
+          "line": 109,
           "called": [
             "AccessRightSet",
             "maxBits"
@@ -44558,8 +44558,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:110>",
-          "line": 110,
+          "name": "<anonymous:instance:111>",
+          "line": 111,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -44569,7 +44569,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 115,
+          "line": 116,
           "called": [
             "AccessRightSet",
             "maxBits"
@@ -44578,7 +44578,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_valid",
-          "line": 118,
+          "line": 119,
           "called": [
             "maxBits",
             "ofNat",
@@ -44588,7 +44588,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_idempotent",
-          "line": 123,
+          "line": 124,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -44599,7 +44599,7 @@
         {
           "kind": "def",
           "name": "mk_checked",
-          "line": 132,
+          "line": 133,
           "called": [
             "AccessRightSet"
           ]
@@ -44607,7 +44607,7 @@
         {
           "kind": "theorem",
           "name": "mk_checked_valid",
-          "line": 138,
+          "line": 139,
           "called": [
             "maxBits",
             "mk_checked",
@@ -44617,7 +44617,7 @@
         {
           "kind": "theorem",
           "name": "eta",
-          "line": 146,
+          "line": 147,
           "called": [
             "AccessRightSet",
             "ofNat",
@@ -44628,7 +44628,7 @@
         {
           "kind": "def",
           "name": "empty",
-          "line": 150,
+          "line": 151,
           "called": [
             "AccessRightSet"
           ]
@@ -44636,7 +44636,7 @@
         {
           "kind": "theorem",
           "name": "empty_valid",
-          "line": 153,
+          "line": 154,
           "called": [
             "valid"
           ]
@@ -44644,7 +44644,7 @@
         {
           "kind": "def",
           "name": "singleton",
-          "line": 156,
+          "line": 157,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44654,7 +44654,7 @@
         {
           "kind": "theorem",
           "name": "singleton_valid",
-          "line": 159,
+          "line": 160,
           "called": [
             "AccessRight",
             "singleton",
@@ -44664,7 +44664,7 @@
         {
           "kind": "def",
           "name": "ofList",
-          "line": 164,
+          "line": 165,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44674,7 +44674,7 @@
         {
           "kind": "def",
           "name": "mem",
-          "line": 168,
+          "line": 169,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44683,8 +44683,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:171>",
-          "line": 171,
+          "name": "<anonymous:instance:172>",
+          "line": 172,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44693,8 +44693,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:174>",
-          "line": 174,
+          "name": "<anonymous:instance:175>",
+          "line": 175,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44704,7 +44704,7 @@
         {
           "kind": "def",
           "name": "subset",
-          "line": 179,
+          "line": 180,
           "called": [
             "AccessRightSet"
           ]
@@ -44712,7 +44712,7 @@
         {
           "kind": "def",
           "name": "union",
-          "line": 187,
+          "line": 188,
           "called": [
             "AccessRightSet"
           ]
@@ -44720,7 +44720,7 @@
         {
           "kind": "def",
           "name": "inter",
-          "line": 193,
+          "line": 194,
           "called": [
             "AccessRightSet"
           ]
@@ -44728,7 +44728,7 @@
         {
           "kind": "theorem",
           "name": "union_valid",
-          "line": 196,
+          "line": 197,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -44740,18 +44740,7 @@
         {
           "kind": "theorem",
           "name": "inter_valid",
-          "line": 202,
-          "called": [
-            "AccessRightSet",
-            "inter",
-            "maxBits",
-            "valid"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "inter_valid_left",
-          "line": 211,
+          "line": 209,
           "called": [
             "AccessRightSet",
             "inter",
@@ -44762,7 +44751,7 @@
         {
           "kind": "theorem",
           "name": "subset_sound",
-          "line": 220,
+          "line": 218,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44774,7 +44763,7 @@
         {
           "kind": "theorem",
           "name": "mem_bit_bounded",
-          "line": 242,
+          "line": 240,
           "called": [
             "AccessRight",
             "toBit"
@@ -44783,7 +44772,7 @@
         {
           "kind": "theorem",
           "name": "isWord5_of_valid",
-          "line": 251,
+          "line": 249,
           "called": [
             "AccessRightSet",
             "valid"
@@ -44792,7 +44781,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 254,
+          "line": 252,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44802,8 +44791,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:257>",
-          "line": 257,
+          "name": "<anonymous:instance:255>",
+          "line": 255,
           "called": [
             "AccessRightSet"
           ]
@@ -44811,7 +44800,7 @@
         {
           "kind": "theorem",
           "name": "ofList_comm",
-          "line": 261,
+          "line": 259,
           "called": [
             "AccessRight",
             "ofList",
@@ -44821,7 +44810,7 @@
         {
           "kind": "theorem",
           "name": "singleton_lt_maxBits",
-          "line": 269,
+          "line": 267,
           "called": [
             "AccessRight",
             "maxBits",
@@ -44831,13 +44820,13 @@
         {
           "kind": "theorem",
           "name": "or_lt_two_pow",
-          "line": 275,
+          "line": 273,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "or_lt_maxBits",
-          "line": 279,
+          "line": 277,
           "called": [
             "maxBits",
             "or_lt_two_pow"
@@ -44846,7 +44835,7 @@
         {
           "kind": "theorem",
           "name": "foldl_or_lt_maxBits",
-          "line": 285,
+          "line": 283,
           "called": [
             "AccessRight",
             "maxBits",
@@ -44858,7 +44847,7 @@
         {
           "kind": "theorem",
           "name": "ofList_valid",
-          "line": 303,
+          "line": 301,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44871,7 +44860,7 @@
         {
           "kind": "inductive",
           "name": "CapTarget",
-          "line": 313,
+          "line": 311,
           "called": [
             "ObjId",
             "Slot",
@@ -44881,7 +44870,7 @@
         {
           "kind": "structure",
           "name": "Capability",
-          "line": 321,
+          "line": 319,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -44892,13 +44881,13 @@
         {
           "kind": "namespace",
           "name": "Capability",
-          "line": 327,
+          "line": 325,
           "called": []
         },
         {
           "kind": "def",
           "name": "hasRight",
-          "line": 330,
+          "line": 328,
           "called": [
             "AccessRight",
             "Capability",
@@ -44908,19 +44897,19 @@
         {
           "kind": "def",
           "name": "maxMessageRegisters",
-          "line": 337,
+          "line": 335,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxExtraCaps",
-          "line": 341,
+          "line": 339,
           "called": []
         },
         {
           "kind": "structure",
           "name": "IpcMessage",
-          "line": 349,
+          "line": 347,
           "called": [
             "Badge",
             "Capability",
@@ -44931,13 +44920,13 @@
         {
           "kind": "namespace",
           "name": "IpcMessage",
-          "line": 359,
+          "line": 357,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 361,
+          "line": 359,
           "called": [
             "IpcMessage",
             "RegValue",
@@ -44947,7 +44936,7 @@
         {
           "kind": "def",
           "name": "bounded",
-          "line": 365,
+          "line": 363,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -44958,7 +44947,7 @@
         {
           "kind": "def",
           "name": "checkBounds",
-          "line": 371,
+          "line": 369,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -44969,7 +44958,7 @@
         {
           "kind": "theorem",
           "name": "empty_bounded",
-          "line": 375,
+          "line": 373,
           "called": [
             "bounded",
             "empty",
@@ -44981,7 +44970,7 @@
         {
           "kind": "theorem",
           "name": "checkBounds_iff_bounded",
-          "line": 379,
+          "line": 377,
           "called": [
             "IpcMessage",
             "bounded",
@@ -44993,7 +44982,7 @@
         {
           "kind": "inductive",
           "name": "CapTransferResult",
-          "line": 391,
+          "line": 389,
           "called": [
             "ObjId",
             "Slot"
@@ -45002,7 +44991,7 @@
         {
           "kind": "structure",
           "name": "CapTransferSummary",
-          "line": 402,
+          "line": 400,
           "called": [
             "CapTransferResult"
           ]
@@ -45010,7 +44999,7 @@
         {
           "kind": "inductive",
           "name": "IpcTimeoutResult",
-          "line": 409,
+          "line": 407,
           "called": [
             "IpcMessage"
           ]
@@ -45018,7 +45007,7 @@
         {
           "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 427,
+          "line": 425,
           "called": [
             "ObjId",
             "ThreadId",
@@ -45028,13 +45017,13 @@
         {
           "kind": "inductive",
           "name": "ThreadState",
-          "line": 450,
+          "line": 448,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 466,
+          "line": 464,
           "called": [
             "ThreadId"
           ]
@@ -45042,7 +45031,7 @@
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 471,
+          "line": 469,
           "called": [
             "CPtr",
             "Deadline",
@@ -45064,8 +45053,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:551>",
-          "line": 551,
+          "name": "<anonymous:instance:549>",
+          "line": 549,
           "called": [
             "TCB"
           ]
@@ -45073,7 +45062,7 @@
         {
           "kind": "theorem",
           "name": "TCB.not_lawfulBEq",
-          "line": 572,
+          "line": 570,
           "called": [
             "ObjId",
             "RegName",
@@ -45086,7 +45075,7 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 597,
+          "line": 595,
           "called": [
             "ThreadId",
             "none"
@@ -45095,7 +45084,7 @@
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 608,
+          "line": 606,
           "called": [
             "IntrusiveQueue"
           ]
@@ -45103,13 +45092,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 613,
+          "line": 611,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 648,
+          "line": 646,
           "called": [
             "Badge",
             "NotificationState",
@@ -45120,7 +45109,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 672,
+          "line": 670,
           "called": [
             "Capability",
             "RHTable",
@@ -45130,13 +45119,13 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 681,
+          "line": 679,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 686,
+          "line": 684,
           "called": [
             "ObjId",
             "size"
@@ -45145,7 +45134,7 @@
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 701,
+          "line": 699,
           "called": [
             "PAddr",
             "UntypedChild"
@@ -45154,13 +45143,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 717,
+          "line": 715,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 720,
+          "line": 718,
           "called": [
             "UntypedObject"
           ]
@@ -45168,7 +45157,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 724,
+          "line": 722,
           "called": [
             "UntypedObject",
             "size"
@@ -45177,7 +45166,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 735,
+          "line": 733,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45189,7 +45178,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 747,
+          "line": 745,
           "called": [
             "UntypedObject"
           ]
@@ -45197,7 +45186,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 751,
+          "line": 749,
           "called": [
             "UntypedObject"
           ]
@@ -45205,7 +45194,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 755,
+          "line": 753,
           "called": [
             "UntypedObject",
             "size"
@@ -45214,7 +45203,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 759,
+          "line": 757,
           "called": [
             "UntypedObject",
             "size"
@@ -45223,7 +45212,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 764,
+          "line": 762,
           "called": [
             "UntypedObject"
           ]
@@ -45231,7 +45220,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 769,
+          "line": 767,
           "called": [
             "UntypedObject",
             "childrenNonOverlap",
@@ -45243,7 +45232,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 773,
+          "line": 771,
           "called": [
             "PAddr",
             "size",
@@ -45253,7 +45242,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 777,
+          "line": 775,
           "called": [
             "PAddr",
             "childrenWithinWatermark",
@@ -45263,7 +45252,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 782,
+          "line": 780,
           "called": [
             "PAddr",
             "childrenNonOverlap",
@@ -45273,7 +45262,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 787,
+          "line": 785,
           "called": [
             "PAddr",
             "childrenUniqueIds",
@@ -45283,7 +45272,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 792,
+          "line": 790,
           "called": [
             "PAddr",
             "empty_childrenNonOverlap",
@@ -45297,7 +45286,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 798,
+          "line": 796,
           "called": [
             "UntypedObject",
             "canAllocate",
@@ -45307,7 +45296,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 805,
+          "line": 803,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45319,7 +45308,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 824,
+          "line": 822,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45331,7 +45320,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 833,
+          "line": 831,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45343,7 +45332,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 840,
+          "line": 838,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45355,7 +45344,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 847,
+          "line": 845,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45369,7 +45358,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 858,
+          "line": 856,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45381,7 +45370,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 869,
+          "line": 867,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45394,7 +45383,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 887,
+          "line": 885,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45408,7 +45397,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 909,
+          "line": 907,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45421,7 +45410,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 928,
+          "line": 926,
           "called": [
             "UntypedObject",
             "reset",
@@ -45431,7 +45420,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 932,
+          "line": 930,
           "called": [
             "UntypedObject",
             "reset",
@@ -45442,7 +45431,7 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 947,
+          "line": 945,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -45457,13 +45446,13 @@
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 975,
+          "line": 973,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 979,
+          "line": 977,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45479,13 +45468,13 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 1007,
+          "line": 1005,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1011,
+          "line": 1009,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45501,8 +45490,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1039>",
-          "line": 1039,
+          "name": "<anonymous:instance:1037>",
+          "line": 1037,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45518,7 +45507,7 @@
         {
           "kind": "def",
           "name": "all",
-          "line": 1071,
+          "line": 1069,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45534,7 +45523,7 @@
         {
           "kind": "theorem",
           "name": "all_length",
-          "line": 1083,
+          "line": 1081,
           "called": [
             "count"
           ]
@@ -45542,7 +45531,7 @@
         {
           "kind": "theorem",
           "name": "all_complete",
-          "line": 1086,
+          "line": 1084,
           "called": [
             "SyscallId",
             "all"
@@ -45551,7 +45540,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1090,
+          "line": 1088,
           "called": [
             "SyscallId",
             "ofNat",
@@ -45561,7 +45550,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 1102,
+          "line": 1100,
           "called": [
             "SyscallId",
             "ofNat",
@@ -45571,7 +45560,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1114,
+          "line": 1112,
           "called": [
             "SyscallId",
             "ofNat_toNat",
@@ -45581,25 +45570,25 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 1128,
+          "line": 1126,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 1134,
+          "line": 1132,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLabel",
-          "line": 1139,
+          "line": 1137,
           "called": []
         },
         {
           "kind": "def",
           "name": "encode",
-          "line": 1147,
+          "line": 1145,
           "called": [
             "MessageInfo"
           ]
@@ -45607,7 +45596,7 @@
         {
           "kind": "def",
           "name": "decode",
-          "line": 1153,
+          "line": 1151,
           "called": [
             "MessageInfo",
             "maxExtraCaps",
@@ -45618,8 +45607,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1162>",
-          "line": 1162,
+          "name": "<anonymous:instance:1160>",
+          "line": 1160,
           "called": [
             "MessageInfo"
           ]
@@ -45627,25 +45616,25 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 1171,
+          "line": 1169,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 1196,
+          "line": 1194,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 1228,
+          "line": 1226,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 1257,
+          "line": 1255,
           "called": [
             "MessageInfo",
             "and_mask_127",
@@ -45661,7 +45650,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 1282,
+          "line": 1280,
           "called": [
             "CPtr",
             "MessageInfo",
