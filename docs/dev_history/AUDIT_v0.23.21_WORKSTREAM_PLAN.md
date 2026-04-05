@@ -3,7 +3,7 @@
 **Created**: 2026-03-31
 **Baseline version**: 0.23.21
 **Baseline audit**:
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md` (0 CRIT, 5 HIGH, 8 MED, 30 LOW, 35+ INFO)
+- `docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md` (0 CRIT, 5 HIGH, 8 MED, 30 LOW, 35+ INFO)
 **Prior portfolios**: WS-B through WS-Z (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 
