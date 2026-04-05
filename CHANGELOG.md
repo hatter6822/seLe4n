@@ -7,9 +7,11 @@ modified. All tests pass (232-job build + smoke). Zero sorry/axiom.
   and `returnDonatedSchedContext` — 3-step `storeObject` mutation sequences,
   monad-level atomicity (`.error` carries no state), hardware-level atomicity
   (interrupts disabled during kernel transitions).
-- **AC3-B (I-02 proof)**: `donateSchedContext_ok_implies_sc_bound` theorem —
-  proves success implies SchedContext found and bound to client. Added to
-  `SchedulerLemmas.lean`.
+- **AC3-B (I-02 proof)**: Two atomicity theorems in `SchedulerLemmas.lean`:
+  `donateSchedContext_ok_implies_sc_bound` (precondition witness — SchedContext
+  found and bound to client) and `donateSchedContext_ok_server_donated`
+  (postcondition witness — server TCB has `.donated` binding in post-state,
+  proving both `storeObject` calls succeeded).
 - **AC3-C (I-04)**: `Badge.bor` unbounded-Nat intermediate documented —
   `ofNatMasked` applies `% machineWordMax`, `bor_valid` proves result validity.
 - **AC3-D (API-01)**: `resolveExtraCaps` silent-drop semantics documented.

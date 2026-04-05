@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-ac3-ipc-atomicity-SGcml",
-      "commit_sha": "761db10d876adee9e16f1d7ccb8728badc719314",
-      "tree_sha": "804cdb964770d12e55146db3555cf4643a2bbb3c",
-      "committed_at_utc": "2026-04-05T02:12:46-04:00"
+      "commit_sha": "b1aa4db972b4afd7996b8aa2e98e0bf1539c2330",
+      "tree_sha": "2a42f55d660459b1fdfde62bbf5aedcbf6efd051",
+      "committed_at_utc": "2026-04-05T13:26:58+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f406cd102515819d7ab9b9b81708575c277ca08ec65a07f9eeddb59f911ef77c"
+    "source_digest": "26f631287af2a44db2707ee05cfd40565891709326f3188ff9489a291b7729e7"
   },
   "summary": {
     "module_count": 148,
-    "declaration_count": 4447
+    "declaration_count": 4448
   },
   "readme_sync": {
     "version": "0.25.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 83628,
+    "production_loc": 83676,
     "test_files": 15,
     "test_loc": 10742,
-    "proved_theorem_lemma_decls": 2453,
+    "proved_theorem_lemma_decls": 2454,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -19156,7 +19156,7 @@
         {
           "kind": "def",
           "name": "donateSchedContext",
-          "line": 183,
+          "line": 184,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -19171,7 +19171,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContext",
-          "line": 229,
+          "line": 230,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -19187,7 +19187,7 @@
         {
           "kind": "def",
           "name": "cleanupActiveDonation",
-          "line": 266,
+          "line": 267,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -19200,7 +19200,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq_z7",
-          "line": 274,
+          "line": 275,
           "called": [
             "KernelObject",
             "ObjId",
@@ -19211,7 +19211,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_scheduler_eq",
-          "line": 281,
+          "line": 282,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -19228,7 +19228,7 @@
         {
           "kind": "def",
           "name": "notificationSignal",
-          "line": 337,
+          "line": 338,
           "called": [
             "Badge",
             "IpcMessage",
@@ -19251,7 +19251,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 392,
+          "line": 393,
           "called": [
             "Badge",
             "Kernel",
@@ -19270,7 +19270,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 436,
+          "line": 437,
           "called": [
             "ObjId",
             "SystemState",
@@ -19288,7 +19288,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 461,
+          "line": 462,
           "called": [
             "Notification",
             "ObjId",
@@ -19306,7 +19306,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 481,
+          "line": 482,
           "called": [
             "SystemState",
             "ThreadId",
@@ -19316,7 +19316,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 488,
+          "line": 489,
           "called": [
             "SystemState",
             "ThreadId",
@@ -19326,7 +19326,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 498,
+          "line": 499,
           "called": [
             "SystemState",
             "ThreadId",
@@ -19342,7 +19342,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 519,
+          "line": 520,
           "called": [
             "Endpoint",
             "ObjId",
@@ -19360,7 +19360,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 539,
+          "line": 540,
           "called": [
             "CNode",
             "ObjId",
@@ -19379,7 +19379,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 559,
+          "line": 560,
           "called": [
             "ObjId",
             "SystemState",
@@ -19397,7 +19397,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 580,
+          "line": 581,
           "called": [
             "CNode",
             "ObjId",
@@ -19417,7 +19417,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 607,
+          "line": 608,
           "called": [
             "Endpoint",
             "ObjId",
@@ -19437,7 +19437,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 634,
+          "line": 635,
           "called": [
             "Notification",
             "ObjId",
@@ -19457,7 +19457,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 663,
+          "line": 664,
           "called": [
             "Notification",
             "ObjId",
@@ -19472,7 +19472,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 679,
+          "line": 680,
           "called": [
             "Badge",
             "Notification",
@@ -19495,7 +19495,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 750,
+          "line": 751,
           "called": [
             "Notification",
             "ObjId",
@@ -19520,7 +19520,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.SchedulerLemmas",
       "path": "SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean",
-      "declaration_count": 36,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -20074,15 +20074,34 @@
         {
           "kind": "theorem",
           "name": "donateSchedContext_ok_implies_sc_bound",
-          "line": 597,
+          "line": 600,
           "called": [
-            "Kernel",
             "SchedContext",
             "SchedContextId",
             "SystemState",
             "ThreadId",
             "donateSchedContext",
             "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "donateSchedContext_ok_server_donated",
+          "line": 633,
+          "called": [
+            "Kernel",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "donateSchedContext",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "storeObject",
+            "storeObject_objects_eq'",
+            "storeObject_preserves_objects_invExt'",
             "toObjId"
           ]
         }

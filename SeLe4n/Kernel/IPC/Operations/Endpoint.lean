@@ -169,10 +169,11 @@ Performs the bidirectional binding:
 Returns the updated state or error if lookups fail.
 
 **Atomicity contract (AC3-A / I-02)**:
-This function performs 3 sequential mutations via `storeObject`:
-  1. Update SchedContext `boundThread` to point to server.
-  2. Look up server TCB in the intermediate state `st1`.
-  3. Update server TCB `schedContextBinding` to `.donated`.
+This function performs 2 sequential `storeObject` mutations (through states
+`st` → `st1` → `st2`) with an intermediate lookup:
+  1. `storeObject` SchedContext with `boundThread := some serverTid` → `st1`.
+  2. `lookupTcb st1 serverTid` to find the server TCB (pure read, no mutation).
+  3. `storeObject` server TCB with `schedContextBinding := .donated` → `st2`.
 In the `KernelM` monad (`Except KernelError`), `.error` carries **no state** —
 only the error value. If step 1 succeeds but step 2 or 3 fails, the
 intermediate state `st1` is discarded by the monad's `bind` operation and the
