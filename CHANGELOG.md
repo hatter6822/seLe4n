@@ -5,7 +5,7 @@ Phase AC6 of WS-AC Comprehensive Audit Remediation. 7 sub-tasks. All tests pass
 COMPLETE** (6 phases, 42 sub-tasks, v0.25.3-v0.25.10).
 
 ### Changes
-- **T-03 (AC6-A)**: New `tests/DecodingSuite.lean` — 37 dedicated tests for
+- **T-03 (AC6-A)**: New `tests/DecodingSuite.lean` — 40 dedicated tests for
   Layer 1 (RegisterDecode: `decodeSyscallId`, `decodeMsgInfo`, `decodeCapPtr`,
   `validateRegBound`) and Layer 2 (SyscallArgDecode: 20 per-syscall decode
   functions across CSpace, VSpace, Lifecycle, Service, Notification,
@@ -19,7 +19,7 @@ COMPLETE** (6 phases, 42 sub-tasks, v0.25.3-v0.25.10).
   AUDIT_v0.25.3_COMPREHENSIVE.md — 16 errata catalogued with corrected entries,
   reclassifications (A-01: Medium→Info, X-05: Medium→Low), and recommendation
   to use Sections 1-12 as authoritative source.
-- **AC6-E**: `codebase_map.json` regenerated (16 test suites, 11,251 test LoC).
+- **AC6-E**: `codebase_map.json` regenerated (16 test suites, 11,318 test LoC).
 - Version bump 0.25.9 → 0.25.10.
 
 ## v0.25.9 — WS-AC Phase AC5: Cross-Cutting & Infrastructure

@@ -165,6 +165,23 @@ private def rd010_decodeSyscallArgsInsufficientRegs : IO Unit := do
   let result := decodeSyscallArgs arm64DefaultLayout rf 5
   expect "RD-010a insufficient regs" (!result.isOk)
 
+/-- RD-011: extractMessageRegisters — boundary and truncation behavior. -/
+private def rd011_extractMessageRegisters : IO Unit := do
+  let regs : Array RegValue := #[⟨10⟩, ⟨20⟩, ⟨30⟩, ⟨40⟩]
+  -- length=2: should extract only first 2 registers
+  let mi2 : MessageInfo := { length := 2, extraCaps := 0, label := 0 }
+  let r2 := extractMessageRegisters regs mi2
+  expect "RD-011a length=2 size" (r2.size == 2)
+  expect "RD-011b length=2 val0" (r2[0]! == ⟨10⟩)
+  -- length=120 (maxMessageRegisters): bounded by array size (4)
+  let mi120 : MessageInfo := { length := 120, extraCaps := 0, label := 0 }
+  let r120 := extractMessageRegisters regs mi120
+  expect "RD-011c length=120 capped at array size" (r120.size == 4)
+  -- length=0: should extract nothing
+  let mi0 : MessageInfo := { length := 0, extraCaps := 0, label := 0 }
+  let r0 := extractMessageRegisters regs mi0
+  expect "RD-011d length=0 empty" (r0.size == 0)
+
 private def runRegisterDecodeTests : IO Unit := do
   IO.println "--- Layer 1: RegisterDecode ---"
   rd001_decodeSyscallIdValid
@@ -177,6 +194,7 @@ private def runRegisterDecodeTests : IO Unit := do
   rd008_validateRegBound
   rd009_decodeSyscallArgsIntegration
   rd010_decodeSyscallArgsInsufficientRegs
+  rd011_extractMessageRegisters
 
 -- ============================================================================
 -- Layer 2: SyscallArgDecode tests
@@ -430,6 +448,52 @@ private def sad027_noArgDecoders : IO Unit := do
   expect "SAD-027c suspend" (decodeSuspendArgs stub).isOk
   expect "SAD-027d resume" (decodeResumeArgs stub).isOk
 
+/-- SAD-028: validateVSpaceMapPermsForMemoryKind — device+execute rejection. -/
+private def sad028_validateVSpaceMapPermsDeviceExec : IO Unit := do
+  -- PagePermissions.ofNat: bit 0=read, 1=write, 2=execute, 3=user, 4=cacheable
+  -- Construct args with execute=true, placed in a device region
+  let args : VSpaceMapArgs :=
+    { asid := ASID.ofNat 1, vaddr := VAddr.ofNat 0x1000
+      paddr := PAddr.ofNat 0x80000, perms := { execute := true } }
+  let deviceRegion : MemoryRegion :=
+    { base := PAddr.ofNat 0x80000, size := 0x1000, kind := .device }
+  -- Device + execute should be rejected
+  let result := validateVSpaceMapPermsForMemoryKind args [deviceRegion]
+  expect "SAD-028a device+exec rejected" (!result.isOk)
+  -- Device + no execute should be accepted
+  let argsNoExec : VSpaceMapArgs :=
+    { asid := ASID.ofNat 1, vaddr := VAddr.ofNat 0x1000
+      paddr := PAddr.ofNat 0x80000, perms := { read := true } }
+  let resultOk := validateVSpaceMapPermsForMemoryKind argsNoExec [deviceRegion]
+  expect "SAD-028b device+read ok" resultOk.isOk
+  -- RAM + execute should be accepted
+  let ramRegion : MemoryRegion :=
+    { base := PAddr.ofNat 0x80000, size := 0x1000, kind := .ram }
+  let resultRam := validateVSpaceMapPermsForMemoryKind args [ramRegion]
+  expect "SAD-028c ram+exec ok" resultRam.isOk
+
+/-- SAD-029: decodeExtraCapAddrs — basic and truncation behavior. -/
+private def sad029_decodeExtraCapAddrs : IO Unit := do
+  -- Set up a stub with 4 msgRegs, length=2, extraCaps=2
+  -- Extra caps start at index=length (2), so indices 2,3
+  let stub : SyscallDecodeResult :=
+    { capAddr := CPtr.ofNat 0
+      msgInfo := { length := 2, extraCaps := 2, label := 0 }
+      syscallId := .send
+      msgRegs := #[⟨10⟩, ⟨20⟩, ⟨30⟩, ⟨40⟩] }
+  let caps := decodeExtraCapAddrs stub
+  expect "SAD-029a extraCaps count" (caps.size == 2)
+  expect "SAD-029b cap0 value" (caps[0]!.toNat == 30)
+  expect "SAD-029c cap1 value" (caps[1]!.toNat == 40)
+  -- Truncation: extraCaps=2 but only 1 register available after length
+  let stubShort : SyscallDecodeResult :=
+    { capAddr := CPtr.ofNat 0
+      msgInfo := { length := 2, extraCaps := 2, label := 0 }
+      syscallId := .send
+      msgRegs := #[⟨10⟩, ⟨20⟩, ⟨30⟩] }  -- only index 2 available, not 3
+  let capsShort := decodeExtraCapAddrs stubShort
+  expect "SAD-029d truncated to 1" (capsShort.size == 1)
+
 private def runSyscallArgDecodeTests : IO Unit := do
   IO.println "--- Layer 2: SyscallArgDecode ---"
   -- CSpace
@@ -467,6 +531,9 @@ private def runSyscallArgDecodeTests : IO Unit := do
   sad026_serviceRevoke
   -- Edge cases
   sad027_noArgDecoders
+  -- Security-relevant validation
+  sad028_validateVSpaceMapPermsDeviceExec
+  sad029_decodeExtraCapAddrs
 
 end SeLe4n.Testing.DecodingSuite
 
@@ -474,4 +541,4 @@ def main : IO Unit := do
   IO.println "=== DecodingSuite (T-03/AC6-A) ==="
   SeLe4n.Testing.DecodingSuite.runRegisterDecodeTests
   SeLe4n.Testing.DecodingSuite.runSyscallArgDecodeTests
-  IO.println "=== DecodingSuite PASSED (37 tests) ==="
+  IO.println "=== DecodingSuite PASSED (40 tests) ==="
