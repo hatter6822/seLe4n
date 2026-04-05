@@ -282,24 +282,25 @@ the first).
 **AC1-D.2**: Add a prominent doc-comment block above `cspaceMint` (Operations.lean:
 535–540) documenting:
 - This function creates **CDT-untracked** capabilities.
-- Minted capabilities are **irrevocable** via CDT-based revocation.
-- The current syscall dispatch path routes through `cspaceMintChecked` →
-  `cspaceMint` (CDT-untracked). `cspaceMintWithCdt` exists but is not yet
-  wired into the dispatch path.
+- It is the internal base operation composed within `cspaceMintWithCdt`.
 - Direct use should be limited to: (a) internal composition within
   `cspaceMintWithCdt`, (b) proof decomposition, (c) tests.
 
-**AC1-D.3**: Verify that the `@[deprecated]` attribute compiles without breaking
-existing callers. In Lean 4, `@[deprecated]` emits a warning, not an error, so
-all 78 sites will produce warnings but the build will succeed.
+**AC1-D.3** (SUPERSEDED): `@[deprecated]` was evaluated but rejected — 14
+suppression annotations across 8 proof files outweighed the signal value.
+Doc-comment serves the same purpose with zero blast radius.
 
-**AC1-D.4**: Suppress the deprecation warning at the 2 legitimate internal call
-sites (`cspaceMintWithCdt` at Operations.lean:788 and `cspaceMintChecked` at
-Wrappers.lean:59) by adding `@[inline]` wrapper aliases if needed, or by
-documenting that these warnings are expected.
+**AC1-D.4** (IMPLEMENTED): Production dispatch wired through `cspaceMintWithCdt`.
+Change path: `dispatchWithCap` → `cspaceMintWithCdt`, `cspaceMintChecked` →
+`cspaceMintWithCdt`. NI proof updated with CDT-pipeline preservation
+(`cdt_only_preserves_projection'`, `ensureCdtNodeForSlot_preserves_projection'`).
+Enforcement soundness and dispatch delegation theorems updated. Minted
+capabilities are now revocable via `cspaceRevoke`.
 
-**Files modified**: `Operations.lean` (~15 lines attribute + doc-comment).
-**Build verification**: `lake build SeLe4n.Kernel.Capability.Operations`.
+**Files modified**: `Operations.lean` (doc-comment), `API.lean` (dispatch +
+delegation theorem), `Wrappers.lean` (checked wrapper + equivalence theorems),
+`InformationFlow/Invariant/Operations.lean` (NI proof + early CDT helpers).
+**Build verification**: All 4 modules build, 232 jobs, zero sorry/axiom.
 
 ### AC1-E: Update preservation proofs for fail-closed `hasSufficientBudget` (S-01 proof chain)
 

@@ -35,6 +35,48 @@ with CDT-specific frame lemmas.
 -/
 
 -- ============================================================================
+-- CDT-only state modifications preserve projection (needed early for NI proofs)
+-- ============================================================================
+
+/-- A state modification that only changes CDT fields preserves projection.
+    Moved before NI bridge theorems so cspaceMintChecked_NI can reference it. -/
+private theorem cdt_only_preserves_projection'
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState)
+    (hObjects : st'.objects = st.objects)
+    (hScheduler : st'.scheduler = st.scheduler)
+    (hServices : st'.services = st.services)
+    (hIrq : st'.irqHandlers = st.irqHandlers)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hMachine : st'.machine = st.machine) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · funext oid; simp only [projectObjects, hObjects]
+  · simp [projectRunnable, hScheduler]
+  · simp [projectCurrent, hScheduler]
+  · funext sid; simp only [projectServicePresence, lookupService, hServices]
+  · simp [projectActiveDomain, hScheduler]
+  · funext irq; simp only [projectIrqHandlers, hIrq]
+  · simp only [projectObjectIndex, hObjIdx]
+  · simp [projectDomainTimeRemaining, hScheduler]
+  · simp [projectDomainSchedule, hScheduler]
+  · simp [projectDomainScheduleIndex, hScheduler]
+  · simp [projectMachineRegs, hScheduler, hMachine]
+  · exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
+  · exact projectServiceRegistry_eq_of_services_eq ctx observer st' st hServices
+
+/-- ensureCdtNodeForSlot preserves projection (modifies only CDT). -/
+private theorem ensureCdtNodeForSlot_preserves_projection'
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (ref : SlotRef) :
+    projectState ctx observer (SystemState.ensureCdtNodeForSlot st ref).2 =
+      projectState ctx observer st := by
+  unfold SystemState.ensureCdtNodeForSlot
+  cases st.cdtSlotNode[ref]? with
+  | some _ => rfl
+  | none => exact cdt_only_preserves_projection' ctx observer st _ rfl rfl rfl rfl rfl rfl
+
+-- ============================================================================
 -- WS-F3/F-20: Enforcement-NI bridge theorems
 -- ============================================================================
 
@@ -60,10 +102,51 @@ theorem cspaceMintChecked_NI
       have := cspaceMintChecked_flowDenied ctx src dst rights badge s₁ h
       rw [this] at hStep₁; simp at hStep₁
     | true => rfl
-  rw [cspaceMintChecked_eq_cspaceMint_when_allowed ctx src dst rights badge s₁ hFlow₁] at hStep₁
-  rw [cspaceMintChecked_eq_cspaceMint_when_allowed ctx src dst rights badge s₂ hFlow₁] at hStep₂
-  exact cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
-    s₁ s₂ s₁' s₂' hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
+  rw [cspaceMintChecked_eq_cspaceMintWithCdt_when_allowed ctx src dst rights badge s₁ hFlow₁] at hStep₁
+  rw [cspaceMintChecked_eq_cspaceMintWithCdt_when_allowed ctx src dst rights badge s₂ hFlow₁] at hStep₂
+  -- Unfold cspaceMintWithCdt to extract the underlying cspaceMint step
+  unfold cspaceMintWithCdt at hStep₁ hStep₂
+  -- Split on the cspaceMint result for s₁
+  cases hMint₁ : cspaceMint src dst rights badge s₁ with
+  | error e => simp [hMint₁] at hStep₁
+  | ok pair₁ =>
+    simp only [hMint₁, Except.ok.injEq, Prod.mk.injEq] at hStep₁
+    obtain ⟨_, rfl⟩ := hStep₁
+    -- Split on the cspaceMint result for s₂
+    cases hMint₂ : cspaceMint src dst rights badge s₂ with
+    | error e => simp [hMint₂] at hStep₂
+    | ok pair₂ =>
+      simp only [hMint₂, Except.ok.injEq, Prod.mk.injEq] at hStep₂
+      obtain ⟨_, rfl⟩ := hStep₂
+      -- cspaceMint results preserve lowEquivalent
+      have hMintLow := cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
+        s₁ s₂ pair₁.2 pair₂.2 hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hObjInv₁ hObjInv₂
+        hMint₁ hMint₂
+      -- CDT pipeline (ensureCdtNodeForSlot × 2 + addEdge) only modifies CDT
+      -- fields — none appear in projectState. Use early-defined helpers.
+      unfold lowEquivalent at hMintLow ⊢
+      -- Each side: projectState ctx observer { stDst with cdt := ... }
+      -- Chain: {with cdt} → ensureCdt(dst) → ensureCdt(src) → original
+      calc projectState ctx observer _
+          = projectState ctx observer
+              ((SystemState.ensureCdtNodeForSlot
+                (SystemState.ensureCdtNodeForSlot pair₁.2 src).2 dst).2) := by
+            exact cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl
+        _ = projectState ctx observer
+              (SystemState.ensureCdtNodeForSlot pair₁.2 src).2 :=
+            ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst
+        _ = projectState ctx observer pair₁.2 :=
+            ensureCdtNodeForSlot_preserves_projection' ctx observer _ src
+        _ = projectState ctx observer pair₂.2 := hMintLow
+        _ = projectState ctx observer
+              (SystemState.ensureCdtNodeForSlot pair₂.2 src).2 :=
+            (ensureCdtNodeForSlot_preserves_projection' ctx observer _ src).symm
+        _ = projectState ctx observer
+              ((SystemState.ensureCdtNodeForSlot
+                (SystemState.ensureCdtNodeForSlot pair₂.2 src).2 dst).2) :=
+            (ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst).symm
+        _ = projectState ctx observer _ := by
+            exact (cdt_only_preserves_projection' ctx observer _ _ rfl rfl rfl rfl rfl rfl).symm
 
 -- ============================================================================
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers

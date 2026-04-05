@@ -63,7 +63,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `switchDomainChecked` | Scheduler (M-05/X2-I) | Stable (**production entry point** — `saveOutgoingContextChecked` guard) |
 | `chooseThread`, `chooseThreadInDomain` | Scheduler | Stable |
 | `cspaceLookupSlot`, `cspaceLookupPath` | Capability | Stable |
-| `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable (M-08/A-20: `cspaceMint` does not record CDT edges — capabilities created via this path are untracked by CDT-based revocation; prefer `cspaceMintWithCdt` for tracked derivation) |
+| `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable (C-01: dispatch path now uses `cspaceMintWithCdt` for CDT-tracked derivation; `cspaceMint` is the untracked base used only for internal composition and proofs) |
 | `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
@@ -621,6 +621,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
   -- seL4's treatment of zero-valued badges as "no badge specified".
   -- X5-I (L-5): Confirmed v0.22.17 audit — badge zero indistinguishability
   -- matches seL4 semantics. No security impact.
+  -- C-01: Uses cspaceMintWithCdt for CDT-tracked derivation so minted
+  -- capabilities are revocable via cspaceRevoke.
   | .cspaceMint =>
     match cap.target with
     | .object cnodeId =>
@@ -631,7 +633,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
             let badge : Option SeLe4n.Badge :=
               if args.badge.val = 0 then none else some args.badge
-            cspaceMint src dst args.rights badge st
+            cspaceMintWithCdt src dst args.rights badge st
     | _ => fun _ => .error .invalidCapability
   | .cspaceCopy =>
     match cap.target with
@@ -864,6 +866,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
   -- semantics where badge 0 indicates an unbadged capability.
+  -- C-01: cspaceMintChecked delegates to cspaceMintWithCdt for CDT tracking.
   | .cspaceMint =>
     match cap.target with
     | .object cnodeId =>
@@ -1370,9 +1373,9 @@ theorem syscallRequiredRight_total (sid : SyscallId) :
 -- WS-K-C: CSpace dispatch delegation theorems
 -- ============================================================================
 
-/-- WS-K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMint`
+/-- WS-K-C: When cspaceMint dispatch succeeds, the kernel-level `cspaceMintWithCdt`
 is invoked with the decoded source slot, destination slot, rights, and badge
-from message registers. -/
+from message registers. CDT-tracked (C-01). -/
 theorem dispatchWithCap_cspaceMint_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (cnodeId : SeLe4n.ObjId)
@@ -1385,7 +1388,7 @@ theorem dispatchWithCap_cspaceMint_delegates
       let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
       let badge : Option SeLe4n.Badge :=
         if args.badge.val = 0 then none else some args.badge
-      cspaceMint src dst args.rights badge := by
+      cspaceMintWithCdt src dst args.rights badge := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-C: When cspaceCopy dispatch succeeds, the kernel-level `cspaceCopy`

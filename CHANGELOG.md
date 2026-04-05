@@ -14,18 +14,17 @@ End-to-end audit verified: all 9 sub-tasks complete, zero sorry/axiom.
   moved from Structural.lean to NotificationPreservation.lean with full
   machine-checked proofs (replacing comment cross-references). Net ~330 lines
   removed from Structural.lean.
-- **AC1-D (C-01)**: `cspaceMint` documented as CDT-untracked with prominent
-  doc-comment warning. `cspaceMintWithCdt` is the CDT-tracked alternative.
-  `@[deprecated]` was evaluated but rejected: 14 suppression annotations
-  across 8 proof files outweighed the signal value. Doc-comment corrected
-  during audit: production dispatch path is `cspaceMintChecked` → `cspaceMint`
-  (CDT-untracked), not `cspaceMintWithCdt` as previously claimed.
+- **AC1-D (C-01)**: Production syscall dispatch now routes through
+  `cspaceMintWithCdt` (CDT-tracked) — minted capabilities are revocable via
+  `cspaceRevoke`. Change path: `dispatchWithCap` → `cspaceMintWithCdt`,
+  `cspaceMintChecked` → `cspaceMintWithCdt`. Non-interference proof updated
+  with CDT-pipeline preservation (`cdt_only_preserves_projection'`,
+  `ensureCdtNodeForSlot_preserves_projection'`). Enforcement soundness and
+  dispatch delegation theorems updated. `cspaceMint` retained as CDT-untracked
+  base operation for internal composition and proof decomposition.
 - **AC1-G**: 5 negative regression tests for budget fail-closed behavior.
 - **AC1-H**: 2 regression tests verifying CDT edge tracking difference between
   `cspaceMint` (no edges) and `cspaceMintWithCdt` (adds edge).
-- **Audit corrections**: Fixed inaccurate documentation claiming syscall dispatch
-  routes through CDT-tracked path (Operations.lean, workstream plan, comprehensive
-  audit report). All documentation now accurately reflects the actual dispatch chain.
 - Cross-subsystem verification: Preservation.lean, WCRT, CrossSubsystem,
   PriorityInheritance all build unchanged. Zero sorry/axiom.
 - Version bump 0.25.3 → 0.25.5.
