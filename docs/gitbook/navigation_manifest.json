@@ -3,7 +3,7 @@
   "current_state_bullets": [
     "**Version:** 0.25.3 (Lean v4.28.0).",
     "**Codebase metrics:** 83,286 production LoC across 132 files; 10,564 test LoC across 15 suites; 2,447 theorem/lemma declarations (zero sorry/axiom).",
-    "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.23.21`](../audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW).",
+    "**Latest audit:** [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW).",
     "**Active workstream:** **All workstreams COMPLETE** (WS-B through WS-AB, v0.9.0–v0.25.3). WS-AB delivered all 5 deferred seL4 operations, Priority Inheritance Protocol, and Bounded Latency Theorem.",
     "**Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.",
     "**Hardware target:** Raspberry Pi 5 (ARM64).",
