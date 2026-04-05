@@ -1,3 +1,27 @@
+## v0.25.10 — WS-AC Phase AC6: Documentation, Testing & Closure
+
+Phase AC6 of WS-AC Comprehensive Audit Remediation. 7 sub-tasks. All tests pass
+(full build + test_full.sh Tier 0-3). Zero sorry/axiom. **WS-AC PORTFOLIO
+COMPLETE** (6 phases, 42 sub-tasks, v0.25.3-v0.25.10).
+
+### Changes
+- **T-03 (AC6-A)**: New `tests/DecodingSuite.lean` — 35 dedicated tests for
+  Layer 1 (RegisterDecode: `decodeSyscallId`, `decodeMsgInfo`, `decodeCapPtr`,
+  `validateRegBound`) and Layer 2 (SyscallArgDecode: 17 per-syscall decode
+  functions across CSpace, VSpace, Lifecycle, Service, Notification,
+  SchedContext, TCB families). Covers valid decode, insufficient registers,
+  boundary conditions, domain-specific validation failures. Registered in
+  `lakefile.toml` and `test_tier2_negative.sh`.
+- **AC6-B**: Decode layer test coverage convention (#10) added to
+  DEVELOPMENT.md §5b audit-driven coding conventions.
+- **AC6-C**: WORKSTREAM_HISTORY.md updated with WS-AC completion entry.
+- **AC6-D**: Corrected severity table addendum (Section 16) appended to
+  AUDIT_v0.25.3_COMPREHENSIVE.md — 16 errata catalogued with corrected entries,
+  reclassifications (A-01: Medium→Info, X-05: Medium→Low), and recommendation
+  to use Sections 1-12 as authoritative source.
+- **AC6-E**: `codebase_map.json` regenerated (16 test suites, 11,208 test LoC).
+- Version bump 0.25.9 → 0.25.10.
+
 ## v0.25.9 — WS-AC Phase AC5: Cross-Cutting & Infrastructure
 
 Phase AC5 of WS-AC Comprehensive Audit Remediation. 8 sub-tasks, 9 files

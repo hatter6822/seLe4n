@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.25.9"
+version = "0.25.10"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -81,3 +81,8 @@ root = "tests.PriorityInheritanceSuite"
 [[lean_exe]]
 name = "liveness_suite"
 root = "tests.LivenessSuite"
+
+# T-03/AC6-A: Dedicated RegisterDecode + SyscallArgDecode test suite
+[[lean_exe]]
+name = "decoding_suite"
+root = "tests.DecodingSuite"

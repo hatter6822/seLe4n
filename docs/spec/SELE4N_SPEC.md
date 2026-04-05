@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.9` (`lakefile.toml`) |
+| **Package version** | `0.25.10` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 84,013 across 133 Lean files |
-| **Test LoC** | 10,774 across 15 Lean test suites |
+| **Test LoC** | 11,208 across 16 Lean test suites |
 | **Proved declarations** | 2,478 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| **Active workstream** | **WS-AC Comprehensive Audit Remediation** (v0.25.3–v0.25.9). AC1–AC5 complete (high-severity fixes, scheduler hardening, IPC atomicity, architecture tightening, cross-cutting infrastructure). Prior: WS-B through WS-AB complete (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.3_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md). **Next: AC6 (Documentation & Closure), then Raspberry Pi 5 hardware binding.** |
+| **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
+| **Active workstream** | **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10). 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Prior: WS-B through WS-AB complete (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.3_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

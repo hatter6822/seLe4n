@@ -570,3 +570,51 @@ The project is well-positioned for its first major release and hardware benchmar
 ---
 
 *Audit conducted 2026-04-05. Auditor: Claude (Opus 4.6). Methodology: line-by-line review of all Lean modules and Rust crates, global safety scans (sorry/axiom/unsafe/native_decide), cross-reference against Lean source declarations.*
+
+---
+
+## 16. Errata & Severity Table Amendments (AC6-D)
+
+**Added**: 2026-04-05, as part of WS-AC Phase AC6 workstream closure.
+
+The severity summary table in Section 14 above contains **16 discrepancies**
+relative to the detailed findings in Sections 1–12. These were identified during
+independent verification of every finding against source code as part of the
+WS-AC remediation workstream (see `docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
+§2.5 for the complete errata catalogue).
+
+### Corrected Entries
+
+| Table Row | Section 14 (Original) | Sections 1–12 (Authoritative) | Discrepancy |
+|-----------|----------------------|-------------------------------|-------------|
+| I-02 | Severity: High | Severity: Medium (§3, line 167) | Severity escalation |
+| S-04 | `switchDomain` wrapping arithmetic | `defaultTimeSlice` hardcoded (§1) | Wrong description |
+| S-05 | RunQueue duplicate insert | `switchDomain` dual-state pattern (§1) | Wrong description |
+| S-06 | `inferThreadState` heuristic | RunQueue flat-list O(n) operations (§1) | Wrong description |
+| S-07 | EDF tie-breaking determinism | Positive findings header — phantom (§1) | Phantom finding |
+| I-04 | Dual-queue head-insert bias | Badge OR unbounded Nat (§3) | Wrong description |
+| I-05 | `callEndpoint` 5-step threading | Per-notification duplicate check (§3) | Wrong description |
+| I-06 | SchedContext donation proofs | Positive findings header — phantom (§3) | Phantom finding |
+| C-01 | `resolveCapAddress` guard + Low | `cspaceMint` no CDT edges + High (§4) | Wrong finding + severity |
+| C-02 | `rightsSubset` manual check + Low | Bidirectional proof (positive) (§4) | Positive → negative |
+| A-02 | TLB flush model abstract | W^X enforcement positive (§7) | Positive → negative |
+| A-03 | W^X at map time only | TLB flush always full (§7) | Wrong description |
+| IF-01 | reflexivity/transitivity | Enforcement boundary completeness (§8) | Wrong description |
+| IF-02 | 11 wrappers + Info | `securityFlowsTo` pure check + Low (§8) | Wrong finding + severity |
+| SC-01 | `consumeBudget` underflow | CBS exhaustion full scan = S-02 (§6) | Wrong description |
+
+### Reclassifications
+
+| ID | Original | Reclassified | Rationale |
+|----|----------|-------------|-----------|
+| A-01 | Medium | Info | `vspaceMapPage` visibility intentional for proof decomposition; `*WithFlush` variants enforce safety |
+| X-05 | Medium | Low | Field-disjointness facts ARE machine-checked via `decide` theorems; prose is supplementary |
+
+### Recommendation
+
+Use Sections 1–12 of this audit as the authoritative source for finding
+descriptions and severities. The Section 14 table should be treated as a
+convenience summary only and may contain the inaccuracies catalogued above.
+
+The complete remediation plan and per-finding traceability matrix are in
+`docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` §13.

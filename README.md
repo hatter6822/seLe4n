@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.9-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.10-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -85,10 +85,10 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.25.9` |
+| **Version** | `0.25.10` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 84,013 across 133 files |
-| **Test Lean LoC** | 10,774 across 15 test suites |
+| **Test Lean LoC** | 11,208 across 16 test suites |
 | **Proved declarations** | 2,478 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
@@ -219,6 +219,7 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
 | Workstream | Scope | Version |
 |------------|-------|---------|
+| **WS-AC** | Comprehensive Audit Remediation — 3 HIGH, 9 MEDIUM, 9 LOW findings addressed across scheduler, IPC, capability, architecture, and cross-cutting subsystems (6 phases, 42 tasks) | v0.25.3–v0.25.10 |
 | **WS-AB** | Deferred Operations & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem (6 phases, 90 tasks) | v0.24.0–v0.25.5 |
 | **WS-Z** | Composable Performance Objects — `SchedContext` as 7th kernel object, CBS budget engine, replenishment queue, passive server donation, timeout endpoints (10 phases, 213 tasks) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Core kernel subsystems, Robin Hood hash tables, radix trees, frozen state, information flow, service orchestration, platform contracts | v0.9.0–v0.22.x |
