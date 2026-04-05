@@ -2099,6 +2099,67 @@ private def chain33ServiceLifecycle : IO Unit := do
   -- W5-C-9: Invariant check after revokeService
   assertInvariants "chain33: invariants after revokeService" st5
 
+/-- AC3-D / API-01: Verify resolveCapAddress silent-drop behavior.
+Three CPtr addresses — 2 resolve to valid slots, 1 to an empty slot.
+Simulates the resolveExtraCaps silent-drop: only resolvable caps survive. -/
+private def chain34ResolveExtraCapsSilentDrop : IO Unit := do
+  let cnodeId : SeLe4n.ObjId := ⟨3400⟩
+  let targetObj : SeLe4n.ObjId := ⟨3401⟩
+
+  -- CNode with slots 0 and 1 occupied, slot 2 empty
+  let cap0 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.read], badge := none }
+  let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.write], badge := none }
+  let st :=
+    (BootstrapBuilder.empty
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject cnodeId (.cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+            (⟨0⟩, cap0),
+            (⟨1⟩, cap1)
+            -- slot 2 intentionally empty
+          ]
+        })
+      |>.buildChecked)
+
+  -- Resolve slot 0: should succeed
+  let resolve0 := SeLe4n.Kernel.resolveCapAddress cnodeId ⟨0⟩ 4 st
+  match resolve0 with
+  | .ok ref0 =>
+    expect "chain34: slot 0 resolves" (ref0.cnode == cnodeId && ref0.slot == ⟨0⟩)
+    expect "chain34: slot 0 cap exists" (SystemState.lookupSlotCap st ref0).isSome
+  | .error _ => throw <| IO.userError "chain34: slot 0 resolution failed unexpectedly"
+
+  -- Resolve slot 1: should succeed
+  let resolve1 := SeLe4n.Kernel.resolveCapAddress cnodeId ⟨1⟩ 4 st
+  match resolve1 with
+  | .ok ref1 =>
+    expect "chain34: slot 1 resolves" (ref1.cnode == cnodeId && ref1.slot == ⟨1⟩)
+    expect "chain34: slot 1 cap exists" (SystemState.lookupSlotCap st ref1).isSome
+  | .error _ => throw <| IO.userError "chain34: slot 1 resolution failed unexpectedly"
+
+  -- Resolve slot 2: resolves but cap is absent (simulates silent drop)
+  let resolve2 := SeLe4n.Kernel.resolveCapAddress cnodeId ⟨2⟩ 4 st
+  match resolve2 with
+  | .ok ref2 =>
+    -- Resolution succeeds (slot address valid) but no cap stored there
+    expect "chain34: slot 2 resolves to address" (ref2.slot == ⟨2⟩)
+    expect "chain34: slot 2 cap absent (silent drop)" (SystemState.lookupSlotCap st ref2).isNone
+  | .error _ => throw <| IO.userError "chain34: slot 2 resolution failed unexpectedly"
+
+  -- Simulate resolveExtraCaps logic: fold over 3 addresses, keep only resolvable caps
+  let capAddrs : Array SeLe4n.CPtr := #[⟨0⟩, ⟨1⟩, ⟨2⟩]
+  let resolved := capAddrs.foldl (fun acc addr =>
+    match SeLe4n.Kernel.resolveCapAddress cnodeId addr 4 st with
+    | .error _ => acc
+    | .ok ref =>
+      match SystemState.lookupSlotCap st ref with
+      | none => acc
+      | some cap => acc.push cap) #[]
+  -- 3 addresses sent, 2 resolved — silent drop of 1
+  expect "chain34: resolved count is 2 (not 3)" (resolved.size == 2)
+  IO.println "operation-chain check passed [chain34 resolveExtraCaps silent-drop: true]"
+
 private def runOperationChainSuite : IO Unit := do
   chain1RetypeMintRevoke
   chain2SendSendReceiveFifo
@@ -2134,7 +2195,8 @@ private def runOperationChainSuite : IO Unit := do
   chain31SyscallReply
   chain32SyscallCall
   chain33ServiceLifecycle
-  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5/R3-A/T7/W5-C)"
+  chain34ResolveExtraCapsSilentDrop
+  IO.println "all operation-chain checks passed (WS-I3/WS-I4/WS-M3/WS-M4/WS-M5/R3-A/T7/W5-C/AC3-D)"
 
 end SeLe4n.Testing
 

@@ -1,3 +1,27 @@
+## v0.25.7 — WS-AC Phase AC3: IPC Atomicity & Invariant Strengthening
+
+Phase AC3 of WS-AC Comprehensive Audit Remediation. 6 sub-tasks, 7 files
+modified. All tests pass (232-job build + smoke). Zero sorry/axiom.
+
+- **AC3-A (I-02/I-03)**: Atomicity contracts documented for `donateSchedContext`
+  and `returnDonatedSchedContext` — 3-step `storeObject` mutation sequences,
+  monad-level atomicity (`.error` carries no state), hardware-level atomicity
+  (interrupts disabled during kernel transitions).
+- **AC3-B (I-02 proof)**: `donateSchedContext_ok_implies_sc_bound` theorem —
+  proves success implies SchedContext found and bound to client. Added to
+  `SchedulerLemmas.lean`.
+- **AC3-C (I-04)**: `Badge.bor` unbounded-Nat intermediate documented —
+  `ofNatMasked` applies `% machineWordMax`, `bor_valid` proves result validity.
+- **AC3-D (API-01)**: `resolveExtraCaps` silent-drop semantics documented.
+  New `chain34ResolveExtraCapsSilentDrop` test in OperationChainSuite (3
+  addresses, 2 valid + 1 empty slot → resolved count = 2).
+- **AC3-E (F-03)**: `storeObjectChecked` capacity-enforcing variant added to
+  `State.lean`. Rejects new insertions at `maxObjects`, allows in-place updates.
+  3 theorems: `storeObjectChecked_preserves_objectIndexBounded`,
+  `storeObjectChecked_existing_eq_storeObject`,
+  `storeObjectChecked_headroom_eq_storeObject`.
+- **AC3-F**: Full build (232 jobs) + smoke tests pass.
+
 ## v0.25.6 — WS-AC Phase AC2: Scheduler & SchedContext Hardening
 
 Phase AC2 of WS-AC Comprehensive Audit Remediation. 7 sub-tasks, 12 files

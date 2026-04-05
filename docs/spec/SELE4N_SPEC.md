@@ -475,8 +475,11 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   `65536 × 8 = 512 KB` at maximum capacity — well within RPi5's 8 GB RAM.
 - **Advisory predicate**: `objectIndexBounded st` asserts
   `st.objectIndex.length ≤ maxObjects` (defined in `Model/State.lean`).
-- **Capacity enforcement**: `storeObject` returns `objectStoreCapacityExceeded`
-  when the object count reaches `maxObjects`, preventing unbounded growth.
+- **Capacity enforcement**: `storeObjectChecked` (AC3-E) returns
+  `objectStoreCapacityExceeded` when inserting a new object at `maxObjects`
+  capacity. In-place updates of existing objects are always permitted.
+  `storeObject` (infallible) is used by internal operations where
+  `objectIndexBounded` is an established invariant precondition.
 
 ### 8.2 Word-Boundedness Invariants
 

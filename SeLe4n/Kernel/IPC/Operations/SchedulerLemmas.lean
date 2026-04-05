@@ -584,4 +584,44 @@ theorem storeTcbPendingMessage_preserves_objects_invExt
       have := Except.ok.inj hStep; subst this
       exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
 
+-- ============================================================================
+-- AC3-B / I-02: donateSchedContext atomicity lemmas
+-- ============================================================================
+
+-- Note: `donateSchedContext_scheduler_eq` is defined in Donation.lean (Z7-B).
+-- The theorem below strengthens the postcondition by extracting witnesses.
+
+/-- AC3-B: On success, `donateSchedContext` implies the SchedContext was found
+    and was bound to the client. This strengthens the postcondition beyond
+    just "some state was returned". -/
+theorem donateSchedContext_ok_implies_sc_bound
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId)
+    (hOk : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    ∃ sc : SchedContext,
+      st.objects[clientScId.toObjId]? = some (.schedContext sc) ∧
+      sc.boundThread = some clientTid := by
+  -- We use the existing donateSchedContext_scheduler_eq to know the function
+  -- succeeds, then unfold to extract the SchedContext witness.
+  unfold donateSchedContext at hOk
+  -- Generalize the object lookup to preserve the equation
+  generalize hLookup : st.objects[clientScId.toObjId]? = optObj at hOk
+  match optObj, hLookup with
+  | none, _ => cases hOk
+  | some (.schedContext sc), hLookup =>
+    simp only [] at hOk
+    refine ⟨sc, rfl, ?_⟩
+    -- Case-split on the bound-thread check (Bool)
+    cases hBne : (sc.boundThread != some clientTid)
+    · -- false branch: bne = false means they are equal
+      simp [bne] at hBne; exact hBne
+    · -- true branch: bne = true → .error, contradicting .ok
+      simp [hBne] at hOk
+  | some (.tcb _), _ => cases hOk
+  | some (.endpoint _), _ => cases hOk
+  | some (.notification _), _ => cases hOk
+  | some (.cnode _), _ => cases hOk
+  | some (.vspaceRoot _), _ => cases hOk
+  | some (.untyped _), _ => cases hOk
+
 end SeLe4n.Kernel

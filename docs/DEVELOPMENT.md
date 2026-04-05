@@ -399,6 +399,13 @@ will address these with hardware profiling data if needed.
    The ABI boundary (`RegisterDecode.lean` + `SyscallArgDecode.lean`) validates
    all incoming values. Internal kernel code is trusted to produce valid IDs.
 
+4. **`storeObject` vs `storeObjectChecked` (F-03/AC3-E)**: Use
+   `storeObjectChecked` in new code paths that are not covered by the
+   `retypeFromUntyped` capacity gate. `storeObjectChecked` rejects new object
+   insertions when the store reaches `maxObjects` (65536) capacity. Use
+   `storeObject` only in proof-layer code where `objectIndexBounded` is an
+   established precondition, or for in-place updates of existing objects.
+
 ---
 
 ## 6) Proof engineering standards

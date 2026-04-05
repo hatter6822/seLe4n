@@ -501,6 +501,75 @@ theorem storeObject_preserves_objectIndexBounded
   simp only
   split <;> simp [List.length] <;> omega
 
+/-- AC3-E / F-03: Capacity-checked variant of `storeObject`. Rejects new object
+    insertions that would exceed `maxObjects`. Updates to existing objects are
+    always allowed (they don't grow the index).
+
+    Use this in new code paths that are not covered by the `retypeFromUntyped`
+    capacity gate. Use `storeObject` only in proof-layer code where
+    `objectIndexBounded` is an established precondition. -/
+def storeObjectChecked (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
+  fun st =>
+    if st.objectIndex.length ≥ maxObjects && !st.objectIndexSet.contains id then
+      .error .objectStoreCapacityExceeded
+    else
+      storeObject id obj st
+
+/-- AC3-E: `storeObjectChecked` preserves `objectIndexBounded` on success. -/
+theorem storeObjectChecked_preserves_objectIndexBounded
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hBound : objectIndexBounded st)
+    (hStore : storeObjectChecked id obj st = .ok ((), st')) :
+    objectIndexBounded st' := by
+  unfold storeObjectChecked at hStore
+  -- Case-split on the capacity guard
+  cases hIf : (st.objectIndex.length ≥ maxObjects && !st.objectIndexSet.contains id) with
+  | true => simp [hIf] at hStore
+  | false =>
+    simp [hIf] at hStore
+    -- hStore : storeObject id obj st = .ok ((), st')
+    unfold objectIndexBounded at hBound ⊢
+    unfold storeObject at hStore; cases hStore
+    simp only
+    split
+    · exact hBound
+    · -- New object: index grows by 1
+      rename_i hNotContains
+      -- hIf : (len ≥ max && !contains) = false and hNotContains : contains = false
+      -- So !contains = true, meaning len ≥ max must be false, i.e., len < max
+      have hLt : st.objectIndex.length < maxObjects := by
+        have : (!st.objectIndexSet.contains id) = true := by simp [hNotContains]
+        simp [this] at hIf
+        exact hIf
+      unfold maxObjects at hLt
+      show (id :: st.objectIndex).length ≤ 65536
+      simp only [List.length_cons]
+      exact hLt
+
+/-- AC3-E: `storeObjectChecked` delegates to `storeObject` when the object
+    already exists in the store (in-place update). This covers the common case
+    for IPC, scheduler, and capability operations that overwrite existing objects. -/
+theorem storeObjectChecked_existing_eq_storeObject
+    (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hExists : st.objectIndexSet.contains id = true) :
+    storeObjectChecked id obj st = storeObject id obj st := by
+  unfold storeObjectChecked
+  simp [hExists]
+
+/-- AC3-E: `storeObjectChecked` delegates to `storeObject` when the store has
+    capacity headroom (strictly less than `maxObjects`). This covers the case
+    for new object insertions within the capacity bound. -/
+theorem storeObjectChecked_headroom_eq_storeObject
+    (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hHeadroom : st.objectIndex.length < maxObjects) :
+    storeObjectChecked id obj st = storeObject id obj st := by
+  unfold storeObjectChecked maxObjects at *
+  split
+  · rename_i hGuard
+    simp [Bool.and_eq_true] at hGuard
+    omega
+  · rfl
+
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
 def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
   fun st =>
