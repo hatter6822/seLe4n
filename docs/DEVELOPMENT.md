@@ -313,7 +313,7 @@ Every milestone-moving PR should include:
 
 - IPC thread-state updates now fail with `objectNotFound` when the target TCB is missing (including reserved thread ID `0`), preventing ghost queue entries in endpoint/notification paths.
 - Sentinel ID `0` is rejected at IPC TCB lookup/update boundaries (`lookupTcb`/`storeTcbIpcState`) rather than silently treated as a valid runtime thread identity.
-- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) by default; unchecked operations remain available for research experiments. `enforcementBoundary` classifies 30 operations (11 policy-gated, 15 capability-only, 4 read-only). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added; WS-Z8: SchedContext ops; D1: thread lifecycle; D2: priority management; D3: IPC buffer.)
+- Trace and probe harnesses now exercise policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) by default; unchecked operations remain available for research experiments. `enforcementBoundary` classifies 33 operations (11 policy-gated, 18 capability-only, 4 read-only). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added; WS-Z8: SchedContext ops; D1: thread lifecycle; D2: priority management; D3: IPC buffer; AC4-D: VSpace/service ops.)
 - WS-E4 dual-queue endpoint operations (`endpointSendDual`/`endpointReceiveDual`) use intrusive-list queue boundaries (`sendQ`/`receiveQ`) with per-thread links stored in `TCB.queuePrev`/`TCB.queuePPrev`/`TCB.queueNext`; invariant checks now include `intrusiveQueueWellFormed` validation for both endpoint queues (including head/tail shape, cycle-free traversal, and per-node `queuePrev`/`queuePPrev`/`queueNext` linkage), and `negative_state_suite` adds runtime queue-link assertions for both send-queue and receive-queue FIFO/dequeue paths alongside enqueue/block, rendezvous/dequeue, queue drain, O(1) middle removal via `endpointQueueRemoveDual`, malformed-`queuePPrev` rejection (`illegalState`), and dual-queue double-wait rejection (`alreadyWaiting`).
 - WS-E4 CDT representation is node-stable: derivation edges are over stable node IDs and slots map to nodes via bidirectional maps (`cdtSlotNode`, `cdtNodeSlot`). `cspaceMove` updates slot→node ownership/backpointers instead of rewriting every CDT edge, `cspaceDeleteSlot` detaches stale slot↔node mappings on deletion, the observed slot-level CDT is defined as projection of node edges through the slot mapping (`SystemState.observedCdtEdges`), and strict revoke (`cspaceRevokeCdtStrict`) now reports the first descendant deletion failure with offending slot context.
 
@@ -405,6 +405,25 @@ will address these with hardware profiling data if needed.
    insertions when the store reaches `maxObjects` (65536) capacity. Use
    `storeObject` only in proof-layer code where `objectIndexBounded` is an
    established precondition, or for in-place updates of existing objects.
+
+5. **`AccessRightSet` constructor safety (F-02/AC4-B)**: Never use
+   `AccessRightSet.mk` or `⟨n⟩` directly in production code. Use `ofNat`
+   (masked to 5 bits), `mk_checked` (proof-carrying), `ofList`, `singleton`,
+   or `empty`. The `union` and `inter` operations return raw `⟨bits⟩` without
+   masking — apply `ofNat` to the result if downstream validity is required.
+
+6. **Physical address bounds (A-04/AC4-A)**: Production VSpace map operations
+   must use `vspaceMapPageCheckedWithFlushFromState` (state-aware, reads
+   `st.machine.physicalAddressWidth`). The model-level `physicalAddressBound`
+   (2^52, ARM64 LPA max) is for proof-layer reasoning only. The syscall
+   dispatch path (API.lean) already wires through the state-aware variant.
+
+7. **Enforcement boundary completeness (IF-01/AC4-D)**: When adding a new
+   `SyscallId` variant, you must also: (a) add it to `SyscallId.all`, (b)
+   add a case to `syscallIdToEnforcementName` in Wrappers.lean, and (c)
+   ensure the mapped name appears in `enforcementBoundary`. The compile-time
+   `enforcementBoundary_is_complete` theorem (`native_decide`) will fail the
+   build if any of these steps are missed.
 
 ---
 

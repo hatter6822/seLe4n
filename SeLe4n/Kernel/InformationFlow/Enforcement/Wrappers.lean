@@ -175,7 +175,7 @@ inductive EnforcementClass where
   deriving Repr
 
 /-- WS-E5/M-07/Q1-D/U5-B/U5-C/V2-B/C/Z8-M/D1/D2: Canonical enforcement boundary
-classification table (30 entries). V2-B/C added `notificationWaitChecked` and
+classification table (33 entries). V2-B/C added `notificationWaitChecked` and
 `endpointReplyRecvChecked`. Z8-M added 3 SchedContext capability-only operations.
 D1 added 2 thread lifecycle capability-only operations.
 D2 added 2 priority management capability-only operations.
@@ -222,7 +222,68 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "setMCPriority"
   -- D3: IPC buffer configuration capability-only operation
   , .capabilityOnly "setIPCBuffer"
+  -- AC4-D: VSpace operations (capability-only; internally delegate to storeObject)
+  , .capabilityOnly "vspaceMapPageCheckedWithFlushFromState"
+  , .capabilityOnly "vspaceUnmapPageWithFlush"
+  -- AC4-D: Service revocation (capability-only; operates on serviceRegistry)
+  , .capabilityOnly "revokeService"
   ]
+
+-- ============================================================================
+-- AC4-D/IF-01: Enforcement boundary completeness witness
+-- ============================================================================
+
+/-- AC4-D: Map each `SyscallId` to the name of its corresponding enforcement
+    boundary entry. This bridges the typed `SyscallId` inductive to the
+    string-based `EnforcementClass` list, enabling compile-time completeness
+    verification. -/
+def syscallIdToEnforcementName : SyscallId → String
+  | .send                  => "endpointSendDualChecked"
+  | .receive               => "endpointReceiveDualChecked"
+  | .call                  => "endpointCallChecked"
+  | .reply                 => "endpointReplyChecked"
+  | .cspaceMint            => "cspaceMintChecked"
+  | .cspaceCopy            => "cspaceCopyChecked"
+  | .cspaceMove            => "cspaceMoveChecked"
+  | .cspaceDelete          => "cspaceDeleteSlot"
+  | .lifecycleRetype       => "lifecycleRetypeObject"
+  | .vspaceMap             => "vspaceMapPageCheckedWithFlushFromState"
+  | .vspaceUnmap           => "vspaceUnmapPageWithFlush"
+  | .serviceRegister       => "registerServiceChecked"
+  | .serviceRevoke         => "revokeService"
+  | .serviceQuery          => "lookupService"
+  | .notificationSignal    => "notificationSignalChecked"
+  | .notificationWait      => "notificationWaitChecked"
+  | .replyRecv             => "endpointReplyRecvChecked"
+  | .schedContextConfigure => "schedContextConfigure"
+  | .schedContextBind      => "schedContextBind"
+  | .schedContextUnbind    => "schedContextUnbind"
+  | .tcbSuspend            => "suspendThread"
+  | .tcbResume             => "resumeThread"
+  | .tcbSetPriority        => "setPriority"
+  | .tcbSetMCPriority      => "setMCPriority"
+  | .tcbSetIPCBuffer       => "setIPCBuffer"
+
+/-- AC4-D: Check whether every SyscallId maps to an operation name present in
+    the enforcement boundary list. Returns `true` iff every syscall is covered. -/
+def enforcementBoundaryComplete : Bool :=
+  SyscallId.all.all (fun sid =>
+    let name := syscallIdToEnforcementName sid
+    enforcementBoundary.any (fun ec =>
+      match ec with
+      | .policyGated n | .capabilityOnly n | .readOnly n => n == name))
+
+/-- AC4-D/IF-01: **Compile-time completeness theorem** — every `SyscallId` variant
+    maps to an operation present in the enforcement boundary.
+
+    This theorem fails at compile time if:
+    - A new `SyscallId` variant is added without updating `syscallIdToEnforcementName`.
+    - A `syscallIdToEnforcementName` mapping references a name absent from
+      `enforcementBoundary`.
+    - An `enforcementBoundary` entry is removed that was the sole coverage for
+      a `SyscallId` variant. -/
+theorem enforcementBoundary_is_complete :
+    enforcementBoundaryComplete = true := by native_decide
 
 -- ============================================================================
 -- WS-E5/M-07: Denied-preserves-state theorems

@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.7` (`lakefile.toml`) |
+| **Package version** | `0.25.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 83,286 across 132 Lean files |
 | **Test LoC** | 10,564 across 15 Lean test suites |
 | **Proved declarations** | 2,447 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| **Active workstream** | **WS-AC Comprehensive Audit Remediation** (v0.25.3–v0.25.7). AC1 complete (high-severity fixes), AC2 complete (scheduler hardening), AC3 complete (IPC atomicity & invariant strengthening). Prior: WS-B through WS-AB complete (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.3_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md). **Next: AC4–AC6, then Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-AC Comprehensive Audit Remediation** (v0.25.3–v0.25.8). AC1 complete (high-severity fixes), AC2 complete (scheduler hardening), AC3 complete (IPC atomicity & invariant strengthening), AC4 complete (architecture & platform tightening). Prior: WS-B through WS-AB complete (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.3_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md). **Next: AC5–AC6, then Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -122,7 +122,7 @@ semantic and proof foundations of the previous one.
 - IPC message transfer via `TCB.pendingMessage`: messages (registers, caps, badge) flow through sender→receiver rendezvous with combined state+message helpers (`storeTcbIpcStateAndMessage`).
 - **WS-H12d/A-09:** IPC message payloads bounded by `maxMessageRegisters` (120) and `maxExtraCaps` (3), matching seL4's `seL4_MsgMaxLength`/`seL4_MsgMaxExtraCaps`. Bounds enforced at all IPC send boundaries with `ipcMessageTooLarge`/`ipcMessageTooManyCaps` errors. `IpcMessage.bounded` predicate with proven send-produces-bounded theorems.
 - Node-stable CDT with bidirectional slot↔node maps and strict revocation error reporting.
-- Policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) exercised by default in trace and probe harnesses. `enforcementBoundary` classifies 30 operations (11 policy-gated, 15 capability-only, 4 read-only). Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added — service lifecycle simplified to registry-only model.)
+- Policy-checked wrappers (`endpointSendDualChecked`, `cspaceMintChecked`, `registerServiceChecked`) exercised by default in trace and probe harnesses. `enforcementBoundary` classifies 33 operations (11 policy-gated, 18 capability-only, 4 read-only). Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3), VSpace/service ops (AC4-D). (WS-Q1: `serviceRestartChecked` removed, `registerServiceChecked` added — service lifecycle simplified to registry-only model.)
 - **WS-G1/WS-J1:** All 16 typed identifiers and the composite `SlotRef` key have `Hashable` instances with `@[inline]` for zero overhead. `Std.Data.HashMap` and `Std.Data.HashSet` imported in `Prelude.lean`, enabling O(1) hash-based data structures for kernel performance optimization (WS-G2..G9). WS-J1-A added `RegName`/`RegValue` (v0.15.4); WS-J1-F added `CdtNodeId` (v0.15.10).
 
 ---
@@ -359,7 +359,7 @@ kernel code changes (proof-only phase). Key results:
 
 **D6 (v0.25.2):** API Surface Integration & Closure. Rust ABI synchronized
 with 5 new `SyscallId` variants (20→25) and `AlignmentError` (43). All 25
-SyscallId variants, 30 enforcement boundary entries, 20 frozen operations,
+SyscallId variants, 33 enforcement boundary entries, 20 frozen operations,
 and 25 dispatch arms verified. Documentation fully synchronized.
 
 ---

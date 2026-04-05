@@ -756,12 +756,13 @@ is semantically transparent under the invariant.
 
 ---
 
-## 6. Phase AC4 — Architecture & Platform Tightening
+## 6. Phase AC4 — Architecture & Platform Tightening ✓ COMPLETE
 
 **Goal**: Address A-04 physical address bound gap, F-01/F-02 identifier and
 access-right constructor safety, and IF-01 enforcement boundary completeness.
 **Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh` pass.
 **Dependencies**: AC1–AC3 complete.
+**Status**: COMPLETE (v0.25.8). All 5 sub-tasks delivered. Zero sorry/axiom.
 
 ### AC4-A: Parameterize `physicalAddressBound` via platform config (A-04)
 
@@ -1422,18 +1423,18 @@ The workstream is COMPLETE when all of the following hold:
 | S-02 | MEDIUM | AC2-A | — | ✓ Complete |
 | SC-01 | MEDIUM | AC2-A | — (shared with S-02) | ✓ Complete |
 | S-03 | MEDIUM | AC2-B | — | ✓ Complete |
-| F-01 | MEDIUM | AC4-C | — | Pending |
-| F-02 | MEDIUM | AC4-B | AC5-E | Pending |
-| F-03 | MEDIUM | AC3-E | AC5-F | Pending |
-| IF-01 | MEDIUM | AC4-D | AC5-G | Pending |
-| API-01 | MEDIUM | AC3-D | — | Pending |
+| F-01 | MEDIUM | AC4-C | — | ✓ Complete |
+| F-02 | MEDIUM | AC4-B | AC5-E | ✓ AC4 Complete (AC5-E pending) |
+| F-03 | MEDIUM | AC3-E | AC5-F | ✓ Complete |
+| IF-01 | MEDIUM | AC4-D | AC5-G | ✓ AC4 Complete (AC5-G pending) |
+| API-01 | MEDIUM | AC3-D | — | ✓ Complete |
 | S-04 | LOW | AC2-C | — | ✓ Complete |
 | S-05 | LOW | AC2-D | AC5-C | ✓ Complete |
 | S-06 | LOW | AC2-E | — | ✓ Complete |
 | F-04 | LOW | AC2-F | AC5-D | ✓ Complete |
-| I-02 | MEDIUM | AC3-A | AC3-B | Pending |
-| I-04 | LOW | AC3-C | — | Pending |
-| A-04 | LOW | AC4-A | — | Pending |
+| I-02 | MEDIUM | AC3-A | AC3-B | ✓ Complete |
+| I-04 | LOW | AC3-C | — | ✓ Complete |
+| A-04 | LOW | AC4-A | — | ✓ Complete |
 | X-05 | LOW | AC5-A | — | Pending |
 | X-08 | LOW | AC5-B | — | Pending |
 | T-03 | LOW | AC6-A | — | Pending |

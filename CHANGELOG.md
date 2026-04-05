@@ -1,3 +1,32 @@
+## v0.25.8 — WS-AC Phase AC4: Architecture & Platform Tightening
+
+Phase AC4 of WS-AC Comprehensive Audit Remediation. 5 sub-tasks, 20 files
+modified. All tests pass (full build + test_full.sh Tier 0-3). Zero sorry/axiom.
+
+- **AC4-A (A-04)**: `physicalAddressBound` documented as proof-layer default
+  only — production code uses `vspaceMapPageCheckedWithFlushFromState`
+  (state-aware, reads `st.machine.physicalAddressWidth`). 2 regression tests:
+  PA at 2^44 rejected on RPi5 (44-bit), PA at 2^44-1 accepted.
+- **AC4-B (F-02)**: `AccessRightSet` constructor safety model documented —
+  raw `mk` is TCB-internal, 5 safe constructors with validity theorems,
+  operational safety argument for `mem`/`subset`/`inter`/`union`. AC4-B notes
+  added to `union`/`inter` on raw `⟨bits⟩` return semantics.
+- **AC4-C (F-01)**: Typed Identifier Safety Model added to Prelude.lean —
+  unbounded `Nat` design rationale, ABI boundary validation chain, internal
+  kernel trust model, hardware deployment contract.
+- **AC4-D (IF-01)**: Enforcement boundary completeness witness —
+  `SyscallId.all` (25 variants), `all_length` + `all_complete` compile-time
+  checks, `syscallIdToEnforcementName` bridge, `enforcementBoundaryComplete`
+  Bool check, `enforcementBoundary_is_complete` (`native_decide` theorem).
+  Fails at compile time if any `SyscallId` is missing from enforcement boundary.
+  Enforcement boundary expanded 30→33 entries with dedicated VSpace
+  (`vspaceMapPageCheckedWithFlushFromState`, `vspaceUnmapPageWithFlush`) and
+  service (`revokeService`) capability-only entries. All `syscallIdToEnforcementName`
+  mappings verified against API dispatch for semantic accuracy.
+- **AC4-E**: Full build + test_full.sh (Tier 0-3) pass.
+- Audit-driven coding conventions extended (F-02, A-04, IF-01).
+- Version bump 0.25.7 → 0.25.8.
+
 ## v0.25.7 — WS-AC Phase AC3: IPC Atomicity & Invariant Strengthening
 
 Phase AC3 of WS-AC Comprehensive Audit Remediation. 6 sub-tasks, 7 files
