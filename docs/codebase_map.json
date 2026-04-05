@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-scheduler-hardening-DyR13",
-      "commit_sha": "9a7755bf916be0063ff357d4fe6fce553c35bc14",
-      "tree_sha": "bb94560dd436883ad050e35ef7c0f2176b060613",
-      "committed_at_utc": "2026-04-05T00:25:00-04:00"
+      "commit_sha": "abda15fca5a7b4887e05c16a63f5daaa539e15a0",
+      "tree_sha": "cd28d064db4e63d1e5e7399a4b35a4d21279073f",
+      "committed_at_utc": "2026-04-05T04:46:44+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b55e55e5a7284e865030bc4b5dcfc0621aab7b0a06a8baf552d368d40f372d10"
+    "source_digest": "b1715033913145364335615388f5247272b68e2aff63d0c16fbe5c09e206d9c5"
   },
   "summary": {
     "module_count": 148,
     "declaration_count": 4441
   },
   "readme_sync": {
-    "version": "0.25.5",
+    "version": "0.25.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
     "production_loc": 83479,

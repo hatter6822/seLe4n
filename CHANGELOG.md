@@ -1,3 +1,31 @@
+## v0.25.6 — WS-AC Phase AC2: Scheduler & SchedContext Hardening
+
+Phase AC2 of WS-AC Comprehensive Audit Remediation. 7 sub-tasks, 12 files
+modified. All tests pass (232-job build + Tier 0–3). Zero sorry/axiom.
+
+- **AC2-A (S-02/SC-01)**: `timeoutBlockedThreads` O(n) cost documented with
+  quantified worst-case analysis (n ≤ 65536 objects, triggered once per CBS
+  period). Future optimization path noted (per-SchedContext bound-thread index).
+- **AC2-B (S-03)**: `blockingChain` fuel-truncation behavior documented —
+  fuel default (`objectIndex.length`), `blockingAcyclic` invariant dependency,
+  silent truncation on cycle, consequence analysis.
+- **AC2-C (S-04)**: `timerTick` and `timerTickBudget` migrated from hardcoded
+  `defaultTimeSlice` to configurable `st.scheduler.configDefaultTimeSlice`.
+  18 proof sites in Preservation.lean updated. New `hConfigTS` hypothesis
+  (`configDefaultTimeSlice > 0`) added to `timerTick_preserves_timeSlicePositive`,
+  `timerTick_preserves_currentTimeSlicePositive`, and
+  `timerTick_preserves_schedulerInvariantBundleFull`. TraceModel.lean and
+  InformationFlow/Operations.lean updated.
+- **AC2-D (S-05)**: `switchDomain` dual-state pattern documented — reads from
+  `st`, returns `stSaved`, formal reference to `saveOutgoingContext_scheduler`.
+- **AC2-E (S-06)**: RunQueue flat-list complexity documented (O(1)/O(k)/O(n)/O(p)
+  breakdown with RPi5 acceptability rationale).
+- **AC2-F (F-04)**: `KernelError` catch-all lint convention added (doc-comment
+  on inductive + DEVELOPMENT.md coding convention).
+- Audit-driven coding conventions and performance characteristics table added
+  to DEVELOPMENT.md.
+- Version bump 0.25.5 → 0.25.6.
+
 ## v0.25.5 — WS-AC Phase AC1: High-Severity Audit Fixes (Audit-Verified)
 
 Phase AC1 of WS-AC Comprehensive Audit Remediation (v0.25.3 baseline).

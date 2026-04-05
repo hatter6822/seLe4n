@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.25.5` |
+| Version | `0.25.6` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 83,286 across 132 Lean files |
 | Test LoC | 10,564 across 15 suites |
 | Proved declarations | 2,447 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| Active workstream | **All workstreams COMPLETE** (WS-B through WS-AB). WS-AB Phases D1–D6 complete (v0.24.0–v0.25.5): suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem, API surface integration. **Next: Raspberry Pi 5 hardware binding.** |
+| Active workstream | **WS-AC Comprehensive Audit Remediation** (v0.25.3–v0.25.6). AC1 complete (high-severity fixes), AC2 complete (scheduler hardening). Prior: WS-B through WS-AB (v0.9.0–v0.25.5). **Next: AC3–AC6, then Raspberry Pi 5 hardware binding.** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

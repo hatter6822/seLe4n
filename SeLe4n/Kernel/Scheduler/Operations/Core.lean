@@ -372,7 +372,7 @@ def timerTick : Kernel Unit :=
               -- Time-slice expired: reset, re-enqueue, reschedule
               -- AC2-C: Now uses configurable `configDefaultTimeSlice` from scheduler
               -- state (initialized to `defaultTimeSlice` = 5). Preservation proofs
-              -- carry an `hTimeSlice` hypothesis bridging the two values.
+              -- carry an `hConfigTS` hypothesis requiring `configDefaultTimeSlice > 0`.
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
