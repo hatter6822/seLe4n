@@ -588,6 +588,7 @@ WS-AC remediation workstream (see `docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
 | Table Row | Section 14 (Original) | Sections 1–12 (Authoritative) | Discrepancy |
 |-----------|----------------------|-------------------------------|-------------|
 | I-02 | Severity: High | Severity: Medium (§3, line 167) | Severity escalation |
+| S-03 | "fuel default may undercount" | "fuel-based termination, not structural" (§1) | Description drift |
 | S-04 | `switchDomain` wrapping arithmetic | `defaultTimeSlice` hardcoded (§1) | Wrong description |
 | S-05 | RunQueue duplicate insert | `switchDomain` dual-state pattern (§1) | Wrong description |
 | S-06 | `inferThreadState` heuristic | RunQueue flat-list O(n) operations (§1) | Wrong description |

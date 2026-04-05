@@ -87,15 +87,18 @@ private def rd004_decodeMsgInfoValid : IO Unit := do
   let decoded := decodeMsgInfo encoded
   expect "RD-004a round-trip" (isOkEq decoded mi)
 
-/-- RD-005: decodeMsgInfo — overflow values. -/
+/-- RD-005: decodeMsgInfo — boundary and overflow values. -/
 private def rd005_decodeMsgInfoOverflow : IO Unit := do
-  -- MessageInfo.decode should reject length > 120 or extraCaps > maxExtraCaps
-  -- Test with a raw value that would decode to an invalid length
-  -- length field is bits 0..6 (7 bits), extraCaps bits 7..8 (2 bits), label bits 12+
-  -- Construct a value with length = 121 (exceeds maxMessageRegisters = 120)
+  -- Boundary: length=120 (maxMessageRegisters) should succeed
+  let miBoundary : MessageInfo := { length := 120, extraCaps := 0, label := 0 }
+  let encodedBoundary := encodeMsgInfo miBoundary
+  let decodedBoundary := decodeMsgInfo encodedBoundary
+  expect "RD-005a boundary length=120 ok" (isOkEq decodedBoundary miBoundary)
+  -- Overflow: length=121 should fail
+  -- length field is bits 0..6 (7 bits), extraCaps bits 7..8 (2 bits), label bits 9+
   let rawWithLength121 := 121  -- bits 0-6 = 121
   let result := decodeMsgInfo ⟨rawWithLength121⟩
-  expect "RD-005a overflow length" (!result.isOk)
+  expect "RD-005b overflow length" (!result.isOk)
 
 /-- RD-006: decodeCapPtr — valid and boundary values. -/
 private def rd006_decodeCapPtrValid : IO Unit := do
@@ -124,6 +127,42 @@ private def rd008_validateRegBound : IO Unit := do
   let r32 := validateRegBound ⟨32⟩ 32
   expect "RD-008c idx=32 bound=32 err" (isErrEq r32 .invalidRegister)
 
+/-- RD-009: decodeSyscallArgs — full integration with arm64DefaultLayout.
+    Populates a RegisterFile with valid values in the ARM64 convention
+    (x0=capPtr, x1=msgInfo, x2-x5=msgRegs, x7=syscallId) and verifies
+    the complete decode pipeline produces the expected SyscallDecodeResult. -/
+private def rd009_decodeSyscallArgsIntegration : IO Unit := do
+  -- Build a RegisterFile with known values in the ARM64 positions
+  let capPtrVal : Nat := 42
+  let msgInfoVal : MessageInfo := { length := 2, extraCaps := 1, label := 7 }
+  let syscallVal : SyscallId := .send  -- toNat = 0
+  -- Construct register file: default (all zeros), then write specific registers
+  let rf := (default : RegisterFile)
+    |> (writeReg · ⟨0⟩ (encodeCapPtr (CPtr.ofNat capPtrVal)))   -- x0 = capPtr
+    |> (writeReg · ⟨1⟩ (encodeMsgInfo msgInfoVal))               -- x1 = msgInfo
+    |> (writeReg · ⟨2⟩ ⟨100⟩)                                    -- x2 = msgReg0
+    |> (writeReg · ⟨3⟩ ⟨200⟩)                                    -- x3 = msgReg1
+    |> (writeReg · ⟨4⟩ ⟨300⟩)                                    -- x4 = msgReg2
+    |> (writeReg · ⟨5⟩ ⟨400⟩)                                    -- x5 = msgReg3
+    |> (writeReg · ⟨7⟩ (encodeSyscallId syscallVal))             -- x7 = syscallNum
+  let result := decodeSyscallArgs arm64DefaultLayout rf 32
+  expect "RD-009a integration ok" result.isOk
+  match result with
+  | .ok dr =>
+    expect "RD-009b capAddr" (dr.capAddr.toNat == capPtrVal)
+    expect "RD-009c syscallId" (dr.syscallId == syscallVal)
+    expect "RD-009d msgRegs length" (dr.msgRegs.size == 4)
+    expect "RD-009e msgReg0" (dr.msgRegs[0]! == ⟨100⟩)
+    expect "RD-009f msgReg1" (dr.msgRegs[1]! == ⟨200⟩)
+  | .error _ => pure ()
+
+/-- RD-010: decodeSyscallArgs — insufficient regCount rejects. -/
+private def rd010_decodeSyscallArgsInsufficientRegs : IO Unit := do
+  let rf := (default : RegisterFile)
+  -- regCount=5 means registers 0..4 are valid, but arm64DefaultLayout needs x7
+  let result := decodeSyscallArgs arm64DefaultLayout rf 5
+  expect "RD-010a insufficient regs" (!result.isOk)
+
 private def runRegisterDecodeTests : IO Unit := do
   IO.println "--- Layer 1: RegisterDecode ---"
   rd001_decodeSyscallIdValid
@@ -134,6 +173,8 @@ private def runRegisterDecodeTests : IO Unit := do
   rd006_decodeCapPtrValid
   rd007_decodeCapPtrOutOfRange
   rd008_validateRegBound
+  rd009_decodeSyscallArgsIntegration
+  rd010_decodeSyscallArgsInsufficientRegs
 
 -- ============================================================================
 -- Layer 2: SyscallArgDecode tests
@@ -431,4 +472,4 @@ def main : IO Unit := do
   IO.println "=== DecodingSuite (T-03/AC6-A) ==="
   SeLe4n.Testing.DecodingSuite.runRegisterDecodeTests
   SeLe4n.Testing.DecodingSuite.runSyscallArgDecodeTests
-  IO.println "=== DecodingSuite PASSED (35 tests) ==="
+  IO.println "=== DecodingSuite PASSED (37 tests) ==="

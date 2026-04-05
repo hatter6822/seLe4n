@@ -208,7 +208,7 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
   RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
-  DecodingSuite.lean             T-03/AC6-A: 35 tests for RegisterDecode + SyscallArgDecode
+  DecodingSuite.lean             T-03/AC6-A: 37 tests for RegisterDecode + SyscallArgDecode
   LivenessSuite.lean             D5: 58 surface anchor tests for liveness/WCRT theorems
 ```
 
