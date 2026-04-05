@@ -41,9 +41,9 @@ in this plan. The verification discovered:
 |----------|----------------|--------------------|------------|
 | Critical | 0 | 0 | 0 |
 | High | 3 | 3 | 3 |
-| Medium | 9 | 9 (A-01→Info, I-02 stays Medium) | 9 |
-| Low | 14 | 14 (X-05→Low, I-02→Medium) | 9 |
-| Info | 20+ | 22+ | 0 (monitoring only) |
+| Medium | 9 | 9 (A-01 reclassified to Info; net +0 because I-02 confirmed Medium) | 9 |
+| Low | 14 | 14 (X-05 reclassified from Medium to Low; net +0) | 9 |
+| Info | 20+ | 22+ (A-01 added; phantom findings excluded) | 0 (monitoring only) |
 
 ### 1.3 Actionable HIGH Findings
 
@@ -431,12 +431,9 @@ but the pattern is fragile.
    - Why the result uses `stSaved`: the returned state must include the saved
      register context.
    - The implicit assumption: `saveOutgoingContext` does not modify `scheduler`.
-2. Add a `theorem saveOutgoingContext_scheduler_eq` in `Preservation.lean` (if
-   not already present) proving `(saveOutgoingContext st).scheduler = st.scheduler`.
-   This mechanizes the implicit assumption.
+   - Cross-reference to AC5-C which adds the formal theorem mechanizing this.
 
-**Files modified**: `Core.lean` (~8 lines comment), possibly `Preservation.lean`
-(~15 lines theorem).
+**Files modified**: `Core.lean` (~8 lines comment).
 **Build verification**: `lake build SeLe4n.Kernel.Scheduler.Operations.Core`.
 
 ### AC2-E: Document RunQueue flat-list complexity (S-06)
