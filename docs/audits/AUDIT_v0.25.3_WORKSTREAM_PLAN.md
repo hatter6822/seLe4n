@@ -199,47 +199,62 @@ taken. Verify by building `SeLe4n.Kernel.Scheduler.Operations.Selection` and
 **Build verification**: `lake build SeLe4n.Kernel.Scheduler.Operations.Selection`
 and `lake build SeLe4n.Kernel.Scheduler.Operations.Preservation`.
 
-### AC1-B: Formalize `notificationWaiterPendingMessageNone` preservation (I-01)
+### AC1-B: Wire existing `waitingThreadsPendingMessageNone` preservation into NotificationPreservation (I-01)
 
 **Finding**: `notificationSignal` (Endpoint.lean:334) unconditionally overwrites
 a waiter's `pendingMessage`. The safety depends on `waitingThreadsPendingMessageNone`
-(Defs.lean:267–290), which states threads blocked on receive or notification
-have `pendingMessage = none`. However, the preservation of this invariant by
-`notificationSignal` itself is not formally proven.
+(Defs.lean:284–290), which states threads blocked on receive or notification
+have `pendingMessage = none`.
 
-**Change**:
-1. In `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean`, add a new
-   theorem `notificationSignal_preserves_waitingThreadsPendingMessageNone` that
-   proves the invariant is maintained after `notificationSignal` executes.
-2. The proof structure:
-   - **Pre-condition**: `waitingThreadsPendingMessageNone st` holds.
-   - **Case 1** (no waiters — badge OR path): No thread's `pendingMessage` is
-     modified; the badge OR updates the notification object only. Invariant
-     trivially preserved.
-   - **Case 2** (waiter exists — wake path): The woken thread transitions from
-     `blockedOnNotification` to `ready` with `pendingMessage := some badgeMsg`.
-     Since it is no longer in a blocking state, the `waitingThreadsPendingMessageNone`
-     predicate no longer applies to it. All other threads are unchanged.
-3. Wire the new theorem into the existing `notificationSignal_preserves_*`
-   theorem family in `NotificationPreservation.lean`.
+**Key discovery during verification**: The preservation theorems **already exist**
+in `Structural.lean`:
+- Line 7110–7149: `notificationSignal_preserves_waitingThreadsPendingMessageNone`
+- Line 7248–7287: `notificationWait_preserves_waitingThreadsPendingMessageNone`
 
-**Files modified**: `NotificationPreservation.lean` (~40–80 lines).
+These are fully proven using helper lemmas:
+- `storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone` (Structural.lean:7050–7088)
+- `storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone` (Structural.lean:6982–7000)
+- `ensureRunnable_preserves_waitingThreadsPendingMessageNone` (Structural.lean:6969–6975)
+- `notificationWake_pendingMessage_was_none` (Structural.lean:7098–7106)
+
+The file `NotificationPreservation.lean` (lines 1352–1358) contains a
+forward-reference comment to these theorems but does not import or re-export them.
+
+**Change** (3 sub-steps):
+
+**AC1-B.1**: Read `NotificationPreservation.lean` ending (lines 1350–1365) to
+confirm the forward-reference comment and identify the exact insertion point.
+
+**AC1-B.2**: Add a thin re-export section at the end of `NotificationPreservation.lean`
+that imports and re-exports the two Structural.lean theorems, matching the
+existing naming convention (`notificationSignal_preserves_<inv>`). This follows
+the pattern of the 5 existing theorems:
+- `notificationSignal_preserves_ipcInvariant` (line 38)
+- `notificationSignal_preserves_schedulerInvariantBundle` (line 85)
+- `notificationSignal_preserves_ipcSchedulerContractPredicates` (line 387)
+- `notificationSignal_preserves_badgeWellFormed` (line 1009)
+- `notificationSignal_preserves_notificationWaiterConsistent` (line 1225)
+
+**AC1-B.3**: Replace the forward-reference comment (lines 1352–1358) with the
+actual theorem statements, delegating proofs to the Structural.lean versions.
+
+**Files modified**: `NotificationPreservation.lean` (~15–25 lines replacing comment).
 **Build verification**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation`.
 
-### AC1-C: Formalize `notificationSignal` pending-message precondition (I-01 supplement)
+### AC1-C: Wire `notificationWait` preservation into NotificationPreservation (I-01 supplement)
 
-**Finding**: The argument that waiting threads have `pendingMessage = none` at
-the point `notificationSignal` reads them relies on entry-path analysis (the
-only way to enter `blockedOnNotification` is via `notificationWait`, which sets
-`pendingMessage := none`). This should be an explicit precondition lemma.
+**Finding**: Same discovery — `notificationWait_preserves_waitingThreadsPendingMessageNone`
+already exists in Structural.lean:7248–7287.
 
-**Change**:
-1. In `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean`, add a lemma
-   `notificationWait_sets_pendingMessage_none` proving that after
-   `notificationWait` succeeds, the thread's `pendingMessage` field is `none`.
-2. This lemma supports AC1-B by establishing the base case of the invariant.
+**Change** (2 sub-steps):
 
-**Files modified**: `NotificationPreservation.lean` (~20–40 lines).
+**AC1-C.1**: Add a re-export theorem for the `notificationWait` preservation in
+`NotificationPreservation.lean`, following the same pattern as AC1-B.
+
+**AC1-C.2**: Verify the theorem compiles and the forward-reference comment
+(if any exists for `notificationWait`) is replaced with the actual theorem.
+
+**Files modified**: `NotificationPreservation.lean` (~10–15 lines).
 **Build verification**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation`.
 
 ### AC1-D: Address `cspaceMint` CDT-tracking gap (C-01)
@@ -249,31 +264,46 @@ CDT edge recording. `cspaceMintWithCdt` (Operations.lean:785–794) is the
 tracked alternative. The `syscallEntry` dispatch wires through the checked
 path, but the untracked `cspaceMint` remains in the public API.
 
-**Change** (option analysis — choose one):
+**Blast radius analysis**: Verification found **78 occurrences** of `cspaceMint`
+across **18 files**:
+- 8 direct function call sites (tests, API dispatch, CDT wrapper, checked wrapper)
+- 27+ theorem parameters and `unfold cspaceMint` in proofs (Authority, Preservation,
+  Non-Interference invariants across 6 proof files)
+- 10+ pattern-match sites in composition theorems (KernelOperation inductive)
+- 15+ API/documentation/comment references
+- 7 model/type system references (SyscallId, FrozenOps)
 
-**Option 1 (Conservative — Document and gate)**: Add a prominent doc-comment to
-`cspaceMint` warning that it produces irrevocable capabilities. Add an
-`@[deprecated]` attribute (if supported by current Lean 4.28.0) directing
-callers to `cspaceMintWithCdt`. No semantic change.
+**Decision**: **Option 1 (Conservative)** — renaming (Option 2) would touch 78
+sites across 18 files with high proof breakage risk. Option 1 achieves the same
+safety signal with near-zero blast radius.
 
-**Option 2 (Moderate — Rename to signal intent)**: Rename `cspaceMint` to
-`cspaceMintUntracked` to make the lack of CDT tracking visible at every call
-site. Update all internal callers (primarily `cspaceMintWithCdt` which
-delegates to it). Add a `@[inline]` to preserve codegen.
+**Change** (4 sub-steps):
 
-**Option 3 (Aggressive — Unify)**: Make `cspaceMint` always record CDT edges
-by inlining the CDT logic. Remove `cspaceMintWithCdt` as a separate function.
-This eliminates the gap but changes `cspaceMint` semantics and requires updating
-all callers and proofs that depend on `cspaceMint` NOT modifying the CDT.
+**AC1-D.1**: Add a `@[deprecated "Use cspaceMintWithCdt for CDT-tracked derivation"]`
+attribute to `cspaceMint` in Operations.lean:541. Lean 4.28.0 supports this
+attribute (verified: no existing `@[deprecated]` usage in codebase — this is
+the first).
 
-**Recommended**: Option 2. It makes the design decision visible without breaking
-existing proofs. Option 3 has the highest blast radius and should be deferred
-to a dedicated CDT workstream.
+**AC1-D.2**: Add a prominent doc-comment block above `cspaceMint` (Operations.lean:
+535–540) documenting:
+- This function creates **CDT-untracked** capabilities.
+- Minted capabilities are **irrevocable** via CDT-based revocation.
+- The syscall dispatch path uses `cspaceMintChecked` → `cspaceMintWithCdt` for
+  tracked derivation.
+- Direct use should be limited to: (a) internal composition within
+  `cspaceMintWithCdt`, (b) proof decomposition, (c) tests.
 
-**Files modified**: `Operations.lean` (~10 lines rename), `API.lean` (~5 lines),
-`Wrappers.lean` (~5 lines), any callers of `cspaceMint`.
-**Build verification**: `lake build SeLe4n.Kernel.Capability.Operations` and
-`lake build SeLe4n.Kernel.API`.
+**AC1-D.3**: Verify that the `@[deprecated]` attribute compiles without breaking
+existing callers. In Lean 4, `@[deprecated]` emits a warning, not an error, so
+all 78 sites will produce warnings but the build will succeed.
+
+**AC1-D.4**: Suppress the deprecation warning at the 2 legitimate internal call
+sites (`cspaceMintWithCdt` at Operations.lean:788 and `cspaceMintChecked` at
+Wrappers.lean:59) by adding `@[inline]` wrapper aliases if needed, or by
+documenting that these warnings are expected.
+
+**Files modified**: `Operations.lean` (~15 lines attribute + doc-comment).
+**Build verification**: `lake build SeLe4n.Kernel.Capability.Operations`.
 
 ### AC1-E: Update preservation proofs for fail-closed `hasSufficientBudget` (S-01 proof chain)
 
@@ -317,14 +347,15 @@ The key theorems are in `Preservation.lean` (2170 lines).
 **Files modified**: `tests/NegativeStateSuite.lean` (~15–20 lines).
 **Build verification**: `lake build tests.NegativeStateSuite` + `lake exe test_negative_state`.
 
-### AC1-H: Add negative test for `cspaceMintUntracked` CDT absence (C-01 test)
+### AC1-H: Add negative test for `cspaceMint` CDT absence (C-01 test)
 
 **Change**:
 1. In `tests/NegativeStateSuite.lean` (or `tests/OperationChainSuite.lean`),
-   add a test that calls `cspaceMintUntracked` (post-rename) and verifies the
-   CDT has no new edges, then calls `cspaceMintWithCdt` and verifies the CDT
-   does have a new edge.
-2. This documents and regression-tests the intended CDT behavior difference.
+   add a test that calls `cspaceMint` (deprecated but functional) and verifies
+   the CDT has no new edges, then calls `cspaceMintWithCdt` on the same state
+   and verifies the CDT does have a new edge.
+2. This documents and regression-tests the intended CDT behavior difference,
+   making the deprecation's rationale concrete.
 
 **Files modified**: Test suite (~20–30 lines).
 **Build verification**: Build + run the relevant test executable.
@@ -396,26 +427,81 @@ termination. A cyclic blocking graph would cause silent truncation. The
 **Finding**: `defaultTimeSlice` (Core.lean:344) is hardcoded to 5. The
 configurable `configDefaultTimeSlice` (State.lean:102) exists but is unused.
 
-**Change**:
-1. In `Core.lean`, replace all uses of `defaultTimeSlice` with
-   `st.scheduler.configDefaultTimeSlice` in `timerTick` and `timerTickBudget`.
-2. Remove the standalone `def defaultTimeSlice : Nat := 5` constant (or keep
-   it as a default value initializer for `configDefaultTimeSlice`).
-3. Update preservation theorems in `Preservation.lean` that reference
-   `defaultTimeSlice`. The proofs should be structurally identical since both
-   values default to 5; the change is from a global constant to a state field.
-4. Update `Liveness/TimerTick.lean` if any budget monotonicity theorem references
-   the hardcoded value.
+**Blast radius analysis**: `defaultTimeSlice` appears in **~30 locations**:
+- `Core.lean`: 2 function bodies (timerTick line 376, timerTickBudget line 527)
+  and 4 comments
+- `Preservation.lean`: **~22 occurrences** across proof bodies — `simp [defaultTimeSlice]`
+  is used extensively in timerTick and timerTickBudget preservation proofs
+  (lines 652, 1027, 1049, 1051, 1054, 1067, 1072, 1252, 1264, 1268, 1269,
+  1547, 1824, 2541, 2572, 2575, 2591, 2723, 3013, 3357)
+- `Liveness/TraceModel.lean`: 1 occurrence — `maxBudgetInBand` (line 249)
+  uses `defaultTimeSlice` as fallback budget for unbound threads
+- `InformationFlow/Invariant/Operations.lean`: 1 occurrence — `tcbReset`
+  (line 2003) uses `defaultTimeSlice`
+- `Model/Object/Types.lean`: 1 comment reference (line 419)
 
-**Proof impact**: Medium. The theorems need to reference `st.scheduler.configDefaultTimeSlice`
-instead of `defaultTimeSlice`. Since the default is 5, `native_decide` proofs
-may need restructuring to reference the state field.
+**Risk assessment**: The `simp [defaultTimeSlice]` calls in Preservation.lean
+work because `defaultTimeSlice` unfolds to a concrete `Nat` literal (`5`),
+which `simp` can then use for arithmetic simplification. Replacing with
+`st.scheduler.configDefaultTimeSlice` (a state field) means `simp` can no
+longer unfold to a concrete value — **every such proof site will break** unless
+restructured to use a hypothesis `h : st.scheduler.configDefaultTimeSlice = 5`
+or a `configDefaultTimeSlice > 0` precondition.
 
-**Files modified**: `Core.lean` (~10 lines), `Preservation.lean` (~20–60 lines),
-possibly `Liveness/TimerTick.lean` (~10–20 lines).
-**Build verification**: `lake build SeLe4n.Kernel.Scheduler.Operations.Core` and
-`lake build SeLe4n.Kernel.Scheduler.Operations.Preservation` and
-`lake build SeLe4n.Kernel.Scheduler.Liveness.TimerTick`.
+**Decision**: This task has **HIGH proof blast radius** (~22 proof sites). It
+must be executed incrementally with careful build verification at each step.
+
+**Change** (7 sub-steps):
+
+**AC2-C.1**: In `Core.lean`, retain `defaultTimeSlice` as the **default value
+initializer** for `configDefaultTimeSlice`:
+```lean
+def defaultTimeSlice : Nat := 5  -- retained as default initializer
+```
+This preserves backward compatibility for all proof sites that `simp [defaultTimeSlice]`.
+
+**AC2-C.2**: In `Core.lean`, modify `timerTick` (line 376) to read the time
+slice from the state field:
+```lean
+let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
+```
+Verify: `lake build SeLe4n.Kernel.Scheduler.Operations.Core`.
+
+**AC2-C.3**: In `Core.lean`, modify `timerTickBudget` (line 527) similarly.
+Verify: `lake build SeLe4n.Kernel.Scheduler.Operations.Core`.
+
+**AC2-C.4**: In `Preservation.lean`, add a section-level hypothesis:
+```lean
+variable (hTimeSlice : st.scheduler.configDefaultTimeSlice = defaultTimeSlice)
+```
+This allows existing `simp [defaultTimeSlice]` calls to continue working by
+rewriting through `hTimeSlice`. Apply to all timerTick preservation theorems.
+Build incrementally — start with `timerTick_preserves_schedulerInvariantBundle`
+(line ~1027) and verify before proceeding to others.
+
+**AC2-C.5**: Update the ~22 proof sites in `Preservation.lean` that reference
+`defaultTimeSlice` in their proof bodies. For each site:
+- If the proof uses `simp [defaultTimeSlice]` for arithmetic (e.g., proving
+  `5 > 0`), replace with `simp [← hTimeSlice, defaultTimeSlice]` or add an
+  explicit `have : st.scheduler.configDefaultTimeSlice > 0 := by rw [hTimeSlice]; decide`.
+- If the proof uses `defaultTimeSlice` in a term construction (e.g., `{ tcb with
+  timeSlice := defaultTimeSlice }`), replace with `st.scheduler.configDefaultTimeSlice`.
+Build after each group of ~5 related proof sites to catch errors early.
+
+**AC2-C.6**: Update `Liveness/TraceModel.lean:249` — `maxBudgetInBand` uses
+`defaultTimeSlice` as a fallback for unbound threads. Change to pass the
+configurable value or add a comment explaining why the hardcoded default is
+appropriate here (unbound threads always use the system default).
+Verify: `lake build SeLe4n.Kernel.Scheduler.Liveness.TraceModel`.
+
+**AC2-C.7**: Update `InformationFlow/Invariant/Operations.lean:2003` —
+`tcbReset` uses `defaultTimeSlice`. Change to pass the configurable value from
+the state parameter.
+Verify: `lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations`.
+
+**Files modified**: `Core.lean` (~10 lines), `Preservation.lean` (~40–80 lines
+across 22 proof sites), `TraceModel.lean` (~5 lines), `Operations.lean` (~5 lines).
+**Build verification**: Incremental — verify each module after its changes.
 
 ### AC2-D: Document `switchDomain` dual-state rationale (S-05)
 
@@ -509,17 +595,49 @@ update. Callers discard error states, but the pattern is fragile.
 ### AC3-B: Add `donateSchedContext` intermediate-state lemma (I-02 proof)
 
 **Finding**: While documentation addresses the operational concern, a formal
-proof strengthens the argument.
+proof strengthens the argument. The function (Endpoint.lean:170–194) performs:
+1. `storeObject clientScId.toObjId (.schedContext sc')` — update SchedContext
+2. Lookup server TCB
+3. `storeObject serverTid.toObjId (.tcb serverTcb')` — update server TCB
 
-**Change**:
-1. In `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean`, add a lemma
-   `donateSchedContext_error_preserves_scheduler` proving that if
-   `donateSchedContext` returns `.error`, the scheduler fields of the returned
-   state are unchanged from input.
-2. This supports the argument that callers who discard error states lose no
-   scheduler consistency.
+**Change** (3 sub-steps):
 
-**Files modified**: `SchedulerLemmas.lean` (~30–50 lines).
+**AC3-B.1**: Add a lemma proving scheduler preservation on error:
+```lean
+theorem donateSchedContext_error_preserves_scheduler
+    (st : SystemState) (clientScId : SeLe4n.SchedContextId)
+    (serverTid : SeLe4n.ThreadId) (e : KernelError)
+    (hErr : donateSchedContext clientScId serverTid st = .error e) :
+    -- The returned error state's scheduler is identical to input
+    -- (actually, .error returns no state — this is trivially true)
+    True
+```
+**Correction**: In the `KernelM` monad, `.error e` returns no state at all —
+`Except.error` carries only the error value. So the concern about "partial
+state" is actually a non-issue in the pure model: if any step fails, the
+caller gets `.error` with **no state**, not a partial state. The intermediate
+state from step 1 is discarded by the monad's bind operation.
+
+**AC3-B.2**: Instead, add a lemma proving that success implies all three steps
+succeeded (strengthening the postcondition):
+```lean
+theorem donateSchedContext_ok_implies_all_stores_succeeded
+    (st st' : SystemState) (clientScId : SeLe4n.SchedContextId)
+    (serverTid : SeLe4n.ThreadId)
+    (hOk : donateSchedContext clientScId serverTid st = .ok ((), st')) :
+    ∃ sc' serverTcb', ...  -- all intermediate lookups succeeded
+```
+
+**AC3-B.3**: Verify build: `lake build SeLe4n.Kernel.IPC.Operations.SchedulerLemmas`.
+
+**Important note**: The AC3-A documentation should be updated to reflect that
+`.error` in `KernelM` carries **no state** — the "partial state" concern from
+the audit is a misunderstanding of the `Except` monad semantics. The actual
+risk is only relevant if someone extracts the intermediate state from a
+`do`-block at a point between step 1 and step 2, which doesn't happen because
+the entire function is a single `do`-expression.
+
+**Files modified**: `SchedulerLemmas.lean` (~25–40 lines).
 **Build verification**: `lake build SeLe4n.Kernel.IPC.Operations.SchedulerLemmas`.
 
 ### AC3-C: Document `Badge.bor` unbounded-Nat intermediary (I-04)
@@ -562,23 +680,53 @@ distinguish dropped caps from never-sent.
 (~20 lines test).
 **Build verification**: `lake build SeLe4n.Kernel.API` + build/run test suite.
 
-### AC3-E: Prove `storeObject_preserves_objectCount_bound` (F-03 supplement)
+### AC3-E: Add `storeObjectChecked` with capacity enforcement (F-03 supplement)
 
 **Finding**: `storeObject` (State.lean:457–482) always returns `.ok` with no
-capacity check. The preservation theorem `storeObject_preserves_objectIndexBounded`
-exists (State.lean:488–495) proving the invariant is maintained. However, a
-debug-mode assertion for hardware targets would provide additional safety.
+capacity check. The existing theorem `storeObject_preserves_objectIndexBounded`
+(State.lean:488–495) proves the invariant holds but doesn't enforce it at
+runtime. The capacity model uses:
+- `objectIndex : List SeLe4n.ObjId` (State.lean:237)
+- `maxObjects : Nat := 65536` (State.lean:398)
+- `objectIndexBounded st ↔ st.objectIndex.length ≤ maxObjects` (State.lean:403–404)
 
-**Change**:
-1. Add a `def storeObjectChecked` variant in `State.lean` that checks
-   `objectIndex.length < maxObjects` before delegating to `storeObject`,
-   returning `KernelError.objectStoreCapacityExceeded` on violation.
-2. Add a theorem `storeObjectChecked_capacity_safe` proving that successful
-   `storeObjectChecked` results always satisfy the capacity bound.
-3. The existing `storeObject` remains for proof-layer use where the invariant
-   is already established.
+**Change** (4 sub-steps):
 
-**Files modified**: `State.lean` (~25–35 lines).
+**AC3-E.1**: Add the checked variant after `storeObject` (insert at ~State.lean:496):
+```lean
+def storeObjectChecked (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
+  fun st =>
+    if st.objectIndex.length ≥ maxObjects && !st.objectIndexSet.contains id then
+      .error .objectStoreCapacityExceeded
+    else
+      storeObject id obj st
+```
+Note: the `!st.objectIndexSet.contains id` check avoids false rejection when
+updating an existing object (which doesn't grow `objectIndex`).
+
+**AC3-E.2**: Add a postcondition theorem:
+```lean
+theorem storeObjectChecked_preserves_objectIndexBounded
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hBound : objectIndexBounded st)
+    (hStore : storeObjectChecked id obj st = .ok ((), st')) :
+    objectIndexBounded st'
+```
+
+**AC3-E.3**: Add a delegation theorem proving that `storeObjectChecked` and
+`storeObject` produce identical results when the capacity bound holds:
+```lean
+theorem storeObjectChecked_eq_storeObject
+    (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hBound : objectIndexBounded st) :
+    storeObjectChecked id obj st = storeObject id obj st
+```
+This ensures that migrating callers from `storeObject` to `storeObjectChecked`
+is semantically transparent under the invariant.
+
+**AC3-E.4**: Verify build: `lake build SeLe4n.Model.State`.
+
+**Files modified**: `State.lean` (~35–50 lines).
 **Build verification**: `lake build SeLe4n.Model.State`.
 
 ### AC3-F: Phase AC3 smoke test gate
@@ -621,25 +769,31 @@ invalid on RPi5. A platform-aware variant `physicalAddressBoundForConfig`
 ### AC4-B: Add `AccessRightSet` constructor-safety documentation (F-02)
 
 **Finding**: `AccessRightSet.mk` (Types.lean:76) is structurally accessible.
-The `INTERNAL` comment warns against direct use, but Lean 4 cannot enforce
-private constructors.
+The existing `INTERNAL` comment (Types.lean:72–75) warns against direct use,
+but Lean 4 cannot enforce private constructors. Safe alternatives exist:
+`ofNat` (masked), `mk_checked` (proof-carrying), `ofList`, `singleton`, `empty`.
 
-**Change**:
-1. Add a module-level comment at the top of the `AccessRightSet` section
-   documenting:
-   - `mk` is TCB-internal only.
-   - All external construction must use `ofNat` (auto-masks), `mk_checked`
-     (proof-carrying), `ofList`, `singleton`, or `empty`.
-   - The `valid` predicate (`bits < 32`) is the canonical safety condition.
-   - `subset` uses bitwise AND which masks high bits naturally, making invalid
-     `AccessRightSet` values harmless for rights-checking operations.
-2. Add a `theorem AccessRightSet.subset_masks_invalid` proving that for any
-   `a b : AccessRightSet`, `a.subset b` produces a correct result regardless of
-   whether `a.valid` or `b.valid` holds. This mechanizes the argument that
-   invalid sets are safe operationally.
+**Change** (2 sub-steps):
 
-**Files modified**: `Types.lean` (~10 lines comment + ~15 lines theorem).
-**Build verification**: `lake build SeLe4n.Model.Object.Types`.
+**AC4-B.1**: Expand the existing `INTERNAL` comment into a structured safety
+model documentation block covering:
+- `mk` is TCB-internal only — no enforcement possible in Lean 4.
+- Safe constructors and when to use each: `ofNat` for user input (auto-masks to
+  5 bits), `mk_checked` for proof contexts (carries `bits < 32` witness),
+  `ofList`/`singleton`/`empty` for compile-time-known sets.
+- Operational safety argument: `subset` (line 160) uses `&&&` (bitwise AND)
+  which naturally bounds the result. `mem` (line 155) uses `testBit` which is
+  safe for any `Nat`. Neither operation produces incorrect results for invalid
+  sets — they just test more bits than the 5 defined rights.
+- Cross-reference to AC5-E which adds formal proofs mechanizing this argument.
+
+**AC4-B.2**: Add a brief comment at `inter` (line 167) and `union` (line 164)
+noting that these return raw `⟨bits⟩` without masking, so they can propagate
+invalid high bits. Callers should use `ofNat` on the result if validity is
+required downstream.
+
+**Files modified**: `Types.lean` (~15 lines comment).
+**Build verification**: None (doc-only; formal proofs deferred to AC5-E).
 
 ### AC4-C: Document identifier `Nat` unboundedness and ABI validation (F-01)
 
@@ -665,24 +819,70 @@ private constructors.
 ### AC4-D: Add enforcement boundary completeness witness (IF-01)
 
 **Finding**: The enforcement boundary (Wrappers.lean:186–225) lists 30
-classified operations across 4 categories, but the classification is a manual
-`List EnforcementClass` — no compile-time check ensures every `SyscallId` is
-accounted for.
+classified operations across 4 categories (11 policy-gated, 16 capability-only,
+3 read-only), but the classification is a manual `List EnforcementClass` — no
+compile-time check ensures every `SyscallId` is accounted for.
 
-**Change**:
-1. In `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean`, add a
-   `def enforcementBoundaryComplete : Bool` function that:
-   - Iterates over all 25 `SyscallId` variants (using the existing `SyscallId.all`
-     list from Types.lean).
-   - Checks that each variant appears in exactly one classification category.
-   - Returns `true` iff the mapping is exhaustive and injective.
-2. Add a theorem `enforcementBoundary_is_complete :
-   enforcementBoundaryComplete = true := by native_decide`.
-3. This creates a compile-time breakage whenever a new `SyscallId` is added
-   without updating the enforcement boundary.
+**Key structural details discovered during verification**:
+- `EnforcementClass` (Wrappers.lean:171–175) is an inductive with 3 variants,
+  each carrying a `String` field (not a `SyscallId` — uses string names).
+- `SyscallId` (Types.lean:883–909) has 25 variants with `DecidableEq` derived.
+- **`SyscallId.all` does NOT exist** — must be created.
+- `SyscallId.count : Nat := 25` exists, and `toNat`/`ofNat?` provide
+  bidirectional conversion.
+- Existing completeness pattern (Soundness.lean:314–330) uses definitional
+  equality (`rfl`) for structural assertions.
 
-**Files modified**: `Wrappers.lean` (~30–50 lines).
-**Build verification**: `lake build SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers`.
+**Change** (5 sub-steps):
+
+**AC4-D.1**: In `SeLe4n/Model/Object/Types.lean`, add `SyscallId.all`:
+```lean
+def SyscallId.all : List SyscallId :=
+  [.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy, .cspaceMove,
+   .cspaceDelete, .lifecycleRetype, .vspaceMap, .vspaceUnmap,
+   .serviceRegister, .serviceRevoke, .serviceQuery,
+   .notificationSignal, .notificationWait, .replyRecv,
+   .schedContextConfigure, .schedContextBind, .schedContextUnbind,
+   .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority, .tcbSetIPCBuffer]
+```
+Add a completeness theorem: `theorem SyscallId.all_length : all.length = count := by rfl`.
+Verify: `lake build SeLe4n.Model.Object.Types`.
+
+**AC4-D.2**: In `Wrappers.lean`, add a mapping function from `SyscallId` to
+its enforcement classification string name:
+```lean
+def syscallIdToEnforcementName : SyscallId → String
+  | .send => "endpointSendDualChecked"
+  | .receive => "endpointReceiveDualChecked"
+  | .call => "endpointCallChecked"
+  -- ... (all 25 variants)
+```
+This bridges the `SyscallId` type to the string-based `EnforcementClass` list.
+
+**AC4-D.3**: Add the completeness check function:
+```lean
+def enforcementBoundaryComplete : Bool :=
+  SyscallId.all.all (fun sid =>
+    let name := syscallIdToEnforcementName sid
+    enforcementBoundary.any (fun ec =>
+      match ec with
+      | .policyGated n | .capabilityOnly n | .readOnly n => n == name))
+```
+
+**AC4-D.4**: Add the compile-time completeness theorem:
+```lean
+theorem enforcementBoundary_is_complete :
+    enforcementBoundaryComplete = true := by native_decide
+```
+This will fail at compile time if any `SyscallId` variant is missing from the
+enforcement boundary, or if the `syscallIdToEnforcementName` mapping is out of
+sync with the `enforcementBoundary` list.
+
+**AC4-D.5**: Verify: `lake build SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers`.
+
+**Files modified**: `Types.lean` (~10 lines), `Wrappers.lean` (~40–55 lines).
+**Build verification**: `lake build SeLe4n.Model.Object.Types` and
+`lake build SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers`.
 
 ### AC4-E: Phase AC4 smoke test gate
 
@@ -699,22 +899,78 @@ and add targeted infrastructure improvements.
 **Gate**: `source ~/.elan/env && lake build` + `./scripts/test_full.sh` pass.
 **Dependencies**: AC1–AC4 complete (theorem changes may interact).
 
-### AC5-A: Strengthen CrossSubsystem field-disjointness prose with theorem coverage (X-05)
+### AC5-A: Strengthen CrossSubsystem field-disjointness theorem coverage (X-05)
 
-**Finding**: The field-disjointness facts are machine-checked via `decide`
-(CrossSubsystem.lean:413–472), but the architectural rationale explaining *why*
-disjoint fields imply composable invariants is prose.
+**Finding**: The field-disjointness facts are partially machine-checked via
+`decide` (CrossSubsystem.lean:413–472). Verification found:
 
-**Change**:
-1. Add a structured comment block at CrossSubsystem.lean:230 that explicitly
-   maps each invariant predicate to the `StateField` values it touches, with
-   cross-references to the corresponding `fieldsDisjoint` theorems.
-2. Add a `theorem allCrossSubsystemPredicates_pairwise_disjoint` that composes
-   all individual `fieldsDisjoint` theorems into a single top-level statement
-   covering all 8 predicates. This turns the "informal composition" argument
-   into a single machine-checked theorem.
+**Current state** (10 theorems for 8 predicates):
+- 6 **disjoint** pairs proven (all return `true` via `by decide`):
+  `regDepConsistent ⊥ staleEndpoint`, `regDepConsistent ⊥ staleNotification`,
+  `serviceGraph ⊥ staleEndpoint`, `serviceGraph ⊥ staleNotification`,
+  `regDepConsistent ⊥ regEndpointValid`, `serviceGraph ⊥ regEndpointValid`
+- 4 **shared** pairs proven (all return `false` via `by decide`):
+  `staleEndpoint ∩ staleNotification`, `regEndpointValid ∩ staleEndpoint`,
+  `regEndpointValid ∩ staleNotification`, `regDepConsistent ∩ serviceGraph`
 
-**Files modified**: `CrossSubsystem.lean` (~30–50 lines).
+**Gap**: For 8 predicates, C(8,2) = 28 pairs. Only 10 are covered.
+The missing 18 pairs involve the 3 SchedContext predicates
+(`schedContextStoreConsistent`, `schedContextNotDualBound`,
+`schedContextRunQueueConsistent`) which were added later and don't have
+field-set declarations or pairwise theorems yet.
+
+**`StateField` enum** (CrossSubsystem.lean:358–363): 15 variants including
+`machine`, `objects`, `objectIndex`, `scheduler`, `services`, `lifecycle`,
+`asidTable`, `interfaceRegistry`, `serviceRegistry`, `cdt`, `tlb`, etc.
+
+**Change** (4 sub-steps):
+
+**AC5-A.1**: Add field-set declarations for the 3 SchedContext predicates:
+```lean
+def schedContextStoreConsistent_fields : List StateField := [.objects]
+def schedContextNotDualBound_fields : List StateField := [.objects]
+def schedContextRunQueueConsistent_fields : List StateField := [.objects, .scheduler]
+```
+These must accurately reflect which `StateField` values each predicate reads.
+Verify by inspecting each predicate's definition (CrossSubsystem.lean:174–206).
+
+**AC5-A.2**: Add the pairwise disjointness (or overlap) theorems for all pairs
+involving the 3 new field-sets. For each pair, the theorem is:
+```lean
+theorem <pred1>_disjoint_<pred2> :
+    fieldsDisjoint <pred1>_fields <pred2>_fields = true := by decide
+-- OR
+theorem <pred1>_shares_<pred2> :
+    fieldsDisjoint <pred1>_fields <pred2>_fields = false := by decide
+```
+Since the SchedContext predicates all touch `objects`, pairs among them will
+likely be **shared** (not disjoint). Pairs with predicates that only touch
+`services`/`serviceRegistry` will be disjoint.
+
+**AC5-A.3**: Add the structured comment block mapping each of the 8 predicates
+to its field-set, organized as a table:
+```
+-- Predicate                         Fields Touched
+-- registryEndpointValid             [objects, services]
+-- registryDependencyConsistent      [services, serviceRegistry]
+-- noStaleEndpointQueueReferences    [objects]
+-- noStaleNotificationWaitReferences [objects]
+-- serviceGraphInvariant             [services, serviceRegistry]
+-- schedContextStoreConsistent       [objects]
+-- schedContextNotDualBound          [objects]
+-- schedContextRunQueueConsistent    [objects, scheduler]
+```
+
+**AC5-A.4**: Add a summary theorem that asserts the total count of disjoint
+pairs and shared pairs:
+```lean
+theorem crossSubsystem_disjoint_pair_count :
+    (<list of all disjoint pair bools>).countP id = <N> := by native_decide
+```
+This provides a single compile-time check that the full pairwise analysis is
+complete.
+
+**Files modified**: `CrossSubsystem.lean` (~50–70 lines).
 **Build verification**: `lake build SeLe4n.Kernel.CrossSubsystem`.
 
 ### AC5-B: Add GitBook content-hash drift check (X-08)
@@ -775,23 +1031,49 @@ be systematically confirmed.
 **Files modified**: Varies (0–20 lines per site, likely 0 based on verification).
 **Build verification**: `lake build` for any modified files.
 
-### AC5-E: Add `AccessRightSet.subset_masks_invalid` theorem (F-02 proof)
+### AC5-E: Add `AccessRightSet` operational safety theorems (F-02 proof)
 
-**Finding**: From AC4-B, the `subset` function uses bitwise AND, which naturally
-masks high bits. This should be proven to close the `mk` bypass concern.
+**Finding**: `AccessRightSet.subset` (Types.lean:160–161) is defined as:
+```lean
+@[inline] def subset (a b : AccessRightSet) : Bool := a.bits &&& b.bits == a.bits
+```
+The `valid` predicate is `s.bits < maxBits` where `maxBits = 2^5 = 32`
+(Types.lean:84, 89). The `mk` constructor bypass concern is that `⟨999⟩`
+violates `valid` but `subset` still produces correct results because bitwise
+AND masks high bits.
 
-**Change**:
-1. In `SeLe4n/Model/Object/Types.lean`, add:
-   ```lean
-   theorem AccessRightSet.subset_masks :
-       ∀ (a b : AccessRightSet), (a.subset b).bits < 32 :=
-   ```
-   This proves that `subset` always produces a valid `AccessRightSet` regardless
-   of input validity.
-2. The proof relies on `Nat.land_lt_two_pow` or equivalent bitwise arithmetic
-   lemma.
+**Correction**: `subset` returns a `Bool`, not an `AccessRightSet` — it tests
+whether `a ⊆ b`. The actual masking happens in `ofNat`, `inter` (line 167:
+`⟨a.bits &&& b.bits⟩`), and `union` (line 164: `⟨a.bits ||| b.bits⟩`).
 
-**Files modified**: `Types.lean` (~15–25 lines).
+**Change** (3 sub-steps):
+
+**AC5-E.1**: Add a theorem proving `inter` preserves validity when at least
+one operand is valid:
+```lean
+theorem AccessRightSet.inter_valid_left (a b : AccessRightSet)
+    (ha : a.valid) : (a.inter b).valid := by
+  unfold valid inter maxBits at *
+  exact Nat.lt_of_le_of_lt (Nat.land_le_left a.bits b.bits) ha
+```
+
+**AC5-E.2**: Add a theorem proving `subset` is sound regardless of `valid`:
+```lean
+theorem AccessRightSet.subset_correct (a b : AccessRightSet) :
+    a.subset b = true ↔ ∀ i, i < 5 → (a.bits.testBit i = true → b.bits.testBit i = true)
+```
+This shows that `subset` correctly tests bit-level inclusion even for invalid
+sets, because bitwise AND is well-defined on all `Nat` values.
+
+**AC5-E.3**: Add a theorem proving `mem` is safe for invalid sets:
+```lean
+theorem AccessRightSet.mem_bounded (s : AccessRightSet) (r : AccessRight) :
+    s.mem r = true → r.val < 5
+```
+This proves that membership checks cannot return `true` for out-of-range
+rights, even if `s.bits` is invalid.
+
+**Files modified**: `Types.lean` (~25–40 lines).
 **Build verification**: `lake build SeLe4n.Model.Object.Types`.
 
 ### AC5-F: Add `storeObjectChecked` usage recommendation to coding conventions (F-03)
@@ -838,24 +1120,86 @@ addendum, workstream history update, and final validation.
 
 ### AC6-A: Create dedicated `DecodingSuite.lean` test file (T-03)
 
-**Finding**: `RegisterDecode.lean` and `SyscallArgDecode.lean` have coverage
-dispersed across `NegativeStateSuite.lean` (lines 1857–2230) and
-`OperationChainSuite.lean` (lines 516–607), but no standalone test suite.
+**Finding**: `RegisterDecode.lean` exports 5 Layer-1 decode functions;
+`SyscallArgDecode.lean` exports ~20 Layer-2 per-syscall decode functions.
+Coverage exists in `NegativeStateSuite.lean` (lines 1857–2230, tests J1-NEG-01
+through J1-NEG-17) and `OperationChainSuite.lean` (lines 516–607, chains 10–11),
+but is dispersed and not independently runnable.
 
-**Change**:
-1. Create `tests/DecodingSuite.lean` with test cases extracted and organized by
-   decode function:
-   - `decodeSyscallId`: valid range (0–24), boundary (25 = invalid), large values.
-   - `decodeMsgInfo`: valid MessageInfo encoding/decoding round-trip, overflow.
-   - `decodeCapPtr`: valid/invalid capability pointers.
-   - `decodeSyscallArgs`: per-syscall typed argument decode for all 25 syscalls.
-   - `validateRegBound`: register index bounds checking.
-2. Add `DecodingSuite` to `lakefile.lean` as a test executable target.
-3. Add `lake exe test_decoding` to `scripts/test_smoke.sh` (Tier 2).
+**Test infrastructure details**:
+- Test helpers: `SeLe4n.Testing.Helpers` provides `expectError`, `expectOk`,
+  `expectOkState`, `runKernelState`
+- State construction: `BootstrapBuilder.empty |>.withObject ... |>.buildChecked`
+- Lakefile pattern: `[[lean_exe]] name = "suite_name" root = "tests.Module"`
+- Invocation pattern: `run_check "TRACE" lake exe suite_name` in tier scripts
 
-**Files modified**: New `tests/DecodingSuite.lean` (~100–150 lines), `lakefile.lean`
-(~5 lines), `scripts/test_smoke.sh` (~2 lines).
-**Build verification**: `lake build tests.DecodingSuite` + `lake exe test_decoding`.
+**Change** (6 sub-steps):
+
+**AC6-A.1**: Create `tests/DecodingSuite.lean` skeleton (~30 lines):
+```lean
+import SeLe4n.Kernel.Architecture.RegisterDecode
+import SeLe4n.Kernel.Architecture.SyscallArgDecode
+import SeLe4n.Testing.Helpers
+
+namespace SeLe4n.Testing.DecodingSuite
+
+-- Layer 1: RegisterDecode tests
+def runRegisterDecodeTests : IO Unit := do ...
+
+-- Layer 2: SyscallArgDecode tests
+def runSyscallArgDecodeTests : IO Unit := do ...
+
+def main : IO Unit := do
+  IO.println "=== DecodingSuite ==="
+  runRegisterDecodeTests
+  runSyscallArgDecodeTests
+  IO.println "=== DecodingSuite PASSED ==="
+end SeLe4n.Testing.DecodingSuite
+```
+
+**AC6-A.2**: Add Layer-1 tests in `runRegisterDecodeTests` (~40 lines):
+- `decodeSyscallId`: valid (0 → `.send`, 12 → `.serviceRegister`, 24 →
+  `.tcbSetIPCBuffer`), invalid (25, 2^64), boundary (24/25 edge)
+- `decodeMsgInfo`: valid round-trip (encode then decode), overflow (length > 120,
+  extraCaps > 7), boundary (length = 120)
+- `decodeCapPtr`: valid (small values), large value (2^63)
+- `validateRegBound`: valid (0, 31), invalid (32, 2^64)
+- `decodeSyscallArgs`: integration test with a fully populated register file
+
+**AC6-A.3**: Add Layer-2 tests in `runSyscallArgDecodeTests` (~60 lines):
+Organize by syscall family:
+- **CSpace** (4 functions): `decodeCSpaceMintArgs`, `decodeCSpaceCopyArgs`,
+  `decodeCSpaceMoveArgs`, `decodeCSpaceDeleteArgs` — test valid decode, missing
+  register, zero values
+- **VSpace** (2 functions): `decodeVSpaceMapArgs` (with permission validation),
+  `decodeVSpaceUnmapArgs`
+- **Notification** (3 functions): `decodeNotificationSignalArgs`,
+  `decodeNotificationWaitArgs` (unit), `decodeReplyRecvArgs`
+- **SchedContext** (3 functions): `decodeSchedContextConfigureArgs`,
+  `decodeSchedContextBindArgs`, `decodeSchedContextUnbindArgs` (unit)
+- **TCB** (5 functions): `decodeSetPriorityArgs`, `decodeSetMCPriorityArgs`,
+  `decodeSetIPCBufferArgs`, `decodeSuspendArgs` (unit), `decodeResumeArgs` (unit)
+- **Service** (2 functions): `decodeServiceRegisterArgs`, `decodeServiceRevokeArgs`
+- **Lifecycle** (1 function): `decodeLifecycleRetypeArgs`
+
+**AC6-A.4**: Add to `lakefile.toml`:
+```toml
+[[lean_exe]]
+name = "decoding_suite"
+root = "tests.DecodingSuite"
+```
+
+**AC6-A.5**: Add to `scripts/test_tier2_negative.sh` (or `test_smoke.sh` Tier 2
+section):
+```bash
+run_check "TRACE" lake exe decoding_suite
+```
+
+**AC6-A.6**: Verify: `lake build tests.DecodingSuite` + `lake exe decoding_suite`.
+
+**Files modified**: New `tests/DecodingSuite.lean` (~130–160 lines),
+`lakefile.toml` (~3 lines), test script (~1 line).
+**Build verification**: `lake build tests.DecodingSuite` + `lake exe decoding_suite`.
 
 ### AC6-B: Update `docs/DEVELOPMENT.md` with audit-driven coding conventions
 
@@ -879,7 +1223,7 @@ dispersed across `NegativeStateSuite.lean` (lines 1857–2230) and
    - Status: IN PROGRESS (update to COMPLETE when all phases are done)
    - Phase count: 6 (AC1–AC6)
    - Sub-task count: 42
-   - Findings addressed: 3 HIGH, 8 MEDIUM, 10 LOW
+   - Findings addressed: 3 HIGH, 9 MEDIUM, 9 LOW
    - Findings excluded: 22+ Info/positive/phantom
 
 **Files modified**: `docs/WORKSTREAM_HISTORY.md` (~15 lines).
@@ -934,7 +1278,7 @@ validation gate for the entire workstream:
 AC1 (High fixes) ─────────────────────────────────────┐
   AC1-A (S-01 fail-closed) ──► AC1-E (proof chain) ──►│
   AC1-B (I-01 invariant)  ──► AC1-C (I-01 precond) ──►│
-  AC1-D (C-01 rename)     ──► AC1-H (C-01 test) ─────►│── AC1-I gate
+  AC1-D (C-01 deprecate)  ──► AC1-H (C-01 test) ─────►│── AC1-I gate
   AC1-A ──────────────────────► AC1-G (S-01 test) ────►│
                                                         │
 AC2 (Scheduler harden) ◄───────────────────────────────┘
@@ -979,14 +1323,14 @@ AC6 (Doc & closure) ◄────┘
 
 Within each phase, tasks without data dependencies can execute in parallel:
 
-| Phase | Parallel Groups |
-|-------|----------------|
-| AC1 | {AC1-A, AC1-B, AC1-C, AC1-D} can start in parallel; {AC1-E, AC1-F} after AC1-A; {AC1-G, AC1-H} after their parents |
-| AC2 | {AC2-A, AC2-B, AC2-D, AC2-E, AC2-F} are independent; AC2-C is the only proof-impacting change |
-| AC3 | {AC3-A, AC3-C, AC3-D} are doc-only and parallel; {AC3-B, AC3-E} are proof work |
-| AC4 | {AC4-A, AC4-B, AC4-C} are independent; AC4-D depends on Types.lean stability |
-| AC5 | {AC5-A, AC5-B, AC5-D, AC5-F} are independent; {AC5-C, AC5-E, AC5-G} need prior phases |
-| AC6 | {AC6-A, AC6-B, AC6-C, AC6-D} are independent |
+| Phase | Parallel Groups | Critical Path |
+|-------|----------------|---------------|
+| AC1 | {AC1-A, AC1-B, AC1-C, AC1-D} can start in parallel; {AC1-E, AC1-F} after AC1-A; {AC1-G, AC1-H} after their parents | AC1-A → AC1-E → AC1-F (scheduler proof chain) |
+| AC2 | {AC2-A, AC2-B, AC2-D, AC2-E, AC2-F} are independent doc-only tasks; **AC2-C is the critical path** (7 sub-steps, 22 proof sites) — execute last within phase | AC2-C.1 → AC2-C.2 → AC2-C.4 → AC2-C.5 (incremental proof migration) |
+| AC3 | {AC3-A, AC3-C, AC3-D} are doc-only and parallel; {AC3-B, AC3-E} are proof work and can run in parallel with each other | AC3-E (storeObjectChecked) is independent of all others |
+| AC4 | {AC4-A, AC4-B, AC4-C} are independent; **AC4-D must run after AC4-D.1** (SyscallId.all in Types.lean) | AC4-D.1 (Types.lean) → AC4-D.2–D.4 (Wrappers.lean) |
+| AC5 | {AC5-A, AC5-B, AC5-D, AC5-F} are independent; {AC5-C, AC5-E, AC5-G} depend on prior phases | AC5-A (50–70 lines in CrossSubsystem) is the largest task |
+| AC6 | {AC6-A, AC6-B, AC6-C, AC6-D} are independent; AC6-E after all code changes | AC6-A (DecodingSuite, 130–160 lines) is the largest task |
 
 ---
 
@@ -995,9 +1339,13 @@ Within each phase, tasks without data dependencies can execute in parallel:
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | AC1-A breaks preservation proofs | Low | Medium | `schedContextStoreConsistent` ensures unreachable arm; proofs should not depend on `true` fallback |
-| AC2-C (`configDefaultTimeSlice`) breaks Liveness theorems | Medium | Medium | Proofs reference a constant `5`; need to generalize to state field. May require non-trivial proof refactoring |
-| AC4-D (`enforcementBoundaryComplete`) doesn't compile via `native_decide` | Low | Low | The `SyscallId` list is small (25 variants); `native_decide` is reliable for bounded enumeration |
-| AC1-D rename (`cspaceMintUntracked`) misses a caller | Low | Low | Global grep + build verification catches all callers |
+| AC2-C (`configDefaultTimeSlice`) breaks ~22 proof sites in Preservation.lean | **High** | **Medium** | Retain `defaultTimeSlice` as initializer; add `hTimeSlice` hypothesis; migrate incrementally with per-group build verification. **Highest-risk task in the workstream** |
+| AC2-C breaks Liveness/TraceModel theorems | Medium | Medium | `maxBudgetInBand` uses `defaultTimeSlice` for unbound threads — may need special handling since unbound threads genuinely use the system default, not a per-state value |
+| AC4-D `SyscallId.all` list falls out of sync with SyscallId inductive | Low | Low | `all_length` theorem (`= count := by rfl`) will catch any mismatch at compile time |
+| AC4-D `syscallIdToEnforcementName` mapping has wrong string | Low | Medium | `native_decide` theorem fails at compile time if any mapping is wrong — caught before merge |
+| AC1-D `@[deprecated]` attribute causes unexpected build warnings | Low | Low | Lean 4.28.0 `@[deprecated]` emits warnings not errors; suppress at 2 legitimate internal call sites |
+| AC5-A SchedContext predicate field-set declarations are wrong | Medium | Low | Field-sets must be manually verified against predicate definitions; `by decide` will catch if wrong (disjointness claim on shared fields would fail) |
+| AC5-E `Nat.land_le_left` or `Nat.testBit` lemmas not available in Lean 4.28.0 | Medium | Low | Fall back to `omega` or `decide` for small-domain proofs; bitwise arithmetic lemmas have been in Lean 4 since ~4.5.0 |
 | New `DecodingSuite.lean` test failures reveal latent bugs | Medium | Low-Medium | Test failures are valuable — they would indicate actual decode issues worth fixing |
 | AC3-E `storeObjectChecked` changes caller behavior | None | None | The checked variant is additive; existing `storeObject` is unchanged |
 
@@ -1007,15 +1355,21 @@ Within each phase, tasks without data dependencies can execute in parallel:
 
 | Phase | Sub-tasks | Lean Lines | Doc Lines | Test Lines | Proof Lines |
 |-------|-----------|-----------|-----------|------------|-------------|
-| AC1 | 9 | 1–10 | 10–20 | 35–50 | 60–150 |
-| AC2 | 7 | 30–80 | 30–40 | 0 | 20–60 |
-| AC3 | 6 | 25–35 | 25–35 | 20 | 30–50 |
-| AC4 | 5 | 0–5 | 20–30 | 15–20 | 45–75 |
-| AC5 | 8 | 0 | 8–15 | 0 | 55–90 |
-| AC6 | 7 | 5 | 85–95 | 100–150 | 0 |
-| **Total** | **42** | **61–135** | **178–235** | **170–240** | **210–425** |
+| AC1 | 9 | 1–15 | 15–25 | 35–50 | 25–40 |
+| AC2 | 7 | 10–20 | 30–45 | 0 | 40–80 |
+| AC3 | 6 | 15–25 | 25–35 | 20 | 25–40 |
+| AC4 | 5 | 10–15 | 15–25 | 15–20 | 40–55 |
+| AC5 | 8 | 0 | 8–15 | 0 | 75–130 |
+| AC6 | 7 | 5 | 85–95 | 130–160 | 0 |
+| **Total** | **42** | **41–80** | **178–240** | **200–250** | **205–345** |
 
-**Grand total**: ~620–1,035 lines of changes across all categories.
+**Grand total**: ~625–915 lines of changes across all categories.
+
+**Key changes from initial estimate**: AC1-B/C reduced (proofs already exist —
+wiring only). AC2-C increased (22 proof sites in Preservation.lean). AC4-D
+increased (need `SyscallId.all` + string-to-SyscallId bridge). AC5-A increased
+(18 missing pairwise theorems). AC5-E restructured (corrected `subset` vs
+`inter` semantics).
 
 ---
 
@@ -1026,9 +1380,9 @@ The workstream is COMPLETE when all of the following hold:
 1. **Zero `sorry`/`axiom`** in production proof surface (maintained).
 2. **All 3 HIGH findings** resolved:
    - S-01: `hasSufficientBudget` returns `false` on missing SchedContext.
-   - I-01: `waitingThreadsPendingMessageNone` preservation proven for
-     `notificationSignal`.
-   - C-01: `cspaceMint` renamed to `cspaceMintUntracked` (or equivalent).
+   - I-01: `waitingThreadsPendingMessageNone` preservation wired from
+     Structural.lean into NotificationPreservation.lean.
+   - C-01: `cspaceMint` marked `@[deprecated]` with prominent safety documentation.
 3. **All 9 MEDIUM findings** addressed (code fix, proof, or documented deferral).
 4. **9 selected LOW findings** addressed (documentation, proofs, or tests).
 5. **`test_full.sh`** passes (Tier 0–3).
