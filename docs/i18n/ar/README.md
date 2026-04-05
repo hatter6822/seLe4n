@@ -67,7 +67,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 | **أسطر Lean للاختبارات** | 10,564 عبر 15 مجموعة اختبار |
 | **الإعلانات المُبرهَنة** | 2,447 إعلان theorem/lemma (صفر sorry/axiom) |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **آخر تدقيق** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/audits/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — تدقيق شامل للنواة Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **آخر تدقيق** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — تدقيق شامل للنواة Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **خريطة قاعدة الشفرة** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — جرد إعلانات قابل للقراءة آليًا |
 
 تُشتق المقاييس من قاعدة الشفرة بواسطة `./scripts/generate_codebase_map.py` وتُخزَّن

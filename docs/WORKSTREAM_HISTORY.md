@@ -112,7 +112,7 @@ WS-AB Phase D1 complete. Phase D2 complete. Phase D3 complete. Phase D4 complete
 WS-Y addresses 14 unique actionable findings from a comprehensive full-kernel
 audit of v0.22.22 (2 MED, 8 LOW, 4 INFO) across 3 phases (Y1–Y3) with 20
 atomic sub-tasks. Plan:
-[`AUDIT_v0.22.22_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.22.22_WORKSTREAM_PLAN.md).
+[`AUDIT_v0.22.22_WORKSTREAM_PLAN.md`](dev_history/AUDIT_v0.22.22_WORKSTREAM_PLAN.md).
 
 - **Y1 (Frozen State & Foundation Fixes) COMPLETE** (v0.22.23): 7 sub-tasks
   (Y1-A through Y1-G). Resolves MED-01, LOW-01, LOW-02, LOW-03:

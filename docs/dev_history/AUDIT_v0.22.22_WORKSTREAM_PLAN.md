@@ -3,7 +3,7 @@
 **Created**: 2026-03-30
 **Baseline version**: 0.22.22
 **Baseline audit**:
-- `docs/audits/AUDIT_COMPREHENSIVE_v0.22.22_FULL_KERNEL_RUST.md` (0 CRIT, 0 HIGH, 2 MED, 8 LOW, 6 INFO)
+- `docs/dev_history/AUDIT_COMPREHENSIVE_v0.22.22_FULL_KERNEL_RUST.md` (0 CRIT, 0 HIGH, 2 MED, 8 LOW, 6 INFO)
 **Prior portfolios**: WS-B through WS-X (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 
@@ -679,5 +679,5 @@ grep -r "axiom" SeLe4n/ --include="*.lean" | grep -v "-- " | wc -l  # Must be 0
 ---
 
 *Plan created by Claude (Opus 4.6) on 2026-03-30*
-*Baseline: `docs/audits/AUDIT_COMPREHENSIVE_v0.22.22_FULL_KERNEL_RUST.md`*
+*Baseline: `docs/dev_history/AUDIT_COMPREHENSIVE_v0.22.22_FULL_KERNEL_RUST.md`*
 *All 16 findings validated against source code; 14 actionable, 2 non-actionable*
