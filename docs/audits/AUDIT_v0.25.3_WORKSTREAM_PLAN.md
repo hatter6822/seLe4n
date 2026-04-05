@@ -480,13 +480,33 @@ Build incrementally — start with `timerTick_preserves_schedulerInvariantBundle
 (line ~1027) and verify before proceeding to others.
 
 **AC2-C.5**: Update the ~22 proof sites in `Preservation.lean` that reference
-`defaultTimeSlice` in their proof bodies. For each site:
+`defaultTimeSlice` in their proof bodies. The 10 affected theorems are:
+
+**HIGH difficulty** (contain `simp [defaultTimeSlice]` — 4 calls total):
+- `timerTick_preserves_timeSlicePositive` (line 1029, **private**) — 2 simp calls
+- `timerTick_preserves_currentTimeSlicePositive` (line 1226, **private**) — 2 simp calls
+
+**MODERATE difficulty** (intermediate state constructions only):
+- `timerTick_preserves_schedulerInvariantBundle` (line 623, public)
+- `timerTick_preserves_runnableThreadsAreTCBs` (line 1520, public)
+- `timerTick_preserves_domainTimeRemainingPositive` (line 1800, public)
+- `timerTick_preserves_edfCurrentHasEarliestDeadline` (line 2501, private)
+- `timerTick_preserves_contextMatchesCurrent` (line 2699, private)
+- `timerTick_preserves_schedulerPriorityMatch` (line 2981, private)
+- `timerTick_preserves_schedulerInvariantBundleFull` (line 3125, public)
+- `consumeBudget_respects_unbound_invariant` (line ~3345, public)
+
+**Migration strategy per site**:
 - If the proof uses `simp [defaultTimeSlice]` for arithmetic (e.g., proving
   `5 > 0`), replace with `simp [← hTimeSlice, defaultTimeSlice]` or add an
   explicit `have : st.scheduler.configDefaultTimeSlice > 0 := by rw [hTimeSlice]; decide`.
 - If the proof uses `defaultTimeSlice` in a term construction (e.g., `{ tcb with
   timeSlice := defaultTimeSlice }`), replace with `st.scheduler.configDefaultTimeSlice`.
-Build after each group of ~5 related proof sites to catch errors early.
+
+**Recommended order**: Start with the 2 HIGH-difficulty private theorems (they
+are internal and can be refactored freely). Then migrate the 8 moderate-difficulty
+theorems in dependency order (bottom-up: private helpers first, then public
+composites). Build after each group of 2–3 related theorems to catch errors early.
 
 **AC2-C.6**: Update `Liveness/TraceModel.lean:249` — `maxBudgetInBand` uses
 `defaultTimeSlice` as a fallback for unbound threads. Change to pass the
