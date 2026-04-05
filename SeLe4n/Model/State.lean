@@ -23,7 +23,14 @@ patterns when matching on `KernelError`. Lean's exhaustiveness checker will
 flag missing arms at compile time, but catch-all patterns silently swallow
 new variants added in future workstreams, masking potential error-handling
 bugs. Use `| _ =>` only for genuinely uniform error handling (e.g., converting
-any error to a user-facing string) where variant-specific behavior is not needed. -/
+any error to a user-facing string) where variant-specific behavior is not needed.
+
+**AC5-D audit result**: Codebase-wide audit of `| _ =>` patterns confirmed zero
+catch-alls on `KernelError` in production code. All `.error _` catch-alls found
+are in: (a) test harness code (MainTraceHarness.lean), (b) intentional uniform
+error handling in donation/lifecycle wrappers (documented by AC3-A/I-02 atomicity
+contract), or (c) seL4-compatible `resolveExtraCaps` silent-drop (documented by
+AC3-D/API-01). -/
 inductive KernelError where
   | invalidCapability
   | objectNotFound

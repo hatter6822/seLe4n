@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-ac4-iY8rl",
-      "commit_sha": "3a5dec94df38e0c744a8e1780a17c7c53aa53cb0",
-      "tree_sha": "11300c50872fd4b896c0bced57beb03c288cc3e2",
-      "committed_at_utc": "2026-04-05T19:38:14+00:00"
+      "branch": "claude/optimize-ac5-infrastructure-jhkeV",
+      "commit_sha": "ec92bf572ccb918846d99e9cadcc42f1fdab3c85",
+      "tree_sha": "f7e4d574b70b6405a9bb9db89a9ec1db30da56d1",
+      "committed_at_utc": "2026-04-05T16:01:59-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a1cdd6449ef37b7d43049662db01436d0b9e54c42e292519d8557977c6a098db"
+    "source_digest": "b1ccead0538d14a321d62e2e4c755b5b99a1eb637d03a0b1f386e452f4fb53b3"
   },
   "summary": {
     "module_count": 148,
-    "declaration_count": 4454
+    "declaration_count": 4476
   },
   "readme_sync": {
     "version": "0.25.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 83821,
+    "production_loc": 84015,
     "test_files": 15,
     "test_loc": 10774,
-    "proved_theorem_lemma_decls": 2457,
+    "proved_theorem_lemma_decls": 2479,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -8657,7 +8657,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 71,
+      "declaration_count": 90,
       "declarations": [
         {
           "kind": "namespace",
@@ -9057,9 +9057,205 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "schedCtxStore_disjoint_regDepConsistent",
+          "line": 483,
+          "called": [
+            "fieldsDisjoint",
+            "registryDependencyConsistent_fields",
+            "schedContextStoreConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxStore_disjoint_serviceGraph",
+          "line": 489,
+          "called": [
+            "fieldsDisjoint",
+            "schedContextStoreConsistent_fields",
+            "serviceGraphInvariant_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxNotDualBound_disjoint_regDepConsistent",
+          "line": 495,
+          "called": [
+            "fieldsDisjoint",
+            "registryDependencyConsistent_fields",
+            "schedContextNotDualBound_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxNotDualBound_disjoint_serviceGraph",
+          "line": 501,
+          "called": [
+            "fieldsDisjoint",
+            "schedContextNotDualBound_fields",
+            "serviceGraphInvariant_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxRunQueue_disjoint_regDepConsistent",
+          "line": 507,
+          "called": [
+            "fieldsDisjoint",
+            "registryDependencyConsistent_fields",
+            "schedContextRunQueueConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxRunQueue_disjoint_serviceGraph",
+          "line": 513,
+          "called": [
+            "fieldsDisjoint",
+            "schedContextRunQueueConsistent_fields",
+            "serviceGraphInvariant_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxStore_shares_regEndpointValid",
+          "line": 519,
+          "called": [
+            "fieldsDisjoint",
+            "registryEndpointValid_fields",
+            "schedContextStoreConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxStore_shares_staleEndpoint",
+          "line": 525,
+          "called": [
+            "fieldsDisjoint",
+            "noStaleEndpointQueueReferences_fields",
+            "schedContextStoreConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxStore_shares_staleNotification",
+          "line": 531,
+          "called": [
+            "fieldsDisjoint",
+            "noStaleNotificationWaitReferences_fields",
+            "schedContextStoreConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxStore_shares_schedCtxNotDualBound",
+          "line": 537,
+          "called": [
+            "fieldsDisjoint",
+            "schedContextNotDualBound_fields",
+            "schedContextStoreConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxStore_shares_schedCtxRunQueue",
+          "line": 543,
+          "called": [
+            "fieldsDisjoint",
+            "schedContextRunQueueConsistent_fields",
+            "schedContextStoreConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxNotDualBound_shares_regEndpointValid",
+          "line": 549,
+          "called": [
+            "fieldsDisjoint",
+            "registryEndpointValid_fields",
+            "schedContextNotDualBound_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxNotDualBound_shares_staleEndpoint",
+          "line": 555,
+          "called": [
+            "fieldsDisjoint",
+            "noStaleEndpointQueueReferences_fields",
+            "schedContextNotDualBound_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxNotDualBound_shares_staleNotification",
+          "line": 561,
+          "called": [
+            "fieldsDisjoint",
+            "noStaleNotificationWaitReferences_fields",
+            "schedContextNotDualBound_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxNotDualBound_shares_schedCtxRunQueue",
+          "line": 567,
+          "called": [
+            "fieldsDisjoint",
+            "schedContextNotDualBound_fields",
+            "schedContextRunQueueConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxRunQueue_shares_regEndpointValid",
+          "line": 573,
+          "called": [
+            "fieldsDisjoint",
+            "registryEndpointValid_fields",
+            "schedContextRunQueueConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxRunQueue_shares_staleEndpoint",
+          "line": 579,
+          "called": [
+            "fieldsDisjoint",
+            "noStaleEndpointQueueReferences_fields",
+            "schedContextRunQueueConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedCtxRunQueue_shares_staleNotification",
+          "line": 585,
+          "called": [
+            "fieldsDisjoint",
+            "noStaleNotificationWaitReferences_fields",
+            "schedContextRunQueueConsistent_fields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystem_pairwise_coverage_complete",
+          "line": 606,
+          "called": [
+            "fieldsDisjoint",
+            "noStaleEndpointQueueReferences_fields",
+            "noStaleNotificationWaitReferences_fields",
+            "registryDependencyConsistent_fields",
+            "registryEndpointValid_fields",
+            "schedContextNotDualBound_fields",
+            "schedContextRunQueueConsistent_fields",
+            "schedContextStoreConsistent_fields",
+            "serviceGraphInvariant_fields"
+          ]
+        },
+        {
           "kind": "def",
           "name": "storeObject_modifiedFields",
-          "line": 480,
+          "line": 628,
           "called": [
             "StateField"
           ]
@@ -9067,7 +9263,7 @@
         {
           "kind": "def",
           "name": "serviceRegisterDependency_modifiedFields",
-          "line": 485,
+          "line": 633,
           "called": [
             "StateField"
           ]
@@ -9075,7 +9271,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeObject_modifiedFields",
-          "line": 490,
+          "line": 638,
           "called": [
             "StateField"
           ]
@@ -9083,7 +9279,7 @@
         {
           "kind": "def",
           "name": "ipcEndpointOp_modifiedFields",
-          "line": 497,
+          "line": 645,
           "called": [
             "StateField"
           ]
@@ -9091,7 +9287,7 @@
         {
           "kind": "def",
           "name": "capabilityOp_modifiedFields",
-          "line": 504,
+          "line": 652,
           "called": [
             "StateField"
           ]
@@ -9099,7 +9295,7 @@
         {
           "kind": "def",
           "name": "revokeService_modifiedFields",
-          "line": 510,
+          "line": 658,
           "called": [
             "StateField"
           ]
@@ -9107,7 +9303,7 @@
         {
           "kind": "theorem",
           "name": "noStaleEndpointQueueReferences_frame",
-          "line": 520,
+          "line": 668,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences"
@@ -9116,7 +9312,7 @@
         {
           "kind": "theorem",
           "name": "noStaleNotificationWaitReferences_frame",
-          "line": 542,
+          "line": 690,
           "called": [
             "SystemState",
             "noStaleNotificationWaitReferences"
@@ -9125,7 +9321,7 @@
         {
           "kind": "theorem",
           "name": "registryEndpointValid_frame",
-          "line": 554,
+          "line": 702,
           "called": [
             "SystemState",
             "registryEndpointValid"
@@ -9134,7 +9330,7 @@
         {
           "kind": "theorem",
           "name": "fieldDisjointness_frameIndependence_documented",
-          "line": 606,
+          "line": 754,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9147,7 +9343,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemFieldSets",
-          "line": 623,
+          "line": 771,
           "called": [
             "StateField",
             "noStaleEndpointQueueReferences_fields",
@@ -9163,13 +9359,13 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemFieldSets_count",
-          "line": 634,
+          "line": 782,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "registryDependencyConsistent_frame",
-          "line": 640,
+          "line": 788,
           "called": [
             "SystemState",
             "registryDependencyConsistent"
@@ -9178,7 +9374,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_frame",
-          "line": 658,
+          "line": 806,
           "called": [
             "SystemState",
             "lookupService",
@@ -9191,7 +9387,7 @@
         {
           "kind": "theorem",
           "name": "schedContextStoreConsistent_frame",
-          "line": 688,
+          "line": 836,
           "called": [
             "SystemState",
             "scId",
@@ -9201,7 +9397,7 @@
         {
           "kind": "theorem",
           "name": "schedContextNotDualBound_frame",
-          "line": 701,
+          "line": 849,
           "called": [
             "SystemState",
             "scId",
@@ -9211,7 +9407,7 @@
         {
           "kind": "theorem",
           "name": "schedContextRunQueueConsistent_frame",
-          "line": 711,
+          "line": 859,
           "called": [
             "SystemState",
             "runnable",
@@ -9222,7 +9418,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_monotone",
-          "line": 732,
+          "line": 880,
           "called": [
             "SystemState",
             "lookupService",
@@ -9235,7 +9431,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_noStaleNotificationWaitReferences",
-          "line": 763,
+          "line": 911,
           "called": [
             "ServiceId",
             "SystemState",
@@ -9248,7 +9444,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair1_objects_frame",
-          "line": 802,
+          "line": 950,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -9260,7 +9456,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair23_objects_frame",
-          "line": 815,
+          "line": 963,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -9274,7 +9470,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair4_services_frame",
-          "line": 833,
+          "line": 981,
           "called": [
             "SystemState",
             "registryDependencyConsistent",
@@ -9286,7 +9482,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_sharingPairs_objects",
-          "line": 847,
+          "line": 995,
           "called": [
             "ServiceId",
             "SystemState",
@@ -9301,7 +9497,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_frame",
-          "line": 863,
+          "line": 1011,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9319,7 +9515,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_services_change",
-          "line": 887,
+          "line": 1035,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9337,7 +9533,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_composition_complete",
-          "line": 928,
+          "line": 1076,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9353,7 +9549,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextStoreConsistent",
-          "line": 976,
+          "line": 1124,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -9363,7 +9559,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextNotDualBound",
-          "line": 986,
+          "line": 1134,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -9373,7 +9569,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextRunQueueConsistent",
-          "line": 996,
+          "line": 1144,
           "called": [
             "SystemState",
             "runnable",
@@ -9384,7 +9580,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedContextPredicates",
-          "line": 1007,
+          "line": 1155,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9400,7 +9596,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextNotDualBound",
-          "line": 1025,
+          "line": 1173,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -9410,7 +9606,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextStoreConsistent",
-          "line": 1037,
+          "line": 1185,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -9420,7 +9616,7 @@
         {
           "kind": "theorem",
           "name": "cleanup_frame_preserves_schedContextPredicates",
-          "line": 1050,
+          "line": 1198,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9434,7 +9630,7 @@
         {
           "kind": "theorem",
           "name": "threadCleanup_frame_preserves_schedContextPredicates",
-          "line": 1067,
+          "line": 1215,
           "called": [
             "Kernel",
             "SystemState",
@@ -44279,7 +44475,7 @@
     {
       "module": "SeLe4n.Model.Object.Types",
       "path": "SeLe4n/Model/Object/Types.lean",
-      "declaration_count": 120,
+      "declaration_count": 123,
       "declarations": [
         {
           "kind": "namespace",
@@ -44336,25 +44532,25 @@
         {
           "kind": "structure",
           "name": "AccessRightSet",
-          "line": 94,
+          "line": 95,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "AccessRightSet",
-          "line": 98,
+          "line": 99,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxBits",
-          "line": 102,
+          "line": 103,
           "called": []
         },
         {
           "kind": "def",
           "name": "valid",
-          "line": 107,
+          "line": 108,
           "called": [
             "AccessRightSet",
             "maxBits"
@@ -44362,8 +44558,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:109>",
-          "line": 109,
+          "name": "<anonymous:instance:110>",
+          "line": 110,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -44373,7 +44569,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 114,
+          "line": 115,
           "called": [
             "AccessRightSet",
             "maxBits"
@@ -44382,7 +44578,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_valid",
-          "line": 117,
+          "line": 118,
           "called": [
             "maxBits",
             "ofNat",
@@ -44392,7 +44588,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_idempotent",
-          "line": 122,
+          "line": 123,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -44403,7 +44599,7 @@
         {
           "kind": "def",
           "name": "mk_checked",
-          "line": 131,
+          "line": 132,
           "called": [
             "AccessRightSet"
           ]
@@ -44411,7 +44607,7 @@
         {
           "kind": "theorem",
           "name": "mk_checked_valid",
-          "line": 137,
+          "line": 138,
           "called": [
             "maxBits",
             "mk_checked",
@@ -44421,7 +44617,7 @@
         {
           "kind": "theorem",
           "name": "eta",
-          "line": 145,
+          "line": 146,
           "called": [
             "AccessRightSet",
             "ofNat",
@@ -44432,7 +44628,7 @@
         {
           "kind": "def",
           "name": "empty",
-          "line": 149,
+          "line": 150,
           "called": [
             "AccessRightSet"
           ]
@@ -44440,7 +44636,7 @@
         {
           "kind": "theorem",
           "name": "empty_valid",
-          "line": 152,
+          "line": 153,
           "called": [
             "valid"
           ]
@@ -44448,7 +44644,7 @@
         {
           "kind": "def",
           "name": "singleton",
-          "line": 155,
+          "line": 156,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44458,7 +44654,7 @@
         {
           "kind": "theorem",
           "name": "singleton_valid",
-          "line": 158,
+          "line": 159,
           "called": [
             "AccessRight",
             "singleton",
@@ -44468,7 +44664,7 @@
         {
           "kind": "def",
           "name": "ofList",
-          "line": 163,
+          "line": 164,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44478,7 +44674,7 @@
         {
           "kind": "def",
           "name": "mem",
-          "line": 167,
+          "line": 168,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44487,8 +44683,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:170>",
-          "line": 170,
+          "name": "<anonymous:instance:171>",
+          "line": 171,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44497,8 +44693,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:173>",
-          "line": 173,
+          "name": "<anonymous:instance:174>",
+          "line": 174,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44508,7 +44704,7 @@
         {
           "kind": "def",
           "name": "subset",
-          "line": 178,
+          "line": 179,
           "called": [
             "AccessRightSet"
           ]
@@ -44516,7 +44712,7 @@
         {
           "kind": "def",
           "name": "union",
-          "line": 186,
+          "line": 187,
           "called": [
             "AccessRightSet"
           ]
@@ -44524,7 +44720,7 @@
         {
           "kind": "def",
           "name": "inter",
-          "line": 192,
+          "line": 193,
           "called": [
             "AccessRightSet"
           ]
@@ -44532,7 +44728,7 @@
         {
           "kind": "theorem",
           "name": "union_valid",
-          "line": 195,
+          "line": 196,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -44544,7 +44740,7 @@
         {
           "kind": "theorem",
           "name": "inter_valid",
-          "line": 201,
+          "line": 202,
           "called": [
             "AccessRightSet",
             "inter",
@@ -44554,8 +44750,40 @@
         },
         {
           "kind": "theorem",
+          "name": "inter_valid_left",
+          "line": 211,
+          "called": [
+            "AccessRightSet",
+            "inter",
+            "maxBits",
+            "valid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "subset_sound",
+          "line": 220,
+          "called": [
+            "AccessRight",
+            "AccessRightSet",
+            "mem",
+            "subset",
+            "toBit"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_bit_bounded",
+          "line": 242,
+          "called": [
+            "AccessRight",
+            "toBit"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "isWord5_of_valid",
-          "line": 212,
+          "line": 251,
           "called": [
             "AccessRightSet",
             "valid"
@@ -44564,7 +44792,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 215,
+          "line": 254,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44574,8 +44802,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:218>",
-          "line": 218,
+          "name": "<anonymous:instance:257>",
+          "line": 257,
           "called": [
             "AccessRightSet"
           ]
@@ -44583,7 +44811,7 @@
         {
           "kind": "theorem",
           "name": "ofList_comm",
-          "line": 222,
+          "line": 261,
           "called": [
             "AccessRight",
             "ofList",
@@ -44593,7 +44821,7 @@
         {
           "kind": "theorem",
           "name": "singleton_lt_maxBits",
-          "line": 230,
+          "line": 269,
           "called": [
             "AccessRight",
             "maxBits",
@@ -44603,13 +44831,13 @@
         {
           "kind": "theorem",
           "name": "or_lt_two_pow",
-          "line": 236,
+          "line": 275,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "or_lt_maxBits",
-          "line": 240,
+          "line": 279,
           "called": [
             "maxBits",
             "or_lt_two_pow"
@@ -44618,7 +44846,7 @@
         {
           "kind": "theorem",
           "name": "foldl_or_lt_maxBits",
-          "line": 246,
+          "line": 285,
           "called": [
             "AccessRight",
             "maxBits",
@@ -44630,7 +44858,7 @@
         {
           "kind": "theorem",
           "name": "ofList_valid",
-          "line": 264,
+          "line": 303,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -44643,7 +44871,7 @@
         {
           "kind": "inductive",
           "name": "CapTarget",
-          "line": 274,
+          "line": 313,
           "called": [
             "ObjId",
             "Slot",
@@ -44653,7 +44881,7 @@
         {
           "kind": "structure",
           "name": "Capability",
-          "line": 282,
+          "line": 321,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -44664,13 +44892,13 @@
         {
           "kind": "namespace",
           "name": "Capability",
-          "line": 288,
+          "line": 327,
           "called": []
         },
         {
           "kind": "def",
           "name": "hasRight",
-          "line": 291,
+          "line": 330,
           "called": [
             "AccessRight",
             "Capability",
@@ -44680,19 +44908,19 @@
         {
           "kind": "def",
           "name": "maxMessageRegisters",
-          "line": 298,
+          "line": 337,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxExtraCaps",
-          "line": 302,
+          "line": 341,
           "called": []
         },
         {
           "kind": "structure",
           "name": "IpcMessage",
-          "line": 310,
+          "line": 349,
           "called": [
             "Badge",
             "Capability",
@@ -44703,13 +44931,13 @@
         {
           "kind": "namespace",
           "name": "IpcMessage",
-          "line": 320,
+          "line": 359,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 322,
+          "line": 361,
           "called": [
             "IpcMessage",
             "RegValue",
@@ -44719,7 +44947,7 @@
         {
           "kind": "def",
           "name": "bounded",
-          "line": 326,
+          "line": 365,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -44730,7 +44958,7 @@
         {
           "kind": "def",
           "name": "checkBounds",
-          "line": 332,
+          "line": 371,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -44741,7 +44969,7 @@
         {
           "kind": "theorem",
           "name": "empty_bounded",
-          "line": 336,
+          "line": 375,
           "called": [
             "bounded",
             "empty",
@@ -44753,7 +44981,7 @@
         {
           "kind": "theorem",
           "name": "checkBounds_iff_bounded",
-          "line": 340,
+          "line": 379,
           "called": [
             "IpcMessage",
             "bounded",
@@ -44765,7 +44993,7 @@
         {
           "kind": "inductive",
           "name": "CapTransferResult",
-          "line": 352,
+          "line": 391,
           "called": [
             "ObjId",
             "Slot"
@@ -44774,7 +45002,7 @@
         {
           "kind": "structure",
           "name": "CapTransferSummary",
-          "line": 363,
+          "line": 402,
           "called": [
             "CapTransferResult"
           ]
@@ -44782,7 +45010,7 @@
         {
           "kind": "inductive",
           "name": "IpcTimeoutResult",
-          "line": 370,
+          "line": 409,
           "called": [
             "IpcMessage"
           ]
@@ -44790,7 +45018,7 @@
         {
           "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 388,
+          "line": 427,
           "called": [
             "ObjId",
             "ThreadId",
@@ -44800,13 +45028,13 @@
         {
           "kind": "inductive",
           "name": "ThreadState",
-          "line": 411,
+          "line": 450,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 427,
+          "line": 466,
           "called": [
             "ThreadId"
           ]
@@ -44814,7 +45042,7 @@
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 432,
+          "line": 471,
           "called": [
             "CPtr",
             "Deadline",
@@ -44836,8 +45064,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:512>",
-          "line": 512,
+          "name": "<anonymous:instance:551>",
+          "line": 551,
           "called": [
             "TCB"
           ]
@@ -44845,7 +45073,7 @@
         {
           "kind": "theorem",
           "name": "TCB.not_lawfulBEq",
-          "line": 533,
+          "line": 572,
           "called": [
             "ObjId",
             "RegName",
@@ -44858,7 +45086,7 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 558,
+          "line": 597,
           "called": [
             "ThreadId",
             "none"
@@ -44867,7 +45095,7 @@
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 569,
+          "line": 608,
           "called": [
             "IntrusiveQueue"
           ]
@@ -44875,13 +45103,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 574,
+          "line": 613,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 609,
+          "line": 648,
           "called": [
             "Badge",
             "NotificationState",
@@ -44892,7 +45120,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 633,
+          "line": 672,
           "called": [
             "Capability",
             "RHTable",
@@ -44902,13 +45130,13 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 642,
+          "line": 681,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 647,
+          "line": 686,
           "called": [
             "ObjId",
             "size"
@@ -44917,7 +45145,7 @@
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 662,
+          "line": 701,
           "called": [
             "PAddr",
             "UntypedChild"
@@ -44926,13 +45154,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 678,
+          "line": 717,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 681,
+          "line": 720,
           "called": [
             "UntypedObject"
           ]
@@ -44940,7 +45168,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 685,
+          "line": 724,
           "called": [
             "UntypedObject",
             "size"
@@ -44949,7 +45177,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 696,
+          "line": 735,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -44961,7 +45189,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 708,
+          "line": 747,
           "called": [
             "UntypedObject"
           ]
@@ -44969,7 +45197,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 712,
+          "line": 751,
           "called": [
             "UntypedObject"
           ]
@@ -44977,7 +45205,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 716,
+          "line": 755,
           "called": [
             "UntypedObject",
             "size"
@@ -44986,7 +45214,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 720,
+          "line": 759,
           "called": [
             "UntypedObject",
             "size"
@@ -44995,7 +45223,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 725,
+          "line": 764,
           "called": [
             "UntypedObject"
           ]
@@ -45003,7 +45231,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 730,
+          "line": 769,
           "called": [
             "UntypedObject",
             "childrenNonOverlap",
@@ -45015,7 +45243,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 734,
+          "line": 773,
           "called": [
             "PAddr",
             "size",
@@ -45025,7 +45253,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 738,
+          "line": 777,
           "called": [
             "PAddr",
             "childrenWithinWatermark",
@@ -45035,7 +45263,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 743,
+          "line": 782,
           "called": [
             "PAddr",
             "childrenNonOverlap",
@@ -45045,7 +45273,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 748,
+          "line": 787,
           "called": [
             "PAddr",
             "childrenUniqueIds",
@@ -45055,7 +45283,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 753,
+          "line": 792,
           "called": [
             "PAddr",
             "empty_childrenNonOverlap",
@@ -45069,7 +45297,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 759,
+          "line": 798,
           "called": [
             "UntypedObject",
             "canAllocate",
@@ -45079,7 +45307,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 766,
+          "line": 805,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45091,7 +45319,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 785,
+          "line": 824,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45103,7 +45331,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 794,
+          "line": 833,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45115,7 +45343,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 801,
+          "line": 840,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45127,7 +45355,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 808,
+          "line": 847,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45141,7 +45369,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 819,
+          "line": 858,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45153,7 +45381,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 830,
+          "line": 869,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45166,7 +45394,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 848,
+          "line": 887,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45180,7 +45408,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 870,
+          "line": 909,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -45193,7 +45421,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 889,
+          "line": 928,
           "called": [
             "UntypedObject",
             "reset",
@@ -45203,7 +45431,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 893,
+          "line": 932,
           "called": [
             "UntypedObject",
             "reset",
@@ -45214,7 +45442,7 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 908,
+          "line": 947,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -45229,13 +45457,13 @@
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 936,
+          "line": 975,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 940,
+          "line": 979,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45251,13 +45479,13 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 968,
+          "line": 1007,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 972,
+          "line": 1011,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45273,8 +45501,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1000>",
-          "line": 1000,
+          "name": "<anonymous:instance:1039>",
+          "line": 1039,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45290,7 +45518,7 @@
         {
           "kind": "def",
           "name": "all",
-          "line": 1032,
+          "line": 1071,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -45306,7 +45534,7 @@
         {
           "kind": "theorem",
           "name": "all_length",
-          "line": 1044,
+          "line": 1083,
           "called": [
             "count"
           ]
@@ -45314,7 +45542,7 @@
         {
           "kind": "theorem",
           "name": "all_complete",
-          "line": 1047,
+          "line": 1086,
           "called": [
             "SyscallId",
             "all"
@@ -45323,7 +45551,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1051,
+          "line": 1090,
           "called": [
             "SyscallId",
             "ofNat",
@@ -45333,7 +45561,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 1063,
+          "line": 1102,
           "called": [
             "SyscallId",
             "ofNat",
@@ -45343,7 +45571,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1075,
+          "line": 1114,
           "called": [
             "SyscallId",
             "ofNat_toNat",
@@ -45353,25 +45581,25 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 1089,
+          "line": 1128,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 1095,
+          "line": 1134,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLabel",
-          "line": 1100,
+          "line": 1139,
           "called": []
         },
         {
           "kind": "def",
           "name": "encode",
-          "line": 1108,
+          "line": 1147,
           "called": [
             "MessageInfo"
           ]
@@ -45379,7 +45607,7 @@
         {
           "kind": "def",
           "name": "decode",
-          "line": 1114,
+          "line": 1153,
           "called": [
             "MessageInfo",
             "maxExtraCaps",
@@ -45390,8 +45618,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1123>",
-          "line": 1123,
+          "name": "<anonymous:instance:1162>",
+          "line": 1162,
           "called": [
             "MessageInfo"
           ]
@@ -45399,25 +45627,25 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 1132,
+          "line": 1171,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 1157,
+          "line": 1196,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 1189,
+          "line": 1228,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 1218,
+          "line": 1257,
           "called": [
             "MessageInfo",
             "and_mask_127",
@@ -45433,7 +45661,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 1243,
+          "line": 1282,
           "called": [
             "CPtr",
             "MessageInfo",
@@ -45465,19 +45693,19 @@
         {
           "kind": "inductive",
           "name": "KernelError",
-          "line": 27,
+          "line": 34,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:77>",
-          "line": 77,
+          "name": "<anonymous:instance:84>",
+          "line": 84,
           "called": []
         },
         {
           "kind": "structure",
           "name": "DomainScheduleEntry",
-          "line": 83,
+          "line": 90,
           "called": [
             "DomainId"
           ]
@@ -45485,7 +45713,7 @@
         {
           "kind": "structure",
           "name": "SchedulerState",
-          "line": 88,
+          "line": 95,
           "called": [
             "DomainId",
             "DomainScheduleEntry",
@@ -45498,7 +45726,7 @@
         {
           "kind": "abbrev",
           "name": "SchedulerState.runnable",
-          "line": 118,
+          "line": 125,
           "called": [
             "SchedulerState",
             "ThreadId",
@@ -45508,7 +45736,7 @@
         {
           "kind": "def",
           "name": "SchedulerState.domainScheduleAllPositive",
-          "line": 124,
+          "line": 131,
           "called": [
             "DomainScheduleEntry",
             "all",
@@ -45518,7 +45746,7 @@
         {
           "kind": "structure",
           "name": "SlotRef",
-          "line": 128,
+          "line": 135,
           "called": [
             "ObjId",
             "Slot"
@@ -45526,8 +45754,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:136>",
-          "line": 136,
+          "name": "<anonymous:instance:143>",
+          "line": 143,
           "called": [
             "SlotRef"
           ]
@@ -45535,7 +45763,7 @@
         {
           "kind": "structure",
           "name": "LifecycleMetadata",
-          "line": 146,
+          "line": 153,
           "called": [
             "CapTarget",
             "KernelObjectType",
@@ -45547,7 +45775,7 @@
         {
           "kind": "structure",
           "name": "TlbEntry",
-          "line": 156,
+          "line": 163,
           "called": [
             "ASID",
             "PAddr",
@@ -45558,15 +45786,15 @@
         {
           "kind": "structure",
           "name": "TlbState",
-          "line": 168,
+          "line": 175,
           "called": [
             "TlbEntry"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:172>",
-          "line": 172,
+          "name": "<anonymous:instance:179>",
+          "line": 179,
           "called": [
             "TlbState",
             "default"
@@ -45575,7 +45803,7 @@
         {
           "kind": "def",
           "name": "TlbState.empty",
-          "line": 176,
+          "line": 183,
           "called": [
             "TlbState"
           ]
@@ -45583,7 +45811,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlb",
-          "line": 182,
+          "line": 189,
           "called": [
             "TlbState",
             "TlbState.empty"
@@ -45592,7 +45820,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbByAsid",
-          "line": 191,
+          "line": 198,
           "called": [
             "ASID",
             "TlbState",
@@ -45602,7 +45830,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbByVAddr",
-          "line": 199,
+          "line": 206,
           "called": [
             "ASID",
             "TlbState",
@@ -45613,7 +45841,7 @@
         {
           "kind": "structure",
           "name": "SystemState",
-          "line": 202,
+          "line": 209,
           "called": [
             "ASID",
             "CapDerivationTree",
@@ -45641,15 +45869,15 @@
         {
           "kind": "abbrev",
           "name": "CSpaceOwner",
-          "line": 273,
+          "line": 280,
           "called": [
             "ObjId"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:275>",
-          "line": 275,
+          "name": "<anonymous:instance:282>",
+          "line": 282,
           "called": [
             "SchedulerState",
             "default",
@@ -45659,8 +45887,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:278>",
-          "line": 278,
+          "name": "<anonymous:instance:285>",
+          "line": 285,
           "called": [
             "SystemState",
             "TlbState.empty",
@@ -45671,7 +45899,7 @@
         {
           "kind": "def",
           "name": "setDomainScheduleChecked",
-          "line": 305,
+          "line": 312,
           "called": [
             "DomainScheduleEntry",
             "SchedulerState.domainScheduleAllPositive",
@@ -45682,7 +45910,7 @@
         {
           "kind": "def",
           "name": "SystemState.allTablesInvExtK",
-          "line": 316,
+          "line": 323,
           "called": [
             "SystemState",
             "invExtK"
@@ -45691,7 +45919,7 @@
         {
           "kind": "theorem",
           "name": "default_allTablesInvExtK",
-          "line": 342,
+          "line": 349,
           "called": [
             "RHSet.empty_invExtK",
             "RHTable.empty_invExtK",
@@ -45703,7 +45931,7 @@
         {
           "kind": "theorem",
           "name": "allTablesInvExtK_witness",
-          "line": 364,
+          "line": 371,
           "called": [
             "SystemState",
             "allTablesInvExtK",
@@ -45713,7 +45941,7 @@
         {
           "kind": "abbrev",
           "name": "Kernel",
-          "line": 382,
+          "line": 389,
           "called": [
             "KernelError",
             "KernelM",
@@ -45723,7 +45951,7 @@
         {
           "kind": "def",
           "name": "lookupObject",
-          "line": 384,
+          "line": 391,
           "called": [
             "Kernel",
             "KernelObject",
@@ -45734,7 +45962,7 @@
         {
           "kind": "def",
           "name": "lookupVSpaceRoot",
-          "line": 391,
+          "line": 398,
           "called": [
             "Kernel",
             "ObjId",
@@ -45745,13 +45973,13 @@
         {
           "kind": "def",
           "name": "maxObjects",
-          "line": 405,
+          "line": 412,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectIndexBounded",
-          "line": 410,
+          "line": 417,
           "called": [
             "SystemState",
             "maxObjects"
@@ -45760,7 +45988,7 @@
         {
           "kind": "abbrev",
           "name": "objectCount_le_maxObjects",
-          "line": 417,
+          "line": 424,
           "called": [
             "objectIndexBounded"
           ]
@@ -45768,7 +45996,7 @@
         {
           "kind": "theorem",
           "name": "default_objectCount_le_maxObjects",
-          "line": 420,
+          "line": 427,
           "called": [
             "SystemState",
             "default",
@@ -45780,7 +46008,7 @@
         {
           "kind": "def",
           "name": "storeObject",
-          "line": 464,
+          "line": 471,
           "called": [
             "Kernel",
             "KernelObject",
@@ -45796,7 +46024,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objectIndexBounded",
-          "line": 495,
+          "line": 502,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45808,7 +46036,7 @@
         {
           "kind": "def",
           "name": "storeObjectChecked",
-          "line": 511,
+          "line": 518,
           "called": [
             "Kernel",
             "KernelObject",
@@ -45821,7 +46049,7 @@
         {
           "kind": "theorem",
           "name": "storeObjectChecked_preserves_objectIndexBounded",
-          "line": 519,
+          "line": 526,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45836,7 +46064,7 @@
         {
           "kind": "theorem",
           "name": "storeObjectChecked_existing_eq_storeObject",
-          "line": 552,
+          "line": 559,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45849,7 +46077,7 @@
         {
           "kind": "theorem",
           "name": "storeObjectChecked_headroom_eq_storeObject",
-          "line": 562,
+          "line": 569,
           "called": [
             "KernelObject",
             "ObjId",
@@ -45862,7 +46090,7 @@
         {
           "kind": "def",
           "name": "storeCapabilityRef",
-          "line": 574,
+          "line": 581,
           "called": [
             "CapTarget",
             "Kernel",
@@ -45876,7 +46104,7 @@
         {
           "kind": "def",
           "name": "revokeAndClearRefsState",
-          "line": 589,
+          "line": 596,
           "called": [
             "CNode",
             "CapTarget",
@@ -45891,7 +46119,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsFoldBody_preserves_objects",
-          "line": 600,
+          "line": 607,
           "called": [
             "CapTarget",
             "Capability",
@@ -45905,7 +46133,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_objects",
-          "line": 615,
+          "line": 622,
           "called": [
             "CNode",
             "CapTarget",
@@ -45920,7 +46148,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsFoldBody_preserves_cdt",
-          "line": 623,
+          "line": 630,
           "called": [
             "CapTarget",
             "Capability",
@@ -45934,7 +46162,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_cdt_eq",
-          "line": 654,
+          "line": 661,
           "called": [
             "CNode",
             "CapTarget",
@@ -45949,7 +46177,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsFoldBody_preserves_fields",
-          "line": 669,
+          "line": 676,
           "called": [
             "CapTarget",
             "Capability",
@@ -45963,7 +46191,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_allFields",
-          "line": 693,
+          "line": 700,
           "called": [
             "CNode",
             "CapTarget",
@@ -45978,21 +46206,6 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_preserves_scheduler",
-          "line": 710,
-          "called": [
-            "CNode",
-            "CapTarget",
-            "ObjId",
-            "Slot",
-            "SystemState",
-            "cnodeId",
-            "revokeAndClearRefsState",
-            "revokeAndClearRefsState_preserves_allFields"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "revokeAndClearRefsState_preserves_machine",
           "line": 717,
           "called": [
             "CNode",
@@ -46007,7 +46220,7 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeAndClearRefsState_preserves_services",
+          "name": "revokeAndClearRefsState_preserves_machine",
           "line": 724,
           "called": [
             "CNode",
@@ -46022,7 +46235,7 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeAndClearRefsState_preserves_irqHandlers",
+          "name": "revokeAndClearRefsState_preserves_services",
           "line": 731,
           "called": [
             "CNode",
@@ -46037,7 +46250,7 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeAndClearRefsState_preserves_objectIndex",
+          "name": "revokeAndClearRefsState_preserves_irqHandlers",
           "line": 738,
           "called": [
             "CNode",
@@ -46052,8 +46265,23 @@
         },
         {
           "kind": "theorem",
-          "name": "revokeAndClearRefsState_preserves_objectIndexSet",
+          "name": "revokeAndClearRefsState_preserves_objectIndex",
           "line": 745,
+          "called": [
+            "CNode",
+            "CapTarget",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "cnodeId",
+            "revokeAndClearRefsState",
+            "revokeAndClearRefsState_preserves_allFields"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeAndClearRefsState_preserves_objectIndexSet",
+          "line": 752,
           "called": [
             "CNode",
             "CapTarget",
@@ -46068,7 +46296,7 @@
         {
           "kind": "def",
           "name": "setCurrentThread",
-          "line": 751,
+          "line": 758,
           "called": [
             "Kernel",
             "ThreadId"
@@ -46077,7 +46305,7 @@
         {
           "kind": "def",
           "name": "lookupService",
-          "line": 757,
+          "line": 764,
           "called": [
             "ServiceGraphEntry",
             "ServiceId",
@@ -46087,7 +46315,7 @@
         {
           "kind": "theorem",
           "name": "revokeAndClearRefsState_lookupService",
-          "line": 761,
+          "line": 768,
           "called": [
             "CNode",
             "CapTarget",
@@ -46104,7 +46332,7 @@
         {
           "kind": "def",
           "name": "hasServiceDependency",
-          "line": 770,
+          "line": 777,
           "called": [
             "ServiceId",
             "SystemState",
@@ -46115,7 +46343,7 @@
         {
           "kind": "def",
           "name": "hasIsolationEdge",
-          "line": 776,
+          "line": 783,
           "called": [
             "ServiceId",
             "SystemState",
@@ -46125,7 +46353,7 @@
         {
           "kind": "def",
           "name": "storeServiceState",
-          "line": 782,
+          "line": 789,
           "called": [
             "ServiceGraphEntry",
             "ServiceId",
@@ -46136,7 +46364,7 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_lookup_eq",
-          "line": 788,
+          "line": 795,
           "called": [
             "RHTable.getElem",
             "ServiceGraphEntry",
@@ -46150,7 +46378,7 @@
         {
           "kind": "theorem",
           "name": "storeServiceState_lookup_ne",
-          "line": 797,
+          "line": 804,
           "called": [
             "RHTable.getElem",
             "ServiceGraphEntry",
@@ -46164,7 +46392,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_services",
-          "line": 809,
+          "line": 816,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46175,7 +46403,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_scheduler",
-          "line": 818,
+          "line": 825,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -46186,7 +46414,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_services",
-          "line": 827,
+          "line": 834,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -46197,7 +46425,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_objects",
-          "line": 836,
+          "line": 843,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -46208,7 +46436,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_irqHandlers",
-          "line": 846,
+          "line": 853,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -46219,7 +46447,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_objectIndex",
-          "line": 856,
+          "line": 863,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -46230,7 +46458,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_preserves_machine",
-          "line": 866,
+          "line": 873,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -46241,7 +46469,7 @@
         {
           "kind": "theorem",
           "name": "storeCapabilityRef_lookup_eq",
-          "line": 875,
+          "line": 882,
           "called": [
             "CapTarget",
             "RHTable.getElem",
@@ -46256,7 +46484,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objects_eq'",
-          "line": 894,
+          "line": 901,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46269,7 +46497,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objects_eq",
-          "line": 905,
+          "line": 912,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46282,7 +46510,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objects_ne'",
-          "line": 914,
+          "line": 921,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46295,7 +46523,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objects_ne",
-          "line": 927,
+          "line": 934,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46308,7 +46536,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objects_invExt'",
-          "line": 937,
+          "line": 944,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46321,7 +46549,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq",
-          "line": 948,
+          "line": 955,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46332,7 +46560,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_irqHandlers_eq",
-          "line": 957,
+          "line": 964,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46343,7 +46571,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_machine_eq",
-          "line": 966,
+          "line": 973,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46354,7 +46582,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objects_invExt",
-          "line": 975,
+          "line": 982,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46367,7 +46595,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_cdt_eq",
-          "line": 985,
+          "line": 992,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46378,7 +46606,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_vspaceRoot",
-          "line": 999,
+          "line": 1006,
           "called": [
             "ObjId",
             "RHTable.getElem",
@@ -46392,7 +46620,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_vspaceRoot_ne",
-          "line": 1012,
+          "line": 1019,
           "called": [
             "ASID",
             "ObjId",
@@ -46409,7 +46637,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_asidTable_non_vspaceRoot",
-          "line": 1043,
+          "line": 1050,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46421,7 +46649,7 @@
         {
           "kind": "def",
           "name": "objectIndexSetSync",
-          "line": 1062,
+          "line": 1069,
           "called": [
             "ObjId",
             "SystemState",
@@ -46431,7 +46659,7 @@
         {
           "kind": "theorem",
           "name": "objectIndexSetSync_contains_of_mem",
-          "line": 1066,
+          "line": 1073,
           "called": [
             "ObjId",
             "SystemState",
@@ -46442,7 +46670,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_updates_objectTypeMeta",
-          "line": 1072,
+          "line": 1079,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46457,13 +46685,13 @@
         {
           "kind": "namespace",
           "name": "SystemState",
-          "line": 1082,
+          "line": 1089,
           "called": []
         },
         {
           "kind": "def",
           "name": "lookupCNode",
-          "line": 1085,
+          "line": 1092,
           "called": [
             "CNode",
             "ObjId",
@@ -46474,7 +46702,7 @@
         {
           "kind": "def",
           "name": "lookupSlotCap",
-          "line": 1091,
+          "line": 1098,
           "called": [
             "Capability",
             "SlotRef",
@@ -46487,7 +46715,7 @@
         {
           "kind": "def",
           "name": "ownerOfSlot",
-          "line": 1097,
+          "line": 1104,
           "called": [
             "CSpaceOwner",
             "SlotRef"
@@ -46496,7 +46724,7 @@
         {
           "kind": "def",
           "name": "ownsSlot",
-          "line": 1101,
+          "line": 1108,
           "called": [
             "CSpaceOwner",
             "SlotRef",
@@ -46508,7 +46736,7 @@
         {
           "kind": "def",
           "name": "ownedSlots",
-          "line": 1106,
+          "line": 1113,
           "called": [
             "CSpaceOwner",
             "Capability",
@@ -46522,7 +46750,7 @@
         {
           "kind": "def",
           "name": "lookupObjectTypeMeta",
-          "line": 1112,
+          "line": 1119,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -46532,7 +46760,7 @@
         {
           "kind": "def",
           "name": "lookupCapabilityRefMeta",
-          "line": 1116,
+          "line": 1123,
           "called": [
             "CapTarget",
             "SlotRef",
@@ -46543,7 +46771,7 @@
         {
           "kind": "def",
           "name": "lookupCdtNodeOfSlot",
-          "line": 1121,
+          "line": 1128,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -46553,7 +46781,7 @@
         {
           "kind": "def",
           "name": "lookupCdtSlotOfNode",
-          "line": 1125,
+          "line": 1132,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -46563,7 +46791,7 @@
         {
           "kind": "def",
           "name": "attachSlotToCdtNode",
-          "line": 1150,
+          "line": 1157,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -46576,7 +46804,7 @@
         {
           "kind": "def",
           "name": "detachSlotFromCdt",
-          "line": 1168,
+          "line": 1175,
           "called": [
             "SlotRef",
             "SystemState",
@@ -46587,7 +46815,7 @@
         {
           "kind": "def",
           "name": "ensureCdtNodeForSlot",
-          "line": 1179,
+          "line": 1186,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -46599,7 +46827,7 @@
         {
           "kind": "theorem",
           "name": "attachSlotToCdtNode_objects_eq",
-          "line": 1194,
+          "line": 1201,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -46610,7 +46838,7 @@
         {
           "kind": "theorem",
           "name": "detachSlotFromCdt_objects_eq",
-          "line": 1198,
+          "line": 1205,
           "called": [
             "SlotRef",
             "SystemState",
@@ -46620,7 +46848,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_objects_eq",
-          "line": 1203,
+          "line": 1210,
           "called": [
             "SlotRef",
             "SystemState",
@@ -46630,7 +46858,7 @@
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_of_objects_eq",
-          "line": 1209,
+          "line": 1216,
           "called": [
             "SlotRef",
             "SystemState",
@@ -46641,7 +46869,7 @@
         {
           "kind": "def",
           "name": "objectTypeMetadataConsistent",
-          "line": 1217,
+          "line": 1224,
           "called": [
             "SystemState",
             "lookupObjectTypeMeta",
@@ -46651,7 +46879,7 @@
         {
           "kind": "def",
           "name": "capabilityRefMetadataConsistent",
-          "line": 1221,
+          "line": 1228,
           "called": [
             "SystemState",
             "lookupCapabilityRefMeta",
@@ -46661,7 +46889,7 @@
         {
           "kind": "def",
           "name": "lifecycleMetadataConsistent",
-          "line": 1225,
+          "line": 1232,
           "called": [
             "SystemState",
             "capabilityRefMetadataConsistent",
@@ -46671,7 +46899,7 @@
         {
           "kind": "theorem",
           "name": "lookupSlotCap_eq_none_of_lookupCNode_eq_none",
-          "line": 1228,
+          "line": 1235,
           "called": [
             "SlotRef",
             "SystemState",
@@ -46683,7 +46911,7 @@
         {
           "kind": "theorem",
           "name": "ownsSlot_iff",
-          "line": 1235,
+          "line": 1242,
           "called": [
             "CSpaceOwner",
             "SlotRef",
@@ -46696,7 +46924,7 @@
         {
           "kind": "theorem",
           "name": "ownedSlots_eq_nil_of_lookupCNode_eq_none",
-          "line": 1243,
+          "line": 1250,
           "called": [
             "CSpaceOwner",
             "SystemState",
@@ -46708,7 +46936,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objectTypeMetadataConsistent",
-          "line": 1252,
+          "line": 1259,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46724,7 +46952,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_capabilityRefMetadataConsistent",
-          "line": 1275,
+          "line": 1282,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46737,7 +46965,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_lifecycleMetadataConsistent",
-          "line": 1285,
+          "line": 1292,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46752,7 +46980,7 @@
         {
           "kind": "theorem",
           "name": "capabilityRefs_filter_preserves_invExt",
-          "line": 1305,
+          "line": 1312,
           "called": [
             "CapTarget",
             "ObjId",
@@ -46766,7 +46994,7 @@
         {
           "kind": "theorem",
           "name": "capabilityRefs_fold_preserves_invExt",
-          "line": 1320,
+          "line": 1327,
           "called": [
             "CNode",
             "CapTarget",
@@ -46783,7 +47011,7 @@
         {
           "kind": "theorem",
           "name": "capabilityRefs_fold_preserves_invExtK",
-          "line": 1331,
+          "line": 1338,
           "called": [
             "CNode",
             "CapTarget",
@@ -46800,7 +47028,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_allTablesInvExtK",
-          "line": 1356,
+          "line": 1363,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46824,7 +47052,7 @@
         {
           "kind": "theorem",
           "name": "default_systemState_lifecycleConsistent",
-          "line": 1428,
+          "line": 1435,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -46840,7 +47068,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_type_change",
-          "line": 1450,
+          "line": 1457,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46854,7 +47082,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_metadata_sync_capref_at_stored",
-          "line": 1468,
+          "line": 1475,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46874,7 +47102,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_objectIndex_monotone",
-          "line": 1491,
+          "line": 1498,
           "called": [
             "KernelObject",
             "ObjId",
@@ -46886,7 +47114,7 @@
         {
           "kind": "def",
           "name": "objectIndexLive",
-          "line": 1516,
+          "line": 1523,
           "called": [
             "ObjId",
             "SystemState",
@@ -46896,7 +47124,7 @@
         {
           "kind": "theorem",
           "name": "objectIndexLive_default",
-          "line": 1520,
+          "line": 1527,
           "called": [
             "default",
             "objectIndexLive"
@@ -46905,7 +47133,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_preserves_objectIndexLive",
-          "line": 1529,
+          "line": 1536,
           "called": [
             "KernelObject",
             "ObjId",

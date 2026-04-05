@@ -912,12 +912,13 @@ sync with the `enforcementBoundary` list.
 
 ---
 
-## 7. Phase AC5 — Cross-Cutting & Infrastructure
+## 7. Phase AC5 — Cross-Cutting & Infrastructure ✓ COMPLETE
 
 **Goal**: Address X-05 field-disjointness prose gap, X-08 GitBook drift risk,
 and add targeted infrastructure improvements.
 **Gate**: `source ~/.elan/env && lake build` + `./scripts/test_full.sh` pass.
 **Dependencies**: AC1–AC4 complete (theorem changes may interact).
+**Status**: COMPLETE (v0.25.9). All 8 sub-tasks delivered. Zero sorry/axiom.
 
 ### AC5-A: Strengthen CrossSubsystem field-disjointness theorem coverage (X-05)
 
@@ -1424,9 +1425,9 @@ The workstream is COMPLETE when all of the following hold:
 | SC-01 | MEDIUM | AC2-A | — (shared with S-02) | ✓ Complete |
 | S-03 | MEDIUM | AC2-B | — | ✓ Complete |
 | F-01 | MEDIUM | AC4-C | — | ✓ Complete |
-| F-02 | MEDIUM | AC4-B | AC5-E | ✓ AC4 Complete (AC5-E pending) |
+| F-02 | MEDIUM | AC4-B | AC5-E | ✓ Complete |
 | F-03 | MEDIUM | AC3-E | AC5-F | ✓ Complete |
-| IF-01 | MEDIUM | AC4-D | AC5-G | ✓ AC4 Complete (AC5-G pending) |
+| IF-01 | MEDIUM | AC4-D | AC5-G | ✓ Complete |
 | API-01 | MEDIUM | AC3-D | — | ✓ Complete |
 | S-04 | LOW | AC2-C | — | ✓ Complete |
 | S-05 | LOW | AC2-D | AC5-C | ✓ Complete |
@@ -1435,8 +1436,8 @@ The workstream is COMPLETE when all of the following hold:
 | I-02 | MEDIUM | AC3-A | AC3-B | ✓ Complete |
 | I-04 | LOW | AC3-C | — | ✓ Complete |
 | A-04 | LOW | AC4-A | — | ✓ Complete |
-| X-05 | LOW | AC5-A | — | Pending |
-| X-08 | LOW | AC5-B | — | Pending |
+| X-05 | LOW | AC5-A | — | ✓ Complete |
+| X-08 | LOW | AC5-B | — | ✓ Complete |
 | T-03 | LOW | AC6-A | — | Pending |
 
 **Coverage**: 21 findings (3 HIGH + 9 MEDIUM + 9 LOW) → 42 sub-tasks. All
