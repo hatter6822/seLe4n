@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
+import SeLe4n.Kernel.IPC.Invariant.WaitingThreadHelpers
 
 namespace SeLe4n.Kernel
 
@@ -1349,37 +1350,141 @@ theorem frame_preserves_notificationWaiterConsistent
 -- for notification operations
 -- ============================================================================
 --
--- The following three theorems are machine-checked and live in Structural.lean
--- (which imports this file — adding a reverse import would create a cycle).
--- They are placed there because their proofs depend on primitive lemmas
--- (`storeTcbIpcStateAndMessage_preserves_*`, `storeObject_nonTcb_preserves_*`,
--- `ensureRunnable_preserves_*`) that are defined in the Structural module.
---
--- ── V3-G3 (M-PRF-5) ─────────────────────────────────────────────────────
--- theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
---     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
---     (hObjInv : st.objects.invExt)
---     (hInv : waitingThreadsPendingMessageNone st)
---     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
---     waitingThreadsPendingMessageNone st'
--- Location: Structural.lean, `notificationSignal_preserves_waitingThreadsPendingMessageNone`
---
--- ── V3-G2 (M-PRF-5) ─────────────────────────────────────────────────────
--- theorem notificationWait_preserves_waitingThreadsPendingMessageNone
---     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
---     (badge : Option SeLe4n.Badge)
---     (hObjInv : st.objects.invExt)
---     (hInv : waitingThreadsPendingMessageNone st)
---     (hWaiterMsg : ∀ tcb, lookupTcb st waiter = some tcb → tcb.pendingMessage = none)
---     (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
---     waitingThreadsPendingMessageNone st'
--- Location: Structural.lean, `notificationWait_preserves_waitingThreadsPendingMessageNone`
---
--- ── V3-I (L-IPC-1) ──────────────────────────────────────────────────────
--- theorem notificationWake_pendingMessage_was_none
---     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (nid : SeLe4n.ObjId)
---     (hInv : waitingThreadsPendingMessageNone st)
---     (hLookup : st.objects[tid.toObjId]? = some (.tcb tcb))
---     (hBlocked : tcb.ipcState = .blockedOnNotification nid) :
---     tcb.pendingMessage = none
--- Location: Structural.lean, `notificationWake_pendingMessage_was_none`
+-- These theorems were previously located in Structural.lean due to a circular
+-- import (Structural imports NotificationPreservation). The primitive helpers
+-- they depend on now live in WaitingThreadHelpers.lean, which both files can
+-- import, enabling these proofs to live in their semantic home.
+
+/-- V3-I (L-IPC-1): Before `notificationSignal` delivers a badge to a waiting
+    thread, the waiter's `pendingMessage` was `none`. Direct extraction from the
+    `waitingThreadsPendingMessageNone` invariant: any thread with
+    `ipcState = .blockedOnNotification _` has `pendingMessage = none`. -/
+theorem notificationWake_pendingMessage_was_none
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (nid : SeLe4n.ObjId)
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hLookup : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hBlocked : tcb.ipcState = .blockedOnNotification nid) :
+    tcb.pendingMessage = none := by
+  have h := hInv tid tcb hLookup
+  rw [hBlocked] at h
+  exact h
+
+/-- V3-G3 (M-PRF-5): `notificationSignal` preserves `waitingThreadsPendingMessageNone`.
+    Wake path: sets `.ready` (out of scope). Merge path: non-TCB store only. -/
+theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    waitingThreadsPendingMessageNone st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · -- some (.notification ntfn)
+    rename_i ntfn hObj
+    -- After first split: ntfn.waitingThreads branches
+    cases hWaiters : ntfn.waitingThreads with
+    | cons waiter rest =>
+      -- Wake path: storeObject → storeTcbIpcStateAndMessage (.ready) → ensureRunnable
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction  -- storeObject error
+      next st1 hSO =>
+        have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+          st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction  -- storeTcbIpcStateAndMessage error
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have hInv2 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+            st1 st2 waiter .ready _ hObjInv1 hSM hInv1 (by trivial)
+          exact ensureRunnable_preserves_waitingThreadsPendingMessageNone st2 waiter hInv2
+    | nil =>
+      -- Merge path: storeObject only
+      simp only [hWaiters] at hStep
+      -- pendingBadge match produces two sub-cases, both are storeObject
+      split at hStep
+      all_goals (
+        exact storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+          st st' notificationId (.notification _) (fun tcb => by simp) hObjInv hStep hInv)
+  · contradiction
+  · contradiction
+
+/-- V3-G2 (M-PRF-5): `notificationWait` preserves `waitingThreadsPendingMessageNone`.
+    Deliver path: `storeTcbIpcState` to `.ready` exits scope.
+    Block path: `storeTcbIpcState_fromTcb` to `.blockedOnNotification` + `removeRunnable`;
+    requires `hWaiterMsg` precondition that the waiter's `pendingMessage` is `none`. -/
+theorem notificationWait_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : waitingThreadsPendingMessageNone st)
+    (hWaiterMsg : ∀ tcb, lookupTcb st waiter = some tcb → tcb.pendingMessage = none)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    waitingThreadsPendingMessageNone st' := by
+  simp only [notificationWait] at hStep
+  split at hStep
+  · -- some (.notification ntfn)
+    rename_i ntfn hObj
+    split at hStep
+    · -- Deliver path: pendingBadge = some badge
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+          st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
+            st1 st2 waiter .ready hObjInv1 hSI hInv1 (fun _ _ => trivial)
+    · -- Block path: pendingBadge = none
+      split at hStep
+      · contradiction -- lookupTcb = none
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction -- already waiting
+        · split at hStep
+          next => contradiction -- storeObject error
+          next st1 hSO =>
+            have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
+              st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
+            have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+            -- Split on storeTcbIpcState_fromTcb result
+            split at hStep
+            next => contradiction -- storeTcbIpcState_fromTcb error
+            next st2 hSI =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              apply removeRunnable_preserves_waitingThreadsPendingMessageNone
+              -- Unfold storeTcbIpcState_fromTcb to extract underlying storeObject
+              simp only [storeTcbIpcState_fromTcb] at hSI
+              split at hSI
+              next => contradiction -- storeObject error
+              next pair hSO2 =>
+                simp only [Except.ok.injEq] at hSI
+                -- hSI : pair = st2, pair : SystemState
+                subst hSI
+                -- Goal is now about pair
+                intro tid' tcb' hObj'
+                by_cases hTidEq : tid'.toObjId = waiter.toObjId
+                · -- Same thread: stored TCB has blockedOnNotification, pendingMessage unchanged
+                  have hSelf := storeObject_objects_eq st1 pair waiter.toObjId
+                    (.tcb { waiterTcb with ipcState := .blockedOnNotification notificationId })
+                    hObjInv1 hSO2
+                  rw [hTidEq] at hObj'; rw [hSelf] at hObj'
+                  simp only [Option.some.injEq, KernelObject.tcb.injEq] at hObj'; subst hObj'
+                  dsimp only []
+                  exact hWaiterMsg waiterTcb hLookup
+                · -- Different thread: frame
+                  have hFrame := storeObject_objects_ne st1 pair waiter.toObjId tid'.toObjId
+                    (.tcb { waiterTcb with ipcState := .blockedOnNotification notificationId })
+                    hTidEq hObjInv1 hSO2
+                  rw [hFrame] at hObj'
+                  exact hInv1 tid' tcb' hObj'
+  · contradiction
+  · contradiction

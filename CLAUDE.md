@@ -119,6 +119,7 @@ SeLe4n/Kernel/IPC/*              IPC subsystem
     Invariant/Defs.lean          Core IPC invariant definitions
     Invariant/EndpointPreservation.lean Endpoint preservation proofs
     Invariant/CallReplyRecv.lean Call/ReplyRecv preservation proofs
+    Invariant/WaitingThreadHelpers.lean Primitive waitingThreadsPendingMessageNone helpers
     Invariant/NotificationPreservation.lean Notification preservation proofs
     Invariant/QueueNoDup.lean    V3-K: No self-loops, send/receive head disjointness
     Invariant/QueueMembership.lean V3-J: Queue membership consistency proofs

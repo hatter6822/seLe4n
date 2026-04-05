@@ -5,10 +5,13 @@ Phase AC1 of WS-AC Comprehensive Audit Remediation (v0.25.3 baseline).
 - **AC1-A (S-01)**: `hasSufficientBudget` changed from fail-open to fail-closed.
   Missing SchedContext now returns `false` (defense-in-depth). Unreachable under
   `schedContextStoreConsistent` invariant. All preservation proofs pass unchanged.
-- **AC1-B/C (I-01)**: `waitingThreadsPendingMessageNone` preservation theorems
-  cross-referenced in NotificationPreservation.lean with full signatures and
-  locations. Machine-checked proofs in Structural.lean confirmed for both
-  `notificationSignal` and `notificationWait` paths.
+- **AC1-B/C (I-01)**: `waitingThreadsPendingMessageNone` preservation proofs
+  refactored to their semantic home. New `WaitingThreadHelpers.lean` extracts
+  7 primitive helpers from Structural.lean, breaking a circular import dependency.
+  3 operation-level theorems (`notificationSignal_preserves_*`,
+  `notificationWait_preserves_*`, `notificationWake_pendingMessage_was_none`)
+  moved from Structural.lean to NotificationPreservation.lean with full
+  machine-checked proofs (previously only comment cross-references).
 - **AC1-D (C-01)**: `cspaceMint` documented as CDT-untracked with prominent
   doc-comment warning. `cspaceMintWithCdt` is the CDT-tracked alternative.
   `@[deprecated]` was evaluated but rejected: 14 suppression annotations
