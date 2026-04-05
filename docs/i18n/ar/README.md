@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.5-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -61,7 +61,7 @@ seLe4n هو نواة مصغرة بُنيت من الصفر بلغة Lean 4. كل
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.25.3` |
+| **الإصدار** | `0.25.5` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
 | **أسطر Lean الإنتاجية** | 83,286 عبر 132 ملفًا |
 | **أسطر Lean للاختبارات** | 10,564 عبر 15 مجموعة اختبار |
@@ -194,7 +194,7 @@ tests/                           15 test suites
 
 | تيار العمل | النطاق | الإصدار |
 |-----------|--------|---------|
-| **WS-AB** | العمليات المؤجلة والحيوية — suspend/resume، setPriority/setMCPriority، setIPCBuffer، بروتوكول وراثة الأولوية، نظرية الكمون المحدود (6 مراحل، 90 مهمة) | v0.24.0–v0.25.3 |
+| **WS-AB** | العمليات المؤجلة والحيوية — suspend/resume، setPriority/setMCPriority، setIPCBuffer، بروتوكول وراثة الأولوية، نظرية الكمون المحدود (6 مراحل، 90 مهمة) | v0.24.0–v0.25.5 |
 | **WS-Z** | كائنات الأداء القابلة للتركيب — `SchedContext` ككائن نواة سابع، محرك ميزانية CBS، طابور التجديد، تبرع الخادم الخامل، نقاط نهاية المُهَل (10 مراحل، 213 مهمة) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | الأنظمة الفرعية الأساسية للنواة، جداول تجزئة Robin Hood، أشجار الجذر، الحالة المجمّدة، تدفق المعلومات، تنسيق الخدمات، عقود المنصة | v0.9.0–v0.22.x |
 

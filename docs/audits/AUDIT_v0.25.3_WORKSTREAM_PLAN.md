@@ -168,11 +168,12 @@ document as an addendum after this workstream completes.
 
 ---
 
-## 3. Phase AC1 — High-Severity Fixes
+## 3. Phase AC1 — High-Severity Fixes ✓ COMPLETE
 
 **Goal**: Resolve all 3 HIGH findings with minimal blast radius.
 **Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh` pass.
 **Dependencies**: None (first phase).
+**Status**: COMPLETE (v0.25.4). All 9 sub-tasks delivered. Zero sorry/axiom.
 
 ### AC1-A: Change `hasSufficientBudget` to fail-closed (S-01)
 
@@ -220,41 +221,35 @@ These are fully proven using helper lemmas:
 The file `NotificationPreservation.lean` (lines 1352–1358) contains a
 forward-reference comment to these theorems but does not import or re-export them.
 
-**Change** (3 sub-steps):
+**Implementation** (refactored from original re-export plan):
 
-**AC1-B.1**: Read `NotificationPreservation.lean` ending (lines 1350–1365) to
-confirm the forward-reference comment and identify the exact insertion point.
+Rather than thin re-exports, the circular import dependency was broken by
+extracting primitive helper lemmas into a new `WaitingThreadHelpers.lean`:
 
-**AC1-B.2**: Add a thin re-export section at the end of `NotificationPreservation.lean`
-that imports and re-exports the two Structural.lean theorems, matching the
-existing naming convention (`notificationSignal_preserves_<inv>`). This follows
-the pattern of the 5 existing theorems:
-- `notificationSignal_preserves_ipcInvariant` (line 38)
-- `notificationSignal_preserves_schedulerInvariantBundle` (line 85)
-- `notificationSignal_preserves_ipcSchedulerContractPredicates` (line 387)
-- `notificationSignal_preserves_badgeWellFormed` (line 1009)
-- `notificationSignal_preserves_notificationWaiterConsistent` (line 1225)
+1. Created `Invariant/WaitingThreadHelpers.lean` with 7 primitive helpers
+   extracted from Structural.lean (removeRunnable, ensureRunnable,
+   storeObject_nonTcb, storeTcbIpcState, storeTcbIpcStateAndMessage,
+   storeTcbQueueLinks, storeTcbPendingMessage — all `_preserves_waitingThreadsPendingMessageNone`).
+2. Added `import WaitingThreadHelpers` to both NotificationPreservation.lean
+   and Structural.lean.
+3. Moved the 3 operation-level theorems (`notificationSignal_preserves_*`,
+   `notificationWait_preserves_*`, `notificationWake_pendingMessage_was_none`)
+   from Structural.lean into NotificationPreservation.lean with full
+   machine-checked proofs (replacing comment cross-references).
+4. Deleted ~330 lines from Structural.lean (moved code).
 
-**AC1-B.3**: Replace the forward-reference comment (lines 1352–1358) with the
-actual theorem statements, delegating proofs to the Structural.lean versions.
-
-**Files modified**: `NotificationPreservation.lean` (~15–25 lines replacing comment).
-**Build verification**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation`.
+**Files modified**: `WaitingThreadHelpers.lean` (new, ~250 lines),
+`NotificationPreservation.lean` (~140 lines replacing comment block),
+`Structural.lean` (~330 lines deleted, 1 import added).
+**Build verification**: All 3 modules + full `lake build` (232 jobs) pass.
 
 ### AC1-C: Wire `notificationWait` preservation into NotificationPreservation (I-01 supplement)
 
 **Finding**: Same discovery — `notificationWait_preserves_waitingThreadsPendingMessageNone`
-already exists in Structural.lean:7248–7287.
+already exists in Structural.lean. Addressed jointly with AC1-B via the
+WaitingThreadHelpers extraction (see AC1-B above).
 
-**Change** (2 sub-steps):
-
-**AC1-C.1**: Add a re-export theorem for the `notificationWait` preservation in
-`NotificationPreservation.lean`, following the same pattern as AC1-B.
-
-**AC1-C.2**: Verify the theorem compiles and the forward-reference comment
-(if any exists for `notificationWait`) is replaced with the actual theorem.
-
-**Files modified**: `NotificationPreservation.lean` (~10–15 lines).
+**Files modified**: Same as AC1-B (joint implementation).
 **Build verification**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation`.
 
 ### AC1-D: Address `cspaceMint` CDT-tracking gap (C-01)
@@ -287,23 +282,25 @@ the first).
 **AC1-D.2**: Add a prominent doc-comment block above `cspaceMint` (Operations.lean:
 535–540) documenting:
 - This function creates **CDT-untracked** capabilities.
-- Minted capabilities are **irrevocable** via CDT-based revocation.
-- The syscall dispatch path uses `cspaceMintChecked` → `cspaceMintWithCdt` for
-  tracked derivation.
+- It is the internal base operation composed within `cspaceMintWithCdt`.
 - Direct use should be limited to: (a) internal composition within
   `cspaceMintWithCdt`, (b) proof decomposition, (c) tests.
 
-**AC1-D.3**: Verify that the `@[deprecated]` attribute compiles without breaking
-existing callers. In Lean 4, `@[deprecated]` emits a warning, not an error, so
-all 78 sites will produce warnings but the build will succeed.
+**AC1-D.3** (SUPERSEDED): `@[deprecated]` was evaluated but rejected — 14
+suppression annotations across 8 proof files outweighed the signal value.
+Doc-comment serves the same purpose with zero blast radius.
 
-**AC1-D.4**: Suppress the deprecation warning at the 2 legitimate internal call
-sites (`cspaceMintWithCdt` at Operations.lean:788 and `cspaceMintChecked` at
-Wrappers.lean:59) by adding `@[inline]` wrapper aliases if needed, or by
-documenting that these warnings are expected.
+**AC1-D.4** (IMPLEMENTED): Production dispatch wired through `cspaceMintWithCdt`.
+Change path: `dispatchWithCap` → `cspaceMintWithCdt`, `cspaceMintChecked` →
+`cspaceMintWithCdt`. NI proof updated with CDT-pipeline preservation
+(`cdt_only_preserves_projection'`, `ensureCdtNodeForSlot_preserves_projection'`).
+Enforcement soundness and dispatch delegation theorems updated. Minted
+capabilities are now revocable via `cspaceRevoke`.
 
-**Files modified**: `Operations.lean` (~15 lines attribute + doc-comment).
-**Build verification**: `lake build SeLe4n.Kernel.Capability.Operations`.
+**Files modified**: `Operations.lean` (doc-comment), `API.lean` (dispatch +
+delegation theorem), `Wrappers.lean` (checked wrapper + equivalence theorems),
+`InformationFlow/Invariant/Operations.lean` (NI proof + early CDT helpers).
+**Build verification**: All 4 modules build, 232 jobs, zero sorry/axiom.
 
 ### AC1-E: Update preservation proofs for fail-closed `hasSufficientBudget` (S-01 proof chain)
 
@@ -1417,9 +1414,9 @@ The workstream is COMPLETE when all of the following hold:
 
 | Finding ID | Severity | Primary Task | Supporting Tasks | Status |
 |-----------|----------|-------------|-----------------|--------|
-| S-01 | HIGH | AC1-A | AC1-E, AC1-F, AC1-G | Pending |
-| I-01 | HIGH | AC1-B | AC1-C | Pending |
-| C-01 | HIGH | AC1-D | AC1-H | Pending |
+| S-01 | HIGH | AC1-A | AC1-E, AC1-F, AC1-G | ✓ Complete |
+| I-01 | HIGH | AC1-B | AC1-C | ✓ Complete |
+| C-01 | HIGH | AC1-D | AC1-H | ✓ Complete |
 | S-02 | MEDIUM | AC2-A | — | Pending |
 | SC-01 | MEDIUM | AC2-A | — (shared with S-02) | Pending |
 | S-03 | MEDIUM | AC2-B | — | Pending |

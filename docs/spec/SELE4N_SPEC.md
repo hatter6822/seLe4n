@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.3` (`lakefile.toml`) |
+| **Package version** | `0.25.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 83,286 across 132 Lean files |
 | **Test LoC** | 10,564 across 15 Lean test suites |
 | **Proved declarations** | 2,447 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| **Active workstream** | **All workstreams COMPLETE** (WS-B through WS-AB, v0.9.0–v0.25.3). WS-AB Phases D1–D6 complete: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3), Priority Inheritance Protocol (D4), Bounded Latency Theorem (D5), API surface integration (D6). Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **All workstreams COMPLETE** (WS-B through WS-AB, v0.9.0–v0.25.5). WS-AB Phases D1–D6 complete: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3), Priority Inheritance Protocol (D4), Bounded Latency Theorem (D5), API surface integration (D6). Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

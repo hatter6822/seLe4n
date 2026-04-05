@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.25.5-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -86,7 +86,7 @@ provas do Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.25.3` |
+| **Versão** | `0.25.5` |
 | **Toolchain Lean** | `v4.28.0` |
 | **LoC Lean de produção** | 83.286 em 132 arquivos |
 | **LoC Lean de testes** | 10.564 em 15 suítes de testes |
@@ -220,7 +220,7 @@ histórico completo está em [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKST
 
 | Workstream | Escopo | Versão |
 |------------|--------|--------|
-| **WS-AB** | Operações Diferidas & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Protocolo de Herança de Prioridade, Teorema de Latência Limitada (6 fases, 90 tarefas) | v0.24.0–v0.25.3 |
+| **WS-AB** | Operações Diferidas & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Protocolo de Herança de Prioridade, Teorema de Latência Limitada (6 fases, 90 tarefas) | v0.24.0–v0.25.5 |
 | **WS-Z** | Objetos de Desempenho Composicionais — `SchedContext` como 7o objeto de kernel, motor de budget CBS, fila de reabastecimento, doação de servidor passivo, endpoints com timeout (10 fases, 213 tarefas) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Subsistemas centrais do kernel, tabelas hash Robin Hood, radix trees, estado congelado, fluxo de informação, orquestração de serviços, contratos de plataforma | v0.9.0–v0.22.x |
 

@@ -44,7 +44,7 @@ def endpointSendDualChecked
 
 /-- Policy-checked capability mint: verifies that information may flow from
 the source CNode's security domain to the destination CNode's security domain
-before delegating to the underlying `cspaceMint` operation.
+before delegating to `cspaceMintWithCdt` for CDT-tracked derivation.
 
 Returns `flowDenied` when `securityFlowsTo srcLabel dstLabel = false`. -/
 def cspaceMintChecked
@@ -56,7 +56,7 @@ def cspaceMintChecked
     let srcLabel := ctx.objectLabelOf src.cnode
     let dstLabel := ctx.objectLabelOf dst.cnode
     if securityFlowsTo srcLabel dstLabel then
-      cspaceMint src dst rights badge st
+      cspaceMintWithCdt src dst rights badge st
     else
       .error .flowDenied
 
@@ -110,8 +110,8 @@ theorem endpointSendDualChecked_flowDenied
   simp [hDeny]
 
 /-- When the policy allows flow, the checked mint behaves identically to the
-unchecked mint. -/
-theorem cspaceMintChecked_eq_cspaceMint_when_allowed
+CDT-tracked mint. -/
+theorem cspaceMintChecked_eq_cspaceMintWithCdt_when_allowed
     (ctx : LabelingContext)
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
@@ -120,7 +120,7 @@ theorem cspaceMintChecked_eq_cspaceMint_when_allowed
     (hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode)
                (ctx.objectLabelOf dst.cnode) = true) :
     cspaceMintChecked ctx src dst rights badge st =
-      cspaceMint src dst rights badge st := by
+      cspaceMintWithCdt src dst rights badge st := by
   unfold cspaceMintChecked
   simp [hFlow]
 
@@ -284,13 +284,13 @@ theorem enforcement_sufficiency_endpointSendDual
       | true => right; right; left; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
       | false => right; right; right; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
 
-/-- `cspaceMintChecked` either delegates to unchecked or returns `flowDenied`. -/
+/-- `cspaceMintChecked` either delegates to CDT-tracked mint or returns `flowDenied`. -/
 theorem enforcement_sufficiency_cspaceMint
     (ctx : LabelingContext) (src dst : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (st : SystemState) :
     (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true ∧
-       cspaceMintChecked ctx src dst rights badge st = cspaceMint src dst rights badge st) ∨
+       cspaceMintChecked ctx src dst rights badge st = cspaceMintWithCdt src dst rights badge st) ∨
     (securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false ∧
        cspaceMintChecked ctx src dst rights badge st = .error .flowDenied) := by
   cases hFlow : securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) with

@@ -537,7 +537,18 @@ def mintDerivedCap (parent : Capability) (rights : AccessRightSet)
   else
     .error .invalidCapability
 
-/-- Mint from source slot and insert into destination slot under attenuation checks. -/
+/-- Mint from source slot and insert into destination slot under attenuation checks.
+
+**CDT-untracked base operation (C-01)**: This function creates capabilities
+without recording CDT derivation edges. The production syscall dispatch path
+(`dispatchWithCapChecked` → `cspaceMintChecked`) uses `cspaceMintWithCdt`,
+which calls this function then records CDT edges. Minted capabilities are
+therefore revocable via `cspaceRevoke`.
+
+Direct use of `cspaceMint` (without CDT tracking) should be limited to:
+- Internal composition within `cspaceMintWithCdt`
+- Proof decomposition (invariant theorems reference this base function)
+- Test scaffolding for the untracked primitive -/
 def cspaceMint
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)

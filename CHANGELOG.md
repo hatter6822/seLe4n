@@ -1,3 +1,34 @@
+## v0.25.5 — WS-AC Phase AC1: High-Severity Audit Fixes (Audit-Verified)
+
+Phase AC1 of WS-AC Comprehensive Audit Remediation (v0.25.3 baseline).
+End-to-end audit verified: all 9 sub-tasks complete, zero sorry/axiom.
+
+- **AC1-A (S-01)**: `hasSufficientBudget` changed from fail-open to fail-closed.
+  Missing SchedContext now returns `false` (defense-in-depth). Unreachable under
+  `schedContextStoreConsistent` invariant. All preservation proofs pass unchanged.
+- **AC1-B/C (I-01)**: `waitingThreadsPendingMessageNone` preservation proofs
+  refactored to their semantic home. New `WaitingThreadHelpers.lean` extracts
+  7 primitive helpers from Structural.lean, breaking a circular import dependency.
+  3 operation-level theorems (`notificationSignal_preserves_*`,
+  `notificationWait_preserves_*`, `notificationWake_pendingMessage_was_none`)
+  moved from Structural.lean to NotificationPreservation.lean with full
+  machine-checked proofs (replacing comment cross-references). Net ~330 lines
+  removed from Structural.lean.
+- **AC1-D (C-01)**: Production syscall dispatch now routes through
+  `cspaceMintWithCdt` (CDT-tracked) — minted capabilities are revocable via
+  `cspaceRevoke`. Change path: `dispatchWithCap` → `cspaceMintWithCdt`,
+  `cspaceMintChecked` → `cspaceMintWithCdt`. Non-interference proof updated
+  with CDT-pipeline preservation (`cdt_only_preserves_projection'`,
+  `ensureCdtNodeForSlot_preserves_projection'`). Enforcement soundness and
+  dispatch delegation theorems updated. `cspaceMint` retained as CDT-untracked
+  base operation for internal composition and proof decomposition.
+- **AC1-G**: 5 negative regression tests for budget fail-closed behavior.
+- **AC1-H**: 2 regression tests verifying CDT edge tracking difference between
+  `cspaceMint` (no edges) and `cspaceMintWithCdt` (adds edge).
+- Cross-subsystem verification: Preservation.lean, WCRT, CrossSubsystem,
+  PriorityInheritance all build unchanged. Zero sorry/axiom.
+- Version bump 0.25.3 → 0.25.5.
+
 ## v0.25.3 — D5 Audit: Surface Anchor Count Correction
 
 Comprehensive audit of Phase D5 (Bounded Latency Theorem) implementation.

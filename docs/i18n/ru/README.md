@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.25.5-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -87,7 +87,7 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.25.3` |
+| **Версия** | `0.25.5` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовый код (Lean LoC)** | 83 286 строк в 132 файлах |
 | **Тестовый код (Lean LoC)** | 10 564 строк в 15 тест-сьютах |
@@ -221,7 +221,7 @@ tests/                           15 test suites
 
 | Рабочий поток | Охват | Версия |
 |---------------|-------|--------|
-| **WS-AB** | Отложенные операции и Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Протокол наследования приоритетов, Теорема ограниченной латентности (6 фаз, 90 задач) | v0.24.0–v0.25.3 |
+| **WS-AB** | Отложенные операции и Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Протокол наследования приоритетов, Теорема ограниченной латентности (6 фаз, 90 задач) | v0.24.0–v0.25.5 |
 | **WS-Z** | Композиционные объекты производительности — `SchedContext` как 7-й объект ядра, движок бюджетов CBS, очередь пополнения, донация пассивных серверов, endpoint с таймаутами (10 фаз, 213 задач) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Основные подсистемы ядра, хеш-таблицы Robin Hood, radix-деревья, замороженное состояние, информационный поток, оркестрация сервисов, контракты платформы | v0.9.0–v0.22.x |
 
