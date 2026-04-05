@@ -99,7 +99,7 @@ guarantees that depend on the SchedContext infrastructure from WS-Z.
 - **D5** (v0.25.0–v0.25.1): Bounded Latency Theorem — WCRT = D×L_max + N×(B+P) across 7 liveness modules (TimerTick, Replenishment, Yield, BandExhaustion, DomainRotation, WCRT).
 - **D6** (v0.25.2–v0.25.3): API surface integration — 5 deferred operations in kernel API, enforcement boundary 25→30, Rust ABI sync (SyscallId 25, KernelError 44).
 
-Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md).
+Plan: [`WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`](../dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md).
 
 ## Completed: WS-Z Composable Performance Objects (v0.23.0–v0.23.20, PORTFOLIO COMPLETE)
 
@@ -118,7 +118,7 @@ API surface with frozen operations, and cross-subsystem invariant composition.
 - **Z8** (v0.23.17–v0.23.18): API surface — 3 error-exclusivity theorems, 4 frozen operations, enforcement boundary 22→25.
 - **Z9** (v0.23.20): Invariant composition — `crossSubsystemInvariant` 5→8 predicates, `proofLayerInvariantBundle` 9→10 conjuncts, 14 disjointness witnesses, 3 frame lemmas, boot/operation preservation.
 
-Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
+Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
 
 ## Completed: WS-V Phase V1 Rust ABI Hardening (v0.22.0)
 
