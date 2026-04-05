@@ -967,6 +967,12 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `enforcementBoundaryExtended_eq_canonical` — element-wise equality proof (W2-G),
 - `enforcementBoundaryComplete_counts` — compile-time count witness (11+15+4=30, V6-F/Z8-M/D1/D2/D3),
 - `enforcementBoundary_names_nonempty` — all boundary handler names non-empty (V6-F),
+- `SyscallId.all` — exhaustive list of all 25 SyscallId variants (AC4-D),
+- `SyscallId.all_length` — compile-time length check (`all.length = count`, AC4-D),
+- `SyscallId.all_complete` — membership proof for every variant (`cases s <;> decide`, AC4-D),
+- `syscallIdToEnforcementName` — SyscallId → String bridge mapping to enforcement boundary names (AC4-D),
+- `enforcementBoundaryComplete` — Bool check that every SyscallId maps to a boundary entry (AC4-D),
+- `enforcementBoundary_is_complete` — `native_decide` compile-time completeness theorem (AC4-D/IF-01),
 - `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
 - `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 11 policy-gated operations.
 

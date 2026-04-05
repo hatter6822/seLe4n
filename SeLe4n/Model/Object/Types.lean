@@ -69,10 +69,27 @@ access rights maps to a unique bit position (0..4). Membership is a single
 bit test; subset is bitwise AND comparison. Two sets with the same rights in
 any order are structurally equal.
 
-**INTERNAL**: Do not use `AccessRightSet.mk` or `⟨n⟩` directly outside this
-module. Use `ofNat` (masked), `mk_checked` (proof-carrying), `ofList`,
-`singleton`, or `empty` instead. Raw construction can create invalid
-values with `bits ≥ 32` that bypass the `valid` predicate. -/
+**Constructor Safety Model (AC4-B/F-02):**
+
+- `mk` (raw constructor) is TCB-internal only. Lean 4 cannot enforce private
+  constructors, so `⟨999⟩` is syntactically valid but violates `valid`.
+- **Safe constructors** (each guarantees `valid` by theorem):
+  - `ofNat n`: Masks to 5 bits (`n % 32`). Use for user-supplied input.
+  - `mk_checked bits h`: Carries `bits < 32` witness. Use in proof contexts.
+  - `ofList rs` / `singleton r` / `empty`: Compile-time-known sets.
+- **Operational safety argument**: Even if `bits ≥ 32` (invalid), operations
+  produce correct results for the 5 defined rights:
+  - `mem` uses `testBit` — only positions 0..4 are meaningful access rights,
+    so high bits are irrelevant to membership queries.
+  - `subset` uses bitwise AND — `a &&& b == a` is correct for any `Nat`.
+  - `inter` returns `⟨a &&& b⟩` — AND naturally clears bits beyond `b`'s range.
+  - `union` returns `⟨a ||| b⟩` — may propagate invalid high bits from either
+    operand; callers requiring validity should apply `ofNat` to the result.
+- **Formal proofs**: `ofNat_valid`, `mk_checked_valid`, `empty_valid`,
+  `singleton_valid`, `union_valid`, `inter_valid`, `ofList_valid` collectively
+  prove that all public constructors produce valid sets. See AC5-E for
+  additional operational safety theorems (`inter_valid_left`, `subset_correct`,
+  `mem_bounded`). -/
 structure AccessRightSet where
   bits : Nat
 deriving DecidableEq, Repr, Inhabited
@@ -160,10 +177,17 @@ instance (r : AccessRight) (s : AccessRightSet) : Decidable (r ∈ s) :=
 @[inline] def subset (a b : AccessRightSet) : Bool :=
   a.bits &&& b.bits == a.bits
 
-/-- WS-F5/D2a: Union of two rights sets (bitwise OR). -/
+/-- WS-F5/D2a: Union of two rights sets (bitwise OR).
+    **AC4-B note**: Returns raw `⟨bits⟩` without masking. If either operand has
+    invalid high bits (`bits ≥ 32`), they propagate to the result. Callers
+    requiring `valid` should use `ofNat (union a b).bits` or rely on
+    `union_valid` (which requires both operands valid). -/
 @[inline] def union (a b : AccessRightSet) : AccessRightSet := ⟨a.bits ||| b.bits⟩
 
-/-- WS-F5/D2a: Intersection of two rights sets (bitwise AND). -/
+/-- WS-F5/D2a: Intersection of two rights sets (bitwise AND).
+    **AC4-B note**: Returns raw `⟨bits⟩` without masking. However, AND naturally
+    clears any bit not set in both operands, so if at least one operand is valid
+    (`bits < 32`), the result is also valid (see `inter_valid`). -/
 @[inline] def inter (a b : AccessRightSet) : AccessRightSet := ⟨a.bits &&& b.bits⟩
 
 /-- U2-K: Union of two valid rights sets is valid (5-bit closure). -/
@@ -999,6 +1023,28 @@ instance : ToString SyscallId where
     | .tcbSetPriority        => "tcbSetPriority"
     | .tcbSetMCPriority      => "tcbSetMCPriority"
     | .tcbSetIPCBuffer       => "tcbSetIPCBuffer"
+
+/-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
+    boundary completeness witness to ensure every syscall is classified. The
+    `all_length` theorem provides a compile-time check that this list stays in
+    sync with the `count` constant. -/
+def all : List SyscallId :=
+  [ .send, .receive, .call, .reply
+  , .cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete
+  , .lifecycleRetype, .vspaceMap, .vspaceUnmap
+  , .serviceRegister, .serviceRevoke, .serviceQuery
+  , .notificationSignal, .notificationWait, .replyRecv
+  , .schedContextConfigure, .schedContextBind, .schedContextUnbind
+  , .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority
+  , .tcbSetIPCBuffer ]
+
+/-- AC4-D: Compile-time check — `all` has exactly `count` elements.
+    Fails at compile time if a variant is added to the inductive but not to `all`. -/
+theorem all_length : all.length = count := by rfl
+
+/-- AC4-D: Every SyscallId is a member of `all`. -/
+theorem all_complete (s : SyscallId) : s ∈ all := by
+  cases s <;> decide
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by

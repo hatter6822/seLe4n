@@ -119,6 +119,8 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
   - `Enforcement/Wrappers.lean` — 30-entry enforcement boundary (11 policy-gated,
     15 capability-only, 4 read-only) wiring `securityFlowsTo` policy
     into enforcement boundaries. Includes SchedContext ops (WS-Z8), thread lifecycle (D1), priority management (D2), IPC buffer (D3).
+    AC4-D: `enforcementBoundary_is_complete` compile-time completeness witness
+    (`native_decide`) ensuring every `SyscallId` variant maps to a boundary entry.
   - `Enforcement/Soundness.lean` — correctness theorems, soundness, declassification.
 - `SeLe4n/Kernel/InformationFlow/Invariant.lean` (re-export hub)
   - `Invariant/Helpers.lean` — shared NI proof infrastructure.

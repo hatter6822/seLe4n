@@ -406,6 +406,25 @@ will address these with hardware profiling data if needed.
    `storeObject` only in proof-layer code where `objectIndexBounded` is an
    established precondition, or for in-place updates of existing objects.
 
+5. **`AccessRightSet` constructor safety (F-02/AC4-B)**: Never use
+   `AccessRightSet.mk` or `⟨n⟩` directly in production code. Use `ofNat`
+   (masked to 5 bits), `mk_checked` (proof-carrying), `ofList`, `singleton`,
+   or `empty`. The `union` and `inter` operations return raw `⟨bits⟩` without
+   masking — apply `ofNat` to the result if downstream validity is required.
+
+6. **Physical address bounds (A-04/AC4-A)**: Production VSpace map operations
+   must use `vspaceMapPageCheckedWithFlushFromState` (state-aware, reads
+   `st.machine.physicalAddressWidth`). The model-level `physicalAddressBound`
+   (2^52, ARM64 LPA max) is for proof-layer reasoning only. The syscall
+   dispatch path (API.lean) already wires through the state-aware variant.
+
+7. **Enforcement boundary completeness (IF-01/AC4-D)**: When adding a new
+   `SyscallId` variant, you must also: (a) add it to `SyscallId.all`, (b)
+   add a case to `syscallIdToEnforcementName` in Wrappers.lean, and (c)
+   ensure the mapped name appears in `enforcementBoundary`. The compile-time
+   `enforcementBoundary_is_complete` theorem (`native_decide`) will fail the
+   build if any of these steps are missed.
+
 ---
 
 ## 6) Proof engineering standards

@@ -25,6 +25,33 @@ service at ID 0. This mirrors seL4's convention where capability pointer 0
 (`seL4_CapNull`) is the null capability. The `isReserved` predicate on
 `ObjId`, `ThreadId`, and `ServiceId` identifies the sentinel value. -/
 
+/-! ## AC4-C/F-01: Typed Identifier Safety Model
+
+All identifier types (`ObjId`, `ThreadId`, `CPtr`, `Slot`, `DomainId`, `Priority`,
+`Deadline`, `Irq`, `ServiceId`, `InterfaceId`, `SchedContextId`, `Badge`, `ASID`,
+`VAddr`, `PAddr`) wrap unbounded Lean `Nat` by design. This is intentional for
+proof ergonomics: unbounded naturals allow `simp`, `omega`, and `decide` to work
+without bit-width overflow reasoning, making theorem statements cleaner and proofs
+shorter.
+
+**ABI boundary validation**: The Rust ABI crate + `RegisterDecode.lean` +
+`SyscallArgDecode.lean` validate all incoming values before constructing
+identifiers. Specifically:
+- `RegisterDecode.decodeSyscallId` rejects values ≥ 25 (invalid syscall numbers).
+- `RegisterDecode.decodeMsgInfo` enforces length ≤ 120, extraCaps ≤ 7.
+- `RegisterDecode.validateRegBound` checks register indices < 32.
+- All per-syscall decoders in `SyscallArgDecode.lean` produce typed identifiers
+  only from validated register contents.
+
+**Internal kernel trust**: Operations that derive new identifiers from existing
+(validated) ones are trusted. For example, `storeObject` with an `ObjId` from
+`retypeFromUntyped` inherits the source's validity.
+
+**Hardware deployment contract**: For ARM64 targets, the `isWord64` / `isWord64Dec`
+predicates (defined below at `machineWordMax := 2^64`) must be enforced at every
+ABI entry point. The `CPtr.isWord64Bounded` and `Slot.isWord64Bounded` methods
+provide this check for capability pointers and slot indices. -/
+
 /-- Identifier for objects in the global kernel object store.
     Value 0 is reserved as sentinel (H-06/WS-E3). -/
 structure ObjId where

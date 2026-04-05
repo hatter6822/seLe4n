@@ -49,7 +49,15 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
 
 /-- WS-H11/A-05: Default physical address space bound (ARM64 52-bit LPA maximum).
     Used as the upper bound for model-level reasoning. Platform-specific bounds
-    (e.g., 44-bit for BCM2712) are enforced via `physicalAddressBoundForConfig`. -/
+    (e.g., 44-bit for BCM2712) are enforced via `physicalAddressBoundForConfig`.
+
+    **Proof-layer default only** — production code must use
+    `physicalAddressBoundForConfig` (explicit config) or
+    `vspaceMapPageCheckedWithFlushFromState` (reads `st.machine.physicalAddressWidth`
+    from runtime state). The syscall dispatch path (API.lean) wires through the
+    state-aware variant, so all user-facing operations enforce the platform-specific
+    bound. Direct use of `physicalAddressBound` is appropriate only in model-level
+    theorems where the concrete platform is irrelevant. -/
 def physicalAddressBound : Nat := 2^52
 
 /-- U2-D/U-H07: Platform-specific physical address bound derived from `MachineConfig`.

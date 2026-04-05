@@ -3298,6 +3298,38 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   else
     throw <| IO.userError s!"X2-D-02: expected default PA width 52, got {bootedState.state.machine.physicalAddressWidth}"
 
+  -- AC4-A/A-04: vspaceMapPageCheckedWithFlushFromState rejects address at 2^44
+  -- on RPi5 config (44-bit PA). This verifies that the state-aware production
+  -- entry point enforces platform-specific bounds, closing the [2^44, 2^52) gap.
+  let asidAC4 : SeLe4n.ASID := ⟨1⟩
+  let vaddrAC4 : SeLe4n.VAddr := ⟨0x1000⟩
+  let rootOid : SeLe4n.ObjId := ⟨500⟩
+  let paddrAtBoundary : SeLe4n.PAddr := ⟨2^44⟩  -- first address beyond 44-bit range
+  let stRpi5 : SystemState :=
+    { withPA.state with
+      objects := withPA.state.objects.insert rootOid
+        (.vspaceRoot { asid := asidAC4, mappings := {} })
+      asidTable := withPA.state.asidTable.insert asidAC4 rootOid }
+  let resultReject := SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState
+    asidAC4 vaddrAC4 paddrAtBoundary default stRpi5
+  match resultReject with
+  | .error .addressOutOfBounds =>
+    IO.println "positive check passed [AC4-A-01]: state-aware map rejects PA at 2^44 on RPi5 (44-bit)"
+  | .error e =>
+    throw <| IO.userError s!"AC4-A-01: expected addressOutOfBounds, got {repr e}"
+  | .ok _ =>
+    throw <| IO.userError "AC4-A-01: state-aware map should reject PA at 2^44 on 44-bit platform"
+
+  -- AC4-A/A-04: address just below the 44-bit boundary should be accepted
+  let paddrJustBelow : SeLe4n.PAddr := ⟨2^44 - 1⟩
+  let resultAccept := SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState
+    asidAC4 vaddrAC4 paddrJustBelow default stRpi5
+  match resultAccept with
+  | .ok _ =>
+    IO.println "positive check passed [AC4-A-02]: state-aware map accepts PA at 2^44-1 on RPi5"
+  | .error e =>
+    throw <| IO.userError s!"AC4-A-02: expected ok for PA just below 44-bit bound, got {repr e}"
+
   -- X2-I: scheduleChecked on malformed state returns schedulerInvariantViolation
   -- Uses .build intentionally: runnable [tid 77] references non-existent TCB
   -- (check 3 would reject). Tests scheduleChecked handling of malformed state.

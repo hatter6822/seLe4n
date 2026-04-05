@@ -225,6 +225,62 @@ def enforcementBoundary : List EnforcementClass :=
   ]
 
 -- ============================================================================
+-- AC4-D/IF-01: Enforcement boundary completeness witness
+-- ============================================================================
+
+/-- AC4-D: Map each `SyscallId` to the name of its corresponding enforcement
+    boundary entry. This bridges the typed `SyscallId` inductive to the
+    string-based `EnforcementClass` list, enabling compile-time completeness
+    verification. -/
+def syscallIdToEnforcementName : SyscallId → String
+  | .send                  => "endpointSendDualChecked"
+  | .receive               => "endpointReceiveDualChecked"
+  | .call                  => "endpointCallChecked"
+  | .reply                 => "endpointReplyChecked"
+  | .cspaceMint            => "cspaceMintChecked"
+  | .cspaceCopy            => "cspaceCopyChecked"
+  | .cspaceMove            => "cspaceMoveChecked"
+  | .cspaceDelete          => "cspaceDeleteSlot"
+  | .lifecycleRetype       => "lifecycleRetypeObject"
+  | .vspaceMap             => "storeObject"
+  | .vspaceUnmap           => "storeObject"
+  | .serviceRegister       => "registerServiceChecked"
+  | .serviceRevoke         => "cspaceRevoke"
+  | .serviceQuery          => "lookupService"
+  | .notificationSignal    => "notificationSignalChecked"
+  | .notificationWait      => "notificationWaitChecked"
+  | .replyRecv             => "endpointReplyRecvChecked"
+  | .schedContextConfigure => "schedContextConfigure"
+  | .schedContextBind      => "schedContextBind"
+  | .schedContextUnbind    => "schedContextUnbind"
+  | .tcbSuspend            => "suspendThread"
+  | .tcbResume             => "resumeThread"
+  | .tcbSetPriority        => "setPriority"
+  | .tcbSetMCPriority      => "setMCPriority"
+  | .tcbSetIPCBuffer       => "setIPCBuffer"
+
+/-- AC4-D: Check whether every SyscallId maps to an operation name present in
+    the enforcement boundary list. Returns `true` iff every syscall is covered. -/
+def enforcementBoundaryComplete : Bool :=
+  SyscallId.all.all (fun sid =>
+    let name := syscallIdToEnforcementName sid
+    enforcementBoundary.any (fun ec =>
+      match ec with
+      | .policyGated n | .capabilityOnly n | .readOnly n => n == name))
+
+/-- AC4-D/IF-01: **Compile-time completeness theorem** — every `SyscallId` variant
+    maps to an operation present in the enforcement boundary.
+
+    This theorem fails at compile time if:
+    - A new `SyscallId` variant is added without updating `syscallIdToEnforcementName`.
+    - A `syscallIdToEnforcementName` mapping references a name absent from
+      `enforcementBoundary`.
+    - An `enforcementBoundary` entry is removed that was the sole coverage for
+      a `SyscallId` variant. -/
+theorem enforcementBoundary_is_complete :
+    enforcementBoundaryComplete = true := by native_decide
+
+-- ============================================================================
 -- WS-E5/M-07: Denied-preserves-state theorems
 -- ============================================================================
 
