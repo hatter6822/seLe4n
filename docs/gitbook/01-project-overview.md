@@ -73,10 +73,10 @@ M7 (audit remediation).
 
 ### What's next
 
-All workstreams from WS-B through WS-AB are **COMPLETE** (v0.9.0–v0.25.3).
+All workstreams from WS-B through WS-AB are **COMPLETE** (v0.9.0–v0.25.5).
 Key recent completions:
 
-- **WS-AB** (v0.24.0–v0.25.3): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer), Priority Inheritance Protocol with deadlock freedom proof, Bounded Latency Theorem (WCRT = D×L_max + N×(B+P)), API surface integration. **PORTFOLIO COMPLETE.**
+- **WS-AB** (v0.24.0–v0.25.5): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer), Priority Inheritance Protocol with deadlock freedom proof, Bounded Latency Theorem (WCRT = D×L_max + N×(B+P)), API surface integration. **PORTFOLIO COMPLETE.**
 - **WS-AA** (v0.23.21): Comprehensive Audit Remediation — Phases AA1–AA2 complete (Rust ABI type sync, CI hardening). **PORTFOLIO COMPLETE.**
 - **WS-Z** (v0.23.0–v0.23.20): Composable Performance Objects — 10 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, full API surface, and invariant composition. **PORTFOLIO COMPLETE.**
 

@@ -205,7 +205,7 @@ The O(1) duplicate check (Endpoint.lean:391) only catches a thread waiting on th
 The API stability table (API.lean:66) documents: "`cspaceMint` does not record CDT edges — capabilities created via this path are untracked by CDT-based revocation." This means capabilities minted via `cspaceMint` cannot be revoked via the CDT walk. `cspaceMintWithCdt` exists for tracked derivation.
 
 - **Impact**: If a caller uses `cspaceMint` instead of `cspaceMintWithCdt`, the resulting capability is permanently irrevocable via CDT-based revocation. In a security context, this could allow persistence of authority that should have been reclaimed.
-- **Mitigation**: The API documentation explicitly directs callers to use `cspaceMintWithCdt` for tracked derivation. The `syscallEntry` dispatch path (API.lean) wires `.cspaceMint` through the CDT-aware path.
+- **Mitigation**: The API documentation explicitly directs callers to use `cspaceMintWithCdt` for tracked derivation. Note: the current `syscallEntry` dispatch path routes `.cspaceMint` through `cspaceMintChecked` → `cspaceMint` (CDT-untracked). `cspaceMintWithCdt` is not yet wired into the dispatch path.
 - **Recommendation**: Consider deprecating or removing the untracked `cspaceMint` from the public API entirely.
 
 ### C-02 [Low] — `resolveCapAddress` guard check is bidirectionally proven (positive finding)

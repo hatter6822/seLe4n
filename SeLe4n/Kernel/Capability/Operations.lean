@@ -541,8 +541,11 @@ def mintDerivedCap (parent : Capability) (rights : AccessRightSet)
 
 **CDT-untracked (C-01)**: This function creates capabilities without recording
 CDT derivation edges. Minted capabilities are therefore **irrevocable** via
-CDT-based revocation (`cspaceRevoke`). The syscall dispatch path uses
-`cspaceMintChecked` → `cspaceMintWithCdt` for CDT-tracked derivation.
+CDT-based revocation (`cspaceRevoke`). The current syscall dispatch path
+(`dispatchWithCapChecked`) routes `.cspaceMint` through `cspaceMintChecked`,
+which delegates to this function — CDT edges are **not** recorded on the
+production syscall path. `cspaceMintWithCdt` exists as a CDT-tracked
+alternative but is not yet wired into the dispatch path.
 
 Direct use should be limited to:
 - Internal composition within `cspaceMintWithCdt`

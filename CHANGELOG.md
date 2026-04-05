@@ -1,6 +1,7 @@
-## v0.25.4 — WS-AC Phase AC1: High-Severity Audit Fixes
+## v0.25.5 — WS-AC Phase AC1: High-Severity Audit Fixes (Audit-Verified)
 
 Phase AC1 of WS-AC Comprehensive Audit Remediation (v0.25.3 baseline).
+End-to-end audit verified: all 9 sub-tasks complete, zero sorry/axiom.
 
 - **AC1-A (S-01)**: `hasSufficientBudget` changed from fail-open to fail-closed.
   Missing SchedContext now returns `false` (defense-in-depth). Unreachable under
@@ -11,17 +12,23 @@ Phase AC1 of WS-AC Comprehensive Audit Remediation (v0.25.3 baseline).
   3 operation-level theorems (`notificationSignal_preserves_*`,
   `notificationWait_preserves_*`, `notificationWake_pendingMessage_was_none`)
   moved from Structural.lean to NotificationPreservation.lean with full
-  machine-checked proofs (previously only comment cross-references).
+  machine-checked proofs (replacing comment cross-references). Net ~330 lines
+  removed from Structural.lean.
 - **AC1-D (C-01)**: `cspaceMint` documented as CDT-untracked with prominent
   doc-comment warning. `cspaceMintWithCdt` is the CDT-tracked alternative.
   `@[deprecated]` was evaluated but rejected: 14 suppression annotations
-  across 8 proof files outweighed the signal value. Doc-comment achieves
-  the same safety awareness without build noise.
+  across 8 proof files outweighed the signal value. Doc-comment corrected
+  during audit: production dispatch path is `cspaceMintChecked` → `cspaceMint`
+  (CDT-untracked), not `cspaceMintWithCdt` as previously claimed.
 - **AC1-G**: 5 negative regression tests for budget fail-closed behavior.
 - **AC1-H**: 2 regression tests verifying CDT edge tracking difference between
   `cspaceMint` (no edges) and `cspaceMintWithCdt` (adds edge).
+- **Audit corrections**: Fixed inaccurate documentation claiming syscall dispatch
+  routes through CDT-tracked path (Operations.lean, workstream plan, comprehensive
+  audit report). All documentation now accurately reflects the actual dispatch chain.
 - Cross-subsystem verification: Preservation.lean, WCRT, CrossSubsystem,
   PriorityInheritance all build unchanged. Zero sorry/axiom.
+- Version bump 0.25.3 → 0.25.5.
 
 ## v0.25.3 — D5 Audit: Surface Anchor Count Correction
 

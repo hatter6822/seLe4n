@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-ac1-fixes-5cT4c",
-      "commit_sha": "1b46beefcdc877a826b99a23675078a202037d29",
-      "tree_sha": "f6fa06c6350594042574368595f06b3e40265dcf",
-      "committed_at_utc": "2026-04-05T02:49:17+00:00"
+      "commit_sha": "aa0fb27b7c9dedb9a2ff5cb72277ef25158d28fd",
+      "tree_sha": "652dfee5c284eb6e902aa82ddd620f20c0d5bfa8",
+      "committed_at_utc": "2026-04-05T03:05:24+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "927da3f4c184804057faaba80fc74c148c1b82812cfeda0096e84b1270aa3200"
+    "source_digest": "5544b404f2afc978ed9fef0d89cf032b024db303a31c04bfe8542ac810ab2ac6"
   },
   "summary": {
     "module_count": 148,
     "declaration_count": 4439
   },
   "readme_sync": {
-    "version": "0.25.3",
+    "version": "0.25.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 83312,
+    "production_loc": 83315,
     "test_files": 15,
     "test_loc": 10680,
     "proved_theorem_lemma_decls": 2447,
@@ -8177,7 +8177,7 @@
         {
           "kind": "def",
           "name": "cspaceMint",
-          "line": 553,
+          "line": 556,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -8192,7 +8192,7 @@
         {
           "kind": "def",
           "name": "hasCdtChildren",
-          "line": 568,
+          "line": 571,
           "called": [
             "CSpaceAddr",
             "SystemState",
@@ -8205,7 +8205,7 @@
         {
           "kind": "def",
           "name": "cspaceDeleteSlotCore",
-          "line": 577,
+          "line": 580,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -8219,7 +8219,7 @@
         {
           "kind": "def",
           "name": "cspaceDeleteSlot",
-          "line": 597,
+          "line": 600,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -8230,7 +8230,7 @@
         {
           "kind": "def",
           "name": "cspaceRevoke",
-          "line": 653,
+          "line": 656,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -8243,7 +8243,7 @@
         {
           "kind": "def",
           "name": "cspaceCopy",
-          "line": 678,
+          "line": 681,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -8256,7 +8256,7 @@
         {
           "kind": "def",
           "name": "cspaceMove",
-          "line": 696,
+          "line": 699,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -8271,7 +8271,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_error_no_state",
-          "line": 723,
+          "line": 726,
           "called": [
             "CSpaceAddr",
             "KernelError",
@@ -8282,7 +8282,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_state_eq",
-          "line": 735,
+          "line": 738,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -8293,7 +8293,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_ok_implies_source_exists",
-          "line": 744,
+          "line": 747,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -8306,7 +8306,7 @@
         {
           "kind": "def",
           "name": "cspaceMutate",
-          "line": 773,
+          "line": 776,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -8323,7 +8323,7 @@
         {
           "kind": "def",
           "name": "cspaceMintWithCdt",
-          "line": 797,
+          "line": 800,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -8337,7 +8337,7 @@
         {
           "kind": "def",
           "name": "processRevokeNode",
-          "line": 823,
+          "line": 826,
           "called": [
             "CdtNodeId",
             "KernelError",
@@ -8351,7 +8351,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdt",
-          "line": 857,
+          "line": 860,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -8365,7 +8365,7 @@
         {
           "kind": "def",
           "name": "streamingRevokeBFS",
-          "line": 896,
+          "line": 899,
           "called": [
             "CdtNodeId",
             "KernelError",
@@ -8377,7 +8377,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStreaming",
-          "line": 922,
+          "line": 925,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -8391,7 +8391,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictFailure",
-          "line": 938,
+          "line": 941,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -8401,7 +8401,7 @@
         {
           "kind": "structure",
           "name": "RevokeCdtStrictReport",
-          "line": 948,
+          "line": 951,
           "called": [
             "CSpaceAddr",
             "RevokeCdtStrictFailure"
@@ -8410,7 +8410,7 @@
         {
           "kind": "def",
           "name": "cspaceRevokeCdtStrict",
-          "line": 963,
+          "line": 966,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -8430,7 +8430,7 @@
         {
           "kind": "def",
           "name": "ipcTransferSingleCap",
-          "line": 1018,
+          "line": 1021,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8448,7 +8448,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_scheduler_eq",
-          "line": 1041,
+          "line": 1044,
           "called": [
             "SlotRef",
             "SystemState",
@@ -8458,7 +8458,7 @@
         {
           "kind": "theorem",
           "name": "ensureCdtNodeForSlot_services_eq",
-          "line": 1046,
+          "line": 1049,
           "called": [
             "SlotRef",
             "SystemState",
@@ -8468,7 +8468,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_scheduler",
-          "line": 1051,
+          "line": 1054,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8488,7 +8488,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_ne",
-          "line": 1085,
+          "line": 1088,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8509,7 +8509,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_services",
-          "line": 1121,
+          "line": 1124,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8529,7 +8529,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_objects_invExt",
-          "line": 1155,
+          "line": 1158,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8550,7 +8550,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ntfn_objects",
-          "line": 1194,
+          "line": 1197,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8567,7 +8567,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_not_ntfn",
-          "line": 1216,
+          "line": 1219,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8592,7 +8592,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_ep_objects",
-          "line": 1291,
+          "line": 1294,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8609,7 +8609,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_preserves_tcb_objects",
-          "line": 1312,
+          "line": 1315,
           "called": [
             "CSpaceAddr",
             "CapTransferResult",
@@ -8626,7 +8626,7 @@
         {
           "kind": "theorem",
           "name": "ipcTransferSingleCap_receiverRoot_stays_cnode",
-          "line": 1334,
+          "line": 1337,
           "called": [
             "CNode",
             "CSpaceAddr",

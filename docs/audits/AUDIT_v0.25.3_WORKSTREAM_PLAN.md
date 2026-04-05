@@ -283,8 +283,9 @@ the first).
 535–540) documenting:
 - This function creates **CDT-untracked** capabilities.
 - Minted capabilities are **irrevocable** via CDT-based revocation.
-- The syscall dispatch path uses `cspaceMintChecked` → `cspaceMintWithCdt` for
-  tracked derivation.
+- The current syscall dispatch path routes through `cspaceMintChecked` →
+  `cspaceMint` (CDT-untracked). `cspaceMintWithCdt` exists but is not yet
+  wired into the dispatch path.
 - Direct use should be limited to: (a) internal composition within
   `cspaceMintWithCdt`, (b) proof decomposition, (c) tests.
 

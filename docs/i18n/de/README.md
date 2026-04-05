@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.5-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -86,7 +86,7 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.25.3` |
+| **Version** | `0.25.5` |
 | **Lean-Toolchain** | `v4.28.0` |
 | **Produktions-LoC (Lean)** | 83.286 über 132 Dateien |
 | **Test-LoC (Lean)** | 10.564 über 15 Testsuiten |
@@ -222,7 +222,7 @@ Geschichte befindet sich in [`docs/WORKSTREAM_HISTORY.md`](../../../docs/WORKSTR
 
 | Workstream | Umfang | Version |
 |------------|--------|---------|
-| **WS-AB** | Zurückgestellte Operationen & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority-Inheritance-Protokoll, Theorem für beschränkte Latenz (6 Phasen, 90 Aufgaben) | v0.24.0–v0.25.3 |
+| **WS-AB** | Zurückgestellte Operationen & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority-Inheritance-Protokoll, Theorem für beschränkte Latenz (6 Phasen, 90 Aufgaben) | v0.24.0–v0.25.5 |
 | **WS-Z** | Komponierbare Leistungsobjekte — `SchedContext` als 7. Kernel-Objekt, CBS-Budget-Engine, Replenishment-Queue, passive Server-Donation, Timeout-Endpoints (10 Phasen, 213 Aufgaben) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Kern-Subsysteme, Robin-Hood-Hashtabellen, Radix Trees, Frozen State, Informationsfluss, Service-Orchestrierung, Plattformverträge | v0.9.0–v0.22.x |
 

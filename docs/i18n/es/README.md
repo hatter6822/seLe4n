@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.3-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.5-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -87,7 +87,7 @@ demostración de Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.25.3` |
+| **Versión** | `0.25.5` |
 | **Toolchain de Lean** | `v4.28.0` |
 | **LoC de producción en Lean** | 83.286 en 132 archivos |
 | **LoC de pruebas en Lean** | 10.564 en 15 suites de pruebas |
@@ -222,7 +222,7 @@ El historial completo se encuentra en [`docs/WORKSTREAM_HISTORY.md`](../../../do
 
 | Flujo de trabajo | Alcance | Versión |
 |------------------|---------|---------|
-| **WS-AB** | Operaciones diferidas y vivacidad — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Protocolo de Herencia de Prioridad, Teorema de Latencia Acotada (6 fases, 90 tareas) | v0.24.0–v0.25.3 |
+| **WS-AB** | Operaciones diferidas y vivacidad — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Protocolo de Herencia de Prioridad, Teorema de Latencia Acotada (6 fases, 90 tareas) | v0.24.0–v0.25.5 |
 | **WS-Z** | Objetos de rendimiento componibles — `SchedContext` como 7.o objeto de kernel, motor de presupuesto CBS, cola de reposición, donación de servidor pasivo, endpoints con timeout (10 fases, 213 tareas) | v0.23.0–v0.23.21 |
 | **WS-B – WS-Y** | Subsistemas centrales del kernel, tablas hash Robin Hood, árboles radix, estado congelado, flujo de información, orquestación de servicios, contratos de plataforma | v0.9.0–v0.22.x |
 
