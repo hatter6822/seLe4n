@@ -79,17 +79,18 @@ any order are structurally equal.
   - `ofList rs` / `singleton r` / `empty`: Compile-time-known sets.
 - **Operational safety argument**: Even if `bits ≥ 32` (invalid), operations
   produce correct results for the 5 defined rights:
-  - `mem` uses `testBit` — only positions 0..4 are meaningful access rights,
-    so high bits are irrelevant to membership queries.
+  - `mem` uses shift-right and bitwise AND (`(bits >>> r.toBit) &&& 1 != 0`)
+    — only positions 0..4 are meaningful access rights, so high bits are
+    irrelevant to membership queries.
   - `subset` uses bitwise AND — `a &&& b == a` is correct for any `Nat`.
   - `inter` returns `⟨a &&& b⟩` — AND naturally clears bits beyond `b`'s range.
   - `union` returns `⟨a ||| b⟩` — may propagate invalid high bits from either
     operand; callers requiring validity should apply `ofNat` to the result.
 - **Formal proofs**: `ofNat_valid`, `mk_checked_valid`, `empty_valid`,
   `singleton_valid`, `union_valid`, `inter_valid`, `ofList_valid` collectively
-  prove that all public constructors produce valid sets. See AC5-E for
-  additional operational safety theorems (`inter_valid_left`, `subset_correct`,
-  `mem_bounded`). -/
+  prove that all public constructors produce valid sets. AC5-E (pending)
+  will add additional operational safety theorems (`inter_valid_left`,
+  `subset_correct`, `mem_bounded`). -/
 structure AccessRightSet where
   bits : Nat
 deriving DecidableEq, Repr, Inhabited

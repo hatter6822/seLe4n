@@ -39,7 +39,8 @@ shorter.
 identifiers. Specifically:
 - `RegisterDecode.decodeSyscallId` rejects values ≥ 25 (invalid syscall numbers).
 - `RegisterDecode.decodeMsgInfo` enforces length ≤ 120, extraCaps ≤ 3.
-- `RegisterDecode.validateRegBound` checks register indices < 32.
+- `RegisterDecode.validateRegBound` checks register indices against a
+  configurable bound (default 32 on ARM64 via `regCount`).
 - All per-syscall decoders in `SyscallArgDecode.lean` produce typed identifiers
   only from validated register contents.
 
