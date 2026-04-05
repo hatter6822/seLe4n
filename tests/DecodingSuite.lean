@@ -19,7 +19,7 @@ dispersed across NegativeStateSuite and OperationChainSuite.
 **Layer 1** (RegisterDecode): `decodeSyscallId`, `decodeMsgInfo`,
 `decodeCapPtr`, `validateRegBound`, `decodeSyscallArgs`.
 
-**Layer 2** (SyscallArgDecode): 17 per-syscall decode functions
+**Layer 2** (SyscallArgDecode): 20 per-syscall decode functions
 organized by subsystem (CSpace, VSpace, Lifecycle, Service,
 Notification, SchedContext, TCB). -/
 
@@ -150,11 +150,13 @@ private def rd009_decodeSyscallArgsIntegration : IO Unit := do
   match result with
   | .ok dr =>
     expect "RD-009b capAddr" (dr.capAddr.toNat == capPtrVal)
-    expect "RD-009c syscallId" (dr.syscallId == syscallVal)
-    expect "RD-009d msgRegs length" (dr.msgRegs.size == 4)
-    expect "RD-009e msgReg0" (dr.msgRegs[0]! == ⟨100⟩)
-    expect "RD-009f msgReg1" (dr.msgRegs[1]! == ⟨200⟩)
-  | .error _ => pure ()
+    expect "RD-009c msgInfo length" (dr.msgInfo.length == 2)
+    expect "RD-009d msgInfo extraCaps" (dr.msgInfo.extraCaps == 1)
+    expect "RD-009e syscallId" (dr.syscallId == syscallVal)
+    expect "RD-009f msgRegs length" (dr.msgRegs.size == 4)
+    expect "RD-009g msgReg0" (dr.msgRegs[0]! == ⟨100⟩)
+    expect "RD-009h msgReg1" (dr.msgRegs[1]! == ⟨200⟩)
+  | .error _ => expect "RD-009 unexpected error" false
 
 /-- RD-010: decodeSyscallArgs — insufficient regCount rejects. -/
 private def rd010_decodeSyscallArgsInsufficientRegs : IO Unit := do
@@ -199,7 +201,7 @@ private def sad001_cspaceMint : IO Unit := do
     expect "SAD-001b srcSlot" (args.srcSlot.toNat == 10)
     expect "SAD-001c dstSlot" (args.dstSlot.toNat == 20)
     expect "SAD-001d badge" (args.badge.toNat == 42)
-  | .error _ => pure ()
+  | .error _ => expect "SAD-001 unexpected error" false
 
 /-- SAD-002: decodeCSpaceMintArgs — insufficient registers (3). -/
 private def sad002_cspaceMintInsufficient : IO Unit := do
@@ -216,7 +218,7 @@ private def sad003_cspaceCopy : IO Unit := do
   | .ok args =>
     expect "SAD-003b srcSlot" (args.srcSlot.toNat == 5)
     expect "SAD-003c dstSlot" (args.dstSlot.toNat == 15)
-  | .error _ => pure ()
+  | .error _ => expect "SAD-003 unexpected error" false
 
 /-- SAD-004: decodeCSpaceMoveArgs — valid decode. -/
 private def sad004_cspaceMove : IO Unit := do
@@ -319,7 +321,7 @@ private def sad016_schedContextConfigure : IO Unit := do
     expect "SAD-016b budget" (args.budget == 1000)
     expect "SAD-016c period" (args.period == 5000)
     expect "SAD-016d priority" (args.priority == 128)
-  | .error _ => pure ()
+  | .error _ => expect "SAD-016 unexpected error" false
 
 /-- SAD-017: decodeSchedContextConfigureArgs — insufficient registers (4). -/
 private def sad017_schedContextConfigureInsufficient : IO Unit := do
@@ -359,7 +361,7 @@ private def sad021_setPriority : IO Unit := do
   expect "SAD-021a setPriority ok" result.isOk
   match result with
   | .ok args => expect "SAD-021b priority value" (args.newPriority == 128)
-  | .error _ => pure ()
+  | .error _ => expect "SAD-021 unexpected error" false
   -- Boundary: 0xFF is valid
   let stubMax := mkStub #[⟨0xFF⟩]
   let resultMax := decodeSetPriorityArgs stubMax
@@ -401,7 +403,7 @@ private def sad024_serviceRegister : IO Unit := do
   | .ok args =>
     expect "SAD-024b methodCount" (args.methodCount == 10)
     expect "SAD-024c requiresGrant" args.requiresGrant
-  | .error _ => pure ()
+  | .error _ => expect "SAD-024 unexpected error" false
 
 /-- SAD-025: decodeServiceRegisterArgs — insufficient registers (4). -/
 private def sad025_serviceRegisterInsufficient : IO Unit := do
