@@ -13,7 +13,7 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 4 HIGH, 21 MEDIUM, 37 LOW, 25 INFORMATIONAL (87 total)
+**Critical findings**: 4 HIGH, 23 MEDIUM, 38 LOW, 25 INFORMATIONAL (90 total)
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, four high-severity
@@ -117,6 +117,9 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | PLT-06 | LOW | Platform/RPi5/BootContract | Boot contract validates empty state, not hardware-derived state |
 | PLT-07 | INFO | Kernel/CrossSubsystem | 8-predicate invariant with 28 pairwise analyses — exemplary |
 | PLT-08 | INFO | Service/Invariant/Acyclicity | Acyclicity proof is genuine, not vacuous — fixed original BFS issue |
+| IPC-01 | MEDIUM | IPC/Operations/Timeout | Timeout detection uses sentinel register value — collision risk with message data |
+| IPC-02 | MEDIUM | IPC/DualQueue/Core | `endpointQueueRemove` silently absorbs queue link lookup failures |
+| IPC-03 | LOW | IPC/Operations/Endpoint | Notification wait uses LIFO instead of FIFO — potential waiter starvation |
 | T-06 | MEDIUM | Testing | PriorityInheritanceSuite compiled but never executed in any test tier |
 | T-07 | LOW | Testing | SuspendResume/Priority/IpcBuffer suites use unchecked `builder.build` |
 | T-02 | INFO | Testing/InvariantChecks | Runtime invariant checks are boolean predicates, not proofs — by design |
@@ -635,6 +638,43 @@ queue length under the acyclicity invariant, or return an error on fuel exhausti
 
 ---
 
+### IPC-01: Timeout detection uses sentinel register value — collision risk
+
+**Location**: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, lines 23, 111
+**Impact**: False timeout detection if legitimate IPC message contains sentinel value
+**Severity**: MEDIUM
+
+`timeoutAwareReceive` detects prior timeouts by checking `gpr x0 = timeoutErrorCode
+(0xFFFFFFFF) AND ipcState = .ready`. No mechanism prevents a sender from setting this
+value in message register x0. A thread that received a legitimate message containing
+`0xFFFFFFFF` could be misidentified as timed-out.
+
+In practice, the IPC message is delivered via `pendingMessage` and `gpr x0` is only
+written by `timeoutThread`, but the formal model does not prove that `gpr x0` cannot
+contain the sentinel through non-timeout paths.
+
+**Remediation**: Add a dedicated `wasTimedOut : Bool` field to TCB, or prove an
+invariant that `gpr x0 = timeoutErrorCode` implies the thread was actually timed out.
+
+---
+
+### IPC-02: `endpointQueueRemove` silently absorbs queue link lookup failures
+
+**Location**: `SeLe4n/Kernel/IPC/DualQueue/Core.lean`, lines 493-507
+**Impact**: Queue corruption masked by defensive fallback
+**Severity**: MEDIUM
+
+When predecessor/successor TCB lookup fails during mid-queue removal, the fallback is
+a no-op (`objs`). If this fallback IS reached (e.g., queue corruption from a bug
+elsewhere), the predecessor's `queueNext` still points to the removed thread — a
+dangling pointer. The `tcbQueueLinkIntegrity` invariant theoretically prevents this,
+but the defensive fallback masks the symptom rather than failing loudly.
+
+**Remediation**: Return an error on the fallback path, or prove formally that the
+branch is unreachable under `dualQueueSystemInvariant`.
+
+---
+
 ## LOW Severity Findings
 
 ### F-06: IntermediateState and Builder only reachable via Boot path
@@ -945,6 +985,19 @@ as a "production entry point."
 `decodeVSpaceMapArgs` validates both. A non-canonical VAddr in an unmap request produces
 a harmless `.translationFault` error (no mapping exists), so no security impact.
 Asymmetry is a code smell.
+
+---
+
+### IPC-03: Notification wait uses LIFO instead of FIFO
+
+**Location**: `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`, lines 389-390, 418
+**Severity**: LOW
+
+`notificationWait` prepends waiters (`waiter :: ntfn.waitingThreads`) for O(1) enqueue.
+`notificationSignal` wakes the first element. This produces LIFO order — the last
+thread to wait is first to be woken. While the seL4 spec doesn't mandate FIFO, most
+implementations use FIFO. LIFO can cause starvation of early waiters if new waiters
+continuously arrive. Documented design choice.
 
 ---
 
@@ -1336,8 +1389,11 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 - **Invariant suite**: 8 invariant submodules (Defs, EndpointPreservation, CallReplyRecv,
   WaitingThreadHelpers, NotificationPreservation, QueueNoDup, QueueMembership,
   QueueNextBlocking, Structural). Total ~8000 lines of preservation proofs.
-- **Deep audit verdict**: No security or correctness issues found. All operations
-  verified correct with comprehensive invariant preservation.
+- **Timeout**: Sentinel value collision risk (IPC-01) — `timeoutErrorCode` in gpr x0
+  is convention-based, not invariant-enforced. `endpointQueueRemove` silently absorbs
+  lookup failures (IPC-02). Notification wait uses LIFO (IPC-03) — documented choice.
+- **Deep audit verdict**: Two MEDIUM findings (sentinel detection, silent fallback).
+  Core IPC operations (send, receive, call, reply, replyRecv) verified correct.
 
 ### Capability (`SeLe4n/Kernel/Capability/` — 5 files)
 
@@ -1600,7 +1656,7 @@ perfect Lean-Rust ABI synchronization.
 - **IF-01** (switchDomain NI gap): Domain-switch missing from NI composition — per-step proof exists, needs wiring
 - **IF-02** (PIP outside NI envelope): Call/reply donation mutations unproven for NI — needs constructor extension
 
-**Twenty-one MEDIUM findings** should be addressed before benchmarking:
+**Twenty-three MEDIUM findings** should be addressed before benchmarking:
 - F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-01/S-02 (scheduler correctness)
 - IF-03 through IF-06 (NI methodology, labeling, integrity, projection completeness)
 - SC-01/SC-02 (CBS bandwidth bound gap, admission control truncation)
@@ -1618,7 +1674,7 @@ formal proof that such leaks cannot occur.
 
 After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler,
 capability), the kernel is well-positioned for its first major release and
-hardware benchmarking on the Raspberry Pi 5. The 37 LOW and 25 INFORMATIONAL
+hardware benchmarking on the Raspberry Pi 5. The 38 LOW and 25 INFORMATIONAL
 findings are maintenance items that can be addressed incrementally. Deep audits
 of the IPC and Architecture subsystems found no security issues. The Capability
 subsystem has a model-level CPtr masking inconsistency (CAP-01) and a CDT
