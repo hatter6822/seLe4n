@@ -9,6 +9,12 @@
 import SeLe4n.Kernel.Service.Registry.Invariant
 import SeLe4n.Kernel.Service.Invariant.Acyclicity
 import SeLe4n.Kernel.SchedContext.Invariant
+-- AD1/F-01: Integrate orphaned SchedContext preservation modules into
+-- the production proof chain. These cannot live in SchedContext/Invariant.lean
+-- (import cycle via Object/Types), so they are imported here at the
+-- cross-subsystem boundary where preservation theorems naturally compose.
+import SeLe4n.Kernel.SchedContext.Invariant.Preservation
+import SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation
 
 /-!
 # R4-E: Cross-Subsystem Invariant Definitions

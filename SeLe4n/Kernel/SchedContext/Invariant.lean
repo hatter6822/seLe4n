@@ -12,4 +12,13 @@ import SeLe4n.Kernel.SchedContext.Invariant.Defs
 
 Thin re-export hub for SchedContext invariant definitions and proofs.
 Follows the project convention of `Invariant.lean` → `Invariant/Defs.lean`.
+
+**Note (AD1/F-01):** `Preservation.lean` (Z5 per-operation preservation) and
+`PriorityPreservation.lean` (D2 transport lemmas, authority bounds) are NOT
+imported here due to an import-cycle constraint: this hub is transitively
+imported by `Object/Types.lean` via `SchedContext.lean`, and both preservation
+modules depend on `Operations.lean` → `Model.State` → `Object/Types.lean`.
+Instead, they are integrated via `CrossSubsystem.lean`, which sits downstream
+of the cycle boundary and is the natural home for cross-subsystem preservation
+theorem composition.
 -/
