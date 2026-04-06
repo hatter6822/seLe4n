@@ -557,17 +557,17 @@ targeted operation-specific preservation proofs for sharing-pair predicates.
 This phase addresses the composition gap documented at CrossSubsystem.lean:306–327.
 **Gate**: `lake build SeLe4n.Kernel.CrossSubsystem` + `./scripts/test_full.sh`.
 **Dependencies**: AD1–AD3 (clean codebase with integrated SchedContext proofs).
-**Status**: COMPLETE — 1 core bridge + 7 IPC + 5 Scheduler/Lifecycle bridge lemmas proven. Zero sorry/axiom.
+**Status**: COMPLETE — 2 core bridges + 31 per-operation bridge lemmas (33 total) covering all 31 kernel operations that modify `objects`. Zero sorry/axiom.
 
 ### Background: Current Composition Infrastructure
 
 The existing infrastructure in `CrossSubsystem.lean` provides:
 
 1. **8-predicate conjunction** (`crossSubsystemInvariant`):
+   `registryEndpointValid`, `registryDependencyConsistent`,
    `noStaleEndpointQueueReferences`, `noStaleNotificationWaitReferences`,
-   `registryDependencyConsistent`, `schedContextStoreConsistent`,
-   `schedContextNotDualBound`, `schedContextRunQueueConsistent`,
-   `cdtConsistentWithObjectStore`, `noOrphanedQueueChains`
+   `serviceGraphInvariant`, `schedContextStoreConsistent`,
+   `schedContextNotDualBound`, `schedContextRunQueueConsistent`
 
 2. **12 disjoint pairs** with frame lemmas (6 original + 6 Z9-E):
    Predicates with non-overlapping read-sets are automatically preserved
