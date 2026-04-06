@@ -21,8 +21,8 @@ The kernel demonstrates exceptional formal verification discipline. **Zero `sorr
 | Severity | Count | Description |
 |----------|-------|-------------|
 | CRITICAL | 0 | No exploitable vulnerabilities found |
-| HIGH | 7 | Design-level gaps requiring attention before hardware binding |
-| MEDIUM | 37 | Assurance gaps, defense-in-depth improvements, maintenance risks |
+| HIGH | 6 | Design-level gaps requiring attention before hardware binding |
+| MEDIUM | 38 | Assurance gaps, defense-in-depth improvements, maintenance risks |
 | LOW | 50 | Minor inconsistencies, documentation debt, style issues |
 | INFO | 72+ | Positive findings, design validations, confirmed correctness |
 
@@ -121,7 +121,7 @@ The kernel demonstrates exceptional formal verification discipline. **Zero `sorr
 
 | ID | Severity | File | Description |
 |----|----------|------|-------------|
-| I-T01 | MEDIUM | Operations/Timeout.lean:111 | Timeout detection via magic register value `0xFFFFFFFF` — potential false positive if legitimate IPC sets x0 to this value while thread is `.ready` |
+| I-T01 | MEDIUM | Operations/Timeout.lean:23,111 | Timeout detection via magic register value `0xFFFFFFFF` (line 23: `timeoutErrorCode`) combined with `ipcState = .ready` check (line 111). The composite AND condition mitigates false positives — both the register value AND ready state must hold simultaneously. Still recommended to replace with an out-of-band `timedOut : Bool` TCB field for hardware binding. |
 | I-TR02 | MEDIUM | DualQueue/Transport.lean:1648 | `endpointReceiveDual` reads `pendingMessage`/`ipcState` from pre-dequeue TCB — proven safe by transport lemmas but fragile if PopHead semantics change |
 | I-WC01 | MEDIUM | DualQueue/WithCaps.lean:28-33 | All capability transfers target `Slot.ofNat 0` — simplification that overwrites previous transfers; must be generalized for hardware binding |
 | I-ST01 | MEDIUM | Invariant/Structural.lean:4752-4774 | `ipcInvariantFull` preservation requires 11 externalized post-state hypotheses — proof obligations deferred to cross-subsystem layer |
@@ -180,8 +180,8 @@ The kernel demonstrates exceptional formal verification discipline. **Zero `sorr
 
 | ID | Severity | File | Description |
 |----|----------|------|-------------|
-| IF-01 | **HIGH** | Policy.lean:49-79 | **Non-standard integrity model (reversed BIBA)**: untrusted code CAN write to trusted destinations. Extensively documented, formally proved different from BIBA (`integrityFlowsTo_is_not_biba`), and proved to prevent escalation. However, system integrators expecting standard BIBA will get weaker integrity guarantees. |
-| IF-02 | **HIGH** | Policy.lean:219-226 | **Default labeling context defeats all IF enforcement**: assigns `publicLabel` to all entities, making `securityFlowsTo` trivially true. Formal insecurity witness exists (`defaultLabelingContext_insecure`). Production deployments MUST override. |
+| IF-01 | MEDIUM | Policy.lean:49-79 | **Non-standard integrity model (intentional, not BIBA)**: `integrityFlowsTo` is called with reversed arguments in `securityFlowsTo` (`dst.integrity, src.integrity`), allowing trusted destinations to accept untrusted sources. This is a **deliberate documented design choice** for authority-delegation semantics, NOT a vulnerability. Formally proved different from BIBA (`integrityFlowsTo_is_not_biba`, line 115) and proved to prevent escalation (`integrityFlowsTo_prevents_escalation`, line 157). `DomainFlowPolicy` provides standard BIBA alternative. **Deployment risk**: system integrators expecting standard BIBA will get different integrity guarantees. |
+| IF-02 | **HIGH** | Policy.lean:219-226 | **Default labeling context defeats all IF enforcement**: assigns `publicLabel` to all entities, making `securityFlowsTo` trivially true for all pairs (proven by `defaultLabelingContext_insecure`, line 240). Code includes explicit production warning (lines 215-219). Production deployments MUST override. |
 | IF-03 | MEDIUM | Projection.lean:256-288 | Scheduling state covert channel (accepted): 4 scheduling fields unconditionally visible to ALL observers; bandwidth bounded to <400 bits/second; matches seL4 design |
 | IF-04 | MEDIUM | Projection.lean:106-122 | Service registry projection coverage gap: service-layer internal state not captured by NI projection model |
 | IF-13 | MEDIUM | Invariant/Composition.lean:312-476 | NI proof structure is one-sided (projection preservation); sound for current operation set but extending to operations that modify observable state differently based on non-observable state requires different proof strategy |
@@ -319,7 +319,7 @@ The kernel demonstrates exceptional formal verification discipline. **Zero `sorr
 
 | ID | Severity | File | Description |
 |----|----------|------|-------------|
-| R-F01 | MEDIUM | sele4n-abi/args/sched_context.rs:16,29 | `SchedContextConfigureArgs` has 5 fields but only 4 inline registers (x2-x5); 5th field (domain) requires IPC buffer overflow handling not yet implemented; comment incorrectly implies x6 is used |
+| R-F01 | MEDIUM | sele4n-abi/args/sched_context.rs:16,29 | Register mapping comment says "x6=domain" but x6 is not in the ABI register array (`[x0,x1,x2-x5,x7]` — x6 skipped). The 5th field (domain) is correctly handled on the Lean side via IPC buffer overflow (`requireMsgReg decoded.msgRegs 4`). Rust `encode()` returns `[u64; 5]` but `SyscallRequest.msg_regs` is `[u64; 4]` — `sele4n-sys` wrapper must use IPC buffer overflow pattern. Comment should read "overflow[0]=domain". |
 | R-F02 | MEDIUM | sele4n-sys/tcb.rs:49-98 | `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer` pass raw `u64` without client-side validation — causes unnecessary kernel traps for invalid inputs |
 | R-F03 | MEDIUM | sele4n-sys/service.rs:31-46 | `service_register` does not validate `method_count` bounds client-side |
 | R-F04 | LOW | sele4n-sys/ipc.rs:180 | `endpoint_reply_recv` sends stale register values beyond `msg.length` (no security impact) |
@@ -415,45 +415,55 @@ Preservation chains exist for all major operations. The externalized-hypothesis 
 
 Single-core, interrupts disabled during kernel transitions. No concurrency races possible in the formal model. Hardware binding must enforce this assumption (GIC-400 interrupt masking on RPi5).
 
+### 11.7 Verification Methodology
+
+All HIGH findings and selected MEDIUM findings were independently verified in a second pass:
+- Each finding's cited line numbers were re-read against the actual source code
+- Code snippets were extracted and compared to the finding's characterization
+- One finding (IF-01, non-standard BIBA) was **downgraded from HIGH to MEDIUM** after verification revealed it is an intentional, formally-witnessed design choice — not a flaw
+- One finding (R-F01, SchedContext register mapping) was **refined** after verification confirmed the comment is incorrect about x6 but the Lean kernel correctly handles the 5th field via IPC buffer overflow
+- One finding (I-T01, timeout magic value) was **refined** to note the composite AND condition (register + state) that mitigates false positives
+- All other HIGH findings were confirmed accurate with exact code citations added
 
 ---
 
 ## 12. Consolidated HIGH Findings
 
-### HIGH-1: Non-Standard Integrity Model (IF-01)
-- **Location**: `InformationFlow/Policy.lean:49-79`
-- **Impact**: Reversed BIBA allows untrusted→trusted writes. Formally proved to still prevent escalation, but system integrators expecting standard BIBA get weaker integrity.
-- **Mitigation**: Extensively documented with formal witnesses. `DomainFlowPolicy` provides standard BIBA alternative. Deployment guide must prominently warn.
-
-### HIGH-2: Default Labeling Context Insecure (IF-02)
+### HIGH-1: Default Labeling Context Insecure (IF-02)
 - **Location**: `InformationFlow/Policy.lean:219-226`
-- **Impact**: All IF enforcement is trivially defeated with default labels.
+- **Impact**: All IF enforcement is trivially defeated with default labels. Proven by `defaultLabelingContext_insecure` (line 240).
 - **Mitigation**: Formal insecurity witness exists. SA-2 advisory referenced. Production MUST override.
+- **Verified**: Code at lines 220-226 assigns `publicLabel` to all entities. Theorem at line 240 proves `securityFlowsTo` is trivially true for all pairs.
 
-### HIGH-3: TLB Targeted Flush Transition Risk (A-T01)
+### HIGH-2: TLB Targeted Flush Transition Risk (A-T01)
 - **Location**: `Architecture/TlbModel.lean:168-188`
-- **Impact**: Current proof surface only covers full TLB flush. Targeted flush composition theorems needed before H3 hardware binding.
-- **Mitigation**: Current behavior is conservative (full flush). Performance concern only until targeted flushes are enabled.
+- **Impact**: `vspaceMapPageWithFlush` (line 168) and `vspaceUnmapPageWithFlush` (line 183) both use `adapterFlushTlb` (full TLB invalidation). Targeted variants (`adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`) exist but no production entry point uses them. Transitioning to targeted flushes for H3 requires composition theorems that do not yet exist.
+- **Mitigation**: Current behavior is conservative (full flush). Add targeted flush composition theorems before H3.
+- **Verified**: Lines 168-174 and 183-188 both call `adapterFlushTlb`. Comment at lines 181-182 acknowledges conservatism.
 
-### HIGH-4: VAddr Canonicity Not Checked on Unmap (A-SA01)
+### HIGH-3: VAddr Canonicity Not Checked on Unmap (A-SA01)
 - **Location**: `Architecture/SyscallArgDecode.lean:228-237`
-- **Impact**: Defense-in-depth gap. Non-canonical VAddr produces `translationFault` (safe) but error message is confusing.
-- **Mitigation**: Add canonical VAddr check to `decodeVSpaceUnmapArgs` for consistency.
+- **Impact**: `decodeVSpaceMapArgs` validates canonicity (line 213: `if !vaddr.isCanonical`), but `decodeVSpaceUnmapArgs` does not (line 237: constructs result directly with `VAddr.ofNat r1.val`). Non-canonical VAddr fails safely via `translationFault` in VSpace layer, but produces a confusing error rather than `addressOutOfBounds`.
+- **Mitigation**: Add `if !vaddr.isCanonical then .error .addressOutOfBounds` for consistency.
+- **Verified**: Map decode has canonicity check at line 213; unmap decode at line 237 lacks it.
 
-### HIGH-5: RobinHood `invExt` API Lacks `4 ≤ capacity` Guard (D-RH01)
-- **Location**: `RobinHood/Bridge.lean:361,858`
-- **Impact**: `insert_size_lt_capacity` theorem requires `4 ≤ capacity`. Construction via `invExt` (not `invExtK`) could bypass this. Kernel code uses `invExtK`.
-- **Mitigation**: Unify on `invExtK` or add guard to `RHTable.empty`.
+### HIGH-4: RobinHood `invExt` API Lacks `4 ≤ capacity` Guard (D-RH01)
+- **Location**: `RobinHood/Bridge.lean:361,858`, `RobinHood/Core.lean:91`
+- **Impact**: `insert_size_lt_capacity` (line 361) requires `hCapGe4 : 4 ≤ t.capacity`. `invExtK` (line 858) includes this guard. But `RHTable.empty` (Core.lean:91) accepts any `cap > 0`, and `invExt` (Preservation.lean:447) does not include the `4 ≤ capacity` constraint. A table created with `cap = 1` using `invExt` would bypass the guard.
+- **Mitigation**: Unify on `invExtK` or add `4 ≤ cap` to `RHTable.empty`.
+- **Verified**: All four code locations confirmed.
 
-### HIGH-6: RadixTree Bridge Precondition Not Type-Enforced (D-RT01)
-- **Location**: `RadixTree/Bridge.lean:317,420`
-- **Impact**: `UniqueRadixIndices` discharge depends on caller-side key bounds not enforced by type system.
+### HIGH-5: RadixTree Bridge Precondition Not Type-Enforced (D-RT01)
+- **Location**: `RadixTree/Bridge.lean:317-324,420-434`
+- **Impact**: `buildCNodeRadix_lookup_equiv` (line 317) requires `UniqueRadixIndices` and `hNoPhantom`. `uniqueRadixIndices_sufficient` (line 420) shows these are automatically satisfied when keys are bounded by `2^radixWidth`, but this bound is NOT enforced by the type system — it is a caller-side proof obligation.
 - **Mitigation**: Add bounded key type or runtime check in `buildCNodeRadix`.
+- **Verified**: Lines 406-419 document the sufficiency chain explicitly.
 
-### HIGH-7: PriorityInheritanceSuite Never Executed (T-F01)
-- **Location**: `lakefile.toml:76-78`, all `scripts/test_tier*.sh`
-- **Impact**: 20+ PIP tests covering priority inheritance — a security-critical subsystem — are dead tests. Regressions go undetected.
+### HIGH-6: PriorityInheritanceSuite Never Executed (T-F01)
+- **Location**: `lakefile.toml:75-78`, `scripts/test_tier2_negative.sh`
+- **Impact**: `priority_inheritance_suite` is registered as an executable (lakefile.toml:76) but never invoked by any test script. `test_tier2_negative.sh` executes D1 (suspend_resume), D2 (priority_management), D3 (ipc_buffer), and D5 (liveness) suites, but **skips D4** entirely. 20+ PIP tests are dead.
 - **Mitigation**: Add `run_check "TRACE" lake exe priority_inheritance_suite` to `test_tier2_negative.sh`.
+- **Verified**: Grep for `priority_inheritance` across all scripts returns zero hits. Gap visible in test_tier2_negative.sh between D3 and D5.
 
 ---
 
@@ -461,35 +471,35 @@ Single-core, interrupts disabled during kernel transitions. No concurrency races
 
 ### Priority 1 — Before Hardware Binding (H3)
 
-1. **[HIGH-7] Execute PriorityInheritanceSuite**: Add to Tier 2 test script. Single-line fix with immediate coverage gain.
-2. **[HIGH-4] Add VAddr canonicity check to `decodeVSpaceUnmapArgs`**: One `if !vaddr.isCanonical` guard for consistency.
-3. **[HIGH-3] Add targeted TLB flush composition theorems**: Required before switching from full-flush to per-ASID/per-VAddr.
-4. **[HIGH-5] Unify RobinHood on `invExtK`**: Either mark `invExt` private or add `4 ≤ capacity` to `RHTable.empty`.
-5. **[HIGH-6] Add key bounds enforcement to `buildCNodeRadix`**: Runtime check or refined key type.
+1. **[HIGH-6] Execute PriorityInheritanceSuite**: Add to Tier 2 test script. Single-line fix with immediate coverage gain for a security-critical subsystem.
+2. **[HIGH-3] Add VAddr canonicity check to `decodeVSpaceUnmapArgs`**: One `if !vaddr.isCanonical` guard for consistency with map decode.
+3. **[HIGH-2] Add targeted TLB flush composition theorems**: Required before switching from full-flush to per-ASID/per-VAddr.
+4. **[HIGH-4] Unify RobinHood on `invExtK`**: Either mark `invExt` private or add `4 ≤ capacity` to `RHTable.empty`.
+5. **[HIGH-5] Add key bounds enforcement to `buildCNodeRadix`**: Runtime check or refined key type.
 
 ### Priority 2 — Before Production Deployment
 
-6. **[HIGH-1, HIGH-2] Deployment guide**: Prominently document reversed-BIBA semantics and mandatory labeling override.
-7. **[I-T01] Replace timeout magic value**: Use out-of-band `timedOut : Bool` TCB field instead of `0xFFFFFFFF` sentinel.
+6. **[HIGH-1] Override default labeling**: Deployment guide must prominently document mandatory labeling override and the non-standard integrity model (IF-01: `DomainFlowPolicy` provides standard BIBA alternative).
+7. **[I-T01] Replace timeout magic value**: Use out-of-band `timedOut : Bool` TCB field instead of `0xFFFFFFFF` sentinel. The current composite check (register + state) mitigates false positives but is fragile for hardware binding.
 8. **[I-WC01] Generalize cap transfer slot**: Address slot-0-only simplification for real CSpace usage.
-9. **[R-F01] Fix SchedContext args register comment**: Document IPC buffer overflow requirement for 5th field.
-10. **[S-07] Strengthen WCRT liveness**: Prove or document the two external hypotheses.
+9. **[R-F01] Fix SchedContext args register comment**: Change "x6=domain" to document IPC buffer overflow for 5th field. Ensure `sele4n-sys` wrapper follows `service_register()` overflow pattern.
+10. **[S-07] Strengthen WCRT liveness**: Prove or document the two external hypotheses (`hDomainActiveRunnable`, `hBandProgress`).
 
 ### Priority 3 — Assurance Strengthening
 
-11. **[C-CAP06] Include `cdtMintCompleteness` in main bundle** or verify preservation separately.
-12. **[D-FO01] Refactor `frozenQueuePushTailObjects`**: Validate all lookups before performing writes.
-13. **[SC-L04] Preserve `min(oldBudgetRemaining, newBudget)` on reconfigure** to prevent runtime extension.
-14. **[SC-L06] Use `getCurrentPriority` for preemption check** in `resumeThread`.
-15. **[S-06] Tighten PIP inversion bound** to use `countTCBs` instead of `objectIndex.length`.
+11. **[C-CAP06] Include `cdtMintCompleteness` in main bundle** or verify preservation for all CDT-modifying operations.
+12. **[D-FO01] Refactor `frozenQueuePushTailObjects`**: Validate all lookups before performing writes to prevent partial state corruption on intermediate failure.
+13. **[SC-L04] Preserve `min(oldBudgetRemaining, newBudget)` on reconfigure** to prevent capability-gated runtime window extension.
+14. **[SC-L06] Use `getCurrentPriority` for preemption check** in `resumeThread` (currently uses TCB priority, missing SchedContext effective priority).
+15. **[S-06] Tighten PIP inversion bound** to use `countTCBs` or `maxBlockingDepth` instead of `objectIndex.length`.
 
 ### Priority 4 — Maintenance & Documentation
 
 16. Update `CLAUDE.md` large-file size for `Structural.lean` (now ~7591 lines, documented as ~2345).
-17. Add strategic documentation to `relaxedPCD` technique (10-15 line block comment).
-18. Factor high-heartbeat proofs (400K-800K) into intermediate lemmas.
-19. Change test suites to use `buildChecked` (T-F02, T-F03).
-20. Add at least one `assertStateInvariantsWithoutSync` test per subsystem.
+17. Add strategic documentation to `relaxedPCD` technique (10-15 line block comment explaining gap-and-backshift proof strategy).
+18. Factor high-heartbeat proofs (400K-800K) into intermediate lemmas to reduce Lean version upgrade fragility.
+19. Change test suites to use `buildChecked` (T-F02, T-F03) — `TraceSequenceProbe`, `SuspendResumeSuite`, `PriorityManagementSuite`.
+20. Add at least one `assertStateInvariantsWithoutSync` test per subsystem to detect operational drift.
 
 ---
 
@@ -503,5 +513,5 @@ Single-core, interrupts disabled during kernel transitions. No concurrency races
 
 ---
 
-*This audit was conducted as a pre-release comprehensive review for the seLe4n v0.25.12 kernel, covering all kernel modules, the Rust ABI layer, test infrastructure, and build system. The audit found zero `sorry`/`axiom` usage, zero CVE-worthy vulnerabilities, and a mature verification infrastructure. The 7 HIGH findings are primarily defense-in-depth gaps and deployment requirements, not exploitable vulnerabilities.*
+*This audit was conducted as a pre-release comprehensive review of the seLe4n v0.25.12 kernel, covering all 150 Lean modules, 30 Rust source files, test infrastructure, and build system. Every HIGH finding was independently verified against source code after initial discovery. The audit found zero `sorry`/`axiom` usage, zero CVE-worthy vulnerabilities, and a mature verification infrastructure. The 6 HIGH findings are defense-in-depth gaps (4), a deployment requirement (1), and a test coverage gap (1) — none are exploitable vulnerabilities in the current codebase.*
 
