@@ -13,7 +13,13 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 4 HIGH, 23 MEDIUM, 38 LOW, 25 INFORMATIONAL (90 total)
+**Critical findings**: 4 HIGH, 20 MEDIUM, 39 LOW, 25 INFORMATIONAL (88 total)
+
+> **Post-audit verification note** (2026-04-06): All 90 original findings were
+> cross-checked against source code. 3 findings were removed as erroneous
+> (IF-05, original IF-06), 2 findings were downgraded (IF-04 MEDIUM→LOW,
+> S-01 MEDIUM→LOW), and 1 finding was corrected (IF-06 rewritten). See
+> "Verification Status" annotations on individual findings.
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, four high-severity
@@ -63,7 +69,7 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | F-16 | INFO | RobinHood | Deeply integrated into production chain (Prelude, Object/Types, State, RunQueue) |
 | F-17 | INFO | RadixTree | Reachable via Platform.Boot → FreezeProofs → FrozenState |
 | F-18 | INFO | Re-export hubs | All 15 re-export hub files correctly import their submodules |
-| S-01 | MEDIUM | Scheduler/PriorityInheritance/Propagate | PIP propagation reads pre-mutation `blockingServer` state |
+| S-01 | LOW | Scheduler/PriorityInheritance/Propagate | PIP propagation reads pre-mutation `blockingServer` state (currently functionally equivalent) |
 | S-02 | MEDIUM | Scheduler/Operations/Selection | Domain filter uses `tcb.domain` but effective priority uses `sc.domain` |
 | S-03 | LOW | Scheduler/Operations/Core | `handleYield` re-enqueues at raw priority, not effective priority |
 | S-04 | LOW | Scheduler/Operations/Preservation | `*Effective`/`*WithBudget` variants lack full invariant preservation proofs |
@@ -71,9 +77,9 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | IF-01 | **HIGH** | InformationFlow/Invariant/Composition | `switchDomain` missing from `NonInterferenceStep` inductive |
 | IF-02 | **HIGH** | Kernel/API.lean + InformationFlow | PIP/donation mutations in call/reply outside NI proof envelope |
 | IF-03 | MEDIUM | InformationFlow/Invariant/Composition | `NonInterferenceStep` proves per-operation NI, not full dispatch NI |
-| IF-04 | MEDIUM | InformationFlow/Enforcement/Wrappers | Default labeling context uses `⊥` (bottom) — all flows permitted |
-| IF-05 | MEDIUM | InformationFlow/Policy | BIBA integrity ordering reversed (`securityFlowsTo` used for both) |
-| IF-06 | MEDIUM | InformationFlow/Invariant | Service registry excluded from NI projection model |
+| IF-04 | LOW | InformationFlow/Policy | Default `publicLabel` permits all flows — by-design but must be overridden at boot |
+| ~~IF-05~~ | ~~REMOVED~~ | ~~InformationFlow/Policy~~ | ~~ERRONEOUS: separate `confidentialityFlowsTo`/`integrityFlowsTo` predicates exist with distinct orderings~~ |
+| IF-06 | MEDIUM | InformationFlow/Projection | Service orchestration internals (lifecycle, restart, heartbeat) outside NI projection boundary |
 | IF-07 | LOW | InformationFlow/Enforcement/Soundness | Declassification well-formedness not structurally enforced |
 | IF-08 | LOW | InformationFlow/Enforcement/Wrappers | Dispatch structure couples enforcement to operation structure |
 | IF-09 | LOW | InformationFlow/Invariant/Composition | `replyRecv` compound operation NI proof assumes decomposition |
@@ -363,65 +369,70 @@ proofs. This closes the assumption gap.
 
 ---
 
-### IF-04: Default labeling context uses bottom label — all flows permitted
+### IF-04: Default `publicLabel` permits all flows — by-design but must be overridden
 
-**Location**: `SeLe4n/Kernel/InformationFlow/Policy.lean`
+**Location**: `SeLe4n/Kernel/InformationFlow/Policy.lean`, lines 35-36, 229-231
 **Impact**: Default configuration permits all cross-domain flows
-**Severity**: MEDIUM
+**Severity**: LOW (downgraded — by-design default, proven by `defaultLabelingContext_insecure`)
 
-**Description**: The default `LabelingContext` initializes security labels to `⊥`
-(bottom), meaning `securityFlowsTo` returns true for all domain pairs. This is
-correct for testing and simulation but means the default kernel configuration has
-no information-flow restrictions. If a platform binding fails to configure proper
-labels, the enforcement boundary will permit all flows silently.
+> **Verification status**: Corrected. Original finding described a lattice-theoretic
+> "bottom label (⊥)". The actual code uses `publicLabel = { confidentiality := .low,
+> integrity := .untrusted }`, which is not a formal lattice bottom element. However,
+> the conclusion is correct: `defaultLabelingContext_insecure` (line 229) proves that
+> the default label permits all flows. This is by-design for testing/simulation.
 
-**Remediation**: Add a runtime check or theorem verifying that the boot sequence
-configures non-trivial security labels before the first syscall. Alternatively,
-add a `LabelingContext.isNonTrivial` predicate and check it in `syscallEntryChecked`.
+**Description**: The default `LabelingContext` uses `publicLabel` with `.low`
+confidentiality and `.untrusted` integrity. Since `.low` confidentiality flows to
+all levels and `.untrusted` integrity flows from all levels, `securityFlowsTo`
+returns true for all domain pairs. This is correct for testing and simulation but
+means the default kernel configuration has no information-flow restrictions. If a
+platform binding fails to configure proper labels, enforcement permits all flows.
 
----
-
-### IF-05: BIBA integrity uses same ordering as confidentiality
-
-**Location**: `SeLe4n/Kernel/InformationFlow/Policy.lean`
-**Impact**: Integrity ordering may not match seL4's BIBA model
-**Severity**: MEDIUM
-
-**Description**: The `securityFlowsTo` predicate is used for both confidentiality
-(no read-up, no write-down) and integrity (BIBA: no write-up, no read-down). If
-the same lattice ordering is used for both properties, the BIBA integrity direction
-is effectively reversed relative to standard BIBA formulations where high-integrity
-data flows downward.
-
-This may be intentional (a lattice-theoretic dual), but the model does not explicitly
-distinguish the two flow directions or document the duality.
-
-**Remediation**: Add explicit documentation clarifying the integrity flow direction.
-If BIBA integrity is intended, consider separate predicates `confidentialityFlowsTo`
-and `integrityFlowsTo` with documented lattice orientations.
+**Remediation**: Add a `LabelingContext.isNonTrivial` predicate and check it in
+`syscallEntryChecked`, or document that platform bindings MUST override the default.
 
 ---
 
-### IF-06: Service registry excluded from NI projection model
+### ~~IF-05~~: REMOVED — ERRONEOUS
 
-**Location**: `SeLe4n/Kernel/InformationFlow/Projection.lean`
-**Impact**: Service operations are not covered by non-interference projection
+> **Verification status**: Removed. Original finding claimed `securityFlowsTo` uses
+> the same ordering for both confidentiality and integrity. This is factually wrong:
+> `Policy.lean` defines separate `confidentialityFlowsTo` (lines 43-46) and
+> `integrityFlowsTo` (lines 74-79) with distinct implementations. The code includes
+> `integrityFlowsTo_is_not_biba` (lines 114-117) explicitly documenting the non-standard
+> integrity direction. `securityFlowsTo` (line 181) uses reversed argument order for
+> integrity: `integrityFlowsTo dst.integrity src.integrity`.
+
+---
+
+### IF-06: Service orchestration internals outside NI projection boundary
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Projection.lean`, lines 93, 136-153, 480
+**Impact**: Service lifecycle/restart/heartbeat state not covered by NI proofs
 **Severity**: MEDIUM
 
-**Description**: The NI projection model (`projectState`) projects kernel state
-per domain for the non-interference property. The service registry (`serviceEntries`)
-is not included in the projection — service registrations, revocations, and queries
-are invisible to the NI framework.
+> **Verification status**: Corrected. Original finding claimed the service registry
+> was "excluded from NI projection." This is wrong — `projectState` (line 480) does
+> include `serviceRegistry := projectServiceRegistry ctx observer st`, and
+> `projectServiceRegistry` (lines 136-153) projects full `ServiceGraphEntry` data.
+> The actual limitation is documented at lines 104-121 and formalized by
+> `serviceOrchestrationOutsideNiBoundary` (lines 528-550).
 
-This means that if a service operation leaks information across domain boundaries
-(e.g., a query reveals the existence of a cross-domain service), this would not be
-caught by the NI proofs. The enforcement boundary classifies service operations
-(`.serviceWrite "register"`, `.serviceWrite "revoke"`, `.serviceRead "query"`) but
-the projection does not observe their effects.
+**Description**: The NI projection model (`projectState`) correctly includes the
+service registry's static dependency graph (registrations, capability bindings,
+dependency edges). However, service orchestration internals — lifecycle state
+transitions, restart policies, heartbeat monitoring — are explicitly outside the
+NI projection boundary. This is documented by the
+`serviceOrchestrationOutsideNiBoundary` theorem (lines 528-550).
 
-**Remediation**: Extend `projectState` to include the domain-relevant subset of
-the service registry, then prove NI preservation for service operations against
-the extended projection.
+If a service orchestration action (e.g., automatic restart after failure) leaks
+cross-domain information through timing or state changes, the NI proofs would not
+catch it. The enforcement boundary classifies service operations correctly, but
+orchestration-layer side effects are not observable in the projection.
+
+**Remediation**: If service orchestration becomes security-relevant (e.g., restart
+timing as a covert channel), extend `ObservableState` to include orchestration state
+and prove NI preservation for orchestration transitions.
 
 ---
 
@@ -1346,11 +1357,14 @@ The API module is the central dispatch hub. Key observations:
 
 **Scheduler-specific findings from deep audit:**
 
-**S-01 (MEDIUM)**: `propagatePriorityInheritance` reads `blockingServer` from
-pre-mutation state but recurses on post-mutation state (`Propagate.lean:60-72`).
-Currently safe because `updatePipBoost` only modifies `pipBoost`/run queue, never
-`ipcState`. Latent correctness risk if `updatePipBoost` is ever extended.
-Recommend: add frame theorem proving `updatePipBoost` preserves `ipcState`.
+**S-01 (LOW, downgraded from MEDIUM)**: `propagatePriorityInheritance` reads
+`blockingServer` from pre-mutation state but recurses on post-mutation state
+(`Propagate.lean:60-72`). **Verification confirmed**: `updatePipBoost` (lines 25-48)
+only modifies `pipBoost` (`{ tcb with pipBoost := newBoost }`), never `ipcState`.
+Since `blockingServer` reads `ipcState`, pre-mutation and post-mutation states yield
+identical results — this is currently functionally equivalent, not a correctness bug.
+Downgraded to LOW as a latent risk: if `updatePipBoost` is ever extended to modify
+`ipcState`, this would become a real bug. Recommend: add frame theorem.
 
 **S-02 (MEDIUM)**: `chooseBestRunnableInDomainEffective` filters by `tcb.domain`
 but `effectivePriority` resolves from `sc.domain` (`Selection.lean:363`). If
@@ -1565,14 +1579,15 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 9. **Fix IF-04**: Add a `LabelingContext.isNonTrivial` predicate and verify
    non-trivial labels are configured before the first syscall in boot sequence.
 
-10. **Fix IF-05**: Document the integrity flow direction explicitly, or add
-    separate `confidentialityFlowsTo`/`integrityFlowsTo` predicates.
+10. ~~**Fix IF-05**~~: REMOVED — finding was erroneous. Separate predicates
+    already exist (`confidentialityFlowsTo`, `integrityFlowsTo`).
 
-11. **Fix IF-06**: Extend `projectState` to include the service registry
-    and prove NI preservation for service operations.
+11. **Fix IF-06**: Extend `ObservableState` to include service orchestration
+    internals if restart/lifecycle timing becomes security-relevant.
 
-12. **Fix S-01/S-02**: Add frame theorem for `updatePipBoost` preserving
-    `ipcState`; enforce `sc.domain == tcb.domain` invariant for bound threads.
+12. **Fix S-02**: Enforce `sc.domain == tcb.domain` invariant for bound threads.
+    (S-01 downgraded to LOW — currently functionally equivalent; frame theorem
+    recommended but not urgent.)
 
 13. **Fix SC-03**: Clear or rewrite replenishment list during `schedContextConfigure`
     to prevent transient `replenishmentAmountsBounded` violation.
@@ -1656,25 +1671,31 @@ perfect Lean-Rust ABI synchronization.
 - **IF-01** (switchDomain NI gap): Domain-switch missing from NI composition — per-step proof exists, needs wiring
 - **IF-02** (PIP outside NI envelope): Call/reply donation mutations unproven for NI — needs constructor extension
 
-**Twenty-three MEDIUM findings** should be addressed before benchmarking:
-- F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-01/S-02 (scheduler correctness)
-- IF-03 through IF-06 (NI methodology, labeling, integrity, projection completeness)
+**Twenty MEDIUM findings** should be addressed before benchmarking:
+- F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-02 (scheduler domain mismatch)
+- IF-03 (NI methodology), IF-06 (service orchestration outside NI boundary)
 - SC-01/SC-02 (CBS bandwidth bound gap, admission control truncation)
 - SC-03 (stale replenishment entries after reconfigure)
 - SC-04/SC-05 (`cancelDonation` incomplete vs `schedContextUnbind`, resume priority mismatch)
 - CAP-01 (CPtr masking inconsistency), CAP-02 (CDT acyclicity hypothesis gap)
 - SVC-01/SVC-02 (service traversal semantics, lookup ordering)
 - PLT-01/PLT-02 (boot invariant bridge, queue truncation)
+- IPC-01/IPC-02 (timeout sentinel collision, queue remove fallback)
+- T-06 (PriorityInheritanceSuite not executed)
+
+> **Post-verification note**: 3 original MEDIUM findings were removed or downgraded:
+> IF-05 (erroneous — separate predicates exist), IF-04 (downgraded to LOW — by-design
+> default), S-01 (downgraded to LOW — currently functionally equivalent).
 
 The information flow subsystem is architecturally sound but has proof coverage gaps
-(IF-01/IF-02) and methodology limitations (IF-03 through IF-06) that should be
-closed to claim full non-interference for all kernel transitions. These gaps do not
-indicate the presence of actual information leaks — they indicate the absence of
-formal proof that such leaks cannot occur.
+(IF-01/IF-02) and methodology limitations (IF-03, IF-06) that should be closed to
+claim full non-interference for all kernel transitions. These gaps do not indicate
+the presence of actual information leaks — they indicate the absence of formal proof
+that such leaks cannot occur.
 
 After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler,
 capability), the kernel is well-positioned for its first major release and
-hardware benchmarking on the Raspberry Pi 5. The 38 LOW and 25 INFORMATIONAL
+hardware benchmarking on the Raspberry Pi 5. The 39 LOW and 25 INFORMATIONAL
 findings are maintenance items that can be addressed incrementally. Deep audits
 of the IPC and Architecture subsystems found no security issues. The Capability
 subsystem has a model-level CPtr masking inconsistency (CAP-01) and a CDT
