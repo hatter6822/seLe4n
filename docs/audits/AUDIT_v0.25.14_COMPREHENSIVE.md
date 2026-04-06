@@ -446,8 +446,42 @@ proof-of-concept framework purpose. All unreachable modules have test coverage.
 - Capability, IPC, VSpace, lifecycle, service operations
 - All function signatures match the Lean kernel API
 
+### Detailed Rust ABI Findings
+
+**R-01 (LOW)**: `SchedContextId` missing from Rust identifiers (`sele4n-types/src/identifiers.rs`).
+Lean Prelude defines `SchedContextId` but Rust has no typed wrapper. `SchedContextBindArgs`
+uses raw `u64` for `thread_id` instead of a typed identifier. Kernel validates on entry.
+
+**R-02 (INFO)**: Stale variant counts in `sele4n-types/src/lib.rs` line 7 ("43-variant"
+should be 44) and line 9 ("20-variant" should be 25). Documentation-only discrepancy.
+
+**R-03 (LOW)**: `SchedContextConfigureArgs` decode does not validate budget/period
+relationship (`sele4n-abi/src/args/sched_context.rs:36-51`). Budget > period violates
+CBS admission control. Kernel validates, so this is defense-in-depth only.
+
+**R-04 (LOW)**: `decode_response` comment at `sele4n-abi/src/decode.rs:39` says
+"error codes are 0-42" but actual max is 43 (AlignmentError). Stale comment, logic correct.
+
+**R-05 (INFO)**: `sele4n-sys` missing SchedContext syscall wrappers. Arg encode/decode
+structures exist in `sele4n-abi`, but safe `sele4n-sys` wrappers for Configure/Bind/Unbind
+are absent.
+
+**R-06 (INFO)**: `Cap<Obj, Rts>` phantom-typed capabilities in `sele4n-sys/src/cap.rs` are
+Rust-only (no Lean counterpart). Compile-time safety layer, by design.
+
+### Rust Security Positives
+
+- **Zero external dependencies** across all 3 crates — no supply chain risk
+- **Single `unsafe` block** (`trap.rs` ARM64 `svc #0`) — sound with proper clobber list
+- **`#![deny(unsafe_code)]`** globally with targeted `#[allow]` on 2 functions
+- **All 3 crates are `#![no_std]`** by default
+- **`#[non_exhaustive]`** on `KernelError` for forward compatibility
+- **`TryFrom` for all fallible conversions** — no panicking paths
+- **IPC buffer bounds checking** — no buffer overflow possible
+- **Compile-time layout assertions** on `IpcBuffer` (960 bytes, `#[repr(C)]`)
+
 **Assessment**: The Rust ABI layer is a faithful mirror of the Lean model with
-comprehensive test coverage. No desynchronization found.
+comprehensive test coverage. No security vulnerabilities or CVE-worthy issues found.
 
 ---
 
