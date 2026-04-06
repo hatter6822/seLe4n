@@ -624,6 +624,11 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
     - 4 sharing pairs with frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`)
     - `crossSubsystemInvariant_composition_complete` — 10-conjunct tightness witness
     - `crossSubsystemInvariant_objects_frame` / `crossSubsystemInvariant_services_change` — composite preservation
+  - **AD4 (F-08, v0.25.14)**: Cross-subsystem composition bridge lemmas — closes the composition gap for operations modifying `objects`:
+    - `crossSubsystemInvariant_objects_change_bridge` — core bridge: frame-preserves `registryDependencyConsistent` and `serviceGraphInvariant` (services/objectIndex unchanged); takes caller-provided post-state proofs for 6 objects-reading predicates
+    - 7 IPC operation bridges: `ipcSend_crossSubsystemInvariant_bridge`, `ipcReceive_crossSubsystemInvariant_bridge`, `ipcReply_crossSubsystemInvariant_bridge`, `ipcCall_crossSubsystemInvariant_bridge`, `ipcReplyRecv_crossSubsystemInvariant_bridge`, `notificationSignal_crossSubsystemInvariant_bridge`, `notificationWait_crossSubsystemInvariant_bridge`
+    - 5 Scheduler/Lifecycle operation bridges: `schedule_crossSubsystemInvariant_bridge`, `handleYield_crossSubsystemInvariant_bridge`, `timerTick_crossSubsystemInvariant_bridge`, `suspendThread_crossSubsystemInvariant_bridge`, `resumeThread_crossSubsystemInvariant_bridge`
+    - All 12 kernel operations that modify `objects` now have explicit bridge lemmas connecting per-subsystem preservation to the full 8-predicate `crossSubsystemInvariant` bundle
 
 ## 9.2 S5-G/H: Page-alignment check for VSpace-bound retype (S5 complete)
 

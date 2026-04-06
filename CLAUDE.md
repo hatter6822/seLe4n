@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.12.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.14.
 
 ## Build and run
 
@@ -495,9 +495,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-AD Phase AD3 COMPLETE** (v0.25.13): Pre-Release Audit Remediation — Phase AD3 Production Deployment Documentation (F-04, F-05, F-06, F-07): Created `docs/DEPLOYMENT_GUIDE.md` (238 lines) covering non-BIBA integrity model, NI boundary scope, covert channel analysis, mandatory labeling override with code example. Updated spec §11.2, SECURITY_ADVISORY SA-4, claims index, GitBook ch.28. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
-- **WS-AD Phase AD2 COMPLETE** (v0.25.12): Pre-Release Audit Remediation — Phase AD2 Code Quality Hardening (F-02, F-03): `endpointQueuePopHeadFresh` convenience wrapper added (stale-TCB footgun mitigation), staleness annotations at all call sites, CapTransfer error-to-noSlot documentation. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
-- **WS-AD Phase AD1 COMPLETE** (v0.25.11): Pre-Release Audit Remediation — Phase AD1 Integration Fix (F-01): 21 orphaned SchedContext preservation theorems integrated via CrossSubsystem.lean (import-cycle resolution). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
+- **WS-AD PORTFOLIO COMPLETE** (v0.25.11–v0.25.14): Pre-Release Audit Remediation — 5 phases (AD1–AD5), 19 sub-tasks. 21 findings (7 actionable, 2 already addressed, 12 no-action). Phase AD4 (F-08): 13 cross-subsystem bridge lemmas (1 core + 7 IPC + 5 Scheduler/Lifecycle). Phase AD5: documentation sync & closure. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
 - **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10): Comprehensive Audit Remediation — 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Phase AC6 COMPLETE (documentation, testing & closure: T-03 DecodingSuite, audit errata, workstream history). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
 - **WS-AB PORTFOLIO COMPLETE** (v0.24.0–v0.25.5): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations implemented: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3). Priority Inheritance Protocol (D4). Bounded Latency Theorem WCRT = D*L_max + N*(B+P) (D5). API Surface Integration & Closure (D6). Rust ABI synchronized (SyscallId 25, KernelError 44). Zero sorry/axiom. See `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`

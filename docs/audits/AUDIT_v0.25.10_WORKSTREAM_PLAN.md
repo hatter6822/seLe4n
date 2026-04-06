@@ -550,13 +550,14 @@ documentation additions and cross-reference the formal witnesses.
 
 ---
 
-## 6. Phase AD4 — Cross-Subsystem Composition Proofs (F-08)
+## 6. Phase AD4 — Cross-Subsystem Composition Proofs (F-08) ✅ COMPLETE
 
 **Goal**: Strengthen the cross-subsystem invariant composition by adding
 targeted operation-specific preservation proofs for sharing-pair predicates.
 This phase addresses the composition gap documented at CrossSubsystem.lean:306–327.
 **Gate**: `lake build SeLe4n.Kernel.CrossSubsystem` + `./scripts/test_full.sh`.
 **Dependencies**: AD1–AD3 (clean codebase with integrated SchedContext proofs).
+**Status**: COMPLETE — 1 core bridge + 7 IPC + 5 Scheduler/Lifecycle bridge lemmas proven. Zero sorry/axiom.
 
 ### Background: Current Composition Infrastructure
 
@@ -592,7 +593,7 @@ must be individually proven to preserve. Currently, each subsystem's
 cross-subsystem bridge connecting these proofs to the full bundle is incomplete
 for certain operations.
 
-### AD4-A: Audit operation coverage for sharing-pair predicates
+### AD4-A: Audit operation coverage for sharing-pair predicates ✅
 
 **Purpose**: Systematically identify which kernel operations modify `objects`
 or `services` and which sharing-pair preservation proofs already exist vs.
@@ -623,7 +624,7 @@ are missing.
 **Files modified**: None (analysis only).
 **Estimated effort**: Moderate — requires reading multiple Preservation.lean files.
 
-### AD4-B: Add IPC operation cross-subsystem bridge lemmas (F-08)
+### AD4-B: Add IPC operation cross-subsystem bridge lemmas (F-08) ✅
 
 **Finding**: IPC operations are the highest-impact sharing-pair gap because
 they modify `objects` extensively (TCB state changes, queue link updates,
@@ -668,7 +669,7 @@ plus the services-frame lemma.
 **Files modified**: `CrossSubsystem.lean` (~80–120 lines added).
 **Estimated effort**: Moderate — structural proofs following established pattern.
 
-### AD4-C: Add Scheduler/Lifecycle operation cross-subsystem bridge lemmas (F-08)
+### AD4-C: Add Scheduler/Lifecycle operation cross-subsystem bridge lemmas (F-08) ✅
 
 **Finding**: Scheduler operations (`schedule`, `handleYield`, `timerTick`) and
 lifecycle operations (`suspendThread`, `resumeThread`) also modify `objects`.
@@ -681,31 +682,41 @@ the SchedContext preservation proofs integrated in AD1.
 
 **Scope**: Add bridge lemmas for 5 operations (3 scheduler + 2 lifecycle).
 
-**Files modified**: `CrossSubsystem.lean` (~60–80 lines added).
-**Estimated effort**: Moderate — same structural pattern as AD4-B.
+**Files modified**: `CrossSubsystem.lean` (~110 lines added).
 
-### AD4-D: Phase AD4 gate verification
+### AD4-D: Phase AD4 gate verification ✅
 
-**Steps**:
-1. Build: `lake build SeLe4n.Kernel.CrossSubsystem`
-2. Full build: `source ~/.elan/env && lake build`
-3. Full test: `./scripts/test_full.sh`
-4. Verify zero sorry/axiom: `grep -r 'sorry\|axiom' SeLe4n/ --include='*.lean'`
+**Verified**:
+1. Module build: `lake build SeLe4n.Kernel.CrossSubsystem` — 69 jobs, PASS
+2. Full build: `lake build` — 236 jobs, PASS
+3. Full test: `./scripts/test_full.sh` — all tiers passed
+4. Zero sorry/axiom in production code (3 matches are comments only)
 
-**Gate condition**: All commands pass; zero sorry/axiom in production code.
+**Gate condition**: All commands pass; zero sorry/axiom in production code. ✅
 
 **Files modified**: None (verification only).
 
+### AD4 Implementation Summary
+
+| Sub-task | Change | Lines |
+|----------|--------|-------|
+| AD4-A | Coverage matrix audit (documented in CrossSubsystem.lean docstring) | ~50 |
+| AD4-B | 7 IPC bridge lemmas + core bridge theorem | ~155 |
+| AD4-C | 5 Scheduler/Lifecycle bridge lemmas | ~110 |
+| AD4-D | Verification only | 0 |
+| **Total** | **1 core + 12 per-operation bridge lemmas** | **~343 lines** |
+
 ---
 
-## 7. Phase AD5 — Closure & Documentation Sync
+## 7. Phase AD5 — Closure & Documentation Sync ✅ COMPLETE
 
 **Goal**: Final documentation synchronization, workstream history update,
 and full validation.
 **Gate**: `./scripts/test_full.sh` + all documentation sync checks.
 **Dependencies**: AD1–AD4 (all code and proof changes complete).
+**Status**: COMPLETE — all documentation synchronized, all tests pass, zero sorry/axiom.
 
-### AD5-A: Update documentation artifacts
+### AD5-A: Update documentation artifacts ✅
 
 **Change**: Synchronize all documentation touched by this workstream:
 
@@ -735,7 +746,7 @@ and full validation.
 **Files modified**: 3–5 documentation files (~40–60 lines total).
 **Estimated effort**: Minimal.
 
-### AD5-B: Final validation and closure
+### AD5-B: Final validation and closure ✅
 
 **Steps**:
 1. Full test suite: `./scripts/test_full.sh`
