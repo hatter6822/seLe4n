@@ -13,7 +13,7 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 4 HIGH, 20 MEDIUM, 36 LOW, 25 INFORMATIONAL (85 total)
+**Critical findings**: 4 HIGH, 21 MEDIUM, 37 LOW, 25 INFORMATIONAL (87 total)
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, four high-severity
@@ -117,6 +117,8 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | PLT-06 | LOW | Platform/RPi5/BootContract | Boot contract validates empty state, not hardware-derived state |
 | PLT-07 | INFO | Kernel/CrossSubsystem | 8-predicate invariant with 28 pairwise analyses — exemplary |
 | PLT-08 | INFO | Service/Invariant/Acyclicity | Acyclicity proof is genuine, not vacuous — fixed original BFS issue |
+| T-06 | MEDIUM | Testing | PriorityInheritanceSuite compiled but never executed in any test tier |
+| T-07 | LOW | Testing | SuspendResume/Priority/IpcBuffer suites use unchecked `builder.build` |
 | T-02 | INFO | Testing/InvariantChecks | Runtime invariant checks are boolean predicates, not proofs — by design |
 | T-03 | INFO | IPC subsystem | Deep audit: no security or correctness issues found across all 20 files |
 | T-04 | INFO | Lifecycle subsystem | Deep audit: retype cleanup, suspend/resume, all invariants verified correct |
@@ -799,6 +801,35 @@ the trace harness, though many are covered by individual test suites (NegativeSt
 DecodingSuite). The `InvariantChecks.lean` runtime checks are boolean predicates, not
 proofs — this is appropriate for runtime testing but should not be conflated with the
 formal proof surface.
+
+---
+
+### T-06: PriorityInheritanceSuite compiled but never executed
+
+**Location**: `tests/PriorityInheritanceSuite.lean`, `lakefile.toml` line 77
+**Severity**: MEDIUM (promoted from testing subsystem)
+
+`priority_inheritance_suite` is registered in `lakefile.toml` as a lean_exe target
+and compiles successfully, but it is **not referenced in any test script**
+(`test_tier2_negative.sh`, `test_smoke.sh`, `test_full.sh`, or `test_nightly.sh`).
+The suite tests `propagatePriorityInheritance`/`revertPriorityInheritance` used in
+the `.call`/`.reply` dispatch arms — critical production code paths.
+
+**Remediation**: Add `lake exe priority_inheritance_suite` to `test_tier2_negative.sh`
+or `test_full.sh`.
+
+---
+
+### T-07: Some test suites use unchecked `builder.build`
+
+**Location**: `tests/SuspendResumeSuite.lean`, `PriorityManagementSuite.lean`,
+`IpcBufferSuite.lean`, `PriorityInheritanceSuite.lean`
+**Severity**: LOW
+
+These suites use `builder.build` instead of `buildChecked`, constructing states
+without validation. Could create unrealistic test states that mask bugs. Partially
+by design (edge-case states like already-inactive threads), but reduces confidence
+that test scenarios represent production-reachable states.
 
 ---
 
@@ -1569,7 +1600,7 @@ perfect Lean-Rust ABI synchronization.
 - **IF-01** (switchDomain NI gap): Domain-switch missing from NI composition — per-step proof exists, needs wiring
 - **IF-02** (PIP outside NI envelope): Call/reply donation mutations unproven for NI — needs constructor extension
 
-**Twenty MEDIUM findings** should be addressed before benchmarking:
+**Twenty-one MEDIUM findings** should be addressed before benchmarking:
 - F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-01/S-02 (scheduler correctness)
 - IF-03 through IF-06 (NI methodology, labeling, integrity, projection completeness)
 - SC-01/SC-02 (CBS bandwidth bound gap, admission control truncation)
@@ -1587,7 +1618,7 @@ formal proof that such leaks cannot occur.
 
 After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler,
 capability), the kernel is well-positioned for its first major release and
-hardware benchmarking on the Raspberry Pi 5. The 36 LOW and 25 INFORMATIONAL
+hardware benchmarking on the Raspberry Pi 5. The 37 LOW and 25 INFORMATIONAL
 findings are maintenance items that can be addressed incrementally. Deep audits
 of the IPC and Architecture subsystems found no security issues. The Capability
 subsystem has a model-level CPtr masking inconsistency (CAP-01) and a CDT
