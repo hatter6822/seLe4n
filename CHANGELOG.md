@@ -5,24 +5,32 @@ Phase AD4 of WS-AD Pre-Release Audit Remediation + Phase AD5 closure. Addresses
 pass (test_full.sh Tier 0-3). Zero sorry/axiom. **WS-AD PORTFOLIO COMPLETE.**
 
 ### Changes
-- **AD4-A (F-08)**: Coverage matrix audit — all 12 kernel operations that modify
-  `objects` preserve `services`, `serviceRegistry`, and `objectIndex`. The 2
-  services-reading predicates (`registryDependencyConsistent`, `serviceGraphInvariant`)
-  are always frame-preserved; the 6 objects-reading predicates require per-subsystem
-  post-state proofs.
-- **AD4-B (F-08)**: Added 7 IPC operation cross-subsystem bridge lemmas in
-  `CrossSubsystem.lean` — `ipcSend`, `ipcReceive`, `ipcReply`, `ipcCall`,
-  `ipcReplyRecv`, `notificationSignal`, `notificationWait`. Each bridges
-  per-subsystem preservation proofs to the full 8-predicate
-  `crossSubsystemInvariant` bundle via `crossSubsystemInvariant_objects_change_bridge`.
-- **AD4-C (F-08)**: Added 5 Scheduler/Lifecycle operation cross-subsystem bridge
-  lemmas — `schedule`, `handleYield`, `timerTick`, `suspendThread`, `resumeThread`.
-  Same bridge pattern as AD4-B.
-- **AD4 core**: Added `crossSubsystemInvariant_objects_change_bridge` — generic
-  bridge theorem for operations modifying `objects` while preserving `services`
-  and `objectIndex`. Automatically frame-preserves `registryDependencyConsistent`
-  and `serviceGraphInvariant`; takes caller-provided post-state proofs for 6
-  objects-reading predicates.
+- **AD4-A (F-08)**: Coverage matrix audit — all 31 kernel operations that modify
+  `objects` preserve `services` and `serviceRegistry`. 28 operations preserve
+  `objectIndex` (in-place mutations); 3 lifecycle retype operations may grow
+  `objectIndex`. The 2 services-reading predicates are always frame-preserved.
+- **AD4-B (F-08)**: 7 IPC operation bridge lemmas — `ipcSend`, `ipcReceive`,
+  `ipcReply`, `ipcCall`, `ipcReplyRecv`, `notificationSignal`, `notificationWait`.
+- **AD4-C (F-08)**: 5 Scheduler/Lifecycle operation bridge lemmas — `schedule`,
+  `handleYield`, `timerTick`, `suspendThread`, `resumeThread`.
+- **AD4-D (F-08)**: 7 Capability operation bridge lemmas — `cspaceMint`,
+  `cspaceCopy`, `cspaceMove`, `cspaceMutate`, `cspaceInsertSlot`,
+  `cspaceDeleteSlot`, `cspaceRevoke`.
+- **AD4-E (F-08)**: 4 SchedContext operation bridge lemmas — `schedContextConfigure`,
+  `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`.
+- **AD4-F (F-08)**: 2 Priority management bridge lemmas — `setPriorityOp`,
+  `setMCPriorityOp`.
+- **AD4-G (F-08)**: 2 VSpace operation bridge lemmas — `vspaceMapPage`,
+  `vspaceUnmapPage`.
+- **AD4-H (F-08)**: 1 IPC buffer bridge lemma — `setIPCBufferOp`.
+- **AD4-I (F-08)**: 3 Lifecycle retype bridge lemmas using monotone objectIndex
+  variant — `lifecycleRetypeObject`, `lifecycleRetypeWithCleanup`,
+  `retypeFromUntyped`.
+- **AD4 core**: 2 core bridge theorems:
+  (1) `crossSubsystemInvariant_objects_change_bridge` — for operations preserving
+  `objectIndex` (28 operations);
+  (2) `crossSubsystemInvariant_retype_bridge` — for lifecycle operations that
+  grow `objectIndex` (3 operations), using `serviceGraphInvariant_monotone`.
 - **AD5-A**: Documentation sync — WORKSTREAM_HISTORY, CHANGELOG, CLAIM_EVIDENCE_INDEX,
   GitBook chapter 12, codebase_map.json, README version badge, workstream plan
   status updates. Version bump 0.25.13 → 0.25.14.

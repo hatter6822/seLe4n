@@ -1257,22 +1257,49 @@ The 6 objects-reading predicates require per-subsystem post-state proofs:
 | `schedContextNotDualBound` | objects |
 | `schedContextRunQueueConsistent` | scheduler + objects |
 
-### Operation Coverage
+### Operation Coverage (31 operations, 2 core bridges)
 
-| Operation | Modifies objects | Modifies scheduler | Preserves services | Preserves svcReg | Preserves objIdx |
-|-----------|-----------------|-------------------|-------------------|-----------------|-----------------|
-| endpointSendDual | ✓ | ✓ | ✓ | ✓ | ✓ |
-| endpointReceiveDual | ✓ | ✓ | ✓ | ✓ | ✓ |
-| endpointReply | ✓ | ✓ | ✓ | ✓ | ✓ |
-| endpointCall | ✓ | ✓ | ✓ | ✓ | ✓ |
-| endpointReplyRecv | ✓ | ✓ | ✓ | ✓ | ✓ |
-| notificationSignal | ✓ | ✓ | ✓ | ✓ | ✓ |
-| notificationWait | ✓ | ✓ | ✓ | ✓ | ✓ |
-| schedule | ✓ | ✓ | ✓ | ✓ | ✓ |
-| handleYield | ✓ | ✓ | ✓ | ✓ | ✓ |
-| timerTick | ✓ | ✓ | ✓ | ✓ | ✓ |
-| suspendThread | ✓ | ✓ | ✓ | ✓ | ✓ |
-| resumeThread | ✓ | ✓ | ✓ | ✓ | ✓ |
+**Core bridge A** (`crossSubsystemInvariant_objects_change_bridge`): For
+operations preserving `objectIndex` (in-place object mutations).
+
+**Core bridge B** (`crossSubsystemInvariant_retype_bridge`): For lifecycle
+operations that grow `objectIndex` (new object creation).
+
+| Operation | Bridge | Modifies objects | Preserves objIdx |
+|-----------|--------|-----------------|-----------------|
+| endpointSendDual | A | ✓ | ✓ |
+| endpointReceiveDual | A | ✓ | ✓ |
+| endpointReply | A | ✓ | ✓ |
+| endpointCall | A | ✓ | ✓ |
+| endpointReplyRecv | A | ✓ | ✓ |
+| notificationSignal | A | ✓ | ✓ |
+| notificationWait | A | ✓ | ✓ |
+| schedule | A | ✓ | ✓ |
+| handleYield | A | ✓ | ✓ |
+| timerTick | A | ✓ | ✓ |
+| suspendThread | A | ✓ | ✓ |
+| resumeThread | A | ✓ | ✓ |
+| cspaceMint | A | ✓ | ✓ |
+| cspaceCopy | A | ✓ | ✓ |
+| cspaceMove | A | ✓ | ✓ |
+| cspaceMutate | A | ✓ | ✓ |
+| cspaceInsertSlot | A | ✓ | ✓ |
+| cspaceDeleteSlot | A | ✓ | ✓ |
+| cspaceRevoke | A | ✓ | ✓ |
+| schedContextConfigure | A | ✓ | ✓ |
+| schedContextBind | A | ✓ | ✓ |
+| schedContextUnbind | A | ✓ | ✓ |
+| schedContextYieldTo | A | ✓ | ✓ |
+| setPriorityOp | A | ✓ | ✓ |
+| setMCPriorityOp | A | ✓ | ✓ |
+| vspaceMapPage | A | ✓ | ✓ |
+| vspaceUnmapPage | A | ✓ | ✓ |
+| setIPCBufferOp | A | ✓ | ✓ |
+| lifecycleRetypeObject | B | ✓ | grows |
+| lifecycleRetypeWithCleanup | B | ✓ | grows |
+| retypeFromUntyped | B | ✓ | grows |
+
+All operations preserve `services` and `serviceRegistry`.
 
 ### Bridge Pattern
 
@@ -1569,6 +1596,409 @@ theorem resumeThread_crossSubsystemInvariant_bridge
     (hScRunQ : schedContextRunQueueConsistent st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+-- ============================================================================
+-- AD4: Retype bridge variant (objectIndex may grow)
+-- ============================================================================
+
+/-- AD4 (F-08): Retype bridge — for lifecycle operations that create new objects,
+    growing `objectIndex`. Uses `serviceGraphInvariant_monotone` instead of
+    `serviceGraphInvariant_frame` to handle monotonically increasing object index.
+    All other frame conditions are the same as the core bridge. -/
+theorem crossSubsystemInvariant_retype_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdxGrow : st.objectIndex.length ≤ st'.objectIndex.length)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' := by
+  obtain ⟨_, h2, _, _, h5, _, _, _⟩ := hPre
+  exact ⟨hRegEpValid,
+         registryDependencyConsistent_frame st st' hServices h2,
+         hEndpointQ, hNotifWait,
+         serviceGraphInvariant_monotone st st' hServices hObjIdxGrow h5,
+         hScStore, hScDual, hScRunQ⟩
+
+-- ============================================================================
+-- AD4-D: Capability operation cross-subsystem bridge lemmas
+-- ============================================================================
+
+/-- AD4-D (F-08): `cspaceMint` preserves `crossSubsystemInvariant`.
+    Capability mint creates a new capability (with badge) in a target CNode slot
+    via `cspaceInsertSlot` → `storeObject`. Modifies `objects` (CNode slot update)
+    but preserves `services`, `serviceRegistry`, and `objectIndex` (in-place
+    CNode mutation, object already exists in store). -/
+theorem cspaceMint_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-D (F-08): `cspaceCopy` preserves `crossSubsystemInvariant`.
+    Capability copy duplicates a capability into a target CNode slot.
+    Same CNode in-place mutation pattern as `cspaceMint`. -/
+theorem cspaceCopy_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-D (F-08): `cspaceMove` preserves `crossSubsystemInvariant`.
+    Capability move transfers a capability between CNode slots (insert + delete).
+    May modify two CNode objects. -/
+theorem cspaceMove_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-D (F-08): `cspaceMutate` preserves `crossSubsystemInvariant`.
+    Capability mutate modifies a capability's badge within its CNode slot. -/
+theorem cspaceMutate_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-D (F-08): `cspaceInsertSlot` preserves `crossSubsystemInvariant`.
+    Inserts a capability into a specific CNode slot via `storeObject`. -/
+theorem cspaceInsertSlot_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-D (F-08): `cspaceDeleteSlot` preserves `crossSubsystemInvariant`.
+    Clears a CNode slot via `storeObject`. -/
+theorem cspaceDeleteSlot_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-D (F-08): `cspaceRevoke` preserves `crossSubsystemInvariant`.
+    Iterates over CDT children and deletes derived capabilities. May modify
+    multiple CNode objects across the revocation cascade. -/
+theorem cspaceRevoke_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+-- ============================================================================
+-- AD4-E: SchedContext operation cross-subsystem bridge lemmas
+-- ============================================================================
+
+/-- AD4-E (F-08): `schedContextConfigure` preserves `crossSubsystemInvariant`.
+    Updates SchedContext budget/period/deadline fields via `storeObject`.
+    Does not modify `services`, `serviceRegistry`, or `objectIndex`. -/
+theorem schedContextConfigure_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-E (F-08): `schedContextBind` preserves `crossSubsystemInvariant`.
+    Updates SchedContext `boundThread` and TCB `schedContextBinding` fields
+    via `objects.insert`. Does not modify `services`, `serviceRegistry`, or
+    `objectIndex`. -/
+theorem schedContextBind_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-E (F-08): `schedContextUnbind` preserves `crossSubsystemInvariant`.
+    Clears SchedContext `boundThread` and TCB `schedContextBinding` fields.
+    Does not modify `services`, `serviceRegistry`, or `objectIndex`. -/
+theorem schedContextUnbind_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-E (F-08): `schedContextYieldTo` preserves `crossSubsystemInvariant`.
+    Transfers budget between SchedContexts. Modifies SchedContext objects
+    via `objects.insert`. Does not modify `services`, `serviceRegistry`, or
+    `objectIndex`. -/
+theorem schedContextYieldTo_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+-- ============================================================================
+-- AD4-F: Priority management cross-subsystem bridge lemmas
+-- ============================================================================
+
+/-- AD4-F (F-08): `setPriorityOp` preserves `crossSubsystemInvariant`.
+    Updates TCB priority and potentially SchedContext effective priority via
+    `updatePrioritySource`. May modify `scheduler.runnable` for run queue
+    migration. Does not modify `services`, `serviceRegistry`, or `objectIndex`. -/
+theorem setPriority_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-F (F-08): `setMCPriorityOp` preserves `crossSubsystemInvariant`.
+    Updates TCB maximum controlled priority (MCP) and potentially effective
+    priority via `updatePrioritySource`. Same field modification pattern as
+    `setPriorityOp`. -/
+theorem setMCPriority_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+-- ============================================================================
+-- AD4-G: VSpace operation cross-subsystem bridge lemmas
+-- ============================================================================
+
+/-- AD4-G (F-08): `vspaceMapPage` preserves `crossSubsystemInvariant`.
+    Inserts a page mapping into a VSpaceRoot object via `storeObject`.
+    Modifies only the VSpaceRoot within `objects`. Does not modify `services`,
+    `serviceRegistry`, or `objectIndex`. -/
+theorem vspaceMapPage_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-G (F-08): `vspaceUnmapPage` preserves `crossSubsystemInvariant`.
+    Removes a page mapping from a VSpaceRoot object via `storeObject`.
+    Same field modification pattern as `vspaceMapPage`. -/
+theorem vspaceUnmapPage_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+-- ============================================================================
+-- AD4-H: IPC buffer and remaining operation bridges
+-- ============================================================================
+
+/-- AD4-H (F-08): `setIPCBufferOp` preserves `crossSubsystemInvariant`.
+    Updates TCB `ipcBuffer` field. May conditionally grow `objectIndex` if the
+    TCB's ObjId is not yet indexed — however, `setIPCBufferOp` requires the
+    TCB to already exist in the store (validated before call), so for existing
+    TCBs, `objectIndex` is preserved. If `objectIndex` does grow, use
+    `crossSubsystemInvariant_retype_bridge` instead. -/
+theorem setIPCBuffer_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+-- ============================================================================
+-- AD4-I: Lifecycle retype operation cross-subsystem bridge lemmas
+-- ============================================================================
+
+/-- AD4-I (F-08): `lifecycleRetypeObject` preserves `crossSubsystemInvariant`.
+    Creates a new kernel object via `storeObject`, which may grow `objectIndex`
+    for newly-created objects. Uses the retype bridge variant with monotone
+    objectIndex condition. Does not modify `services` or `serviceRegistry`. -/
+theorem lifecycleRetype_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdxGrow : st.objectIndex.length ≤ st'.objectIndex.length)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_retype_bridge st st' hPre hServices hObjIdxGrow
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-I (F-08): `lifecycleRetypeWithCleanup` preserves `crossSubsystemInvariant`.
+    Performs pre-retype cleanup (queue removal, service revocation, CDT detach)
+    followed by `lifecycleRetypeObject`. The cleanup phase may modify `objects`
+    extensively. Uses the retype bridge variant. -/
+theorem lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdxGrow : st.objectIndex.length ≤ st'.objectIndex.length)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_retype_bridge st st' hPre hServices hObjIdxGrow
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-I (F-08): `retypeFromUntyped` preserves `crossSubsystemInvariant`.
+    Creates a child object from untyped memory via two `storeObject` calls
+    (one for the untyped, one for the new child). May grow `objectIndex`.
+    Uses the retype bridge variant. -/
+theorem retypeFromUntyped_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdxGrow : st.objectIndex.length ≤ st'.objectIndex.length)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_retype_bridge st st' hPre hServices hObjIdxGrow
     hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
 
 end SeLe4n.Kernel
