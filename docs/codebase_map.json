@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-code-quality-SDnko",
-      "commit_sha": "6d835ffdfb77170489d301852632ed31f5b83983",
-      "tree_sha": "0ebcf8a88329cb61624c759c6342dbaf506f0787",
-      "committed_at_utc": "2026-04-06T01:46:29+00:00"
+      "branch": "claude/optimize-phase-ad4-ukKUz",
+      "commit_sha": "aa268e81ad3ec25a1fbc8304501c39a6e0da4c66",
+      "tree_sha": "dc6d4ece592a2efa5bc40f571f8a4393650f2a55",
+      "committed_at_utc": "2026-04-06T19:22:55+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "211fd50e42095e588d7cfec5cecdb972bbaaf6f5746b8ab66d0014e1c153cf1e"
+    "source_digest": "fec8827289ea951508da9f2bbcd4f6b507cf40ebd58bdd34879ad2829c5ccead"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4525
+    "declaration_count": 4560
   },
   "readme_sync": {
-    "version": "0.25.13",
+    "version": "0.25.14",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 84061,
+    "production_loc": 84876,
     "test_files": 16,
     "test_loc": 11318,
-    "proved_theorem_lemma_decls": 2479,
+    "proved_theorem_lemma_decls": 2514,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -8657,7 +8657,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 90,
+      "declaration_count": 125,
       "declarations": [
         {
           "kind": "namespace",
@@ -9632,7 +9632,6 @@
           "name": "threadCleanup_frame_preserves_schedContextPredicates",
           "line": 1221,
           "called": [
-            "Kernel",
             "SystemState",
             "crossSubsystemInvariant",
             "runnable",
@@ -9640,6 +9639,569 @@
             "schedContextRunQueueConsistent",
             "schedContextStoreConsistent",
             "schedule_preserves_schedContextPredicates"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_objects_change_bridge",
+          "line": 1326,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryDependencyConsistent_frame",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent",
+            "serviceGraphInvariant_frame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSend_crossSubsystemInvariant_bridge",
+          "line": 1354,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcReceive_crossSubsystemInvariant_bridge",
+          "line": 1374,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcReply_crossSubsystemInvariant_bridge",
+          "line": 1394,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcCall_crossSubsystemInvariant_bridge",
+          "line": 1415,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcReplyRecv_crossSubsystemInvariant_bridge",
+          "line": 1436,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignal_crossSubsystemInvariant_bridge",
+          "line": 1457,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWait_crossSubsystemInvariant_bridge",
+          "line": 1478,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_crossSubsystemInvariant_bridge",
+          "line": 1504,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_crossSubsystemInvariant_bridge",
+          "line": 1525,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_crossSubsystemInvariant_bridge",
+          "line": 1545,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_crossSubsystemInvariant_bridge",
+          "line": 1565,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_crossSubsystemInvariant_bridge",
+          "line": 1585,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThread_crossSubsystemInvariant_bridge",
+          "line": 1607,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resumeThread_crossSubsystemInvariant_bridge",
+          "line": 1628,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_retype_bridge",
+          "line": 1651,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryDependencyConsistent_frame",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent",
+            "serviceGraphInvariant_monotone"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMint_crossSubsystemInvariant_bridge",
+          "line": 1679,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceCopy_crossSubsystemInvariant_bridge",
+          "line": 1697,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMove_crossSubsystemInvariant_bridge",
+          "line": 1715,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceMutate_crossSubsystemInvariant_bridge",
+          "line": 1732,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceInsertSlot_crossSubsystemInvariant_bridge",
+          "line": 1749,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceDeleteSlot_crossSubsystemInvariant_bridge",
+          "line": 1766,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cspaceRevoke_crossSubsystemInvariant_bridge",
+          "line": 1784,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextConfigure_crossSubsystemInvariant_bridge",
+          "line": 1806,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextBind_crossSubsystemInvariant_bridge",
+          "line": 1825,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbind_crossSubsystemInvariant_bridge",
+          "line": 1843,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextYieldTo_crossSubsystemInvariant_bridge",
+          "line": 1862,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setPriority_crossSubsystemInvariant_bridge",
+          "line": 1885,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setMCPriority_crossSubsystemInvariant_bridge",
+          "line": 1904,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapPage_crossSubsystemInvariant_bridge",
+          "line": 1927,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPage_crossSubsystemInvariant_bridge",
+          "line": 1945,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setIPCBuffer_crossSubsystemInvariant_bridge",
+          "line": 1970,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_objects_change_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetype_crossSubsystemInvariant_bridge",
+          "line": 1993,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_retype_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge",
+          "line": 2012,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_retype_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_crossSubsystemInvariant_bridge",
+          "line": 2031,
+          "called": [
+            "Kernel",
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_retype_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
           ]
         }
       ]

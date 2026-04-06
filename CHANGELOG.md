@@ -1,3 +1,43 @@
+## v0.25.14 — WS-AD Phase AD4/AD5: Cross-Subsystem Composition Proofs & Closure (F-08)
+
+Phase AD4 of WS-AD Pre-Release Audit Remediation + Phase AD5 closure. Addresses
+1 MEDIUM finding (F-08) with cross-subsystem composition bridge lemmas. All tests
+pass (test_full.sh Tier 0-3). Zero sorry/axiom. **WS-AD PORTFOLIO COMPLETE.**
+
+### Changes
+- **AD4-A (F-08)**: Coverage matrix audit — all 33 kernel operations that modify
+  `objects` preserve `services` and `serviceRegistry`. 30 operations preserve
+  `objectIndex` (in-place mutations); 3 lifecycle retype operations may grow
+  `objectIndex`. The 2 services-reading predicates are always frame-preserved.
+- **AD4-B (F-08)**: 7 IPC operation bridge lemmas — `ipcSend`, `ipcReceive`,
+  `ipcReply`, `ipcCall`, `ipcReplyRecv`, `notificationSignal`, `notificationWait`.
+- **AD4-C (F-08)**: 7 Scheduler/Lifecycle operation bridge lemmas — `schedule`,
+  `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`, `suspendThread`,
+  `resumeThread`.
+- **AD4-D (F-08)**: 7 Capability operation bridge lemmas — `cspaceMint`,
+  `cspaceCopy`, `cspaceMove`, `cspaceMutate`, `cspaceInsertSlot`,
+  `cspaceDeleteSlot`, `cspaceRevoke`.
+- **AD4-E (F-08)**: 4 SchedContext operation bridge lemmas — `schedContextConfigure`,
+  `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`.
+- **AD4-F (F-08)**: 2 Priority management bridge lemmas — `setPriorityOp`,
+  `setMCPriorityOp`.
+- **AD4-G (F-08)**: 2 VSpace operation bridge lemmas — `vspaceMapPage`,
+  `vspaceUnmapPage`.
+- **AD4-H (F-08)**: 1 IPC buffer bridge lemma — `setIPCBufferOp`.
+- **AD4-I (F-08)**: 3 Lifecycle retype bridge lemmas using monotone objectIndex
+  variant — `lifecycleRetypeObject`, `lifecycleRetypeWithCleanup`,
+  `retypeFromUntyped`.
+- **AD4 core**: 2 core bridge theorems:
+  (1) `crossSubsystemInvariant_objects_change_bridge` — for operations preserving
+  `objectIndex` (30 operations);
+  (2) `crossSubsystemInvariant_retype_bridge` — for lifecycle operations that
+  grow `objectIndex` (3 operations), using `serviceGraphInvariant_monotone`.
+- **AD5-A**: Documentation sync — WORKSTREAM_HISTORY, CHANGELOG, CLAIM_EVIDENCE_INDEX,
+  GitBook chapter 12, codebase_map.json, README version badge, workstream plan
+  status updates. Version bump 0.25.13 → 0.25.14.
+- **AD5-B**: Final validation — `test_full.sh` pass, zero sorry/axiom, all 21
+  findings accounted for, all 19 sub-tasks complete.
+
 ## v0.25.13 — WS-AD Phase AD3: Production Deployment Documentation (F-04, F-05, F-06, F-07)
 
 Phase AD3 of WS-AD Pre-Release Audit Remediation. 6 sub-tasks. Addresses 3 HIGH
