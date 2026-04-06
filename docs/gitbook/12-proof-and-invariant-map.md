@@ -624,10 +624,10 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
     - 4 sharing pairs with frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`)
     - `crossSubsystemInvariant_composition_complete` — 10-conjunct tightness witness
     - `crossSubsystemInvariant_objects_frame` / `crossSubsystemInvariant_services_change` — composite preservation
-  - **AD4 (F-08, v0.25.14)**: Cross-subsystem composition bridge lemmas — fully closes the composition gap for ALL 31 operations modifying `objects`:
-    - `crossSubsystemInvariant_objects_change_bridge` — core bridge for 28 in-place mutation operations: frame-preserves `registryDependencyConsistent` and `serviceGraphInvariant` (services/objectIndex unchanged); takes caller-provided post-state proofs for 6 objects-reading predicates
+  - **AD4 (F-08, v0.25.14)**: Cross-subsystem composition bridge lemmas — fully closes the composition gap for ALL 33 operations modifying `objects`:
+    - `crossSubsystemInvariant_objects_change_bridge` — core bridge for 30 in-place mutation operations: frame-preserves `registryDependencyConsistent` and `serviceGraphInvariant` (services/objectIndex unchanged); takes caller-provided post-state proofs for 6 objects-reading predicates
     - `crossSubsystemInvariant_retype_bridge` — retype bridge for 3 lifecycle operations that grow `objectIndex`: uses `serviceGraphInvariant_monotone` instead of `serviceGraphInvariant_frame`
-    - 7 IPC bridges, 5 Scheduler/Lifecycle bridges, 7 Capability bridges (`cspaceMint`/`Copy`/`Move`/`Mutate`/`InsertSlot`/`DeleteSlot`/`Revoke`), 4 SchedContext bridges, 2 Priority bridges, 2 VSpace bridges, 1 IPC buffer bridge, 3 Lifecycle retype bridges
+    - 7 IPC bridges, 7 Scheduler/Lifecycle bridges (`schedule`, `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`, `suspendThread`, `resumeThread`), 7 Capability bridges (`cspaceMint`/`Copy`/`Move`/`Mutate`/`InsertSlot`/`DeleteSlot`/`Revoke`), 4 SchedContext bridges, 2 Priority bridges, 2 VSpace bridges, 1 IPC buffer bridge, 3 Lifecycle retype bridges
 
 ## 9.2 S5-G/H: Page-alignment check for VSpace-bound retype (S5 complete)
 

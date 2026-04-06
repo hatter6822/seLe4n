@@ -700,9 +700,9 @@ the SchedContext preservation proofs integrated in AD1.
 
 | Sub-task | Change | Bridges |
 |----------|--------|---------|
-| AD4-A | Coverage matrix audit (31 operations documented) | 0 |
+| AD4-A | Coverage matrix audit (33 operations documented) | 0 |
 | AD4-B | 7 IPC operation bridges | 7 |
-| AD4-C | 5 Scheduler/Lifecycle bridges | 5 |
+| AD4-C | 7 Scheduler/Lifecycle bridges (+switchDomain, scheduleDomain) | 7 |
 | AD4-D | 7 Capability operation bridges | 7 |
 | AD4-E | 4 SchedContext operation bridges | 4 |
 | AD4-F | 2 Priority management bridges | 2 |
@@ -710,7 +710,7 @@ the SchedContext preservation proofs integrated in AD1.
 | AD4-H | 1 IPC buffer bridge | 1 |
 | AD4-I | 3 Lifecycle retype bridges (monotone objectIndex) | 3 |
 | Core | 2 core bridge theorems (objects_change + retype) | 2 |
-| **Total** | **2 core + 31 per-operation bridge lemmas** | **33** |
+| **Total** | **2 core + 33 per-operation bridge lemmas** | **35** |
 | **Lines** | **~773 lines added to CrossSubsystem.lean** | |
 
 ---

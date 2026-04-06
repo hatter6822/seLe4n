@@ -5,14 +5,15 @@ Phase AD4 of WS-AD Pre-Release Audit Remediation + Phase AD5 closure. Addresses
 pass (test_full.sh Tier 0-3). Zero sorry/axiom. **WS-AD PORTFOLIO COMPLETE.**
 
 ### Changes
-- **AD4-A (F-08)**: Coverage matrix audit — all 31 kernel operations that modify
-  `objects` preserve `services` and `serviceRegistry`. 28 operations preserve
+- **AD4-A (F-08)**: Coverage matrix audit — all 33 kernel operations that modify
+  `objects` preserve `services` and `serviceRegistry`. 30 operations preserve
   `objectIndex` (in-place mutations); 3 lifecycle retype operations may grow
   `objectIndex`. The 2 services-reading predicates are always frame-preserved.
 - **AD4-B (F-08)**: 7 IPC operation bridge lemmas — `ipcSend`, `ipcReceive`,
   `ipcReply`, `ipcCall`, `ipcReplyRecv`, `notificationSignal`, `notificationWait`.
-- **AD4-C (F-08)**: 5 Scheduler/Lifecycle operation bridge lemmas — `schedule`,
-  `handleYield`, `timerTick`, `suspendThread`, `resumeThread`.
+- **AD4-C (F-08)**: 7 Scheduler/Lifecycle operation bridge lemmas — `schedule`,
+  `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`, `suspendThread`,
+  `resumeThread`.
 - **AD4-D (F-08)**: 7 Capability operation bridge lemmas — `cspaceMint`,
   `cspaceCopy`, `cspaceMove`, `cspaceMutate`, `cspaceInsertSlot`,
   `cspaceDeleteSlot`, `cspaceRevoke`.
@@ -28,7 +29,7 @@ pass (test_full.sh Tier 0-3). Zero sorry/axiom. **WS-AD PORTFOLIO COMPLETE.**
   `retypeFromUntyped`.
 - **AD4 core**: 2 core bridge theorems:
   (1) `crossSubsystemInvariant_objects_change_bridge` — for operations preserving
-  `objectIndex` (28 operations);
+  `objectIndex` (30 operations);
   (2) `crossSubsystemInvariant_retype_bridge` — for lifecycle operations that
   grow `objectIndex` (3 operations), using `serviceGraphInvariant_monotone`.
 - **AD5-A**: Documentation sync — WORKSTREAM_HISTORY, CHANGELOG, CLAIM_EVIDENCE_INDEX,

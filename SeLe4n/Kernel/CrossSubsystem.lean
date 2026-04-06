@@ -1257,7 +1257,7 @@ The 6 objects-reading predicates require per-subsystem post-state proofs:
 | `schedContextNotDualBound` | objects |
 | `schedContextRunQueueConsistent` | scheduler + objects |
 
-### Operation Coverage (31 operations, 2 core bridges)
+### Operation Coverage (33 operations, 2 core bridges)
 
 **Core bridge A** (`crossSubsystemInvariant_objects_change_bridge`): For
 operations preserving `objectIndex` (in-place object mutations).
@@ -1277,6 +1277,8 @@ operations that grow `objectIndex` (new object creation).
 | schedule | A | ✓ | ✓ |
 | handleYield | A | ✓ | ✓ |
 | timerTick | A | ✓ | ✓ |
+| switchDomain | A | ✓ | ✓ |
+| scheduleDomain | A | ✓ | ✓ |
 | suspendThread | A | ✓ | ✓ |
 | resumeThread | A | ✓ | ✓ |
 | cspaceMint | A | ✓ | ✓ |
@@ -1541,6 +1543,46 @@ theorem handleYield_crossSubsystemInvariant_bridge
     (`scheduler.runnable` modification), and triggers reschedule. Does not
     modify `services`, `serviceRegistry`, or `objectIndex`. -/
 theorem timerTick_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-C (F-08): `switchDomain` preserves `crossSubsystemInvariant`.
+    Domain switch (M-05) saves the outgoing thread's register context via
+    `saveOutgoingContext` (`objects` insert), re-enqueues the current thread,
+    and updates the scheduler's active domain. Does not modify `services`,
+    `serviceRegistry`, or `objectIndex`. -/
+theorem switchDomain_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hObjIdx
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ
+
+/-- AD4-C (F-08): `scheduleDomain` preserves `crossSubsystemInvariant`.
+    Domain scheduling (M-05) decrements the domain time remaining; on expiry,
+    delegates to `switchDomain` + `schedule`. Both sub-operations modify
+    `objects` (via `saveOutgoingContext`). Does not modify `services`,
+    `serviceRegistry`, or `objectIndex`. -/
+theorem scheduleDomain_crossSubsystemInvariant_bridge
     (st st' : SystemState)
     (hPre : crossSubsystemInvariant st)
     (hServices : st'.services = st.services)
