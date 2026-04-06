@@ -281,6 +281,25 @@ def endpointQueuePopHead
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 
+/-- WS-L1/L1-A (AD2-A): Convenience wrapper that returns the *post-state* TCB
+    with cleared queue links, avoiding the stale-snapshot footgun.
+    `endpointQueuePopHead` returns the pre-dequeue TCB whose queue link fields
+    (queuePrev, queuePPrev, queueNext) are stale — they reflect the pre-state,
+    not the post-state where links have been cleared. Use this variant when the
+    caller needs accurate queue link fields from the post-state.
+    Non-queue fields (ipcState, pendingMessage, priority, domain) are identical
+    in both variants. -/
+def endpointQueuePopHeadFresh
+    (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool)
+    (st : SystemState) : Except KernelError (SeLe4n.ThreadId × TCB × SystemState) :=
+  match endpointQueuePopHead endpointId isReceiveQ st with
+  | .ok (tid, _staleTcb, st') =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb freshTcb) => .ok (tid, freshTcb, st')
+    | _ => .error .objectNotFound  -- unreachable: popHead stores cleared TCB
+  | .error e => .error e
+
 def endpointQueueEnqueue
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)

@@ -27,9 +27,11 @@ WS-AA Phase AA1 complete. Phase AA2 complete.
 WS-AB Phase D1 complete. Phase D2 complete. Phase D3 complete. Phase D4 complete. Phase D5 complete. Phase D6 complete. **WS-AB PORTFOLIO COMPLETE.**
 WS-AC Phase AC6 complete. **WS-AC PORTFOLIO COMPLETE.**
 WS-AD Phase AD1 complete.
+WS-AD Phase AD2 complete.
 
 ### WS-AD: Pre-Release Audit Remediation v0.25.10 (IN PROGRESS)
 
+- **Phase AD2 COMPLETE** (v0.25.12): Code Quality Hardening (F-02, F-03) — 4 sub-tasks (AD2-A through AD2-D). F-02: Added `endpointQueuePopHeadFresh` convenience wrapper in `DualQueue/Core.lean` that returns the post-state TCB with cleared queue links, avoiding the stale-snapshot footgun documented under WS-L1/L1-A. Staleness annotations added at all 3 call sites in `Transport.lean` (`endpointSendDual`, `endpointReceiveDual`, `endpointCall`). F-03: Enhanced module-level docstring in `IPC/Operations/CapTransfer.lean` with explicit error-to-noSlot conversion documentation — clarifies that `ipcTransferSingleCap` errors are intentionally converted to `.noSlot` by `ipcUnwrapCapsLoop`, matching seL4's cursor-preservation semantics. Full build (236 jobs) and smoke tests pass. Zero sorry/axiom.
 - **Phase AD1 COMPLETE** (v0.25.11): Integration Fix (F-01) — 3 sub-tasks (AD1-A through AD1-C). F-01: Integrated 2 orphaned SchedContext preservation modules (`Preservation.lean`: 7 theorems covering Z5-M/Z5-I/Z5-K/Z5-L/Z5-N1/N2; `PriorityPreservation.lean`: 14 theorems covering D2-G/H/I/J transport lemmas and authority non-escalation) into the production proof chain. Import-cycle constraint discovered and resolved: direct import into `SchedContext/Invariant.lean` creates cycle via `Object/Types → SchedContext → Invariant → Preservation → Operations → Model.State → Object/Types`; resolved by importing from `CrossSubsystem.lean` (downstream of cycle boundary, natural integration point for cross-subsystem preservation composition). 21 theorems now reachable via `CrossSubsystem → Architecture/Invariant → API.lean`. Full build (236 jobs), `test_full.sh` (Tier 0–3), and sorry/axiom scan all pass. Zero sorry/axiom.
 
 ### WS-AC: Comprehensive Audit Remediation v0.25.3 (COMPLETE)

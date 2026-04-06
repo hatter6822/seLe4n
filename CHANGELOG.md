@@ -1,3 +1,28 @@
+## v0.25.12 — WS-AD Phase AD2: Code Quality Hardening (F-02, F-03)
+
+Phase AD2 of WS-AD Pre-Release Audit Remediation. 4 sub-tasks. All tests pass
+(full build + test_smoke.sh). Zero sorry/axiom.
+
+### Changes
+- **AD2-A (F-02)**: Added `endpointQueuePopHeadFresh` convenience wrapper in
+  `DualQueue/Core.lean` that returns the post-state TCB with cleared queue
+  links, avoiding the stale-snapshot footgun documented under WS-L1/L1-A.
+  The original `endpointQueuePopHead` returns the pre-dequeue TCB whose
+  queue link fields are stale; the new variant re-fetches from post-state.
+- **AD2-B (F-02)**: Added staleness annotations at all 3 call sites of
+  `endpointQueuePopHead` in `DualQueue/Transport.lean` (`endpointSendDual`,
+  `endpointReceiveDual`, `endpointCall`), noting that the returned TCB has
+  stale queue links and callers should use `st'` for current state.
+- **AD2-C (F-03)**: Enhanced module-level docstring in
+  `IPC/Operations/CapTransfer.lean` with explicit F-03 error-to-noSlot
+  conversion documentation. Clarifies that `ipcTransferSingleCap` errors
+  are intentionally converted to `.noSlot` by `ipcUnwrapCapsLoop`, matching
+  seL4's cursor-preservation semantics. No capability can be silently
+  installed or lost.
+- **AD2-D**: Gate verification — module builds (Core, CapTransfer, Transport),
+  full build (236 jobs), and smoke tests all pass.
+- Codebase map regenerated; version bump 0.25.11 → 0.25.12.
+
 ## v0.25.11 — WS-AD Phase AD1: Integration Fix (F-01)
 
 Phase AD1 of WS-AD Pre-Release Audit Remediation. 3 sub-tasks. All tests pass

@@ -30,6 +30,17 @@ and the loop short-circuits: all remaining caps are filled with `.noSlot` via
 aligns with seL4's cursor-preservation semantics, while the short-circuit
 exploits the observation that error conditions persist (the receiver's CSpace
 root hasn't changed, so subsequent transfers would fail identically).
+
+**Error-to-noSlot conversion (F-03/AD2-C):** When `ipcTransferSingleCap` fails
+(e.g., receiver CSpace root not found, or slot insertion error), the error is
+converted to `.noSlot` in the transfer results array by `ipcUnwrapCapsLoop`.
+Remaining capabilities in the batch are padded with `.noSlot` via short-circuit
+semantics. This matches seL4's cursor-preservation behavior: the receiver sees
+a consistent result count regardless of individual transfer failures. The
+conversion is intentional and does NOT mask security-relevant failures — the
+receiver simply sees fewer successfully transferred capabilities, which is the
+correct degraded behavior. No capability can be silently installed or lost;
+the sender retains all originals.
 -/
 
 namespace SeLe4n.Kernel

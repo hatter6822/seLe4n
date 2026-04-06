@@ -1595,6 +1595,7 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
         match ep.receiveQ.head with
         | some _ =>
             -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
+            -- Note: _tcb has stale queue links (WS-L1/L1-A); use st' for current state
             match endpointQueuePopHead endpointId true st with
             | .error e => .error e
             | .ok (receiver, _tcb, st') =>
@@ -1637,6 +1638,7 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
         match ep.sendQ.head with
         | some _ =>
             -- WS-L1/L1-A: PopHead returns pre-dequeue TCB; read fields directly
+            -- Note: senderTcb has stale queue links (WS-L1/L1-A); use st' for current state
             match endpointQueuePopHead endpointId false st with
             | .error e => .error e
             | .ok (sender, senderTcb, st') =>
@@ -1719,6 +1721,7 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
         match ep.receiveQ.head with
         | some _ =>
             -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
+            -- Note: _tcb has stale queue links (WS-L1/L1-A); use st' for current state
             match endpointQueuePopHead endpointId true st with
             | .error e => .error e
             | .ok (receiver, _tcb, st') =>

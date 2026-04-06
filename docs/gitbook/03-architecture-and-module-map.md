@@ -240,6 +240,12 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
 and adding `_fromTcb` variants for `storeTcbIpcState`/`storeTcbIpcStateAndMessage`.
 22 new queue-consistency theorems (WS-L3). HashMap.fold migration (WS-L2).
 
+**WS-AD/AD2 code quality** (v0.25.12): Added `endpointQueuePopHeadFresh`
+convenience wrapper returning the post-state TCB with cleared queue links,
+avoiding the stale-snapshot footgun (F-02). Staleness annotations added at all
+call sites. CapTransfer module docstring enhanced with F-03 error-to-noSlot
+conversion documentation.
+
 ### Lifecycle subsystem
 
 - `SeLe4n/Kernel/Lifecycle/Operations.lean`
