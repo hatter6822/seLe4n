@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-06
 **Baseline version**: 0.25.10
-**Baseline audit**: `docs/audits/AUDIT_v0.25.10_PRE_RELEASE.md`
+**Baseline audit**: `docs/dev_history/audits/AUDIT_v0.25.10_PRE_RELEASE.md`
 **Prior portfolios**: WS-B through WS-AC (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 

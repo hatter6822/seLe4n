@@ -2,7 +2,7 @@
 
 **Version**: 0.25.13
 **Status**: Pre-release — requires external threat-model review before high-assurance deployment
-**Audit reference**: `docs/audits/AUDIT_v0.25.10_PRE_RELEASE.md`
+**Audit reference**: `docs/dev_history/audits/AUDIT_v0.25.10_PRE_RELEASE.md`
 **Phase**: WS-AD/AD3 (F-04, F-05, F-06, F-07)
 
 ---
