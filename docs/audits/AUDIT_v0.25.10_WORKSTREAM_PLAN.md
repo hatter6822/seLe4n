@@ -288,20 +288,21 @@ is additive and does not modify `endpointQueuePopHead`.
 TCB has stale queue links. While the function itself is well-documented, the
 call sites may benefit from a one-line annotation.
 
-**Change**: Audit all callers of `endpointQueuePopHead` in the codebase (expected
-in `Endpoint.lean`, `DualQueue/WithCaps.lean`) and add a brief inline comment
-at each call site:
+**Change**: Audit all callers of `endpointQueuePopHead` in the codebase.
+Actual call sites are in `DualQueue/Transport.lean` (3 call sites:
+`endpointSendDual`, `endpointReceiveDual`, `endpointCall`), not in
+`Endpoint.lean` or `WithCaps.lean` as originally expected. Added inline
+comments at each call site:
 
 ```lean
--- Note: headTcb has stale queue links (WS-L1/L1-A); use st' for current state
+-- Note: _tcb/senderTcb has stale queue links (WS-L1/L1-A); use st' for current state
 ```
 
 **Proof impact**: None — comments only.
 
-**Build verification**: `lake build SeLe4n.Kernel.IPC.Operations.Endpoint`
+**Build verification**: `lake build SeLe4n.Kernel.IPC.DualQueue.Transport`
 
-**Files modified**: `Endpoint.lean`, `DualQueue/WithCaps.lean` (~2–4 comment
-lines each).
+**Files modified**: `DualQueue/Transport.lean` (3 comment lines added).
 **Estimated effort**: Minimal.
 
 ### AD2-C: Add module-boundary docstring to CapTransfer.lean (F-03) ✅
@@ -788,10 +789,9 @@ avoid merge conflicts in documentation files.
 |------|-------|-------------|-------|
 | `SchedContext/Invariant.lean` | AD1 | Doc note (cycle constraint) | ~10 |
 | `CrossSubsystem.lean` | AD1 | 2 import lines + comment | ~6 |
-| `IPC/DualQueue/Core.lean` | AD2 | New helper function | ~12 |
-| `IPC/Operations/Endpoint.lean` | AD2 | Comments | ~4 |
-| `IPC/DualQueue/WithCaps.lean` | AD2 | Comments | ~2 |
-| `IPC/Operations/CapTransfer.lean` | AD2 | Module docstring | ~15 |
+| `IPC/DualQueue/Core.lean` | AD2 | New helper function | ~19 |
+| `IPC/DualQueue/Transport.lean` | AD2 | Staleness comments (3 call sites) | ~3 |
+| `IPC/Operations/CapTransfer.lean` | AD2 | Module docstring enhancement | ~11 |
 | `docs/DEPLOYMENT_GUIDE.md` | AD3 | New file | ~80–100 |
 | `docs/spec/SELE4N_SPEC.md` | AD3 | NI scope section | ~10–15 |
 | `docs/SECURITY_ADVISORY.md` | AD3 | Cross-refs + SA-4 | ~15–20 |

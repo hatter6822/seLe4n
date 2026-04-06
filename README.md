@@ -219,7 +219,7 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
 | Workstream | Scope | Version |
 |------------|-------|---------|
-| **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned SchedContext preservation module integration with import-cycle resolution (3 tasks) | v0.25.11 |
+| **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned SchedContext preservation module integration (3 tasks), Phase AD2: code quality hardening with fresh-TCB helper and CapTransfer docstring (4 tasks) | v0.25.11–v0.25.12 |
 | **WS-AC** | Comprehensive Audit Remediation — 3 HIGH, 9 MEDIUM, 9 LOW findings addressed across scheduler, IPC, capability, architecture, and cross-cutting subsystems (6 phases, 42 tasks) | v0.25.3–v0.25.10 |
 | **WS-AB** | Deferred Operations & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem (6 phases, 90 tasks) | v0.24.0–v0.25.5 |
 | **WS-Z** | Composable Performance Objects — `SchedContext` as 7th kernel object, CBS budget engine, replenishment queue, passive server donation, timeout endpoints (10 phases, 213 tasks) | v0.23.0–v0.23.21 |
