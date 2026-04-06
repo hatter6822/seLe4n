@@ -13,7 +13,7 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 4 HIGH, 16 MEDIUM, 27 LOW, 20 INFORMATIONAL (67 total)
+**Critical findings**: 4 HIGH, 16 MEDIUM, 30 LOW, 23 INFORMATIONAL (73 total)
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, four high-severity
@@ -99,6 +99,12 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | CAP-04 | LOW | Capability/Operations | `cspaceMove`/`cspaceCopy` same-slot returns error instead of no-op |
 | CAP-05 | INFO | Capability subsystem | No capability forgery path — `capAttenuates` proven for all derivation paths |
 | CAP-06 | INFO | Capability/Operations | No dead code — all operations reachable from API dispatch or internal composition |
+| ARCH-01 | LOW | Architecture/VSpace | No physical address aliasing protection — consistent with seL4 design |
+| ARCH-02 | LOW | Architecture/VSpace | `vspaceMapPageCheckedWithFlush` uses model-default PA bound, not platform bound |
+| ARCH-03 | LOW | Architecture/SyscallArgDecode | `decodeVSpaceUnmapArgs` does not validate VAddr canonical (asymmetry with map) |
+| ARCH-04 | INFO | Architecture/VSpace | W^X enforcement correct at 3 layers (decode, operation, invariant) |
+| ARCH-05 | INFO | Architecture/TlbModel | TLB model sound — per-ASID flush, cross-ASID isolation, frame lemmas proven |
+| ARCH-06 | INFO | Architecture/VSpaceBackend | VSpaceBackend typeclass unused — intentional H3 preparation |
 | T-02 | INFO | Testing/InvariantChecks | Runtime invariant checks are boolean predicates, not proofs — by design |
 | T-03 | INFO | IPC subsystem | Deep audit: no security or correctness issues found across all 20 files |
 | T-04 | INFO | Lifecycle subsystem | Deep audit: retype cleanup, suspend/resume, all invariants verified correct |
@@ -796,6 +802,45 @@ are no-ops. No security impact — behavioral difference only.
 
 ---
 
+### ARCH-01: No physical address aliasing protection in VSpace
+
+**Location**: `SeLe4n/Kernel/Architecture/VSpace.lean`, `VSpaceInvariant.lean`
+**Severity**: LOW
+
+The VSpace model enforces `noVirtualOverlap` (each VAddr maps to at most one PAddr)
+but has no invariant preventing physical address aliasing — multiple VAddrs mapping
+to the same PAddr. This is consistent with seL4's design (PA aliasing is managed by
+frame capabilities, not VSpace), but means VSpace-level isolation alone is insufficient
+without frame capability invariants. The gap is not explicitly documented.
+
+---
+
+### ARCH-02: `vspaceMapPageCheckedWithFlush` uses model-default PA bound
+
+**Location**: `SeLe4n/Kernel/Architecture/VSpace.lean`, lines 192-197
+**Severity**: LOW
+
+Uses `physicalAddressBound` (2^52, ARM64 LPA maximum) not the platform-specific bound.
+On RPi5 (44-bit PA), addresses in [2^44, 2^52) would pass this check. The production
+dispatch path correctly uses `vspaceMapPageCheckedWithFlushFromState` (which reads
+`st.machine.physicalAddressWidth`), so no actual vulnerability exists. Risk is that a
+future developer uses the wrong entry point — the docstring misleadingly labels it
+as a "production entry point."
+
+---
+
+### ARCH-03: `decodeVSpaceUnmapArgs` does not validate VAddr canonical
+
+**Location**: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`, lines 228-237
+**Severity**: LOW
+
+`decodeVSpaceUnmapArgs` validates ASID range but not VAddr canonical-ness. By contrast,
+`decodeVSpaceMapArgs` validates both. A non-canonical VAddr in an unmap request produces
+a harmless `.translationFault` error (no mapping exists), so no security impact.
+Asymmetry is a code smell.
+
+---
+
 ## INFORMATIONAL Findings
 
 ### F-12: Proof Hygiene — Excellent
@@ -1138,15 +1183,21 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 
 ### Architecture (`SeLe4n/Kernel/Architecture/` — 10 files)
 
-- **VSpace**: HashMap-backed virtual address space with W^X enforcement.
-  `vspaceMapPageChecked` validates permissions (no simultaneous write+execute).
-  Physical address bounds checking via `physicalAddressWidth` from machine state.
-- **TLB model**: `vspaceMapPageCheckedWithFlush` and `vspaceUnmapPageWithFlush`
-  include TLB invalidation in the state model.
-- **RegisterDecode**: Total deterministic decode from raw registers to typed kernel IDs.
-  All 25 syscall types have decoders in SyscallArgDecode.lean.
-- **IPC buffer validation**: D3 setIPCBufferOp with 512-byte alignment check.
-- **VSpaceInvariant**: ~733 lines of W^X enforcement and mapping consistency proofs.
+- **VSpace**: HashMap-backed virtual address space with W^X enforcement at 3 layers:
+  decode-time rejection, operation-time re-check, and invariant proof (ARCH-04).
+  No PA aliasing protection (ARCH-01) — consistent with seL4. Model-default PA bound
+  variant exists but production path uses platform-specific bound (ARCH-02).
+- **TLB model**: Conservative and sound — per-ASID flush, cross-ASID isolation,
+  frame lemmas all proven (ARCH-05). Atomic composition prevents TOCTOU.
+- **RegisterDecode**: Total deterministic decode. Round-trip theorems proven.
+  Register bounds validated before access. `isWord64Dec` rejects oversize Nat values.
+- **SyscallArgDecode**: 15 decode structures covering all 25 SyscallId variants.
+  VAddr canonical validation asymmetry between map and unmap decoders (ARCH-03).
+- **IPC buffer validation**: 5-step pipeline (alignment, canonical, TCB lookup,
+  mapping, write permission). All 5 checks proven necessary.
+- **VSpaceBackend**: Typeclass declared but unused — H3 preparation (ARCH-06).
+- **Deep audit verdict**: No security vulnerabilities. 3 LOW findings (PA aliasing
+  gap, PA bound variant, decode asymmetry) — all mitigated by defense-in-depth.
 
 ### Information Flow (`SeLe4n/Kernel/InformationFlow/` — 9 files)
 
@@ -1388,7 +1439,7 @@ formal proof that such leaks cannot occur.
 
 After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler,
 capability), the kernel is well-positioned for its first major release and
-hardware benchmarking on the Raspberry Pi 5. The 27 LOW and 20 INFORMATIONAL
+hardware benchmarking on the Raspberry Pi 5. The 30 LOW and 23 INFORMATIONAL
 findings are maintenance items that can be addressed incrementally. Deep audits
 of the IPC and Architecture subsystems found no security issues. The Capability
 subsystem has a model-level CPtr masking inconsistency (CAP-01) and a CDT
