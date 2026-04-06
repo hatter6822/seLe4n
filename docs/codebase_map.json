@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-ad1-integration-eqojX",
-      "commit_sha": "0da8bd1b9db4e45246232f07f73a1136b5a63717",
-      "tree_sha": "a363b2d3a4ac0ccb3f36341a4713c5db49b63212",
-      "committed_at_utc": "2026-04-06T01:13:44+00:00"
+      "branch": "claude/optimize-code-quality-SDnko",
+      "commit_sha": "6d835ffdfb77170489d301852632ed31f5b83983",
+      "tree_sha": "0ebcf8a88329cb61624c759c6342dbaf506f0787",
+      "committed_at_utc": "2026-04-06T01:46:29+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ef5cb5fa215c9d86f3bcaaf71dbb00225797912862e2664ec865cdbe3d3c5309"
+    "source_digest": "211fd50e42095e588d7cfec5cecdb972bbaaf6f5746b8ab66d0014e1c153cf1e"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4524
+    "declaration_count": 4525
   },
   "readme_sync": {
-    "version": "0.25.11",
+    "version": "0.25.12",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 84028,
+    "production_loc": 84061,
     "test_files": 16,
     "test_loc": 11318,
     "proved_theorem_lemma_decls": 2479,
@@ -10829,7 +10829,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue.Core",
       "path": "SeLe4n/Kernel/IPC/DualQueue/Core.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -11062,8 +11062,23 @@
         },
         {
           "kind": "def",
+          "name": "endpointQueuePopHeadFresh",
+          "line": 292,
+          "called": [
+            "KernelError",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "endpointQueuePopHead",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "endpointQueueEnqueue",
-          "line": 284,
+          "line": 303,
           "called": [
             "Endpoint",
             "IntrusiveQueue",
@@ -11081,7 +11096,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_preserves_objects_invExt",
-          "line": 323,
+          "line": 342,
           "called": [
             "ObjId",
             "SystemState",
@@ -11101,7 +11116,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_preserves_objects_invExt",
-          "line": 377,
+          "line": 396,
           "called": [
             "ObjId",
             "SystemState",
@@ -11120,7 +11135,7 @@
         {
           "kind": "def",
           "name": "endpointQueueRemove",
-          "line": 461,
+          "line": 480,
           "called": [
             "IntrusiveQueue",
             "KernelError",
@@ -11137,7 +11152,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_preserves_objects_invExt",
-          "line": 507,
+          "line": 526,
           "called": [
             "ObjId",
             "RHTable.insert_preserves_invExt",
@@ -11604,7 +11619,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDual",
-          "line": 1632,
+          "line": 1633,
           "called": [
             "Kernel",
             "ObjId",
@@ -11623,7 +11638,7 @@
         {
           "kind": "def",
           "name": "endpointCall",
-          "line": 1710,
+          "line": 1712,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -11645,7 +11660,7 @@
         {
           "kind": "def",
           "name": "endpointReply",
-          "line": 1754,
+          "line": 1757,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -11662,7 +11677,7 @@
         {
           "kind": "def",
           "name": "endpointReplyRecv",
-          "line": 1782,
+          "line": 1785,
           "called": [
             "IpcMessage",
             "Kernel",
@@ -11682,7 +11697,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_preserves_tail_of_nonTail",
-          "line": 1823,
+          "line": 1826,
           "called": [
             "Endpoint",
             "ObjId",
@@ -11707,7 +11722,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemoveDual_tail_update",
-          "line": 1922,
+          "line": 1925,
           "called": [
             "Endpoint",
             "ObjId",
@@ -11732,7 +11747,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_empty_sets_head",
-          "line": 2011,
+          "line": 2014,
           "called": [
             "Endpoint",
             "ObjId",
@@ -11755,7 +11770,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_empty_queueNext_none",
-          "line": 2053,
+          "line": 2056,
           "called": [
             "Endpoint",
             "ObjId",
@@ -11780,7 +11795,7 @@
         {
           "kind": "theorem",
           "name": "lookupTcb_of_objects",
-          "line": 2116,
+          "line": 2119,
           "called": [
             "SystemState",
             "TCB",
@@ -11793,7 +11808,7 @@
         {
           "kind": "theorem",
           "name": "tid_not_reserved_of_enqueue",
-          "line": 2127,
+          "line": 2130,
           "called": [
             "ObjId",
             "SystemState",
@@ -11808,7 +11823,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueEnqueue_then_popHead_succeeds",
-          "line": 2150,
+          "line": 2153,
           "called": [
             "Endpoint",
             "ObjId",
@@ -11833,7 +11848,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_scheduler_eq",
-          "line": 2214,
+          "line": 2217,
           "called": [
             "ObjId",
             "SystemState",
@@ -11847,7 +11862,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_cdt_eq",
-          "line": 2235,
+          "line": 2238,
           "called": [
             "ObjId",
             "SystemState",
@@ -11861,7 +11876,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_lifecycle_eq",
-          "line": 2256,
+          "line": 2259,
           "called": [
             "ObjId",
             "SystemState",
@@ -11875,7 +11890,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueueRemove_services_eq",
-          "line": 2277,
+          "line": 2280,
           "called": [
             "Kernel",
             "ObjId",
@@ -18652,13 +18667,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 35,
+          "line": 46,
           "called": []
         },
         {
           "kind": "def",
           "name": "fillRemainingNoSlot",
-          "line": 44,
+          "line": 55,
           "called": [
             "CapTransferResult",
             "Capability",
@@ -18668,7 +18683,7 @@
         {
           "kind": "def",
           "name": "ipcUnwrapCapsLoop",
-          "line": 57,
+          "line": 68,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18687,7 +18702,7 @@
         {
           "kind": "def",
           "name": "ipcUnwrapCaps",
-          "line": 111,
+          "line": 122,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18701,7 +18716,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_scheduler",
-          "line": 125,
+          "line": 136,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18721,7 +18736,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_scheduler",
-          "line": 158,
+          "line": 169,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18735,7 +18750,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_services",
-          "line": 171,
+          "line": 182,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18755,7 +18770,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_services",
-          "line": 204,
+          "line": 215,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18769,7 +18784,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_objects_ne",
-          "line": 217,
+          "line": 228,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18791,7 +18806,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_objects_ne",
-          "line": 255,
+          "line": 266,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18806,7 +18821,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ntfn_objects",
-          "line": 269,
+          "line": 280,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18829,7 +18844,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ntfn_objects",
-          "line": 310,
+          "line": 321,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18845,7 +18860,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_receiverRoot_not_ntfn",
-          "line": 325,
+          "line": 336,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18867,7 +18882,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ep_objects",
-          "line": 362,
+          "line": 373,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18890,7 +18905,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ep_objects",
-          "line": 401,
+          "line": 412,
           "called": [
             "CapTransferSummary",
             "Endpoint",
@@ -18906,7 +18921,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_tcb_objects",
-          "line": 416,
+          "line": 427,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -18929,7 +18944,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_tcb_objects",
-          "line": 455,
+          "line": 466,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -18945,7 +18960,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_cnode_at_root",
-          "line": 473,
+          "line": 484,
           "called": [
             "CNode",
             "CapTransferResult",
@@ -18968,7 +18983,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_cnode_at_root",
-          "line": 513,
+          "line": 524,
           "called": [
             "CNode",
             "CapTransferSummary",
@@ -18984,7 +18999,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_receiverRoot_not_ntfn",
-          "line": 531,
+          "line": 542,
           "called": [
             "CapTransferSummary",
             "IpcMessage",

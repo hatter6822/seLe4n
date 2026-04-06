@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.11-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.12-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -85,9 +85,9 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.25.11` |
+| **Version** | `0.25.12` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 84,028 across 133 files |
+| **Production Lean LoC** | 84,061 across 133 files |
 | **Test Lean LoC** | 11,318 across 16 test suites |
 | **Proved declarations** | 2,479 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -207,7 +207,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
 | **Service management** | Not in kernel | First-class orchestration with dependency graph and acyclicity proofs |
-| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,479 theorems, zero sorry/axiom) |
+| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,479 proved declarations, zero sorry/axiom) |
 | **Platform** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ## What's next
@@ -219,7 +219,7 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
 | Workstream | Scope | Version |
 |------------|-------|---------|
-| **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned SchedContext preservation module integration with import-cycle resolution (3 tasks) | v0.25.11 |
+| **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned SchedContext preservation module integration (3 tasks), Phase AD2: code quality hardening with fresh-TCB helper and CapTransfer docstring (4 tasks) | v0.25.11–v0.25.12 |
 | **WS-AC** | Comprehensive Audit Remediation — 3 HIGH, 9 MEDIUM, 9 LOW findings addressed across scheduler, IPC, capability, architecture, and cross-cutting subsystems (6 phases, 42 tasks) | v0.25.3–v0.25.10 |
 | **WS-AB** | Deferred Operations & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem (6 phases, 90 tasks) | v0.24.0–v0.25.5 |
 | **WS-Z** | Composable Performance Objects — `SchedContext` as 7th kernel object, CBS budget engine, replenishment queue, passive server donation, timeout endpoints (10 phases, 213 tasks) | v0.23.0–v0.23.21 |
