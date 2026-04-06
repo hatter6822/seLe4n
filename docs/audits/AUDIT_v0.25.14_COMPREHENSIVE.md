@@ -13,13 +13,16 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 2 HIGH, 5 MEDIUM, 9 LOW, 7+ INFORMATIONAL
+**Critical findings**: 4 HIGH, 9 MEDIUM, 13 LOW, 11 INFORMATIONAL
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
-production code) and sound formal verification. However, two high-severity
+production code) and sound formal verification. However, four high-severity
 issues were discovered: (1) the production-recommended checked dispatch path
-silently drops two syscalls, and (2) a significant body of code is tested
-but unreachable from the production import chain.
+silently drops two syscalls, (2) a significant body of code is tested
+but unreachable from the production import chain, (3) `switchDomain` is
+missing from the `NonInterferenceStep` inductive, leaving domain-switch
+non-interference unproven in composition, and (4) PIP/SchedContext donation
+mutations in the call/reply paths occur outside the NI proof envelope.
 
 ---
 
@@ -65,6 +68,19 @@ but unreachable from the production import chain.
 | S-03 | LOW | Scheduler/Operations/Core | `handleYield` re-enqueues at raw priority, not effective priority |
 | S-04 | LOW | Scheduler/Operations/Preservation | `*Effective`/`*WithBudget` variants lack full invariant preservation proofs |
 | S-05 | LOW | Scheduler/Operations/Core | `timeoutBlockedThreads` O(n) scan over entire object store |
+| IF-01 | **HIGH** | InformationFlow/Invariant/Composition | `switchDomain` missing from `NonInterferenceStep` inductive |
+| IF-02 | **HIGH** | Kernel/API.lean + InformationFlow | PIP/donation mutations in call/reply outside NI proof envelope |
+| IF-03 | MEDIUM | InformationFlow/Invariant/Composition | `NonInterferenceStep` proves per-operation NI, not full dispatch NI |
+| IF-04 | MEDIUM | InformationFlow/Enforcement/Wrappers | Default labeling context uses `⊥` (bottom) — all flows permitted |
+| IF-05 | MEDIUM | InformationFlow/Policy | BIBA integrity ordering reversed (`securityFlowsTo` used for both) |
+| IF-06 | MEDIUM | InformationFlow/Invariant | Service registry excluded from NI projection model |
+| IF-07 | LOW | InformationFlow/Enforcement/Soundness | Declassification well-formedness not structurally enforced |
+| IF-08 | LOW | InformationFlow/Enforcement/Wrappers | Dispatch structure couples enforcement to operation structure |
+| IF-09 | LOW | InformationFlow/Invariant/Composition | `replyRecv` compound operation NI proof assumes decomposition |
+| IF-10 | LOW | InformationFlow/Invariant/Operations | Scheduling covert channel not modeled in NI proofs |
+| C-01 | LOW | Kernel/Capability/Operations | `resolveCapAddress` correctly handles `bitsRemaining=0` — no issue |
+| C-02 | INFO | Architecture/SyscallArgDecode | 21 of 25 syscalls have arg decoders; 4 IPC ops use MessageInfo directly |
+| C-03 | INFO | Platform/RPi5/Board | BCM2712 MMIO addresses verified realistic against published documentation |
 
 ---
 
@@ -145,6 +161,67 @@ it should be documented as such and not counted toward production proof coverage
 
 ---
 
+### IF-01: `switchDomain` missing from `NonInterferenceStep` inductive
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`, lines 34-308
+**Impact**: Domain-switch non-interference is unproven in trace composition
+**Severity**: HIGH
+
+**Description**: The `NonInterferenceStep` inductive in `Composition.lean` contains
+32 constructors covering individual kernel operations (endpointSendDual, cspaceMint,
+vspaceMapPage, etc.), but **does not include** a `switchDomain` constructor.
+
+A `switchDomain_preserves_lowEquivalent` theorem exists in `Operations.lean` (lines
+580-596), proving that switchDomain preserves low-equivalence for a single step. However,
+since `switchDomain` is not a constructor in `NonInterferenceStep`, the trace composition
+proof (`nonInterferenceMultiStep`) cannot include domain-switch transitions.
+
+This means the NI guarantee has a gap: a trace including domain switches is not covered
+by the composition theorem. Since domain switches are the primary mechanism for
+cross-domain isolation, this is a critical gap in the security proof.
+
+**Remediation**: Add a `switchDomain` constructor to `NonInterferenceStep` that
+references the `switchDomain_preserves_lowEquivalent` theorem. This closes the
+composition gap without requiring new proofs — the per-step theorem already exists.
+
+---
+
+### IF-02: PIP/donation mutations outside NI proof envelope
+
+**Location**: `SeLe4n/Kernel/API.lean`, lines 610-614 (call), 870-873 (reply)
+**Impact**: Priority inheritance propagation and SchedContext donation are not covered by NI proofs
+**Severity**: HIGH
+
+**Description**: In the checked dispatch path:
+
+- **Call arm** (lines 610-614): After `endpointCallWithCaps`, the code applies
+  `applyCallDonation` then `propagatePriorityInheritance`. These mutations modify
+  scheduler state (PIP boost, SchedContext binding) but occur AFTER the IPC operation
+  that the `endpointCallHigh` NI constructor covers.
+
+- **Reply arm** (lines 870-873): After `endpointReplyChecked`, the code applies
+  `applyReplyDonation` then `revertPriorityInheritance`. Same issue — post-operation
+  mutations outside the NI envelope.
+
+The `NonInterferenceStep` constructors for `endpointCallHigh` and `endpointReply`
+reference the base operations (`endpointCall`, `endpointReply`) without accounting
+for the post-operation PIP state changes. This means the NI composition proof covers
+the IPC operation but not the subsequent scheduler mutations, creating a gap where
+information could flow through priority inheritance changes.
+
+**Risk assessment**: In practice, PIP boost values derive from the blocking graph
+(which is IPC-state-dependent), so they may not constitute a novel information channel.
+However, the formal proof does not establish this — it simply does not cover these
+mutations.
+
+**Remediation**: Either:
+1. Extend the `endpointCallHigh` and `endpointReply` NI constructors to cover the
+   composed operation (IPC + donation + PIP), or
+2. Add separate NI constructors for `applyCallDonation`/`propagatePriorityInheritance`
+   and `applyReplyDonation`/`revertPriorityInheritance`, and compose them in the trace.
+
+---
+
 ## MEDIUM Severity Findings
 
 ### F-03: Scheduler Liveness subsystem unreachable from production
@@ -217,6 +294,89 @@ theorem would have caught F-01 at compile time.
 
 **Remediation**: Fix the comment, and add a compile-time wildcard unreachability
 theorem for `dispatchWithCapChecked` to prevent future regressions.
+
+---
+
+### IF-03: `NonInterferenceStep` proves per-operation NI, not full dispatch NI
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`, lines 34-308
+**Impact**: NI composition theorem does not cover the complete `dispatchSyscall` path
+**Severity**: MEDIUM
+
+**Description**: `NonInterferenceStep` has 32 constructors for individual kernel
+operations, and `syscallDispatchHigh` (lines 295-299) wraps full dispatch via a
+`hProj` hypothesis parameter. This means the composition theorem assumes the
+dispatched operation preserves projection — it does not prove it from first principles.
+
+The per-operation NI proofs in `Operations.lean` (~1492 lines) provide the actual
+guarantees, but the gap between "each operation individually satisfies NI" and
+"the dispatch function as a whole satisfies NI" is bridged by assumption, not proof.
+
+**Remediation**: Add a master dispatch theorem proving that `dispatchSyscallChecked`
+preserves projection for ALL 25 `SyscallId` variants, discharging all 32 per-operation
+proofs. This closes the assumption gap.
+
+---
+
+### IF-04: Default labeling context uses bottom label — all flows permitted
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Policy.lean`
+**Impact**: Default configuration permits all cross-domain flows
+**Severity**: MEDIUM
+
+**Description**: The default `LabelingContext` initializes security labels to `⊥`
+(bottom), meaning `securityFlowsTo` returns true for all domain pairs. This is
+correct for testing and simulation but means the default kernel configuration has
+no information-flow restrictions. If a platform binding fails to configure proper
+labels, the enforcement boundary will permit all flows silently.
+
+**Remediation**: Add a runtime check or theorem verifying that the boot sequence
+configures non-trivial security labels before the first syscall. Alternatively,
+add a `LabelingContext.isNonTrivial` predicate and check it in `syscallEntryChecked`.
+
+---
+
+### IF-05: BIBA integrity uses same ordering as confidentiality
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Policy.lean`
+**Impact**: Integrity ordering may not match seL4's BIBA model
+**Severity**: MEDIUM
+
+**Description**: The `securityFlowsTo` predicate is used for both confidentiality
+(no read-up, no write-down) and integrity (BIBA: no write-up, no read-down). If
+the same lattice ordering is used for both properties, the BIBA integrity direction
+is effectively reversed relative to standard BIBA formulations where high-integrity
+data flows downward.
+
+This may be intentional (a lattice-theoretic dual), but the model does not explicitly
+distinguish the two flow directions or document the duality.
+
+**Remediation**: Add explicit documentation clarifying the integrity flow direction.
+If BIBA integrity is intended, consider separate predicates `confidentialityFlowsTo`
+and `integrityFlowsTo` with documented lattice orientations.
+
+---
+
+### IF-06: Service registry excluded from NI projection model
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Projection.lean`
+**Impact**: Service operations are not covered by non-interference projection
+**Severity**: MEDIUM
+
+**Description**: The NI projection model (`projectState`) projects kernel state
+per domain for the non-interference property. The service registry (`serviceEntries`)
+is not included in the projection — service registrations, revocations, and queries
+are invisible to the NI framework.
+
+This means that if a service operation leaks information across domain boundaries
+(e.g., a query reveals the existence of a cross-domain service), this would not be
+caught by the NI proofs. The enforcement boundary classifies service operations
+(`.serviceWrite "register"`, `.serviceWrite "revoke"`, `.serviceRead "query"`) but
+the projection does not observe their effects.
+
+**Remediation**: Extend `projectState` to include the domain-relevant subset of
+the service registry, then prove NI preservation for service operations against
+the extended projection.
 
 ---
 
@@ -296,6 +456,84 @@ Not present in any production kernel code.
 
 ---
 
+### IF-07: Declassification well-formedness not structurally enforced
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean`
+**Severity**: LOW
+
+Declassification gates allow controlled information flow between domains (e.g.,
+IPC send across a domain boundary). The well-formedness of declassification
+requests (valid source/target labels, authorized gate) is checked at runtime
+but not structurally enforced by the type system. A malformed declassification
+context could pass the runtime check if label comparison is permissive.
+
+**Remediation**: Consider adding a well-formedness witness type that must be
+constructed through a validated path, similar to `IntermediateState`'s
+invariant witnesses.
+
+---
+
+### IF-08: Enforcement dispatch structure tightly coupled to operation structure
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean`
+**Severity**: LOW
+
+The enforcement wrappers individually wrap each kernel operation, creating a 1:1
+coupling between the enforcement layer and the operation layer. When new operations
+are added (as with D1-D3), both the enforcement boundary and the checked dispatch
+path must be updated. The `enforcementBoundary_is_complete` `native_decide` check
+catches missing entries, but only at Lean compile time — there is no analogous
+check for the checked dispatch path (cf. F-01).
+
+**Remediation**: Factor checked dispatch through a table-driven approach that
+automatically derives dispatch from the enforcement boundary classification.
+
+---
+
+### IF-09: `replyRecv` NI proof assumes decomposition into reply + receive
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`
+**Severity**: LOW
+
+The `replyRecv` compound operation is a single atomic transition in the kernel
+(`API.lean` handles it as one arm) but the NI composition proof decomposes it
+into a reply step followed by a receive step. If the atomic implementation has
+observable intermediate states that differ from the sequential decomposition,
+the NI proof may not cover the actual transition.
+
+In practice, the Lean model is sequential (no interleaving), so this decomposition
+is sound. But it should be documented as an assumption.
+
+---
+
+### IF-10: Scheduling covert channel not modeled
+
+**Location**: `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`
+**Severity**: LOW
+
+The NI proofs model information flow through explicit state changes (object store,
+IPC queues, capabilities) but do not model timing-based covert channels through
+the scheduler. A thread in domain A could infer information about domain B's
+workload by observing its own scheduling quantum consumption or preemption patterns.
+
+This is a well-known limitation of state-based NI models and is common in all
+formally-verified microkernels (including seL4's original NI proof). Not a defect
+in the proof, but a documented scope limitation.
+
+---
+
+### C-01: `resolveCapAddress` correctly handles zero-bit edge case
+
+**Location**: `SeLe4n/Kernel/Capability/Operations.lean`, line 87
+**Severity**: LOW (positive confirmation)
+
+Verified that `resolveCapAddress` explicitly guards against `bitsRemaining = 0`
+at entry (`if hZero : bitsRemaining = 0 then .error .illegalState`), preventing
+degenerate CSpace resolution paths. The recursive case maintains strict descent
+via `Nat.sub_lt` proof. No issue found.
+
+---
+
 ## INFORMATIONAL Findings
 
 ### F-12: Proof Hygiene — Excellent
@@ -337,6 +575,25 @@ properties are violated. Documented with risk/mitigation notes.
 - **RobinHood/***: Deeply integrated via `Prelude`, `Object/Types`, `State`, `RunQueue` (F-16)
 - **RadixTree/***: Reachable via `Platform.Boot` → `FreezeProofs` → `FrozenState` (F-17)
 - **All 15 re-export hubs**: Correctly import their submodules with no missing imports (F-18)
+
+### C-02: SyscallArgDecode coverage — 21 of 25 decoders (by design)
+
+`SyscallArgDecode.lean` defines typed argument decoders for 21 of 25 syscall types.
+The 4 IPC syscalls (send, receive, call, reply) do not have separate arg decoders
+because they use `MessageInfo` + capability pointer from registers, decoded directly
+at the API layer via `RegisterDecode.lean`. This is architecturally correct — IPC
+arguments include variable-length message payloads that don't fit a fixed struct pattern.
+
+### C-03: RPi5 BCM2712 MMIO addresses verified realistic
+
+`Platform/RPi5/Board.lean` defines MMIO addresses for the BCM2712 SoC:
+- `peripheralBaseLow: 0xFE000000` — correct legacy 32-bit peripheral window
+- `peripheralBaseHigh: 0x1000000000` — correct high peripheral window (>4GB)
+- `gicDistributorBase: 0xFF841000` — realistic GIC-400 distributor offset
+- `gicCpuInterfaceBase: 0xFF842000` — realistic GIC-400 CPU interface
+- ARM Generic Timer at 54 MHz — matches RPi5 crystal specification
+
+All addresses are consistent with published BCM2712 documentation.
 
 ---
 
@@ -591,12 +848,22 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 ### Information Flow (`SeLe4n/Kernel/InformationFlow/` — 9 files)
 
 - **Policy**: Security labels, `securityFlowsTo` predicate, labeling context.
+  Default labeling context uses `⊥` (bottom) — all flows permitted by default (IF-04).
+  BIBA integrity uses same ordering as confidentiality (IF-05).
 - **Projection**: State projection for non-interference — observable state per domain.
+  Service registry excluded from projection (IF-06).
 - **Enforcement wrappers**: 11 checked operations gating cross-domain flows.
   `enforcementBoundaryComplete` verified by `native_decide` at compile time.
+  Dispatch structure tightly coupled to operation structure (IF-08).
 - **NI proofs**: Per-operation non-interference proofs (~1492 lines in Operations.lean).
-  Trace composition and declassification in Composition.lean (~607 lines).
+  Trace composition in Composition.lean (~607 lines). **Critical gap**: `switchDomain`
+  missing from `NonInterferenceStep` inductive — domain-switch NI unproven in
+  composition (IF-01). PIP/donation mutations outside NI envelope (IF-02).
+  Composition proves per-operation NI but not full dispatch NI (IF-03).
 - **Coverage**: All 25 SyscallId variants mapped to enforcement boundary entries.
+  Declassification well-formedness not structurally enforced (IF-07).
+  `replyRecv` NI proof assumes sequential decomposition (IF-09).
+  Scheduling covert channels not modeled — standard scope limitation (IF-10).
 
 ### Data Structures
 
@@ -665,28 +932,58 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
    integrate into the API layer. If experimental: document as such and move to
    a clearly-labeled directory.
 
+3. **Fix IF-01**: Add `switchDomain` constructor to `NonInterferenceStep` in
+   `Composition.lean`. The per-step theorem already exists in `Operations.lean`
+   (`switchDomain_preserves_lowEquivalent`), so this requires wiring, not new proofs.
+
+4. **Fix IF-02**: Extend the `endpointCallHigh` and `endpointReply` NI
+   constructors to cover the composed operation (IPC + donation + PIP), or add
+   separate constructors for donation/PIP mutations. This closes the NI proof
+   gap for the call/reply dispatch paths.
+
 ### Priority 2 — Fix before benchmarking (MEDIUM)
 
-3. **Fix F-03**: Import `Scheduler.Liveness` into `Scheduler.Invariant` or
+5. **Fix F-03**: Import `Scheduler.Liveness` into `Scheduler.Invariant` or
    `Architecture.Invariant` to bring liveness proofs into the production build.
 
-4. **Fix F-04**: Move `.tcbSetIPCBuffer` into `dispatchCapabilityOnly` alongside
+6. **Fix F-04**: Move `.tcbSetIPCBuffer` into `dispatchCapabilityOnly` alongside
    the other capability-only TCB operations to eliminate duplication.
 
-5. **Fix F-05**: Correct the wildcard unreachability comment in
+7. **Fix F-05**: Correct the wildcard unreachability comment in
    `dispatchWithCapChecked` and add a compile-time completeness theorem.
+
+8. **Fix IF-03**: Add a master dispatch NI theorem that discharges all 32
+   per-operation NI proofs via the actual `dispatchSyscallChecked` function.
+
+9. **Fix IF-04**: Add a `LabelingContext.isNonTrivial` predicate and verify
+   non-trivial labels are configured before the first syscall in boot sequence.
+
+10. **Fix IF-05**: Document the integrity flow direction explicitly, or add
+    separate `confidentialityFlowsTo`/`integrityFlowsTo` predicates.
+
+11. **Fix IF-06**: Extend `projectState` to include the service registry
+    and prove NI preservation for service operations.
+
+12. **Fix S-01/S-02**: Add frame theorem for `updatePipBoost` preserving
+    `ipcState`; enforce `sc.domain == tcb.domain` invariant for bound threads.
 
 ### Priority 3 — Maintenance (LOW)
 
-6. **F-09**: Consider adding `SyscallId.schedContextYieldTo` if user-space budget
-   transfer is needed for the hardware target.
+13. **F-09**: Consider adding `SyscallId.schedContextYieldTo` if user-space budget
+    transfer is needed for the hardware target.
 
-7. **F-10**: Remove or deprecate the `fromDtb` stub once `fromDtbFull` is the
-   canonical DTB parsing path.
+14. **F-10**: Remove or deprecate the `fromDtb` stub once `fromDtbFull` is the
+    canonical DTB parsing path.
 
-8. **General**: Consider adding a CI check that verifies all `.lean` files under
-   `SeLe4n/` are transitively imported by `SeLe4n.lean` (the library root) to
-   prevent future dead code accumulation.
+15. **S-03**: Use `resolveEffectivePrioDeadline` in `handleYield` for correct
+    PIP-aware re-enqueue priority.
+
+16. **S-05**: Consider indexed data structure for `timeoutBlockedThreads` to
+    avoid O(n) scan on RPi5 with many objects.
+
+17. **General**: Consider adding a CI check that verifies all `.lean` files under
+    `SeLe4n/` are transitively imported by `SeLe4n.lean` (the library root) to
+    prevent future dead code accumulation.
 
 ---
 
@@ -713,14 +1010,28 @@ This audit employed:
 
 seLe4n v0.25.14 demonstrates exceptional formal verification discipline with zero
 sorry/axiom in production code, comprehensive invariant preservation proofs, and
-perfect Lean-Rust ABI synchronization. The two HIGH findings (F-01 dispatch gap,
-F-02 FrozenOps unreachability) are both readily fixable. The MEDIUM finding (F-03
-Liveness unreachability) should be addressed before benchmarking to ensure liveness
-guarantees are compile-time verified against the actual scheduler implementation.
+perfect Lean-Rust ABI synchronization.
 
-After fixing F-01, F-02/F-03 (integration vs documentation), and F-04/F-05
-(maintenance), the kernel is well-positioned for its first major release and
-hardware benchmarking on the Raspberry Pi 5.
+**Four HIGH findings** require attention before release:
+- **F-01** (dispatch gap): Two syscalls silently rejected in checked path — straightforward fix
+- **F-02** (FrozenOps unreachable): Production/experimental status needs resolution
+- **IF-01** (switchDomain NI gap): Domain-switch missing from NI composition — per-step proof exists, needs wiring
+- **IF-02** (PIP outside NI envelope): Call/reply donation mutations unproven for NI — needs constructor extension
+
+**Nine MEDIUM findings** should be addressed before benchmarking:
+- F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-01/S-02 (scheduler correctness)
+- IF-03 through IF-06 (NI methodology, labeling, integrity, projection completeness)
+
+The information flow subsystem is architecturally sound but has proof coverage gaps
+(IF-01/IF-02) and methodology limitations (IF-03 through IF-06) that should be
+closed to claim full non-interference for all kernel transitions. These gaps do not
+indicate the presence of actual information leaks — they indicate the absence of
+formal proof that such leaks cannot occur.
+
+After addressing the HIGH findings and the MEDIUM NI gaps, the kernel is
+well-positioned for its first major release and hardware benchmarking on the
+Raspberry Pi 5. The 13 LOW and 11 INFORMATIONAL findings are maintenance items
+that can be addressed incrementally.
 
 ---
 
