@@ -363,7 +363,7 @@ capabilities, which is the correct degraded behavior.
 
 ---
 
-## 5. Phase AD3 — Production Deployment Documentation (F-04, F-05, F-06, F-07)
+## 5. Phase AD3 — Production Deployment Documentation (F-04, F-05, F-06, F-07) ✅ COMPLETE
 
 **Goal**: Create a production deployment guide that consolidates security
 model limitations, NI boundary scope, and configuration requirements
@@ -372,8 +372,9 @@ for any production deployment and must exist before the RPi5 hardware binding
 (H3) milestone.
 **Gate**: `./scripts/test_full.sh` + documentation sync checks.
 **Dependencies**: AD1, AD2 (clean codebase baseline).
+**Status**: COMPLETE — deployment guide created (238 lines), spec/advisory/claims/GitBook updated.
 
-### AD3-A: Create DEPLOYMENT_GUIDE.md (F-04, F-05, F-06, F-07)
+### AD3-A: Create DEPLOYMENT_GUIDE.md (F-04, F-05, F-06, F-07) ✅
 
 **Finding**: No production deployment guide currently exists. Four audit
 findings (3 HIGH, 1 MEDIUM) require deployment-facing documentation:
@@ -441,7 +442,7 @@ SA-2, SA-3) and formal theorems in the Lean codebase.
 **Estimated effort**: Moderate — requires careful drafting of security-
 sensitive documentation.
 
-### AD3-B: Add labeling context override example (F-07)
+### AD3-B: Add labeling context override example (F-07) ✅
 
 **Finding**: `docs/SECURITY_ADVISORY.md` (SA-2) states that production
 deployments MUST override `defaultLabelingContext`, but no code example
@@ -469,7 +470,7 @@ def productionLabelingContext : LabelingContext :=
 
 **Files modified**: `docs/DEPLOYMENT_GUIDE.md` (included in AD3-A).
 
-### AD3-C: Update SELE4N_SPEC.md with NI boundary scope (F-05)
+### AD3-C: Update SELE4N_SPEC.md with NI boundary scope (F-05) ✅
 
 **Finding**: The specification document should explicitly state the NI
 boundary scope — that service orchestration is outside the kernel NI model.
@@ -483,7 +484,7 @@ boundary scope — that service orchestration is outside the kernel NI model.
 **Files modified**: `docs/spec/SELE4N_SPEC.md` (~10–15 lines added).
 **Estimated effort**: Minimal.
 
-### AD3-D: Update SECURITY_ADVISORY.md cross-references (F-04, F-07)
+### AD3-D: Update SECURITY_ADVISORY.md cross-references (F-04, F-07) ✅
 
 **Finding**: `docs/SECURITY_ADVISORY.md` already documents SA-2
 (`defaultLabelingContext` override requirement) but does not cross-reference
@@ -500,7 +501,7 @@ cross-reference to `integrityFlowsTo_is_not_biba`.
 **Files modified**: `docs/SECURITY_ADVISORY.md` (~15–20 lines added).
 **Estimated effort**: Minimal.
 
-### AD3-E: Update CLAIM_EVIDENCE_INDEX.md (F-04, F-05, F-06, F-07)
+### AD3-E: Update CLAIM_EVIDENCE_INDEX.md (F-04, F-05, F-06, F-07) ✅
 
 **Finding**: The claim-evidence index should reflect the deployment-facing
 documentation additions and cross-reference the formal witnesses.
@@ -518,7 +519,7 @@ documentation additions and cross-reference the formal witnesses.
 **Files modified**: `docs/CLAIM_EVIDENCE_INDEX.md` (~20–30 lines added).
 **Estimated effort**: Minimal.
 
-### AD3-F: Phase AD3 gate verification
+### AD3-F: Phase AD3 gate verification ✅
 
 **Steps**:
 1. Full test: `./scripts/test_full.sh`
@@ -526,9 +527,26 @@ documentation additions and cross-reference the formal witnesses.
 3. Website link check: `./scripts/check_website_links.sh`
 4. Verify cross-references resolve correctly
 
-**Gate condition**: All checks pass.
+**Gate condition**: All checks pass. ✅
+
+**Verified**:
+1. Full test: `./scripts/test_full.sh` — all tiers passed
+2. Website link check: `./scripts/check_website_links.sh` — passed
+3. Documentation sync: all cross-references verified
+4. Zero sorry/axiom in production code
 
 **Files modified**: None (verification only).
+
+### AD3 Implementation Summary
+
+| Sub-task | Files Modified | Lines Added |
+|----------|---------------|-------------|
+| AD3-A/B | `docs/DEPLOYMENT_GUIDE.md` (NEW) | 238 |
+| AD3-C | `docs/spec/SELE4N_SPEC.md` | ~18 |
+| AD3-D | `docs/SECURITY_ADVISORY.md` | ~40 |
+| AD3-E | `docs/CLAIM_EVIDENCE_INDEX.md` | ~1 (table row) |
+| AD3-F (GitBook) | `docs/gitbook/28-threat-model-and-security-hardening.md` | ~25 |
+| **Total** | **6 files (1 new, 5 modified)** | **~322 lines** |
 
 ---
 

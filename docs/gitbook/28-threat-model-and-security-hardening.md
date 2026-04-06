@@ -70,6 +70,28 @@ security advisories:
 - **SA-1**: Starvation freedom not guaranteed (fixed-priority preemptive scheduler)
 - **SA-2**: Default labeling context defeats information-flow enforcement
 - **SA-3**: Scheduling covert channel (accepted by design, bounded bandwidth)
+- **SA-4**: Non-BIBA integrity model (authority-flow design; escalation denied)
+
+## Production deployment
+
+See [`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) for the production
+deployment guide covering:
+
+- **Security model overview**: Non-BIBA integrity model (F-04), NI boundary
+  scope (F-05), scheduling covert channel analysis (F-06)
+- **Required configuration**: Mandatory labeling context override (F-07) with
+  code example
+- **Pre-deployment checklist**: 7-item verification checklist for production
+  readiness
+
+Key deployment findings from the pre-release audit (v0.25.10):
+
+| Finding | Severity | Summary |
+|---------|----------|---------|
+| F-04 | HIGH | Non-BIBA integrity model — trusted-to-untrusted delegation allowed |
+| F-05 | HIGH | Service orchestration outside kernel NI boundary |
+| F-06 | HIGH | Scheduling covert channel &le;400 bps (accepted per seL4 precedent) |
+| F-07 | MEDIUM | Default labeling context defeats IF enforcement — MUST override |
 
 ## Related
 
