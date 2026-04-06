@@ -641,3 +641,38 @@ guarantees are compile-time verified against the actual scheduler implementation
 After fixing F-01, F-02/F-03 (integration vs documentation), and F-04/F-05
 (maintenance), the kernel is well-positioned for its first major release and
 hardware benchmarking on the Raspberry Pi 5.
+
+---
+
+## Appendix A: Core Model Deep Audit
+
+Detailed audit of `Prelude.lean` (1049 lines), `Machine.lean` (617 lines),
+`Model/Object/Types.lean` (~1291 lines), `Model/Object/Structures.lean` (~833 lines),
+and `Model/State.lean` (~1073 lines).
+
+### Additional Low-Severity Findings
+
+**A-01: `SchedContextId.ofObjId` missing sentinel check** (`Prelude.lean:373`)
+`ofObjId` converts any `ObjId` to `SchedContextId` without checking sentinel value 0,
+unlike `ThreadId.toObjIdChecked`. Recommend adding `SchedContextId.ofObjIdChecked`.
+
+**A-02: `AccessRightSet` raw constructor exposure** (`Types.lean:96-98`)
+`AccessRightSet.mk 999` creates invalid rights set. Documented and mitigated (AC4-B/F-02).
+Membership queries mask to 5 bits. `union` can propagate high bits but this is harmless.
+
+**A-03: Non-lawful BEq instances** (`Machine.lean:208-228`, `Types.lean:549-589`)
+`RegisterFile.BEq` checks GPR 0-31 only. Negative `LawfulBEq` witnesses prove
+intentionality. Kernel code never accesses GPR >= 32.
+
+### Core Model Positive Confirmations
+
+- `KernelM` monad provably lawful (all laws machine-checked, `Prelude.lean:734`)
+- `CapDerivationTree` uses private constructor preventing inconsistent CDTs
+- `UntypedObject.allocate` watermark monotonicity proven (`Types.lean:838`)
+- No `Inhabited KernelObject` — prevents accidental default kernel object creation
+- `allTablesInvExtK_witness` compile-time completeness check (16 conjuncts)
+- `CNode.resolveSlot` correctly masks CPtr to 64 bits with idempotency proof
+- `CNode.empty` proven NOT well-formed — prevents use in CSpace resolution
+- Sentinel convention (ID 0 reserved) consistently applied across all ID types
+- `storeObject` infallibility documented — capacity enforced at `retypeFromUntyped`
+- `storeObjectChecked` adds capacity guard for new allocation paths
