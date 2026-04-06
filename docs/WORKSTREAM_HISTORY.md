@@ -26,6 +26,11 @@ WS-Z Phases Z1–Z10 complete. **WS-Z PORTFOLIO COMPLETE.**
 WS-AA Phase AA1 complete. Phase AA2 complete.
 WS-AB Phase D1 complete. Phase D2 complete. Phase D3 complete. Phase D4 complete. Phase D5 complete. Phase D6 complete. **WS-AB PORTFOLIO COMPLETE.**
 WS-AC Phase AC6 complete. **WS-AC PORTFOLIO COMPLETE.**
+WS-AD Phase AD1 complete.
+
+### WS-AD: Pre-Release Audit Remediation v0.25.10 (IN PROGRESS)
+
+- **Phase AD1 COMPLETE** (v0.25.11): Integration Fix (F-01) — 3 sub-tasks (AD1-A through AD1-C). F-01: Integrated 2 orphaned SchedContext preservation modules (`Preservation.lean`: 7 theorems covering Z5-M/Z5-I/Z5-K/Z5-L/Z5-N1/N2; `PriorityPreservation.lean`: 14 theorems covering D2-G/H/I/J transport lemmas and authority non-escalation) into the production proof chain. Import-cycle constraint discovered and resolved: direct import into `SchedContext/Invariant.lean` creates cycle via `Object/Types → SchedContext → Invariant → Preservation → Operations → Model.State → Object/Types`; resolved by importing from `CrossSubsystem.lean` (downstream of cycle boundary, natural integration point for cross-subsystem preservation composition). 21 theorems now reachable via `CrossSubsystem → Architecture/Invariant → API.lean`. Full build (236 jobs), `test_full.sh` (Tier 0–3), and sorry/axiom scan all pass. Zero sorry/axiom.
 
 ### WS-AC: Comprehensive Audit Remediation v0.25.3 (COMPLETE)
 

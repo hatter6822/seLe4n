@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/optimize-phase-ac6-BVIHr",
-      "commit_sha": "860e2c7c4291744eb9cd5692351a785ec43245ad",
-      "tree_sha": "ea8fb81eb2970a55a98ca32ca0d134adb2d99ade",
-      "committed_at_utc": "2026-04-05T21:48:16+00:00"
+      "branch": "claude/optimize-phase-ad1-integration-eqojX",
+      "commit_sha": "0da8bd1b9db4e45246232f07f73a1136b5a63717",
+      "tree_sha": "a363b2d3a4ac0ccb3f36341a4713c5db49b63212",
+      "committed_at_utc": "2026-04-06T01:13:44+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fbdeb1cb3a4ac4336cf34f4fbff7b189307c3c03528c06fde20b02f460846247"
+    "source_digest": "ef5cb5fa215c9d86f3bcaaf71dbb00225797912862e2664ec865cdbe3d3c5309"
   },
   "summary": {
     "module_count": 149,
     "declaration_count": 4524
   },
   "readme_sync": {
-    "version": "0.25.10",
+    "version": "0.25.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 84013,
+    "production_loc": 84028,
     "test_files": 16,
     "test_loc": 11318,
-    "proved_theorem_lemma_decls": 2478,
+    "proved_theorem_lemma_decls": 2479,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -8662,13 +8662,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 35,
+          "line": 41,
           "called": []
         },
         {
           "kind": "def",
           "name": "collectQueueMembers",
-          "line": 44,
+          "line": 50,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8681,7 +8681,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_none",
-          "line": 59,
+          "line": 65,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8693,7 +8693,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_fuel_sufficiency_documented",
-          "line": 93,
+          "line": 99,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8708,7 +8708,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_length_bounded",
-          "line": 106,
+          "line": 112,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8723,7 +8723,7 @@
         {
           "kind": "def",
           "name": "noStaleEndpointQueueReferences",
-          "line": 134,
+          "line": 140,
           "called": [
             "Endpoint",
             "ObjId",
@@ -8737,7 +8737,7 @@
         {
           "kind": "def",
           "name": "noStaleNotificationWaitReferences",
-          "line": 152,
+          "line": 158,
           "called": [
             "Notification",
             "ObjId",
@@ -8749,7 +8749,7 @@
         {
           "kind": "def",
           "name": "registryDependencyConsistent",
-          "line": 160,
+          "line": 166,
           "called": [
             "ServiceGraphEntry",
             "ServiceId",
@@ -8760,7 +8760,7 @@
         {
           "kind": "def",
           "name": "schedContextStoreConsistent",
-          "line": 174,
+          "line": 180,
           "called": [
             "SystemState",
             "TCB",
@@ -8772,7 +8772,7 @@
         {
           "kind": "def",
           "name": "schedContextNotDualBound",
-          "line": 188,
+          "line": 194,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -8785,7 +8785,7 @@
         {
           "kind": "def",
           "name": "schedContextRunQueueConsistent",
-          "line": 203,
+          "line": 209,
           "called": [
             "SystemState",
             "TCB",
@@ -8798,7 +8798,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemInvariant",
-          "line": 236,
+          "line": 242,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -8814,7 +8814,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_to_schedContextStoreConsistent",
-          "line": 247,
+          "line": 253,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8824,7 +8824,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_to_schedContextNotDualBound",
-          "line": 252,
+          "line": 258,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8834,7 +8834,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_to_schedContextRunQueueConsistent",
-          "line": 257,
+          "line": 263,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8844,7 +8844,7 @@
         {
           "kind": "theorem",
           "name": "default_crossSubsystemInvariant",
-          "line": 263,
+          "line": 269,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -8863,7 +8863,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_composition_gap_documented",
-          "line": 328,
+          "line": 334,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8880,28 +8880,12 @@
         {
           "kind": "inductive",
           "name": "StateField",
-          "line": 358,
+          "line": 364,
           "called": []
         },
         {
           "kind": "def",
           "name": "registryEndpointValid_fields",
-          "line": 377,
-          "called": [
-            "StateField"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "registryDependencyConsistent_fields",
-          "line": 380,
-          "called": [
-            "StateField"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "noStaleEndpointQueueReferences_fields",
           "line": 383,
           "called": [
             "StateField"
@@ -8909,7 +8893,7 @@
         },
         {
           "kind": "def",
-          "name": "noStaleNotificationWaitReferences_fields",
+          "name": "registryDependencyConsistent_fields",
           "line": 386,
           "called": [
             "StateField"
@@ -8917,7 +8901,7 @@
         },
         {
           "kind": "def",
-          "name": "serviceGraphInvariant_fields",
+          "name": "noStaleEndpointQueueReferences_fields",
           "line": 389,
           "called": [
             "StateField"
@@ -8925,8 +8909,24 @@
         },
         {
           "kind": "def",
+          "name": "noStaleNotificationWaitReferences_fields",
+          "line": 392,
+          "called": [
+            "StateField"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "serviceGraphInvariant_fields",
+          "line": 395,
+          "called": [
+            "StateField"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "schedContextStoreConsistent_fields",
-          "line": 394,
+          "line": 400,
           "called": [
             "StateField"
           ]
@@ -8934,7 +8934,7 @@
         {
           "kind": "def",
           "name": "schedContextNotDualBound_fields",
-          "line": 399,
+          "line": 405,
           "called": [
             "StateField"
           ]
@@ -8942,7 +8942,7 @@
         {
           "kind": "def",
           "name": "schedContextRunQueueConsistent_fields",
-          "line": 404,
+          "line": 410,
           "called": [
             "StateField"
           ]
@@ -8950,7 +8950,7 @@
         {
           "kind": "def",
           "name": "fieldsDisjoint",
-          "line": 408,
+          "line": 414,
           "called": [
             "StateField",
             "all"
@@ -8959,7 +8959,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_staleEndpoint",
-          "line": 413,
+          "line": 419,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -8969,7 +8969,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_staleNotification",
-          "line": 419,
+          "line": 425,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -8979,7 +8979,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_staleEndpoint",
-          "line": 425,
+          "line": 431,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -8989,7 +8989,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_staleNotification",
-          "line": 431,
+          "line": 437,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -8999,7 +8999,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_regEndpointValid",
-          "line": 439,
+          "line": 445,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9009,7 +9009,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_regEndpointValid",
-          "line": 445,
+          "line": 451,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9019,7 +9019,7 @@
         {
           "kind": "theorem",
           "name": "staleEndpoint_shares_staleNotification",
-          "line": 452,
+          "line": 458,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9029,7 +9029,7 @@
         {
           "kind": "theorem",
           "name": "regEndpointValid_shares_staleEndpoint",
-          "line": 458,
+          "line": 464,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9039,7 +9039,7 @@
         {
           "kind": "theorem",
           "name": "regEndpointValid_shares_staleNotification",
-          "line": 464,
+          "line": 470,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9049,7 +9049,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_shares_serviceGraph",
-          "line": 470,
+          "line": 476,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9059,7 +9059,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_disjoint_regDepConsistent",
-          "line": 483,
+          "line": 489,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9069,7 +9069,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_disjoint_serviceGraph",
-          "line": 489,
+          "line": 495,
           "called": [
             "fieldsDisjoint",
             "schedContextStoreConsistent_fields",
@@ -9079,7 +9079,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_disjoint_regDepConsistent",
-          "line": 495,
+          "line": 501,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9089,7 +9089,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_disjoint_serviceGraph",
-          "line": 501,
+          "line": 507,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -9099,7 +9099,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_disjoint_regDepConsistent",
-          "line": 507,
+          "line": 513,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9109,7 +9109,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_disjoint_serviceGraph",
-          "line": 513,
+          "line": 519,
           "called": [
             "fieldsDisjoint",
             "schedContextRunQueueConsistent_fields",
@@ -9119,7 +9119,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_regEndpointValid",
-          "line": 519,
+          "line": 525,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9129,7 +9129,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_staleEndpoint",
-          "line": 525,
+          "line": 531,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9139,7 +9139,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_staleNotification",
-          "line": 531,
+          "line": 537,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9149,7 +9149,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_schedCtxNotDualBound",
-          "line": 537,
+          "line": 543,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -9159,7 +9159,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_schedCtxRunQueue",
-          "line": 543,
+          "line": 549,
           "called": [
             "fieldsDisjoint",
             "schedContextRunQueueConsistent_fields",
@@ -9169,7 +9169,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_regEndpointValid",
-          "line": 549,
+          "line": 555,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9179,7 +9179,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_staleEndpoint",
-          "line": 555,
+          "line": 561,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9189,7 +9189,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_staleNotification",
-          "line": 561,
+          "line": 567,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9199,7 +9199,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_schedCtxRunQueue",
-          "line": 567,
+          "line": 573,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -9209,7 +9209,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_regEndpointValid",
-          "line": 573,
+          "line": 579,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9219,7 +9219,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_staleEndpoint",
-          "line": 579,
+          "line": 585,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9229,7 +9229,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_staleNotification",
-          "line": 585,
+          "line": 591,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9239,7 +9239,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystem_pairwise_coverage_complete",
-          "line": 606,
+          "line": 612,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9255,7 +9255,7 @@
         {
           "kind": "def",
           "name": "storeObject_modifiedFields",
-          "line": 628,
+          "line": 634,
           "called": [
             "StateField"
           ]
@@ -9263,7 +9263,7 @@
         {
           "kind": "def",
           "name": "serviceRegisterDependency_modifiedFields",
-          "line": 633,
+          "line": 639,
           "called": [
             "StateField"
           ]
@@ -9271,7 +9271,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeObject_modifiedFields",
-          "line": 638,
+          "line": 644,
           "called": [
             "StateField"
           ]
@@ -9279,7 +9279,7 @@
         {
           "kind": "def",
           "name": "ipcEndpointOp_modifiedFields",
-          "line": 645,
+          "line": 651,
           "called": [
             "StateField"
           ]
@@ -9287,7 +9287,7 @@
         {
           "kind": "def",
           "name": "capabilityOp_modifiedFields",
-          "line": 652,
+          "line": 658,
           "called": [
             "StateField"
           ]
@@ -9295,7 +9295,7 @@
         {
           "kind": "def",
           "name": "revokeService_modifiedFields",
-          "line": 658,
+          "line": 664,
           "called": [
             "StateField"
           ]
@@ -9303,7 +9303,7 @@
         {
           "kind": "theorem",
           "name": "noStaleEndpointQueueReferences_frame",
-          "line": 668,
+          "line": 674,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences"
@@ -9312,7 +9312,7 @@
         {
           "kind": "theorem",
           "name": "noStaleNotificationWaitReferences_frame",
-          "line": 690,
+          "line": 696,
           "called": [
             "SystemState",
             "noStaleNotificationWaitReferences"
@@ -9321,7 +9321,7 @@
         {
           "kind": "theorem",
           "name": "registryEndpointValid_frame",
-          "line": 702,
+          "line": 708,
           "called": [
             "SystemState",
             "registryEndpointValid"
@@ -9330,7 +9330,7 @@
         {
           "kind": "theorem",
           "name": "fieldDisjointness_frameIndependence_documented",
-          "line": 754,
+          "line": 760,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9343,7 +9343,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemFieldSets",
-          "line": 771,
+          "line": 777,
           "called": [
             "StateField",
             "noStaleEndpointQueueReferences_fields",
@@ -9359,13 +9359,13 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemFieldSets_count",
-          "line": 782,
+          "line": 788,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "registryDependencyConsistent_frame",
-          "line": 788,
+          "line": 794,
           "called": [
             "SystemState",
             "registryDependencyConsistent"
@@ -9374,7 +9374,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_frame",
-          "line": 806,
+          "line": 812,
           "called": [
             "SystemState",
             "lookupService",
@@ -9387,7 +9387,7 @@
         {
           "kind": "theorem",
           "name": "schedContextStoreConsistent_frame",
-          "line": 836,
+          "line": 842,
           "called": [
             "SystemState",
             "scId",
@@ -9397,7 +9397,7 @@
         {
           "kind": "theorem",
           "name": "schedContextNotDualBound_frame",
-          "line": 849,
+          "line": 855,
           "called": [
             "SystemState",
             "scId",
@@ -9407,7 +9407,7 @@
         {
           "kind": "theorem",
           "name": "schedContextRunQueueConsistent_frame",
-          "line": 859,
+          "line": 865,
           "called": [
             "SystemState",
             "runnable",
@@ -9418,7 +9418,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_monotone",
-          "line": 880,
+          "line": 886,
           "called": [
             "SystemState",
             "lookupService",
@@ -9431,7 +9431,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_noStaleNotificationWaitReferences",
-          "line": 911,
+          "line": 917,
           "called": [
             "ServiceId",
             "SystemState",
@@ -9444,7 +9444,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair1_objects_frame",
-          "line": 950,
+          "line": 956,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -9456,7 +9456,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair23_objects_frame",
-          "line": 963,
+          "line": 969,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -9470,7 +9470,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair4_services_frame",
-          "line": 981,
+          "line": 987,
           "called": [
             "SystemState",
             "registryDependencyConsistent",
@@ -9482,7 +9482,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_sharingPairs_objects",
-          "line": 995,
+          "line": 1001,
           "called": [
             "ServiceId",
             "SystemState",
@@ -9497,7 +9497,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_frame",
-          "line": 1011,
+          "line": 1017,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9515,7 +9515,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_services_change",
-          "line": 1035,
+          "line": 1041,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9533,7 +9533,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_composition_complete",
-          "line": 1076,
+          "line": 1082,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9549,7 +9549,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextStoreConsistent",
-          "line": 1124,
+          "line": 1130,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -9559,7 +9559,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextNotDualBound",
-          "line": 1134,
+          "line": 1140,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -9569,7 +9569,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextRunQueueConsistent",
-          "line": 1144,
+          "line": 1150,
           "called": [
             "SystemState",
             "runnable",
@@ -9580,7 +9580,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedContextPredicates",
-          "line": 1155,
+          "line": 1161,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9596,7 +9596,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextNotDualBound",
-          "line": 1173,
+          "line": 1179,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -9606,7 +9606,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextStoreConsistent",
-          "line": 1185,
+          "line": 1191,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -9616,7 +9616,7 @@
         {
           "kind": "theorem",
           "name": "cleanup_frame_preserves_schedContextPredicates",
-          "line": 1198,
+          "line": 1204,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9630,7 +9630,7 @@
         {
           "kind": "theorem",
           "name": "threadCleanup_frame_preserves_schedContextPredicates",
-          "line": 1215,
+          "line": 1221,
           "called": [
             "Kernel",
             "SystemState",

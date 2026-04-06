@@ -162,63 +162,78 @@ The following findings require no code or documentation changes:
 
 ---
 
-## 3. Phase AD1 — Integration Fix (F-01)
+## 3. Phase AD1 — Integration Fix (F-01) ✅ COMPLETE
 
 **Goal**: Integrate orphaned SchedContext invariant modules into the production
-proof chain by adding missing imports to the re-export hub.
-**Gate**: `lake build SeLe4n.Kernel.SchedContext.Invariant` + `lake build` (full).
+proof chain.
+**Gate**: `lake build SeLe4n.Kernel.CrossSubsystem` + `lake build` (full) +
+`test_smoke.sh`.
 **Dependencies**: None (first phase).
+**Status**: COMPLETE — all 21 theorems (7 + 14) reachable via production chain.
 
-### AD1-A: Add Preservation.lean import to SchedContext/Invariant.lean (F-01)
+### AD1 Implementation Note: Import Cycle Resolution
 
-**Finding**: `SchedContext/Invariant/Preservation.lean` (160 lines) contains 7
-proven theorems covering SchedContext configure, bind, unbind, and yieldTo
-operations (Z5-M, Z5-I, Z5-K, Z5-L, Z5-N1/N2). These are fully proven with
-zero sorry/axiom but are not imported by any module in the codebase.
+The original plan called for adding imports to `SchedContext/Invariant.lean`
+(the re-export hub). During implementation, this was found to create an import
+cycle:
 
-**Change**: In `SeLe4n/Kernel/SchedContext/Invariant.lean`, add:
+```
+Object/Types.lean → SchedContext.lean → SchedContext/Invariant.lean
+  → Preservation.lean → SchedContext/Operations.lean → Model.State
+  → Object/Types.lean  (CYCLE)
+```
+
+The `SchedContext/Invariant.lean` hub is transitively imported by
+`Object/Types.lean` via the `SchedContext.lean` re-export hub, and both
+preservation modules depend on `Operations.lean` which requires `Model.State`.
+
+**Resolution**: Both preservation modules are instead imported from
+`CrossSubsystem.lean`, which:
+1. Already sits downstream of the cycle boundary
+2. Is the natural integration point for cross-subsystem preservation theorems
+3. Feeds into the production chain via `Architecture/Invariant.lean` → `API.lean`
+
+The `SchedContext/Invariant.lean` hub retains a documentation note explaining
+the architectural constraint and pointing to `CrossSubsystem.lean` as the
+integration point.
+
+### AD1-A: Add Preservation.lean import to CrossSubsystem.lean (F-01)
+
+**Finding**: `SchedContext/Invariant/Preservation.lean` contains 7 proven
+theorems covering SchedContext configure, bind, unbind, and yieldTo operations
+(Z5-M, Z5-I, Z5-K, Z5-L, Z5-N1/N2). Zero sorry/axiom, not imported anywhere.
+
+**Change**: In `SeLe4n/Kernel/CrossSubsystem.lean`, add:
 ```lean
 import SeLe4n.Kernel.SchedContext.Invariant.Preservation
 ```
 
-**Proof impact**: None — this is a pure import addition. The theorems are
-already proven; they just become reachable from the production import chain.
+**Files modified**: `CrossSubsystem.lean` (1 import line + comment).
 
-**Build verification**: `lake build SeLe4n.Kernel.SchedContext.Invariant`
+### AD1-B: Add PriorityPreservation.lean import to CrossSubsystem.lean (F-01)
 
-**Files modified**: `SchedContext/Invariant.lean` (1 line added).
+**Finding**: `SchedContext/Invariant/PriorityPreservation.lean` contains 14
+proven theorems covering priority transport lemmas and authority bounds for
+setPriority/setMCPriority operations (D2-G/H/I/J). Orphaned identically.
 
-### AD1-B: Add PriorityPreservation.lean import to SchedContext/Invariant.lean (F-01)
-
-**Finding**: `SchedContext/Invariant/PriorityPreservation.lean` (159 lines)
-contains 11 proven theorems covering priority transport lemmas and authority
-bounds for setPriority/setMCPriority operations (D2-G/H/I/J). These are
-orphaned identically to Preservation.lean.
-
-**Change**: In `SeLe4n/Kernel/SchedContext/Invariant.lean`, add:
+**Change**: In `SeLe4n/Kernel/CrossSubsystem.lean`, add:
 ```lean
 import SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation
 ```
 
-**Proof impact**: None — pure import addition.
+**Files modified**: `CrossSubsystem.lean` (1 import line).
 
-**Build verification**: `lake build SeLe4n.Kernel.SchedContext.Invariant`
+### AD1-C: Verify integrated proof chain (F-01 closure) ✅
 
-**Files modified**: `SchedContext/Invariant.lean` (1 line added).
+**Verified**:
+1. Module build: `lake build SeLe4n.Kernel.CrossSubsystem` — 69 jobs, PASS
+2. Full build: `lake build` — 236 jobs, PASS
+3. Smoke test: `./scripts/test_smoke.sh` — all checks passed
+4. Theorem reachability: 21 theorems (7 + 14) confirmed reachable via
+   `CrossSubsystem.lean` → `Architecture/Invariant.lean` → `API.lean`
+5. Zero sorry/axiom in modified files
 
-### AD1-C: Verify integrated proof chain (F-01 closure)
-
-**Purpose**: Confirm that the newly-imported theorems compile cleanly as part
-of the full build and do not introduce import cycles or namespace conflicts.
-
-**Steps**:
-1. Build the re-export hub: `lake build SeLe4n.Kernel.SchedContext.Invariant`
-2. Full build: `source ~/.elan/env && lake build`
-3. Smoke test: `./scripts/test_smoke.sh`
-4. Verify the 18 theorems (7 + 11) are now reachable by grepping the Lean
-   environment for their names in a downstream module
-
-**Gate condition**: All 3 commands pass with zero errors.
+**Gate condition**: All commands pass with zero errors. ✅
 
 **Files modified**: None (verification only).
 
@@ -750,7 +765,7 @@ avoid merge conflicts in documentation files.
 
 | Phase | Lean Code | Proofs | Documentation | Total |
 |-------|-----------|--------|---------------|-------|
-| AD1 | 2 lines | 0 | 0 | ~2 lines |
+| AD1 ✅ | 2 import + 10 doc lines | 0 | 0 | ~12 lines |
 | AD2 | ~12 lines | 0 | ~20 lines | ~32 lines |
 | AD3 | 0 | 0 | ~150–200 lines | ~150–200 lines |
 | AD4 | 0 | ~140–200 lines | 0 | ~140–200 lines |
@@ -761,7 +776,8 @@ avoid merge conflicts in documentation files.
 
 | File | Phase | Change Type | Lines |
 |------|-------|-------------|-------|
-| `SchedContext/Invariant.lean` | AD1 | 2 import lines | ~2 |
+| `SchedContext/Invariant.lean` | AD1 | Doc note (cycle constraint) | ~10 |
+| `CrossSubsystem.lean` | AD1 | 2 import lines + comment | ~6 |
 | `IPC/DualQueue/Core.lean` | AD2 | New helper function | ~12 |
 | `IPC/Operations/Endpoint.lean` | AD2 | Comments | ~4 |
 | `IPC/DualQueue/WithCaps.lean` | AD2 | Comments | ~2 |
@@ -781,7 +797,7 @@ avoid merge conflicts in documentation files.
 |------|------------|--------|------------|
 | AD4 composition proofs require unexpected helper lemmas | Medium | Medium | AD4-A audit step identifies gaps before proof work begins |
 | Deployment guide content requires domain expert review | Low | Low | Cross-reference existing SECURITY_ADVISORY.md and formal theorems |
-| F-01 import addition causes namespace conflicts | Very Low | Low | Both modules already compile independently; imports are additive |
+| F-01 import addition causes import cycle | **REALIZED** | Medium | Resolved: imports moved from re-export hub to CrossSubsystem.lean (downstream of cycle boundary) |
 | AD4 proofs introduce sorry | Very Low | High | Gate condition requires sorry-free build; pre-commit hook enforces |
 | Documentation sync misses a cross-reference | Low | Low | AD5-B systematic verification catches gaps |
 
