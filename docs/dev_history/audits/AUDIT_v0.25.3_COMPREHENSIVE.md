@@ -580,7 +580,7 @@ The project is well-positioned for its first major release and hardware benchmar
 The severity summary table in Section 14 above contains **16 discrepancies**
 relative to the detailed findings in Sections 1–12. These were identified during
 independent verification of every finding against source code as part of the
-WS-AC remediation workstream (see `docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
+WS-AC remediation workstream (see `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
 §2.5 for the complete errata catalogue).
 
 ### Corrected Entries
@@ -618,4 +618,4 @@ descriptions and severities. The Section 14 table should be treated as a
 convenience summary only and may contain the inaccuracies catalogued above.
 
 The complete remediation plan and per-finding traceability matrix are in
-`docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` §13.
+`docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` §13.

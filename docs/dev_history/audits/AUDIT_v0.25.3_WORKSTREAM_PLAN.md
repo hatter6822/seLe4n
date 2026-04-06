@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-05
 **Baseline version**: 0.25.3
-**Baseline audit**: `docs/audits/AUDIT_v0.25.3_COMPREHENSIVE.md`
+**Baseline audit**: `docs/dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md`
 **Prior portfolios**: WS-B through WS-AB (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 
@@ -1255,12 +1255,12 @@ run_check "TRACE" lake exe decoding_suite
 
 **Change**:
 1. Append a "Section 16: Severity Table Addendum (Corrected)" to
-   `docs/audits/AUDIT_v0.25.3_COMPREHENSIVE.md` containing:
+   `docs/dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md` containing:
    - A corrected severity table matching the detailed body text.
    - A note explaining the 16 discrepancies found during verification.
    - Cross-reference to this workstream plan.
 
-**Files modified**: `docs/audits/AUDIT_v0.25.3_COMPREHENSIVE.md` (~40 lines appended).
+**Files modified**: `docs/dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md` (~40 lines appended).
 **Build verification**: None (doc-only).
 
 ### AC6-E: Regenerate `docs/codebase_map.json` if Lean sources changed
