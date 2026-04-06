@@ -13,7 +13,7 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 2 HIGH, 3 MEDIUM, 6 LOW, 7 INFORMATIONAL
+**Critical findings**: 2 HIGH, 5 MEDIUM, 9 LOW, 7+ INFORMATIONAL
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, two high-severity
@@ -60,6 +60,11 @@ but unreachable from the production import chain.
 | F-16 | INFO | RobinHood | Deeply integrated into production chain (Prelude, Object/Types, State, RunQueue) |
 | F-17 | INFO | RadixTree | Reachable via Platform.Boot → FreezeProofs → FrozenState |
 | F-18 | INFO | Re-export hubs | All 15 re-export hub files correctly import their submodules |
+| S-01 | MEDIUM | Scheduler/PriorityInheritance/Propagate | PIP propagation reads pre-mutation `blockingServer` state |
+| S-02 | MEDIUM | Scheduler/Operations/Selection | Domain filter uses `tcb.domain` but effective priority uses `sc.domain` |
+| S-03 | LOW | Scheduler/Operations/Core | `handleYield` re-enqueues at raw priority, not effective priority |
+| S-04 | LOW | Scheduler/Operations/Preservation | `*Effective`/`*WithBudget` variants lack full invariant preservation proofs |
+| S-05 | LOW | Scheduler/Operations/Core | `timeoutBlockedThreads` O(n) scan over entire object store |
 
 ---
 
@@ -520,6 +525,31 @@ The API module is the central dispatch hub. Key observations:
 - **Liveness** (test-only, F-03): WCRT theorem, timer-tick monotonicity, CBS
   replenishment bounds, yield/rotation semantics. 58 surface anchor tests in
   LivenessSuite. Should be brought into production import chain.
+
+**Scheduler-specific findings from deep audit:**
+
+**S-01 (MEDIUM)**: `propagatePriorityInheritance` reads `blockingServer` from
+pre-mutation state but recurses on post-mutation state (`Propagate.lean:60-72`).
+Currently safe because `updatePipBoost` only modifies `pipBoost`/run queue, never
+`ipcState`. Latent correctness risk if `updatePipBoost` is ever extended.
+Recommend: add frame theorem proving `updatePipBoost` preserves `ipcState`.
+
+**S-02 (MEDIUM)**: `chooseBestRunnableInDomainEffective` filters by `tcb.domain`
+but `effectivePriority` resolves from `sc.domain` (`Selection.lean:363`). If
+`tcb.domain != sc.domain` for a SchedContext-bound thread, the thread passes the
+domain filter by its TCB domain but is prioritized by its SchedContext domain.
+Recommend: enforce `sc.domain == tcb.domain` invariant for bound threads.
+
+**S-03 (LOW)**: `handleYield` re-enqueues at `tcb.priority` not effective priority
+(`Core.lean:330`). PIP-boosted threads go into wrong priority bucket after yield.
+Recommend: use `resolveEffectivePrioDeadline` for re-enqueue priority.
+
+**S-04 (LOW)**: `schedulerInvariantBundleFull` (9-tuple) preservation is proven for
+base operations but NOT for `*Effective`/`*WithBudget` variants. The SchedContext-aware
+code path lacks full invariant preservation proofs (`Preservation.lean`, 2170 lines).
+
+**S-05 (LOW)**: `timeoutBlockedThreads` folds over entire object store — O(n) per
+budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 
 ### IPC (`SeLe4n/Kernel/IPC/` — 20 files)
 
