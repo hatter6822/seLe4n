@@ -13,7 +13,7 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 4 HIGH, 16 MEDIUM, 30 LOW, 23 INFORMATIONAL (73 total)
+**Critical findings**: 4 HIGH, 20 MEDIUM, 36 LOW, 25 INFORMATIONAL (85 total)
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, four high-severity
@@ -105,6 +105,18 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | ARCH-04 | INFO | Architecture/VSpace | W^X enforcement correct at 3 layers (decode, operation, invariant) |
 | ARCH-05 | INFO | Architecture/TlbModel | TLB model sound — per-ASID flush, cross-ASID isolation, frame lemmas proven |
 | ARCH-06 | INFO | Architecture/VSpaceBackend | VSpaceBackend typeclass unused — intentional H3 preparation |
+| SVC-01 | MEDIUM | Service/Operations | `serviceHasPathTo` conflates self-reachability with self-loops — bridged by declarative definition |
+| SVC-02 | MEDIUM | Service/Registry | `lookupServiceByCap` first-match depends on RHTable insertion order |
+| PLT-01 | MEDIUM | Platform/Boot | Boot-to-runtime invariant bridge proven only for empty config |
+| PLT-02 | MEDIUM | Kernel/CrossSubsystem | `collectQueueMembers` fuel exhaustion silently truncates queue |
+| SVC-03 | LOW | Service/Invariant/Acyclicity | `serviceCountBounded` existential — no executable runtime check |
+| SVC-04 | LOW | Kernel/CrossSubsystem | `registryInterfaceValid` not in `crossSubsystemInvariant` |
+| PLT-03 | LOW | Platform/Sim/Contract | Simulation PA width (52) diverges from RPi5 (44) |
+| PLT-04 | LOW | Platform/DeviceTree | `parseFdtNodes` fuel exhaustion returns partial results, not error |
+| PLT-05 | LOW | Platform/Boot | `bootFromPlatform` (unchecked) silently overwrites duplicate objects |
+| PLT-06 | LOW | Platform/RPi5/BootContract | Boot contract validates empty state, not hardware-derived state |
+| PLT-07 | INFO | Kernel/CrossSubsystem | 8-predicate invariant with 28 pairwise analyses — exemplary |
+| PLT-08 | INFO | Service/Invariant/Acyclicity | Acyclicity proof is genuine, not vacuous — fixed original BFS issue |
 | T-02 | INFO | Testing/InvariantChecks | Runtime invariant checks are boolean predicates, not proofs — by design |
 | T-03 | INFO | IPC subsystem | Deep audit: no security or correctness issues found across all 20 files |
 | T-04 | INFO | Lifecycle subsystem | Deep audit: retype cleanup, suspend/resume, all invariants verified correct |
@@ -557,6 +569,70 @@ reachability precondition (source not reachable from destination), or add a runt
 
 ---
 
+### SVC-01: `serviceHasPathTo` conflates self-reachability with self-loops
+
+**Location**: `SeLe4n/Kernel/Service/Operations.lean`, line 149
+**Impact**: Executable traversal semantics are asymmetric with declarative definition
+**Severity**: MEDIUM
+
+`serviceHasPathTo.go` checks `if node = target then true` before visited status.
+When `src = target`, returns `true` immediately, conflating "A reaches A" with "A has
+a self-loop." The declarative definition (`serviceDependencyAcyclic` via
+`serviceNontrivialPath`) is correct. The mismatch is bridged by
+`bfs_complete_for_nontrivialPath` requiring `hNe : a != b`. Not a soundness issue,
+but makes the executable check harder to reason about independently.
+
+---
+
+### SVC-02: `lookupServiceByCap` first-match depends on hash table insertion order
+
+**Location**: `SeLe4n/Kernel/Service/Registry.lean`, lines 89-100
+**Impact**: Multiple services can register the same endpoint with nondeterministic lookup
+**Severity**: MEDIUM
+
+Uses `RHTable.fold` for first-match. If two services share the same endpoint, the
+result depends on insertion order into the hash table. No `registryEndpointUnique`
+invariant prevents this. Documented at lines 83-88 but not enforced.
+
+**Remediation**: Add a `registryEndpointUnique` invariant (one service per endpoint)
+or document the intentional multi-registration semantics.
+
+---
+
+### PLT-01: Boot-to-runtime invariant bridge proven only for empty config
+
+**Location**: `SeLe4n/Platform/Boot.lean`, lines 286-345
+**Impact**: Non-empty hardware boot lacks formal invariant guarantee
+**Severity**: MEDIUM
+
+`bootToRuntime_invariantBridge_empty` proves the 10-component `proofLayerInvariantBundle`
+holds for the empty config only. For general configs (non-empty IRQ tables, objects),
+the full bundle is not proven to hold after boot. Documented and deferred to WS-V.
+This means any actual hardware boot with objects loaded will lack formal guarantees
+that the initial state satisfies the full runtime invariant bundle.
+
+**Remediation**: Prove `bootToRuntime_invariantBridge` for arbitrary well-formed
+`PlatformConfig`, or add runtime invariant validation after boot.
+
+---
+
+### PLT-02: `collectQueueMembers` fuel exhaustion silently truncates
+
+**Location**: `SeLe4n/Kernel/CrossSubsystem.lean`, lines 50-60
+**Impact**: Stale endpoint queue references could be hidden by truncation
+**Severity**: MEDIUM
+
+When fuel is exhausted, `collectQueueMembers` returns `[]`, silently truncating the
+remaining queue. This means `noStaleEndpointQueueReferences` could pass even if
+interior queue members reference deleted TCBs, because they were never checked.
+The fuel-sufficiency argument relies on `tcbQueueChainAcyclic` but this connection
+is not formalized (TPI-DOC deferred at line 96-98).
+
+**Remediation**: Formalize the fuel-sufficiency argument by proving that fuel ≥
+queue length under the acyclicity invariant, or return an error on fuel exhaustion.
+
+---
+
 ## LOW Severity Findings
 
 ### F-06: IntermediateState and Builder only reachable via Boot path
@@ -838,6 +914,71 @@ as a "production entry point."
 `decodeVSpaceMapArgs` validates both. A non-canonical VAddr in an unmap request produces
 a harmless `.translationFault` error (no mapping exists), so no security impact.
 Asymmetry is a code smell.
+
+---
+
+### SVC-03: `serviceCountBounded` — existential with no executable check
+
+**Location**: `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean`, lines 441-443
+**Severity**: LOW
+
+`serviceCountBounded` is a `Prop` (existential) with no executable `Bool` validator.
+If the invariant were violated via an unverified boot path, there would be no runtime
+detection. Inherent to the existential formulation.
+
+---
+
+### SVC-04: `registryInterfaceValid` not in `crossSubsystemInvariant`
+
+**Location**: `SeLe4n/Kernel/CrossSubsystem.lean`, line 242
+**Severity**: LOW
+
+`crossSubsystemInvariant` includes `registryEndpointValid` but not `registryInterfaceValid`.
+Coverage exists in `serviceLifecycleCapabilityInvariantBundle` (Policy.lean), so the gap
+is in the cross-subsystem bundle only.
+
+---
+
+### PLT-03: Simulation PA width (52) diverges from RPi5 (44)
+
+**Location**: `SeLe4n/Platform/Sim/Contract.lean` line 47 vs `RPi5/Board.lean` line 122
+**Severity**: LOW
+
+Address-width-sensitive code exercised under simulation may accept addresses that would
+be out-of-range on RPi5. By design (simulation is "idealized"), but PA-width-dependent
+proofs may not transfer without re-checking.
+
+---
+
+### PLT-04: `parseFdtNodes` fuel exhaustion returns partial results
+
+**Location**: `SeLe4n/Platform/DeviceTree.lean`, line 585
+**Severity**: LOW
+
+When fuel reaches 0, returns `some ([], offset)` instead of `none`. A large DTB produces
+a truncated tree without error indication. `extractInterruptController` falls back to
+zeros, preventing crashes but potentially misconfiguring the platform.
+
+---
+
+### PLT-05: `bootFromPlatform` silently overwrites duplicate objects
+
+**Location**: `SeLe4n/Platform/Boot.lean`, lines 119-128
+**Severity**: LOW
+
+Uses `RHTable.insert` with last-wins semantics. Duplicate ObjIds cause silent data loss.
+The checked variant `bootFromPlatformChecked` validates uniqueness and is recommended.
+
+---
+
+### PLT-06: RPi5 boot contract validates empty state, not hardware-derived state
+
+**Location**: `SeLe4n/Platform/RPi5/BootContract.lean`, lines 48-54
+**Severity**: LOW
+
+Asserts `(default : SystemState).objects.size = 0` — properties of the Lean default,
+not of hardware-derived state. Will need re-evaluation when hardware bring-up populates
+objects.
 
 ---
 
@@ -1263,34 +1404,31 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 ### Service (`SeLe4n/Kernel/Service/` — 7 files)
 
 - **Registry**: Capability-mediated registration enforces `.write` right on endpoints
-  (R4-C.1). Duplicate prevention, endpoint type validation (R4-C.2). `lookupServiceByCap`
-  uses deterministic first-match via RHTable probe-chain iteration (T5-K).
-- **Revocation**: `revokeService` erases registration AND cleans dependency graph
-  via `removeDependenciesOf` (removes both outgoing and incoming edges).
-  `cleanupEndpointServiceRegistrations` (T5-F) called before endpoint retype.
+  (R4-C.1). `lookupServiceByCap` first-match depends on RHTable insertion order (SVC-02)
+  — no `registryEndpointUnique` invariant. `registryInterfaceValid` not in cross-subsystem
+  bundle (SVC-04).
+- **Revocation**: `revokeService` erases registration AND cleans dependency graph.
+  `removeDependenciesOf` uses `fold` snapshot semantics (correct but subtle).
 - **Acyclicity**: Declarative property `serviceDependencyAcyclic` correctly captures
-  absence of non-trivial self-loops. Original BFS-based definition was vacuously
-  unsatisfiable (Risk 0/TPI-D07) — fixed with declarative formulation. ~1058 lines
-  of structural lemmas and preservation proofs.
+  absence of non-trivial self-loops. Executable `serviceHasPathTo` conflates self-
+  reachability with self-loops (SVC-01) — bridged by declarative layer. Proof is
+  genuine, not vacuous (PLT-08). `serviceCountBounded` is existential only (SVC-03).
 - **Fuel bound**: Graph reachability uses fuel = `objectIndex.length + 256`, with
-  HashSet membership ensuring each node visited at most once. Fuel never exhausted
-  on well-formed graphs.
+  HashSet membership ensuring each node visited at most once.
 
 ### Platform (`SeLe4n/Platform/` — 11 files)
 
-- **Contract**: PlatformBinding typeclass abstracting hardware details.
-- **Boot**: `bootFromPlatform` is pure and deterministic — same config yields same
-  state. `ObjectEntry` carries proof obligations (slot uniqueness, VSpace extensionality).
-  Duplicate detection via HashSet (V7-I, O(n)).
-- **DeviceTree**: FDT parser with bounds-checked helpers, fuel parameters,
-  truncated-entry rejection, and full node traversal. Well-implemented.
-- **Sim**: Two contracts — `simRuntimeContractPermissive` (all True) for testing,
-  `simRuntimeContractRestrictive` (all False) for proof hooks. Intentionally
-  non-production, clearly documented.
-- **RPi5**: Substantive BCM2712 contracts with verified-realistic MMIO addresses
-  (C-03). Runtime contract enforces ARM Generic Timer monotonicity, register context
-  stability (U6-C strengthened — must match, not permissive), and memory access
-  restricted to declared RAM regions. H3-prep status — not yet hardware-validated.
+- **Boot**: Invariant bridge proven only for empty config (PLT-01). Unchecked variant
+  silently overwrites duplicate objects (PLT-05). Checked variant validates uniqueness.
+  `ObjectEntry` carries proof obligations. Deterministic.
+- **DeviceTree**: FDT parser with bounds-checked helpers. `parseFdtNodes` fuel
+  exhaustion returns partial results without error (PLT-04). `fromDtb` stub (F-10).
+- **Sim**: PA width 52 diverges from RPi5 44 (PLT-03). Three contracts (permissive,
+  restrictive, substantive) for distinct testing purposes.
+- **RPi5**: Verified-realistic BCM2712 addresses (C-03). Boot contract validates
+  empty state only (PLT-06). H3-prep — not yet hardware-validated.
+- **CrossSubsystem**: `collectQueueMembers` fuel exhaustion silently truncates
+  (PLT-02). 8-predicate invariant with 28 pairwise analyses is exemplary (PLT-07).
 
 ### CrossSubsystem (`SeLe4n/Kernel/CrossSubsystem.lean`)
 
@@ -1368,9 +1506,17 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 18. **Fix CAP-02**: Prove `addEdge_preserves_acyclicity` with reachability
     precondition, or add runtime cycle check in CDT-modifying operations.
 
+19. **Fix PLT-01**: Prove `bootToRuntime_invariantBridge` for well-formed non-empty
+    configs, or add runtime invariant validation after boot.
+
+20. **Fix PLT-02**: Formalize fuel-sufficiency for `collectQueueMembers` under
+    acyclicity invariant, or return error on fuel exhaustion.
+
+21. **Fix SVC-02**: Add `registryEndpointUnique` invariant or document multi-registration.
+
 ### Priority 3 — Maintenance (LOW)
 
-17. **F-09**: Consider adding `SyscallId.schedContextYieldTo` if user-space budget
+22. **F-09**: Consider adding `SyscallId.schedContextYieldTo` if user-space budget
     transfer is needed for the hardware target.
 
 18. **F-10**: Remove or deprecate the `fromDtb` stub once `fromDtbFull` is the
@@ -1423,13 +1569,15 @@ perfect Lean-Rust ABI synchronization.
 - **IF-01** (switchDomain NI gap): Domain-switch missing from NI composition — per-step proof exists, needs wiring
 - **IF-02** (PIP outside NI envelope): Call/reply donation mutations unproven for NI — needs constructor extension
 
-**Sixteen MEDIUM findings** should be addressed before benchmarking:
+**Twenty MEDIUM findings** should be addressed before benchmarking:
 - F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-01/S-02 (scheduler correctness)
 - IF-03 through IF-06 (NI methodology, labeling, integrity, projection completeness)
 - SC-01/SC-02 (CBS bandwidth bound gap, admission control truncation)
 - SC-03 (stale replenishment entries after reconfigure)
 - SC-04/SC-05 (`cancelDonation` incomplete vs `schedContextUnbind`, resume priority mismatch)
 - CAP-01 (CPtr masking inconsistency), CAP-02 (CDT acyclicity hypothesis gap)
+- SVC-01/SVC-02 (service traversal semantics, lookup ordering)
+- PLT-01/PLT-02 (boot invariant bridge, queue truncation)
 
 The information flow subsystem is architecturally sound but has proof coverage gaps
 (IF-01/IF-02) and methodology limitations (IF-03 through IF-06) that should be
@@ -1439,7 +1587,7 @@ formal proof that such leaks cannot occur.
 
 After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler,
 capability), the kernel is well-positioned for its first major release and
-hardware benchmarking on the Raspberry Pi 5. The 30 LOW and 23 INFORMATIONAL
+hardware benchmarking on the Raspberry Pi 5. The 36 LOW and 25 INFORMATIONAL
 findings are maintenance items that can be addressed incrementally. Deep audits
 of the IPC and Architecture subsystems found no security issues. The Capability
 subsystem has a model-level CPtr masking inconsistency (CAP-01) and a CDT
