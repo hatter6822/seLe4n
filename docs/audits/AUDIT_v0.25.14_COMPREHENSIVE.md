@@ -401,7 +401,23 @@ SeLe4n.lean
 | **Scheduler/Liveness/** | 7+1 files | LivenessSuite (58 tests) | **TEST-ONLY** (F-03) |
 | FrozenOps.lean (hub) | 1 file | via test suites | TEST-ONLY |
 
-**Total test-only production code**: 12 Lean files (9% of codebase)
+Additionally, the following modules are partially unreachable:
+
+| Module | Files | Reason | Status |
+|--------|-------|--------|--------|
+| **PriorityInheritance hub** | 1 file | Hub itself not imported; submodules are | TEST-ONLY hub |
+| **PriorityInheritance/BoundedInversion** | 1 file | Only imported by Liveness (test-only) | TEST-ONLY |
+| **PriorityInheritance/Preservation** | 1 file | Only imported by BoundedInversion | TEST-ONLY |
+| **RadixTree hub** | 1 file | Hub not imported; submodules reachable via Boot | TEST-ONLY hub |
+
+Note: PriorityInheritance/Propagate, Compute, and BlockingGraph ARE in the
+production chain (imported by IPC/Donation, Lifecycle/Suspend, SchedContext.Invariant).
+
+**Total test-only modules**: 17 Lean files (12.4% of codebase)
+
+**Documentation status**: FrozenOps/Core.lean (lines 15-28) explicitly documents
+its non-production status. Scheduler/Liveness.lean (lines 11-22) documents its
+proof-of-concept framework purpose. All unreachable modules have test coverage.
 
 ---
 
