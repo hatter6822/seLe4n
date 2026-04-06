@@ -2457,6 +2457,14 @@ Phase Z9 composes SchedContext invariants into the cross-subsystem and top-level
 proof surfaces, closing the gap between per-subsystem CBS proofs (Z2–Z8) and the
 kernel-wide invariant bundle.
 
+**SchedContext preservation integration** (AD1/F-01, `CrossSubsystem.lean`):
+- `Preservation.lean` (7 theorems: Z5 per-operation preservation) and
+  `PriorityPreservation.lean` (14 theorems: D2 transport lemmas, authority bounds)
+  are imported here rather than the `SchedContext/Invariant.lean` re-export hub,
+  due to an import-cycle constraint (`Object/Types → SchedContext → Invariant →
+  Preservation → Operations → Model.State → Object/Types`). This makes all 21
+  theorems reachable via the production chain: `CrossSubsystem → Architecture/Invariant → API`.
+
 **Cross-subsystem invariant extension** (`CrossSubsystem.lean`):
 - `schedContextStoreConsistent` — every SchedContext in the object store satisfies `schedContextWellFormed`
 - `schedContextNotDualBound` — no SchedContext is simultaneously bound to two different threads

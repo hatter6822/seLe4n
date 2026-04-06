@@ -1,3 +1,27 @@
+## v0.25.11 — WS-AD Phase AD1: Integration Fix (F-01)
+
+Phase AD1 of WS-AD Pre-Release Audit Remediation. 3 sub-tasks. All tests pass
+(full build + test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+- **AD1-A/B (F-01)**: Integrated 2 orphaned SchedContext preservation modules
+  into the production proof chain. `Preservation.lean` (7 theorems: Z5-M,
+  Z5-I, Z5-K, Z5-L, Z5-N1/N2) and `PriorityPreservation.lean` (14 theorems:
+  D2-G/H/I/J transport lemmas + authority non-escalation) were fully proven
+  but unreachable — not imported by any production module.
+- **Import cycle resolution**: Direct import into `SchedContext/Invariant.lean`
+  (the re-export hub) would create a dependency cycle via
+  `Object/Types → SchedContext → Invariant → Preservation → Operations →
+  Model.State → Object/Types`. Resolved by importing both modules from
+  `CrossSubsystem.lean`, which sits downstream of the cycle boundary and is
+  the natural integration point for cross-subsystem preservation theorem
+  composition. Chain: `CrossSubsystem → Architecture/Invariant → API.lean`.
+- **AD1-C**: Verified 21 theorems (7 + 14) reachable from production import
+  chain. Module build (69 jobs), full build (236 jobs), smoke test, and
+  full test suite (Tier 0-3) all pass.
+- Workstream plan updated with import-cycle resolution documentation.
+- Version bump 0.25.10 → 0.25.11.
+
 ## v0.25.10 — WS-AC Phase AC6: Documentation, Testing & Closure
 
 Phase AC6 of WS-AC Comprehensive Audit Remediation. 7 sub-tasks. All tests pass

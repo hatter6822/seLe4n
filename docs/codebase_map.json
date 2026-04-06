@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/optimize-phase-ad1-integration-eqojX",
-      "commit_sha": "ac61607748ac2e5f57d4a2bf2053155eb25e9d88",
-      "tree_sha": "06a06e8c7ddb5d07284704706c2c9d0d5b7f3bb2",
-      "committed_at_utc": "2026-04-05T21:01:09-04:00"
+      "commit_sha": "0da8bd1b9db4e45246232f07f73a1136b5a63717",
+      "tree_sha": "a363b2d3a4ac0ccb3f36341a4713c5db49b63212",
+      "committed_at_utc": "2026-04-06T01:13:44+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 4524
   },
   "readme_sync": {
-    "version": "0.25.10",
+    "version": "0.25.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
     "production_loc": 84028,
