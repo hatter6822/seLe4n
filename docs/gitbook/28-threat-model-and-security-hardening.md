@@ -1,10 +1,10 @@
-# Threat Model and Security Hardening
+# Threat Model and Security Hardening Baseline (WS-B9)
 
 Canonical source: [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
 
 This chapter summarizes seLe4n's security baseline. The canonical document is normative; this chapter provides a self-contained overview for GitBook readers.
 
-## Scope
+## 1) Purpose and scope
 
 The threat model covers:
 
@@ -15,7 +15,7 @@ The threat model covers:
 
 Out of scope for the current phase: hardware runtime exploit mitigation and cryptographic attestation of generated machine code. Non-interference coverage is >80% of kernel operations with 32 `NonInterferenceStep` constructors and a 33-entry enforcement boundary; remaining operations are documented for future workstreams.
 
-## Assets and security goals
+## 2) Assets and security goals
 
 | Asset | Security goal |
 |-------|--------------|
@@ -24,14 +24,14 @@ Out of scope for the current phase: hardware runtime exploit mitigation and cryp
 | Supply-chain bootstrap (`scripts/setup_lean_env.sh`) | Prevent tampering in toolchain setup flow |
 | Repository integrity and CI policy | Keep security scanning posture explicit and reproducible |
 
-## Threat actors
+## 3) Threat actors and capabilities
 
 1. **Opportunistic external attacker** — inspects public repo, attempts secret harvesting or malicious dependency injection.
 2. **Compromised upstream channel** — delivers altered installer/bootstrap content over trusted URLs.
 3. **Accidental insider error** — commits local secret files, stale policy text, or ad-hoc scanner output.
 4. **Fork-origin CI constraints** — security-event upload permissions unavailable for untrusted fork runs.
 
-## Trust boundaries and controls
+## 4) Trust boundaries
 
 | Boundary | Risk | Control |
 |----------|------|---------|
@@ -39,7 +39,7 @@ Out of scope for the current phase: hardware runtime exploit mitigation and cryp
 | **B: Setup script ↔ external installer** | Tampered remote installer | SHA-256 verification of downloaded elan installer before execution |
 | **C: Repo policy ↔ CI environment** | Drift between docs and workflow behavior | CI policy documentation + Tier 3 anchor checks against workflow semantics |
 
-## Implemented controls (WS-B9)
+## 5) Implemented WS-B9 controls
 
 1. **Canonical threat model** — this artifact is the normative security-assumption ledger.
 2. **Repository hygiene hardening** — `.gitignore` excludes common secret formats and scanner outputs.
@@ -47,13 +47,13 @@ Out of scope for the current phase: hardware runtime exploit mitigation and cryp
 4. **CI/security policy sync** — `CI_POLICY.md` records scanner controls; Tier 3 anchors enforce presence of threat-model and installer-checksum hardening symbols.
 5. **SHA-pinning** — all GitHub Actions workflow references use pinned commit SHAs (WS-E1 F-14).
 
-## Residual risk
+## 6) Residual risk and follow-on work
 
 - Pinned installer checksum requires manual rotation when upstream changes.
 - No cryptographic signature verification for installer provenance yet.
 - CodeQL remains informational/non-blocking due to repository code-scanning constraints.
 
-## Validation
+## 7) Validation hooks
 
 Hardening is validated by standard test gates:
 
@@ -62,7 +62,7 @@ Hardening is validated by standard test gates:
 ./scripts/test_full.sh    # + Tier 3: invariant surface anchors (checks SHA-pinning, threat-model symbols)
 ```
 
-## Security advisories
+### Security advisories
 
 See [`docs/SECURITY_ADVISORY.md`](../SECURITY_ADVISORY.md) for documented
 security advisories:
@@ -72,7 +72,7 @@ security advisories:
 - **SA-3**: Scheduling covert channel (accepted by design, bounded bandwidth)
 - **SA-4**: Non-BIBA integrity model (authority-flow design; escalation denied)
 
-## Production deployment
+### Production deployment
 
 See [`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) for the production
 deployment guide covering:
@@ -93,7 +93,7 @@ Key deployment findings from the pre-release audit (v0.25.10):
 | F-06 | HIGH | Scheduling covert channel &le;400 bps (accepted per seL4 precedent) |
 | F-07 | MEDIUM | Default labeling context defeats IF enforcement — MUST override |
 
-## Related
+### Related
 
 - [CI Maturity and Telemetry](29-ci-maturity-and-telemetry-baseline.md) — WS-B10 observability
 - [End-to-End Audit and Quality Gates](../dev_history/gitbook/19-end-to-end-audit-and-quality-gates.md) — quality gate contract

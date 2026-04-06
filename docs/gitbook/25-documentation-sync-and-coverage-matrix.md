@@ -4,11 +4,11 @@ Canonical source: [`docs/DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](../DOCUMENT
 
 This chapter explains how seLe4n documentation stays synchronized across two surfaces (root `docs/` and `docs/gitbook/`), and what validation steps apply to documentation changes.
 
-## Purpose
+## 1) Canonical source-of-truth map
 
 Every documentation change touches at least two locations: a canonical root document and its GitBook mirror. Without a synchronization contract, these diverge over time. The sync matrix is the authoritative map of which file owns which topic and what validation to run when it changes.
 
-## What to update together
+## 2) Test and verification coverage map
 
 When changing documentation, ensure the paired files are updated in the same PR:
 
@@ -22,7 +22,7 @@ When changing documentation, ensure the paired files are updated in the same PR:
 | Security | `THREAT_MODEL.md`, `INFORMATION_FLOW_ROADMAP.md` | `28-*` |
 | ADRs | `*_ADR.md` | `26-*`, `30-*` |
 
-## Validation minimum
+## 3) PR synchronization checklist (required)
 
 For documentation changes:
 
@@ -32,7 +32,13 @@ For documentation changes:
 
 For baseline planning changes, also run `./scripts/test_nightly.sh`.
 
-## Related
+## 4) Current-stage status summary
+
+All documentation surfaces are synchronized as of v0.25.14. See the canonical
+[`DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
+for the full status table.
+
+### Related
 
 - [Documentation Deduplication Map](27-documentation-deduplication-map.md) — canonical ownership rules
 - [Testing & CI](07-testing-and-ci.md) — tier definitions

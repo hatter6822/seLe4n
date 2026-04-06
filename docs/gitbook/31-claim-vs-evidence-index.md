@@ -4,7 +4,7 @@ Canonical source: [`docs/CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md).
 
 This chapter summarizes how seLe4n ties every public claim to executable or inspectable evidence. The canonical document contains the full claim table; this chapter explains the framework and highlights key claims.
 
-## Purpose
+### Purpose
 
 Every claim in seLe4n documentation (README, spec, GitBook) must be backed by evidence that anyone can reproduce. The claim-evidence index maps each claim to:
 
@@ -12,7 +12,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 2. **Evidence command** — a script that validates the claim.
 3. **Evidence artifact** — what the script checks or produces.
 
-## How evidence works
+### How evidence works
 
 | Evidence type | Example | Assurance level |
 |---------------|---------|----------------|
@@ -21,7 +21,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | **Tier 2 fixture** | `test_tier2_trace.sh` — runtime output matches locked fixture | Medium-High: covers exercised paths |
 | **Tier 3 surface anchor** | `test_tier3_invariant_surface.sh` — named theorems still exist | High: prevents silent proof-surface regression |
 
-## Key active claims
+## Active baseline claims
 
 | Claim | Evidence |
 |-------|---------|
@@ -51,7 +51,7 @@ Every claim in seLe4n documentation (README, spec, GitBook) must be backed by ev
 | WS-U Phase U7 Dead Code & Proof Hygiene — COMPLETE (v0.21.6) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
 | WS-U Phase U8 — COMPLETE (v0.21.7) | [Workstream plan](../dev_history/audits/AUDIT_v0.20.7_WORKSTREAM_PLAN.md) |
 
-## Proof claim qualification
+## Proof claim qualification (WS-D3/F-16, updated by v0.11.6 audit C-01/H-01; C-01/H-01 resolved by WS-E2)
 
 The index distinguishes six categories of proof:
 
@@ -64,6 +64,12 @@ The index distinguishes six categories of proof:
 | **End-to-end chain** | High — multi-step semantic property across subsystem boundaries |
 | **Non-interference** | Critical — proves high-domain operation preserves low-equivalence |
 
+## Closed proof obligations (WS-D tracked issues)
+
+All WS-D tracked proof obligations have been resolved. See the canonical
+[`CLAIM_EVIDENCE_INDEX.md`](../CLAIM_EVIDENCE_INDEX.md) for the full closure
+table.
+
 ## Update policy
 
 When a claim changes:
@@ -72,7 +78,7 @@ When a claim changes:
 2. Update GitBook mirrors in the same PR.
 3. Run `./scripts/test_smoke.sh` (minimum); `./scripts/test_full.sh` when Tier 3 anchors change.
 
-## Related
+### Related
 
 - [Testing & CI](07-testing-and-ci.md) — tier definitions and quality gates
 - [Proof and Invariant Map](12-proof-and-invariant-map.md) — theorem inventory

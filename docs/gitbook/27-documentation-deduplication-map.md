@@ -1,18 +1,16 @@
-# Documentation Deduplication Map
+# Documentation Deduplication Map (WS-C8)
 
 Canonical source: [`docs/DOCS_DEDUPLICATION_MAP.md`](../DOCS_DEDUPLICATION_MAP.md).
 
 This chapter explains how seLe4n avoids documentation drift between root docs and GitBook chapters.
 
-## The problem
+## 1) Canonical ownership rules
 
 With two documentation surfaces (root `docs/` and `docs/gitbook/`), content can easily diverge. A change to `DEVELOPMENT.md` that is not reflected in `06-development-workflow.md` creates contradictions that erode trust.
 
-## The solution: canonical ownership
-
 Every topic has exactly one canonical source. GitBook chapters summarize and link to canonical sources; they never contain normative text that contradicts the root document.
 
-## Ownership map
+## 2) Root ↔ GitBook deduplication map
 
 | Topic | Canonical source | GitBook chapter | Mirror rule |
 |-------|-----------------|-----------------|-------------|
@@ -27,7 +25,7 @@ Every topic has exactly one canonical source. GitBook chapters summarize and lin
 | Security trajectory | `docs/THREAT_MODEL.md`, `docs/INFORMATION_FLOW_ROADMAP.md` | `28-*` | Root is normative |
 | Historical records | `docs/dev_history/` | — | Archived; not mirrored |
 
-## Automation
+## 3) Automation hooks
 
 Three scripts maintain synchronization:
 
@@ -35,7 +33,7 @@ Three scripts maintain synchronization:
 2. **`scripts/check_markdown_links.py`** — validates local markdown links across all tracked `*.md` files.
 3. **`scripts/test_docs_sync.sh`** — runs navigation generation, verifies generated files are committed, runs link validation.
 
-## PR checklist for documentation changes
+## 4) PR checklist additions (planning/doc changes)
 
 1. Update canonical root docs first.
 2. Update GitBook mirrors in the same PR.
@@ -43,7 +41,7 @@ Three scripts maintain synchronization:
 4. Run `./scripts/test_smoke.sh`.
 5. Verify references with targeted searches for newly introduced docs.
 
-## Related
+### Related
 
 - [Documentation Sync and Coverage Matrix](25-documentation-sync-and-coverage-matrix.md) — full sync index
 - [Testing & CI](07-testing-and-ci.md) — validation tiers
