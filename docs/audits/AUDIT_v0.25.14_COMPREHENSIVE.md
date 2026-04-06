@@ -13,7 +13,7 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 4 HIGH, 14 MEDIUM, 25 LOW, 20 INFORMATIONAL (63 total)
+**Critical findings**: 4 HIGH, 16 MEDIUM, 27 LOW, 20 INFORMATIONAL (67 total)
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, four high-severity
@@ -93,6 +93,12 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | SC-10 | INFO | SchedContext/Budget | No double-replenishment risk — CBS cycle correctly sequenced |
 | SC-11 | INFO | SchedContext/PriorityManagement | `setPriorityOp` cannot bypass MCP authority — machine-checked |
 | T-01 | LOW | Testing/MainTraceHarness | Trace harness focuses on happy-path codecs; exception paths underrepresented |
+| CAP-01 | MEDIUM | Capability/Operations | CPtr masking inconsistency between `resolveCapAddress` and `resolveSlot` |
+| CAP-02 | MEDIUM | Capability/Invariant/Preservation | CDT acyclicity externalized as hypothesis — not machine-checked end-to-end |
+| CAP-03 | LOW | Capability/Operations | No `cspaceRevoke` syscall ID — revocation not exposed to userspace |
+| CAP-04 | LOW | Capability/Operations | `cspaceMove`/`cspaceCopy` same-slot returns error instead of no-op |
+| CAP-05 | INFO | Capability subsystem | No capability forgery path — `capAttenuates` proven for all derivation paths |
+| CAP-06 | INFO | Capability/Operations | No dead code — all operations reachable from API dispatch or internal composition |
 | T-02 | INFO | Testing/InvariantChecks | Runtime invariant checks are boolean predicates, not proofs — by design |
 | T-03 | INFO | IPC subsystem | Deep audit: no security or correctness issues found across all 20 files |
 | T-04 | INFO | Lifecycle subsystem | Deep audit: retype cleanup, suspend/resume, all invariants verified correct |
@@ -491,6 +497,60 @@ preemption comparison.
 
 ---
 
+### CAP-01: CPtr masking inconsistency between `resolveCapAddress` and `resolveSlot`
+
+**Location**: `SeLe4n/Kernel/Capability/Operations.lean`, line 96 vs
+`SeLe4n/Model/Object/Structures.lean`, lines 500-501
+**Impact**: Model-level inconsistency in CPtr bit extraction between single-level and multi-level paths
+**Severity**: MEDIUM
+
+**Description**: `resolveCapAddress` uses `addr.toNat` directly without masking to
+64-bit word width:
+```
+let shiftedAddr := addr.toNat >>> (bitsRemaining - consumed)
+```
+
+In contrast, `CNode.resolveSlot` explicitly masks (S4-C):
+```
+let maskedAddr := cptr.toNat % SeLe4n.machineWordMax
+```
+
+Since Lean `Nat` is unbounded, if a `CPtr` value exceeds `2^64`, the two functions
+will compute different guard/slot extractions for the same address. This creates a
+model-level inconsistency where `resolveCapAddress` (multi-level walk) and
+`resolveSlot` (single-level) could resolve to different slots.
+
+In practice, CPtr values come from register decode which bounds them to word width,
+but the model does not enforce this precondition on `resolveCapAddress`.
+
+**Remediation**: Add `% SeLe4n.machineWordMax` masking at the entry of
+`resolveCapAddress`, or prove that all CPtr values reaching the function are
+bounded to 64 bits.
+
+---
+
+### CAP-02: CDT acyclicity externalized as post-state hypothesis
+
+**Location**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`, lines 15-48, 470-513
+**Impact**: CDT cycle-freedom not machine-checked end-to-end
+**Severity**: MEDIUM
+
+**Description**: CDT-modifying operations (`cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`)
+take `hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st'` as a post-state hypothesis
+(documented U4-L/U-M26) rather than proving acyclicity preservation. The preservation
+proofs are conditional — they assume the CDT remains acyclic after `addEdge`.
+
+There is no proven `addEdge_preserves_acyclicity` lemma with a reachability
+precondition. If a cycle were to form, `descendantsOf` (which uses
+fuel = `edges.length`) would terminate but potentially miss descendants, making
+`cspaceRevokeCdt` incomplete — some derived capabilities would survive revocation.
+
+**Remediation**: Either prove `addEdge_preserves_acyclicity` with an appropriate
+reachability precondition (source not reachable from destination), or add a runtime
+`addEdgeWouldBeSafe` check in CDT-modifying operations.
+
+---
+
 ## LOW Severity Findings
 
 ### F-06: IntermediateState and Builder only reachable via Boot path
@@ -710,6 +770,32 @@ changes to bind modify priority. Preservation theorem confirms current correctne
 
 ---
 
+### CAP-03: No `cspaceRevoke` syscall ID — revocation not exposed to userspace
+
+**Location**: `SeLe4n/Model/Object/Types.lean` (SyscallId), `SeLe4n/Kernel/API.lean`
+**Severity**: LOW
+
+The `SyscallId` enumeration has no `cspaceRevoke` variant. `cspaceDelete` returns
+`.revocationRequired` when CDT children exist (U-H03 guard), but there is no
+userspace-accessible syscall to invoke `cspaceRevokeCdt`. This means capabilities
+with CDT children become effectively undeletable from userspace. The revocation
+infrastructure exists internally but is not yet exposed via syscall. Likely
+intentional design-in-progress for the hardware target milestone.
+
+---
+
+### CAP-04: `cspaceMove`/`cspaceCopy` same-slot returns error instead of no-op
+
+**Location**: `SeLe4n/Kernel/Capability/Operations.lean`, lines 677-714
+**Severity**: LOW
+
+When `src == dst`, `cspaceMove` and `cspaceCopy` return `.targetSlotOccupied` rather
+than succeeding as a no-op. This is safe (the error path produces no state change
+by construction of the Kernel monad), but diverges from seL4 where same-slot operations
+are no-ops. No security impact — behavioral difference only.
+
+---
+
 ## INFORMATIONAL Findings
 
 ### F-12: Proof Hygiene — Excellent
@@ -770,6 +856,22 @@ arguments include variable-length message payloads that don't fit a fixed struct
 - ARM Generic Timer at 54 MHz — matches RPi5 crystal specification
 
 All addresses are consistent with published BCM2712 documentation.
+
+### CAP-05: No capability forgery path — machine-checked
+
+Capabilities can only be created through `mintDerivedCap` (rights subset proven),
+`cspaceInsertSlot` (requires pre-constructed Capability), `lifecycleRetypeObject`
+(fresh objects), `cspaceCopy` (unchanged), and `cspaceMutate` (attenuates only).
+The `capAttenuates` property is proven for all derivation paths. `syscallInvoke`
+gate checks `cap.hasRight gate.requiredRight` before dispatch. Badge override
+cannot escalate authority — proven by `mintDerivedCap_rights_attenuated_with_badge_override`
+and `cspaceMint_badge_override_safe`.
+
+### CAP-06: No dead code in capability subsystem
+
+All operations defined in Operations.lean are reachable from either the API dispatch
+layer, internal composition by other kernel operations, or information-flow enforcement
+wrappers.
 
 ### SC-10: No double-replenishment risk — CBS cycle correctly sequenced
 
@@ -1024,11 +1126,15 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 
 - **Multi-level CSpace resolution**: `resolveCapAddress` with termination proof
   (strict descent on `bitsRemaining`). Zero-width CNode and zero-bits rejection.
+  **CPtr masking inconsistency** with `resolveSlot` (CAP-01) — model-level gap.
 - **CDT tracking**: `cspaceMintWithCdt` creates CDT-tracked derivation entries.
-  `cspaceRevoke` uses CDT for revocation. CDT cycles prevented by construction.
+  `cspaceRevoke` uses CDT for revocation. CDT acyclicity externalized as hypothesis
+  (CAP-02) — not machine-checked end-to-end. No `cspaceRevoke` syscall (CAP-03).
 - **Authority reduction**: Proven in Authority.lean — minted capabilities never
-  exceed source rights. Badge routing preserves badge invariants.
+  exceed source rights. Badge routing preserves badge invariants. No capability
+  forgery path exists — `capAttenuates` proven for all derivation paths (CAP-05).
 - **Preservation**: ~1207 lines of per-operation invariant preservation proofs.
+  All operations reachable — no dead code (CAP-06).
 
 ### Architecture (`SeLe4n/Kernel/Architecture/` — 10 files)
 
@@ -1205,6 +1311,12 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
     control truncation as known precision limits. Connect `admissionCheck` to the
     proven bound theorem.
 
+17. **Fix CAP-01**: Add `% SeLe4n.machineWordMax` masking at entry of
+    `resolveCapAddress` to match `resolveSlot`, or prove CPtr values are bounded.
+
+18. **Fix CAP-02**: Prove `addEdge_preserves_acyclicity` with reachability
+    precondition, or add runtime cycle check in CDT-modifying operations.
+
 ### Priority 3 — Maintenance (LOW)
 
 17. **F-09**: Consider adding `SyscallId.schedContextYieldTo` if user-space budget
@@ -1260,12 +1372,13 @@ perfect Lean-Rust ABI synchronization.
 - **IF-01** (switchDomain NI gap): Domain-switch missing from NI composition — per-step proof exists, needs wiring
 - **IF-02** (PIP outside NI envelope): Call/reply donation mutations unproven for NI — needs constructor extension
 
-**Fourteen MEDIUM findings** should be addressed before benchmarking:
+**Sixteen MEDIUM findings** should be addressed before benchmarking:
 - F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-01/S-02 (scheduler correctness)
 - IF-03 through IF-06 (NI methodology, labeling, integrity, projection completeness)
 - SC-01/SC-02 (CBS bandwidth bound gap, admission control truncation)
 - SC-03 (stale replenishment entries after reconfigure)
 - SC-04/SC-05 (`cancelDonation` incomplete vs `schedContextUnbind`, resume priority mismatch)
+- CAP-01 (CPtr masking inconsistency), CAP-02 (CDT acyclicity hypothesis gap)
 
 The information flow subsystem is architecturally sound but has proof coverage gaps
 (IF-01/IF-02) and methodology limitations (IF-03 through IF-06) that should be
@@ -1273,14 +1386,15 @@ closed to claim full non-interference for all kernel transitions. These gaps do 
 indicate the presence of actual information leaks — they indicate the absence of
 formal proof that such leaks cannot occur.
 
-After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler),
-the kernel is well-positioned for its first major release and hardware
-benchmarking on the Raspberry Pi 5. The 25 LOW and 20 INFORMATIONAL findings
-are maintenance items that can be addressed incrementally. Deep audits of the
-IPC, Capability, and Architecture subsystems found no security issues — these
-subsystems are production-ready. The SchedContext/Lifecycle subsystems have
-real but non-critical correctness gaps (SC-03 through SC-05) that should be
-closed before production deployment.
+After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler,
+capability), the kernel is well-positioned for its first major release and
+hardware benchmarking on the Raspberry Pi 5. The 27 LOW and 20 INFORMATIONAL
+findings are maintenance items that can be addressed incrementally. Deep audits
+of the IPC and Architecture subsystems found no security issues. The Capability
+subsystem has a model-level CPtr masking inconsistency (CAP-01) and a CDT
+acyclicity proof gap (CAP-02) that should be closed. The SchedContext/Lifecycle
+subsystems have real but non-critical correctness gaps (SC-03 through SC-05)
+that should be closed before production deployment.
 
 ---
 
