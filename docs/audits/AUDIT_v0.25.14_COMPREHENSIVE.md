@@ -13,7 +13,7 @@ This audit reviewed every module in the seLe4n v0.25.14 kernel — 132 Lean
 files and 30 Rust ABI files — with emphasis on production reachability,
 security correctness, dead code detection, and Lean-Rust ABI synchronization.
 
-**Critical findings**: 4 HIGH, 9 MEDIUM, 21 LOW, 16 INFORMATIONAL (50 total)
+**Critical findings**: 4 HIGH, 14 MEDIUM, 25 LOW, 20 INFORMATIONAL (63 total)
 
 The kernel demonstrates exceptional proof hygiene (zero sorry/axiom in
 production code) and sound formal verification. However, four high-severity
@@ -81,6 +81,17 @@ mutations in the call/reply paths occur outside the NI proof envelope.
 | C-01 | LOW | Kernel/Capability/Operations | `resolveCapAddress` correctly handles `bitsRemaining=0` — no issue |
 | C-02 | INFO | Architecture/SyscallArgDecode | 21 of 25 syscalls have arg decoders; 4 IPC ops use MessageInfo directly |
 | C-03 | INFO | Platform/RPi5/Board | BCM2712 MMIO addresses verified realistic against published documentation |
+| SC-01 | MEDIUM | SchedContext/Invariant/Defs | CBS bandwidth bound 8x weaker than claimed CBS guarantee |
+| SC-02 | MEDIUM | SchedContext/Budget | Admission control integer truncation allows marginal over-admission |
+| SC-03 | MEDIUM | SchedContext/Operations | `schedContextConfigure` resets budget but not replenishment queue entries |
+| SC-04 | MEDIUM | Lifecycle/Suspend | `cancelDonation` for `.bound` does not set `isActive := false` |
+| SC-05 | MEDIUM | Lifecycle/Suspend | `resumeThread` preemption check uses TCB priority, not effective priority |
+| SC-06 | LOW | SchedContext/Types | `Budget.refill` has inverted semantics — dead code but misleading if used |
+| SC-07 | LOW | Lifecycle/Suspend | `cancelDonation` for `.bound` does not remove SchedContext from replenish queue |
+| SC-08 | LOW | SchedContext/ReplenishQueue | `popDue` size calculation trusts cached size, fragile under invariant violation |
+| SC-09 | LOW | SchedContext/Operations | `schedContextBind` run queue re-insertion reads pre-update SchedContext |
+| SC-10 | INFO | SchedContext/Budget | No double-replenishment risk — CBS cycle correctly sequenced |
+| SC-11 | INFO | SchedContext/PriorityManagement | `setPriorityOp` cannot bypass MCP authority — machine-checked |
 | T-01 | LOW | Testing/MainTraceHarness | Trace harness focuses on happy-path codecs; exception paths underrepresented |
 | T-02 | INFO | Testing/InvariantChecks | Runtime invariant checks are boolean predicates, not proofs — by design |
 | T-03 | INFO | IPC subsystem | Deep audit: no security or correctness issues found across all 20 files |
@@ -385,6 +396,101 @@ the extended projection.
 
 ---
 
+### SC-01: CBS bandwidth bound 8x weaker than claimed CBS guarantee
+
+**Location**: `SeLe4n/Kernel/SchedContext/Invariant/Defs.lean`, lines 441-470
+**Impact**: Bandwidth bound theorem proves 8*budget per window, not budget per period
+**Severity**: MEDIUM
+
+**Description**: The `cbs_single_period_bound` and `cbs_bandwidth_bounded` theorems
+prove `totalConsumed <= maxReplenishments * budget` (i.e., 8 * budget with the default
+maxReplenishments = 8). The true CBS guarantee is `budget` per period. While per-object
+`budgetWithinBounds` prevents actual over-consumption at any single tick, the proven
+bound is weaker than the CBS specification claims.
+
+The admission control runtime check (`admissionCheck`) correctly sums utilization
+fractions, but its correctness is not formally connected to the bandwidth bound theorems.
+
+**Remediation**: Either tighten the bandwidth bound proof to `budget` per period, or
+document the 8x gap and connect `admissionCheck` to the proven bound.
+
+---
+
+### SC-02: Admission control integer truncation allows marginal over-admission
+
+**Location**: `SeLe4n/Kernel/SchedContext/Budget.lean`, lines 206-218
+**Impact**: With 64 active SchedContexts, up to 6.4% over-admission possible
+**Severity**: MEDIUM
+
+**Description**: `admissionCheck` uses per-mille integer arithmetic
+(`budget * 1000 / period`) which truncates down. Per-context error is at most 1 per-mille.
+With n active contexts, aggregate error is at most n per-mille. For 64 SchedContexts,
+total utilization could exceed 100% by up to 6.4%, causing deadline misses for all
+contexts when total demand exceeds capacity.
+
+The code comments note this is acceptable because `budgetWithinBounds` prevents
+per-object overrun. This is correct for isolation but not for aggregate schedulability.
+
+**Remediation**: Document as a known precision limit. Consider whether RPi5 workloads
+could realistically hit 64+ active SchedContexts.
+
+---
+
+### SC-03: `schedContextConfigure` resets budget but not replenishment queue
+
+**Location**: `SeLe4n/Kernel/SchedContext/Operations.lean`, lines 98-106
+**Impact**: Stale replenishment entries may transiently violate `replenishmentAmountsBounded`
+**Severity**: MEDIUM
+
+**Description**: When reconfiguring a SchedContext, `budgetRemaining` is set to the new
+budget but the `replenishments` list is not cleared. Old entries reference the previous
+budget/period. If the new budget is **smaller** than the old, old entries may have
+`amount > new_budget`, violating `replenishmentAmountsBounded` until those entries are
+processed. The `min` in `applyRefill` caps actual refill to budget, preventing overrun,
+but the invariant is transiently broken.
+
+**Remediation**: Clear or rewrite the replenishment list during `schedContextConfigure`,
+or prove that the transient invariant violation is harmless.
+
+---
+
+### SC-04: `cancelDonation` for `.bound` does not set `isActive := false`
+
+**Location**: `SeLe4n/Kernel/Lifecycle/Suspend.lean`, lines 96-108
+**Impact**: Orphaned SchedContext remains `isActive` with no bound thread
+**Severity**: MEDIUM
+
+**Description**: When `cancelDonation` processes a `.bound` SchedContext, it clears
+`boundThread` to `none` but does not set `isActive := false`. Compare with
+`schedContextUnbind` (Operations.lean:191) which correctly sets both. A SchedContext
+with `isActive = true` but `boundThread = none` satisfies `replenishQueueConsistent`
+(which checks `isActive`) while having no bound thread — replenishments are processed
+for a SchedContext that cannot schedule anyone.
+
+**Remediation**: Set `isActive := false` in `cancelDonation` for the `.bound` case,
+matching `schedContextUnbind` behavior.
+
+---
+
+### SC-05: `resumeThread` preemption check uses TCB priority, not effective priority
+
+**Location**: `SeLe4n/Kernel/Lifecycle/Suspend.lean`, lines 207-211
+**Impact**: Missed preemptions when current thread's effective priority is SchedContext-derived
+**Severity**: MEDIUM
+
+**Description**: The preemption check at line 210 compares `tcb'.priority.val > curTcb.priority.val`.
+If the current thread's effective priority is derived from a SchedContext (not its TCB
+priority field), this comparison uses the wrong value. The `getCurrentPriority` helper
+from `PriorityManagement.lean` resolves this correctly but is not used here.
+
+This mirrors S-03 (`handleYield` uses raw priority) — the pattern of using `tcb.priority`
+instead of effective priority appears in multiple locations.
+
+**Remediation**: Use `resolveEffectivePrioDeadline` or `getCurrentPriority` for the
+preemption comparison.
+
+---
+
 ## LOW Severity Findings
 
 ### F-06: IntermediateState and Builder only reachable via Boot path
@@ -554,6 +660,56 @@ formal proof surface.
 
 ---
 
+### SC-06: `Budget.refill` has inverted semantics — dead code
+
+**Location**: `SeLe4n/Kernel/SchedContext/Types.lean`, line 49
+**Severity**: LOW
+
+`Budget.refill` is defined as `min b.val ceiling.val`, which caps down to the ceiling
+rather than refilling up. The name suggests additive refill semantics but the
+implementation only decreases or maintains the budget. This function is **unused** —
+the actual refill logic is in `applyRefill` (Budget.lean:136). If any future code
+calls `Budget.refill` expecting refill semantics, it would silently cap the budget.
+
+**Remediation**: Delete `Budget.refill` or rename to `Budget.cap`.
+
+---
+
+### SC-07: `cancelDonation` for `.bound` does not remove from replenish queue
+
+**Location**: `SeLe4n/Kernel/Lifecycle/Suspend.lean`, lines 96-108
+**Severity**: LOW
+
+Unlike `schedContextUnbind` (which calls `ReplenishQueue.remove`), `cancelDonation`
+for the `.bound` case does not remove the SchedContext from the system replenish queue.
+After unbinding, replenishments are processed for a SchedContext with no bound thread —
+a harmless no-op but wasted work.
+
+---
+
+### SC-08: `popDue` size calculation trusts cached size
+
+**Location**: `SeLe4n/Kernel/SchedContext/ReplenishQueue.lean`, line 110
+**Severity**: LOW
+
+`popDue` computes `size := rq.size - due.length` using Nat subtraction (saturates at 0).
+If `replenishQueueSizeConsistent` is violated, size could underflow to 0 while entries
+remain. Compare with `remove` (line 121) which recomputes `size := filtered.length`.
+Safe under invariants but fragile if preconditions are weakened.
+
+---
+
+### SC-09: `schedContextBind` reads pre-update SchedContext for run queue insertion
+
+**Location**: `SeLe4n/Kernel/SchedContext/Operations.lean`, lines 146-149
+**Severity**: LOW
+
+Run queue re-insertion uses `sc.priority` from the pre-update SchedContext. Since bind
+does not change priority, this is currently correct. Pattern could become a bug if future
+changes to bind modify priority. Preservation theorem confirms current correctness.
+
+---
+
 ## INFORMATIONAL Findings
 
 ### F-12: Proof Hygiene — Excellent
@@ -614,6 +770,19 @@ arguments include variable-length message payloads that don't fit a fixed struct
 - ARM Generic Timer at 54 MHz — matches RPi5 crystal specification
 
 All addresses are consistent with published BCM2712 documentation.
+
+### SC-10: No double-replenishment risk — CBS cycle correctly sequenced
+
+CBS cycle is: consume → if exhausted, schedule replenishment → process replenishments
+→ update deadline. Replenishments scheduled at time T become eligible at T + period,
+so they cannot be immediately processed in the same `cbsBudgetCheck` call. Verified
+no double-replenishment is possible within a single tick.
+
+### SC-11: `setPriorityOp` cannot bypass MCP authority — machine-checked
+
+`validatePriorityAuthority` checks `targetPriority.val <= callerTcb.maxControlledPriority.val`
+before any state mutation. The theorem `setPriority_authority_bounded` formally proves
+no bypass is possible. Machine-checked with zero sorry.
 
 ---
 
@@ -906,12 +1075,20 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 ### SchedContext (`SeLe4n/Kernel/SchedContext/` — 10 files)
 
 - **CBS implementation**: Budget consume/replenish with admission control.
-  Total bandwidth bound proven in Invariant/Defs.lean.
+  Bandwidth bound proven as 8*budget (SC-01) — weaker than CBS spec of budget/period.
+  Admission control uses per-mille truncation (SC-02) — up to n/1000 aggregate error.
+  No double-replenishment risk (SC-10). `Budget.refill` is dead code (SC-06).
 - **ReplenishQueue**: System-wide sorted replenishment queue with invariants (Z3).
-- **Operations**: Configure, bind, unbind, yieldTo. All wired into API dispatch
-  except yieldTo (kernel-internal).
-- **Priority management** (D2): `setPriorityOp` with MCP authority validation.
-  Run queue migration on priority change. Preservation proofs in PriorityPreservation.lean.
+  `popDue` trusts cached size (SC-08) — safe under invariants.
+- **Operations**: Configure resets budget but not replenishment entries (SC-03).
+  Bind reads pre-update SchedContext for run queue insertion (SC-09 — currently safe).
+  `yieldTo` is kernel-internal (F-09).
+- **Priority management** (D2): `setPriorityOp` with MCP authority validation —
+  machine-checked no-bypass (SC-11). Run queue migration on priority change.
+- **Lifecycle integration**: `cancelDonation` for `.bound` has two gaps vs
+  `schedContextUnbind`: does not set `isActive := false` (SC-04) and does not
+  remove from replenish queue (SC-07). `resumeThread` preemption check uses raw
+  TCB priority instead of effective priority (SC-05).
 
 ### Lifecycle (`SeLe4n/Kernel/Lifecycle/` — 4 files)
 
@@ -1015,21 +1192,38 @@ budget exhaustion event (`Core.lean:500-515`). Performance-sensitive on RPi5.
 12. **Fix S-01/S-02**: Add frame theorem for `updatePipBoost` preserving
     `ipcState`; enforce `sc.domain == tcb.domain` invariant for bound threads.
 
+13. **Fix SC-03**: Clear or rewrite replenishment list during `schedContextConfigure`
+    to prevent transient `replenishmentAmountsBounded` violation.
+
+14. **Fix SC-04**: Set `isActive := false` in `cancelDonation` for `.bound` case,
+    matching `schedContextUnbind` behavior.
+
+15. **Fix SC-05**: Use `getCurrentPriority` or `resolveEffectivePrioDeadline` in
+    `resumeThread` preemption check instead of raw `tcb.priority`.
+
+16. **Fix SC-01/SC-02**: Document CBS bandwidth bound gap (8x vs 1x) and admission
+    control truncation as known precision limits. Connect `admissionCheck` to the
+    proven bound theorem.
+
 ### Priority 3 — Maintenance (LOW)
 
-13. **F-09**: Consider adding `SyscallId.schedContextYieldTo` if user-space budget
+17. **F-09**: Consider adding `SyscallId.schedContextYieldTo` if user-space budget
     transfer is needed for the hardware target.
 
-14. **F-10**: Remove or deprecate the `fromDtb` stub once `fromDtbFull` is the
+18. **F-10**: Remove or deprecate the `fromDtb` stub once `fromDtbFull` is the
     canonical DTB parsing path.
 
-15. **S-03**: Use `resolveEffectivePrioDeadline` in `handleYield` for correct
-    PIP-aware re-enqueue priority.
+19. **S-03/SC-05**: Use `resolveEffectivePrioDeadline` in `handleYield` and
+    `resumeThread` for correct PIP-aware re-enqueue/preemption priority.
 
-16. **S-05**: Consider indexed data structure for `timeoutBlockedThreads` to
+20. **S-05**: Consider indexed data structure for `timeoutBlockedThreads` to
     avoid O(n) scan on RPi5 with many objects.
 
-17. **General**: Consider adding a CI check that verifies all `.lean` files under
+21. **SC-06**: Delete dead `Budget.refill` function or rename to `Budget.cap`.
+
+22. **SC-07**: Add `ReplenishQueue.remove` to `cancelDonation` for `.bound` case.
+
+23. **General**: Consider adding a CI check that verifies all `.lean` files under
     `SeLe4n/` are transitively imported by `SeLe4n.lean` (the library root) to
     prevent future dead code accumulation.
 
@@ -1066,9 +1260,12 @@ perfect Lean-Rust ABI synchronization.
 - **IF-01** (switchDomain NI gap): Domain-switch missing from NI composition — per-step proof exists, needs wiring
 - **IF-02** (PIP outside NI envelope): Call/reply donation mutations unproven for NI — needs constructor extension
 
-**Nine MEDIUM findings** should be addressed before benchmarking:
+**Fourteen MEDIUM findings** should be addressed before benchmarking:
 - F-03 (Liveness unreachable), F-04/F-05 (dispatch maintenance), S-01/S-02 (scheduler correctness)
 - IF-03 through IF-06 (NI methodology, labeling, integrity, projection completeness)
+- SC-01/SC-02 (CBS bandwidth bound gap, admission control truncation)
+- SC-03 (stale replenishment entries after reconfigure)
+- SC-04/SC-05 (`cancelDonation` incomplete vs `schedContextUnbind`, resume priority mismatch)
 
 The information flow subsystem is architecturally sound but has proof coverage gaps
 (IF-01/IF-02) and methodology limitations (IF-03 through IF-06) that should be
@@ -1076,12 +1273,14 @@ closed to claim full non-interference for all kernel transitions. These gaps do 
 indicate the presence of actual information leaks — they indicate the absence of
 formal proof that such leaks cannot occur.
 
-After addressing the HIGH findings and the MEDIUM NI gaps, the kernel is
-well-positioned for its first major release and hardware benchmarking on the
-Raspberry Pi 5. The 21 LOW and 16 INFORMATIONAL findings are maintenance items
-that can be addressed incrementally. Deep audits of the IPC, Lifecycle, Service,
-Capability, and Architecture subsystems found no additional security issues —
-these subsystems are production-ready.
+After addressing the HIGH findings and the MEDIUM gaps (NI, CBS, scheduler),
+the kernel is well-positioned for its first major release and hardware
+benchmarking on the Raspberry Pi 5. The 25 LOW and 20 INFORMATIONAL findings
+are maintenance items that can be addressed incrementally. Deep audits of the
+IPC, Capability, and Architecture subsystems found no security issues — these
+subsystems are production-ready. The SchedContext/Lifecycle subsystems have
+real but non-critical correctness gaps (SC-03 through SC-05) that should be
+closed before production deployment.
 
 ---
 
