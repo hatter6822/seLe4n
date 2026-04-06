@@ -942,3 +942,22 @@ enables `decide`/`native_decide` and `if`-expressions.
 **`AccessRightSet.valid`** (`SeLe4n/Model/Object/Types.lean`): Added in
 WS-S/S1-G. The well-formedness predicate `bits < 2^5` ensures no spurious
 upper bits exist. `AccessRightSet.ofNat` masks inputs to the valid 5-bit range.
+
+### 11.2 Information Flow and Non-Interference Boundary (AD3-C/F-05)
+
+The kernel's non-interference (NI) guarantees cover all kernel-primitive
+transitions via 32 `NonInterferenceStep` constructors in
+`SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`. These include IPC,
+scheduling, capability operations, lifecycle, and decode/dispatch paths.
+
+**Service orchestration is explicitly outside the kernel NI boundary.** The
+`serviceOrchestrationOutsideNiBoundary` theorem (`Projection.lean:551`)
+formally proves that service orchestration internals (lifecycle policies,
+restart state, heartbeat, dependency resolution order) are not captured by the
+NI projection model. Only the service registry layer (presence and dependency
+edges) is observable.
+
+Deployers requiring service-layer information-flow isolation must analyze
+service-layer flows independently of kernel NI guarantees. See
+[`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) Section 3 for deployment
+implications.

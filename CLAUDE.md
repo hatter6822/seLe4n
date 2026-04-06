@@ -495,6 +495,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-AD Phase AD3 COMPLETE** (v0.25.13): Pre-Release Audit Remediation — Phase AD3 Production Deployment Documentation (F-04, F-05, F-06, F-07): Created `docs/DEPLOYMENT_GUIDE.md` (238 lines) covering non-BIBA integrity model, NI boundary scope, covert channel analysis, mandatory labeling override with code example. Updated spec §11.2, SECURITY_ADVISORY SA-4, claims index, GitBook ch.28. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
 - **WS-AD Phase AD2 COMPLETE** (v0.25.12): Pre-Release Audit Remediation — Phase AD2 Code Quality Hardening (F-02, F-03): `endpointQueuePopHeadFresh` convenience wrapper added (stale-TCB footgun mitigation), staleness annotations at all call sites, CapTransfer error-to-noSlot documentation. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
 - **WS-AD Phase AD1 COMPLETE** (v0.25.11): Pre-Release Audit Remediation — Phase AD1 Integration Fix (F-01): 21 orphaned SchedContext preservation theorems integrated via CrossSubsystem.lean (import-cycle resolution). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
 - **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10): Comprehensive Audit Remediation — 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Phase AC6 COMPLETE (documentation, testing & closure: T-03 DecodingSuite, audit errata, workstream history). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`

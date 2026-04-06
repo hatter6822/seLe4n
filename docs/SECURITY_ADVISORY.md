@@ -60,6 +60,9 @@ invariants (`schedulerInvariantBundleFull`) concern structural correctness
 
 ## SA-2: Default Labeling Context Defeats Information Flow Enforcement (M-2)
 
+> **See also**: [`docs/DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) Section 2.1
+> for override instructions with a concrete code example.
+
 **Severity**: MEDIUM (configuration-level)
 **Component**: Information Flow (`SeLe4n/Kernel/InformationFlow/Policy.lean`)
 **Audit reference**: WS-X/X5-H, finding M-2
@@ -116,3 +119,41 @@ Temporal partitioning via domain scheduling (already present) bounds the channel
 bandwidth. This covert channel is accepted per seL4 design precedent (Murray et
 al., CCS 2013). Hardware-level isolation (partitioned caches, separate timer
 domains) would further reduce bandwidth but is beyond the kernel model's scope.
+
+---
+
+## SA-4: Non-BIBA Integrity Model (F-04)
+
+**Severity**: HIGH (design-level — documentation only)
+**Component**: Information Flow (`SeLe4n/Kernel/InformationFlow/Policy.lean`)
+**Audit reference**: WS-AD/AD3, finding F-04
+
+### Description
+
+seLe4n's integrity model deliberately differs from standard BIBA. The
+`integrityFlowsTo` function (`Policy.lean:75`) allows trusted-to-untrusted
+flow (authority delegation) and denies untrusted-to-trusted flow (privilege
+escalation). Standard BIBA reverses this: it denies write-down and allows
+write-up.
+
+This design is intentional for capability-based authority tracking — trusted
+code delegates capabilities downward, and untrusted code cannot escalate
+authority upward.
+
+### Formal Witnesses
+
+- `integrityFlowsTo_is_not_biba` (`Policy.lean:115`): Proves the model differs
+  from BIBA at the `(trusted, untrusted)` case.
+- `integrityFlowsTo_prevents_escalation` (`Policy.lean:157`): Proves
+  untrusted-to-trusted escalation is denied.
+- `bibaIntegrityFlowsTo` (`Policy.lean:97`): Reference BIBA implementation
+  provided as a drop-in alternative.
+
+### Recommended Mitigation
+
+Commission an external threat-model review before deploying in high-assurance
+environments. Verify that the authority-flow integrity model matches your
+deployment's trust assumptions.
+
+See [`docs/DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) Section 1.2 for detailed
+analysis and the pre-deployment checklist.

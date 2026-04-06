@@ -1,3 +1,26 @@
+## v0.25.13 — WS-AD Phase AD3: Production Deployment Documentation (F-04, F-05, F-06, F-07)
+
+Phase AD3 of WS-AD Pre-Release Audit Remediation. 6 sub-tasks. Addresses 3 HIGH
++ 1 MEDIUM findings with deployment-facing documentation. All tests pass
+(test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+- **AD3-A/B (F-04, F-05, F-06, F-07)**: Created `docs/DEPLOYMENT_GUIDE.md`
+  (238 lines) — production deployment guide with security model overview
+  (non-BIBA integrity, NI boundary scope, covert channel analysis), mandatory
+  labeling context override with code example, platform binding requirements,
+  and 7-item pre-deployment checklist.
+- **AD3-C (F-05)**: Added §11.2 "Information Flow and Non-Interference
+  Boundary" to `docs/spec/SELE4N_SPEC.md` — documents 32 `NonInterferenceStep`
+  constructors and service orchestration exclusion with
+  `serviceOrchestrationOutsideNiBoundary` cross-reference.
+- **AD3-D (F-04, F-07)**: Added SA-4 (non-BIBA integrity model) to
+  `docs/SECURITY_ADVISORY.md` with formal witnesses; added SA-2 cross-reference
+  to deployment guide override instructions.
+- **AD3-E**: Updated `docs/CLAIM_EVIDENCE_INDEX.md` with 4 deployment claims.
+- **AD3-F**: Updated GitBook chapter 28 with deployment findings table.
+- Version bump 0.25.12 → 0.25.13.
+
 ## v0.25.12 — WS-AD Phase AD2: Code Quality Hardening (F-02, F-03)
 
 Phase AD2 of WS-AD Pre-Release Audit Remediation. 4 sub-tasks. All tests pass

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.12-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.13-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -85,7 +85,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.25.12` |
+| **Version** | `0.25.13` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 84,061 across 133 files |
 | **Test Lean LoC** | 11,318 across 16 test suites |
@@ -219,7 +219,7 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
 | Workstream | Scope | Version |
 |------------|-------|---------|
-| **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned SchedContext preservation module integration (3 tasks), Phase AD2: code quality hardening with fresh-TCB helper and CapTransfer docstring (4 tasks) | v0.25.11–v0.25.12 |
+| **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned module integration (3 tasks), Phase AD2: code quality hardening (4 tasks), Phase AD3: production deployment documentation covering non-BIBA integrity model, NI boundary scope, covert channel analysis, mandatory labeling override (6 tasks) | v0.25.11–v0.25.13 |
 | **WS-AC** | Comprehensive Audit Remediation — 3 HIGH, 9 MEDIUM, 9 LOW findings addressed across scheduler, IPC, capability, architecture, and cross-cutting subsystems (6 phases, 42 tasks) | v0.25.3–v0.25.10 |
 | **WS-AB** | Deferred Operations & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem (6 phases, 90 tasks) | v0.24.0–v0.25.5 |
 | **WS-Z** | Composable Performance Objects — `SchedContext` as 7th kernel object, CBS budget engine, replenishment queue, passive server donation, timeout endpoints (10 phases, 213 tasks) | v0.23.0–v0.23.21 |
