@@ -2689,3 +2689,26 @@ transitive propagation, reversion, frame preservation, zero-fuel identity.
 **IPC buffer cross-page** (`Architecture/IpcBufferValidation.lean`):
 - `ipcBuffer_within_page`: 512-byte aligned buffer fits within 4KB ARM64 page
   (`addr / 4096 = (addr + 511) / 4096`). Proof by `omega`.
+
+---
+
+### 12.18 Testing, Documentation & Closure (WS-AE Phase AE6)
+
+**Test infrastructure hardening:**
+- `priority_inheritance_suite` (D4 PIP) added to `test_tier2_negative.sh` Tier 2
+  gate — propagation, blocking chains, reversion, and SchedContext integration
+  tests now execute on every smoke run.
+- 4 test suites (`SuspendResumeSuite`, `PriorityManagementSuite`,
+  `PriorityInheritanceSuite`, `IpcBufferSuite`) upgraded from unchecked
+  `builder.build` to `builder.buildChecked` — test states validated against 8
+  structural invariants at construction time.
+- `test_rust.sh` propagates `RUST_TESTS_SKIPPED=true` to `$GITHUB_OUTPUT` when
+  cargo is unavailable, making CI skip status visible in GitHub Actions.
+- Rust ABI `SchedContextConfigureArgs` and `SchedContextBindArgs` register mapping
+  comments corrected to match actual `decode()` register indices.
+
+**WS-AE portfolio closure:**
+- All 37 actionable findings from `AUDIT_v0.25.14_COMPREHENSIVE.md` and
+  `AUDIT_v0.25.12_KERNEL_MODULES.md` resolved across 6 phases (AE1–AE6),
+  53 sub-tasks. 8 HIGH, 27 MEDIUM, 22 LOW findings addressed. 3 deferred to
+  future workstreams (WS-V). Zero sorry/axiom throughout.

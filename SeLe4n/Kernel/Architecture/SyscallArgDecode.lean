@@ -926,7 +926,8 @@ def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
 -- ============================================================================
 
 /-- Z5-A: Per-syscall argument structure for `schedContextConfigure`.
-    Register mapping: x2=budget, x3=period, x4=priority, x5=deadline, x6=domain. -/
+    Register mapping: msgRegs[0]=budget, msgRegs[1]=period, msgRegs[2]=priority,
+    msgRegs[3]=deadline, msgRegs[4]=domain. -/
 structure SchedContextConfigureArgs where
   budget   : Nat
   period   : Nat
@@ -936,7 +937,7 @@ structure SchedContextConfigureArgs where
   deriving Repr, DecidableEq
 
 /-- Z5-B: Per-syscall argument structure for `schedContextBind`.
-    Register mapping: x2=threadId (thread to bind to this SchedContext). -/
+    Register mapping: msgRegs[0]=threadId (thread to bind to this SchedContext). -/
 structure SchedContextBindArgs where
   threadId : Nat
   deriving Repr, DecidableEq

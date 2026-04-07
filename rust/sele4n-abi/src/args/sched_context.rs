@@ -13,7 +13,7 @@ pub const MAX_PRIORITY: u64 = 255;
 pub const MAX_DOMAIN: u64 = 255;
 
 /// Arguments for `schedContextConfigure` (syscall 17).
-/// Register mapping: x2=budget, x3=period, x4=priority, x5=deadline, x6=domain.
+/// Register mapping: regs[0]=budget, regs[1]=period, regs[2]=priority, regs[3]=deadline, regs[4]=domain.
 ///
 /// Lean: `SchedContextConfigureArgs` (SyscallArgDecode.lean:894–900)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl SchedContextConfigureArgs {
 }
 
 /// Arguments for `schedContextBind` (syscall 18).
-/// Register mapping: x2=threadId.
+/// Register mapping: regs[0]=threadId.
 ///
 /// Lean: `SchedContextBindArgs` (SyscallArgDecode.lean:904–906)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

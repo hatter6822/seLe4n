@@ -45,7 +45,7 @@ private def mkState (objs : List (ObjId × KernelObject))
     current := current
     runnable := runnable
   }
-  builder.build
+  builder.buildChecked
 
 -- ============================================================================
 -- D2-M1: setPriorityOp — success cases
