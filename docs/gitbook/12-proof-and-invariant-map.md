@@ -108,7 +108,7 @@ Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)
 - `schedulerInvariantBundleFull` (9-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs ∧ schedulerPriorityMatch ∧ domainTimeRemainingPositive ∧ domainScheduleEntriesPositive`, R6-D/L-12/V5-H/X2-A)
-- `schedulerInvariantBundleExtended` (15-conjunct: `schedulerInvariantBundleFull ∧ budgetPositive ∧ currentBudgetPositive ∧ schedContextsWellFormed ∧ replenishQueueValid ∧ schedContextBindingConsistent ∧ effectiveParamsMatchRunQueue`, Z4)
+- `schedulerInvariantBundleExtended` (16-conjunct: `schedulerInvariantBundleFull ∧ budgetPositive ∧ currentBudgetPositive ∧ schedContextsWellFormed ∧ replenishQueueValid ∧ schedContextBindingConsistent ∧ effectiveParamsMatchRunQueue ∧ boundThreadDomainConsistent`, Z4/AE3-A)
 
 Extraction theorems:
 
@@ -2508,7 +2508,7 @@ kernel-wide invariant bundle.
 - `crossSubsystemInvariant` extended from 5 to **8 predicates** (Z9 adds the three above)
 
 **Top-level bundle extension**:
-- `proofLayerInvariantBundle` extended from 9 to **10 conjuncts**: added `schedulerInvariantBundleExtended` (the 15-conjunct CBS-aware scheduler bundle from Z4)
+- `proofLayerInvariantBundle` extended from 9 to **10 conjuncts**: added `schedulerInvariantBundleExtended` (the 16-conjunct CBS-aware scheduler bundle from Z4/AE3-A)
 - Preservation theorems updated for all kernel operations that touch SchedContext state
 
 **Boot safety extension** (`Platform/Boot.lean`):

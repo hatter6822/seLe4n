@@ -128,4 +128,137 @@ theorem revert_eq_propagate (st : SystemState) (tid : ThreadId)
     · exact ih ..
     · rfl
 
+-- ============================================================================
+-- AE3-I/S-01: Frame theorem — updatePipBoost preserves ipcState
+-- ============================================================================
+
+/-- AE3-I/S-01: `updatePipBoost` only modifies `pipBoost` (and optionally the
+scheduler's RunQueue) — it never touches `ipcState` on any TCB. This makes it
+safe for `propagatePriorityInheritance` to read `blockingServer` from the
+pre-mutation state: the blocking graph (which depends on `ipcState`) is
+unchanged by PIP boost updates.
+
+`updatePipBoost` has three code paths:
+1. TCB not found or not-TCB → state unchanged (trivial)
+2. `pipBoost` already equals `newBoost` → state unchanged (trivial)
+3. `pipBoost` changed → record-with update only sets `pipBoost`,
+   then optionally migrates RunQueue bucket (scheduler-only, no objects change
+   beyond the `pipBoost` update at `tid.toObjId`)
+
+In all paths, `blockingServer` reads `ipcState` which is untouched. -/
+theorem updatePipBoost_ipcState_frame (st : SystemState) (tid : ThreadId)
+    (hObjInv : st.objects.invExt)
+    (t : ThreadId) (hNe : t ≠ tid) :
+    (updatePipBoost st tid).objects[t.toObjId]? = st.objects[t.toObjId]? := by
+  unfold updatePipBoost
+  cases hTid : st.objects[tid.toObjId]? with
+  | none => rfl
+  | some obj =>
+    cases obj with
+    | tcb tcb =>
+      simp only []
+      split
+      · rfl
+      · -- pipBoost changed → objects insert at tid.toObjId
+        have hObjNe : ¬(tid.toObjId == t.toObjId) = true := by
+          intro h; apply hNe
+          exact (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm
+        -- After insert at tid.toObjId, lookup at t.toObjId is unchanged
+        split
+        · -- In run queue
+          split
+          · -- Priority changed → scheduler updated, objects have insert
+            show (st.objects.insert tid.toObjId _).get? t.toObjId = _
+            exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
+          · -- Priority unchanged → same objects with insert
+            exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
+        · -- Not in run queue → same objects with insert
+          exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
+    | _ => rfl
+
+/-- AE3-I/S-01: For the target thread itself, `updatePipBoost` only modifies
+`pipBoost`. The `ipcState` field is definitionally preserved by the
+`{ tcb with pipBoost := newBoost }` record-with update. -/
+theorem updatePipBoost_self_ipcState (st : SystemState) (tid : ThreadId)
+    (hObjInv : st.objects.invExt) (tcb : TCB)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    match (updatePipBoost st tid).objects[tid.toObjId]? with
+    | some (.tcb tcb') => tcb'.ipcState = tcb.ipcState
+    | _ => True := by
+  -- Factor: if we know the lookup gives a TCB with preserved ipcState, the match resolves
+  suffices h : ∃ tcb', (updatePipBoost st tid).objects[tid.toObjId]? = some (.tcb tcb') ∧
+      tcb'.ipcState = tcb.ipcState by
+    obtain ⟨tcb', hLook, hIpc⟩ := h; simp only [hLook, hIpc]
+  -- Now prove the lookup gives such a TCB
+  unfold updatePipBoost
+  simp only [hObj]
+  split
+  · -- pipBoost unchanged → state is st, lookup is hObj
+    exact ⟨tcb, hObj, rfl⟩
+  · -- pipBoost changed → lookup gives { tcb with pipBoost := ... }
+    have hSelf : (st.objects.insert tid.toObjId
+        (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }))[tid.toObjId]? =
+        some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
+      RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
+    refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
+    -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies
+    by_cases hRQ : tid ∈ st.scheduler.runQueue
+    · simp only [hRQ, ite_true]; split <;> exact hSelf
+    · simp only [hRQ, ite_false]; exact hSelf
+
+/-- AE3-I/S-01: `updatePipBoost` preserves `blockingServer` for all threads.
+This is the main frame theorem: the blocking graph is invariant under PIP
+boost updates. `propagatePriorityInheritance` reads `blockingServer` from
+the pre-mutation state, and this theorem justifies that the result would be
+identical on the post-mutation state.
+
+For `t ≠ tid`: objects[t] is unchanged (`updatePipBoost_ipcState_frame`).
+For `t = tid`: `ipcState` is preserved by the record-with update
+(`updatePipBoost_self_ipcState`). Since `blockingServer` reads only
+`ipcState`, the result is identical in both cases. -/
+-- Helper: blockingServer depends only on objects[t.toObjId]?
+private theorem blockingServer_congr_objects (st₁ st₂ : SystemState) (t : ThreadId)
+    (h : st₁.objects[t.toObjId]? = st₂.objects[t.toObjId]?) :
+    blockingServer st₁ t = blockingServer st₂ t := by
+  simp only [blockingServer, h]
+
+-- Helper: blockingServer is determined by the ipcState of the looked-up TCB
+private theorem blockingServer_ipcState_congr (st₁ st₂ : SystemState) (t : ThreadId)
+    (tcb₁ tcb₂ : TCB) (h₁ : st₁.objects[t.toObjId]? = some (.tcb tcb₁))
+    (h₂ : st₂.objects[t.toObjId]? = some (.tcb tcb₂))
+    (hIpc : tcb₁.ipcState = tcb₂.ipcState) :
+    blockingServer st₁ t = blockingServer st₂ t := by
+  simp only [blockingServer, h₁, h₂, hIpc]
+
+theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : ThreadId)
+    (hObjInv : st.objects.invExt) (t : ThreadId) :
+    blockingServer (updatePipBoost st tid) t = blockingServer st t := by
+  by_cases hEq : t = tid
+  · -- t = tid: ipcState preserved by { tcb with pipBoost := ... }
+    rw [hEq]
+    unfold updatePipBoost
+    cases hTid : st.objects[tid.toObjId]? with
+    | none => rfl
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only []
+        split
+        · rfl -- pipBoost unchanged
+        · -- pipBoost changed: blockingServer reads only ipcState, which is
+          -- unchanged by { tcb with pipBoost := ... }. Use ipcState congr lemma.
+          refine blockingServer_ipcState_congr _ _ _
+            { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hTid rfl
+          -- Remaining goal: <result-state>.objects[tid.toObjId]? = some (.tcb { tcb with pipBoost := ... })
+          -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies.
+          have hSelf : (st.objects.insert tid.toObjId
+              (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }))[tid.toObjId]? =
+              some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
+            RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
+          by_cases hRQ : tid ∈ st.scheduler.runQueue
+          · simp only [hRQ, ite_true]; split <;> exact hSelf
+          · simp only [hRQ, ite_false]; exact hSelf
+      | _ => rfl
+  · exact blockingServer_congr_objects _ _ _ (updatePipBoost_ipcState_frame st tid hObjInv t hEq)
+
 end SeLe4n.Kernel.PriorityInheritance

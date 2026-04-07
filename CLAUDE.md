@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.17.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.18.
 
 ## Build and run
 
@@ -495,6 +495,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-AE Phase AE3 COMPLETE** (v0.25.18): Production Audit Remediation — Phase AE3: Scheduler & SchedContext Correctness. 12 sub-tasks (AE3-A through AE3-L). Domain consistency enforcement (U-11), cancelDonation isActive+replenish queue fix (U-15), effective priority in resumeThread (U-16), handleYield gap documentation (S-03), schedContextConfigure replenishment queue reset (U-14), CBS bandwidth documentation (U-12/U-13), dead Budget.refill deletion (SC-06), frame theorem with full invExt threading (S-01), schedContextBind documentation (SC-09), timeoutBlockedThreads documentation (S-05). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE2 COMPLETE** (v0.25.16): Production Audit Remediation — Phase AE2: Data Structure Hardening & Production Reachability. 8 sub-tasks (AE2-A through AE2-H). RobinHood `4 ≤ capacity` enforcement (U-28), RadixTree checked build with key-bounds validation (U-29), fuel exhaustion documentation (U-30), FrozenOps partial mutation fix (U-31), FrozenOps experimental status documentation (U-02), Liveness production reachability via CrossSubsystem import (U-05), PIP transitive import verification (AE2-G). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE1 COMPLETE** (v0.25.15): Production Audit Remediation — Phase AE1: API Dispatch & NI Composition. 8 sub-tasks (AE1-A through AE1-H). Dispatch parity fixes (U-01/U-06), wildcard unreachability (U-07), switchDomain NI composition (IF-01/U-03), donation/PIP NI proofs (IF-02/U-04), master dispatch NI theorem (U-08). KernelOperation 32→34 constructors. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AD PORTFOLIO COMPLETE** (v0.25.11–v0.25.14): Pre-Release Audit Remediation — 5 phases (AD1–AD5). 21 findings (7 actionable, 2 already addressed, 12 no-action). Phase AD4 (F-08): 35 cross-subsystem bridge lemmas (2 core + 33 per-operation) covering ALL 33 kernel operations that modify `objects`. Phase AD5: documentation sync & closure. Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`

@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.10` (`lakefile.toml`) |
+| **Package version** | `0.25.18` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 84,013 across 133 Lean files |
 | **Test LoC** | 11,318 across 16 Lean test suites |
 | **Proved declarations** | 2,478 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10). 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Prior: WS-B through WS-AB complete (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.3_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-AE Phase AE3 COMPLETE** (v0.25.18). Scheduler & SchedContext Correctness — 12 sub-tasks. Domain consistency enforcement, CBS budget fixes, PIP frame theorems. Prior: WS-AE AE1/AE2 (v0.25.15–v0.25.16), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -716,9 +716,10 @@ fields if unbound), `hasSufficientBudget` (budget eligibility predicate),
 
 6 new invariants: `budgetPositive`, `currentBudgetPositive`,
 `schedContextsWellFormed`, `replenishQueueValid`, `schedContextBindingConsistent`,
-`effectiveParamsMatchRunQueue`. Extended bundle:
-`schedulerInvariantBundleExtended` (15-tuple: original 9 + 6 new). Backward
-compatible: existing `chooseThread`/`schedule`/`timerTick`/`handleYield`
+`effectiveParamsMatchRunQueue`, `boundThreadDomainConsistent` (AE3-A: enforces
+`tcb.domain = sc.domain` for all bound thread-SchedContext pairs). Extended
+bundle: `schedulerInvariantBundleExtended` (16-tuple: original 9 + 7 new).
+Backward compatible: existing `chooseThread`/`schedule`/`timerTick`/`handleYield`
 preserved unchanged.
 
 #### 8.12.4 Capability-Controlled Thread Binding (WS-Z Phase Z5)
@@ -727,7 +728,8 @@ preserved unchanged.
 (18), `.schedContextUnbind` (19). Capability-gated operations:
 `validateSchedContextParams`, `schedContextConfigure` (validate + admit + store),
 `schedContextBind` (bidirectional TCB↔SchedContext binding + RunQueue
-re-insertion), `schedContextUnbind` (unbind + preemption guard + RunQueue
+re-insertion + domain consistency enforcement: `tcb.domain == sc.domain`
+required), `schedContextUnbind` (unbind + preemption guard + RunQueue
 removal), `schedContextYieldTo` (kernel-internal budget transfer). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via

@@ -73,7 +73,22 @@ def replenishmentAmountsBounded (sc : SchedContext) : Prop :=
 CBS budget bounds, replenishment list well-formedness, and replenishment
 entry amount bounds. The fourth conjunct ensures that every replenishment
 entry's amount is ≤ the configured budget — required by the CBS bandwidth
-isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`). -/
+isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`).
+
+CBS Bandwidth Bound — Known Precision Gap (U-12/SC-01, AE3-G)
+The proven bound `cbs_bandwidth_bounded` establishes:
+  totalConsumed ≤ maxReplenishments × budget = 8 × budget
+This is 8× weaker than the ideal CBS guarantee of `budget` per period.
+The per-object `budgetWithinBounds` invariant prevents actual overrun at
+any single tick. The proven bound reflects worst-case replenishment
+accumulation across the full replenishment window.
+
+Admission Control Precision (U-13/SC-02, AE3-G)
+`admissionCheck` uses integer per-mille arithmetic (budget×1000/period)
+which truncates per-context. Aggregate error ≤ n/1000 where n is the
+number of active SchedContexts. For n=64, this is ≤6.4% overcommit.
+The `budgetWithinBounds` invariant provides per-object isolation
+regardless of aggregate admission precision. -/
 def schedContextWellFormed (sc : SchedContext) : Prop :=
   sc.wellFormed ∧ budgetWithinBounds sc ∧
   replenishmentListWellFormed sc ∧ replenishmentAmountsBounded sc

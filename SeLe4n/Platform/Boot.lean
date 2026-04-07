@@ -1184,7 +1184,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     rw [hTlb]; exact Architecture.tlbConsistent_empty _
   -- 10. schedulerInvariantBundleExtended (Z9-G: SchedContext invariants at boot)
   have hExtBundle : schedulerInvariantBundleExtended (bootFromPlatform config).state := by
-    refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- budgetPositive: empty runnable list at boot
       intro tid hMem; rw [hRun] at hMem; simp at hMem
     · -- currentBudgetPositive: current = none at boot
@@ -1210,6 +1210,19 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         rw [hSch]; decide
       have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
       simp [RunQueue.toList, hFlat] at hInFlat
+    · -- boundThreadDomainConsistent: all TCBs have .unbound at boot
+      intro tid scId
+      show match (bootFromPlatform config).state.objects[tid.toObjId]? with
+        | some (.tcb tcb) => tcb.schedContextBinding = .bound scId → _ | _ => True
+      cases hLookup : (bootFromPlatform config).state.objects[tid.toObjId]? with
+      | none => trivial
+      | some obj =>
+        cases obj with
+        | tcb tcb =>
+          intro hBound
+          have hTcbProps := (hBS tid.toObjId _ hLookup).2.2.2.1 tcb rfl
+          rw [hTcbProps.2.2.2.2.2] at hBound; cases hBound
+        | _ => trivial
   -- Compose all 10 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle⟩

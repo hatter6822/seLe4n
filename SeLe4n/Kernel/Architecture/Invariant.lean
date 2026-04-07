@@ -502,7 +502,8 @@ theorem default_system_state_proofLayerInvariantBundle :
   · exact ⟨default_schedulerInvariantBundleFull,
            default_budgetPositive, default_currentBudgetPositive,
            default_schedContextsWellFormed, default_replenishQueueValid,
-           default_schedContextBindingConsistent, default_effectiveParamsMatchRunQueue⟩
+           default_schedContextBindingConsistent, default_effectiveParamsMatchRunQueue,
+           default_boundThreadDomainConsistent⟩
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems

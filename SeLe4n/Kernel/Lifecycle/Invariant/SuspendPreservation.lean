@@ -56,16 +56,25 @@ theorem cancelIpcBlocking_scheduler_eq
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
-/-- D1-I: cancelDonation only modifies `objects`, preserving the scheduler. -/
-theorem cancelDonation_scheduler_eq
+/-- D1-I/AE3-B/AE3-C: cancelDonation preserves the scheduler for `.unbound`
+and `.donated` cases. For `.bound`, the scheduler is modified (AE3-C: replenish
+queue cleanup) — the runQueue and current fields are preserved but
+replenishQueue may differ. -/
+theorem cancelDonation_scheduler_runQueue_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (cancelDonation st tid tcb).scheduler = st.scheduler := by
+    (cancelDonation st tid tcb).scheduler.runQueue = st.scheduler.runQueue ∧
+    (cancelDonation st tid tcb).scheduler.current = st.scheduler.current := by
   unfold cancelDonation
   split
-  · rfl
-  · dsimp only []
-    split <;> (split <;> rfl)
-  · exact cleanupDonatedSchedContext_scheduler_eq st tid
+  · exact ⟨rfl, rfl⟩
+  · -- .bound case: replenish queue removed but runQueue/current unchanged
+    dsimp only []
+    constructor
+    · split <;> (split <;> rfl)
+    · split <;> (split <;> rfl)
+  · -- .donated case
+    have h := cleanupDonatedSchedContext_scheduler_eq st tid
+    exact ⟨congrArg SchedulerState.runQueue h, congrArg SchedulerState.current h⟩
 
 /-- D1-I: clearPendingState only modifies `objects`, preserving the scheduler. -/
 theorem clearPendingState_scheduler_eq

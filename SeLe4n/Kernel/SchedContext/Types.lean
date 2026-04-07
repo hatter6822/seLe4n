@@ -45,9 +45,9 @@ namespace Budget
 @[inline] def decrement (b : Budget) (ticks : Nat := 1) : Budget :=
   ⟨b.val - ticks⟩
 
-/-- Refill budget up to a ceiling value. -/
-@[inline] def refill (b : Budget) (ceiling : Budget) : Budget :=
-  ⟨min b.val ceiling.val⟩
+-- AE3-H/SC-06: `Budget.refill` deleted — had inverted semantics (capped down
+-- to ceiling instead of refilling up). Unused by CBS engine; `applyRefill`
+-- in Budget.lean handles actual replenishment.
 
 end Budget
 

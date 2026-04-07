@@ -2225,12 +2225,12 @@ and sub-task. This matrix ensures no finding is overlooked.
 | IF-03 (v14), IF-13 (v12) | U-08 | AE1-G | COMPLETE (v0.25.15) |
 | IF-04 (v14), IF-02 (v12) | U-09 | AE5-F | PLANNED |
 | IF-06 (v14), IF-04 (v12) | U-10 | AE5-E | PLANNED |
-| S-02 (v14) | U-11 | AE3-A | PLANNED |
-| SC-01 (v14), SC-02 (v12) | U-12 | AE3-G | PLANNED |
-| SC-02 (v14) | U-13 | AE3-G | PLANNED |
-| SC-03 (v14), SC-L04 (v12) | U-14 | AE3-F | PLANNED |
-| SC-04 (v14) | U-15 | AE3-B | PLANNED |
-| SC-05 (v14), SC-L06 (v12) | U-16 | AE3-D | PLANNED |
+| S-02 (v14) | U-11 | AE3-A | COMPLETE |
+| SC-01 (v14), SC-02 (v12) | U-12 | AE3-G | COMPLETE |
+| SC-02 (v14) | U-13 | AE3-G | COMPLETE |
+| SC-03 (v14), SC-L04 (v12) | U-14 | AE3-F | COMPLETE |
+| SC-04 (v14) | U-15 | AE3-B | COMPLETE |
+| SC-05 (v14), SC-L06 (v12) | U-16 | AE3-D | COMPLETE |
 | CAP-01 (v14) | U-17 | AE4-A | PLANNED |
 | CAP-02 (v14), C-CAP07 (v12) | U-18 | AE4-C | PLANNED |
 | SVC-02 (v14) | U-20 | AE5-B | PLANNED |
@@ -2251,12 +2251,12 @@ and sub-task. This matrix ensures no finding is overlooked.
 | C-CAP01 (v12) | U-35 | — | DEFERRED (seL4 design) |
 | C-CAP06 (v12) | U-36 | AE4-D | PLANNED |
 | I-WC01 (v12) | U-37 | AE4-I | PLANNED |
-| SC-06 (v14) | — | AE3-H | PLANNED |
-| SC-07 (v14) | — | AE3-C | PLANNED |
-| SC-09 (v14) | — | AE3-J | PLANNED |
-| S-01 (v14) | — | AE3-I | PLANNED |
-| S-03 (v14) | — | AE3-E | PLANNED |
-| S-05 (v14), S-02 (v12) | — | AE3-K | PLANNED |
+| SC-06 (v14) | — | AE3-H | COMPLETE |
+| SC-07 (v14) | — | AE3-C | COMPLETE |
+| SC-09 (v14) | — | AE3-J | COMPLETE |
+| S-01 (v14) | — | AE3-I | COMPLETE |
+| S-03 (v14) | — | AE3-E | COMPLETE |
+| S-05 (v14), S-02 (v12) | — | AE3-K | COMPLETE |
 | SVC-04 (v14) | — | AE5-C | PLANNED |
 | IF-14 (v12) | — | AE5-F | PLANNED |
 | T-07 (v14), T-F02/03 (v12) | — | AE6-B | PLANNED |

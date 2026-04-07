@@ -214,7 +214,11 @@ This is an external-consistency predicate bridging the RunQueue's internal
 `threadPriority` field to the authoritative TCB priority in the object store.
 Together with `RunQueue.wellFormed`, it enables the bucket-first scheduling
 proof: if a thread has the same priority as the selected candidate, it must
-reside in the same priority bucket. -/
+reside in the same priority bucket.
+
+Note (AE3-E): For threads with SchedContext bindings, the effective priority
+is tracked by `effectiveParamsMatchRunQueue` (component 15 of the extended
+bundle). This legacy invariant covers the unbound-thread case. -/
 def schedulerPriorityMatch (st : SystemState) : Prop :=
   ∀ tid, tid ∈ st.scheduler.runQueue →
     match st.objects[tid.toObjId]? with
@@ -483,7 +487,7 @@ theorem default_schedContextBindingConsistent :
 -- ============================================================================
 
 /-- Z4-P: For every runnable thread, the RunQueue's cached priority matches
-the effective priority from `effectivePriority` resolution. This extends
+the effective priority from SchedContext resolution. This extends
 `schedulerPriorityMatch` to the SchedContext world — when a thread is bound
 to a SchedContext, the RunQueue entry reflects the SchedContext's priority. -/
 def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
@@ -510,18 +514,48 @@ theorem default_effectiveParamsMatchRunQueue :
   simp [hEmpty] at hMem
 
 -- ============================================================================
+-- AE3-A/U-11: boundThreadDomainConsistent invariant
+-- ============================================================================
+
+/-- AE3-A/U-11: For every thread bound to a SchedContext, the thread's domain
+must match the SchedContext's domain. This invariant is established by the
+domain check in `schedContextBind` (AE3-A2) and preserved by all binding-
+modifying operations (unbind/cancelDonation clear `.bound`; donation uses
+`.donated` not `.bound`). -/
+def boundThreadDomainConsistent (st : SystemState) : Prop :=
+  ∀ (tid : ThreadId) (scId : SchedContextId),
+    match (st.objects[tid.toObjId]? : Option KernelObject) with
+    | some (.tcb tcb) =>
+      tcb.schedContextBinding = .bound scId →
+      match (st.objects[scId.toObjId]? : Option KernelObject) with
+      | some (.schedContext sc) => tcb.domain = sc.domain
+      | _ => True
+    | _ => True
+
+/-- AE3-A: Default state has empty object store — no bound threads to check. -/
+theorem default_boundThreadDomainConsistent :
+    boundThreadDomainConsistent (default : SystemState) := by
+  intro tid _scId
+  -- Default object store is empty — all lookups return none
+  have hNone : (default : SystemState).objects.get? tid.toObjId = none :=
+    RobinHood.RHTable.getElem?_empty 16 (by omega) tid.toObjId
+  simp only [show (default : SystemState).objects[tid.toObjId]? =
+    (default : SystemState).objects.get? tid.toObjId from rfl, hNone]
+
+-- ============================================================================
 -- Z4: Extended scheduler invariant bundle
 -- ============================================================================
 
-/-- Z4: Extended scheduler invariant bundle with 6 additional SchedContext
-invariants. 15-tuple: original 9 + budgetPositive + currentBudgetPositive +
+/-- Z4/AE3-A: Extended scheduler invariant bundle with 7 additional SchedContext
+invariants. 16-tuple: original 9 + budgetPositive + currentBudgetPositive +
 schedContextsWellFormed + replenishQueueValid + schedContextBindingConsistent +
-effectiveParamsMatchRunQueue. -/
+effectiveParamsMatchRunQueue + boundThreadDomainConsistent. -/
 def schedulerInvariantBundleExtended (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
   budgetPositive st ∧ currentBudgetPositive st ∧
   schedContextsWellFormed st ∧ replenishQueueValid st ∧
-  schedContextBindingConsistent st ∧ effectiveParamsMatchRunQueue st
+  schedContextBindingConsistent st ∧ effectiveParamsMatchRunQueue st ∧
+  boundThreadDomainConsistent st
 
 /-- Z4: Project the original 9-tuple from the extended bundle. -/
 theorem schedulerInvariantBundleExtended_to_full {st : SystemState}
@@ -556,6 +590,11 @@ theorem schedulerInvariantBundleExtended_to_schedContextBindingConsistent {st : 
 /-- Z4: Project `effectiveParamsMatchRunQueue` from the extended bundle. -/
 theorem schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue {st : SystemState}
     (h : schedulerInvariantBundleExtended st) : effectiveParamsMatchRunQueue st :=
-  h.2.2.2.2.2.2
+  h.2.2.2.2.2.2.1
+
+/-- AE3-A: Project `boundThreadDomainConsistent` from the extended bundle. -/
+theorem schedulerInvariantBundleExtended_to_boundThreadDomainConsistent {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) : boundThreadDomainConsistent st :=
+  h.2.2.2.2.2.2.2
 
 end SeLe4n.Kernel

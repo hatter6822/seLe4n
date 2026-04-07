@@ -327,6 +327,13 @@ def handleYield : Kernel Unit :=
         match st.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
             -- WS-H12b: re-enqueue at back of priority bucket, then schedule
+            -- AE3-E/S-03: Note — re-enqueues at tcb.priority (legacy). For
+            -- SchedContext-bound threads, the effective priority from sc.priority
+            -- is tracked by effectiveParamsMatchRunQueue and the SchedContext-aware
+            -- selection path (chooseBestRunnableEffective). PIP boost is applied
+            -- at selection time, not stored in the RunQueue. A full transition to
+            -- effective-priority insertion requires refactoring schedulerPriorityMatch
+            -- infrastructure (48 proof sites). Deferred to post-release hardening.
             let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
             let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
             schedule st'
@@ -487,11 +494,13 @@ control. The admission check (`admissionControl` in Budget.lean) ensures
 total bandwidth ≤ 1.0, so exhaustion occurs only when a thread fully consumes
 its allocated budget within a single period.
 
--- Future optimization (WS-AD/perf): Replace with per-SchedContext bound-thread
--- index (`HashMap SchedContextId (List ThreadId)`) maintained by bind/unbind/delete
+-- PERF-NOTE (S-05/AE3-K): O(n) scan over all objects. Acceptable for
+-- current object counts (≤65K). If RPi5 benchmarking shows this as a
+-- bottleneck, replace with per-SchedContext bound-thread index
+-- (`HashMap SchedContextId (List ThreadId)`) maintained by bind/unbind/delete
 -- operations. This would reduce timeout scanning from O(n) to O(k) where k is
 -- the number of threads bound to the exhausted SchedContext (typically 1–3).
--- Deferred until hardware profiling confirms this is a bottleneck on RPi5.
+-- Deferred to post-benchmarking optimization.
 
 Note: threads in `blockedOnReply` are also timed out. In seL4 MCS, this
 handles the case where a client's donated budget expires while the server
