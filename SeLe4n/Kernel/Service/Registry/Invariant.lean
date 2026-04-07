@@ -118,15 +118,17 @@ theorem registerService_preserves_registryEndpointValid
           case endpoint ep =>
             split at hStep
             · cases hStep
-            · simp at hStep; subst st'
-              intro sid reg hReg
-              simp only [RHTable_getElem?_eq_get?] at hReg
-              rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
-              split at hReg
-              · cases hReg
-                refine ⟨epId, hTarget, ?_⟩
-                rw [← hObjEq, hObj]; simp
-              · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
+            · split at hStep
+              · cases hStep
+              · simp at hStep; subst st'
+                intro sid reg hReg
+                simp only [RHTable_getElem?_eq_get?] at hReg
+                rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
+                split at hReg
+                · cases hReg
+                  refine ⟨epId, hTarget, ?_⟩
+                  rw [← hObjEq, hObj]; simp
+                · exact hObjEq ▸ hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -152,17 +154,19 @@ theorem registerService_preserves_registryInterfaceValid
           case endpoint ep =>
             split at hStep
             · cases hStep
-            · simp at hStep; subst st'
-              intro sid reg hReg
-              simp only [RHTable_getElem?_eq_get?] at hReg
-              rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
-              split at hReg
-              · cases hReg
-                suffices h : ∃ spec, st.interfaceRegistry[newReg.iface.ifaceId]? = some spec from h
-                cases hIface : st.interfaceRegistry[newReg.iface.ifaceId]? with
-                | none => exact absurd hIface hHasIface
-                | some s => exact ⟨s, rfl⟩
-              · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
+            · split at hStep
+              · cases hStep
+              · simp at hStep; subst st'
+                intro sid reg hReg
+                simp only [RHTable_getElem?_eq_get?] at hReg
+                rw [RHTable_getElem?_insert st.serviceRegistry newReg.sid newReg hSvcInv] at hReg
+                split at hReg
+                · cases hReg
+                  suffices h : ∃ spec, st.interfaceRegistry[newReg.iface.ifaceId]? = some spec from h
+                  cases hIface : st.interfaceRegistry[newReg.iface.ifaceId]? with
+                  | none => exact absurd hIface hHasIface
+                  | some s => exact ⟨s, rfl⟩
+                · exact hInv sid reg (by simp only [RHTable_getElem?_eq_get?]; exact hReg)
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -321,5 +325,94 @@ theorem cleanupEndpointServiceRegistrations_preserves_registryInvariant
     registryInvariant (cleanupEndpointServiceRegistrations st epId) :=
   ⟨cleanupEndpointServiceRegistrations_preserves_registryEndpointValid st epId hInv.1 hSvcRegInv,
    cleanupEndpointServiceRegistrations_preserves_registryInterfaceValid st epId hInv.2 hSvcRegInv⟩
+
+-- ============================================================================
+-- AE5-B (U-20): registryEndpointUnique invariant
+-- ============================================================================
+
+/-- AE5-B (U-20): No two distinct service registrations target the same endpoint.
+    This ensures `lookupServiceByCap` returns a deterministic result regardless of
+    `RHTable` iteration order. The runtime check in `registerService` (via
+    `hasEndpointRegistered`) enforces this at registration time. -/
+def registryEndpointUnique (st : SystemState) : Prop :=
+  ∀ (sid₁ sid₂ : ServiceId) (reg₁ reg₂ : ServiceRegistration)
+    (epId : SeLe4n.ObjId),
+    st.serviceRegistry[sid₁]? = some reg₁ →
+    st.serviceRegistry[sid₂]? = some reg₂ →
+    reg₁.endpointCap.target = CapTarget.object epId →
+    reg₂.endpointCap.target = CapTarget.object epId →
+    sid₁ = sid₂
+
+/-- AE5-B: The default (empty) state satisfies `registryEndpointUnique` vacuously. -/
+theorem default_registryEndpointUnique :
+    registryEndpointUnique (default : SystemState) := by
+  intro sid₁ sid₂ reg₁ reg₂ epId h₁
+  simp only [RHTable_getElem?_eq_get?] at h₁
+  have : (default : SystemState).serviceRegistry.get? sid₁ = none :=
+    RHTable.getElem?_empty 16 (by omega) sid₁
+  simp [this] at h₁
+
+/-- AE5-B: `registerInterface` preserves `registryEndpointUnique` (serviceRegistry unchanged). -/
+theorem registerInterface_preserves_registryEndpointUnique
+    (st st' : SystemState) (spec : InterfaceSpec)
+    (hStep : registerInterface spec st = .ok ((), st'))
+    (hInv : registryEndpointUnique st) :
+    registryEndpointUnique st' := by
+  unfold registerInterface at hStep
+  split at hStep
+  · simp at hStep
+  · simp at hStep; subst st'
+    -- serviceRegistry unchanged
+    exact hInv
+
+/-- AE5-B: `revokeService` preserves `registryEndpointUnique`.
+    Removing a registration from the registry preserves uniqueness — if
+    any two remaining registrations share an endpoint, they shared it before
+    revocation, contradicting the pre-condition. -/
+theorem revokeService_preserves_registryEndpointUnique
+    (st st' : SystemState) (sid : ServiceId)
+    (hStep : revokeService sid st = .ok ((), st'))
+    (hInv : registryEndpointUnique st)
+    (hSvcK : st.serviceRegistry.invExtK) :
+    registryEndpointUnique st' := by
+  unfold revokeService at hStep
+  split at hStep
+  · simp at hStep
+  · simp at hStep; cases hStep
+    intro sid₁ sid₂ reg₁ reg₂ epId h₁ h₂ ht₁ ht₂
+    rw [removeDependenciesOf_serviceRegistry_eq] at h₁ h₂
+    simp only [RHTable_getElem?_eq_get?] at h₁ h₂
+    rw [RHTable_getElem?_erase_K st.serviceRegistry sid hSvcK] at h₁ h₂
+    split at h₁
+    · simp at h₁
+    · split at h₂
+      · simp at h₂
+      · exact hInv sid₁ sid₂ reg₁ reg₂ epId
+          (by simp only [RHTable_getElem?_eq_get?]; exact h₁)
+          (by simp only [RHTable_getElem?_eq_get?]; exact h₂) ht₁ ht₂
+
+/-- AE5-B: `cleanupEndpointServiceRegistrations` preserves `registryEndpointUnique`.
+    Filtering out registrations preserves the uniqueness property — surviving
+    registrations were in the original state and satisfied uniqueness there. -/
+theorem cleanupEndpointServiceRegistrations_preserves_registryEndpointUnique
+    (st : SystemState) (epId : SeLe4n.ObjId)
+    (hInv : registryEndpointUnique st)
+    (hSvcRegInv : st.serviceRegistry.invExt) :
+    registryEndpointUnique (cleanupEndpointServiceRegistrations st epId) := by
+  intro sid₁ sid₂ reg₁ reg₂ epId' h₁ h₂ ht₁ ht₂
+  have hSvcRegResult : (cleanupEndpointServiceRegistrations st epId).serviceRegistry =
+      (st.serviceRegistry.filter fun _sid reg' =>
+        match reg'.endpointCap.target with
+        | .object id => !(id == epId)
+        | _ => true) := by
+    unfold cleanupEndpointServiceRegistrations
+    exact foldl_removeDependenciesOf_serviceRegistry_eq _ _
+  rw [RHTable_getElem?_eq_get?] at h₁; rw [hSvcRegResult] at h₁
+  rw [RHTable_getElem?_eq_get?] at h₂; rw [hSvcRegResult] at h₂
+  have hOrig₁ := RHTable.filter_get_subset st.serviceRegistry _ sid₁ reg₁ hSvcRegInv h₁
+  have hOrig₂ := RHTable.filter_get_subset st.serviceRegistry _ sid₂ reg₂ hSvcRegInv h₂
+  rw [← RHTable_getElem?_eq_get?] at hOrig₁
+  rw [← RHTable_getElem?_eq_get?] at hOrig₂
+  exact hInv sid₁ sid₂ reg₁ reg₂ epId' hOrig₁ hOrig₂ ht₁ ht₂
 
 end SeLe4n.Kernel

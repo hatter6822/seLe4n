@@ -667,6 +667,18 @@ theorem projPreserving_preserves_lowEquivalent
     **Deployment requirement**: The system integrator must discharge these
     hypotheses for their specific labeling configuration. The kernel proofs
     assume them as parameters — they are NOT enforced at runtime. -/
+/- LabelingContextValid — Deployment Requirement (AE5-F/IF-14)
+
+   `LabelingContextValid` ensures the labeling context is coherent:
+   all thread labels are consistent with their domain assignments,
+   all kernel object labels respect the capability derivation tree,
+   and no label escalation paths exist.
+
+   This is a DEPLOYMENT REQUIREMENT — the kernel does not validate
+   `LabelingContextValid` at runtime. The platform binding (H3) must
+   construct a valid labeling context during boot, and the boot
+   sequence must be proven (or runtime-checked) to produce a valid
+   context. See PLT-01 (U-21) for the boot invariant bridge. -/
 structure LabelingContextValid (ctx : LabelingContext) : Prop where
   /-- Thread-object label coherence: the thread label flows to its own object label.
       This is the key domain-separation hypothesis used by `NonInterferenceStep`

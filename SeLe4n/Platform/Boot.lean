@@ -348,6 +348,24 @@ theorem bootToRuntime_invariantBridge_empty :
     SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
   ⟨emptyBoot_proofLayerInvariantBundle, emptyBoot_freeze_preserves⟩
 
+/- Boot-to-Runtime Invariant Bridge — Known Limitation (AE5-D/U-21/PLT-01)
+
+   `bootToRuntime_invariantBridge_empty` proves the full 10-component
+   `proofLayerInvariantBundle` holds after booting with an empty
+   PlatformConfig. For non-empty configs (real hardware with IRQ tables,
+   pre-allocated objects), the full bundle is NOT proven to hold.
+
+   The checked boot path `bootFromPlatformChecked` validates per-object
+   well-formedness and uniqueness, but does not prove the resulting state
+   satisfies all 10 runtime invariants simultaneously.
+
+   Remediation deferred to WS-V (hardware binding). When RPi5 boot is
+   implemented, either:
+   (a) Prove `bootToRuntime_invariantBridge` for arbitrary well-formed
+       PlatformConfig, or
+   (b) Add a post-boot runtime invariant validation pass that asserts all
+       10 invariants hold before enabling syscall dispatch. -/
+
 -- ============================================================================
 -- V4-A1: Builder Operation × Invariant Component Interaction Matrix
 -- ============================================================================
@@ -1121,10 +1139,15 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
     · intro oidA _ _ _ hObjA; exact absurd hObjA (hNoVSpace oidA _)
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
-  -- 8. crossSubsystemInvariant (Z9-D: 8 predicates)
+  -- 8. crossSubsystemInvariant (Z9-D + AE5-C: 9 predicates)
   have hCrossBundle : crossSubsystemInvariant (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
+      intro sid reg hLookup; rw [hSvcR] at hLookup
+      have : (default : SystemState).serviceRegistry[sid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [this] at hLookup; exact absurd hLookup (by simp)
+    · -- AE5-C: registryInterfaceValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
         simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
@@ -1142,10 +1165,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       · intro tid hH; rw [hEp.2.1] at hH; exact absurd hH (by simp)
       · intro tid hH; rw [hEp.2.2.1] at hH; exact absurd hH (by simp)
       · intro tid hH; rw [hEp.2.2.2] at hH; exact absurd hH (by simp)
-      · -- sendQ interior: head = none ⇒ collectQueueMembers returns []
-        intro tid hMem; rw [hEp.1, collectQueueMembers_none] at hMem; simp at hMem
-      · -- receiveQ interior: head = none ⇒ collectQueueMembers returns []
-        intro tid hMem; rw [hEp.2.2.1, collectQueueMembers_none] at hMem; simp at hMem
+      · -- sendQ interior: head = none ⇒ collectQueueMembers returns some []
+        intro members hMem tid hIn
+        rw [hEp.1, collectQueueMembers_none] at hMem; cases hMem; simp at hIn
+      · -- receiveQ interior: head = none ⇒ collectQueueMembers returns some []
+        intro members hMem tid hIn
+        rw [hEp.2.2.1, collectQueueMembers_none] at hMem; cases hMem; simp at hIn
     · -- noStaleNotificationWaitReferences
       intro oid notif hObj tid hMem
       have hNtfn := (hBS oid _ hObj).2.1 notif rfl

@@ -720,9 +720,9 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
            by exact hR⟩
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
-  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D: 8 conjuncts)
-  · obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := hCross
-    exact ⟨h1, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
+  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D + AE5-C: 9 conjuncts)
+  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8⟩ := hCross
+    exact ⟨h1, h1i, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
            h6, h7, h8⟩
 
 -- ============================================================================

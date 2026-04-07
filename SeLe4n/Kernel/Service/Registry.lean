@@ -45,6 +45,13 @@ def registerInterface (spec : InterfaceSpec) : Kernel Unit :=
       .ok ((), { st with
         interfaceRegistry := st.interfaceRegistry.insert spec.ifaceId spec })
 
+/-- AE5-B helper: Check if any existing service registration targets the given endpoint. -/
+private def hasEndpointRegistered (st : SystemState) (epId : SeLe4n.ObjId) : Bool :=
+  st.serviceRegistry.fold false fun acc _ entry =>
+    acc || match entry.endpointCap.target with
+           | .object id => id == epId
+           | _ => false
+
 /-- Register a service with capability-mediated binding.
 Checks (ordered for defense-in-depth — validate target before authority):
 1. Service not already registered (`illegalState`)
@@ -52,6 +59,7 @@ Checks (ordered for defense-in-depth — validate target before authority):
 3. Endpoint capability target resolves to an existing object (`invalidCapability`)
 4. R4-C.2 (L-09): Target object must be an endpoint (`invalidCapability`)
 5. R4-C.1 (M-14): Endpoint capability must have Write right (`illegalAuthority`)
+6. AE5-B (U-20): No existing service already targets this endpoint (`illegalState`)
 -/
 def registerService (reg : ServiceRegistration) : Kernel Unit :=
   fun st =>
@@ -70,6 +78,9 @@ def registerService (reg : ServiceRegistration) : Kernel Unit :=
           -- Checked after target validation to prevent authority probing on invalid targets
           if !Capability.hasRight reg.endpointCap .write then
             .error .illegalAuthority
+          -- AE5-B (U-20): Reject duplicate endpoint registration
+          else if hasEndpointRegistered st epId then
+            .error .illegalState
           else
             .ok ((), { st with
               serviceRegistry := st.serviceRegistry.insert reg.sid reg })
@@ -346,7 +357,9 @@ theorem registerService_preserves_objects
           case endpoint ep =>
             split at hStep
             · cases hStep
-            · simp at hStep; cases hStep; rfl
+            · split at hStep
+              · cases hStep
+              · simp at hStep; cases hStep; rfl
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
@@ -381,7 +394,9 @@ theorem registerService_preserves_scheduler
           case endpoint ep =>
             split at hStep
             · cases hStep
-            · simp at hStep; cases hStep; rfl
+            · split at hStep
+              · cases hStep
+              · simp at hStep; cases hStep; rfl
       | cnodeSlot => simp [hTarget] at hStep
       | replyCap => simp [hTarget] at hStep
 
