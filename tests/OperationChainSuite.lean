@@ -2049,6 +2049,10 @@ private def chain33ServiceLifecycle : IO Unit := do
   let regMissingEp : ServiceRegistration := { sid := ⟨353⟩, iface := iface1, endpointCap := missingEpCap }
   expectErr "chain33: registerService non-existent endpoint"
     (SeLe4n.Kernel.registerService regMissingEp st2) .invalidCapability
+  -- 5f: Duplicate endpoint — different service ID but same endpoint as svc1 (AE5-B / U-20)
+  let regDupEp : ServiceRegistration := { sid := ⟨354⟩, iface := iface1, endpointCap := epCap1 }
+  expectErr "chain33: registerService duplicate endpoint"
+    (SeLe4n.Kernel.registerService regDupEp st2) .illegalState
   -- W5-C-9: Invariant check after registerService
   assertInvariants "chain33: invariants after registerService" st2
   -- === W5-C-6: serviceRegisterDependency acyclic path ===

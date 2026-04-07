@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-ae5-workstream-I7B6A",
-      "commit_sha": "879bdbb027f9959acdeae5dadf24d575a8dcd352",
-      "tree_sha": "ceb1d7d8b2cd74cf6aa1edccd90ae3fddfc849ad",
-      "committed_at_utc": "2026-04-07T07:15:22+00:00"
+      "commit_sha": "cb144192dc2059b8a9685861895670846e5d16bf",
+      "tree_sha": "130bbd3b3cbb3048ea2cd94c9b3281bc0902a471",
+      "committed_at_utc": "2026-04-07T07:40:06+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d1519fc0f3e1695b5e35ca964e383fc2761ce81f3c2ef1668c05f843d34a8079"
+    "source_digest": "8821db74eed0c51c9451ad864f7c42fdd3a879746afab74eb818bb86e1832f89"
   },
   "summary": {
     "module_count": 149,
@@ -29,7 +29,7 @@
     "production_files": 133,
     "production_loc": 86579,
     "test_files": 16,
-    "test_loc": 11318,
+    "test_loc": 11347,
     "proved_theorem_lemma_decls": 2568,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -58828,7 +58828,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 3051,
+          "line": 3076,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -58855,7 +58855,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3178,
+          "line": 3203,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -58885,7 +58885,7 @@
         {
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
-          "line": 3255,
+          "line": 3280,
           "called": [
             "ASID",
             "DomainScheduleEntry",
@@ -58918,7 +58918,7 @@
         {
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
-          "line": 3361,
+          "line": 3386,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -58939,7 +58939,7 @@
         {
           "kind": "def",
           "name": "runAC1BudgetFailClosedChecks",
-          "line": 3429,
+          "line": 3454,
           "called": [
             "ObjId",
             "SystemState",
@@ -58956,7 +58956,7 @@
         {
           "kind": "def",
           "name": "runAC1CdtTrackingChecks",
-          "line": 3485,
+          "line": 3510,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -58977,7 +58977,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 3541,
+          "line": 3566,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",
@@ -59913,7 +59913,7 @@
         {
           "kind": "def",
           "name": "chain34ResolveExtraCapsSilentDrop",
-          "line": 2105,
+          "line": 2109,
           "called": [
             "CPtr",
             "Capability",
@@ -59935,7 +59935,7 @@
         {
           "kind": "def",
           "name": "runOperationChainSuite",
-          "line": 2163,
+          "line": 2167,
           "called": [
             "chain10RegisterDecodeMultiSyscall",
             "chain11RegisterDecodeIpcTransfer",
@@ -59977,7 +59977,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2203,
+          "line": 2207,
           "called": [
             "runOperationChainSuite"
           ]

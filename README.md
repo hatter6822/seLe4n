@@ -87,8 +87,8 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.25.20` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 86,106 across 133 files |
-| **Test Lean LoC** | 11,318 across 16 test suites |
+| **Production Lean LoC** | 86,579 across 133 files |
+| **Test Lean LoC** | 11,347 across 16 test suites |
 | **Proved declarations** | 2,557 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
