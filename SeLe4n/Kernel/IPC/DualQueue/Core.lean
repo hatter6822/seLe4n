@@ -549,3 +549,65 @@ theorem endpointQueueRemove_preserves_objects_invExt
         have ins := @SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt
         repeat (first | exact hObjInv | apply ins | split)
 
+-- ============================================================================
+-- AE4-E (U-24/IPC-02): endpointQueueRemove fallback unreachability
+-- ============================================================================
+
+/-- AE4-E (U-24/IPC-02): Under doubly-linked queue link integrity, the
+predecessor TCB lookup in `endpointQueueRemove` always succeeds.
+
+The hypothesis `hReverseInt` is the reverse direction of
+`tcbQueueLinkIntegrity` (defined in IPC/Invariant/Defs.lean):
+  b.queuePrev = some a → a exists as TCB ∧ a.queueNext = some b
+
+This proves that the fallback `| _ => objs` at the predecessor patch
+is unreachable under the IPC invariant. -/
+theorem queueRemove_predecessor_exists
+    (st : SystemState) (tid : SeLe4n.ThreadId) (prevTid : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hReverseInt : ∀ (b : SeLe4n.ThreadId) (tcbB : TCB),
+      st.objects[b.toObjId]? = some (.tcb tcbB) →
+      ∀ (a : SeLe4n.ThreadId), tcbB.queuePrev = some a →
+        ∃ tcbA, st.objects[a.toObjId]? = some (.tcb tcbA) ∧ tcbA.queueNext = some b)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPrev : tcb.queuePrev = some prevTid) :
+    ∃ prevTcb, st.objects[prevTid.toObjId]? = some (.tcb prevTcb) := by
+  have ⟨prevTcb, hPrevObj, _⟩ := hReverseInt tid tcb hTcb prevTid hPrev
+  exact ⟨prevTcb, hPrevObj⟩
+
+/-- AE4-E (U-24/IPC-02): Under doubly-linked queue link integrity, the
+successor TCB lookup in `endpointQueueRemove` always succeeds.
+
+The hypothesis `hForwardInt` is the forward direction of
+`tcbQueueLinkIntegrity` (defined in IPC/Invariant/Defs.lean):
+  a.queueNext = some b → b exists as TCB ∧ b.queuePrev = some a
+
+This proves that the fallback `| _ => objs` at the successor patch
+is unreachable under the IPC invariant. -/
+theorem queueRemove_successor_exists
+    (st : SystemState) (tid : SeLe4n.ThreadId) (nextTid : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hForwardInt : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) →
+      ∀ (b : SeLe4n.ThreadId), tcbA.queueNext = some b →
+        ∃ tcbB, st.objects[b.toObjId]? = some (.tcb tcbB) ∧ tcbB.queuePrev = some a)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNext : tcb.queueNext = some nextTid) :
+    ∃ nextTcb, st.objects[nextTid.toObjId]? = some (.tcb nextTcb) := by
+  have ⟨nextTcb, hNextObj, _⟩ := hForwardInt tid tcb hTcb nextTid hNext
+  exact ⟨nextTcb, hNextObj⟩
+
+/- AE4-E/IPC-02: Fallback branch documentation.
+
+  In `endpointQueueRemove`, the two `| _ => objs` fallback branches (at the
+  predecessor and successor patches) are unreachable under `dualQueueSystemInvariant`:
+  - Predecessor fallback: `queueRemove_predecessor_exists` proves that if
+    `tcb.queuePrev = some prevTid`, then `objs[prevTid.toObjId]?` is
+    `some (.tcb prevTcb)` — the predecessor TCB always exists.
+  - Successor fallback: `queueRemove_successor_exists` proves the same for
+    `tcb.queueNext = some nextTid`.
+
+  The fallback preserves state unchanged (defensive, no corruption) and is
+  retained for totality of the pure function. The invariant guarantee means
+  the fallback code is dead code under correct system operation. -/
+

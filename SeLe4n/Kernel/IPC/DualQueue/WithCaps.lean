@@ -24,22 +24,27 @@ receiver's TCB internally, rather than accepting it as a parameter. This
 ensures correctness when the receiver's identity is determined dynamically
 during the rendezvous.
 
-**U5-K/U-M30: CSpace root slot 0 simplification**: The `receiverSlotBase`
-parameter is hardcoded to `Slot.ofNat 0` at the API dispatch layer (API.lean).
-This is a model simplification — real seL4 uses the actual slot address from
-the message info register to determine where received capabilities are placed
-in the receiver's CNode. In seLe4n, all cap transfers target slot 0 of the
-receiver's CSpace root. This simplification is safe for correctness but
-imprecise: real seL4 allows receivers to specify where caps are placed.
-See: seL4 Reference Manual §4.2 "Message Info".
+**AE4-I (U-37/I-WC01): Per-slot capability transfer targeting**: The
+`receiverSlotBase` parameter is fully plumbed from the API dispatch layer
+through to `ipcUnwrapCaps` → `ipcTransferSingleCap`, which scans for empty
+slots starting at `receiverSlotBase`. The `SyscallDecodeResult.capRecvSlot`
+field carries the receiver's requested slot base (default: `Slot.ofNat 0`).
 
-**U5-M/U-L06: Cap transfer CDT tracking**: Transferred capabilities are
-tracked in the CDT (Capability Derivation Tree) using fixed slot 0 of the
-receiver's CSpace root. This means all transferred capabilities share the
-same CDT parent slot, which is imprecise but safe: CDT-based revocation of
-the parent slot over-revokes (revokes ALL caps received via this endpoint)
-rather than under-revokes. This is a conservative simplification that
-preserves the security guarantee: no capability can escape revocation.
+For multiple cap transfers (up to `maxExtraCaps = 3`), `ipcUnwrapCapsLoop`
+advances the slot cursor via `findFirstEmptySlot` after each successful
+insertion, placing caps at consecutive empty slots starting from
+`receiverSlotBase`. Each transferred cap gets its own unique CDT entry,
+enabling precise per-cap revocation.
+
+**Current status**: The receiver slot base defaults to `Slot.ofNat 0`
+because the receiver-side extraction from the IPC buffer is not yet
+implemented (requires H3 IPC buffer layout). The full plumbing is in
+place: when receiver-side decode populates `capRecvSlot`, per-slot
+targeting will activate without any additional code changes.
+
+**CDT tracking**: Each transferred capability is tracked individually
+in the CDT via `ensureCdtNodeForSlot` with the actual target slot
+(not a shared slot). Revocation is precise per-capability.
 -/
 
 namespace SeLe4n.Kernel

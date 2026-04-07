@@ -2231,26 +2231,26 @@ and sub-task. This matrix ensures no finding is overlooked.
 | SC-03 (v14), SC-L04 (v12) | U-14 | AE3-F | COMPLETE |
 | SC-04 (v14) | U-15 | AE3-B | COMPLETE |
 | SC-05 (v14), SC-L06 (v12) | U-16 | AE3-D | COMPLETE |
-| CAP-01 (v14) | U-17 | AE4-A | PLANNED |
-| CAP-02 (v14), C-CAP07 (v12) | U-18 | AE4-C | PLANNED |
+| CAP-01 (v14) | U-17 | AE4-A | COMPLETE (v0.25.19) |
+| CAP-02 (v14), C-CAP07 (v12) | U-18 | AE4-C | COMPLETE (v0.25.19) |
 | SVC-02 (v14) | U-20 | AE5-B | PLANNED |
 | PLT-01 (v14) | U-21 | AE5-D | PLANNED |
 | PLT-02 (v14), CS-01 (v12) | U-22 | AE5-A | PLANNED |
-| IPC-01 (v14), I-T01 (v12) | U-23 | AE4-F | PLANNED |
-| IPC-02 (v14) | U-24 | AE4-E | PLANNED |
+| IPC-01 (v14), I-T01 (v12) | U-23 | AE4-F | COMPLETE (v0.25.19) |
+| IPC-02 (v14) | U-24 | AE4-E | COMPLETE (v0.25.19) |
 | T-06 (v14), T-F01 (v12) | U-25 | AE6-A | PLANNED |
-| ARCH-03 (v14), A-SA01 (v12) | U-26 | AE4-B | PLANNED |
-| A-T01 (v12) | U-27 | AE4-G | PLANNED |
+| ARCH-03 (v14), A-SA01 (v12) | U-26 | AE4-B | COMPLETE (v0.25.19) |
+| A-T01 (v12) | U-27 | AE4-G | COMPLETE (v0.25.19) |
 | D-RH01 (v12) | U-28 | AE2-A | COMPLETE (v0.25.16) |
 | D-RT01 (v12) | U-29 | AE2-B | COMPLETE (v0.25.16) |
 | D-RH02 (v12) | U-30 | AE2-C | COMPLETE (v0.25.16) |
 | D-FO01 (v12) | U-31 | AE2-D | COMPLETE (v0.25.16) |
-| A-IB01 (v12) | U-32 | AE4-H | PLANNED |
+| A-IB01 (v12) | U-32 | AE4-H | COMPLETE (v0.25.19) |
 | A-SA02 (v12) | U-33 | — | DEFERRED (low risk) |
 | A-SA03 (v12) | U-34 | — | DEFERRED (low risk) |
 | C-CAP01 (v12) | U-35 | — | DEFERRED (seL4 design) |
-| C-CAP06 (v12) | U-36 | AE4-D | PLANNED |
-| I-WC01 (v12) | U-37 | AE4-I | PLANNED |
+| C-CAP06 (v12) | U-36 | AE4-D | COMPLETE (v0.25.19) |
+| I-WC01 (v12) | U-37 | AE4-I | COMPLETE (v0.25.19) |
 | SC-06 (v14) | — | AE3-H | COMPLETE |
 | SC-07 (v14) | — | AE3-C | COMPLETE |
 | SC-09 (v14) | — | AE3-J | COMPLETE |

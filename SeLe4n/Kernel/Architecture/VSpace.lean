@@ -337,4 +337,41 @@ theorem resolveAsidRoot_of_asidTable_entry
 -- storeObject preservation lemmas for VSpace operations
 -- ============================================================================
 
+-- ============================================================================
+-- AE4-G (U-27/A-T01): H3 Preparation — Targeted TLB Flush Composition
+-- ============================================================================
+
+/- **H3 Preparation: Targeted TLB Flush Composition (U-27/A-T01)**
+
+When transitioning from full flush (`adapterFlushTlb`) to targeted
+flush (`adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`) for H3
+hardware binding, the following composition theorems are required:
+
+1. `targetedFlushByAsid_sufficient`: prove that flushing only the
+   modified ASID is sufficient for VSpace map/unmap correctness.
+   Building block: `adapterFlushTlbByAsid_preserves_tlbConsistent`
+   (TlbModel.lean).
+
+2. `targetedFlushByVAddr_sufficient`: prove that flushing only the
+   modified VAddr within an ASID preserves VSpace invariants.
+   Building block: `adapterFlushTlbByVAddr_preserves_tlbConsistent`
+   (TlbModel.lean).
+
+3. `targetedFlush_crossAsid_isolation`: prove that targeted flush
+   does not affect other ASIDs. Building block:
+   `cross_asid_tlb_isolation` (TlbModel.lean).
+
+Current status: All production paths (`vspaceMapPageCheckedWithFlush`,
+`vspaceUnmapPageWithFlush`) use full TLB flush via `adapterFlushTlb`.
+Targeted variants exist in TlbModel.lean but are not yet wired into
+the production VSpace operations. The full flush is conservative but
+correct; targeted flush is a performance optimization for hardware.
+
+The transition to targeted flush requires:
+- Proof that per-ASID flush is sufficient when only one ASID is modified
+- Proof that per-VAddr flush is sufficient when only one mapping changes
+- Integration of `adapterFlushTlbByAsid` into `vspaceMapPageWithFlush`
+  and `vspaceUnmapPageWithFlush` with updated correctness proofs
+- Performance benchmarking on RPi5 to validate the optimization -/
+
 end SeLe4n.Kernel.Architecture

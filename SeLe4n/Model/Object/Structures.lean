@@ -1161,6 +1161,36 @@ parent is not reachable from child via existing edges. -/
 def addEdgeWouldBeSafe (cdt : CapDerivationTree) (parent child : CdtNodeId) : Bool :=
   parent != child && parent ∉ cdt.descendantsOf child
 
+/-- AE4-C (U-18/CAP-02): Propositional reachability — `src` can reach `dst`
+through a non-empty path of edges. Used as the specification-level reachability
+predicate for CDT acyclicity analysis. -/
+def cdtReachable (cdt : CapDerivationTree) (src dst : CdtNodeId) : Prop :=
+  ∃ (path : List CdtNodeId),
+    path.length > 1 ∧
+    path.head? = some src ∧
+    path.getLast? = some dst ∧
+    (∀ i, (h : i + 1 < path.length) →
+      ∃ e ∈ cdt.edges, e.parent = path[i] ∧ e.child = path[i + 1])
+
+/-- AE4-C: A fresh child (no edges) trivially has no reachability to any node.
+This bridges the gap between `addEdge_preserves_edgeWellFounded_fresh`
+(which requires freshness) and the reachability-based specification. -/
+theorem freshChild_not_reachable
+    (cdt : CapDerivationTree) (child target : CdtNodeId)
+    (hFresh : ∀ e ∈ cdt.edges, e.parent ≠ child ∧ e.child ≠ child) :
+    ¬ cdt.cdtReachable child target := by
+  intro ⟨path, hLen, hHead, hLast, hEdges⟩
+  -- path[0] = child (from hHead). Edge 0→1 must exist (hLen > 1).
+  have hFirst : 0 + 1 < path.length := by omega
+  have ⟨e, hMem, hep, _⟩ := hEdges 0 hFirst
+  -- path[0] = child
+  have hP0 : path[0] = child := by
+    cases path with
+    | nil => simp at hLen
+    | cons a rest => simp [List.head?] at hHead; exact hHead
+  -- e.parent = path[0] = child, but hFresh says no edge has parent = child
+  exact (hFresh e hMem).1 (hep.trans hP0)
+
 /-- WS-G8: Consistency invariant — `childMap` mirrors the parent→child
 relationship in `edges`. -/
 def childMapConsistent (cdt : CapDerivationTree) : Prop :=
