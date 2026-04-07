@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-0H98s",
-      "commit_sha": "92b8caa4a85231e83da111f4a08234a456513c45",
-      "tree_sha": "ad9f6d3f2efc8f4f73e49e864fa7bc9c756fa0aa",
-      "committed_at_utc": "2026-04-06T19:00:26-04:00"
+      "commit_sha": "fed90abea5fe7bf9eb102649507e5258e1628410",
+      "tree_sha": "d031c41d52ee6fd964e8d30b9cd97b30313d9cdd",
+      "committed_at_utc": "2026-04-07T00:27:39+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 4584
   },
   "readme_sync": {
-    "version": "0.25.14",
+    "version": "0.25.15",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
     "production_loc": 85476,
