@@ -45,8 +45,9 @@ def registerInterface (spec : InterfaceSpec) : Kernel Unit :=
       .ok ((), { st with
         interfaceRegistry := st.interfaceRegistry.insert spec.ifaceId spec })
 
-/-- AE5-B helper: Check if any existing service registration targets the given endpoint. -/
-private def hasEndpointRegistered (st : SystemState) (epId : SeLe4n.ObjId) : Bool :=
+/-- AE5-B helper: Check if any existing service registration targets the given endpoint.
+    Public for use in `Registry/Invariant.lean` preservation proofs. -/
+def hasEndpointRegistered (st : SystemState) (epId : SeLe4n.ObjId) : Bool :=
   st.serviceRegistry.fold false fun acc _ entry =>
     acc || match entry.endpointCap.target with
            | .object id => id == epId

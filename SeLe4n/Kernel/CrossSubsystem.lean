@@ -109,6 +109,12 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
     so `collectQueueMembers` always returns `some _` (never `none`) for well-formed
     states.
 
+    **Security caveat**: If `collectQueueMembers` returns `none` (fuel exhaustion),
+    the `noStaleEndpointQueueReferences` invariant becomes vacuously true for that
+    queue's interior members. This is safe ONLY because the fuel-sufficiency argument
+    ensures `none` is unreachable. If fuel were ever reduced below `objects.size`,
+    stale interior references could go undetected.
+
     **Why not a formal proof**: The `tcbQueueChainAcyclic` invariant operates on
     `QueueNextPath` (an inductive path predicate), while `collectQueueMembers`
     operates on `queueNext` field traversal. Connecting these requires showing
