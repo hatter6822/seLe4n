@@ -1,3 +1,55 @@
+## v0.25.19 — WS-AE Phase AE4: Capability, IPC & Architecture Hardening
+
+Phase AE4 of WS-AE Production Audit Remediation. Addresses 10 findings across
+capability, IPC, and architecture subsystems — CPtr masking, VAddr canonicity,
+CDT acyclicity preservation, mint completeness integration, queue remove
+unreachability, timeout documentation, TLB flush preparation, IPC buffer
+cross-page safety, and capability transfer slot generalization. All tests pass
+(test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+- **AE4-A (U-17/CAP-01)**: Added CPtr masking (`addr.toNat % machineWordMax`)
+  to `resolveCapAddress` for consistency with `CNode.resolveSlot` (S4-C). Updated
+  `resolveCapAddress_guard_reject` and `resolveCapAddress_guard_match` theorem
+  statements to reference masked address.
+- **AE4-B (U-26/ARCH-03)**: Added VAddr canonicity check to
+  `decodeVSpaceUnmapArgs` for defense-in-depth parity with `decodeVSpaceMapArgs`.
+  Updated `decodeVSpaceUnmapArgs_error_iff` (3-way disjunction) and
+  `decodeVSpaceUnmapArgs_roundtrip` (new `hVAddr` hypothesis).
+  `decode_layer2_roundtrip_all` updated.
+- **AE4-C (U-18/CAP-02)**: Added `cdtReachable` propositional reachability
+  predicate and `freshChild_not_reachable` bridging theorem. Added
+  `cspaceMintWithCdt_cdtAcyclicity_of_freshDst` — proves CDT acyclicity
+  preservation for mint operations with fresh destination nodes, eliminating
+  the need for `hCdtPost` hypothesis in the fresh-child case.
+- **AE4-D (U-36/C-CAP06)**: Defined `capabilityInvariantBundleWithMintCompleteness`
+  (standard 7-tuple + `cdtMintCompleteness`). Added extraction and composition
+  theorems. Integrated into `CrossSubsystem.lean` as
+  `crossSubsystemInvariantWithCdtCoverage` for full CDT coverage at the
+  composition layer.
+- **AE4-E (U-24/IPC-02)**: Proved `queueRemove_predecessor_exists` and
+  `queueRemove_successor_exists` — under `tcbQueueLinkIntegrity`, the fallback
+  `| _ => objs` branches in `endpointQueueRemove` are unreachable. Added
+  documentation annotations.
+- **AE4-F (U-23/IPC-01)**: Documented timeout sentinel `0xFFFFFFFF` dual-condition
+  mitigation strategy in `Timeout.lean`. gpr x0 AND ipcState=.ready composite
+  check prevents false positives. H3 migration path: dedicated `timedOut : Bool`
+  TCB field.
+- **AE4-G (U-27/A-T01)**: Added H3 preparation documentation for targeted TLB
+  flush composition theorems in `VSpace.lean`. Documents required theorems
+  (`targetedFlushByAsid_sufficient`, `targetedFlushByVAddr_sufficient`,
+  `targetedFlush_crossAsid_isolation`) and building blocks from `TlbModel.lean`.
+- **AE4-H (U-32/A-IB01)**: Proved `ipcBuffer_within_page` — IPC buffer cross-page
+  safety is guaranteed by 512-byte alignment (512 divides 4096). Defense-in-depth
+  for H3 hardware binding.
+- **AE4-I (U-37/I-WC01)**: Documented complete slot targeting plumbing:
+  `capRecvSlot` flows from `SyscallDecodeResult` through API dispatch to
+  `ipcUnwrapCaps` → `ipcTransferSingleCap`. Per-slot CDT tracking is already
+  in place. Receiver-side extraction deferred to H3 IPC buffer layout.
+- **AE4-J**: Gate verification — `lake build` (256 jobs), `test_full.sh` Tier 0-3,
+  zero sorry/axiom in all modified files.
+- Version bump 0.25.18 → 0.25.19.
+
 ## v0.25.18 — WS-AE Phase AE3: Scheduler & SchedContext Correctness
 
 Phase AE3 of WS-AE Production Audit Remediation. Addresses 12 findings across

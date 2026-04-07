@@ -24,6 +24,9 @@ import SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation
 -- Cannot live in Scheduler/Invariant.lean (import cycle via Operations/Core →
 -- Selection → Invariant), so integrated here at the cross-subsystem boundary.
 import SeLe4n.Kernel.Scheduler.Liveness
+-- AE4-D (U-36): Import capability invariant definitions for cdtMintCompleteness
+-- cross-subsystem composition.
+import SeLe4n.Kernel.Capability.Invariant.Defs
 
 /-!
 # R4-E: Cross-Subsystem Invariant Definitions
@@ -313,6 +316,31 @@ theorem default_crossSubsystemInvariant :
     intro tid hMem
     have : (default : SystemState).scheduler.runnable = [] := by decide
     rw [this] at hMem; simp at hMem
+
+-- ============================================================================
+-- AE4-D (U-36/C-CAP06): Extended cross-subsystem composition with mint completeness
+-- ============================================================================
+
+/-- AE4-D (U-36/C-CAP06): Full cross-subsystem invariant with CDT mint completeness.
+
+Combines `crossSubsystemInvariant` (8 predicates) with
+`capabilityInvariantBundleWithMintCompleteness` (standard bundle + mint completeness).
+This ensures CDT-based revocation via `cspaceRevokeCdt` is exhaustive at the
+composition layer without modifying the 60+ theorems that destructure the
+standard 7-tuple `capabilityInvariantBundle`. -/
+def crossSubsystemInvariantWithCdtCoverage (st : SystemState) : Prop :=
+  crossSubsystemInvariant st ∧
+  capabilityInvariantBundleWithMintCompleteness st
+
+/-- AE4-D: Extract `cdtMintCompleteness` from the full composition. -/
+theorem crossSubsystemInvariantWithCdtCoverage_to_mintCompleteness
+    (st : SystemState) (h : crossSubsystemInvariantWithCdtCoverage st) :
+    cdtMintCompleteness st := h.2.2
+
+/-- AE4-D: Extract the standard capability bundle from the full composition. -/
+theorem crossSubsystemInvariantWithCdtCoverage_to_capabilityBundle
+    (st : SystemState) (h : crossSubsystemInvariantWithCdtCoverage st) :
+    capabilityInvariantBundle st := h.2.1
 
 -- ============================================================================
 -- W2-B (H-1): Cross-subsystem invariant composition gap documentation

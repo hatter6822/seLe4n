@@ -233,8 +233,14 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
   let asid := ASID.ofNat r0.val
   if !asid.isValidForConfig 65536 then .error .asidNotBound
   else
+  -- AE4-B (U-26/ARCH-03): Validate VAddr canonical for consistency with
+  -- decodeVSpaceMapArgs. Non-canonical addresses fault on ARM64 hardware;
+  -- rejecting at decode provides defense-in-depth.
+  let vaddr := VAddr.ofNat r1.val
+  if !vaddr.isCanonical then .error .addressOutOfBounds
+  else
   pure { asid  := asid
-         vaddr := VAddr.ofNat r1.val }
+         vaddr := vaddr }
 
 -- ============================================================================
 -- V4-F/M-HW-5: MemoryKind cross-check for VSpace permissions
@@ -551,11 +557,15 @@ theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
     | .inr (.inr (.inr ⟨h3, hPerms⟩)) =>
       exact decodeVSpaceMapArgs_error_of_invalid_perms d (by omega) hPerms
 
-/-- VSpace unmap decode fails iff fewer than 2 message registers or ASID invalid. -/
+/-- AE4-B: VSpace unmap decode fails iff fewer than 2 message registers,
+    ASID invalid, or VAddr non-canonical. -/
 theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
     (∃ e, decodeVSpaceUnmapArgs d = .error e) ↔
     (d.msgRegs.size < 2 ∨
-     (∃ (h : 1 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = false)) := by
+     (∃ (h : 1 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = false) ∨
+     (∃ (h : 1 < d.msgRegs.size),
+       (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = true ∧
+       (VAddr.ofNat (d.msgRegs[1]'(by omega)).val).isCanonical = false)) := by
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 2
@@ -564,17 +574,31 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
       simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega)] at he
-      split at he
+      -- Branch on ASID validity
+      by_cases hAsid : (ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536 = true
+      · -- ASID valid
+        have hAsidBool : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = false := by
+          rw [hAsid]; rfl
+        simp only [hAsidBool, Bool.false_eq_true, ↓reduceIte] at he
+        -- Branch on VAddr canonicity
+        by_cases hVAddr : (VAddr.ofNat d.msgRegs[1].val).isCanonical = true
+        · -- VAddr canonical → pure succeeds → contradiction
+          have hVBool : (!(VAddr.ofNat d.msgRegs[1].val).isCanonical) = false := by
+            rw [hVAddr]; rfl
+          simp only [hVBool, Bool.false_eq_true, ↓reduceIte] at he
+          nomatch he
+        · -- VAddr non-canonical
+          right; right
+          refine ⟨h1, hAsid, ?_⟩
+          cases hc : (VAddr.ofNat d.msgRegs[1].val).isCanonical
+          · rfl
+          · exact absurd hc hVAddr
       · -- ASID invalid
-        rename_i hAsidInvalid
-        right
+        right; left
         exact ⟨h1, by
-          simp only [Bool.not_eq_true'] at hAsidInvalid
           cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536
           · rfl
-          · rw [hc] at hAsidInvalid; simp at hAsidInvalid⟩
-      · -- ASID valid → pure succeeds → contradiction
-        nomatch he
+          · exact absurd hc hAsid⟩
   · intro h
     match h with
     | .inl hLt =>
@@ -584,7 +608,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
       · rw [requireMsgReg_unfold_ok _ _ h0]; simp
         rw [requireMsgReg_unfold_err _ _ (by omega)]
       · rw [requireMsgReg_unfold_err _ _ h0]
-    | .inr ⟨h1, hAsid⟩ =>
+    | .inr (.inl ⟨h1, hAsid⟩) =>
       exact ⟨.asidNotBound, by
         simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
@@ -592,6 +616,16 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
         have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = true := by
           rw [hAsid]; rfl
         simp [this]⟩
+    | .inr (.inr ⟨h1, hAsidOk, hVAddr⟩) =>
+      exact ⟨.addressOutOfBounds, by
+        simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
+          requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+          dif_pos (show 1 < d.msgRegs.size by omega)]
+        have hAsidTrue : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = false := by
+          rw [hAsidOk]; rfl
+        have hVAddrFalse : (!(VAddr.ofNat d.msgRegs[1].val).isCanonical) = true := by
+          rw [hVAddr]; rfl
+        simp [hAsidTrue, hVAddrFalse]⟩
 
 -- ============================================================================
 -- Round-trip proofs: encode then decode recovers the original
@@ -691,14 +725,16 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs)
       ASID.ofNat_toNat, VAddr.ofNat_toNat, PAddr.ofNat_toNat, pure, Except.pure]
 
 /-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original.
-    U2-G: Requires ASID is valid for config 65536. -/
+    U2-G: Requires ASID is valid for config 65536.
+    AE4-B: Requires VAddr is canonical. -/
 theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs)
-    (hAsid : args.asid.isValidForConfig 65536 = true) :
+    (hAsid : args.asid.isValidForConfig 65536 = true)
+    (hVAddr : args.vaddr.isCanonical = true) :
     decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args := by
   rcases args with ⟨a, v⟩
   simp [decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
     bind, Except.bind, requireMsgReg, ASID.ofNat_toNat, VAddr.ofNat_toNat,
-    pure, Except.pure, hAsid]
+    pure, Except.pure, hAsid, hVAddr]
 
 -- ============================================================================
 -- WS-Q1-D: Service argument structures
@@ -1021,7 +1057,7 @@ theorem decode_layer2_roundtrip_all :
     (∀ args, args.asid.isValidForConfig 65536 = true → args.vaddr.isCanonical = true →
       args.perms.wxCompliant = true →
       decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args) ∧
-    (∀ args, args.asid.isValidForConfig 65536 = true →
+    (∀ args, args.asid.isValidForConfig 65536 = true → args.vaddr.isCanonical = true →
       decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) ∧
@@ -1038,7 +1074,7 @@ theorem decode_layer2_roundtrip_all :
    decodeCSpaceDeleteArgs_roundtrip,
    decodeLifecycleRetypeArgs_roundtrip,
    fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args hA hV hWx,
-   fun args hA => decodeVSpaceUnmapArgs_roundtrip args hA,
+   fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args hA hV,
    decodeServiceRegisterArgs_roundtrip,
    decodeServiceRevokeArgs_roundtrip,
    fun args h => decodeNotificationSignalArgs_roundtrip args h,

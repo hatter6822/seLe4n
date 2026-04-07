@@ -2649,3 +2649,42 @@ effectivePriority with/without boost, SchedContext-bound threads with pipBoost,
 waitersOf, computeMaxWaiterPriority, updatePipBoost with run queue migration,
 blockingChain traversal, blockingGraphEdges, blockingServer, chainContains,
 transitive propagation, reversion, frame preservation, zero-fuel identity.
+
+---
+
+### 12.17 Capability, IPC & Architecture Hardening (WS-AE Phase AE4)
+
+**CPtr masking** (`Capability/Operations.lean`):
+- `resolveCapAddress` now masks CPtr via `addr.toNat % machineWordMax` at entry,
+  matching `resolveSlot` (Structures.lean:500). Prevents unbounded Lean Nat from
+  resolving to different CNode slots than 64-bit hardware registers.
+- `resolveCapAddress_guard_match` and `resolveCapAddress_guard_reject` updated
+  to reflect masked expression.
+
+**VAddr canonicity** (`Architecture/SyscallArgDecode.lean`):
+- `decodeVSpaceUnmapArgs` validates `vaddr.isCanonical` matching `decodeVSpaceMapArgs`.
+- `decodeVSpaceUnmapArgs_error_iff`: 3-way disjunction (ASID invalid OR VAddr
+  non-canonical OR ASID out of range).
+- Roundtrip theorem gains `hVAddr` hypothesis.
+
+**CDT acyclicity preservation** (`Model/Object/Structures.lean`, `Capability/Invariant/Preservation.lean`):
+- `cdtReachable`: propositional path reachability predicate over CDT edges.
+- `freshChild_not_reachable`: fresh node (no edges) cannot be source of any path.
+- `cspaceMintWithCdt_cdtAcyclicity_of_freshDst`: proven via
+  `addEdge_preserves_edgeWellFounded_fresh` — acyclicity preserved when minting
+  to a fresh destination.
+
+**Mint completeness composition** (`CrossSubsystem.lean`):
+- `capabilityInvariantBundleWithMintCompleteness`: conjunction of 7-tuple bundle
+  with `cdtMintCompleteness`.
+- `crossSubsystemInvariantWithCdtCoverage`: lifts mint completeness into
+  cross-subsystem composition layer.
+
+**Queue link integrity** (`IPC/DualQueue/Core.lean`):
+- `queueRemove_predecessor_exists`: under `tcbQueueLinkIntegrity`, predecessor
+  lookup always succeeds (no silent fallback).
+- `queueRemove_successor_exists`: symmetric proof for successor.
+
+**IPC buffer cross-page** (`Architecture/IpcBufferValidation.lean`):
+- `ipcBuffer_within_page`: 512-byte aligned buffer fits within 4KB ARM64 page
+  (`addr / 4096 = (addr + 511) / 4096`). Proof by `omega`.

@@ -626,6 +626,27 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
                 cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
                 hObjFinal ▸ hObjInv1⟩
 
+/-- AE4-C (U-18/CAP-02): Discharge CDT acyclicity for `cspaceMintWithCdt`
+when the destination CDT node is fresh (no edges reference it).
+
+This bridges `addEdge_preserves_edgeWellFounded_fresh` into the
+`cspaceMintWithCdt` context. When `ensureCdtNodeForSlot` creates a new
+CDT node for an empty destination slot, that node has ID = `cdtNextNode`
+and no edges reference it. This theorem proves that `addEdge` with such
+a fresh child preserves both `cdtCompleteness` and `cdtAcyclicity`,
+eliminating the `hCdtPost` hypothesis for the mint case.
+
+Usage: callers that construct the state via `cspaceMintWithCdt` can
+discharge the CDT invariants using this theorem + `hFreshDst` (provable
+from `cdtNextNode` freshness). -/
+theorem cspaceMintWithCdt_cdtAcyclicity_of_freshDst
+    (cdt : CapDerivationTree) (srcNode dstNode : CdtNodeId) (hNeq : srcNode ≠ dstNode)
+    (hAcyclic : cdt.edgeWellFounded)
+    (hFreshDst : ∀ e ∈ cdt.edges, e.parent ≠ dstNode ∧ e.child ≠ dstNode) :
+    (cdt.addEdge srcNode dstNode .mint).edgeWellFounded :=
+  CapDerivationTree.addEdge_preserves_edgeWellFounded_fresh cdt srcNode dstNode .mint
+    hNeq hAcyclic hFreshDst
+
 -- ============================================================================
 -- WS-F4/F-06: cspaceMutate preservation
 -- ============================================================================

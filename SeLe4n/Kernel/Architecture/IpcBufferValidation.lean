@@ -38,12 +38,18 @@ open SeLe4n.Model
 
 /-- D3-D: Validate an IPC buffer address for a given thread.
 
-Five-step validation pipeline:
+Six-step validation pipeline:
 1. Alignment: `addr.toNat % ipcBufferAlignment = 0`
 2. Canonical address: `addr.toNat < VAddr.canonicalBound` (ARM64 48-bit VA)
-3. VSpace root validity: thread's `vspaceRoot` resolves to a VSpaceRoot object
-4. Mapping check: address is mapped in the thread's VSpace
-5. Write permission: mapped page has `write = true`
+3. Cross-page safety: guaranteed by step 1 — see `ipcBuffer_within_page`
+4. VSpace root validity: thread's `vspaceRoot` resolves to a VSpaceRoot object
+5. Mapping check: address is mapped in the thread's VSpace
+6. Write permission: mapped page has `write = true`
+
+AE4-H (U-32/A-IB01): Cross-page boundary safety is guaranteed by the
+alignment check (step 1): since `ipcBufferAlignment = 512` divides the
+ARM64 page size (4096), any 512-byte-aligned buffer of ≤512 bytes fits
+entirely within a single 4KB page. See `ipcBuffer_within_page` below.
 
 Returns `.error` with appropriate error code on any failure. -/
 def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
@@ -159,6 +165,23 @@ theorem validateIpcBufferAddress_implies_mapped_writable
           · contradiction
         · contradiction
       · contradiction
+
+/-- AE4-H (U-32/A-IB01): IPC buffer cross-page safety.
+
+The IPC buffer (512 bytes) never crosses a page boundary when the address
+is aligned to `ipcBufferAlignment` (512 bytes). Since 512 divides the ARM64
+page size (4096 = 512 × 8), any 512-aligned offset within a page leaves at
+least 512 bytes before the next page boundary.
+
+This theorem guarantees that a single VSpace page-table lookup at `addr`
+covers the entire IPC buffer region `[addr, addr + 512)`. -/
+theorem ipcBuffer_within_page (addr : VAddr)
+    (hAligned : addr.toNat % ipcBufferAlignment = 0) :
+    addr.toNat / 4096 = (addr.toNat + ipcBufferAlignment - 1) / 4096 := by
+  -- ipcBufferAlignment = 512. Since 512 | addr, addr % 4096 ∈ {0, 512, ..., 3584}.
+  -- addr + 511 has the same page index because 3584 + 511 = 4095 < 4096.
+  simp only [ipcBufferAlignment] at hAligned ⊢
+  omega
 
 -- ============================================================================
 -- D3-F: Transport lemmas — setIPCBufferOp preserves non-object state fields

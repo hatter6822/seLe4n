@@ -19,7 +19,23 @@ open SeLe4n.Model
 
 /-- Z6-C: Timeout error code written to register x0 when a thread's IPC
 operation times out due to SchedContext budget expiry. Matches seL4 MCS
-convention: timeout is signaled via the return register, not an exception. -/
+convention: timeout is signaled via the return register, not an exception.
+
+**AE4-F (U-23/IPC-01): Timeout Detection Sentinel — Design Rationale**
+
+`timeoutAwareReceive` detects prior timeouts via a composite check:
+  (1) gpr x0 = timeoutErrorCode (0xFFFFFFFF), AND
+  (2) ipcState = .ready
+
+The AND condition mitigates false positives: legitimate IPC messages are
+delivered via `pendingMessage` and set ipcState to `.waitingForReply` or
+`.blocked`, not `.ready`. The gpr x0 sentinel is only written by
+`timeoutThread`, which also sets ipcState to `.ready`.
+
+For H3 hardware binding, consider replacing with a dedicated
+`timedOut : Bool` field on TCB to eliminate the sentinel pattern entirely.
+The composite check is sound for the current model but fragile if future
+operations modify gpr x0 without updating ipcState simultaneously. -/
 def timeoutErrorCode : SeLe4n.RegValue := ⟨0xFFFFFFFF⟩
 
 /-- Z6-C1/C2/C3: Unblock a thread whose IPC operation has timed out due to

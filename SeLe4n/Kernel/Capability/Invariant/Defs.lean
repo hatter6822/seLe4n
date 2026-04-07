@@ -175,6 +175,37 @@ def capabilityInvariantBundle (st : SystemState) : Prop :=
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st ∧ st.objects.invExt
 
+/-- AE4-D (U-36/C-CAP06): Extended capability invariant bundle with mint
+completeness. Conjoins the standard 7-property `capabilityInvariantBundle`
+with `cdtMintCompleteness`, ensuring CDT-based revocation via `cspaceRevokeCdt`
+is exhaustive — every CDT node with a slot mapping is either derived (child
+of some edge) or isolated (no edges reference it).
+
+Used at the cross-subsystem composition layer (`crossSubsystemInvariant`) to
+provide full CDT coverage without modifying the 60+ theorems that destructure
+the standard 7-tuple bundle. -/
+def capabilityInvariantBundleWithMintCompleteness (st : SystemState) : Prop :=
+  capabilityInvariantBundle st ∧ cdtMintCompleteness st
+
+/-- AE4-D: Extract the standard bundle from the extended bundle. -/
+theorem capabilityInvariantBundleWithMintCompleteness_to_bundle
+    (st : SystemState)
+    (h : capabilityInvariantBundleWithMintCompleteness st) :
+    capabilityInvariantBundle st := h.1
+
+/-- AE4-D: Extract mint completeness from the extended bundle. -/
+theorem capabilityInvariantBundleWithMintCompleteness_to_mintCompleteness
+    (st : SystemState)
+    (h : capabilityInvariantBundleWithMintCompleteness st) :
+    cdtMintCompleteness st := h.2
+
+/-- AE4-D: Construct the extended bundle from the standard bundle + mint completeness. -/
+theorem capabilityInvariantBundleWithMintCompleteness_of_parts
+    (st : SystemState)
+    (hBundle : capabilityInvariantBundle st)
+    (hMint : cdtMintCompleteness st) :
+    capabilityInvariantBundleWithMintCompleteness st := ⟨hBundle, hMint⟩
+
 -- ============================================================================
 -- S3-D/U-M03: CDT maps consistency as state-level invariant
 -- ============================================================================

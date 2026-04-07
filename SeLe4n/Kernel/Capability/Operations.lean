@@ -92,8 +92,11 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
       if hCons : consumed = 0 then .error .illegalState  -- zero-width CNode
       else if bitsRemaining < consumed then .error .illegalState
       else
-        -- Extract guard and slot index bits
-        let shiftedAddr := addr.toNat >>> (bitsRemaining - consumed)
+        -- AE4-A (U-17/CAP-01): Mask CPtr to machine word width for consistency
+        -- with CNode.resolveSlot (S4-C). For Lean's unbounded Nat, addresses
+        -- beyond 2^64 must produce identical results to 64-bit hardware registers.
+        let maskedAddr := addr.toNat % SeLe4n.machineWordMax
+        let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
         let radixMask := 2 ^ cn.radixWidth
         let slotIndex := shiftedAddr % radixMask
         let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
@@ -209,7 +212,7 @@ theorem resolveCapAddress_guard_reject
     (hConsPos : 0 < cn.guardWidth + cn.radixWidth)
     (hFit : cn.guardWidth + cn.radixWidth ≤ bits)
     (hBadGuard :
-      (addr.toNat >>> (bits - (cn.guardWidth + cn.radixWidth))) /
+      ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
         2 ^ cn.radixWidth % 2 ^ cn.guardWidth ≠ cn.guardValue) :
     resolveCapAddress rootId addr bits st = .error .invalidCapability := by
   unfold resolveCapAddress
@@ -239,7 +242,7 @@ theorem resolveCapAddress_guard_match
     (hObj : st.objects[rootId]? = some (.cnode cn))
     (hOk : resolveCapAddress rootId addr bits st = .ok ref)
     (hLeaf : bits = cn.guardWidth + cn.radixWidth) :
-    (addr.toNat >>> (bits - (cn.guardWidth + cn.radixWidth))) /
+    ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
       2 ^ cn.radixWidth % 2 ^ cn.guardWidth = cn.guardValue := by
   -- Unfold and trace through the function structure
   unfold resolveCapAddress at hOk
