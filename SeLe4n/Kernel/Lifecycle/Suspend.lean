@@ -94,18 +94,21 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
   match tcb.schedContextBinding with
   | .unbound => st
   | .bound scId =>
-    -- Unbind: clear the SchedContext's boundThread
+    -- Unbind: clear the SchedContext's boundThread and deactivate (AE3-B/U-15)
     let st1 : SystemState := match st.objects[scId.toObjId]? with
       | some (.schedContext sc) =>
-        let sc' := { sc with boundThread := none }
+        let sc' := { sc with boundThread := none, isActive := false }
         { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
       | _ => st
+    -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
+    let st2 := { st1 with scheduler := { st1.scheduler with
+        replenishQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scId } }
     -- Clear TCB binding
-    match st1.objects[tid.toObjId]? with
+    match (st2.objects[tid.toObjId]? : Option KernelObject) with
     | some (.tcb tcb') =>
       let tcb'' := { tcb' with schedContextBinding := .unbound }
-      { st1 with objects := st1.objects.insert tid.toObjId (.tcb tcb'') }
-    | _ => st1
+      { st2 with objects := st2.objects.insert tid.toObjId (.tcb tcb'') }
+    | _ => st2
   | .donated _ _ =>
     cleanupDonatedSchedContext st tid
 
@@ -202,12 +205,15 @@ def resumeThread (st : SystemState) (tid : SeLe4n.ThreadId)
       let st := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
       -- H4: Insert into run queue at effective priority
       let st := ensureRunnable st tid
-      -- H5: Conditional preemption check
-      -- If the resumed thread has higher priority than current, reschedule
+      -- H5: Conditional preemption check (AE3-D/U-16: use effective priority)
+      -- If the resumed thread has higher effective priority than current, reschedule
       let needsReschedule : Bool := match st.scheduler.current with
         | some curTid =>
           match st.objects[curTid.toObjId]? with
-          | some (.tcb curTcb) => tcb'.priority.val > curTcb.priority.val
+          | some (.tcb curTcb) =>
+            let resumedEffective := (resolveEffectivePrioDeadline st tcb').1
+            let curEffective := (resolveEffectivePrioDeadline st curTcb).1
+            resumedEffective.val > curEffective.val
           | _ => true  -- No valid current → always reschedule
         | none => false  -- No current thread → no preemption needed
       if needsReschedule then

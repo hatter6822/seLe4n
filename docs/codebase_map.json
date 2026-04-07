@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-ae2-5eeU7",
-      "commit_sha": "3344bd512e628ebe366ce10dbcc1d8436bf0d806",
-      "tree_sha": "e2e2eb984d64dd614ac0396c254e348af0ba7f5d",
-      "committed_at_utc": "2026-04-07T02:47:17+00:00"
+      "branch": "claude/review-scheduler-workstream-NFLFB",
+      "commit_sha": "4fc4785830034ebd4a7a0051cf8cc3b2c0d2773d",
+      "tree_sha": "68fe14e2125ba76acb8e52002ae19e00a6064278",
+      "committed_at_utc": "2026-04-06T23:01:19-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "60e76fb531f6ac821e52c08b3dd99a839e3d1ccd75e4e0ec1b98a88aa827f81c"
+    "source_digest": "1fbc4492cbb1e1a85845374e2235f2835cd37d71f49af83c247154dc24a47dc4"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4589
+    "declaration_count": 4596
   },
   "readme_sync": {
-    "version": "0.25.17",
+    "version": "0.25.18",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 85574,
+    "production_loc": 85814,
     "test_files": 16,
     "test_loc": 11318,
-    "proved_theorem_lemma_decls": 2540,
+    "proved_theorem_lemma_decls": 2547,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1965,6 +1965,7 @@
             "RHTable_get",
             "SystemState",
             "default",
+            "default_boundThreadDomainConsistent",
             "default_budgetPositive",
             "default_capabilityInvariantBundle",
             "default_contextMatchesCurrent",
@@ -1992,7 +1993,7 @@
         {
           "kind": "theorem",
           "name": "deterministicTimerProgress_consumed_by_advanceTimer",
-          "line": 534,
+          "line": 535,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -2004,7 +2005,7 @@
         {
           "kind": "theorem",
           "name": "deterministicRegisterContext_consumed_by_writeRegister",
-          "line": 547,
+          "line": 548,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -2018,7 +2019,7 @@
         {
           "kind": "theorem",
           "name": "memoryAccessSafety_consumed_by_readMemory",
-          "line": 560,
+          "line": 561,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -2030,7 +2031,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_capabilityInvariantBundle",
-          "line": 602,
+          "line": 603,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2040,7 +2041,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_ipcInvariantFull",
-          "line": 610,
+          "line": 611,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -2056,7 +2057,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_of_services_eq",
-          "line": 665,
+          "line": 666,
           "called": [
             "ServiceId",
             "SystemState",
@@ -2067,7 +2068,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_services_eq",
-          "line": 672,
+          "line": 673,
           "called": [
             "ServiceId",
             "SystemState",
@@ -2078,7 +2079,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_serviceGraphInvariant",
-          "line": 681,
+          "line": 682,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2089,7 +2090,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
-          "line": 696,
+          "line": 697,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2103,7 +2104,7 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 757,
+          "line": 758,
           "called": [
             "SystemState",
             "toObjId"
@@ -2112,7 +2113,7 @@
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 763,
+          "line": 764,
           "called": [
             "SystemState",
             "default",
@@ -2122,7 +2123,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 770,
+          "line": 771,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -2133,7 +2134,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 784,
+          "line": 785,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2143,7 +2144,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 792,
+          "line": 793,
           "called": [
             "RegName",
             "RegValue",
@@ -26215,8 +26216,8 @@
         },
         {
           "kind": "theorem",
-          "name": "cancelDonation_scheduler_eq",
-          "line": 60,
+          "name": "cancelDonation_scheduler_runQueue_eq",
+          "line": 63,
           "called": [
             "SystemState",
             "TCB",
@@ -26228,7 +26229,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_scheduler_eq",
-          "line": 71,
+          "line": 80,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26238,7 +26239,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_serviceRegistry_eq",
-          "line": 81,
+          "line": 90,
           "called": [
             "SystemState",
             "TCB",
@@ -26252,7 +26253,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_serviceRegistry_eq",
-          "line": 95,
+          "line": 104,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26262,7 +26263,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_lifecycle_eq",
-          "line": 101,
+          "line": 110,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26272,7 +26273,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_serviceRegistry_eq",
-          "line": 107,
+          "line": 116,
           "called": [
             "KernelObject",
             "ObjId",
@@ -26283,7 +26284,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_serviceRegistry_eq",
-          "line": 115,
+          "line": 124,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26300,7 +26301,7 @@
         {
           "kind": "theorem",
           "name": "cleanupDonatedSchedContext_serviceRegistry_eq",
-          "line": 156,
+          "line": 165,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26315,7 +26316,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_serviceRegistry_eq",
-          "line": 174,
+          "line": 183,
           "called": [
             "SystemState",
             "TCB",
@@ -26327,7 +26328,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_lifecycle_eq",
-          "line": 195,
+          "line": 204,
           "called": [
             "SystemState",
             "TCB",
@@ -27841,12 +27842,14 @@
           "name": "cancelDonation",
           "line": 92,
           "called": [
+            "KernelObject",
             "SystemState",
             "TCB",
             "ThreadId",
             "cleanupDonatedSchedContext",
             "insert",
             "none",
+            "remove",
             "scId",
             "toObjId"
           ]
@@ -27854,7 +27857,7 @@
         {
           "kind": "def",
           "name": "clearPendingState",
-          "line": 119,
+          "line": 122,
           "called": [
             "SystemState",
             "ThreadId",
@@ -27866,7 +27869,7 @@
         {
           "kind": "def",
           "name": "suspendThread",
-          "line": 144,
+          "line": 147,
           "called": [
             "KernelError",
             "SystemState",
@@ -27884,7 +27887,7 @@
         {
           "kind": "def",
           "name": "resumeThread",
-          "line": 192,
+          "line": 195,
           "called": [
             "KernelError",
             "SystemState",
@@ -27892,6 +27895,7 @@
             "ensureRunnable",
             "insert",
             "none",
+            "resolveEffectivePrioDeadline",
             "schedule",
             "toObjId"
           ]
@@ -32248,7 +32252,7 @@
         {
           "kind": "def",
           "name": "schedContextWellFormed",
-          "line": 77,
+          "line": 92,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -32260,7 +32264,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_budgetWithinBounds",
-          "line": 87,
+          "line": 102,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -32271,7 +32275,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_budgetWithinBounds",
-          "line": 104,
+          "line": 119,
           "called": [
             "SchedContext",
             "applyRefill",
@@ -32282,7 +32286,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_replenishmentListWellFormed",
-          "line": 120,
+          "line": 135,
           "called": [
             "Budget",
             "SchedContext",
@@ -32296,7 +32300,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_wellFormed",
-          "line": 144,
+          "line": 159,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -32308,7 +32312,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_replenishmentListWellFormed",
-          "line": 153,
+          "line": 168,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -32318,7 +32322,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_wellFormed",
-          "line": 164,
+          "line": 179,
           "called": [
             "SchedContext",
             "applyRefill",
@@ -32330,7 +32334,7 @@
         {
           "kind": "theorem",
           "name": "filter_mem_of_mem",
-          "line": 175,
+          "line": 190,
           "called": [
             "filter"
           ]
@@ -32338,7 +32342,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_replenishmentListWellFormed",
-          "line": 189,
+          "line": 204,
           "called": [
             "SchedContext",
             "partitionEligible",
@@ -32349,7 +32353,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_budgetWithinBounds",
-          "line": 207,
+          "line": 222,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -32359,7 +32363,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_wellFormed",
-          "line": 214,
+          "line": 229,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
@@ -32369,7 +32373,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_replenishmentListWellFormed",
-          "line": 221,
+          "line": 236,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
@@ -32379,7 +32383,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_wellFormed",
-          "line": 233,
+          "line": 248,
           "called": [
             "Budget",
             "SchedContext",
@@ -32391,7 +32395,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_budgetWithinBounds",
-          "line": 241,
+          "line": 256,
           "called": [
             "Budget",
             "SchedContext",
@@ -32402,7 +32406,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_replenishmentAmountsBounded",
-          "line": 253,
+          "line": 268,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -32412,7 +32416,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishments_preserves_replenishmentAmountsBounded",
-          "line": 261,
+          "line": 276,
           "called": [
             "SchedContext",
             "partitionEligible",
@@ -32423,7 +32427,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_replenishmentAmountsBounded",
-          "line": 272,
+          "line": 287,
           "called": [
             "Budget",
             "SchedContext",
@@ -32436,7 +32440,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_replenishmentAmountsBounded",
-          "line": 287,
+          "line": 302,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
@@ -32446,7 +32450,7 @@
         {
           "kind": "theorem",
           "name": "cbsBudgetCheck_preserves_schedContextWellFormed",
-          "line": 301,
+          "line": 316,
           "called": [
             "SchedContext",
             "cbsBudgetCheck",
@@ -32472,7 +32476,7 @@
         {
           "kind": "def",
           "name": "totalConsumed",
-          "line": 353,
+          "line": 368,
           "called": [
             "SchedContext",
             "filter",
@@ -32482,7 +32486,7 @@
         {
           "kind": "theorem",
           "name": "cbsBudgetCheck_preserves_replenishmentAmountsBounded",
-          "line": 361,
+          "line": 376,
           "called": [
             "SchedContext",
             "budgetWithinBounds",
@@ -32497,7 +32501,7 @@
         {
           "kind": "theorem",
           "name": "sumReplenishments_filter_le",
-          "line": 384,
+          "line": 399,
           "called": [
             "ReplenishmentEntry",
             "filter",
@@ -32507,7 +32511,7 @@
         {
           "kind": "theorem",
           "name": "sumReplenishments_le_count_mul_max",
-          "line": 396,
+          "line": 411,
           "called": [
             "ReplenishmentEntry",
             "sumReplenishments"
@@ -32516,7 +32520,7 @@
         {
           "kind": "theorem",
           "name": "totalConsumed_le_max_budget",
-          "line": 416,
+          "line": 431,
           "called": [
             "SchedContext",
             "filter",
@@ -32532,7 +32536,7 @@
         {
           "kind": "theorem",
           "name": "cbs_single_period_bound",
-          "line": 441,
+          "line": 456,
           "called": [
             "SchedContext",
             "maxReplenishments",
@@ -32545,7 +32549,7 @@
         {
           "kind": "theorem",
           "name": "cbs_bandwidth_bounded",
-          "line": 464,
+          "line": 479,
           "called": [
             "Kernel",
             "SchedContext",
@@ -32918,7 +32922,7 @@
         {
           "kind": "def",
           "name": "schedContextBind",
-          "line": 122,
+          "line": 126,
           "called": [
             "Kernel",
             "KernelObject",
@@ -32935,7 +32939,7 @@
         {
           "kind": "def",
           "name": "schedContextUnbind",
-          "line": 168,
+          "line": 183,
           "called": [
             "Kernel",
             "KernelObject",
@@ -32952,7 +32956,7 @@
         {
           "kind": "def",
           "name": "schedContextYieldTo",
-          "line": 219,
+          "line": 234,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -33487,7 +33491,7 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.Types",
       "path": "SeLe4n/Kernel/SchedContext/Types.lean",
-      "declaration_count": 40,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -33535,14 +33539,6 @@
           "kind": "def",
           "name": "decrement",
           "line": 45,
-          "called": [
-            "Budget"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "refill",
-          "line": 49,
           "called": [
             "Budget"
           ]
@@ -33828,7 +33824,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 46,
+      "declaration_count": 49,
       "declarations": [
         {
           "kind": "namespace",
@@ -33972,7 +33968,7 @@
         {
           "kind": "def",
           "name": "schedulerPriorityMatch",
-          "line": 218,
+          "line": 222,
           "called": [
             "SystemState",
             "toObjId"
@@ -33981,7 +33977,7 @@
         {
           "kind": "def",
           "name": "domainTimeRemainingPositive",
-          "line": 238,
+          "line": 242,
           "called": [
             "SystemState"
           ]
@@ -33989,7 +33985,7 @@
         {
           "kind": "def",
           "name": "domainScheduleEntriesPositive",
-          "line": 246,
+          "line": 250,
           "called": [
             "SystemState"
           ]
@@ -33997,7 +33993,7 @@
         {
           "kind": "theorem",
           "name": "default_domainScheduleEntriesPositive",
-          "line": 250,
+          "line": 254,
           "called": [
             "SystemState",
             "default",
@@ -34007,7 +34003,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleFull",
-          "line": 265,
+          "line": 269,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -34024,7 +34020,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_base",
-          "line": 273,
+          "line": 277,
           "called": [
             "SystemState",
             "schedulerInvariantBundle",
@@ -34034,7 +34030,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_contextMatchesCurrent",
-          "line": 278,
+          "line": 282,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -34044,7 +34040,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_priorityMatch",
-          "line": 283,
+          "line": 287,
           "called": [
             "SystemState",
             "schedulerInvariantBundleFull",
@@ -34054,7 +34050,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainTimeRemainingPositive",
-          "line": 288,
+          "line": 292,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -34064,7 +34060,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainScheduleEntriesPositive",
-          "line": 293,
+          "line": 297,
           "called": [
             "SystemState",
             "domainScheduleEntriesPositive",
@@ -34074,7 +34070,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_of_runQueue_objects_eq",
-          "line": 299,
+          "line": 303,
           "called": [
             "SystemState",
             "schedulerPriorityMatch"
@@ -34083,7 +34079,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_insert",
-          "line": 310,
+          "line": 314,
           "called": [
             "RHTable_getElem",
             "SystemState",
@@ -34102,7 +34098,7 @@
         {
           "kind": "def",
           "name": "budgetPositive",
-          "line": 357,
+          "line": 361,
           "called": [
             "SystemState",
             "runnable",
@@ -34113,7 +34109,7 @@
         {
           "kind": "theorem",
           "name": "default_budgetPositive",
-          "line": 370,
+          "line": 374,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -34124,7 +34120,7 @@
         {
           "kind": "def",
           "name": "currentBudgetPositive",
-          "line": 384,
+          "line": 388,
           "called": [
             "SystemState",
             "none",
@@ -34135,7 +34131,7 @@
         {
           "kind": "theorem",
           "name": "default_currentBudgetPositive",
-          "line": 399,
+          "line": 403,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -34145,7 +34141,7 @@
         {
           "kind": "def",
           "name": "schedContextsWellFormed",
-          "line": 410,
+          "line": 414,
           "called": [
             "ObjId",
             "SchedContext",
@@ -34156,7 +34152,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextsWellFormed",
-          "line": 418,
+          "line": 422,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -34170,7 +34166,7 @@
         {
           "kind": "def",
           "name": "replenishQueueValid",
-          "line": 433,
+          "line": 437,
           "called": [
             "SystemState",
             "replenishQueueSizeConsistent",
@@ -34180,7 +34176,7 @@
         {
           "kind": "theorem",
           "name": "default_replenishQueueValid",
-          "line": 438,
+          "line": 442,
           "called": [
             "SystemState",
             "default",
@@ -34192,7 +34188,7 @@
         {
           "kind": "def",
           "name": "schedContextBindingConsistent",
-          "line": 453,
+          "line": 457,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -34206,7 +34202,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextBindingConsistent",
-          "line": 467,
+          "line": 471,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -34222,7 +34218,7 @@
         {
           "kind": "def",
           "name": "effectiveParamsMatchRunQueue",
-          "line": 489,
+          "line": 493,
           "called": [
             "SystemState",
             "scId",
@@ -34232,7 +34228,7 @@
         {
           "kind": "theorem",
           "name": "default_effectiveParamsMatchRunQueue",
-          "line": 504,
+          "line": 508,
           "called": [
             "RHSet.contains_empty",
             "SystemState",
@@ -34244,10 +34240,38 @@
         },
         {
           "kind": "def",
+          "name": "boundThreadDomainConsistent",
+          "line": 525,
+          "called": [
+            "KernelObject",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_boundThreadDomainConsistent",
+          "line": 536,
+          "called": [
+            "RHTable.getElem",
+            "SystemState",
+            "boundThreadDomainConsistent",
+            "default",
+            "get",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "schedulerInvariantBundleExtended",
-          "line": 520,
+          "line": 553,
           "called": [
             "SystemState",
+            "boundThreadDomainConsistent",
             "budgetPositive",
             "currentBudgetPositive",
             "effectiveParamsMatchRunQueue",
@@ -34260,7 +34284,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_full",
-          "line": 527,
+          "line": 561,
           "called": [
             "SystemState",
             "schedulerInvariantBundleExtended",
@@ -34270,7 +34294,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_budgetPositive",
-          "line": 532,
+          "line": 566,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -34280,7 +34304,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_currentBudgetPositive",
-          "line": 537,
+          "line": 571,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -34290,7 +34314,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextsWellFormed",
-          "line": 542,
+          "line": 576,
           "called": [
             "SystemState",
             "schedContextsWellFormed",
@@ -34300,7 +34324,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_replenishQueueValid",
-          "line": 547,
+          "line": 581,
           "called": [
             "SystemState",
             "replenishQueueValid",
@@ -34310,7 +34334,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextBindingConsistent",
-          "line": 552,
+          "line": 586,
           "called": [
             "SystemState",
             "schedContextBindingConsistent",
@@ -34320,11 +34344,21 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue",
-          "line": 557,
+          "line": 591,
+          "called": [
+            "SystemState",
+            "effectiveParamsMatchRunQueue",
+            "schedulerInvariantBundleExtended"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantBundleExtended_to_boundThreadDomainConsistent",
+          "line": 596,
           "called": [
             "Kernel",
             "SystemState",
-            "effectiveParamsMatchRunQueue",
+            "boundThreadDomainConsistent",
             "schedulerInvariantBundleExtended"
           ]
         }
@@ -35421,13 +35455,13 @@
         {
           "kind": "def",
           "name": "defaultTimeSlice",
-          "line": 344,
+          "line": 351,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerTick",
-          "line": 362,
+          "line": 369,
           "called": [
             "Kernel",
             "insert",
@@ -35440,7 +35474,7 @@
         {
           "kind": "def",
           "name": "popDueReplenishments",
-          "line": 400,
+          "line": 407,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -35451,7 +35485,7 @@
         {
           "kind": "def",
           "name": "refillSchedContext",
-          "line": 408,
+          "line": 415,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -35465,7 +35499,7 @@
         {
           "kind": "def",
           "name": "processReplenishmentsDue",
-          "line": 429,
+          "line": 436,
           "called": [
             "SystemState",
             "insert",
@@ -35481,7 +35515,7 @@
         {
           "kind": "def",
           "name": "tcbBlockingInfo",
-          "line": 461,
+          "line": 468,
           "called": [
             "ObjId",
             "TCB",
@@ -35491,7 +35525,7 @@
         {
           "kind": "def",
           "name": "timeoutBlockedThreads",
-          "line": 500,
+          "line": 509,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -35505,7 +35539,7 @@
         {
           "kind": "def",
           "name": "timerTickBudget",
-          "line": 532,
+          "line": 541,
           "called": [
             "Budget",
             "KernelError",
@@ -35525,7 +35559,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 599,
+          "line": 608,
           "called": [
             "Kernel",
             "chooseThreadEffective",
@@ -35540,7 +35574,7 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 633,
+          "line": 642,
           "called": [
             "Kernel",
             "none",
@@ -35554,7 +35588,7 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 669,
+          "line": 678,
           "called": [
             "Budget",
             "Kernel",
@@ -35571,7 +35605,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 715,
+          "line": 724,
           "called": [
             "Kernel",
             "ThreadId",
@@ -35581,7 +35615,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 744,
+          "line": 753,
           "called": [
             "Kernel",
             "insert",
@@ -35594,7 +35628,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 783,
+          "line": 792,
           "called": [
             "DomainScheduleEntry",
             "schedule"
@@ -35603,7 +35637,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 795,
+          "line": 804,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -35614,7 +35648,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 805,
+          "line": 814,
           "called": [
             "SystemState",
             "invExt",
@@ -35625,7 +35659,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 821,
+          "line": 830,
           "called": [
             "Kernel",
             "schedule",
@@ -35635,7 +35669,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 843,
+          "line": 852,
           "called": [
             "SystemState",
             "TCB",
@@ -35646,7 +35680,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 858,
+          "line": 867,
           "called": [
             "SystemState",
             "fold",
@@ -35658,7 +35692,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 870,
+          "line": 879,
           "called": [
             "Kernel",
             "ObjId",
@@ -38694,7 +38728,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean",
-      "declaration_count": 7,
+      "declaration_count": 12,
       "declarations": [
         {
           "kind": "namespace",
@@ -38773,6 +38807,82 @@
             "propagatePriorityInheritance",
             "revertPriorityInheritance",
             "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_ipcState_frame",
+          "line": 149,
+          "called": [
+            "RHTable_get",
+            "SystemState",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "get",
+            "insert",
+            "invExt",
+            "none",
+            "toObjId",
+            "updatePipBoost"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_self_ipcState",
+          "line": 182,
+          "called": [
+            "RHTable_get",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "computeMaxWaiterPriority",
+            "insert",
+            "invExt",
+            "toObjId",
+            "updatePipBoost"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockingServer_congr_objects",
+          "line": 220,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "blockingServer",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockingServer_ipcState_congr",
+          "line": 226,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "blockingServer",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoost_preserves_blockingServer",
+          "line": 233,
+          "called": [
+            "RHTable_get",
+            "SystemState",
+            "ThreadId",
+            "blockingServer",
+            "blockingServer_congr_objects",
+            "blockingServer_ipcState_congr",
+            "computeMaxWaiterPriority",
+            "insert",
+            "invExt",
+            "none",
+            "toObjId",
+            "updatePipBoost",
+            "updatePipBoost_ipcState_frame"
           ]
         }
       ]
@@ -49407,7 +49517,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 1223,
+          "line": 1236,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",

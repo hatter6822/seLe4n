@@ -102,7 +102,11 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
             priority := ⟨priority⟩
             deadline := ⟨deadline⟩
             domain := ⟨domain⟩
-            budgetRemaining := ⟨budget⟩ }
+            budgetRemaining := ⟨budget⟩
+            -- AE3-F/U-14: Reset replenishment list to a single fresh entry
+            -- with the new budget amount. Prevents stale entries from prior
+            -- configuration referencing outdated budget/period values.
+            replenishments := [{ amount := ⟨budget⟩, eligibleAt := st.machine.timer }] }
         if checkAdmission st updated (some scId) then
           storeObject scId (KernelObject.schedContext updated) st
         else
@@ -128,6 +132,13 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
       else
         match (st.objects[threadId.toObjId]? : Option KernelObject) with
         | some (KernelObject.tcb tcb) =>
+          -- AE3-A/U-11: Domain consistency check — reject cross-domain binding.
+          -- The domain filter (chooseBestRunnableInDomainEffective) uses tcb.domain
+          -- but effective priority resolves from sc.domain. Mismatched domains would
+          -- cause a thread to pass the domain filter by TCB domain but be prioritized
+          -- by SchedContext domain.
+          if tcb.domain != sc.domain then .error .invalidArgument
+          else
           -- Z5-G1: Precondition check — TCB must be unbound
           match tcb.schedContextBinding with
           | .unbound =>
@@ -143,6 +154,10 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
             -- runnable-but-not-current threads are in the RunQueue. After bind,
             -- the effective priority resolves from the SchedContext, so we must
             -- update the RunQueue entry to match.
+            -- AE3-J/SC-09: Run queue insertion uses pre-update sc.priority.
+            -- This is correct because schedContextBind does not modify priority.
+            -- If future changes to bind modify priority, this must be updated
+            -- to read from the post-update SchedContext.
             let st3 := if threadId ∈ st2.scheduler.runQueue then
               let rqRemoved := st2.scheduler.runQueue.remove threadId
               let rqInserted := rqRemoved.insert threadId sc.priority
