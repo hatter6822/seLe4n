@@ -13,8 +13,7 @@ pub const MAX_PRIORITY: u64 = 255;
 pub const MAX_DOMAIN: u64 = 255;
 
 /// Arguments for `schedContextConfigure` (syscall 17).
-/// Register mapping: regs[0]=budget, regs[1]=period, regs[2]=priority, regs[3]=deadline
-/// overflow[0]=domain (5th field via IPC buffer overflow pattern).
+/// Register mapping: regs[0]=budget, regs[1]=period, regs[2]=priority, regs[3]=deadline, regs[4]=domain.
 ///
 /// Lean: `SchedContextConfigureArgs` (SyscallArgDecode.lean:894–900)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
