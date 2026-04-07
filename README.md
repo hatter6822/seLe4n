@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.16-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.17-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -71,7 +71,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 ### Security and verification
 
-- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (32-constructor `NonInterferenceStep` inductive)
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (34-constructor `NonInterferenceStep` inductive)
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 10 subsystem invariants (scheduler, capability, IPC, lifecycle, service, VSpace, cross-subsystem, TLB, and CBS extensions) into a single top-level obligation verified from boot through all operations
 - **Two-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 20 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, including the 5 deferred operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer)

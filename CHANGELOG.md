@@ -1,3 +1,17 @@
+## v0.25.17 — AE1 Audit Remediation: Stale Comment Fixes & Documentation Sync
+
+Post-implementation audit of WS-AE Phase AE1. Fixed stale constructor count
+comments (32→34) in NI composition proofs and README documentation. Synchronized
+Spanish README enforcement boundary count (30→33). Zero sorry/axiom.
+
+### Changes
+- **Composition.lean**: Fixed two stale comments referencing "32 constructors"
+  to correctly state "34 constructors" (matching `kernelOperation_count` theorem).
+- **README.md**: Updated `NonInterferenceStep` constructor count from 32 to 34.
+- **docs/i18n/es/README.md**: Updated `NonInterferenceStep` constructor count
+  from 32 to 34 and enforcement boundary count from 30 to 33.
+- Version bump 0.25.16 → 0.25.17.
+
 ## v0.25.16 — WS-AE Phase AE2: Data Structure Hardening & Production Reachability
 
 Phase AE2 of WS-AE Production Audit Remediation. Addresses 6 audit findings
