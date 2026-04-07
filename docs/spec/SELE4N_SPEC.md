@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.25.19` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 84,013 across 133 Lean files |
+| **Production LoC** | 86,106 across 133 Lean files |
 | **Test LoC** | 11,318 across 16 Lean test suites |
-| **Proved declarations** | 2,478 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,557 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
 | **Active workstream** | **WS-AE Phase AE4 COMPLETE** (v0.25.19). Capability, IPC & Architecture Hardening — 10 sub-tasks. CPtr masking, VAddr canonicity, CDT acyclicity proofs, mint completeness bundle, queue link integrity, timeout sentinel docs, TLB flush docs, IPC buffer cross-page theorem, slot targeting plumbing. Prior: WS-AE AE1–AE3 (v0.25.15–v0.25.18), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.14_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
