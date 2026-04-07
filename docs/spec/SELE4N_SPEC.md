@@ -716,9 +716,10 @@ fields if unbound), `hasSufficientBudget` (budget eligibility predicate),
 
 6 new invariants: `budgetPositive`, `currentBudgetPositive`,
 `schedContextsWellFormed`, `replenishQueueValid`, `schedContextBindingConsistent`,
-`effectiveParamsMatchRunQueue`. Extended bundle:
-`schedulerInvariantBundleExtended` (15-tuple: original 9 + 6 new). Backward
-compatible: existing `chooseThread`/`schedule`/`timerTick`/`handleYield`
+`effectiveParamsMatchRunQueue`, `boundThreadDomainConsistent` (AE3-A: enforces
+`tcb.domain = sc.domain` for all bound thread-SchedContext pairs). Extended
+bundle: `schedulerInvariantBundleExtended` (16-tuple: original 9 + 7 new).
+Backward compatible: existing `chooseThread`/`schedule`/`timerTick`/`handleYield`
 preserved unchanged.
 
 #### 8.12.4 Capability-Controlled Thread Binding (WS-Z Phase Z5)
@@ -727,7 +728,8 @@ preserved unchanged.
 (18), `.schedContextUnbind` (19). Capability-gated operations:
 `validateSchedContextParams`, `schedContextConfigure` (validate + admit + store),
 `schedContextBind` (bidirectional TCB↔SchedContext binding + RunQueue
-re-insertion), `schedContextUnbind` (unbind + preemption guard + RunQueue
+re-insertion + domain consistency enforcement: `tcb.domain == sc.domain`
+required), `schedContextUnbind` (unbind + preemption guard + RunQueue
 removal), `schedContextYieldTo` (kernel-internal budget transfer). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via

@@ -1,3 +1,45 @@
+## v0.25.18 — WS-AE Phase AE3: Scheduler & SchedContext Correctness
+
+Phase AE3 of WS-AE Production Audit Remediation. Addresses 12 findings across
+the scheduler, SchedContext, and lifecycle subsystems — domain consistency,
+CBS budget accounting, donation cleanup, effective priority, and PIP frame
+theorems. All tests pass (test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+- **AE3-A (U-11)**: Enforced `sc.domain == tcb.domain` invariant in
+  `schedContextBind` — rejects cross-domain binding with `.invalidArgument`.
+  Added `boundThreadDomainConsistent` predicate and boot state theorem.
+  `schedulerInvariantBundleExtended` expanded from 15-tuple to 16-tuple.
+- **AE3-B/C (U-15, SC-07)**: Fixed `cancelDonation` for `.bound` case — checks
+  `isActive` before enqueuing replenishment, clears replenishment queue on unbind
+  to prevent stale entry accumulation. Added 3 transport lemmas for lifecycle and
+  serviceRegistry preservation. `cancelDonation_scheduler_eq` refined to
+  `cancelDonation_scheduler_runQueue_eq` (reflects replenishQueue modification).
+- **AE3-D (U-16)**: Changed `resumeThread` preemption check from `tcb.priority`
+  to `resolveEffectivePriority` for PIP-aware priority comparison.
+- **AE3-E (S-03)**: Documented `handleYield` effective priority gap — re-enqueue
+  uses base `tcb.priority` (correct for yield semantics; PIP boost applied at
+  selection time).
+- **AE3-F (U-14)**: Reset replenishment list in `schedContextConfigure` to
+  `[{ amount := budget, eligibleAt := st.machine.timer }]`. Prevents stale
+  entries from prior configuration referencing outdated budget/period values.
+- **AE3-G (U-12, U-13)**: Documented CBS bandwidth bound 8× precision gap
+  (`maxReplenishments × budget`) and admission control per-mille rounding
+  (aggregate error ≤ n/1000).
+- **AE3-H (SC-06)**: Deleted dead `Budget.refill` function (inverted semantics,
+  unreachable, superseded by `applyRefill`).
+- **AE3-I (S-01)**: Strengthened PIP frame theorems with full `invExt` threading.
+  Proved `updatePipBoost_self_ipcState`, `blockingServer_ipcState_congr`, and
+  completed `updatePipBoost_preserves_blockingServer` (blocking graph invariant
+  under PIP boost). Uses `suffices`/`refine`/`by_cases` pattern.
+- **AE3-J (SC-09)**: Documented `schedContextBind` pre-update read pattern for
+  run queue insertion priority.
+- **AE3-K (S-05)**: Documented `timeoutBlockedThreads` O(n) performance with
+  deferred optimization to per-SchedContext bound-thread index.
+- **AE3-L**: Gate verification — `lake build` (256 jobs), `test_smoke.sh`, zero
+  sorry/axiom. Trace fixture updated for AE3-F replenishment queue reset.
+- Version bump 0.25.17 → 0.25.18.
+
 ## v0.25.17 — AE1 Audit Remediation: Stale Comment Fixes & Documentation Sync
 
 Post-implementation audit of WS-AE Phase AE1. Fixed stale constructor count
