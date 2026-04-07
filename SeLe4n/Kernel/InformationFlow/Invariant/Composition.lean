@@ -818,7 +818,7 @@ theorem syscallNI_coverage_witness
     -- Every NI step composes into a single-step trace
     (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
       NonInterferenceTrace ctx observer st st') ∧
-    -- step_preserves_projection is total (exhaustive match on all 32 constructors)
+    -- step_preserves_projection is total (exhaustive match on all 34 constructors)
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,
@@ -898,7 +898,7 @@ theorem kernelOperation_count : (List.length
 
 /-- U4-F (U-H10): Every `KernelOperation` variant has a witnessing
     `NonInterferenceStep` constructor. This is proven by exhaustive match on
-    all 32 `KernelOperation` variants, each providing a concrete
+    all 34 `KernelOperation` variants, each providing a concrete
     `NonInterferenceStep` constructor.
 
     If a new `KernelOperation` variant is added, the match becomes

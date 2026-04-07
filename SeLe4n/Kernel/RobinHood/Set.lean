@@ -26,8 +26,8 @@ structure RHSet (κ : Type) [BEq κ] [Hashable κ] [LawfulBEq κ] where
   table : RHTable κ Unit
 
 /-- Create an empty `RHSet` with the given capacity. -/
-def RHSet.empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat := 16) (h : 0 < cap := by omega) : RHSet κ :=
-  ⟨RHTable.empty cap h⟩
+def RHSet.empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat := 16) (hCapGe4 : 4 ≤ cap := by omega) : RHSet κ :=
+  ⟨RHTable.empty cap hCapGe4⟩
 
 /-- Check if the set contains the given key. -/
 def RHSet.contains [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) (k : κ) : Bool :=
@@ -47,8 +47,8 @@ def RHSet.toList [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : List κ 
 
 /-- Build a set from a list of keys. -/
 def RHSet.ofList [BEq κ] [Hashable κ] [LawfulBEq κ] (keys : List κ)
-    (cap : Nat := 16) (hPos : 0 < cap := by omega) : RHSet κ :=
-  ⟨RHTable.ofList (keys.map fun k => (k, ())) cap hPos⟩
+    (cap : Nat := 16) (hCapGe4 : 4 ≤ cap := by omega) : RHSet κ :=
+  ⟨RHTable.ofList (keys.map fun k => (k, ())) cap hCapGe4⟩
 
 -- ============================================================================
 -- Instances
@@ -134,7 +134,7 @@ def RHSet.invExtK [BEq κ] [Hashable κ] [LawfulBEq κ] (s : RHSet κ) : Prop :=
 /-- Empty set satisfies invExtK. -/
 theorem RHSet.empty_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ] :
     (RHSet.empty : RHSet κ).table.invExtK :=
-  RHTable.empty_invExtK 16 (by omega) (by omega)
+  RHTable.empty_invExtK 16 (by omega)
 
 /-- Insert preserves invExtK. -/
 theorem RHSet.insert_preserves_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ]

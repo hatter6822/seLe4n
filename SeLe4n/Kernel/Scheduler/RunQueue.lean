@@ -73,8 +73,8 @@ namespace RunQueue
     exact absurd h (by rw [show ({} : RHSet ThreadId) = RHSet.empty from rfl,
       RHSet.contains_empty]; decide)
   mem_invExtK := RHSet.empty_invExtK
-  byPrio_invExtK := RHTable.empty_invExtK 16 (by omega) (by omega)
-  threadPrio_invExtK := RHTable.empty_invExtK 16 (by omega) (by omega)
+  byPrio_invExtK := RHTable.empty_invExtK 16 (by omega)
+  threadPrio_invExtK := RHTable.empty_invExtK 16 (by omega)
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 instance : Repr RunQueue where reprPrec rq _ := repr rq.flat

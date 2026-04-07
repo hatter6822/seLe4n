@@ -697,7 +697,7 @@ theorem empty_guardBounded : CNode.empty.guardBounded := by
 
 /-- WS-N4: The empty CNode's slots satisfy the slot invariant. -/
 theorem empty_slotsUnique : CNode.empty.slotsUnique :=
-  RHTable.empty_invExtK 16 (by omega) (by omega)
+  RHTable.empty_invExtK 16 (by omega)
 
 /-- WS-N4: Insert preserves the slot invariant. -/
 

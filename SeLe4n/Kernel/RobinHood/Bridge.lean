@@ -58,11 +58,12 @@ instance [BEq α] [Hashable α] [LawfulBEq α] [BEq β] : BEq (RHTable α β) wh
 
 /-- N3-B5: Looking up any key in an empty table returns `none`. -/
 theorem RHTable.getElem?_empty [BEq α] [Hashable α] [LawfulBEq α]
-    (cap : Nat) (hPos : 0 < cap) (k : α) :
-    (RHTable.empty cap hPos : RHTable α β).get? k = none := by
+    (cap : Nat) (hCapGe4 : 4 ≤ cap) (k : α) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).get? k = none := by
+  have hPos : 0 < cap := by omega
   unfold RHTable.get?
   suffices h : ∀ fuel idx d, getLoop fuel idx k d
-      (RHTable.empty cap hPos : RHTable α β).slots cap
+      (RHTable.empty cap hCapGe4 : RHTable α β).slots cap
       (by simp [RHTable.empty, Array.size]) hPos = none from h _ _ _
   intro fuel
   induction fuel with
@@ -70,7 +71,7 @@ theorem RHTable.getElem?_empty [BEq α] [Hashable α] [LawfulBEq α]
   | succ n ih =>
     intro idx d
     unfold getLoop; simp only []
-    have hSlot : (RHTable.empty cap hPos : RHTable α β).slots[idx % cap]'(by
+    have hSlot : (RHTable.empty cap hCapGe4 : RHTable α β).slots[idx % cap]'(by
         simp [RHTable.empty, Array.size]; exact Nat.mod_lt _ hPos) = none := by
       simp [RHTable.empty]
     rw [hSlot]
@@ -172,11 +173,11 @@ private theorem resize_size_le [BEq α] [Hashable α] [LawfulBEq α]
       match slot with
       | none => acc
       | some e => acc.insertNoResize e.key e.value)
-    (RHTable.empty (t.capacity * 2) (Nat.mul_pos t.hCapPos (by omega))) : RHTable α β).size ≤ t.size
+    (RHTable.empty (t.capacity * 2) (by have := t.hCapGe4; omega)) : RHTable α β).size ≤ t.size
   rw [← Array.foldl_toList]
   have h := list_fold_insertNoResize_size_le t.slots.toList
-    (RHTable.empty (t.capacity * 2) (Nat.mul_pos t.hCapPos (by omega)) : RHTable α β)
-  have hEmpty : (RHTable.empty (t.capacity * 2) (Nat.mul_pos t.hCapPos (by omega))
+    (RHTable.empty (t.capacity * 2) (by have := t.hCapGe4; omega) : RHTable α β)
+  have hEmpty : (RHTable.empty (t.capacity * 2) (by have := t.hCapGe4; omega)
       : RHTable α β).size = 0 := by simp [RHTable.empty]
   rw [hEmpty, Nat.zero_add] at h
   rw [hwf.sizeCount]; unfold countOccupied; exact h
@@ -239,7 +240,7 @@ theorem RHTable.fold_eq_slots_foldl [BEq α] [Hashable α] [LawfulBEq α]
 /-- N3-C1: Filter entries by a predicate, rebuilding via fold + insert. -/
 def RHTable.filter [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (f : α → β → Bool)
     : RHTable α β :=
-  t.fold (RHTable.empty t.capacity t.hCapPos) fun acc k v =>
+  t.fold (RHTable.empty t.capacity t.hCapGe4) fun acc k v =>
     if f k v then acc.insertNoResize k v else acc
 
 -- ============================================================================
@@ -291,11 +292,11 @@ theorem RHTable.size_filter_le_capacity [BEq α] [Hashable α] [LawfulBEq α]
       match slot with
       | none => acc
       | some e => if f e.key e.value then acc.insertNoResize e.key e.value else acc)
-    (RHTable.empty t.capacity t.hCapPos) : RHTable α β).size ≤ t.capacity
+    (RHTable.empty t.capacity t.hCapGe4) : RHTable α β).size ≤ t.capacity
   rw [← Array.foldl_toList]
   have h := list_fold_filter_size_le t.slots.toList
-    (RHTable.empty t.capacity t.hCapPos : RHTable α β) f
-  have hEmpty : (RHTable.empty t.capacity t.hCapPos : RHTable α β).size = 0 := by
+    (RHTable.empty t.capacity t.hCapGe4 : RHTable α β) f
+  have hEmpty : (RHTable.empty t.capacity t.hCapGe4 : RHTable α β).size = 0 := by
     simp [RHTable.empty]
   rw [hEmpty, Nat.zero_add] at h
   have hCount : t.slots.toList.countP (·.isSome) ≤ t.slots.toList.length :=
@@ -311,11 +312,11 @@ theorem RHTable.size_filter_le_size [BEq α] [Hashable α] [LawfulBEq α]
       match slot with
       | none => acc
       | some e => if f e.key e.value then acc.insertNoResize e.key e.value else acc)
-    (RHTable.empty t.capacity t.hCapPos) : RHTable α β).size ≤ t.size
+    (RHTable.empty t.capacity t.hCapGe4) : RHTable α β).size ≤ t.size
   rw [← Array.foldl_toList]
   have h := list_fold_filter_size_le t.slots.toList
-    (RHTable.empty t.capacity t.hCapPos : RHTable α β) f
-  have hEmpty : (RHTable.empty t.capacity t.hCapPos : RHTable α β).size = 0 := by
+    (RHTable.empty t.capacity t.hCapGe4 : RHTable α β) f
+  have hEmpty : (RHTable.empty t.capacity t.hCapGe4 : RHTable α β).size = 0 := by
     simp [RHTable.empty]
   rw [hEmpty, Nat.zero_add] at h
   rw [hWF.sizeCount]; unfold countOccupied; exact h
@@ -336,9 +337,9 @@ theorem RHTable.size_filter_le_size [BEq α] [Hashable α] [LawfulBEq α]
 /-- Construct an `RHTable` from a list of key-value pairs.
     Later entries override earlier ones for duplicate keys. -/
 def RHTable.ofList [BEq α] [Hashable α] [LawfulBEq α]
-    (entries : List (α × β)) (cap : Nat := 16) (hPos : 0 < cap := by omega)
+    (entries : List (α × β)) (cap : Nat := 16) (hCapGe4 : 4 ≤ cap := by omega)
     : RHTable α β :=
-  entries.foldl (fun acc ⟨k, v⟩ => acc.insert k v) (RHTable.empty cap hPos)
+  entries.foldl (fun acc ⟨k, v⟩ => acc.insert k v) (RHTable.empty cap hCapGe4)
 
 -- ============================================================================
 -- N3 supplement: empty table invExt (re-export for bridge consumers)
@@ -346,9 +347,9 @@ def RHTable.ofList [BEq α] [Hashable α] [LawfulBEq α]
 
 /-- The empty table satisfies the extended invariant. -/
 theorem RHTable.empty_invExt' [BEq α] [Hashable α] [LawfulBEq α]
-    (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).invExt :=
-  RHTable.empty_invExt cap hPos
+    (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).invExt :=
+  RHTable.empty_invExt cap hCapGe4
 
 -- ============================================================================
 -- N4 bridge: insert preserves size < capacity
@@ -414,8 +415,8 @@ theorem RHTable.filter_preserves_invExt [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (f : α → β → Bool) (_hExt : t.invExt) :
     (t.filter f).invExt := by
   unfold RHTable.filter RHTable.fold
-  have hEmpty : (RHTable.empty t.capacity t.hCapPos : RHTable α β).invExt :=
-    RHTable.empty_invExt t.capacity t.hCapPos
+  have hEmpty : (RHTable.empty t.capacity t.hCapGe4 : RHTable α β).invExt :=
+    RHTable.empty_invExt t.capacity t.hCapGe4
   exact Array.foldl_induction
     (motive := fun _ (acc : RHTable α β) => acc.invExt)
     hEmpty
@@ -485,10 +486,10 @@ private theorem filter_fold_absent [BEq α] [Hashable α] [LawfulBEq α]
   exact (Array.foldl_induction
     (motive := fun i (acc : RHTable α β) =>
       acc.invExt ∧ acc.size ≤ i ∧ acc.capacity = t.capacity ∧ acc.get? k = none)
-    ⟨RHTable.empty_invExt t.capacity t.hCapPos,
+    ⟨RHTable.empty_invExt t.capacity t.hCapGe4,
      Nat.zero_le 0,
      by simp [RHTable.empty],
-     RHTable.getElem?_empty t.capacity t.hCapPos k⟩
+     RHTable.getElem?_empty t.capacity t.hCapGe4 k⟩
     (fun i acc ⟨hAccExt, hAccSizeI, hAccCap, hAccNone⟩ => by
       have hAccSizeLt : acc.size < acc.capacity := by
         have := i.isLt; have := t.hSlotsLen; omega
@@ -637,8 +638,8 @@ private theorem filter_fold_present [BEq α] [Hashable α] [LawfulBEq α]
     (fun i (acc : RHTable α β) =>
       acc.invExt ∧ acc.size ≤ i ∧ acc.capacity = t.capacity ∧
       (if p < i then acc.get? k = some v else acc.get? k = none))
-    (RHTable.empty t.capacity t.hCapPos)
-    ⟨RHTable.empty_invExt t.capacity t.hCapPos,
+    (RHTable.empty t.capacity t.hCapGe4)
+    ⟨RHTable.empty_invExt t.capacity t.hCapGe4,
      Nat.zero_le 0,
      by simp [RHTable.empty],
      by simp [Nat.not_lt_zero, RHTable.getElem?_empty]⟩
@@ -657,7 +658,7 @@ private theorem filter_fold_present [BEq α] [Hashable α] [LawfulBEq α]
       | none => acc
       | some entry => if f entry.key entry.value then acc.insertNoResize entry.key entry.value
                       else acc)
-    (RHTable.empty t.capacity t.hCapPos) t.slots
+    (RHTable.empty t.capacity t.hCapGe4) t.slots
   have hR : result.invExt ∧ result.size ≤ t.slots.size ∧ result.capacity = t.capacity ∧
     (if p < t.slots.size then result.get? k = some v else result.get? k = none) := hResult
   simp only [hpSlots, ite_true] at hR
@@ -710,10 +711,10 @@ private theorem filter_fold_absent_by_pred [BEq α] [Hashable α] [LawfulBEq α]
   exact (Array.foldl_induction
     (motive := fun i (acc : RHTable α β) =>
       acc.invExt ∧ acc.size ≤ i ∧ acc.capacity = t.capacity ∧ acc.get? k = none)
-    ⟨RHTable.empty_invExt t.capacity t.hCapPos,
+    ⟨RHTable.empty_invExt t.capacity t.hCapGe4,
      Nat.zero_le 0,
      by simp [RHTable.empty],
-     RHTable.getElem?_empty t.capacity t.hCapPos k⟩
+     RHTable.getElem?_empty t.capacity t.hCapGe4 k⟩
     (fun i acc ⟨hAccExt, hAccSizeI, hAccCap, hAccNone⟩ => by
       have hAccSizeLt : acc.size < acc.capacity := by
         have := i.isLt; have := t.hSlotsLen; omega
@@ -879,10 +880,10 @@ theorem RHTable.mk_invExtK [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α
 
 /-- The empty table satisfies `invExtK` when `4 ≤ cap`. -/
 theorem RHTable.empty_invExtK [BEq α] [Hashable α] [LawfulBEq α]
-    (cap : Nat) (hPos : 0 < cap) (hCapGe4 : 4 ≤ cap) :
-    (RHTable.empty cap hPos : RHTable α β).invExtK :=
-  ⟨RHTable.empty_invExt cap hPos,
-   by simp [RHTable.empty]; exact hPos,
+    (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).invExtK :=
+  ⟨RHTable.empty_invExt cap hCapGe4,
+   by simp [RHTable.empty]; omega,
    by simp [RHTable.empty]; exact hCapGe4⟩
 
 -- ============================================================================

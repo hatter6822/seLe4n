@@ -433,8 +433,8 @@ def RHTable.probeChainDominant [Hashable α] (t : RHTable α β) : Prop :=
   SeLe4n.Kernel.RobinHood.probeChainDominant t.slots t.capacity t.hSlotsLen t.hCapPos
 
 /-- Empty tables trivially satisfy probe-chain dominant. -/
-theorem RHTable.empty_probeChainDominant [Hashable α] (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).probeChainDominant := by
+theorem RHTable.empty_probeChainDominant [Hashable α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).probeChainDominant := by
   intro p hp e hSlot
   simp [RHTable.empty] at hSlot
 
@@ -448,12 +448,12 @@ def RHTable.invExt [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : P
   t.WF ∧ t.distCorrect ∧ t.noDupKeys ∧ t.probeChainDominant
 
 /-- Empty tables satisfy the extended invariant. -/
-theorem RHTable.empty_invExt [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).invExt :=
-  ⟨RHTable.empty_wf cap hPos,
-   RHTable.empty_distCorrect cap hPos,
-   RHTable.empty_noDupKeys cap hPos,
-   RHTable.empty_probeChainDominant cap hPos⟩
+theorem RHTable.empty_invExt [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).invExt :=
+  ⟨RHTable.empty_wf cap hCapGe4,
+   RHTable.empty_distCorrect cap hCapGe4,
+   RHTable.empty_noDupKeys cap hCapGe4,
+   RHTable.empty_probeChainDominant cap hCapGe4⟩
 
 -- ============================================================================
 -- V3-A (H-RH-1): Extended invariant with load factor bound
@@ -481,9 +481,9 @@ theorem RHTable.invExtFull_implies_size_lt_capacity [BEq α] [Hashable α] [Lawf
   omega
 
 /-- V3-A: The empty table satisfies `invExtFull` (size = 0, load = 0%). -/
-theorem RHTable.empty_invExtFull [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).invExtFull :=
-  ⟨RHTable.empty_invExt cap hPos, RHTable.empty_loadFactorBounded cap hPos⟩
+theorem RHTable.empty_invExtFull [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).invExtFull :=
+  ⟨RHTable.empty_invExt cap hCapGe4, RHTable.empty_loadFactorBounded cap hCapGe4⟩
 
 -- ============================================================================
 -- Section 9b: Modular arithmetic displacement helpers

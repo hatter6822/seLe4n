@@ -122,11 +122,11 @@ def CNodeRadix.ofCNode (cn : CNode) : CNodeRadix :=
 -- ============================================================================
 
 /-- Building from an empty RHTable yields an empty CNodeRadix. -/
-theorem buildCNodeRadix_empty_lookup (cap : Nat) (hPos : 0 < cap)
+theorem buildCNodeRadix_empty_lookup (cap : Nat) (hCapGe4 : 4 ≤ cap)
     (config : CNodeConfig) (slot : SeLe4n.Slot) :
-    (buildCNodeRadix (RHTable.empty cap hPos) config).lookup slot = none := by
+    (buildCNodeRadix (RHTable.empty cap hCapGe4) config).lookup slot = none := by
   -- Use fold_preserves to show the result equals the initial empty tree
-  have hEq : (buildCNodeRadix (RHTable.empty cap hPos) config).lookup slot =
+  have hEq : (buildCNodeRadix (RHTable.empty cap hCapGe4) config).lookup slot =
       (CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth).lookup slot := by
     unfold buildCNodeRadix
     congr 1
@@ -134,7 +134,7 @@ theorem buildCNodeRadix_empty_lookup (cap : Nat) (hPos : 0 < cap)
     rw [← Array.foldl_toList]
     unfold RHTable.empty
     simp only []
-    clear hPos
+    clear hCapGe4
     induction cap with
     | zero => rfl
     | succ n ih =>
@@ -448,6 +448,48 @@ theorem buildCNodeRadix_hNoPhantom_auto_discharge
       extractBits s.toNat 0 radixWidth ≠ extractBits slot.toNat 0 radixWidth :=
   uniqueRadixIndices_sufficient rt radixWidth hBounded
     (fun s hBnd => extractBits_identity s.toNat radixWidth hBnd)
+
+-- ============================================================================
+-- AE2-B (U-29): Checked buildCNodeRadix with runtime key-bounds validation
+-- ============================================================================
+
+/-- AE2-B (U-29): Runtime predicate — all keys in the table are bounded by
+    `2^radixWidth`. When this holds, `UniqueRadixIndices` and `hNoPhantom`
+    are automatically satisfied (see `uniqueRadixIndices_sufficient`). -/
+def allKeysBounded (rt : RHTable SeLe4n.Slot Capability) (radixWidth : Nat) : Bool :=
+  rt.fold true fun acc k _ => acc && (k.toNat < 2 ^ radixWidth)
+
+/-- AE2-B (U-29): Checked variant of `buildCNodeRadix` with runtime key-bounds
+    validation. Falls back to an empty radix tree if any key exceeds
+    `2^radixWidth`, preventing index-out-of-range in the flat array.
+
+    In well-formed CNodes, all slot keys are bounded by `2^radixWidth`
+    (enforced by CNode construction), so the fallback is unreachable under
+    maintained invariants. This provides defense-in-depth against unbounded
+    keys bypassing the `UniqueRadixIndices` precondition. -/
+def buildCNodeRadixChecked (rt : RHTable SeLe4n.Slot Capability) (config : CNodeConfig)
+    : CNodeRadix :=
+  if allKeysBounded rt config.radixWidth then
+    buildCNodeRadix rt config
+  else
+    -- AUDIT-NOTE: U-29 — Safe fallback: empty radix on invalid keys.
+    -- Unreachable under CNode invariants (all slot keys < 2^radixWidth).
+    CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth
+
+/-- AE2-B: When all keys are bounded, the checked variant equals the unchecked. -/
+theorem buildCNodeRadixChecked_eq_of_bounded
+    (rt : RHTable SeLe4n.Slot Capability) (config : CNodeConfig)
+    (hBounded : allKeysBounded rt config.radixWidth = true) :
+    buildCNodeRadixChecked rt config = buildCNodeRadix rt config := by
+  simp [buildCNodeRadixChecked, hBounded]
+
+/-- AE2-B: When keys are out of bounds, the checked variant returns empty. -/
+theorem buildCNodeRadixChecked_fallback
+    (rt : RHTable SeLe4n.Slot Capability) (config : CNodeConfig)
+    (hNotBounded : allKeysBounded rt config.radixWidth = false) :
+    buildCNodeRadixChecked rt config =
+      CNodeRadix.empty config.guardWidth config.guardValue config.radixWidth := by
+  simp [buildCNodeRadixChecked, hNotBounded]
 
 -- ============================================================================
 -- Q4-D10: freezeCNodeSlots — integration point for Q5

@@ -207,6 +207,8 @@ already addressed, informational, or deferred to future workstreams:
 
 ## 3. Phase AE1 — Critical: API Dispatch & NI Composition
 
+**Status**: COMPLETE (v0.25.15)
+
 **Goal**: Fix the two highest-impact categories: (1) the checked dispatch path
 dropping two syscalls, and (2) the information-flow non-interference proof gaps.
 **Gate**: `lake build` + `lake build SeLe4n.Kernel.API` +
@@ -747,11 +749,12 @@ theorem applications.
 
 ## 4. Phase AE2 — Data Structure Hardening & Production Reachability
 
+**Status**: COMPLETE (v0.25.16)
 **Goal**: Fix data structure safety gaps (RobinHood capacity guard, RadixTree
 precondition enforcement) and resolve production reachability for FrozenOps
 and Liveness subsystems.
 **Gate**: `lake build` + module-specific builds for modified files +
-`./scripts/test_smoke.sh`
+`./scripts/test_smoke.sh` — ALL PASSED
 **Dependencies**: None (independent of AE1).
 **Estimated scope**: ~100–135 lines of changes.
 
@@ -2212,14 +2215,14 @@ and sub-task. This matrix ensures no finding is overlooked.
 
 | Finding ID(s) | Unified ID | Sub-task | Status |
 |---------------|------------|----------|--------|
-| F-01 (v14) | U-01 | AE1-A | PLANNED |
-| F-02 (v14) | U-02 | AE2-E | PLANNED |
-| IF-01 (v14) | U-03 | AE1-E | PLANNED |
-| IF-02 (v14) | U-04 | AE1-F | PLANNED |
-| F-03 (v14) | U-05 | AE2-F | PLANNED |
-| F-04 (v14) | U-06 | AE1-B | PLANNED |
-| F-05 (v14) | U-07 | AE1-C, AE1-D | PLANNED |
-| IF-03 (v14), IF-13 (v12) | U-08 | AE1-G | PLANNED |
+| F-01 (v14) | U-01 | AE1-A | COMPLETE (v0.25.15) |
+| F-02 (v14) | U-02 | AE2-E | COMPLETE (v0.25.16) |
+| IF-01 (v14) | U-03 | AE1-E | COMPLETE (v0.25.15) |
+| IF-02 (v14) | U-04 | AE1-F | COMPLETE (v0.25.15) |
+| F-03 (v14) | U-05 | AE2-F | COMPLETE (v0.25.16) |
+| F-04 (v14) | U-06 | AE1-B | COMPLETE (v0.25.15) |
+| F-05 (v14) | U-07 | AE1-C, AE1-D | COMPLETE (v0.25.15) |
+| IF-03 (v14), IF-13 (v12) | U-08 | AE1-G | COMPLETE (v0.25.15) |
 | IF-04 (v14), IF-02 (v12) | U-09 | AE5-F | PLANNED |
 | IF-06 (v14), IF-04 (v12) | U-10 | AE5-E | PLANNED |
 | S-02 (v14) | U-11 | AE3-A | PLANNED |
@@ -2238,10 +2241,10 @@ and sub-task. This matrix ensures no finding is overlooked.
 | T-06 (v14), T-F01 (v12) | U-25 | AE6-A | PLANNED |
 | ARCH-03 (v14), A-SA01 (v12) | U-26 | AE4-B | PLANNED |
 | A-T01 (v12) | U-27 | AE4-G | PLANNED |
-| D-RH01 (v12) | U-28 | AE2-A | PLANNED |
-| D-RT01 (v12) | U-29 | AE2-B | PLANNED |
-| D-RH02 (v12) | U-30 | AE2-C | PLANNED |
-| D-FO01 (v12) | U-31 | AE2-D | PLANNED |
+| D-RH01 (v12) | U-28 | AE2-A | COMPLETE (v0.25.16) |
+| D-RT01 (v12) | U-29 | AE2-B | COMPLETE (v0.25.16) |
+| D-RH02 (v12) | U-30 | AE2-C | COMPLETE (v0.25.16) |
+| D-FO01 (v12) | U-31 | AE2-D | COMPLETE (v0.25.16) |
 | A-IB01 (v12) | U-32 | AE4-H | PLANNED |
 | A-SA02 (v12) | U-33 | — | DEFERRED (low risk) |
 | A-SA03 (v12) | U-34 | — | DEFERRED (low risk) |

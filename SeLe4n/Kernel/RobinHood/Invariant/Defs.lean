@@ -49,8 +49,8 @@ def RHTable.loadFactorBounded (t : RHTable α β) : Prop :=
   t.size * 4 ≤ t.capacity * 3
 
 /-- S3-K: The empty table satisfies the load factor bound (size = 0). -/
-theorem RHTable.empty_loadFactorBounded (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).loadFactorBounded := by
+theorem RHTable.empty_loadFactorBounded (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).loadFactorBounded := by
   simp [loadFactorBounded, RHTable.empty]
 
 /-- S3-K: Insert triggers resize when load factor reaches 75%.
@@ -87,31 +87,31 @@ def RHTable.invariant [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) 
 
 /-- N2-B1: The empty table trivially satisfies distance correctness
     (no occupied slots). -/
-theorem RHTable.empty_distCorrect [Hashable α] (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).distCorrect := by
+theorem RHTable.empty_distCorrect [Hashable α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).distCorrect := by
   intro i hi e hSlot
   simp [RHTable.empty] at hSlot
 
 /-- N2-C1: The empty table trivially satisfies no-duplicate-keys
     (no occupied slots). -/
-theorem RHTable.empty_noDupKeys [BEq α] (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).noDupKeys := by
+theorem RHTable.empty_noDupKeys [BEq α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).noDupKeys := by
   intro i j hi hj ei ej hSlotI hSlotJ _
   simp [RHTable.empty] at hSlotI
 
 /-- N2-D1: The empty table trivially satisfies Robin Hood ordering
     (no occupied slots). -/
-theorem RHTable.empty_robinHoodOrdered (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).robinHoodOrdered := by
+theorem RHTable.empty_robinHoodOrdered (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).robinHoodOrdered := by
   intro i hi ei ej hSlotI _
   simp [RHTable.empty] at hSlotI
 
 /-- N2-A1 + B1 + C1 + D1: The empty table satisfies the full invariant bundle. -/
-theorem RHTable.empty_invariant [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).invariant :=
-  ⟨RHTable.empty_wf cap hPos,
-   RHTable.empty_distCorrect cap hPos,
-   RHTable.empty_noDupKeys cap hPos,
-   RHTable.empty_robinHoodOrdered cap hPos⟩
+theorem RHTable.empty_invariant [BEq α] [Hashable α] [LawfulBEq α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).invariant :=
+  ⟨RHTable.empty_wf cap hCapGe4,
+   RHTable.empty_distCorrect cap hCapGe4,
+   RHTable.empty_noDupKeys cap hCapGe4,
+   RHTable.empty_robinHoodOrdered cap hCapGe4⟩
 
 end SeLe4n.Kernel.RobinHood

@@ -15,6 +15,15 @@ import SeLe4n.Kernel.SchedContext.Invariant
 -- cross-subsystem boundary where preservation theorems naturally compose.
 import SeLe4n.Kernel.SchedContext.Invariant.Preservation
 import SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation
+-- AE2-F (U-05): Import Liveness into the production proof chain.
+-- The 7+1 Liveness files (TraceModel, TimerTick, Replenishment, Yield,
+-- BandExhaustion, DomainRotation, WCRT) were previously test-only, meaning
+-- the WCRT bounded latency theorem could silently diverge from actual
+-- scheduler operations. This import ensures the Lean type-checker verifies
+-- liveness theorem compatibility with scheduler implementation on every build.
+-- Cannot live in Scheduler/Invariant.lean (import cycle via Operations/Core →
+-- Selection → Invariant), so integrated here at the cross-subsystem boundary.
+import SeLe4n.Kernel.Scheduler.Liveness
 
 /-!
 # R4-E: Cross-Subsystem Invariant Definitions

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-audit-0H98s",
-      "commit_sha": "1ab80e571841b63d76bb501db9c34b011180a0d2",
-      "tree_sha": "b7912cc739bf1d68561dd0060851eaf8bb3aa995",
-      "committed_at_utc": "2026-04-07T00:51:21+00:00"
+      "branch": "claude/review-codebase-ae2-5eeU7",
+      "commit_sha": "3344bd512e628ebe366ce10dbcc1d8436bf0d806",
+      "tree_sha": "e2e2eb984d64dd614ac0396c254e348af0ba7f5d",
+      "committed_at_utc": "2026-04-07T02:47:17+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5e6ee5d52c7c3262e64529d5b95ad7f6e09652e2a73b90a18abc0d79a990f79c"
+    "source_digest": "60e76fb531f6ac821e52c08b3dd99a839e3d1ccd75e4e0ec1b98a88aa827f81c"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4584
+    "declaration_count": 4589
   },
   "readme_sync": {
-    "version": "0.25.15",
+    "version": "0.25.17",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 85476,
+    "production_loc": 85574,
     "test_files": 16,
     "test_loc": 11318,
-    "proved_theorem_lemma_decls": 2537,
+    "proved_theorem_lemma_decls": 2540,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -8743,13 +8743,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 41,
+          "line": 50,
           "called": []
         },
         {
           "kind": "def",
           "name": "collectQueueMembers",
-          "line": 50,
+          "line": 59,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8762,7 +8762,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_none",
-          "line": 65,
+          "line": 74,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8774,7 +8774,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_fuel_sufficiency_documented",
-          "line": 99,
+          "line": 108,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8789,7 +8789,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_length_bounded",
-          "line": 112,
+          "line": 121,
           "called": [
             "KernelObject",
             "ObjId",
@@ -8804,7 +8804,7 @@
         {
           "kind": "def",
           "name": "noStaleEndpointQueueReferences",
-          "line": 140,
+          "line": 149,
           "called": [
             "Endpoint",
             "ObjId",
@@ -8818,7 +8818,7 @@
         {
           "kind": "def",
           "name": "noStaleNotificationWaitReferences",
-          "line": 158,
+          "line": 167,
           "called": [
             "Notification",
             "ObjId",
@@ -8830,7 +8830,7 @@
         {
           "kind": "def",
           "name": "registryDependencyConsistent",
-          "line": 166,
+          "line": 175,
           "called": [
             "ServiceGraphEntry",
             "ServiceId",
@@ -8841,7 +8841,7 @@
         {
           "kind": "def",
           "name": "schedContextStoreConsistent",
-          "line": 180,
+          "line": 189,
           "called": [
             "SystemState",
             "TCB",
@@ -8853,7 +8853,7 @@
         {
           "kind": "def",
           "name": "schedContextNotDualBound",
-          "line": 194,
+          "line": 203,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -8866,7 +8866,7 @@
         {
           "kind": "def",
           "name": "schedContextRunQueueConsistent",
-          "line": 209,
+          "line": 218,
           "called": [
             "SystemState",
             "TCB",
@@ -8879,7 +8879,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemInvariant",
-          "line": 242,
+          "line": 251,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -8895,7 +8895,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_to_schedContextStoreConsistent",
-          "line": 253,
+          "line": 262,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8905,7 +8905,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_to_schedContextNotDualBound",
-          "line": 258,
+          "line": 267,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8915,7 +8915,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_to_schedContextRunQueueConsistent",
-          "line": 263,
+          "line": 272,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8925,7 +8925,7 @@
         {
           "kind": "theorem",
           "name": "default_crossSubsystemInvariant",
-          "line": 269,
+          "line": 278,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -8944,7 +8944,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_composition_gap_documented",
-          "line": 334,
+          "line": 343,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -8961,36 +8961,12 @@
         {
           "kind": "inductive",
           "name": "StateField",
-          "line": 364,
+          "line": 373,
           "called": []
         },
         {
           "kind": "def",
           "name": "registryEndpointValid_fields",
-          "line": 383,
-          "called": [
-            "StateField"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "registryDependencyConsistent_fields",
-          "line": 386,
-          "called": [
-            "StateField"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "noStaleEndpointQueueReferences_fields",
-          "line": 389,
-          "called": [
-            "StateField"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "noStaleNotificationWaitReferences_fields",
           "line": 392,
           "called": [
             "StateField"
@@ -8998,7 +8974,7 @@
         },
         {
           "kind": "def",
-          "name": "serviceGraphInvariant_fields",
+          "name": "registryDependencyConsistent_fields",
           "line": 395,
           "called": [
             "StateField"
@@ -9006,8 +8982,32 @@
         },
         {
           "kind": "def",
+          "name": "noStaleEndpointQueueReferences_fields",
+          "line": 398,
+          "called": [
+            "StateField"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "noStaleNotificationWaitReferences_fields",
+          "line": 401,
+          "called": [
+            "StateField"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "serviceGraphInvariant_fields",
+          "line": 404,
+          "called": [
+            "StateField"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "schedContextStoreConsistent_fields",
-          "line": 400,
+          "line": 409,
           "called": [
             "StateField"
           ]
@@ -9015,7 +9015,7 @@
         {
           "kind": "def",
           "name": "schedContextNotDualBound_fields",
-          "line": 405,
+          "line": 414,
           "called": [
             "StateField"
           ]
@@ -9023,7 +9023,7 @@
         {
           "kind": "def",
           "name": "schedContextRunQueueConsistent_fields",
-          "line": 410,
+          "line": 419,
           "called": [
             "StateField"
           ]
@@ -9031,7 +9031,7 @@
         {
           "kind": "def",
           "name": "fieldsDisjoint",
-          "line": 414,
+          "line": 423,
           "called": [
             "StateField",
             "all"
@@ -9040,7 +9040,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_staleEndpoint",
-          "line": 419,
+          "line": 428,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9050,7 +9050,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_staleNotification",
-          "line": 425,
+          "line": 434,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9060,7 +9060,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_staleEndpoint",
-          "line": 431,
+          "line": 440,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9070,7 +9070,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_staleNotification",
-          "line": 437,
+          "line": 446,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9080,7 +9080,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_disjoint_regEndpointValid",
-          "line": 445,
+          "line": 454,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9090,7 +9090,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraph_disjoint_regEndpointValid",
-          "line": 451,
+          "line": 460,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9100,7 +9100,7 @@
         {
           "kind": "theorem",
           "name": "staleEndpoint_shares_staleNotification",
-          "line": 458,
+          "line": 467,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9110,7 +9110,7 @@
         {
           "kind": "theorem",
           "name": "regEndpointValid_shares_staleEndpoint",
-          "line": 464,
+          "line": 473,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9120,7 +9120,7 @@
         {
           "kind": "theorem",
           "name": "regEndpointValid_shares_staleNotification",
-          "line": 470,
+          "line": 479,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9130,7 +9130,7 @@
         {
           "kind": "theorem",
           "name": "regDepConsistent_shares_serviceGraph",
-          "line": 476,
+          "line": 485,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9140,7 +9140,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_disjoint_regDepConsistent",
-          "line": 489,
+          "line": 498,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9150,7 +9150,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_disjoint_serviceGraph",
-          "line": 495,
+          "line": 504,
           "called": [
             "fieldsDisjoint",
             "schedContextStoreConsistent_fields",
@@ -9160,7 +9160,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_disjoint_regDepConsistent",
-          "line": 501,
+          "line": 510,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9170,7 +9170,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_disjoint_serviceGraph",
-          "line": 507,
+          "line": 516,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -9180,7 +9180,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_disjoint_regDepConsistent",
-          "line": 513,
+          "line": 522,
           "called": [
             "fieldsDisjoint",
             "registryDependencyConsistent_fields",
@@ -9190,7 +9190,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_disjoint_serviceGraph",
-          "line": 519,
+          "line": 528,
           "called": [
             "fieldsDisjoint",
             "schedContextRunQueueConsistent_fields",
@@ -9200,7 +9200,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_regEndpointValid",
-          "line": 525,
+          "line": 534,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9210,7 +9210,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_staleEndpoint",
-          "line": 531,
+          "line": 540,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9220,7 +9220,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_staleNotification",
-          "line": 537,
+          "line": 546,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9230,7 +9230,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_schedCtxNotDualBound",
-          "line": 543,
+          "line": 552,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -9240,7 +9240,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxStore_shares_schedCtxRunQueue",
-          "line": 549,
+          "line": 558,
           "called": [
             "fieldsDisjoint",
             "schedContextRunQueueConsistent_fields",
@@ -9250,7 +9250,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_regEndpointValid",
-          "line": 555,
+          "line": 564,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9260,7 +9260,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_staleEndpoint",
-          "line": 561,
+          "line": 570,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9270,7 +9270,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_staleNotification",
-          "line": 567,
+          "line": 576,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9280,7 +9280,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxNotDualBound_shares_schedCtxRunQueue",
-          "line": 573,
+          "line": 582,
           "called": [
             "fieldsDisjoint",
             "schedContextNotDualBound_fields",
@@ -9290,7 +9290,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_regEndpointValid",
-          "line": 579,
+          "line": 588,
           "called": [
             "fieldsDisjoint",
             "registryEndpointValid_fields",
@@ -9300,7 +9300,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_staleEndpoint",
-          "line": 585,
+          "line": 594,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9310,7 +9310,7 @@
         {
           "kind": "theorem",
           "name": "schedCtxRunQueue_shares_staleNotification",
-          "line": 591,
+          "line": 600,
           "called": [
             "fieldsDisjoint",
             "noStaleNotificationWaitReferences_fields",
@@ -9320,7 +9320,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystem_pairwise_coverage_complete",
-          "line": 612,
+          "line": 621,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9336,7 +9336,7 @@
         {
           "kind": "def",
           "name": "storeObject_modifiedFields",
-          "line": 634,
+          "line": 643,
           "called": [
             "StateField"
           ]
@@ -9344,7 +9344,7 @@
         {
           "kind": "def",
           "name": "serviceRegisterDependency_modifiedFields",
-          "line": 639,
+          "line": 648,
           "called": [
             "StateField"
           ]
@@ -9352,7 +9352,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeObject_modifiedFields",
-          "line": 644,
+          "line": 653,
           "called": [
             "StateField"
           ]
@@ -9360,7 +9360,7 @@
         {
           "kind": "def",
           "name": "ipcEndpointOp_modifiedFields",
-          "line": 651,
+          "line": 660,
           "called": [
             "StateField"
           ]
@@ -9368,7 +9368,7 @@
         {
           "kind": "def",
           "name": "capabilityOp_modifiedFields",
-          "line": 658,
+          "line": 667,
           "called": [
             "StateField"
           ]
@@ -9376,7 +9376,7 @@
         {
           "kind": "def",
           "name": "revokeService_modifiedFields",
-          "line": 664,
+          "line": 673,
           "called": [
             "StateField"
           ]
@@ -9384,7 +9384,7 @@
         {
           "kind": "theorem",
           "name": "noStaleEndpointQueueReferences_frame",
-          "line": 674,
+          "line": 683,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences"
@@ -9393,7 +9393,7 @@
         {
           "kind": "theorem",
           "name": "noStaleNotificationWaitReferences_frame",
-          "line": 696,
+          "line": 705,
           "called": [
             "SystemState",
             "noStaleNotificationWaitReferences"
@@ -9402,7 +9402,7 @@
         {
           "kind": "theorem",
           "name": "registryEndpointValid_frame",
-          "line": 708,
+          "line": 717,
           "called": [
             "SystemState",
             "registryEndpointValid"
@@ -9411,7 +9411,7 @@
         {
           "kind": "theorem",
           "name": "fieldDisjointness_frameIndependence_documented",
-          "line": 760,
+          "line": 769,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9424,7 +9424,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemFieldSets",
-          "line": 777,
+          "line": 786,
           "called": [
             "StateField",
             "noStaleEndpointQueueReferences_fields",
@@ -9440,13 +9440,13 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemFieldSets_count",
-          "line": 788,
+          "line": 797,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "registryDependencyConsistent_frame",
-          "line": 794,
+          "line": 803,
           "called": [
             "SystemState",
             "registryDependencyConsistent"
@@ -9455,7 +9455,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_frame",
-          "line": 812,
+          "line": 821,
           "called": [
             "SystemState",
             "lookupService",
@@ -9468,7 +9468,7 @@
         {
           "kind": "theorem",
           "name": "schedContextStoreConsistent_frame",
-          "line": 842,
+          "line": 851,
           "called": [
             "SystemState",
             "scId",
@@ -9478,7 +9478,7 @@
         {
           "kind": "theorem",
           "name": "schedContextNotDualBound_frame",
-          "line": 855,
+          "line": 864,
           "called": [
             "SystemState",
             "scId",
@@ -9488,7 +9488,7 @@
         {
           "kind": "theorem",
           "name": "schedContextRunQueueConsistent_frame",
-          "line": 865,
+          "line": 874,
           "called": [
             "SystemState",
             "runnable",
@@ -9499,7 +9499,7 @@
         {
           "kind": "theorem",
           "name": "serviceGraphInvariant_monotone",
-          "line": 886,
+          "line": 895,
           "called": [
             "SystemState",
             "lookupService",
@@ -9512,7 +9512,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_noStaleNotificationWaitReferences",
-          "line": 917,
+          "line": 926,
           "called": [
             "ServiceId",
             "SystemState",
@@ -9525,7 +9525,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair1_objects_frame",
-          "line": 956,
+          "line": 965,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -9537,7 +9537,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair23_objects_frame",
-          "line": 969,
+          "line": 978,
           "called": [
             "SystemState",
             "noStaleEndpointQueueReferences",
@@ -9551,7 +9551,7 @@
         {
           "kind": "theorem",
           "name": "sharingPair4_services_frame",
-          "line": 987,
+          "line": 996,
           "called": [
             "SystemState",
             "registryDependencyConsistent",
@@ -9563,7 +9563,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_sharingPairs_objects",
-          "line": 1001,
+          "line": 1010,
           "called": [
             "ServiceId",
             "SystemState",
@@ -9578,7 +9578,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_frame",
-          "line": 1017,
+          "line": 1026,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9596,7 +9596,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_services_change",
-          "line": 1041,
+          "line": 1050,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9614,7 +9614,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_composition_complete",
-          "line": 1082,
+          "line": 1091,
           "called": [
             "fieldsDisjoint",
             "noStaleEndpointQueueReferences_fields",
@@ -9630,7 +9630,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextStoreConsistent",
-          "line": 1130,
+          "line": 1139,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -9640,7 +9640,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextNotDualBound",
-          "line": 1140,
+          "line": 1149,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -9650,7 +9650,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedContextRunQueueConsistent",
-          "line": 1150,
+          "line": 1159,
           "called": [
             "SystemState",
             "runnable",
@@ -9661,7 +9661,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedContextPredicates",
-          "line": 1161,
+          "line": 1170,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9677,7 +9677,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextNotDualBound",
-          "line": 1179,
+          "line": 1188,
           "called": [
             "SystemState",
             "schedContextNotDualBound",
@@ -9687,7 +9687,7 @@
         {
           "kind": "theorem",
           "name": "donation_frame_preserves_schedContextStoreConsistent",
-          "line": 1191,
+          "line": 1200,
           "called": [
             "SystemState",
             "schedContextStoreConsistent",
@@ -9697,7 +9697,7 @@
         {
           "kind": "theorem",
           "name": "cleanup_frame_preserves_schedContextPredicates",
-          "line": 1204,
+          "line": 1213,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9711,7 +9711,7 @@
         {
           "kind": "theorem",
           "name": "threadCleanup_frame_preserves_schedContextPredicates",
-          "line": 1221,
+          "line": 1230,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9725,7 +9725,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_change_bridge",
-          "line": 1326,
+          "line": 1335,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9742,7 +9742,7 @@
         {
           "kind": "theorem",
           "name": "ipcSend_crossSubsystemInvariant_bridge",
-          "line": 1354,
+          "line": 1363,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9758,7 +9758,7 @@
         {
           "kind": "theorem",
           "name": "ipcReceive_crossSubsystemInvariant_bridge",
-          "line": 1374,
+          "line": 1383,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9774,7 +9774,7 @@
         {
           "kind": "theorem",
           "name": "ipcReply_crossSubsystemInvariant_bridge",
-          "line": 1394,
+          "line": 1403,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9790,7 +9790,7 @@
         {
           "kind": "theorem",
           "name": "ipcCall_crossSubsystemInvariant_bridge",
-          "line": 1415,
+          "line": 1424,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9806,7 +9806,7 @@
         {
           "kind": "theorem",
           "name": "ipcReplyRecv_crossSubsystemInvariant_bridge",
-          "line": 1436,
+          "line": 1445,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9822,7 +9822,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_crossSubsystemInvariant_bridge",
-          "line": 1457,
+          "line": 1466,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9838,7 +9838,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_crossSubsystemInvariant_bridge",
-          "line": 1478,
+          "line": 1487,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9854,7 +9854,7 @@
         {
           "kind": "theorem",
           "name": "schedule_crossSubsystemInvariant_bridge",
-          "line": 1504,
+          "line": 1513,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9870,7 +9870,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_crossSubsystemInvariant_bridge",
-          "line": 1525,
+          "line": 1534,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9886,7 +9886,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_crossSubsystemInvariant_bridge",
-          "line": 1545,
+          "line": 1554,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9902,7 +9902,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_crossSubsystemInvariant_bridge",
-          "line": 1565,
+          "line": 1574,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9918,7 +9918,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_crossSubsystemInvariant_bridge",
-          "line": 1585,
+          "line": 1594,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9934,7 +9934,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_crossSubsystemInvariant_bridge",
-          "line": 1607,
+          "line": 1616,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9950,7 +9950,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_crossSubsystemInvariant_bridge",
-          "line": 1628,
+          "line": 1637,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9966,7 +9966,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_retype_bridge",
-          "line": 1651,
+          "line": 1660,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9983,7 +9983,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMint_crossSubsystemInvariant_bridge",
-          "line": 1679,
+          "line": 1688,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -9999,7 +9999,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_crossSubsystemInvariant_bridge",
-          "line": 1697,
+          "line": 1706,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10015,7 +10015,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_crossSubsystemInvariant_bridge",
-          "line": 1715,
+          "line": 1724,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10031,7 +10031,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_crossSubsystemInvariant_bridge",
-          "line": 1732,
+          "line": 1741,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10047,7 +10047,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_crossSubsystemInvariant_bridge",
-          "line": 1749,
+          "line": 1758,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10063,7 +10063,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_crossSubsystemInvariant_bridge",
-          "line": 1766,
+          "line": 1775,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10079,7 +10079,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_crossSubsystemInvariant_bridge",
-          "line": 1784,
+          "line": 1793,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10095,7 +10095,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_crossSubsystemInvariant_bridge",
-          "line": 1806,
+          "line": 1815,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10111,7 +10111,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_crossSubsystemInvariant_bridge",
-          "line": 1825,
+          "line": 1834,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10127,7 +10127,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_crossSubsystemInvariant_bridge",
-          "line": 1843,
+          "line": 1852,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10143,7 +10143,7 @@
         {
           "kind": "theorem",
           "name": "schedContextYieldTo_crossSubsystemInvariant_bridge",
-          "line": 1862,
+          "line": 1871,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10159,7 +10159,7 @@
         {
           "kind": "theorem",
           "name": "setPriority_crossSubsystemInvariant_bridge",
-          "line": 1885,
+          "line": 1894,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10175,7 +10175,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriority_crossSubsystemInvariant_bridge",
-          "line": 1904,
+          "line": 1913,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10191,7 +10191,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_crossSubsystemInvariant_bridge",
-          "line": 1927,
+          "line": 1936,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10207,7 +10207,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_crossSubsystemInvariant_bridge",
-          "line": 1945,
+          "line": 1954,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10223,7 +10223,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBuffer_crossSubsystemInvariant_bridge",
-          "line": 1970,
+          "line": 1979,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10239,7 +10239,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetype_crossSubsystemInvariant_bridge",
-          "line": 1993,
+          "line": 2002,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10255,7 +10255,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge",
-          "line": 2012,
+          "line": 2021,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -10271,7 +10271,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_crossSubsystemInvariant_bridge",
-          "line": 2031,
+          "line": 2040,
           "called": [
             "Kernel",
             "SystemState",
@@ -10550,13 +10550,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.FrozenOps",
-          "line": 47,
+          "line": 55,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "FrozenKernel",
-          "line": 59,
+          "line": 67,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -10566,7 +10566,7 @@
         {
           "kind": "def",
           "name": "frozenLookupObject",
-          "line": 67,
+          "line": 75,
           "called": [
             "FrozenKernel",
             "FrozenKernelObject",
@@ -10578,7 +10578,7 @@
         {
           "kind": "def",
           "name": "frozenLookupTcb",
-          "line": 75,
+          "line": 83,
           "called": [
             "FrozenSystemState",
             "TCB",
@@ -10592,7 +10592,7 @@
         {
           "kind": "def",
           "name": "frozenLookupEndpoint",
-          "line": 82,
+          "line": 90,
           "called": [
             "Endpoint",
             "FrozenSystemState",
@@ -10604,7 +10604,7 @@
         {
           "kind": "def",
           "name": "frozenLookupNotification",
-          "line": 88,
+          "line": 96,
           "called": [
             "FrozenSystemState",
             "Notification",
@@ -10616,7 +10616,7 @@
         {
           "kind": "def",
           "name": "frozenLookupCNode",
-          "line": 94,
+          "line": 102,
           "called": [
             "FrozenCNode",
             "FrozenSystemState",
@@ -10628,7 +10628,7 @@
         {
           "kind": "def",
           "name": "frozenStoreObject",
-          "line": 106,
+          "line": 114,
           "called": [
             "FrozenKernel",
             "FrozenKernelObject",
@@ -10640,7 +10640,7 @@
         {
           "kind": "def",
           "name": "frozenStoreTcb",
-          "line": 115,
+          "line": 123,
           "called": [
             "FrozenKernel",
             "TCB",
@@ -10652,7 +10652,7 @@
         {
           "kind": "def",
           "name": "frozenStoreEndpoint",
-          "line": 120,
+          "line": 128,
           "called": [
             "Endpoint",
             "FrozenKernel",
@@ -10663,7 +10663,7 @@
         {
           "kind": "def",
           "name": "frozenStoreNotification",
-          "line": 125,
+          "line": 133,
           "called": [
             "FrozenKernel",
             "Notification",
@@ -10674,7 +10674,7 @@
         {
           "kind": "def",
           "name": "frozenStoreTcbIpcState",
-          "line": 130,
+          "line": 138,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -10688,7 +10688,7 @@
         {
           "kind": "def",
           "name": "frozenSaveOutgoingContext",
-          "line": 146,
+          "line": 154,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -10701,7 +10701,7 @@
         {
           "kind": "def",
           "name": "frozenRestoreIncomingContext",
-          "line": 162,
+          "line": 170,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -10713,7 +10713,7 @@
         {
           "kind": "def",
           "name": "frozenSetCurrentThread",
-          "line": 170,
+          "line": 178,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -10723,7 +10723,7 @@
         {
           "kind": "def",
           "name": "frozenQueuePushTailObjects",
-          "line": 181,
+          "line": 192,
           "called": [
             "Endpoint",
             "FrozenKernelObject",
@@ -10733,6 +10733,7 @@
             "ObjId",
             "TCB",
             "ThreadId",
+            "contains",
             "endpointId",
             "get",
             "none",
@@ -10743,7 +10744,7 @@
         {
           "kind": "def",
           "name": "frozenQueuePushTail",
-          "line": 225,
+          "line": 247,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -10759,7 +10760,7 @@
         {
           "kind": "theorem",
           "name": "frozenQueuePushTail_only_modifies_objects",
-          "line": 245,
+          "line": 267,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -10772,7 +10773,7 @@
         {
           "kind": "theorem",
           "name": "frozenLookupObject_state_unchanged",
-          "line": 263,
+          "line": 285,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -10783,7 +10784,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_scheduler",
-          "line": 273,
+          "line": 295,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -10796,7 +10797,7 @@
         {
           "kind": "theorem",
           "name": "frozenStoreObject_preserves_machine",
-          "line": 284,
+          "line": 306,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -27900,7 +27901,7 @@
     {
       "module": "SeLe4n.Kernel.RadixTree.Bridge",
       "path": "SeLe4n/Kernel/RadixTree/Bridge.lean",
-      "declaration_count": 24,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -28194,8 +28195,66 @@
         },
         {
           "kind": "def",
+          "name": "allKeysBounded",
+          "line": 459,
+          "called": [
+            "Capability",
+            "RHTable",
+            "Slot",
+            "fold",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "buildCNodeRadixChecked",
+          "line": 470,
+          "called": [
+            "CNodeConfig",
+            "CNodeRadix",
+            "CNodeRadix.empty",
+            "Capability",
+            "RHTable",
+            "Slot",
+            "allKeysBounded",
+            "buildCNodeRadix",
+            "config"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadixChecked_eq_of_bounded",
+          "line": 480,
+          "called": [
+            "CNodeConfig",
+            "Capability",
+            "RHTable",
+            "Slot",
+            "allKeysBounded",
+            "buildCNodeRadix",
+            "buildCNodeRadixChecked",
+            "config"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "buildCNodeRadixChecked_fallback",
+          "line": 487,
+          "called": [
+            "CNodeConfig",
+            "CNodeRadix.empty",
+            "Capability",
+            "RHTable",
+            "Slot",
+            "allKeysBounded",
+            "buildCNodeRadixChecked",
+            "config"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "freezeCNodeSlots",
-          "line": 460,
+          "line": 502,
           "called": [
             "CNode",
             "CNodeRadix",
@@ -28205,7 +28264,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardWidth",
-          "line": 464,
+          "line": 506,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -28216,7 +28275,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_guardValue",
-          "line": 469,
+          "line": 511,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -28227,7 +28286,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_radixWidth",
-          "line": 474,
+          "line": 516,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -28238,7 +28297,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNodeSlots_wf",
-          "line": 479,
+          "line": 521,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -28924,7 +28983,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 83,
+          "line": 84,
           "called": [
             "RHTable",
             "get",
@@ -28936,7 +28995,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 93,
+          "line": 94,
           "called": [
             "RHTable",
             "get",
@@ -28948,7 +29007,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 104,
+          "line": 105,
           "called": [
             "RHTable",
             "erase",
@@ -28961,7 +29020,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 114,
+          "line": 115,
           "called": [
             "RHTable",
             "erase",
@@ -28974,7 +29033,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_erase_le",
-          "line": 125,
+          "line": 126,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -28985,7 +29044,7 @@
         {
           "kind": "theorem",
           "name": "list_fold_insertNoResize_size_le",
-          "line": 140,
+          "line": 141,
           "called": [
             "RHEntry",
             "RHTable",
@@ -28998,7 +29057,7 @@
         {
           "kind": "theorem",
           "name": "resize_size_le",
-          "line": 168,
+          "line": 169,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29014,7 +29073,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_insert_le",
-          "line": 192,
+          "line": 193,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -29028,7 +29087,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.mem_iff_isSome_getElem",
-          "line": 206,
+          "line": 207,
           "called": [
             "RHTable",
             "RHTable.contains",
@@ -29039,7 +29098,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 216,
+          "line": 217,
           "called": [
             "RHTable",
             "get"
@@ -29048,7 +29107,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.fold_eq_slots_foldl",
-          "line": 227,
+          "line": 228,
           "called": [
             "RHTable",
             "fold",
@@ -29058,7 +29117,7 @@
         {
           "kind": "def",
           "name": "RHTable.filter",
-          "line": 240,
+          "line": 241,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29069,7 +29128,7 @@
         {
           "kind": "theorem",
           "name": "list_fold_filter_size_le",
-          "line": 251,
+          "line": 252,
           "called": [
             "RHEntry",
             "RHTable",
@@ -29082,7 +29141,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_filter_le_capacity",
-          "line": 287,
+          "line": 288,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29097,7 +29156,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.size_filter_le_size",
-          "line": 307,
+          "line": 308,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29114,7 +29173,7 @@
         {
           "kind": "def",
           "name": "RHTable.ofList",
-          "line": 338,
+          "line": 339,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29124,7 +29183,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExt'",
-          "line": 348,
+          "line": 349,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29135,7 +29194,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_size_lt_capacity",
-          "line": 361,
+          "line": 362,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -29153,7 +29212,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_size_lt_capacity",
-          "line": 395,
+          "line": 396,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -29165,7 +29224,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_invExt",
-          "line": 413,
+          "line": 414,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29180,7 +29239,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_size_lt_capacity",
-          "line": 439,
+          "line": 440,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29196,7 +29255,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_absent",
-          "line": 479,
+          "line": 480,
           "called": [
             "RHEntry",
             "RHTable",
@@ -29219,7 +29278,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_present_step",
-          "line": 517,
+          "line": 518,
           "called": [
             "RHEntry",
             "RHTable",
@@ -29238,7 +29297,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_present",
-          "line": 621,
+          "line": 622,
           "called": [
             "RHEntry",
             "RHTable",
@@ -29259,7 +29318,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_key",
-          "line": 666,
+          "line": 667,
           "called": [
             "RHTable",
             "RHTable.get_none_no_matching_entry",
@@ -29275,7 +29334,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.fold_preserves",
-          "line": 687,
+          "line": 688,
           "called": [
             "RHTable",
             "RHTable.fold",
@@ -29285,7 +29344,7 @@
         {
           "kind": "theorem",
           "name": "filter_fold_absent_by_pred",
-          "line": 703,
+          "line": 704,
           "called": [
             "RHEntry",
             "RHTable",
@@ -29308,7 +29367,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_subset",
-          "line": 746,
+          "line": 747,
           "called": [
             "RHEntry",
             "RHTable",
@@ -29326,7 +29385,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_get_pred",
-          "line": 788,
+          "line": 789,
           "called": [
             "RHEntry",
             "RHTable",
@@ -29341,7 +29400,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_filter_getElem",
-          "line": 819,
+          "line": 820,
           "called": [
             "RHTable",
             "RHTable.filter_get_pred",
@@ -29358,8 +29417,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:844>",
-          "line": 844,
+          "name": "<anonymous:instance:845>",
+          "line": 845,
           "called": [
             "RHTable",
             "RHTable.empty"
@@ -29368,7 +29427,7 @@
         {
           "kind": "def",
           "name": "RHTable.invExtK",
-          "line": 858,
+          "line": 859,
           "called": [
             "RHTable",
             "invExt",
@@ -29378,7 +29437,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_invExt",
-          "line": 862,
+          "line": 863,
           "called": [
             "RHTable",
             "invExt",
@@ -29388,7 +29447,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_size_lt_capacity",
-          "line": 865,
+          "line": 866,
           "called": [
             "RHTable",
             "invExtK",
@@ -29398,7 +29457,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.invExtK_capacity_ge4",
-          "line": 868,
+          "line": 869,
           "called": [
             "RHTable",
             "invExtK"
@@ -29407,7 +29466,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.mk_invExtK",
-          "line": 872,
+          "line": 873,
           "called": [
             "RHTable",
             "invExt",
@@ -29418,7 +29477,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_invExtK",
-          "line": 881,
+          "line": 882,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29429,7 +29488,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_capacity_eq",
-          "line": 893,
+          "line": 894,
           "called": [
             "RHTable",
             "RHTable.erase",
@@ -29439,7 +29498,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.erase_preserves_invExtK",
-          "line": 900,
+          "line": 901,
           "called": [
             "RHTable",
             "erase",
@@ -29452,7 +29511,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_capacity_ge4",
-          "line": 912,
+          "line": 913,
           "called": [
             "RHTable",
             "RHTable.insert",
@@ -29464,7 +29523,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insert_preserves_invExtK",
-          "line": 921,
+          "line": 922,
           "called": [
             "RHTable",
             "insert",
@@ -29477,7 +29536,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.getElem",
-          "line": 934,
+          "line": 935,
           "called": [
             "RHTable",
             "erase",
@@ -29488,7 +29547,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_capacity_eq",
-          "line": 945,
+          "line": 946,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29501,7 +29560,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.filter_preserves_invExtK",
-          "line": 965,
+          "line": 966,
           "called": [
             "RHTable",
             "filter",
@@ -29514,7 +29573,7 @@
         {
           "kind": "theorem",
           "name": "cnode_capacity_always_ge4",
-          "line": 989,
+          "line": 990,
           "called": [
             "RHTable",
             "RHTable.empty"
@@ -29525,7 +29584,7 @@
     {
       "module": "SeLe4n.Kernel.RobinHood.Core",
       "path": "SeLe4n/Kernel/RobinHood/Core.lean",
-      "declaration_count": 33,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -29549,9 +29608,17 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "RHTable.hCapPos",
+          "line": 50,
+          "called": [
+            "RHTable"
+          ]
+        },
+        {
           "kind": "instance",
-          "name": "<anonymous:instance:45>",
-          "line": 45,
+          "name": "<anonymous:instance:53>",
+          "line": 53,
           "called": [
             "RHTable",
             "size"
@@ -29560,7 +29627,7 @@
         {
           "kind": "def",
           "name": "idealIndex",
-          "line": 54,
+          "line": 62,
           "called": [
             "toNat"
           ]
@@ -29568,29 +29635,31 @@
         {
           "kind": "def",
           "name": "nextIndex",
-          "line": 59,
+          "line": 67,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "idealIndex_lt",
-          "line": 66,
+          "line": 74,
           "called": [
+            "hCapPos",
             "idealIndex"
           ]
         },
         {
           "kind": "theorem",
           "name": "nextIndex_lt",
-          "line": 71,
+          "line": 79,
           "called": [
+            "hCapPos",
             "nextIndex"
           ]
         },
         {
           "kind": "def",
           "name": "countOccupied",
-          "line": 80,
+          "line": 88,
           "called": [
             "RHEntry"
           ]
@@ -29598,7 +29667,7 @@
         {
           "kind": "structure",
           "name": "RHTable.WF",
-          "line": 84,
+          "line": 92,
           "called": [
             "RHTable",
             "countOccupied",
@@ -29608,7 +29677,7 @@
         {
           "kind": "def",
           "name": "RHTable.empty",
-          "line": 91,
+          "line": 101,
           "called": [
             "RHTable",
             "none",
@@ -29618,7 +29687,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.empty_wf",
-          "line": 99,
+          "line": 109,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29630,9 +29699,10 @@
         {
           "kind": "def",
           "name": "insertLoop",
-          "line": 119,
+          "line": 129,
           "called": [
             "RHEntry",
+            "hCapPos",
             "none",
             "set",
             "size"
@@ -29641,9 +29711,10 @@
         {
           "kind": "theorem",
           "name": "insertLoop_preserves_len",
-          "line": 152,
+          "line": 163,
           "called": [
             "RHEntry",
+            "hCapPos",
             "insertLoop",
             "size",
             "zero"
@@ -29652,9 +29723,10 @@
         {
           "kind": "def",
           "name": "getLoop",
-          "line": 179,
+          "line": 190,
           "called": [
             "RHEntry",
+            "hCapPos",
             "none",
             "size"
           ]
@@ -29662,17 +29734,18 @@
         {
           "kind": "def",
           "name": "RHTable.get",
-          "line": 198,
+          "line": 216,
           "called": [
             "RHTable",
             "getLoop",
+            "hCapPos",
             "idealIndex"
           ]
         },
         {
           "kind": "def",
           "name": "RHTable.contains",
-          "line": 203,
+          "line": 221,
           "called": [
             "RHTable",
             "get"
@@ -29681,9 +29754,10 @@
         {
           "kind": "def",
           "name": "findLoop",
-          "line": 212,
+          "line": 230,
           "called": [
             "RHEntry",
+            "hCapPos",
             "none",
             "size"
           ]
@@ -29691,9 +29765,10 @@
         {
           "kind": "def",
           "name": "backshiftLoop",
-          "line": 233,
+          "line": 256,
           "called": [
             "RHEntry",
+            "hCapPos",
             "none",
             "set",
             "size"
@@ -29702,10 +29777,11 @@
         {
           "kind": "theorem",
           "name": "backshiftLoop_preserves_len",
-          "line": 264,
+          "line": 288,
           "called": [
             "RHEntry",
             "backshiftLoop",
+            "hCapPos",
             "size",
             "zero"
           ]
@@ -29713,12 +29789,13 @@
         {
           "kind": "def",
           "name": "RHTable.erase",
-          "line": 291,
+          "line": 315,
           "called": [
             "RHTable",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
             "findLoop",
+            "hCapPos",
             "idealIndex",
             "none",
             "set",
@@ -29728,7 +29805,7 @@
         {
           "kind": "def",
           "name": "RHTable.fold",
-          "line": 313,
+          "line": 337,
           "called": [
             "RHTable",
             "none"
@@ -29737,7 +29814,7 @@
         {
           "kind": "def",
           "name": "RHTable.toList",
-          "line": 320,
+          "line": 344,
           "called": [
             "RHTable",
             "fold"
@@ -29746,9 +29823,10 @@
         {
           "kind": "def",
           "name": "RHTable.insertNoResize",
-          "line": 325,
+          "line": 349,
           "called": [
             "RHTable",
+            "hCapPos",
             "idealIndex",
             "insertLoop",
             "insertLoop_preserves_len",
@@ -29758,7 +29836,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_capacity",
-          "line": 340,
+          "line": 364,
           "called": [
             "RHTable",
             "insertNoResize"
@@ -29767,7 +29845,7 @@
         {
           "kind": "def",
           "name": "RHTable.resize",
-          "line": 345,
+          "line": 369,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29779,7 +29857,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_fold_capacity",
-          "line": 353,
+          "line": 377,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -29794,7 +29872,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.resize_preserves_len",
-          "line": 372,
+          "line": 396,
           "called": [
             "RHTable",
             "resize",
@@ -29805,7 +29883,7 @@
         {
           "kind": "def",
           "name": "RHTable.insert",
-          "line": 382,
+          "line": 406,
           "called": [
             "RHTable",
             "insertNoResize",
@@ -29816,7 +29894,7 @@
         {
           "kind": "theorem",
           "name": "RHTable.insertNoResize_size_le",
-          "line": 388,
+          "line": 412,
           "called": [
             "RHTable",
             "RHTable.insertNoResize",
@@ -29826,8 +29904,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:399>",
-          "line": 399,
+          "name": "<anonymous:instance:423>",
+          "line": 423,
           "called": [
             "RHTable",
             "contains",
@@ -29836,8 +29914,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:404>",
-          "line": 404,
+          "name": "<anonymous:instance:428>",
+          "line": 428,
           "called": [
             "RHTable",
             "get",
@@ -29846,8 +29924,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:412>",
-          "line": 412,
+          "name": "<anonymous:instance:436>",
+          "line": 436,
           "called": [
             "RHTable",
             "default",
@@ -29875,6 +29953,7 @@
           "called": [
             "RHEntry",
             "RHTable",
+            "hCapPos",
             "idealIndex"
           ]
         },
@@ -29893,7 +29972,8 @@
           "line": 35,
           "called": [
             "RHEntry",
-            "RHTable"
+            "RHTable",
+            "hCapPos"
           ]
         },
         {
@@ -30032,6 +30112,7 @@
           "called": [
             "RHEntry",
             "getLoop",
+            "hCapPos",
             "none",
             "size",
             "zero"
@@ -30047,6 +30128,7 @@
             "displacement_roundtrip",
             "dist_step_mod",
             "findLoop",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "none",
@@ -30063,6 +30145,7 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
+            "hCapPos",
             "none",
             "set",
             "size",
@@ -30077,6 +30160,7 @@
             "RHEntry",
             "findLoop",
             "getElem_idx_eq",
+            "hCapPos",
             "size",
             "zero"
           ]
@@ -30094,6 +30178,7 @@
             "findLoop",
             "findLoop_none_implies_absent",
             "findLoop_some_has_key",
+            "hCapPos",
             "idealIndex",
             "invExt",
             "none",
@@ -30105,7 +30190,9 @@
           "kind": "theorem",
           "name": "displacement_roundtrip'",
           "line": 355,
-          "called": []
+          "called": [
+            "hCapPos"
+          ]
         },
         {
           "kind": "theorem",
@@ -30118,7 +30205,8 @@
           "name": "disp_step'",
           "line": 403,
           "called": [
-            "displacement_roundtrip'"
+            "displacement_roundtrip'",
+            "hCapPos"
           ]
         },
         {
@@ -30131,6 +30219,7 @@
             "displacement_roundtrip'",
             "getElem_idx_eq",
             "getLoop",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "probeChainDominant",
@@ -30144,6 +30233,7 @@
           "line": 533,
           "called": [
             "RHEntry",
+            "hCapPos",
             "insertLoop",
             "insertLoop_preserves_len",
             "mod_add_mod_eq",
@@ -30160,6 +30250,7 @@
           "called": [
             "RHEntry",
             "getElem_idx_eq",
+            "hCapPos",
             "insertLoop",
             "insertLoop_preserves_len",
             "insertLoop_preserves_slot",
@@ -30206,6 +30297,7 @@
           "name": "position_reachable",
           "line": 751,
           "called": [
+            "hCapPos",
             "mod_add_mod_eq"
           ]
         },
@@ -30231,6 +30323,7 @@
             "RHTable.insert",
             "RHTable.insertNoResize",
             "exists_empty_slot",
+            "hCapPos",
             "idealIndex",
             "insert",
             "insertLoop_places_key",
@@ -30253,6 +30346,7 @@
             "RHTable.get",
             "get",
             "getLoop_finds_present",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insert",
@@ -30267,6 +30361,7 @@
           "line": 904,
           "called": [
             "RHEntry",
+            "hCapPos",
             "insertLoop",
             "insertLoop_preserves_len",
             "none",
@@ -30282,6 +30377,7 @@
           "called": [
             "RHEntry",
             "getLoop",
+            "hCapPos",
             "size",
             "zero"
           ]
@@ -30297,6 +30393,7 @@
             "RHTable.fold",
             "RHTable.insertNoResize",
             "RHTable.resize",
+            "hCapPos",
             "idealIndex",
             "insertLoop_absent_ne_key",
             "none",
@@ -30309,6 +30406,7 @@
           "line": 1026,
           "called": [
             "RHEntry",
+            "hCapPos",
             "insertLoop",
             "insertLoop_preserves_len",
             "none",
@@ -30327,6 +30425,7 @@
             "RHTable.get",
             "get",
             "getLoop_finds_present",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "invExt",
@@ -30341,6 +30440,7 @@
             "RHEntry",
             "RHTable",
             "RHTable.insertNoResize",
+            "hCapPos",
             "idealIndex",
             "insertLoop_absent_ne_key",
             "insertNoResize"
@@ -30370,6 +30470,7 @@
             "disp_step'",
             "displacement_roundtrip'",
             "getElem_idx_eq",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop",
@@ -30399,6 +30500,7 @@
             "RHTable.resize",
             "exists_empty_slot",
             "getElem_idx_eq",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_places_key",
@@ -30422,6 +30524,7 @@
             "RHTable.insert",
             "RHTable.insertNoResize",
             "exists_empty_slot",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insert",
@@ -30450,6 +30553,7 @@
             "getLoop_none_of_absent",
             "getLoop_some_implies_entry",
             "get_none_implies_absent",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insert",
@@ -30483,6 +30587,7 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
+            "hCapPos",
             "none",
             "set",
             "size",
@@ -30498,6 +30603,7 @@
             "backshiftLoop",
             "backshiftLoop_preserves_len",
             "getElem_idx_eq",
+            "hCapPos",
             "none",
             "set",
             "size",
@@ -30518,6 +30624,7 @@
             "findLoop",
             "findLoop_some_has_key",
             "getElem_idx_eq",
+            "hCapPos",
             "idealIndex",
             "invExt",
             "none",
@@ -30544,6 +30651,7 @@
             "getLoop_none_of_absent",
             "getLoop_some_implies_entry",
             "get_none_implies_absent",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "invExt",
@@ -30575,6 +30683,7 @@
             "RHTable.get",
             "get",
             "getLoop_some_implies_entry",
+            "hCapPos",
             "idealIndex"
           ]
         },
@@ -30590,6 +30699,7 @@
             "exists_empty_slot",
             "get",
             "getLoop_finds_present",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_places_key",
@@ -30616,6 +30726,7 @@
             "getLoop_none_of_absent",
             "getLoop_some_implies_entry",
             "get_none_implies_absent",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_preserves_ne_entry_new",
@@ -30638,6 +30749,7 @@
             "RHTable.get",
             "get",
             "getLoop_finds_present",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "invExt"
@@ -30730,6 +30842,7 @@
             "countOccupied",
             "countOccupied_set_none_to_some",
             "countOccupied_set_some_to_some",
+            "hCapPos",
             "insertLoop",
             "set",
             "size",
@@ -30746,6 +30859,7 @@
             "countOccupied",
             "countOccupied_set_none_to_some",
             "countOccupied_set_some_to_none",
+            "hCapPos",
             "none",
             "set",
             "size",
@@ -30779,6 +30893,7 @@
             "WF",
             "countOccupied",
             "countOccupied_le_size",
+            "hCapPos",
             "idealIndex",
             "insertLoop",
             "insertLoop_countOccupied",
@@ -30824,6 +30939,7 @@
           "called": [
             "RHEntry",
             "findLoop",
+            "hCapPos",
             "size",
             "zero"
           ]
@@ -30836,6 +30952,7 @@
             "RHEntry",
             "findLoop",
             "findLoop_lt",
+            "hCapPos",
             "size",
             "zero"
           ]
@@ -30856,6 +30973,7 @@
             "erase",
             "findLoop_correct",
             "findLoop_lt",
+            "hCapPos",
             "none",
             "set",
             "size"
@@ -30872,6 +30990,7 @@
           "name": "dist_step_mod",
           "line": 382,
           "called": [
+            "hCapPos",
             "mod_succ_eq"
           ]
         },
@@ -30881,6 +31000,7 @@
           "line": 421,
           "called": [
             "RHEntry",
+            "hCapPos",
             "idealIndex",
             "size"
           ]
@@ -30890,7 +31010,8 @@
           "name": "RHTable.probeChainDominant",
           "line": 432,
           "called": [
-            "RHTable"
+            "RHTable",
+            "hCapPos"
           ]
         },
         {
@@ -30945,6 +31066,7 @@
           "line": 475,
           "called": [
             "RHTable",
+            "hCapPos",
             "invExtFull",
             "loadFactorBounded",
             "size"
@@ -30966,7 +31088,9 @@
           "kind": "theorem",
           "name": "displacement_roundtrip",
           "line": 493,
-          "called": []
+          "called": [
+            "hCapPos"
+          ]
         },
         {
           "kind": "theorem",
@@ -30981,6 +31105,7 @@
           "called": [
             "RHEntry",
             "dist_step_mod",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop",
@@ -30995,7 +31120,9 @@
           "kind": "theorem",
           "name": "offset_injective",
           "line": 632,
-          "called": []
+          "called": [
+            "hCapPos"
+          ]
         },
         {
           "kind": "theorem",
@@ -31014,6 +31141,7 @@
             "RHEntry",
             "displacement_roundtrip",
             "getElem_idx_eq",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "none",
@@ -31038,6 +31166,7 @@
           "line": 776,
           "called": [
             "RHEntry",
+            "hCapPos",
             "idealIndex",
             "set",
             "size"
@@ -31054,6 +31183,7 @@
             "distCorrect_after_set",
             "dist_step_mod",
             "getElem_idx_eq",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop",
@@ -31078,6 +31208,7 @@
             "distCorrect_after_set",
             "dist_step_mod",
             "getElem_idx_eq",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop",
@@ -31098,6 +31229,7 @@
           "called": [
             "RHTable",
             "distCorrect",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_preserves_distCorrect",
@@ -31138,6 +31270,7 @@
           "line": 1349,
           "called": [
             "RHTable",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_preserves_noDupKeys",
@@ -31152,6 +31285,7 @@
           "line": 1365,
           "called": [
             "RHTable",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "insertLoop_preserves_pcd",
@@ -31269,6 +31403,7 @@
             "RHEntry",
             "backshiftLoop",
             "backshiftLoop_preserves_len",
+            "hCapPos",
             "none",
             "set",
             "size",
@@ -31281,6 +31416,7 @@
           "line": 1566,
           "called": [
             "dist_step_mod",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt"
           ]
@@ -31294,6 +31430,7 @@
             "backshiftLoop",
             "backshiftLoop_preserves_len",
             "displacement_backward",
+            "hCapPos",
             "idealIndex",
             "none",
             "set",
@@ -31312,6 +31449,7 @@
             "backshiftLoop_preserves_distCorrect",
             "distCorrect",
             "erase",
+            "hCapPos",
             "idealIndex",
             "invExt",
             "none",
@@ -31329,6 +31467,7 @@
             "backshiftLoop_preserves_noDupKeys",
             "erase",
             "findLoop_lt",
+            "hCapPos",
             "invExt",
             "noDupKeys",
             "noDupKeys_after_clear",
@@ -31343,6 +31482,7 @@
           "line": 1772,
           "called": [
             "RHEntry",
+            "hCapPos",
             "idealIndex",
             "size"
           ]
@@ -31354,6 +31494,7 @@
           "called": [
             "RHEntry",
             "displacement_roundtrip",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "none",
@@ -31368,6 +31509,7 @@
           "line": 1895,
           "called": [
             "RHEntry",
+            "hCapPos",
             "idealIndex",
             "none",
             "probeChainDominant",
@@ -31383,6 +31525,7 @@
           "called": [
             "RHEntry",
             "displacement_roundtrip",
+            "hCapPos",
             "idealIndex",
             "idealIndex_lt",
             "none",
@@ -31407,6 +31550,7 @@
             "backshiftLoop_preserves_len",
             "backshiftStep_relaxedPCD",
             "displacement_backward",
+            "hCapPos",
             "idealIndex",
             "mod_add_mod",
             "none",
@@ -31453,6 +31597,7 @@
             "exists_none_of_countOccupied_lt",
             "findLoop_correct",
             "findLoop_lt",
+            "hCapPos",
             "idealIndex",
             "invExt",
             "mod_add_mod",
