@@ -135,6 +135,80 @@ theorem updatePipBoost_preserves_tlb (st : SystemState) (tid : ThreadId) :
   updatePipBoost_frame (fun s => s.tlb) st tid
     (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
 
+/-- AE1-F: `updatePipBoost` preserves `scheduler.domainTimeRemaining`. -/
+theorem updatePipBoost_preserves_domainTimeRemaining (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).scheduler.domainTimeRemaining =
+    st.scheduler.domainTimeRemaining :=
+  updatePipBoost_frame (fun s => s.scheduler.domainTimeRemaining) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- AE1-F: `updatePipBoost` preserves `scheduler.domainSchedule`. -/
+theorem updatePipBoost_preserves_domainSchedule (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).scheduler.domainSchedule =
+    st.scheduler.domainSchedule :=
+  updatePipBoost_frame (fun s => s.scheduler.domainSchedule) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- AE1-F: `updatePipBoost` preserves `scheduler.domainScheduleIndex`. -/
+theorem updatePipBoost_preserves_domainScheduleIndex (st : SystemState) (tid : ThreadId) :
+    (updatePipBoost st tid).scheduler.domainScheduleIndex =
+    st.scheduler.domainScheduleIndex :=
+  updatePipBoost_frame (fun s => s.scheduler.domainScheduleIndex) st tid
+    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
+
+/-- AE1-F: `updatePipBoost` preserves `objects.invExt`. -/
+theorem updatePipBoost_preserves_objects_invExt (st : SystemState) (tid : ThreadId)
+    (hInv : st.objects.invExt) :
+    (updatePipBoost st tid).objects.invExt := by
+  simp only [updatePipBoost]
+  split
+  · rename_i tcb _
+    split
+    · exact hInv
+    · split
+      · split
+        · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+        · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+      · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+  · exact hInv
+
+/-- AE1-F: `updatePipBoost` does not change `objects[oid]?` for `oid ≠ tid.toObjId`. -/
+theorem updatePipBoost_objects_ne (st : SystemState) (tid : ThreadId) (oid : ObjId)
+    (hNe : ¬(tid.toObjId == oid) = true) (hInv : st.objects.invExt) :
+    (updatePipBoost st tid).objects[oid]? = st.objects[oid]? := by
+  simp only [updatePipBoost]
+  split
+  · split
+    · rfl
+    · split
+      · split
+        · show (st.objects.insert tid.toObjId _)[oid]? = _
+          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
+        · exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
+      · exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
+  · rfl
+
+/-- AE1-F: `updatePipBoost` preserves any filter over `runQueue.toList` when
+the filter excludes `tid`. This is the key lemma for `projectRunnable`
+preservation: since `tid` is non-observable, `threadObservable` excludes it,
+so the filtered runnable list is unchanged. -/
+theorem updatePipBoost_toList_filter_neg (st : SystemState) (tid : ThreadId)
+    (p : ThreadId → Bool) (hp : p tid = false) :
+    (updatePipBoost st tid).scheduler.runQueue.toList.filter p =
+    st.scheduler.runQueue.toList.filter p := by
+  simp only [updatePipBoost]
+  split
+  · split
+    · rfl
+    · split
+      · split
+        · simp only []
+          rw [RunQueue.toList_filter_insert_neg' _ tid _ _ hp,
+              RunQueue.toList_filter_remove_neg _ tid _ hp]
+        · rfl
+      · rfl
+  · rfl
+
 -- ============================================================================
 -- D4-O/P: Chain propagation frame lemmas
 -- ============================================================================
@@ -335,6 +409,45 @@ theorem propagate_preserves_tlb (st : SystemState) (tid : ThreadId)
     split
     · rw [ih]; exact updatePipBoost_preserves_tlb st tid
     · exact updatePipBoost_preserves_tlb st tid
+
+/-- AE1-F: `propagatePriorityInheritance` preserves `scheduler.domainTimeRemaining`. -/
+theorem propagate_preserves_domainTimeRemaining (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).scheduler.domainTimeRemaining =
+    st.scheduler.domainTimeRemaining := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_domainTimeRemaining st tid
+    · exact updatePipBoost_preserves_domainTimeRemaining st tid
+
+/-- AE1-F: `propagatePriorityInheritance` preserves `scheduler.domainSchedule`. -/
+theorem propagate_preserves_domainSchedule (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).scheduler.domainSchedule =
+    st.scheduler.domainSchedule := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_domainSchedule st tid
+    · exact updatePipBoost_preserves_domainSchedule st tid
+
+/-- AE1-F: `propagatePriorityInheritance` preserves `scheduler.domainScheduleIndex`. -/
+theorem propagate_preserves_domainScheduleIndex (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) :
+    (propagatePriorityInheritance st tid fuel).scheduler.domainScheduleIndex =
+    st.scheduler.domainScheduleIndex := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [propagatePriorityInheritance]
+    split
+    · rw [ih]; exact updatePipBoost_preserves_domainScheduleIndex st tid
+    · exact updatePipBoost_preserves_domainScheduleIndex st tid
 
 -- ============================================================================
 -- D4-P: Revert frame lemmas (derived from revert_eq_propagate)

@@ -306,6 +306,23 @@ inductive NonInterferenceStep
       (caller : SeLe4n.ThreadId) (reg : ServiceRegistration)
       (hStep : registerServiceChecked ctx caller reg st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
+  /-- AE1-F5 (U-04): Full call path with donation and PIP — covers the
+      post-IPC mutations `applyCallDonation` and `propagatePriorityInheritance`
+      that occur after `endpointCall`. The projection proof is discharged by
+      `endpointCallWithDonation_preserves_projection`. -/
+  | endpointCallWithDonationHigh
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hProj : projectState ctx observer st' = projectState ctx observer st)
+    : NonInterferenceStep ctx observer st st'
+  /-- AE1-F6 (U-04): Full reply path with donation return and PIP reversion.
+      Covers `applyReplyDonation` and `revertPriorityInheritance` after
+      `endpointReply`. -/
+  | endpointReplyWithReversionHigh
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hProj : projectState ctx observer st' = projectState ctx observer st)
+    : NonInterferenceStep ctx observer st st'
 
 /-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
 projection (one-sided version). -/
@@ -474,6 +491,8 @@ theorem step_preserves_projection
     have hFlow := enforcementSoundness_registerServiceChecked ctx caller reg st st' hOp
     rw [registerServiceChecked_eq_registerService_when_allowed ctx caller reg st hFlow] at hOp
     exact registerService_preserves_projection ctx observer reg st st' hOp
+  | endpointCallWithDonationHigh _ hProj => exact hProj
+  | endpointReplyWithReversionHigh _ hProj => exact hProj
 
 /-- WS-F3/H-05/H-09: Primary IF-M4 composition theorem — single-step bundle
 non-interference. -/
@@ -525,8 +544,102 @@ theorem composedNonInterference_trace
   unfold lowEquivalent; rw [h₁, h₂]; exact hLow
 
 -- ============================================================================
--- Preservation framework (composition helper)
+-- AE1-E: Composed step covering both projection-preserving and
+-- low-equivalence-preserving operations (switchDomain)
 -- ============================================================================
+
+/-- AE1-E (U-03): A paired non-interference step covering all kernel
+operations, including operations that modify the observer's projection
+deterministically (e.g., `switchDomain`).
+
+`NonInterferenceStep` is one-sided: each constructor proves that a single
+step preserves the observer's projection. `switchDomain` does NOT preserve
+projection (it changes `activeDomain`, `domainScheduleIndex`,
+`domainTimeRemaining`), but it DOES preserve low-equivalence because both
+runs compute identical scheduler changes from identical scheduler fields.
+
+This inductive closes the gap identified by IF-01/U-03 by modeling
+`switchDomain` as a paired (two-sided) step alongside the existing
+projection-preserving one-sided steps. -/
+inductive ComposedNonInterferenceStep
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState) : Prop where
+  /-- Standard projection-preserving steps: each run independently preserves
+      the observer's projection via `NonInterferenceStep`. -/
+  | projectionPreserving
+      (hStep₁ : NonInterferenceStep ctx observer s₁ s₁')
+      (hStep₂ : NonInterferenceStep ctx observer s₂ s₂')
+    : ComposedNonInterferenceStep ctx observer s₁ s₂ s₁' s₂'
+  /-- AE1-E: Domain switch — changes scheduler state deterministically.
+      Both runs produce identical scheduler changes because the scheduler
+      fields (`domainSchedule`, `domainScheduleIndex`, `domainTimeRemaining`)
+      are unconditionally projected and therefore identical across
+      low-equivalent states. -/
+  | switchDomain
+      (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hStep₁ : switchDomain s₁ = .ok ((), s₁'))
+      (hStep₂ : switchDomain s₂ = .ok ((), s₂'))
+    : ComposedNonInterferenceStep ctx observer s₁ s₂ s₁' s₂'
+
+/-- AE1-E: Composed non-interference theorem — covers both
+projection-preserving steps and domain switch.
+
+This extends `composedNonInterference_step` to handle `switchDomain`,
+closing the IF-01/U-03 gap. -/
+theorem composedNI_withSwitchDomain
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
+    (hStep : ComposedNonInterferenceStep ctx observer s₁ s₂ s₁' s₂') :
+    lowEquivalent ctx observer s₁' s₂' := by
+  cases hStep with
+  | projectionPreserving h₁ h₂ =>
+    exact composedNonInterference_step ctx observer s₁ s₂ s₁' s₂'
+      hLow hObjInv₁ hObjInv₂ h₁ h₂
+  | switchDomain hCH₁ hCH₂ hS₁ hS₂ =>
+    exact switchDomain_preserves_lowEquivalent ctx observer s₁ s₂ s₁' s₂'
+      hLow hCH₁ hCH₂ hObjInv₁ hObjInv₂ hS₁ hS₂
+
+/-- AE1-E: Two-step composition — two consecutive composed steps preserve
+low-equivalence. This extends `composedNI_withSwitchDomain` for chaining. -/
+theorem composedNI_two_steps
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁_mid s₂_mid s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hObjInv₁ : s₁.objects.invExt) (hObjInv₂ : s₂.objects.invExt)
+    (hObjInvMid₁ : s₁_mid.objects.invExt) (hObjInvMid₂ : s₂_mid.objects.invExt)
+    (hStep₁ : ComposedNonInterferenceStep ctx observer s₁ s₂ s₁_mid s₂_mid)
+    (hStep₂ : ComposedNonInterferenceStep ctx observer s₁_mid s₂_mid s₁' s₂') :
+    lowEquivalent ctx observer s₁' s₂' :=
+  composedNI_withSwitchDomain ctx observer s₁_mid s₂_mid s₁' s₂'
+    (composedNI_withSwitchDomain ctx observer s₁ s₂ s₁_mid s₂_mid hLow hObjInv₁ hObjInv₂ hStep₁)
+    hObjInvMid₁ hObjInvMid₂ hStep₂
+
+-- ============================================================================
+-- AE1-G2: Projection-preserving operations preserve low-equivalence
+-- ============================================================================
+
+/-- AE1-G2: If an operation preserves the observer's projection on both runs,
+then low-equivalence is preserved. This is the shared compositional pattern
+for all capability-only dispatch arms and any other projection-preserving
+operation.
+
+This generalizes `composedNonInterference_step` by not requiring
+`NonInterferenceStep` constructors — only one-sided projection preservation
+on each run is needed. -/
+theorem projPreserving_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hProj₁ : projectState ctx observer s₁' = projectState ctx observer s₁)
+    (hProj₂ : projectState ctx observer s₂' = projectState ctx observer s₂) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProj₁, hProj₂]; exact hLow
 
 -- ============================================================================
 -- V6-D (M-IF-2): NI deployment requirements — LabelingContextValid
@@ -757,6 +870,8 @@ inductive KernelOperation where
   | syscallDecodeError
   | syscallDispatchHigh
   | registerServiceChecked
+  | endpointCallWithDonationHigh
+  | endpointReplyWithReversionHigh
   deriving Repr, DecidableEq
 
 /-- U4-E: Compile-time assertion on the operation count. If a new variant is
@@ -774,7 +889,8 @@ theorem kernelOperation_count : (List.length
    .storeTcbIpcStateAndMessageHigh, .storeTcbQueueLinksHigh,
    .cspaceMutateHigh, .handleYield, .timerTick,
    .syscallDecodeError, .syscallDispatchHigh,
-   .registerServiceChecked]) = 32 := by rfl
+   .registerServiceChecked,
+   .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh]) = 34 := by rfl
 
 -- ============================================================================
 -- U4-F / U-H10: NI step coverage theorem
@@ -792,7 +908,7 @@ theorem kernelOperation_count : (List.length
     The proof uses `syscallDecodeError` as the universal witness (state
     unchanged = trivially NI-preserving) — this demonstrates constructor
     existence, not operational correspondence. Operational correspondence
-    is established by `step_preserves_projection` which handles all 32
+    is established by `step_preserves_projection` which handles all 34
     constructors. -/
 theorem niStepCoverage
     (ctx : LabelingContext) (observer : IfObserver)
@@ -800,7 +916,7 @@ theorem niStepCoverage
     ∀ (_op : KernelOperation),
     ∃ (st' : SystemState), NonInterferenceStep ctx observer st st' := by
   intro
-    -- Exhaustive match on all 32 variants — each witnesses a valid NI step
+    -- Exhaustive match on all 34 variants — each witnesses a valid NI step
     -- via syscallDecodeError (state identity). The match ensures completeness:
     -- adding a new KernelOperation variant without a case here is a compile error.
     | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
@@ -813,7 +929,9 @@ theorem niStepCoverage
     | .storeTcbIpcStateAndMessageHigh | .storeTcbQueueLinksHigh
     | .cspaceMutateHigh | .handleYield | .timerTick
     | .syscallDecodeError | .syscallDispatchHigh
-    | .registerServiceChecked => exact ⟨st, .syscallDecodeError rfl⟩
+    | .registerServiceChecked
+    | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh
+      => exact ⟨st, .syscallDecodeError rfl⟩
 
 -- ============================================================================
 -- V6-I (I1-I5): Operational NI constructor mapping
@@ -836,7 +954,8 @@ theorem niStepCoverage
       cspaceCopy, cspaceMove, cspaceDeleteSlot, cspaceMutateHigh,
       lifecycleRetype, lifecycleRevokeDeleteRetype, storeObjectHigh
     Batch 4 (remaining): vspaceMapPage, vspaceUnmapPage, vspaceLookup,
-      syscallDecodeError, syscallDispatchHigh, registerServiceChecked -/
+      syscallDecodeError, syscallDispatchHigh, registerServiceChecked,
+      endpointCallWithDonationHigh, endpointReplyWithReversionHigh -/
 def kernelOperationNiConstructor : KernelOperation → String
   | .chooseThread                   => "chooseThread"
   | .endpointSendDual               => "endpointSendDual"
@@ -869,7 +988,9 @@ def kernelOperationNiConstructor : KernelOperation → String
   | .timerTick                      => "timerTick"
   | .syscallDecodeError             => "syscallDecodeError"
   | .syscallDispatchHigh            => "syscallDispatchHigh"
-  | .registerServiceChecked         => "registerServiceChecked"
+  | .registerServiceChecked             => "registerServiceChecked"
+  | .endpointCallWithDonationHigh       => "endpointCallWithDonationHigh"
+  | .endpointReplyWithReversionHigh     => "endpointReplyWithReversionHigh"
 
 /-- V6-I5: Every `KernelOperation` maps to a non-empty NI constructor name.
     Combined with the exhaustive match in `kernelOperationNiConstructor`,
@@ -887,7 +1008,8 @@ theorem niStepCoverage_operational :
     | .storeTcbIpcStateAndMessageHigh | .storeTcbQueueLinksHigh
     | .cspaceMutateHigh | .handleYield | .timerTick
     | .syscallDecodeError | .syscallDispatchHigh
-    | .registerServiceChecked => decide
+    | .registerServiceChecked
+    | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh => decide
 
 /-- V6-I5: No two distinct `KernelOperation` variants share the same
     NI constructor name, confirming the mapping is injective (1:1). -/
@@ -899,7 +1021,7 @@ theorem niStepCoverage_injective :
   cases op₁ <;> cases op₂ <;> (first | rfl | simp [kernelOperationNiConstructor] at hEq)
 
 /-- V6-I5: The number of distinct NI constructor names matches the
-    KernelOperation count (32), confirming surjective coverage. -/
+    KernelOperation count (34), confirming surjective coverage. -/
 theorem niStepCoverage_count :
     ([ kernelOperationNiConstructor .chooseThread
      , kernelOperationNiConstructor .endpointSendDual
@@ -933,6 +1055,8 @@ theorem niStepCoverage_count :
      , kernelOperationNiConstructor .syscallDecodeError
      , kernelOperationNiConstructor .syscallDispatchHigh
      , kernelOperationNiConstructor .registerServiceChecked
-     ]).length = 32 := by rfl
+     , kernelOperationNiConstructor .endpointCallWithDonationHigh
+     , kernelOperationNiConstructor .endpointReplyWithReversionHigh
+     ]).length = 34 := by rfl
 
 end SeLe4n.Kernel
