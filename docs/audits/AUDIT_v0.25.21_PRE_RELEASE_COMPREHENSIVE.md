@@ -19,7 +19,7 @@ engineering discipline:
 - **Single `unsafe` block** in the entire Rust ABI layer (the `svc #0` trap instruction)
 - **Comprehensive CI** with 4 test tiers, SHA-pinned GitHub Actions, and hygiene automation
 
-The audit identified **1 HIGH**, **27 MEDIUM**, and **45+ LOW/INFO** findings across 15
+The audit identified **1 HIGH**, **22 MEDIUM**, and **50+ LOW/INFO** findings across 15
 subsystems. No CRITICAL vulnerabilities were found. The HIGH finding is a design-level
 concern about machine-checked enforcement of object store capacity gates. All MEDIUM
 findings are documented, mitigated by surrounding invariants, or relate to pre-hardware
@@ -98,10 +98,10 @@ Both are machine-checked with the `ofNat?_wxSafe` theorem.
 | ID | Severity | Location | Finding |
 |----|----------|----------|---------|
 | CF-01 | **HIGH** | `State.lean:471-496` | `storeObject` is infallible — no machine-checked enforcement that new ObjId insertions pass through a capacity gate. Manual callsite audit is thorough but not structurally enforced. |
-| CF-02 | MEDIUM | `Prelude.lean:373` | `SchedContextId.ofObjId` lacks sentinel check — no `ofObjIdChecked` variant unlike `ThreadId`. |
+| CF-02 | MEDIUM | `Prelude.lean:373` | `SchedContextId.ofObjId` lacks sentinel check — no `toObjIdChecked` style guard unlike `ThreadId`. |
 | CF-03 | MEDIUM | `Machine.lean:208-228` | `RegisterFile` has a non-lawful `BEq` instance (compares only GPR 0-31, but `gpr` is unbounded). Propagates to `TCB`/`KernelObject`. ARM64 safety analysis is convincing. |
 | CF-04 | MEDIUM | `Structures.lean:495-509` | `CNode.resolveSlot` guard extraction does not check `guardBounded` precondition — relies on caller. |
-| CF-05 | MEDIUM | `Structures.lean:1018-1029` | `descendantsOf` BFS fuel may not discover all descendants for deep CDT chains. Proven safe for direct children only. |
+| CF-05 | LOW | `Structures.lean:1018-1029` | `descendantsOf` BFS uses `edges.length` as fuel — sufficient for acyclic CDTs (proven by `cdtAcyclicity`). Only a concern if acyclicity invariant were violated. |
 | CF-06 | LOW | `Machine.lean:405-409` | `zeroMemoryRange` does not check for address wraparound. Safe in abstract model (unbounded Nat), needs hardening for hardware. |
 | CF-07 | LOW | `Prelude.lean:85,382,506` | Inconsistent `valid` predicate return types (`Prop` vs `Bool`) across identifier types. |
 | CF-08 | LOW | `State.lean:1523-1524` | `objectIndexLive` assumes monotonic-append — would break if object deletion were added. |
@@ -137,7 +137,7 @@ Both are machine-checked with the `ofNat?_wxSafe` theorem.
 
 | ID | Severity | Location | Finding |
 |----|----------|----------|---------|
-| CA-01 | MEDIUM | `Operations.lean:77-83` | seL4 divergence: no intermediate rights check during multi-level CSpace traversal. Rights checked only at operation layer. |
+| CA-01 | LOW | `Operations.lean:77-84` | seL4 divergence: no intermediate rights check during multi-level CSpace traversal. Intentional design choice, documented with U-M25 rationale (lines 77-84). Rights checked at operation layer instead. |
 | CA-02 | MEDIUM | `Defs.lean:173-176` | Invariant bundle uses deeply nested 7+ tuples with positional extraction (`.2.2.2...`). Fragile to additions. |
 | CA-03 | MEDIUM | `Operations.lean:43-58,85-120` | Two resolution functions (`cspaceResolvePath` vs `resolveCapAddress`) with overlapping semantics — relationship undocumented. |
 | CA-04 | LOW | `Operations.lean:698-718` | `cspaceMove` has brief intermediate duplication (cap in both source and dest). Proven safe — error discards state. |
@@ -161,10 +161,8 @@ Both are machine-checked with the `ofNat?_wxSafe` theorem.
 | ID | Severity | Location | Finding |
 |----|----------|----------|---------|
 | LS-01 | MEDIUM | `Suspend.lean:159-163` | `suspendThread` re-lookups TCB after `cancelIpcBlocking` — fragile if cancellation ever modifies `schedContextBinding`. |
-| LS-02 | MEDIUM | `Suspend.lean:107-111` | `cancelDonation` silent no-op on missing TCB leaves binding inconsistency. Guarded by well-formedness invariant. |
-| LS-03 | MEDIUM | `Operations.lean:46-51` | `removeThreadFromQueue` adjusts head/tail but not queue count/length. |
-| LS-04 | LOW | `CrossSubsystem.lean:19-24` | `registryEndpointValid` checks object existence but not endpoint type. |
-| LS-05 | LOW | `CrossSubsystem.lean:124-126` | `collectQueueMembers` fuel-sufficiency formal connection deferred (TPI-DOC). |
+| LS-02 | LOW | `Service/Registry/Invariant.lean` | `registryEndpointValid` checks object existence but not endpoint type. |
+| LS-03 | LOW | `CrossSubsystem.lean:124-126` | `collectQueueMembers` fuel-sufficiency formal connection deferred (TPI-DOC). |
 
 ### 3.7 Architecture Subsystem
 
@@ -215,8 +213,8 @@ Both are machine-checked with the `ofNat?_wxSafe` theorem.
 | ID | Severity | Location | Finding |
 |----|----------|----------|---------|
 | PL-01 | MEDIUM | `MmioAdapter.lean:387-440` | `mmioWrite32`/`mmioWrite64` validate only base address, not full byte range. Could spill into adjacent region on boundary writes. |
-| PL-02 | MEDIUM | `DeviceTree.lean:476,577` | DTB parser fuel exhaustion returns `some []` (success) instead of `none` (error). Malformed DTB could cause incomplete parse treated as success. |
-| PL-03 | MEDIUM | `DeviceTree.lean:426` | `readCString` fixed fuel of 256 — truncates silently on long strings. |
+| PL-02 | MEDIUM | `DeviceTree.lean:476` | `parseFdtNodes` fuel exhaustion returns `some []` (success) instead of `none` (error). Malformed DTB could cause incomplete parse treated as success. Note: `findMemoryRegProperty` correctly returns `none` on fuel exhaustion. |
+| PL-03 | LOW | `DeviceTree.lean:426` | `readCString` fixed fuel of 256 — returns `none` (safe failure) on exhaustion. Low risk; only a concern for DTBs with strings exceeding 256 bytes. |
 | PL-04 | MEDIUM | `DeviceTree.lean:750-766` | `extractPeripherals` only searches 2 levels deep. May miss peripherals on complex board configs. |
 | PL-05 | LOW | `Boot.lean:137-140` | `bootFromPlatform` silently accepts empty `PlatformConfig`. |
 | PL-06 | LOW | `Boot.lean:262-270` | `applyMachineConfig` only copies `physicalAddressWidth`, not full config. Name is misleading. |
@@ -228,9 +226,9 @@ Both are machine-checked with the `ofNat?_wxSafe` theorem.
 | ID | Severity | Location | Finding |
 |----|----------|----------|---------|
 | AP-01 | MEDIUM | `API.lean:812-823` | Checked `.send` dispatch uses `endpointSendDualChecked` which may not support IPC capability transfer, unlike the unchecked path. |
-| AP-02 | MEDIUM | `Operations.lean:668-693` | `frozenSchedContextUnbind` may leave TCB with stale `.bound` reference after SC-side-only cleanup. |
+| AP-02 | LOW | `FrozenOps/Operations.lean:668-693` | `frozenSchedContextUnbind` normal path clears both SC and TCB binding. Defensive fallback does SC-side-only cleanup if TCB lookup fails. Mitigated by FrozenOps experimental status. |
 | AP-03 | LOW | `API.lean:777,982` | Wildcard dispatch arms return `.illegalState`. Proven unreachable at compile time. |
-| AP-04 | LOW | `Operations.lean:16` | Header claims "21 operations" but coverage theorem proves 20. Stale documentation. |
+| AP-04 | LOW | `FrozenOps/Operations.lean:16` | Header claims "21 operations" but the file defines 15 operation functions. Stale count in module docstring. |
 
 ---
 
@@ -266,7 +264,7 @@ Compile-time assertions (`const _: ()`) in `message_info.rs:29-33` enforce const
 | ID | Severity | Location | Finding |
 |----|----------|----------|---------|
 | RS-01 | LOW | `decode.rs:36-38` | Error code values `> u32::MAX` mapped to `InvalidSyscallNumber`. Correct defense against truncation. |
-| RS-02 | LOW | `decode.rs:41-43` | Unknown error codes (≥44) mapped to `InvalidSyscallNumber`. Documented as protocol violation. |
+| RS-02 | LOW | `decode.rs:39-43` | Stale comment says error codes are "0–42" but range is 0–43 (AlignmentError at 43). Unknown codes (≥44) correctly mapped to `InvalidSyscallNumber`. |
 | RS-03 | INFO | `trap.rs:28-52` | ARM64 `svc #0` with `clobber_abi("C")` — correct per AAPCS64. `options(nostack)` is appropriate. |
 | RS-04 | INFO | `message_info.rs:73-78` | `new_const` uses `assert!` for compile-time validation. Sound for const context. |
 
@@ -310,8 +308,8 @@ Compile-time assertions (`const _: ()`) in `message_info.rs:29-33` enforce const
 |----------|-------|-------------|
 | CRITICAL | 0 | — |
 | HIGH | 1 | CF-01: `storeObject` capacity bypass risk |
-| MEDIUM | 27 | See subsystem sections above |
-| LOW | 25+ | Mostly documentation, performance, defense-in-depth |
+| MEDIUM | 22 | See subsystem sections above |
+| LOW | 30+ | Mostly documentation, performance, defense-in-depth |
 | INFO | 20+ | Positive confirmations, architecture observations |
 
 ### HIGH Finding Detail
@@ -328,12 +326,11 @@ Alternatively, add a machine-checked proof that all non-retype callers are in-pl
 ### Top MEDIUM Findings (Pre-Hardware Priority)
 
 1. **PL-01**: MMIO multi-byte writes validate only base address — must check full range before RPi5 deployment
-2. **PL-02**: DTB parser fuel exhaustion treated as success — should return `none`
+2. **PL-02**: `parseFdtNodes` fuel exhaustion treated as success — should return `none`
 3. **SC-01/SC-03**: Scheduler priority/domain mismatch between TCB static fields and SchedContext-resolved values
 4. **IP-01**: Timeout sentinel collision risk with legitimate IPC data
 5. **AP-01**: Checked send dispatch may not support IPC capability transfer
 6. **SX-01**: CBS admission control truncation allows ~6.4% over-admission with 64 contexts
-7. **CA-01**: seL4 divergence on intermediate CSpace traversal rights checks
 
 ---
 
@@ -350,14 +347,13 @@ No blockers identified for benchmarking. The formal verification surface is soun
 3. **Address CF-01**: Structurally enforce `storeObject` capacity gating
 4. **Address IP-01**: Add `timedOut: Bool` field to TCB (replacing sentinel detection)
 5. **Address SC-01/SC-03**: Unify legacy and SchedContext-aware scheduler paths
-6. **Verify CA-01**: Validate intermediate rights check omission against threat model
-7. **Fix BF-02**: Enforce W^X in builder-phase `mapPage`
+6. **Fix BF-02**: Enforce W^X in builder-phase `mapPage`
 
 ### 7.3 Code Quality (Post-Release)
 
 1. Refactor deeply nested tuple invariant bundles to named structures
 2. Extract duplicated proof patterns into shared tactics/macros
-3. Update stale documentation (IP-02, AP-04, LS-05)
+3. Update stale documentation (IP-02, AP-04, RS-02)
 4. Parameterize hardcoded constants (ASID max, physicalAddressBound)
 
 ---
