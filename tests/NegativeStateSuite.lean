@@ -3038,6 +3038,31 @@ private def runWSR4CoherenceChecks : IO Unit := do
         throw <| IO.userError "R4-NEG-04: svcA still depends on svcB after removeDependenciesOf"
       IO.println "negative check passed [R4-NEG-04: removeDependenciesOf cleans dependency graph edges]"
 
+    -- R4-NEG-05: Duplicate endpoint rejection — two services on same endpoint (AE5-B / U-20)
+    let dupEpId : SeLe4n.ObjId := ⟨33⟩
+    let r4State5 := (BootstrapBuilder.empty
+        |>.withObject dupEpId (.endpoint {})
+        |>.withLifecycleObjectType dupEpId .endpoint
+        |>.buildChecked)
+    match SeLe4n.Kernel.registerInterface iface r4State5 with
+    | .error _ => throw <| IO.userError "R4-NEG-05: interface registration failed"
+    | .ok (_, stIface5) =>
+      let sharedCap : Capability := { target := .object dupEpId, rights := .singleton .write }
+      let regFirst : ServiceRegistration := {
+        sid := ⟨720⟩, iface := iface, endpointCap := sharedCap
+      }
+      match SeLe4n.Kernel.registerService regFirst stIface5 with
+      | .error e => throw <| IO.userError s!"R4-NEG-05: first registration failed: {toString e}"
+      | .ok (_, stFirstReg) =>
+        -- Second service with DIFFERENT sid but SAME endpoint must fail
+        let regSecond : ServiceRegistration := {
+          sid := ⟨721⟩, iface := iface, endpointCap := sharedCap
+        }
+        expectErr "R4-NEG-05: duplicate endpoint rejected"
+          (SeLe4n.Kernel.registerService regSecond stFirstReg)
+          .illegalState
+        IO.println "negative check passed [R4-NEG-05: duplicate endpoint registration rejected]"
+
   IO.println "all R4 lifecycle/service coherence checks passed"
 
 -- ============================================================================

@@ -2319,9 +2319,10 @@ theorem registerService_preserves_projection
     split at hStep <;> try simp at hStep
     · -- endpoint found
       split at hStep <;> try simp at hStep
-      · -- hasRight check passed — only serviceRegistry changes, projection unchanged
-        -- because the new service is non-observable (hServiceHigh)
-        cases hStep; simp only [projectState]; congr 1
+      · -- AE5-B: hasEndpointRegistered check
+        split at hStep <;> try simp at hStep
+        · -- passed — only serviceRegistry changes, projection unchanged
+          cases hStep; simp only [projectState]; congr 1
   all_goals simp at hStep
 
 /-- R5-B/M-02: registerServiceChecked NI — projection-based.

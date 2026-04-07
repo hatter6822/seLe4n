@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.19-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.25.20-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -85,10 +85,10 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.25.19` |
+| **Version** | `0.25.20` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 86,106 across 133 files |
-| **Test Lean LoC** | 11,318 across 16 test suites |
+| **Production Lean LoC** | 86,579 across 133 files |
+| **Test Lean LoC** | 11,347 across 16 test suites |
 | **Proved declarations** | 2,557 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
@@ -219,7 +219,7 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
 | Workstream | Scope | Version |
 |------------|-------|---------|
-| **WS-AE** | Production Audit Remediation — Phase AE1: API dispatch parity, wildcard unreachability, switchDomain NI composition, donation/PIP NI proofs, master dispatch NI theorem (8 tasks). Phase AE2: Data structure hardening, production reachability (8 tasks). Phase AE3: Scheduler & SchedContext correctness (12 tasks). Phase AE4: Capability, IPC & architecture hardening — CPtr masking, VAddr canonicity, CDT acyclicity, mint completeness bundle, queue link integrity, IPC buffer cross-page theorem (10 tasks) | v0.25.15–v0.25.19 |
+| **WS-AE** | Production Audit Remediation — Phase AE1: API dispatch parity, wildcard unreachability, switchDomain NI composition, donation/PIP NI proofs, master dispatch NI theorem (8 tasks). Phase AE2: Data structure hardening, production reachability (8 tasks). Phase AE3: Scheduler & SchedContext correctness (12 tasks). Phase AE4: Capability, IPC & architecture hardening — CPtr masking, VAddr canonicity, CDT acyclicity, mint completeness bundle, queue link integrity, IPC buffer cross-page theorem (10 tasks) | v0.25.15–v0.25.20 |
 | **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned module integration, Phase AD2: code quality hardening, Phase AD3: production deployment documentation, Phase AD4: 35 cross-subsystem composition bridge lemmas covering all 33 kernel operations (5 phases, 19+ tasks) | v0.25.11–v0.25.14 |
 | **WS-AC** | Comprehensive Audit Remediation — 3 HIGH, 9 MEDIUM, 9 LOW findings addressed across scheduler, IPC, capability, architecture, and cross-cutting subsystems (6 phases, 42 tasks) | v0.25.3–v0.25.10 |
 | **WS-AB** | Deferred Operations & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem (6 phases, 90 tasks) | v0.24.0–v0.25.5 |

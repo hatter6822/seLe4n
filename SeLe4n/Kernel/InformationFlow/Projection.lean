@@ -547,7 +547,20 @@ def serviceRegistryAffectsProjection
     (in `Invariant/Composition.lean`) cover kernel primitives (IPC, scheduling,
     capability operations, lifecycle). Service orchestration NI is deferred to
     a future workstream requiring extension of `ObservableState` with dependency
-    graph projections and NI proofs for all service operations. -/
+    graph projections and NI proofs for all service operations.
+
+    **AE5-E (U-10/IF-06)**: NI Projection Boundary — Service Orchestration.
+    Service orchestration actions (lifecycle transitions, restart policies,
+    heartbeat monitoring) are explicitly OUTSIDE the NI projection boundary.
+    This means the NI proofs do not cover information flows through:
+    - Restart timing (a service restart could leak cross-domain timing)
+    - Lifecycle state transitions visible to other domains
+    - Heartbeat failure detection patterns
+
+    This is an accepted scope limitation for the current kernel model.
+    If service orchestration becomes security-relevant for a deployment,
+    extend `ObservableState` to include orchestration state and prove NI
+    preservation for orchestration transitions. -/
 theorem serviceOrchestrationOutsideNiBoundary
     (ctx : LabelingContext) (observer : IfObserver)
     (st₁ st₂ : SystemState)

@@ -627,7 +627,8 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - `noStaleEndpointQueueReferences` — every endpoint queue head/tail and interior member has a live TCB (T5-I: extended from head/tail-only to full `collectQueueMembers` traversal)
   - `noStaleNotificationWaitReferences` — every ThreadId in notification `waitingThreads` has a live TCB (T5-H)
   - `registryDependencyConsistent` — every dependency edge references a registered service
-  - `crossSubsystemInvariant` — composed 8-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`)
+  - `registryInterfaceValid` — every registered service has its interfaces in the interface registry (AE5-C/SVC-04)
+  - `crossSubsystemInvariant` — composed 9-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`, AE5-C: added `registryInterfaceValid`)
   - **X3-C/X3-D (v0.22.20)**: 10 predicate interaction pairs fully covered:
     - 6 disjoint pairs with field-disjointness witnesses (V6-A3)
     - 4 sharing pairs with frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`)
