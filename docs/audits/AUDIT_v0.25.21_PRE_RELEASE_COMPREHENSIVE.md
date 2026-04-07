@@ -21,7 +21,7 @@ determinism, logic errors, performance, invariant coverage, and dead code.
 |----------|-------|
 | CRITICAL | 0     |
 | HIGH     | 2     |
-| MEDIUM   | 26    |
+| MEDIUM   | 24    |
 | LOW      | 53    |
 | INFO     | 170+  |
 
@@ -73,28 +73,35 @@ Each agent read every file in 500-line chunks and examined each line for:
 - **Subsystem**: Scheduler / Priority Inheritance Protocol
 - **Category**: Invariant gap
 
-**Description**: `blockingAcyclic` is defined as a predicate but is **never
-proven to hold from construction**. It is used as a hypothesis in downstream
-PIP theorems. The blocking graph could in principle contain cycles if IPC
-operations create circular blocking (e.g., thread A blocked on B, B blocked
-on A).
+**Description**: `blockingAcyclic` is defined as a predicate (line 115) but
+is **not part of any proven invariant bundle**. The docstring comments in
+BlockingGraph.lean (lines 62, 74) claim it lives in `crossSubsystemInvariant`,
+but inspection of CrossSubsystem.lean reveals the 9-predicate bundle does NOT
+include `blockingAcyclic`. Furthermore, `blockingAcyclic` is never consumed
+as a hypothesis by any downstream theorem -- the only consumer is
+`blockingChain_acyclic` (line 119) which is a trivial restatement.
 
-`propagatePriorityInheritance` uses fuel to bound traversal, which prevents
-infinite loops at runtime, but a cycle would mean propagation terminates early
-(fuel exhaustion) without fully propagating -- silently producing incorrect
-PIP boosts. No IPC operation currently prevents cyclic blocking at the
-transition level via a proven invariant.
+`propagatePriorityInheritance` uses fuel-bounded traversal (fuel =
+`objectIndex.length`) which prevents infinite loops. If a cycle exists in the
+blocking graph, propagation terminates at the fuel limit rather than looping,
+but the chain walk is incomplete -- threads beyond the cycle point retain
+stale priority boosts.
+
+The key gap is twofold: (1) the predicate is defined but unintegrated into
+the invariant framework, and (2) the code comments incorrectly claim it is
+part of `crossSubsystemInvariant`, creating a false sense of coverage.
 
 **Impact**: If a cycle exists in the blocking graph, PIP propagation is
-incomplete. Priority inversion would not be fully resolved. The fuel bound
-masks the cycle rather than preventing it.
+incomplete (stale boosts). The fuel bound prevents non-termination but does
+not ensure correctness. The misleading comments could cause maintainers to
+believe this property is already verified.
 
-**Recommendation**: Either:
-(a) Prove `blockingAcyclic` from IPC transition invariants (showing the IPC
-    state machine prevents cycles), or
-(b) Add a runtime cycle-detection check in the blocking chain walk, or
-(c) Formally document this as an accepted assumption with evidence that IPC
-    transitions structurally maintain acyclicity.
+**Recommendation**:
+(a) Add `blockingAcyclic` to `crossSubsystemInvariant` and prove preservation
+    for all kernel operations, or
+(b) Prove it from existing IPC invariants (e.g., `tcbQueueChainAcyclic`), or
+(c) Correct the misleading comments in BlockingGraph.lean to accurately state
+    that `blockingAcyclic` is defined but not yet integrated.
 
 ---
 
@@ -104,40 +111,42 @@ masks the cycle rather than preventing it.
 - **Subsystem**: Scheduler / Liveness
 - **Category**: Misleading assurance
 
-**Description**: `bounded_scheduling_latency` is the headline WCRT theorem:
-`wcrt <= wcrtBound hyp`. The proof is `rfl` -- it is **definitionally true**
-because `wcrtBound` simply computes the formula and the theorem states the
-result equals that formula. The theorem provides zero assurance beyond the
-definition itself.
+**Description**: `bounded_scheduling_latency` (line 132) proves
+`wcrtBound D L_max N B P = D * L_max + N * (B + P)`. The proof is
+`simp [wcrtBound]` -- it is **definitional unfolding** that provides zero
+assurance beyond the definition of `wcrtBound` itself. The theorem name
+suggests a proven scheduling latency bound, but it merely confirms the
+formula equals its expansion.
 
-All actual scheduling guarantees are packed into the `WCRTHypotheses`
-structure, which must be instantiated externally. The companion theorem
-`bounded_scheduling_latency_exists` wraps this in an existential
-(`exists bound, wcrt <= bound`) which is equally vacuous.
+**Correction from initial audit**: The companion theorem
+`bounded_scheduling_latency_exists` (line 153) is **NOT** tautological.
+It is a genuine composition theorem that takes `WCRTHypotheses`,
+`hDomainActiveRunnable`, and `hBandProgress` hypotheses and composes them
+via `Nat.add_le_add` to produce a concrete selection index within the bound.
+This is real proof work, though the hypotheses are still externally provided.
 
-The theorem name suggests a proven scheduling latency bound, but the actual
-content is tautological. The real proof obligation -- demonstrating that
-`WCRTHypotheses` holds for a concrete `SystemState` satisfying the scheduler
-invariants -- is entirely deferred.
+The core gap remains: `WCRTHypotheses` must be instantiated externally for
+a concrete system configuration, and neither `hDomainActiveRunnable` nor
+`hBandProgress` are derived from the kernel invariants.
 
-**Positive note**: `pip_enhanced_wcrt_le_base` (same file, ~lines 220-260)
-IS a genuine inequality proving the PIP-enhanced bound is tighter than the
-base bound.
+**Positive note**: `pip_enhanced_wcrt_le_base` (line 278) IS a genuine
+inequality, and `countHigherOrEqual_mono_threshold` (line 238) proves
+monotonicity of the priority counting function.
 
-**Impact**: Misleading assurance. Auditors or users might believe stronger
-guarantees exist than actually do.
+**Impact**: The `bounded_scheduling_latency` name is misleading for its
+definitional content. The existential version does genuine composition
+but relies on externalized hypotheses.
 
-**Recommendation**: Rename to `wcrtBound_unfold` or similar. Add
-documentation clearly stating this is a parametric definition, not a proven
-end-to-end bound. The real theorem would be an instantiation proving
-`WCRTHypotheses` holds for a concrete system configuration.
-
+**Recommendation**: Rename `bounded_scheduling_latency` to
+`wcrtBound_unfold` or similar. Document that `bounded_scheduling_latency_exists`
+is the substantive theorem, and track the `WCRTHypotheses` instantiation
+obligation as a future workstream item.
 
 ---
 
-## MEDIUM Findings (26)
+## MEDIUM Findings (24)
 
-### Scheduler Subsystem (7 MEDIUM)
+### Scheduler Subsystem (5 MEDIUM, 2 retracted)
 
 **MED-S1**: `resolveEffectivePrioDeadline` permissive fallback  
 _Location_: `Scheduler/Operations/Selection.lean`, lines ~280-310  
@@ -153,33 +162,31 @@ Performs a linear scan over `st.objectIndex` on every budget exhaustion
 event. Acknowledged in AE3/S-05 documentation. Consider maintaining an
 index of budget-bound blocked threads.
 
-**MED-S3**: Unreachable `switchDomain` branch not proven unreachable  
-_Location_: `Scheduler/Operations/Core.lean`, lines ~600-650  
-The `| none =>` branch for empty domain schedule is handled defensively
-(returns state unchanged) rather than deriving `False`. Could cause silent
-scheduling stalls if domain schedule construction is ever buggy.
+**~~MED-S3~~**: RETRACTED. The `switchDomain` `| none =>` branch IS proven
+unreachable by `switchDomain_index_in_bounds` (line 792) and
+`switchDomain_index_lookup_isSome` (line 804) in the same file.
 
-**MED-S4**: High heartbeat proofs (fragility risk)  
+**MED-S3**: High heartbeat proofs (fragility risk)  
 _Location_: `Scheduler/Operations/Preservation.lean`, lines 2409, 2494  
 `handleYield_preserves_edfCurrentHasEarliestDeadline` requires 1,600,000
 heartbeats (8x default). `timerTick` variant requires 800,000 (4x).
 Maintenance risk: toolchain updates could break these proofs.
 
-**MED-S5**: Tautological `pip_deterministic` theorem  
+**MED-S4**: Tautological `pip_deterministic` theorem  
 _Location_: `Scheduler/PriorityInheritance/BoundedInversion.lean`, lines 53-66  
 Proves `f x = f x` given identical inputs. Follows from purity by `rfl`.
 Name "deterministic" is misleading. Rename to `pip_congruence`.
 
-**MED-S6**: `eventuallyExits` is an unproven hypothesis  
+**MED-S5**: `eventuallyExits` is an unproven hypothesis  
 _Location_: `Scheduler/Liveness/BandExhaustion.lean`, lines ~30-45  
 Assumes every thread eventually exits a priority band. Not enforced by the
 kernel. A thread with sufficient budget could spin indefinitely. Should be
 derived from CBS budget finiteness for bound threads.
 
-**MED-S7**: Vacuous existential WCRT  
-_Location_: `Scheduler/Liveness/WCRT.lean`, lines ~160-190  
-`bounded_scheduling_latency_exists` wraps the tautological bound in an
-existential. No stronger than HIGH-2 above.
+**~~MED-S7~~**: RETRACTED. `bounded_scheduling_latency_exists` is a genuine
+composition theorem that performs real proof work (combining domain rotation
+and band exhaustion bounds via `Nat.add_le_add`), not a vacuous existential.
+See corrected HIGH-2 description above.
 
 ### IPC Subsystem (3 MEDIUM)
 
@@ -256,11 +263,11 @@ Second `native_decide` instance. Extends TCB to Lean runtime evaluator for
 9-predicate pairwise field-disjointness check.
 
 **MED-CS2**: `collectQueueMembers` fuel-sufficiency not formally connected  
-_Location_: `Kernel/CrossSubsystem.lean`, lines 118-126  
-Fuel-bounded traversal with fuel = object count. Documentation argues
-sufficiency follows from `tcbQueueChainAcyclic`, but the argument is not
-formalized as a theorem. Fuel exhaustion causes predicates to become
-vacuously true.
+_Location_: `Kernel/CrossSubsystem.lean`, def at lines 69-79, doc at 112-126  
+Fuel-bounded traversal with fuel = object count. AE5-A already changed the
+return type to `Option` (fuel exhaustion returns `none` instead of `[]`).
+Documentation argues sufficiency follows from `tcbQueueChainAcyclic`, but
+the argument is not formalized as a theorem.
 
 **MED-D1**: `parseFdtNodes` silent truncation on fuel exhaustion  
 _Location_: `Platform/DeviceTree.lean`, line 585  
@@ -560,8 +567,8 @@ safety violations.
 
 1. **Prove or bridge `blockingAcyclic`** (HIGH-1) -- PIP correctness depends
    on this unproven assumption
-2. **Rename/document WCRT theorems** (HIGH-2, MED-S7) -- prevent misleading
-   assurance claims
+2. **Rename/document WCRT theorems** (HIGH-2) -- prevent misleading
+   assurance claims for `bounded_scheduling_latency`
 3. **Fix DTB parser truncation** (MED-D1) -- return `none` on fuel exhaustion
 4. **Replace `native_decide` with `decide`** (MED-IF1, MED-CS1) -- reduce TCB
 5. **Fix silent reply_recv truncation** (MED-R2) -- return error for >3 regs
@@ -576,8 +583,8 @@ safety violations.
 
 ### Maintenance / Quality
 
-11. Decompose high-heartbeat proofs (MED-S4, LOW-SV4, LOW-RH1)
-12. Derive `eventuallyExits` from CBS budget finiteness (MED-S6)
+11. Decompose high-heartbeat proofs (MED-S3, LOW-SV4, LOW-RH1)
+12. Derive `eventuallyExits` from CBS budget finiteness (MED-S5)
 13. Tighten CBS bandwidth bound from 8x to 1x (MED-SC1)
 14. Add `SchedContext` marker type to Rust sele4n-sys (LOW-R7)
 15. Add XVAL register-position tests for SchedContext/TCB (LOW-R6)
@@ -606,3 +613,37 @@ coverage with clearly documented boundary exclusions.
 **Overall assessment: PASS with 2 HIGH findings requiring attention before
 formal verification claims are made about scheduling guarantees.**
 
+---
+
+## Errata (Post-Verification Corrections)
+
+The following corrections were applied after independent line-by-line
+verification of each finding against the source code:
+
+1. **MED-S3 RETRACTED**: The `switchDomain` `| none =>` branch IS proven
+   unreachable by `switchDomain_index_in_bounds` (line 792) and
+   `switchDomain_index_lookup_isSome` (line 804) in Core.lean. The initial
+   audit agent missed these theorems located directly below the function.
+
+2. **MED-S7 RETRACTED**: `bounded_scheduling_latency_exists` is NOT vacuous.
+   It is a genuine composition theorem that combines domain rotation and band
+   exhaustion bounds via `Nat.add_le_add` with real hypotheses
+   (`hDomainActiveRunnable`, `hBandProgress`). Only the definitional
+   `bounded_scheduling_latency` (which proves `wcrtBound D L N B P =
+   D * L + N * (B + P)` by `simp`) is tautological.
+
+3. **HIGH-1 REFINED**: `blockingAcyclic` is not only unproven but also NOT
+   part of `crossSubsystemInvariant` despite comments in BlockingGraph.lean
+   (lines 62, 74) claiming otherwise. Additionally, `blockingAcyclic` is
+   never consumed by any downstream proof. The misleading comments are an
+   additional concern beyond the original finding.
+
+4. **MED-CS2 LINE CORRECTION**: `collectQueueMembers` definition is at lines
+   69-79 (not 118-126). The documentation at 112-126 discusses fuel
+   sufficiency. AE5-A already changed the return type to `Option` (fuel
+   exhaustion returns `none`).
+
+5. **MEDIUM count adjusted**: 26 -> 24 (2 retracted).
+
+All other 22 MEDIUM and 2 HIGH findings were independently confirmed against
+the source code at their claimed locations.
