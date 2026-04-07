@@ -12,6 +12,14 @@ import SeLe4n.Model.FreezeProofs
 /-!
 # Q7-A: Frozen Kernel Monad and Core Primitives
 
+**STATUS: Experimental/Future — not in production import chain.**
+These modules implement the frozen-state kernel monad for a future
+architecture where syscall processing operates on immutable
+`FrozenSystemState` snapshots. Currently exercised by test suites only.
+Integration into the production API layer is planned for WS-V
+(hardware binding) when the performance characteristics of the
+two-phase approach can be benchmarked on RPi5. (AE2-E / U-02)
+
 **Subsystem status (W3-G):** FrozenOps has zero production consumers — the
 kernel API (`API.lean`) does not reference it. Only `FrozenOpsSuite.lean` and
 `TwoPhaseArchSuite.lean` import it. This subsystem is retained as **architectural
@@ -177,7 +185,10 @@ def frozenSetCurrentThread (tid : Option SeLe4n.ThreadId)
 
 /-- T1-A: Internal helper — compute the updated objects map for queue push tail.
 Returns only the modified `FrozenMap`, not the full state. This separation
-makes preservation proofs trivial: the caller wraps in `{ st with objects }`. -/
+makes preservation proofs trivial: the caller wraps in `{ st with objects }`.
+
+AE2-D (U-31): Two-phase design — validate all object keys exist BEFORE
+performing any writes, preventing partial mutation on intermediate failure. -/
 def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObject)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
@@ -185,6 +196,11 @@ def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObj
   let q := if isReceiveQ then ep.receiveQ else ep.sendQ
   match q.tail with
   | none =>
+      -- AE2-D Phase 1: Validate all target keys exist before any mutation
+      if !(objects.contains endpointId && objects.contains tid.toObjId) then
+        .error .objectNotFound
+      else
+      -- AE2-D Phase 2: Apply writes (guaranteed to succeed by Phase 1)
       let q' : IntrusiveQueue := { head := some tid, tail := some tid }
       let ep' : Endpoint := if isReceiveQ
         then { ep with receiveQ := q' }
@@ -197,11 +213,17 @@ def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObj
       | some objects1 =>
           match objects1.set tid.toObjId (.tcb tcb') with
           | some objects2 => .ok objects2
-          | none => .error .objectNotFound
-      | none => .error .objectNotFound
+          | none => .error .objectNotFound  -- unreachable after Phase 1
+      | none => .error .objectNotFound  -- unreachable after Phase 1
   | some tailTid =>
       match objects.get? tailTid.toObjId with
       | some (.tcb tailTcb) =>
+          -- AE2-D Phase 1: Validate all target keys exist before any mutation
+          if !(objects.contains endpointId && objects.contains tailTid.toObjId
+               && objects.contains tid.toObjId) then
+            .error .objectNotFound
+          else
+          -- AE2-D Phase 2: Apply writes (guaranteed to succeed by Phase 1)
           let q' : IntrusiveQueue := { head := q.head, tail := some tid }
           let ep' : Endpoint := if isReceiveQ
             then { ep with receiveQ := q' }
@@ -217,9 +239,9 @@ def frozenQueuePushTailObjects (objects : FrozenMap SeLe4n.ObjId FrozenKernelObj
               | some objects2 =>
                   match objects2.set tid.toObjId (.tcb tcb') with
                   | some objects3 => .ok objects3
-                  | none => .error .objectNotFound
-              | none => .error .objectNotFound
-          | none => .error .objectNotFound
+                  | none => .error .objectNotFound  -- unreachable after Phase 1
+              | none => .error .objectNotFound  -- unreachable after Phase 1
+          | none => .error .objectNotFound  -- unreachable after Phase 1
       | _ => .error .objectNotFound
 
 def frozenQueuePushTail (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)

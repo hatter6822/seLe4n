@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.15.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.16.
 
 ## Build and run
 
@@ -178,7 +178,7 @@ SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
   Core.lean                      CNodeRadix type, extractBits, O(1) lookup/insert/erase/fold/toList
   Invariant.lean                 24 correctness proofs (lookup, WF, size, toList, fold)
   Bridge.lean                    buildCNodeRadix (RHTable → CNodeRadix), freezeCNodeSlots, bridge lemmas
-SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7)
+SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7, experimental — not in production chain)
   Core.lean                      FrozenKernel monad, lookup/store primitives
   Operations.lean                15 per-subsystem frozen operations
   Commutativity.lean             FrozenMap set/get? roundtrip proofs, frame lemmas
@@ -495,6 +495,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-AE Phase AE2 COMPLETE** (v0.25.16): Production Audit Remediation — Phase AE2: Data Structure Hardening & Production Reachability. 8 sub-tasks (AE2-A through AE2-H). RobinHood `4 ≤ capacity` enforcement (U-28), RadixTree checked build with key-bounds validation (U-29), fuel exhaustion documentation (U-30), FrozenOps partial mutation fix (U-31), FrozenOps experimental status documentation (U-02), Liveness production reachability via CrossSubsystem import (U-05), PIP transitive import verification (AE2-G). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE1 COMPLETE** (v0.25.15): Production Audit Remediation — Phase AE1: API Dispatch & NI Composition. 8 sub-tasks (AE1-A through AE1-H). Dispatch parity fixes (U-01/U-06), wildcard unreachability (U-07), switchDomain NI composition (IF-01/U-03), donation/PIP NI proofs (IF-02/U-04), master dispatch NI theorem (U-08). KernelOperation 32→34 constructors. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AD PORTFOLIO COMPLETE** (v0.25.11–v0.25.14): Pre-Release Audit Remediation — 5 phases (AD1–AD5). 21 findings (7 actionable, 2 already addressed, 12 no-action). Phase AD4 (F-08): 35 cross-subsystem bridge lemmas (2 core + 33 per-operation) covering ALL 33 kernel operations that modify `objects`. Phase AD5: documentation sync & closure. Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md`
 - **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10): Comprehensive Audit Remediation — 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Phase AC6 COMPLETE (documentation, testing & closure: T-03 DecodingSuite, audit errata, workstream history). Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`

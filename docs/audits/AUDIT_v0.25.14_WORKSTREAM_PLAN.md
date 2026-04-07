@@ -747,11 +747,12 @@ theorem applications.
 
 ## 4. Phase AE2 — Data Structure Hardening & Production Reachability
 
+**Status**: COMPLETE (v0.25.16)
 **Goal**: Fix data structure safety gaps (RobinHood capacity guard, RadixTree
 precondition enforcement) and resolve production reachability for FrozenOps
 and Liveness subsystems.
 **Gate**: `lake build` + module-specific builds for modified files +
-`./scripts/test_smoke.sh`
+`./scripts/test_smoke.sh` — ALL PASSED
 **Dependencies**: None (independent of AE1).
 **Estimated scope**: ~100–135 lines of changes.
 

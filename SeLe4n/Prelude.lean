@@ -944,9 +944,9 @@ theorem HashSet_contains_insert_self {α : Type} [BEq α] [Hashable α] [LawfulB
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Lookup in empty RHTable returns none. -/
 theorem RHTable_get?_empty {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
-    (cap : Nat) (hPos : 0 < cap) {a : α} :
-    (RHTable.empty cap hPos : RHTable α β).get? a = none :=
-  RHTable.getElem?_empty cap hPos a
+    (cap : Nat) (hCapGe4 : 4 ≤ cap) {a : α} :
+    (RHTable.empty cap hCapGe4 : RHTable α β).get? a = none :=
+  RHTable.getElem?_empty cap hCapGe4 a
 
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: After inserting key `k` with value `v`, lookup returns `some v`. -/
@@ -1045,9 +1045,9 @@ theorem RHTable_insert_preserves_invExt {α β : Type} [BEq α] [Hashable α] [L
 open SeLe4n.Kernel.RobinHood in
 /-- Q2-A: Empty table satisfies invExt. -/
 theorem RHTable_empty_invExt {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
-    (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).invExt :=
-  RHTable.empty_invExt cap hPos
+    (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).invExt :=
+  RHTable.empty_invExt cap hCapGe4
 
 -- ============================================================================
 -- V3-B Phase 2: invExtK re-exports for kernel code

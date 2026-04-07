@@ -39,8 +39,16 @@ structure RHTable (α : Type) (β : Type) where
   slots     : Array (Option (RHEntry α β))
   size      : Nat
   capacity  : Nat
-  hCapPos   : 0 < capacity
+  -- AE2-A (U-28): Enforce minimum capacity of 4 to guarantee the
+  -- insert-size guard (`insert_size_lt_capacity`) holds for all tables.
+  -- Tables with capacity 1–3 bypassed the guard because `invExtK` requires
+  -- `4 ≤ capacity` but the old `0 < capacity` did not.
+  hCapGe4   : 4 ≤ capacity
   hSlotsLen : slots.size = capacity
+
+/-- AE2-A: Backward-compatible accessor — `4 ≤ capacity` implies `0 < capacity`. -/
+theorem RHTable.hCapPos (t : RHTable α β) : 0 < t.capacity := by
+  have := t.hCapGe4; omega
 
 instance [Repr α] [Repr β] : Repr (RHTable α β) where
   reprPrec t _ :=
@@ -87,19 +95,21 @@ structure RHTable.WF [BEq α] [Hashable α] (t : RHTable α β) : Prop where
   sizeCount  : t.size = countOccupied t.slots
   sizeBound  : t.size ≤ t.capacity
 
-/-- Create an empty Robin Hood hash table with the given capacity. -/
-def RHTable.empty (cap : Nat) (hPos : 0 < cap := by omega) : RHTable α β :=
+/-- Create an empty Robin Hood hash table with the given capacity.
+    AE2-A (U-28): Requires `4 ≤ cap` to guarantee the insert-size guard
+    (`insert_size_lt_capacity`) holds without caller-side obligations. -/
+def RHTable.empty (cap : Nat) (hCapGe4 : 4 ≤ cap := by omega) : RHTable α β :=
   { slots     := ⟨List.replicate cap none⟩
     size      := 0
     capacity  := cap
-    hCapPos   := hPos
+    hCapGe4   := hCapGe4
     hSlotsLen := by simp [Array.size] }
 
 /-- N1-B2: The empty table is well-formed (all 4 WF conjuncts). -/
-theorem RHTable.empty_wf [BEq α] [Hashable α] (cap : Nat) (hPos : 0 < cap) :
-    (RHTable.empty cap hPos : RHTable α β).WF where
+theorem RHTable.empty_wf [BEq α] [Hashable α] (cap : Nat) (hCapGe4 : 4 ≤ cap) :
+    (RHTable.empty cap hCapGe4 : RHTable α β).WF where
   slotsLen  := by simp [RHTable.empty, Array.size]
-  capPos    := hPos
+  capPos    := by simp [RHTable.empty]; omega
   sizeCount := by simp [RHTable.empty, countOccupied, List.countP_replicate]
   sizeBound := Nat.zero_le _
 
@@ -123,14 +133,15 @@ def insertLoop [BEq α] [Hashable α]
     (hCapPos : 0 < capacity)
     : Array (Option (RHEntry α β)) × Bool :=
   match fuel with
-  -- LOW-06: Fuel exhaustion cannot occur under maintained invariants. The caller
-  -- (`insert`) passes `fuel = capacity`, and the `invExtK` bundle guarantees the
-  -- load factor remains below 1.0, ensuring at least one empty slot exists. The
-  -- maximum probe distance is therefore bounded by `capacity - 1`, and fuel
-  -- always exceeds this bound. The `false` return flag is the only signal of
-  -- incomplete insertion — callers should treat it as a table-full condition.
-  -- The defensive return of `(slots, false)` is the correct kernel-safe fallback:
-  -- no mutation occurs and the caller observes a failed insertion.
+  -- AUDIT-NOTE: D-RH02 / LOW-06 — Fuel exhaustion cannot occur under maintained
+  -- invariants. The caller (`insert`) passes `fuel = capacity`, and the `invExtK`
+  -- bundle guarantees the load factor remains below 1.0, ensuring at least one
+  -- empty slot exists. The maximum probe distance is therefore bounded by
+  -- `capacity - 1`, and fuel always exceeds this bound. The `false` return flag
+  -- is the only signal of incomplete insertion — callers should treat it as a
+  -- table-full condition.
+  -- CONSEQUENCE if reached: no mutation — `(slots, false)` returned unchanged.
+  -- WF PROPERTY: `invExtK` → `size < capacity` → at least one empty slot.
   | 0 => (slots, false)
   | fuel' + 1 =>
     let i := idx % capacity
@@ -183,6 +194,13 @@ def getLoop [BEq α] [Hashable α]
     (hCapPos : 0 < capacity)
     : Option β :=
   match fuel with
+  -- AUDIT-NOTE: D-RH02 — Fuel exhaustion cannot occur under maintained
+  -- invariants. The caller (`get?`) passes `fuel = capacity`. Robin Hood
+  -- early termination (empty slot or dist < search dist) is guaranteed to
+  -- trigger within `capacity` steps because at least one slot is empty
+  -- under `invExtK` (`size < capacity`).
+  -- CONSEQUENCE if reached: `none` returned — correct "key absent" semantics.
+  -- WF PROPERTY: `invExtK` → at least one empty slot within probe chain.
   | 0 => none
   | fuel' + 1 =>
     let i := idx % capacity
@@ -216,6 +234,11 @@ def findLoop [BEq α] [Hashable α]
     (hCapPos : 0 < capacity)
     : Option Nat :=
   match fuel with
+  -- AUDIT-NOTE: D-RH02 — Same fuel-safety argument as `getLoop`. Caller
+  -- (`erase`) passes `fuel = capacity`. Robin Hood early termination
+  -- guarantees triggering within capacity steps under `invExtK`.
+  -- CONSEQUENCE if reached: `none` returned — no slot found, erase is no-op.
+  -- WF PROPERTY: `invExtK` → at least one empty slot within probe chain.
   | 0 => none
   | fuel' + 1 =>
     let i := idx % capacity
@@ -237,12 +260,13 @@ def backshiftLoop
     (hCapPos : 0 < capacity)
     : Array (Option (RHEntry α β)) :=
   match fuel with
-  -- LOW-06: Fuel exhaustion cannot occur under maintained invariants. The caller
-  -- (`erase`) passes `fuel = capacity`, and the `invExtK` bundle guarantees at
-  -- least one empty slot exists (load < 1.0). Backshift terminates at the first
-  -- empty slot or an entry at its ideal position (dist = 0), both of which are
-  -- guaranteed to occur within `capacity` steps. The defensive return of the
-  -- unchanged `slots` array is the correct kernel-safe fallback.
+  -- AUDIT-NOTE: D-RH02 / LOW-06 — Fuel exhaustion cannot occur under maintained
+  -- invariants. The caller (`erase`) passes `fuel = capacity`, and the `invExtK`
+  -- bundle guarantees at least one empty slot exists (load < 1.0). Backshift
+  -- terminates at the first empty slot or an entry at its ideal position
+  -- (dist = 0), both of which are guaranteed to occur within `capacity` steps.
+  -- CONSEQUENCE if reached: unchanged `slots` returned — no backshift applied.
+  -- WF PROPERTY: `invExtK` → `size < capacity` → empty slot within chain.
   | 0 => slots
   | fuel' + 1 =>
     let nextI := (gapIdx + 1) % capacity
@@ -301,7 +325,7 @@ def RHTable.erase [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k :
     { slots     := slots''
       size      := t.size - 1
       capacity  := t.capacity
-      hCapPos   := t.hCapPos
+      hCapGe4   := t.hCapGe4
       hSlotsLen := by
         rw [backshiftLoop_preserves_len]; rw [Array.size_set]; exact t.hSlotsLen }
 
@@ -330,7 +354,7 @@ protected def RHTable.insertNoResize [BEq α] [Hashable α] [LawfulBEq α]
   { slots     := result.1
     size      := if result.2 then t.size + 1 else t.size
     capacity  := t.capacity
-    hCapPos   := t.hCapPos
+    hCapGe4   := t.hCapGe4
     hSlotsLen := by
       show (insertLoop t.capacity start k v 0 t.slots t.capacity t.hSlotsLen t.hCapPos).1.size
            = t.capacity
@@ -344,8 +368,8 @@ protected theorem RHTable.insertNoResize_capacity [BEq α] [Hashable α] [Lawful
 /-- N1-G3: Resize the table by doubling capacity and re-inserting all entries. -/
 def RHTable.resize [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : RHTable α β :=
   let newCap := t.capacity * 2
-  have hNewPos : 0 < newCap := Nat.mul_pos t.hCapPos (by omega)
-  let empty : RHTable α β := RHTable.empty newCap hNewPos
+  have hNewGe4 : 4 ≤ newCap := by have := t.hCapGe4; omega
+  let empty : RHTable α β := RHTable.empty newCap hNewGe4
   t.fold empty (fun acc k v => acc.insertNoResize k v)
 
 /-- The fold step used by resize preserves capacity.

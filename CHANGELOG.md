@@ -1,3 +1,33 @@
+## v0.25.16 — WS-AE Phase AE2: Data Structure Hardening & Production Reachability
+
+Phase AE2 of WS-AE Production Audit Remediation. Addresses 6 audit findings
+(U-28, U-29, U-30, U-31, U-02, U-05) with RobinHood capacity enforcement,
+RadixTree key-bounds validation, FrozenOps partial mutation fix, and Liveness
+production reachability. All tests pass (test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+- **AE2-A (U-28)**: Enforced `4 ≤ capacity` in `RHTable` struct and `RHTable.empty`.
+  Changed struct field from `hCapPos : 0 < capacity` to `hCapGe4 : 4 ≤ capacity`,
+  added backward-compatible `hCapPos` accessor. Prevents tables with capacity 1-3
+  from bypassing `insert_size_lt_capacity` guard. Updated 13 downstream files.
+- **AE2-B (U-29)**: Added `buildCNodeRadixChecked` with runtime key-bounds
+  validation. Falls back to empty radix on out-of-bound keys. Connecting theorems
+  prove equivalence when keys are bounded (defense-in-depth for `UniqueRadixIndices`
+  precondition).
+- **AE2-C (U-30)**: Added `AUDIT-NOTE: D-RH02` annotations to all 4 fuel
+  exhaustion points (`insertLoop`, `getLoop`, `findLoop`, `backshiftLoop`)
+  documenting consequence, WF property, and kernel-safe fallback.
+- **AE2-D (U-31)**: Refactored `frozenQueuePushTailObjects` to two-phase design:
+  validate all object keys exist before any mutation, preventing partial state
+  corruption on intermediate lookup failure.
+- **AE2-E (U-02)**: Documented FrozenOps as experimental/future infrastructure
+  with explicit non-production status.
+- **AE2-F (U-05)**: Imported `Scheduler.Liveness` into production proof chain via
+  `CrossSubsystem.lean`. All 7+1 Liveness modules now type-checked against actual
+  scheduler on every build (import-cycle resolved via CrossSubsystem boundary).
+- **AE2-G**: Verified all 5 PriorityInheritance submodules transitively reachable
+  via Liveness import chain.
+
 ## v0.25.15 — WS-AE Phase AE1: API Dispatch & NI Composition
 
 Phase AE1 of WS-AE Production Audit Remediation. Addresses 7 audit findings

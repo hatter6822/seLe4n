@@ -314,6 +314,15 @@ probeChainDominant preservation (`Invariant/Preservation.lean`):
 - `erase_preserves_invExtK`, `insert_preserves_invExtK`, `filter_preserves_invExtK`,
   `getElem?_erase_ne_K`, `ofList_invExtK`, `empty_invExtK` — kernel wrappers (V3-B)
 
+**WS-AE Phase AE2 additions (v0.25.16) — Data Structure Hardening:**
+
+- `RHTable.hCapGe4 : 4 ≤ capacity` struct field replaces `hCapPos : 0 < capacity`
+  (AE2-A/U-28). Backward-compatible `theorem RHTable.hCapPos` derives `0 < capacity`
+  from `4 ≤ capacity`. All `empty_*` theorems updated to accept `hCapGe4`.
+- `AUDIT-NOTE: D-RH02` annotations on `insertLoop`, `getLoop`, `findLoop`,
+  `backshiftLoop` fuel=0 branches documenting consequence if reached and WF property
+  guaranteeing unreachability (AE2-C/U-30).
+
 Helper infrastructure (`Invariant/Preservation.lean`):
 - `offset_injective` — injectivity of modular offsets from same base
 - `getElem_idx_eq` — array access proof irrelevance
@@ -1362,6 +1371,11 @@ Builder equivalence bridge (`RadixTree/Bridge.lean`):
 - `buildCNodeRadix_hNoPhantom_auto_discharge_note` — **(V3-H)** documentation-only
   theorem. Documents auto-discharge pattern for bounded-key CNodes; requires
   `extractBits_identity` lemma (not yet formally proven) to complete the chain.
+- `allKeysBounded` — predicate checking all RHTable keys fit in `radixWidth` bits (AE2-B/U-29)
+- `buildCNodeRadixChecked` — safe wrapper: builds CNodeRadix if keys bounded,
+  falls back to `CNodeRadix.empty` otherwise (AE2-B/U-29)
+- `buildCNodeRadixChecked_eq_of_bounded` / `buildCNodeRadixChecked_fallback` —
+  connecting theorems for bounded/unbounded branches
 
 Resolution theorems:
 
@@ -2162,6 +2176,14 @@ threads are visible to subsequent matching operations (fixes M-FRZ-1/2/3).
 `scheduler`, `machine`, `asidTable`, `serviceRegistry`, `cdtEdges`,
 `irqHandlers`. All derived from `frozenQueuePushTail_only_modifies_objects`.
 
+**AE2-D (v0.25.16):** `frozenQueuePushTailObjects` refactored to two-phase
+validate-then-write pattern (U-31). Phase 1 validates all target keys exist via
+`FrozenMap.contains` before any mutation. Phase 2 applies writes, guaranteed to
+succeed by Phase 1 pre-check. Prevents partial mutation on missing keys.
+
+**AE2-E (v0.25.16):** FrozenOps module docstring annotated `STATUS: EXPERIMENTAL`
+(U-02). Clarifies frozen-state operations are not yet production-integrated.
+
 ### Q9: Integration Testing (`tests/TwoPhaseArchSuite.lean`)
 
 14 integration tests (41 checks) verifying the full builder→freeze→execution
@@ -2472,6 +2494,12 @@ kernel-wide invariant bundle.
   due to an import-cycle constraint (`Object/Types → SchedContext → Invariant →
   Preservation → Operations → Model.State → Object/Types`). This makes all 21
   theorems reachable via the production chain: `CrossSubsystem → Architecture/Invariant → API`.
+
+**Liveness reachability integration** (AE2-F/U-05, v0.25.16, `CrossSubsystem.lean`):
+- `import SeLe4n.Kernel.Scheduler.Liveness` added to CrossSubsystem boundary,
+  making the WCRT bounded latency theorem and all 7 liveness submodules reachable
+  via the production import chain. Cannot reside in `Scheduler/Invariant.lean` due
+  to cycle: `Invariant → Liveness → Operations/Core → Selection → Invariant`.
 
 **Cross-subsystem invariant extension** (`CrossSubsystem.lean`):
 - `schedContextStoreConsistent` — every SchedContext in the object store satisfies `schedContextWellFormed`
