@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-phase-ae5-workstream-I7B6A",
-      "commit_sha": "cb144192dc2059b8a9685861895670846e5d16bf",
-      "tree_sha": "130bbd3b3cbb3048ea2cd94c9b3281bc0902a471",
-      "committed_at_utc": "2026-04-07T07:40:06+00:00"
+      "branch": "claude/complete-phase-ae6-FGWky",
+      "commit_sha": "a37e52b2db1a7f90e80cb250a3a85ae8b9483b3c",
+      "tree_sha": "348a14f4500c001b53ecb1535bd842e67001ea5c",
+      "committed_at_utc": "2026-04-07T14:57:21-04:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8821db74eed0c51c9451ad864f7c42fdd3a879746afab74eb818bb86e1832f89"
+    "source_digest": "9934f3e5a74a48fc49acf8ccc270f4d77d29fa7fe754a33ae007bd1732a7dea7"
   },
   "summary": {
     "module_count": 149,
     "declaration_count": 4623
   },
   "readme_sync": {
-    "version": "0.25.20",
+    "version": "0.25.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
     "production_loc": 86579,
@@ -57706,7 +57706,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
-            "build",
+            "buildChecked",
             "none"
           ]
         },
@@ -60025,7 +60025,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
-            "build",
+            "buildChecked",
             "none",
             "runnable"
           ]
@@ -60378,7 +60378,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
-            "build",
+            "buildChecked",
             "none",
             "runnable"
           ]
@@ -61234,7 +61234,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
-            "build",
+            "buildChecked",
             "none"
           ]
         },

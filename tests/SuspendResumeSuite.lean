@@ -40,7 +40,7 @@ private def mkState (objs : List (ObjId × KernelObject))
     objects := objs
     current := current
   }
-  builder.build
+  builder.buildChecked
 
 -- ============================================================================
 -- D1-Q1: suspendThread tests

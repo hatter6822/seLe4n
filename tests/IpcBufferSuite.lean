@@ -54,7 +54,7 @@ private def mkState (objs : List (ObjId × KernelObject))
     objects := objs
     current := current
   }
-  builder.build
+  builder.buildChecked
 
 -- ============================================================================
 -- D3-J1: setIPCBufferOp success cases

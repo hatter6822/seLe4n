@@ -41,7 +41,7 @@ private def mkState (objs : List (ObjId × KernelObject))
     current := current
     runnable := runnable
   }
-  builder.build
+  builder.buildChecked
 
 -- PIP-001: pipBoost field defaults to none
 private def pip001_defaultPipBoostNone : IO Unit := do

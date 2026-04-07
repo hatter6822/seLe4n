@@ -2223,8 +2223,8 @@ and sub-task. This matrix ensures no finding is overlooked.
 | F-04 (v14) | U-06 | AE1-B | COMPLETE (v0.25.15) |
 | F-05 (v14) | U-07 | AE1-C, AE1-D | COMPLETE (v0.25.15) |
 | IF-03 (v14), IF-13 (v12) | U-08 | AE1-G | COMPLETE (v0.25.15) |
-| IF-04 (v14), IF-02 (v12) | U-09 | AE5-F | PLANNED |
-| IF-06 (v14), IF-04 (v12) | U-10 | AE5-E | PLANNED |
+| IF-04 (v14), IF-02 (v12) | U-09 | AE5-F | COMPLETE (v0.25.20) |
+| IF-06 (v14), IF-04 (v12) | U-10 | AE5-E | COMPLETE (v0.25.20) |
 | S-02 (v14) | U-11 | AE3-A | COMPLETE |
 | SC-01 (v14), SC-02 (v12) | U-12 | AE3-G | COMPLETE |
 | SC-02 (v14) | U-13 | AE3-G | COMPLETE |
@@ -2233,12 +2233,12 @@ and sub-task. This matrix ensures no finding is overlooked.
 | SC-05 (v14), SC-L06 (v12) | U-16 | AE3-D | COMPLETE |
 | CAP-01 (v14) | U-17 | AE4-A | COMPLETE (v0.25.19) |
 | CAP-02 (v14), C-CAP07 (v12) | U-18 | AE4-C | COMPLETE (v0.25.19) |
-| SVC-02 (v14) | U-20 | AE5-B | PLANNED |
-| PLT-01 (v14) | U-21 | AE5-D | PLANNED |
-| PLT-02 (v14), CS-01 (v12) | U-22 | AE5-A | PLANNED |
+| SVC-02 (v14) | U-20 | AE5-B | COMPLETE (v0.25.20) |
+| PLT-01 (v14) | U-21 | AE5-D | COMPLETE (v0.25.20) |
+| PLT-02 (v14), CS-01 (v12) | U-22 | AE5-A | COMPLETE (v0.25.20) |
 | IPC-01 (v14), I-T01 (v12) | U-23 | AE4-F | COMPLETE (v0.25.19) |
 | IPC-02 (v14) | U-24 | AE4-E | COMPLETE (v0.25.19) |
-| T-06 (v14), T-F01 (v12) | U-25 | AE6-A | PLANNED |
+| T-06 (v14), T-F01 (v12) | U-25 | AE6-A | COMPLETE (v0.25.21) |
 | ARCH-03 (v14), A-SA01 (v12) | U-26 | AE4-B | COMPLETE (v0.25.19) |
 | A-T01 (v12) | U-27 | AE4-G | COMPLETE (v0.25.19) |
 | D-RH01 (v12) | U-28 | AE2-A | COMPLETE (v0.25.16) |
@@ -2257,11 +2257,11 @@ and sub-task. This matrix ensures no finding is overlooked.
 | S-01 (v14) | — | AE3-I | COMPLETE |
 | S-03 (v14) | — | AE3-E | COMPLETE |
 | S-05 (v14), S-02 (v12) | — | AE3-K | COMPLETE |
-| SVC-04 (v14) | — | AE5-C | PLANNED |
-| IF-14 (v12) | — | AE5-F | PLANNED |
-| T-07 (v14), T-F02/03 (v12) | — | AE6-B | PLANNED |
-| T-F17 (v12) | — | AE6-C | PLANNED |
-| R-F01 (v12) | — | AE6-D | PLANNED |
+| SVC-04 (v14) | — | AE5-C | COMPLETE (v0.25.20) |
+| IF-14 (v12) | — | AE5-F | COMPLETE (v0.25.20) |
+| T-07 (v14), T-F02/03 (v12) | — | AE6-B | COMPLETE (v0.25.21) |
+| T-F17 (v12) | — | AE6-C | COMPLETE (v0.25.21) |
+| R-F01 (v12) | — | AE6-D | COMPLETE (v0.25.21) |
 | SVC-01 (v14) | U-19 | — | NO ACTION (bridged by declarative layer) |
 
 ---

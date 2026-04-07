@@ -16,6 +16,7 @@ echo "=== Rust Syscall Wrappers (Q8) ==="
 echo ""
 
 # R8-C (I-M03): Explicit cargo availability check with CI warning annotation.
+# AE6-C (T-F17): Log the skip explicitly so CI dashboards surface it.
 if ! command -v cargo &> /dev/null; then
     echo "::warning::Rust tests SKIPPED — cargo not found in PATH"
     echo "[SKIP] cargo not found — Rust tests SKIPPED"
@@ -23,6 +24,10 @@ if ! command -v cargo &> /dev/null; then
     echo ""
     echo "       To ensure Rust tests run in CI, add a rustup install step"
     echo "       to .github/workflows/lean_action_ci.yml"
+    # Propagate skip status to CI output variables when available.
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then
+        echo "RUST_TESTS_SKIPPED=true" >> "$GITHUB_OUTPUT"
+    fi
     exit 0
 fi
 
