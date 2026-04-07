@@ -143,9 +143,9 @@ machine-checked invariant preservation proofs:
 ┌──────────────────────────────────────────────────────────────────────┐
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
-│   Scheduler  │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│  RunQueue    │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│  SchedContext│             │  Donation  │           │                │
+│  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
+│ SchedContext │             │  Donation  │           │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -177,7 +177,7 @@ SeLe4n/
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
 │   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/             CBS budget engine, replenishment queue, priority management
+│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
@@ -220,11 +220,6 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 | Workstream | Scope | Version |
 |------------|-------|---------|
 | **WS-AE** | Production Audit Remediation — Phase AE1: API dispatch & NI composition (8 tasks). Phase AE2: Data structure hardening (8 tasks). Phase AE3: Scheduler & SchedContext correctness (12 tasks). Phase AE4: Capability, IPC & architecture hardening (10 tasks). Phase AE5: Platform, service & cross-subsystem (7 tasks). Phase AE6: Testing, documentation & closure (8 tasks). **PORTFOLIO COMPLETE** (6 phases, 53 tasks) | v0.25.15–v0.25.21 |
-| **WS-AD** | Pre-Release Audit Remediation — 21 findings (7 actionable), Phase AD1: orphaned module integration, Phase AD2: code quality hardening, Phase AD3: production deployment documentation, Phase AD4: 35 cross-subsystem composition bridge lemmas covering all 33 kernel operations (5 phases, 19+ tasks) | v0.25.11–v0.25.14 |
-| **WS-AC** | Comprehensive Audit Remediation — 3 HIGH, 9 MEDIUM, 9 LOW findings addressed across scheduler, IPC, capability, architecture, and cross-cutting subsystems (6 phases, 42 tasks) | v0.25.3–v0.25.10 |
-| **WS-AB** | Deferred Operations & Liveness — suspend/resume, setPriority/setMCPriority, setIPCBuffer, Priority Inheritance Protocol, Bounded Latency Theorem (6 phases, 90 tasks) | v0.24.0–v0.25.5 |
-| **WS-Z** | Composable Performance Objects — `SchedContext` as 7th kernel object, CBS budget engine, replenishment queue, passive server donation, timeout endpoints (10 phases, 213 tasks) | v0.23.0–v0.23.21 |
-| **WS-B – WS-Y** | Core kernel subsystems, Robin Hood hash tables, radix trees, frozen state, information flow, service orchestration, platform contracts | v0.9.0–v0.22.x |
 
 Detailed plans: [WS-AB](docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
 
