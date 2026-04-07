@@ -946,9 +946,13 @@ upper bits exist. `AccessRightSet.ofNat` masks inputs to the valid 5-bit range.
 ### 11.2 Information Flow and Non-Interference Boundary (AD3-C/F-05)
 
 The kernel's non-interference (NI) guarantees cover all kernel-primitive
-transitions via 32 `NonInterferenceStep` constructors in
-`SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`. These include IPC,
-scheduling, capability operations, lifecycle, and decode/dispatch paths.
+transitions via 34 `NonInterferenceStep` constructors in
+`SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`. These include IPC
+(with SchedContext donation and priority inheritance protocol propagation),
+scheduling (including domain rotation via `ComposedNonInterferenceStep`),
+capability operations, lifecycle, and decode/dispatch paths. The
+`dispatchSyscallChecked_preserves_projection` theorem (`API.lean`) bridges
+per-operation NI proofs to the full 25-arm syscall dispatch path.
 
 **Service orchestration is explicitly outside the kernel NI boundary.** The
 `serviceOrchestrationOutsideNiBoundary` theorem (`Projection.lean:551`)

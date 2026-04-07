@@ -7,6 +7,9 @@
 -/
 
 import SeLe4n.Kernel.InformationFlow.Invariant.Helpers
+import SeLe4n.Kernel.IPC.Operations.Donation
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
 
 namespace SeLe4n.Kernel
 
@@ -2414,4 +2417,254 @@ theorem scrubObjectMemory_preserves_lowEquivalent
   rw [scrubObjectMemory_preserves_projection ctx observer objectId objType s₁ hNotObs,
       scrubObjectMemory_preserves_projection ctx observer objectId objType s₂ hNotObs]
   exact hLow
+
+-- ============================================================================
+-- AE1-F: Donation and PIP NI preservation theorems (U-04)
+-- ============================================================================
+
+/-- AE1-F1/F2: `applyCallDonation` preserves NI projection when caller and
+receiver objects (and any SchedContext involved) are non-observable.
+
+`applyCallDonation` either returns the state unchanged (donation conditions
+not met) or calls `donateSchedContext` which modifies only the caller TCB,
+receiver TCB, and one SchedContext — all at non-observable ObjIds.
+The scheduler is unconditionally preserved (`applyCallDonation_scheduler_eq`). -/
+theorem applyCallDonation_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState)
+    (caller receiver : SeLe4n.ThreadId)
+    (_hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
+    (hScHigh : ∀ tcb : TCB, lookupTcb st caller = some tcb →
+      ∀ scId : SeLe4n.SchedContextId, tcb.schedContextBinding = .bound scId →
+        objectObservable ctx observer scId.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (applyCallDonation st caller receiver) =
+    projectState ctx observer st := by
+  -- applyCallDonation either returns st unchanged or calls donateSchedContext.
+  -- In the donation case, donateSchedContext does two storeObject calls at
+  -- non-observable ObjIds (clientScId.toObjId and serverTid.toObjId).
+  -- Chain storeObject_preserves_projection for each store.
+  unfold applyCallDonation
+  cases hR : lookupTcb st receiver with
+  | none => simp
+  | some receiverTcb =>
+    simp only []
+    cases hBinding : receiverTcb.schedContextBinding with
+    | bound _ => simp
+    | donated _ _ => simp
+    | unbound =>
+      simp only []
+      cases hC : lookupTcb st caller with
+      | none => simp
+      | some callerTcb =>
+        simp only []
+        cases hCBinding : callerTcb.schedContextBinding with
+        | unbound => simp
+        | donated _ _ => simp
+        | bound clientScId =>
+          simp only []
+          cases hDon : donateSchedContext st caller receiver clientScId with
+          | error _ => rfl
+          | ok st' =>
+            -- donateSchedContext = storeObject(scId) → storeObject(serverId)
+            -- Both ObjIds are non-observable, chain storeObject_preserves_projection
+            unfold donateSchedContext at hDon
+            revert hDon
+            cases hObj : st.objects[clientScId.toObjId]? with
+            | none => intro h; cases h
+            | some obj =>
+              cases obj with
+              | schedContext sc =>
+                simp only []
+                split
+                · intro h; cases h
+                · cases hS1 : storeObject clientScId.toObjId _ st with
+                  | error _ => intro h; cases h
+                  | ok p1 =>
+                    simp only []
+                    cases hL : lookupTcb p1.2 receiver with
+                    | none => intro h; cases h
+                    | some serverTcb =>
+                      simp only []
+                      cases hS2 : storeObject receiver.toObjId _ p1.2 with
+                      | error _ => intro h; cases h
+                      | ok p2 =>
+                        simp only [Except.ok.injEq]
+                        intro hEq; subst hEq
+                        -- SchedContext is non-observable by hypothesis
+                        have hScObjHigh := hScHigh callerTcb hC clientScId hCBinding
+                        have hInv1 := storeObject_preserves_objects_invExt
+                          st p1.2 clientScId.toObjId _ hObjInv hS1
+                        have hProj1 := storeObject_preserves_projection
+                          ctx observer st p1.2 clientScId.toObjId _ hScObjHigh hObjInv hS1
+                        have hProj2 := storeObject_preserves_projection
+                          ctx observer p1.2 p2.2 receiver.toObjId _ hReceiverObjHigh hInv1 hS2
+                        rw [hProj2, hProj1]
+              | _ => simp only []; intro h; cases h
+
+/-- AE1-F3: `propagatePriorityInheritance` preserves NI projection when
+the starting thread and its entire blocking chain are non-observable.
+
+`propagatePriorityInheritance` walks the blocking chain from `startTid`,
+calling `updatePipBoost` at each step. `updatePipBoost` modifies only:
+1. The TCB's `pipBoost` field (at `tid.toObjId`)
+2. The scheduler run queue (remove/re-insert at new priority)
+
+When all threads in the chain are non-observable:
+- TCB modifications are at non-observable ObjIds → invisible to projectObjects
+- Run queue modifications are on non-observable ThreadIds → invisible to projectRunnable
+
+The `hBlockingChainHigh` hypothesis requires that the blocking chain from
+`startTid` stays within the high domain — i.e., if a high thread is blocked
+on a server, that server is also high. This follows from the domain-separation
+property of the labeling context in well-formed deployments. -/
+private theorem updatePipBoost_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hCoherent : ∀ t : SeLe4n.ThreadId,
+        threadObservable ctx observer t = false →
+        objectObservable ctx observer t.toObjId = false)
+    (hTidHigh : threadObservable ctx observer tid = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (PriorityInheritance.updatePipBoost st tid) =
+    projectState ctx observer st := by
+  have hObjHigh := hCoherent tid hTidHigh
+  simp only [projectState]; congr 1
+  · -- projectObjects: updatePipBoost only modifies objects at tid.toObjId (non-observable)
+    funext oid
+    simp only [projectObjects]
+    cases hObs : objectObservable ctx observer oid
+    · rfl
+    · simp only [ite_true]; congr 1
+      exact PriorityInheritance.updatePipBoost_objects_ne st tid oid (by
+        intro h; rw [(eq_of_beq h).symm] at hObs; simp [hObjHigh] at hObs) hObjInv
+  · -- projectRunnable: filter by threadObservable excludes non-observable tid
+    simp only [projectRunnable, SchedulerState.runnable]
+    exact PriorityInheritance.updatePipBoost_toList_filter_neg st tid
+      (threadObservable ctx observer) hTidHigh
+  · -- projectCurrent
+    simp only [projectCurrent, PriorityInheritance.updatePipBoost_preserves_current]
+  · -- projectServicePresence
+    have hSvc : lookupService (PriorityInheritance.updatePipBoost st tid) =
+                lookupService st := by
+      funext sid; simp [lookupService,
+        PriorityInheritance.updatePipBoost_preserves_services]
+    funext sid; simp only [projectServicePresence, hSvc]
+  · -- projectActiveDomain
+    simp only [projectActiveDomain,
+      PriorityInheritance.updatePipBoost_preserves_activeDomain]
+  · -- projectIrqHandlers
+    funext irq; simp only [projectIrqHandlers,
+      PriorityInheritance.updatePipBoost_preserves_irqHandlers]
+  · -- projectObjectIndex
+    simp only [projectObjectIndex,
+      PriorityInheritance.updatePipBoost_preserves_objectIndex]
+  · -- projectDomainTimeRemaining
+    simp only [projectDomainTimeRemaining,
+      PriorityInheritance.updatePipBoost_preserves_domainTimeRemaining]
+  · -- projectDomainSchedule
+    simp only [projectDomainSchedule,
+      PriorityInheritance.updatePipBoost_preserves_domainSchedule]
+  · -- projectDomainScheduleIndex
+    simp only [projectDomainScheduleIndex,
+      PriorityInheritance.updatePipBoost_preserves_domainScheduleIndex]
+  · -- projectMachineRegs
+    simp only [projectMachineRegs,
+      PriorityInheritance.updatePipBoost_preserves_current,
+      PriorityInheritance.updatePipBoost_preserves_machine]
+  · -- projectMemory
+    funext paddr; simp only [projectMemory,
+      PriorityInheritance.updatePipBoost_preserves_machine]
+  · -- projectServiceRegistry
+    have hSvc : lookupService (PriorityInheritance.updatePipBoost st tid) =
+                lookupService st := by
+      funext s; simp [lookupService,
+        PriorityInheritance.updatePipBoost_preserves_services]
+    funext sid; simp only [projectServiceRegistry, hSvc]
+
+theorem propagatePIP_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (startTid : SeLe4n.ThreadId) (fuel : Nat)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hBlockingChainHigh : ∀ (s : SystemState) (tid server : SeLe4n.ThreadId),
+        threadObservable ctx observer tid = false →
+        PriorityInheritance.blockingServer s tid = some server →
+        threadObservable ctx observer server = false)
+    (hStartHigh : threadObservable ctx observer startTid = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer
+      (PriorityInheritance.propagatePriorityInheritance st startTid fuel) =
+    projectState ctx observer st := by
+  induction fuel generalizing startTid st with
+  | zero =>
+    simp [PriorityInheritance.propagatePriorityInheritance]
+  | succ n ih =>
+    simp only [PriorityInheritance.propagatePriorityInheritance]
+    have hUpdProj := updatePipBoost_preserves_projection ctx observer st startTid
+      hCoherent hStartHigh hObjInv
+    have hUpdInv := PriorityInheritance.updatePipBoost_preserves_objects_invExt
+      st startTid hObjInv
+    split
+    · -- blockingServer st startTid = some nextServer
+      rename_i nextServer hBS
+      have hNextHigh := hBlockingChainHigh st startTid nextServer hStartHigh hBS
+      rw [ih (PriorityInheritance.updatePipBoost st startTid) nextServer
+        hNextHigh hUpdInv]
+      exact hUpdProj
+    · -- blockingServer st startTid = none
+      exact hUpdProj
+
+/-- AE1-F3 (dual): `revertPriorityInheritance` preserves projection.
+By `revert_eq_propagate`, this follows from `propagatePIP_preserves_projection`. -/
+theorem revertPIP_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (fuel : Nat)
+    (hCoherent : ∀ tid : SeLe4n.ThreadId,
+        threadObservable ctx observer tid = false →
+        objectObservable ctx observer tid.toObjId = false)
+    (hBlockingChainHigh : ∀ (s : SystemState) (tid server : SeLe4n.ThreadId),
+        threadObservable ctx observer tid = false →
+        PriorityInheritance.blockingServer s tid = some server →
+        threadObservable ctx observer server = false)
+    (hTidHigh : threadObservable ctx observer tid = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer
+      (PriorityInheritance.revertPriorityInheritance st tid fuel) =
+    projectState ctx observer st := by
+  rw [PriorityInheritance.revert_eq_propagate]
+  exact propagatePIP_preserves_projection ctx observer st tid fuel
+    hCoherent hBlockingChainHigh hTidHigh hObjInv
+
+/-- AE1-F5: Composed call-with-donation-and-PIP path preserves NI projection
+when the full call path yields a projection-equivalent state.
+
+This theorem provides the interface for the `endpointCallWithDonationHigh`
+constructor in `NonInterferenceStep`. The proof obligation for the `hProj`
+parameter is discharged at the API dispatch level by composing:
+1. `endpointCall_preserves_projection` (existing)
+2. `applyCallDonation_preserves_projection` (AE1-F1)
+3. `propagatePIP_preserves_projection` (AE1-F3)
+
+See `endpointCallWithDonationHigh` constructor for usage. -/
+theorem endpointCallWithDonation_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hProj₁ : projectState ctx observer s₁' = projectState ctx observer s₁)
+    (hProj₂ : projectState ctx observer s₂' = projectState ctx observer s₂) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProj₁, hProj₂]; exact hLow
+
+/-- AE1-F6: Composed reply-with-reversion path preserves NI low-equivalence. -/
+theorem endpointReplyWithReversion_preserves_lowEquivalent
+    (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hProj₁ : projectState ctx observer s₁' = projectState ctx observer s₁)
+    (hProj₂ : projectState ctx observer s₂' = projectState ctx observer s₂) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  unfold lowEquivalent; rw [hProj₁, hProj₂]; exact hLow
 

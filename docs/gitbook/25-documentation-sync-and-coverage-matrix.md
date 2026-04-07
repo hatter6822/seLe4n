@@ -34,7 +34,7 @@ For baseline planning changes, also run `./scripts/test_nightly.sh`.
 
 ## 4) Current-stage status summary
 
-All documentation surfaces are synchronized as of v0.25.14. See the canonical
+All documentation surfaces are synchronized as of v0.25.15. See the canonical
 [`DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md`](../DOCUMENTATION_SYNC_AND_COVERAGE_MATRIX.md)
 for the full status table.
 

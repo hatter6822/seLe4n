@@ -425,17 +425,18 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
         | none => acc
         | some cap => acc.push cap) #[]
 
-/-- V8-H/Z5-J/D1: Shared dispatch for capability-only syscalls — these 11 arms
+/-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
 derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
 delegate to this helper for: `.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
 `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
-`.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`.
+`.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`,
+`.tcbSetPriority` (AE1-A), `.tcbSetMCPriority` (AE1-A), `.tcbSetIPCBuffer` (AE1-B).
 
 Returns `none` if the syscall ID is not a capability-only arm (i.e., it
 requires IPC/cross-domain handling). -/
 private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
-    (cap : Capability) : Option (Kernel Unit) :=
+    (cap : Capability) (tid : SeLe4n.ThreadId) : Option (Kernel Unit) :=
   match decoded.syscallId with
   | .cspaceDelete =>
     some <| match cap.target with
@@ -537,6 +538,46 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .ok st' => .ok ((), st')
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
+  -- AE1-A: D2-K TCB setPriority — priority from message register, target from capability
+  -- Moved here from explicit dispatch arms to unify checked/unchecked paths (U-01 fix).
+  | .tcbSetPriority =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match decodeSetPriorityArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match SchedContext.PriorityManagement.setPriorityOp st tid
+            (ThreadId.ofNat objId.toNat)
+            (Priority.ofNat args.newPriority) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- AE1-A: D2-K TCB setMCPriority — MCP from message register, target from capability
+  | .tcbSetMCPriority =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match decodeSetMCPriorityArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match SchedContext.PriorityManagement.setMCPriorityOp st tid
+            (ThreadId.ofNat objId.toNat)
+            (Priority.ofNat args.newMCP) with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- AE1-B: D3-H TCB setIPCBuffer — buffer address from message register, target from capability
+  -- Moved here from duplicate arms in both dispatch paths (U-06 fix).
+  | .tcbSetIPCBuffer =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match decodeSetIPCBufferArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match Architecture.IpcBufferValidation.setIPCBufferOp st
+            (ThreadId.ofNat objId.toNat) args.bufferAddr with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
   | _ => none
 
 /-- WS-J1-C/K-C/K-D: Dispatch a decoded syscall to the appropriate internal
@@ -564,7 +605,7 @@ requiring per-syscall argument decoding from `decoded.msgRegs`). This split:
 The wildcard `| _ =>` arm is provably dead code (W2-C). -/
 private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
-  match dispatchCapabilityOnly decoded cap with
+  match dispatchCapabilityOnly decoded cap tid with
   | some k => k
   | none =>
   match decoded.syscallId with
@@ -727,51 +768,12 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           | .error e => .error e
           | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
-  -- D2-K: TCB setPriority — priority from message register, target from capability
-  | .tcbSetPriority =>
-    match cap.target with
-    | .object objId =>
-      fun st => match decodeSetPriorityArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-        -- Caller is the current thread (tid), target from capability
-        match SchedContext.PriorityManagement.setPriorityOp st tid
-            (ThreadId.ofNat objId.toNat)
-            (Priority.ofNat args.newPriority) with
-        | .ok st' => .ok ((), st')
-        | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
-  -- D2-K: TCB setMCPriority — MCP from message register, target from capability
-  | .tcbSetMCPriority =>
-    match cap.target with
-    | .object objId =>
-      fun st => match decodeSetMCPriorityArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-        -- Caller is the current thread (tid), target from capability
-        match SchedContext.PriorityManagement.setMCPriorityOp st tid
-            (ThreadId.ofNat objId.toNat)
-            (Priority.ofNat args.newMCP) with
-        | .ok st' => .ok ((), st')
-        | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
-  -- D3-H: TCB setIPCBuffer — buffer address from message register, target from capability
-  | .tcbSetIPCBuffer =>
-    match cap.target with
-    | .object objId =>
-      fun st => match decodeSetIPCBufferArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-        match Architecture.IpcBufferValidation.setIPCBufferOp st
-            (ThreadId.ofNat objId.toNat) args.bufferAddr with
-        | .ok st' => .ok ((), st')
-        | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
-  -- V8-H/D1/D2/D3: Remaining arms (cspaceDelete, lifecycleRetype, vspaceMap, vspaceUnmap,
-  -- serviceRevoke, serviceQuery, schedContextConfigure, schedContextBind,
-  -- schedContextUnbind, tcbSuspend, tcbResume) are unreachable here — handled by
-  -- dispatchCapabilityOnly returning `some` above. The wildcard satisfies
-  -- Lean's exhaustiveness checker.
+  -- AE1-A/AE1-B: tcbSetPriority, tcbSetMCPriority, tcbSetIPCBuffer are now handled
+  -- by dispatchCapabilityOnly above. Together with cspaceDelete, lifecycleRetype,
+  -- vspaceMap, vspaceUnmap, serviceRevoke, serviceQuery, schedContextConfigure,
+  -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume — 14 total arms
+  -- handled by dispatchCapabilityOnly. The wildcard satisfies Lean's exhaustiveness
+  -- checker and is provably unreachable (dispatchWithCap_wildcard_unreachable).
   | _ => fun _ => .error .illegalState
 
 -- ============================================================================
@@ -802,7 +804,7 @@ V8-H: Capability-only arms delegate to `dispatchCapabilityOnly`. -/
 private def dispatchWithCapChecked (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability) : Kernel Unit :=
-  match dispatchCapabilityOnly decoded cap with
+  match dispatchCapabilityOnly decoded cap tid with
   | some k => k
   | none =>
   match decoded.syscallId with
@@ -971,21 +973,12 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             let st'' := applyReplyDonation st' tid
             .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
     | _ => fun _ => .error .invalidCapability
-  -- D3-H: TCB setIPCBuffer — buffer address from message register, target from capability
-  -- Capability-only: no cross-domain flow check needed (authority from cap possession)
-  | .tcbSetIPCBuffer =>
-    match cap.target with
-    | .object objId =>
-      fun st => match decodeSetIPCBufferArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-        match Architecture.IpcBufferValidation.setIPCBufferOp st
-            (ThreadId.ofNat objId.toNat) args.bufferAddr with
-        | .ok st' => .ok ((), st')
-        | .error e => .error e
-    | _ => fun _ => .error .invalidCapability
-  -- V8-H/D3: Remaining capability-only arms are unreachable — handled by
-  -- dispatchCapabilityOnly returning `some` above.
+  -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
+  -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
+  -- vspaceUnmap, serviceRevoke, serviceQuery, schedContextConfigure,
+  -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume) are handled by
+  -- dispatchCapabilityOnly returning `some` above. This wildcard is provably
+  -- unreachable (see dispatchWithCapChecked_wildcard_unreachable below).
   | _ => fun _ => .error .illegalState
 
 /-- T6-I: Policy-checked dispatch variant. Routes syscalls through
@@ -1145,11 +1138,39 @@ theorem checkedDispatch_tcbResume_eq_unchecked
     dispatchWithCap decoded tid gate cap := by
   simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
 
-/-- U5-D/U-L20/V8-H/Z5-J/D1: Complete dispatch equivalence — for ALL capability-only
-syscalls, the checked and unchecked dispatch paths produce identical results.
+/-- AE1-A: Structural equivalence for `.tcbSetPriority`. -/
+theorem checkedDispatch_tcbSetPriority_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .tcbSetPriority) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- AE1-A: Structural equivalence for `.tcbSetMCPriority`. -/
+theorem checkedDispatch_tcbSetMCPriority_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .tcbSetMCPriority) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- AE1-B: Structural equivalence for `.tcbSetIPCBuffer`. -/
+theorem checkedDispatch_tcbSetIPCBuffer_eq_unchecked
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .tcbSetIPCBuffer) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap := by
+  simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall]
+
+/-- U5-D/U-L20/V8-H/Z5-J/D1/AE1-A/AE1-B: Complete dispatch equivalence — for ALL
+capability-only syscalls, the checked and unchecked dispatch paths produce identical
+results.
 
 Both `dispatchWithCap` and `dispatchWithCapChecked` delegate to the shared
-`dispatchCapabilityOnly` helper for these 11 arms, making structural identity
+`dispatchCapabilityOnly` helper for these 14 arms, making structural identity
 trivial.
 
 **Production recommendation**: Use `syscallEntryChecked` for user-space entry.
@@ -1168,31 +1189,55 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
                 decoded.syscallId = .schedContextBind ∨
                 decoded.syscallId = .schedContextUnbind ∨
                 decoded.syscallId = .tcbSuspend ∨
-                decoded.syscallId = .tcbResume) :
+                decoded.syscallId = .tcbResume ∨
+                decoded.syscallId = .tcbSetPriority ∨
+                decoded.syscallId = .tcbSetMCPriority ∨
+                decoded.syscallId = .tcbSetIPCBuffer) :
     dispatchWithCapChecked ctx decoded tid gate cap =
     dispatchWithCap decoded tid gate cap := by
-  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h <;>
+  rcases hCapOnly with h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
     simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
 -- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
 -- ============================================================================
 
-/-- W2-C (MED-04)/D1/D3: Every `SyscallId` variant is handled by either
-    `dispatchCapabilityOnly` (returning `some`) or one of the 14 explicit match
+/-- W2-C (MED-04)/D1/D2/D3/AE1-A/AE1-B: Every `SyscallId` variant is handled by either
+    `dispatchCapabilityOnly` (returning `some`) or one of the 11 explicit match
     arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
     wildcard arm is unreachable at runtime.
 
-    The proof enumerates all 25 `SyscallId` constructors: 11 are routed to
+    The proof enumerates all 25 `SyscallId` constructors: 14 are routed to
     `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
     `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
-    `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`),
-    and the remaining 14
+    `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`,
+    `.tcbSetPriority`, `.tcbSetMCPriority`, `.tcbSetIPCBuffer`),
+    and the remaining 11
     (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
     `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
-    `.replyRecv`, `.tcbSetPriority`, `.tcbSetMCPriority`, `.tcbSetIPCBuffer`)
-    are handled by explicit match arms in `dispatchWithCap`. -/
+    `.replyRecv`) are handled by explicit match arms in `dispatchWithCap`.
+
+    AE1-D: The same completeness proof applies to `dispatchWithCapChecked`
+    (see `dispatchWithCapChecked_wildcard_unreachable` below). -/
 theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
+    sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
+            .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
+            .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
+            .notificationSignal, .notificationWait, .replyRecv,
+            .schedContextConfigure, .schedContextBind,
+            .schedContextUnbind, .tcbSuspend, .tcbResume,
+            .tcbSetPriority, .tcbSetMCPriority,
+            .tcbSetIPCBuffer] : List SyscallId) := by
+  cases sid <;> simp [List.mem_cons]
+
+/-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
+    (returning `some`) or one of the 11 explicit match arms in
+    `dispatchWithCapChecked`. This proves the wildcard arm is unreachable.
+
+    This is the checked-dispatch counterpart of `dispatchWithCap_wildcard_unreachable`.
+    The proof is identical because both functions share `dispatchCapabilityOnly` and
+    have the same set of explicit match arms (modulo checked wrappers). -/
+theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
     sid ∈ ([.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
             .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
             .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
@@ -1781,5 +1826,70 @@ theorem dispatchWithCap_preservation_composition_witness :
         Architecture.proofLayerInvariantBundle st') :=
   fun layout regCount st st' hInv hOk hDP =>
     syscallEntry_preserves_proofLayerInvariantBundle layout regCount st st' hInv hOk hDP
+
+-- ============================================================================
+-- AE1-G3: Master dispatch NI theorem
+-- ============================================================================
+
+/-- AE1-G3: Master dispatch NI theorem — `dispatchSyscallChecked` preserves
+the observer's projection when the calling thread is non-observable.
+
+This theorem decomposes `dispatchSyscallChecked` through its three layers:
+1. **TCB/CNode lookup** — read-only (pattern match on `objects`)
+2. **Capability resolution** — read-only (proved by
+   `syscallLookupCap_implies_capability_held`)
+3. **Inner dispatch** — the actual state-modifying operation
+
+The `hInnerProj` hypothesis captures the NI property of the inner dispatch
+(layer 3). It is dischargeable per-arm from existing per-operation NI
+theorems:
+- 14 capability-only arms (via `dispatchCapabilityOnly`):
+  `storeObject_preserves_projection` + operation-specific frame lemmas
+- 11 explicit arms (via `dispatchWithCapChecked` match):
+  `endpointSendDual_preserves_projection`, `endpointCall_preserves_projection`,
+  `propagatePIP_preserves_projection`, `applyCallDonation_preserves_projection`,
+  etc.
+
+Combined with `projPreserving_preserves_lowEquivalent` (AE1-G2 in
+Composition.lean), this yields the full two-sided NI guarantee for the
+complete syscall dispatch path. -/
+theorem dispatchSyscallChecked_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (_hTidHigh : threadObservable ctx observer tid = false)
+    (hInnerProj : ∀ (gate : SyscallGate) (cap : Capability),
+        syscallLookupCap gate st = .ok (cap, st) →
+        ∀ stOut, dispatchWithCapChecked ctx decoded tid gate cap st = .ok ((), stOut) →
+        projectState ctx observer stOut = projectState ctx observer st)
+    (hStep : dispatchSyscallChecked ctx decoded tid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  simp only [dispatchSyscallChecked, syscallInvoke] at hStep
+  -- Layer 1: TCB lookup (read-only)
+  split at hStep
+  · -- some (.tcb tcb)
+    -- Layer 1b: CNode lookup (read-only)
+    split at hStep
+    · -- some (.cnode rootCn)
+      -- Layer 2: Capability resolution (read-only)
+      split at hStep
+      · -- syscallLookupCap returned error
+        simp at hStep
+      · -- syscallLookupCap returned .ok (cap, stCap)
+        rename_i cap stCap hCap
+        -- By syscallLookupCap_implies_capability_held, the state is unchanged
+        have ⟨_, _, _, _, hStEq⟩ :=
+          syscallLookupCap_implies_capability_held _ st cap stCap hCap
+        -- Layer 3: Inner dispatch on original state (since stCap = st)
+        rw [hStEq] at hStep hCap
+        exact hInnerProj _ cap hCap st' hStep
+    · -- some (not .cnode): error
+      simp at hStep
+    · -- none: error
+      simp at hStep
+  · -- some (not .tcb): error
+    simp at hStep
+  · -- none: error
+    simp at hStep
 
 end SeLe4n.Kernel

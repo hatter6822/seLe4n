@@ -862,7 +862,7 @@ The information-flow subsystem is organized in three architectural layers:
    preserve `lowEquivalent` for unobservable state changes. The composition
    layer (`composedNonInterference_trace`) chains single-step NI proofs into
    trace-level non-interference using the `NonInterferenceStep` inductive type
-   (32 constructors as of v0.23.20).
+   (34 constructors as of v0.25.15).
 
 ### IF-M1 baseline (WS-B7 complete)
 
@@ -933,13 +933,17 @@ WS-H8 enforcement soundness (5 theorems):
 
 **H-05 — Composed bundle-level non-interference:**
 
-- `NonInterferenceStep` inductive (32 constructors; extended from 31 by R5-B/M-02: added `registerServiceChecked`. Extended from 28 by v0.13.5 audit: added `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh`. Added `syscallDecodeError`, `syscallDispatchHigh` by WS-J1-D. Original 28 from WS-H9),
-- `step_preserves_projection` — single-step projection preservation (all 32 constructors),
+- `NonInterferenceStep` inductive (34 constructors; extended from 32 by AE1-F: added `endpointCallWithDonationHigh`, `endpointReplyWithReversionHigh`. Extended from 31 by R5-B/M-02: added `registerServiceChecked`. Extended from 28 by v0.13.5 audit: added `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh`. Added `syscallDecodeError`, `syscallDispatchHigh` by WS-J1-D. Original 28 from WS-H9),
+- `step_preserves_projection` — single-step projection preservation (all 34 constructors),
 - `composedNonInterference_step` — primary IF-M4 single-step theorem,
 - `NonInterferenceTrace` inductive (`nil`/`cons`),
 - `trace_preserves_projection`, `composedNonInterference_trace` — multi-step lift,
+- `ComposedNonInterferenceStep` inductive (AE1-E: `projectionPreserving`, `switchDomain`) — paired NI for domain rotation,
+- `composedNI_withSwitchDomain` — composed NI covering both projection-preserving and domain-switch steps,
+- `projPreserving_preserves_lowEquivalent` (AE1-G2) — two-sided projection preservation helper,
 - `preservesLowEquivalence`, `compose_preservesLowEquivalence` — abstract composition,
-- `errorAction_preserves_lowEquiv` — error path preservation.
+- `errorAction_preserves_lowEquiv` — error path preservation,
+- `dispatchSyscallChecked_preserves_projection` (AE1-G3, in API.lean) — master dispatch NI theorem bridging per-operation NI to full syscall dispatch.
 
 WS-H9 new NI preservation theorems (21 theorems):
 - `schedule_preserves_projection` — scheduler NI (high-current + all-runnable-high conditions),
@@ -992,7 +996,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `LabelingContextValid` predicate with `defaultLabelingContext_valid` — NI deployment requirements (V6-D),
 - `endpointPolicyRestricted` — per-endpoint policy subset of global policy well-formedness (V6-G),
 - `DeclassificationEvent` structure with `authorizationBasis` field and `recordDeclassification` audit trail (V6-H),
-- `kernelOperationNiConstructor` — 32-variant operation→constructor mapping (V6-I),
+- `kernelOperationNiConstructor` — 34-variant operation→constructor mapping (V6-I),
 - `niStepCoverage_operational`, `niStepCoverage_injective`, `niStepCoverage_count` — NI coverage documentation (V6-I),
 - `acceptedCovertChannel_scheduling` — documented scheduling covert channel (V6-J),
 - `defaultLabelingContext_insecure` — warning that default labeling provides no security (V6-K),
@@ -1731,7 +1735,7 @@ functions depend only on `msgRegs` (two results with same `msgRegs` produce same
 `dispatchWithCap_preservation_composition_witness` structural preservation theorem.
 `retypeFromUntyped_preserves_lowEquivalent` NI theorem (two-stage store composition).
 `syscallNI_coverage_witness` witnesses decode-error NI step availability, step→trace
-composition, and `step_preserves_projection` totality over all 32 constructors.
+composition, and `step_preserves_projection` totality over all 34 constructors.
 Zero sorry/axiom.
 
 **Completed — K-G (v0.16.7) — Lifecycle NI proof completion and deferred proof resolution:**

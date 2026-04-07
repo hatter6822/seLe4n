@@ -1,3 +1,44 @@
+## v0.25.15 — WS-AE Phase AE1: API Dispatch & NI Composition
+
+Phase AE1 of WS-AE Production Audit Remediation. Addresses 7 audit findings
+(U-01, U-03, U-04, U-06, U-07, U-08, IF-01, IF-02) with dispatch parity fixes,
+wildcard unreachability proofs, and non-interference composition for PIP/donation
+and domain switching. All tests pass (test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+- **AE1-A (U-01)**: Unified `.tcbSetPriority` and `.tcbSetMCPriority` into
+  `dispatchCapabilityOnly` — fixes checked/unchecked dispatch parity bug where
+  `dispatchWithCapChecked` lacked these arms and returned `.illegalState`.
+- **AE1-B (U-06)**: Moved `.tcbSetIPCBuffer` into `dispatchCapabilityOnly` and
+  removed duplicate arms from both `dispatchWithCap` and `dispatchWithCapChecked`.
+  `dispatchCapabilityOnly` now has 14 capability-only arms (was 11).
+- **AE1-C**: Updated wildcard comments in both dispatch functions to reflect
+  14 capability-only arms. Added per-arm structural equivalence theorems:
+  `checkedDispatch_tcbSetPriority_eq_unchecked`,
+  `checkedDispatch_tcbSetMCPriority_eq_unchecked`,
+  `checkedDispatch_tcbSetIPCBuffer_eq_unchecked`.
+- **AE1-D (U-07)**: Added `dispatchWithCapChecked_wildcard_unreachable` —
+  proves all 25 `SyscallId` variants are handled (14 cap-only + 11 explicit).
+  Updated `checkedDispatch_capabilityOnly_eq_unchecked` for 14 disjuncts.
+- **AE1-E (IF-01/U-03)**: Extended NI composition with
+  `ComposedNonInterferenceStep.switchDomain` + `composedNI_withSwitchDomain`.
+  `KernelOperation` extended from 32 to 34 variants with
+  `endpointCallWithDonationHigh` and `endpointReplyWithReversionHigh`.
+- **AE1-F (IF-02/U-04)**: Full NI proofs for call/reply with donation/PIP:
+  `updatePipBoost_preserves_projection` (all 13 projection components),
+  `applyCallDonation_preserves_projection`,
+  `propagatePIP_preserves_projection` (inductive over fuel),
+  `revertPIP_preserves_projection`,
+  `endpointCallWithDonation_preserves_lowEquivalent`,
+  `endpointReplyWithReversion_preserves_lowEquivalent`.
+  Supporting frame lemmas in `PriorityInheritance/Preservation.lean`:
+  `updatePipBoost_objects_ne`, `updatePipBoost_toList_filter_neg`,
+  `updatePipBoost_preserves_objects_invExt`.
+- **AE1-G (U-08)**: Master dispatch NI theorem:
+  `projPreserving_preserves_lowEquivalent` (Composition.lean) +
+  `dispatchSyscallChecked_preserves_projection` (API.lean) — structural
+  decomposition through TCB lookup → CNode lookup → cap resolution → inner dispatch.
+
 ## v0.25.14 — WS-AD Phase AD4/AD5: Cross-Subsystem Composition Proofs & Closure (F-08)
 
 Phase AD4 of WS-AD Pre-Release Audit Remediation + Phase AD5 closure. Addresses

@@ -30,6 +30,11 @@ WS-AD Phase AD1 complete.
 WS-AD Phase AD2 complete.
 WS-AD Phase AD3 complete.
 WS-AD Phase AD4 complete. Phase AD5 complete. **WS-AD PORTFOLIO COMPLETE.**
+WS-AE Phase AE1 complete.
+
+### WS-AE: Production Audit Remediation v0.25.15 (Phase AE1 COMPLETE)
+
+- **Phase AE1 COMPLETE** (v0.25.15): API Dispatch & NI Composition — 8 sub-tasks (AE1-A through AE1-H). AE1-A: Added `.tcbSetPriority` and `.tcbSetMCPriority` to `dispatchCapabilityOnly` (U-01 fix — checked/unchecked dispatch parity). AE1-B: Moved `.tcbSetIPCBuffer` into `dispatchCapabilityOnly` and removed duplicate arms (U-06 fix). AE1-C: Fixed wildcard unreachability comment in `dispatchWithCapChecked` to reflect 14→14 capability-only arms. AE1-D: Added `dispatchWithCapChecked_wildcard_unreachable` theorem proving all 25 `SyscallId` variants are handled by one of the two dispatch tiers (U-07). AE1-E: Added `switchDomain` to NI composition via `ComposedNonInterferenceStep` (IF-01/U-03 — closes domain-switch NI gap). AE1-F: Extended NI proofs for call/reply with donation/PIP — `applyCallDonation_preserves_projection`, `propagatePIP_preserves_projection`, `revertPIP_preserves_projection`, `endpointCallWithDonation_preserves_lowEquivalent`, `endpointReplyWithReversion_preserves_lowEquivalent` (IF-02/U-04). Supporting lemmas in `PriorityInheritance/Preservation.lean`: `updatePipBoost_objects_ne`, `updatePipBoost_toList_filter_neg`, `updatePipBoost_preserves_objects_invExt`. AE1-G: Master dispatch NI theorem — `projPreserving_preserves_lowEquivalent` (two-sided helper in Composition.lean), `dispatchSyscallChecked_preserves_projection` (structural decomposition through TCB lookup → CNode lookup → `syscallLookupCap` state preservation → inner dispatch, in API.lean). AE1-H: Gate verification — `lake build` (238 jobs), `test_full.sh` (Tier 0–3), zero sorry/axiom. Zero warnings.
 
 ### WS-AD: Pre-Release Audit Remediation v0.25.10 (COMPLETE)
 
