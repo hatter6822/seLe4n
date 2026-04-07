@@ -29,8 +29,8 @@ and domain switching. All tests pass (test_full.sh Tier 0-3). Zero sorry/axiom.
   `applyCallDonation_preserves_projection`,
   `propagatePIP_preserves_projection` (inductive over fuel),
   `revertPIP_preserves_projection`,
-  `endpointCallWithDonation_preserves_projection`,
-  `endpointReplyWithReversion_preserves_projection`.
+  `endpointCallWithDonation_preserves_lowEquivalent`,
+  `endpointReplyWithReversion_preserves_lowEquivalent`.
   Supporting frame lemmas in `PriorityInheritance/Preservation.lean`:
   `updatePipBoost_objects_ne`, `updatePipBoost_toList_filter_neg`,
   `updatePipBoost_preserves_objects_invExt`.

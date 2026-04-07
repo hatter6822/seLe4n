@@ -309,7 +309,7 @@ inductive NonInterferenceStep
   /-- AE1-F5 (U-04): Full call path with donation and PIP — covers the
       post-IPC mutations `applyCallDonation` and `propagatePriorityInheritance`
       that occur after `endpointCall`. The projection proof is discharged by
-      `endpointCallWithDonation_preserves_projection`. -/
+      `endpointCallWithDonation_preserves_lowEquivalent`. -/
   | endpointCallWithDonationHigh
       (hCurrentHigh : ∀ t, st.scheduler.current = some t →
           threadObservable ctx observer t = false)
