@@ -494,7 +494,7 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
     · intro oidA oidB rA rB hObjA; exact default_objects_absurd hObjA
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
-  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D: 8 predicates)
+  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D + AF1-B: 10 predicates)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)
   · exact tlbConsistent_empty (default : SystemState)
@@ -720,10 +720,13 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
            by exact hR⟩
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
-  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D + AE5-C: 9 conjuncts)
-  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8⟩ := hCross
+  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D + AE5-C + AF1-B: 10 conjuncts)
+  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hCross
     exact ⟨h1, h1i, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
-           h6, h7, h8⟩
+           h6, h7, h8,
+           PriorityInheritance.blockingAcyclic_frame st (advanceTimerState ticks st) h9
+             (fun _ => by simp [PriorityInheritance.blockingServer, advanceTimerState])
+             (by simp [advanceTimerState])⟩
 
 -- ============================================================================
 -- WS-J1-D: Register decode consistency predicate

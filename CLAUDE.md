@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.19.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.22.
 
 ## Build and run
 
@@ -497,6 +497,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-AF Phase AF1 COMPLETE** (v0.25.22): Pre-Release Comprehensive Audit Remediation — Phase AF1: Scheduler Correctness & Proof Gaps. 10 sub-tasks (AF1-A through AF1-J). `blockingAcyclic` added as 10th predicate of `crossSubsystemInvariant` (AF-01/HIGH-1), `bounded_scheduling_latency` renamed to `wcrtBound_unfold` (AF-02/HIGH-2), `pip_deterministic` renamed to `pip_congruence` (AF-13), `eventuallyExits` hypothesis documentation (AF-14), priority/domain fallback documentation (AF-10/AF-11), RunQueue.size and FIFO documentation (AF-40/AF-49), blockingServer pre-mutation read documentation (AF-29). New theorems: `blockingChain_step`, `blockingChain_congr`, `blockingAcyclic_frame`. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE6 COMPLETE** (v0.25.21): Production Audit Remediation — Phase AE6: Testing, Documentation & Closure. 8 sub-tasks (AE6-A through AE6-H). PIP suite execution in test scripts (U-25), `buildChecked` upgrade for 4 test suites (T-07/T-F02/T-F03), `test_rust.sh` CI skip logging (T-F17), Rust ABI register comment fix (R-F01), CLAUDE.md large-file list refresh, documentation synchronization, fixture verification. Zero sorry/axiom. WS-AE portfolio complete. See `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE5 COMPLETE** (v0.25.20): Production Audit Remediation — Phase AE5: Platform, Service & Cross-Subsystem. 7 sub-tasks (AE5-A through AE5-G). `collectQueueMembers` fuel-safe `Option` return (U-22), `registryEndpointUnique` invariant with duplicate endpoint rejection (U-20), `registryInterfaceValid` added to 9-predicate `crossSubsystemInvariant` (SVC-04), boot invariant bridge limitation documentation (U-21), NI boundary service orchestration documentation (U-10), `LabelingContextValid` deployment requirement documentation (IF-14). Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE4 COMPLETE** (v0.25.19): Production Audit Remediation — Phase AE4: Capability, IPC & Architecture Hardening. 10 sub-tasks (AE4-A through AE4-J). CPtr masking in resolveCapAddress (U-17), VAddr canonicity in decodeVSpaceUnmapArgs (U-26), CDT acyclicity preservation proof with freshChild_not_reachable bridge (U-18), cdtMintCompleteness lifted to cross-subsystem composition (U-36), endpointQueueRemove fallback unreachability proofs (U-24), timeout sentinel dual-condition documentation (U-23), TLB targeted flush H3 preparation documentation (U-27), ipcBuffer_within_page theorem (U-32), receiverSlotBase plumbing documentation (U-37). Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`

@@ -64,7 +64,10 @@ def propagatePriorityInheritance (st : SystemState) (startTid : ThreadId)
   | fuel' + 1 =>
     -- Apply updatePipBoost to the current thread
     let st' := updatePipBoost st startTid
-    -- Check if this thread is itself blocked on a server
+    -- AF1-J: Reads `blockingServer` from pre-mutation state `st`, not post-
+    -- `updatePipBoost` state `st'`. Sound because `updatePipBoost` only modifies
+    -- `pipBoost` (never `ipcState`), so the blocking graph topology is unchanged.
+    -- See AE3-I/S-01 frame theorems.
     match blockingServer st startTid with
     | some nextServer =>
       -- Propagate upward through the chain
@@ -88,6 +91,7 @@ def revertPriorityInheritance (st : SystemState) (tid : ThreadId)
   | 0 => st
   | fuel' + 1 =>
     let st' := updatePipBoost st tid
+    -- AF1-J: Same pre-mutation read pattern as propagatePriorityInheritance.
     match blockingServer st tid with
     | some nextServer =>
       revertPriorityInheritance st' nextServer fuel'

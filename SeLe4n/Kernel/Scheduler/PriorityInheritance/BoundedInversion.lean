@@ -46,19 +46,19 @@ theorem pip_bounded_inversion (st : SystemState) (tid : ThreadId) (wcrt : WCRT) 
 -- D4-R: PIP determinism
 -- ============================================================================
 
-/-- D4-R: `propagatePriorityInheritance` is a pure function of `SystemState`.
-Given identical inputs, it produces identical outputs. This follows from
-deterministic blocking graph traversal — `blockingServer` is a pure function,
-`updatePipBoost` is a pure function, and the chain walk is fuel-bounded. -/
-theorem pip_deterministic (st₁ st₂ : SystemState) (tid₁ tid₂ : ThreadId)
+/-- AF1-E (D4-R): Congruence: `propagatePriorityInheritance` respects argument
+equality. Follows from purity — given identical inputs, pure functions produce
+identical outputs. Retained for explicit documentation that PIP propagation
+is deterministic in the formal model (no non-deterministic branches). -/
+theorem pip_congruence (st₁ st₂ : SystemState) (tid₁ tid₂ : ThreadId)
     (fuel₁ fuel₂ : Nat)
     (hSt : st₁ = st₂) (hTid : tid₁ = tid₂) (hFuel : fuel₁ = fuel₂) :
     propagatePriorityInheritance st₁ tid₁ fuel₁ =
     propagatePriorityInheritance st₂ tid₂ fuel₂ := by
   subst hSt; subst hTid; subst hFuel; rfl
 
-/-- D4-R: `revertPriorityInheritance` is deterministic. -/
-theorem pip_revert_deterministic (st₁ st₂ : SystemState) (tid₁ tid₂ : ThreadId)
+/-- AF1-E (D4-R): Congruence for `revertPriorityInheritance`. -/
+theorem pip_revert_congruence (st₁ st₂ : SystemState) (tid₁ tid₂ : ThreadId)
     (fuel₁ fuel₂ : Nat)
     (hSt : st₁ = st₂) (hTid : tid₁ = tid₂) (hFuel : fuel₁ = fuel₂) :
     revertPriorityInheritance st₁ tid₁ fuel₁ =

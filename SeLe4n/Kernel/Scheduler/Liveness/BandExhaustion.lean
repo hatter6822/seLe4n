@@ -29,7 +29,19 @@ inductive ThreadExitReason where
   deriving Repr
 
 /-- D5-I: Predicate asserting a thread will eventually exit the run queue.
-This is the liveness hypothesis required for priority-band exhaustion. -/
+This is the liveness hypothesis required for priority-band exhaustion.
+
+**AF1-F: Status** — `eventuallyExits` is an EXTERNALIZED HYPOTHESIS, not a
+derived property. It is used as a precondition in `higherBandExhausted` (below)
+but never derived from kernel invariants in the current codebase.
+
+- For CBS-bound threads: should follow from budget finiteness — once
+  `budgetRemaining` hits 0, `timerTick` removes the thread from the run queue.
+- For unbound threads: NOT satisfiable without an external progress assumption
+  (e.g., all threads eventually block, yield, or complete).
+
+Future work: derive `eventuallyExits` from CBS budget finiteness for bound
+threads, connecting `consumeBudget` monotonic decrease to run queue removal. -/
 def eventuallyExits (trace : SchedulerTrace) (tid : ThreadId) (startIdx : Nat) : Prop :=
   ∃ k, k > startIdx ∧ match traceStateAt trace k with
     | some st => st.scheduler.runQueue.contains tid = false ∧

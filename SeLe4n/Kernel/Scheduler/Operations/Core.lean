@@ -289,6 +289,8 @@ def schedule : Kernel Unit :=
     | .ok (some tid, st') =>
         match st'.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
+            -- AF1-G: Domain check uses static `tcb.domain`, safe under
+            -- `boundThreadDomainConsistent` (AE3-A: sc.domain = tcb.domain).
             if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
               -- WS-H12c: save outgoing thread's register context
               let stSaved := saveOutgoingContext st'
@@ -327,13 +329,15 @@ def handleYield : Kernel Unit :=
         match st.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
             -- WS-H12b: re-enqueue at back of priority bucket, then schedule
-            -- AE3-E/S-03: Note — re-enqueues at tcb.priority (legacy). For
-            -- SchedContext-bound threads, the effective priority from sc.priority
-            -- is tracked by effectiveParamsMatchRunQueue and the SchedContext-aware
-            -- selection path (chooseBestRunnableEffective). PIP boost is applied
-            -- at selection time, not stored in the RunQueue. A full transition to
-            -- effective-priority insertion requires refactoring schedulerPriorityMatch
-            -- infrastructure (48 proof sites). Deferred to post-release hardening.
+            -- AF1-H (AE3-E/S-03): Re-enqueues at tcb.priority (static base), not
+            -- effective priority. Intentional: yield surrenders the current timeslice
+            -- and moves the thread to the back of its priority band. PIP boost
+            -- determines scheduling ORDER at selection time (via
+            -- `chooseBestRunnableEffective`) but not yield POSITION — a boosted
+            -- thread yields from its base band, not its boosted position. The
+            -- 48-proof-site debt for effective-priority insertion is tracked but
+            -- yield semantics make this a non-bug: the thread re-enters the queue
+            -- at the priority it was originally assigned.
             let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
             let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
             schedule st'

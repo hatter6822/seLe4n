@@ -1066,12 +1066,19 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 -- D5: Bounded Latency Theorem surface anchors
 #check @SeLe4n.Kernel.Liveness.WCRTHypotheses
 #check @SeLe4n.Kernel.Liveness.wcrtBound
-#check @SeLe4n.Kernel.Liveness.bounded_scheduling_latency
+#check @SeLe4n.Kernel.Liveness.wcrtBound_unfold
 #check @SeLe4n.Kernel.Liveness.countHigherOrEqual_mono_threshold
 #check @SeLe4n.Kernel.Liveness.pip_enhanced_wcrt_le_base
 #check @SeLe4n.Kernel.Liveness.domainRotationTotal_le_bound
 #check @SeLe4n.Kernel.Liveness.fifoProgressBound
 #check @SeLe4n.Kernel.Liveness.bandExhaustionBound
+-- AF1: New theorems and renames
+#check @SeLe4n.Kernel.PriorityInheritance.blockingChain_step
+#check @SeLe4n.Kernel.PriorityInheritance.blockingChain_congr
+#check @SeLe4n.Kernel.PriorityInheritance.blockingAcyclic_frame
+#check @SeLe4n.Kernel.PriorityInheritance.pip_congruence
+#check @SeLe4n.Kernel.PriorityInheritance.pip_revert_congruence
+#check @SeLe4n.Kernel.crossSubsystemInvariant_to_blockingAcyclic
 EOF'
 
 finalize_report

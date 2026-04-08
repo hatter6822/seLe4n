@@ -133,7 +133,13 @@ theorem isBetterCandidate_transitive
 
 Folds over the runnable list accumulating the best candidate using the
 three-level `isBetterCandidate` predicate. The accumulator carries
-`(ThreadId × Priority × Deadline)` to avoid re-reading the object store. -/
+`(ThreadId × Priority × Deadline)` to avoid re-reading the object store.
+
+AF-49: FIFO tie-breaking is implicit in list order — `isBetterCandidate`
+uses strict less-than (`cd < id`), so equal-priority equal-deadline
+challengers never displace the incumbent. Since `RunQueue.insert` appends
+to tail and the flat list preserves insertion order, the first-enqueued
+thread at a given (priority, deadline) is naturally selected first. -/
 def chooseBestRunnableBy
     (objects : SeLe4n.ObjId → Option KernelObject)
     (eligible : TCB → Bool)
@@ -303,7 +309,17 @@ theorem hasSufficientBudget_unbound (st : SystemState) (tcb : TCB)
 
 Returns the priority/deadline pair to use for scheduling comparison.
 For bound threads, uses SchedContext parameters; for unbound threads,
-falls back to TCB legacy fields. -/
+falls back to TCB legacy fields.
+
+**AF1-G: Fallback rationale** — The fallback to `tcb.priority`/`tcb.deadline`
+when SchedContext lookup fails is safe because:
+(1) Unbound threads trivially pass budget checks (`hasSufficientBudget` = true).
+(2) Bound threads with a missing SchedContext are rejected by
+    `schedContextStoreConsistent` (part of `crossSubsystemInvariant`), so the
+    fallback path is unreachable under invariants.
+(3) Domain check in `schedule` (Core.lean) uses static `tcb.domain` which is
+    safe under `boundThreadDomainConsistent` (AE3-A: `sc.domain = tcb.domain`
+    for bound threads). -/
 @[inline] def resolveEffectivePrioDeadline (st : SystemState) (tcb : TCB)
     : SeLe4n.Priority × SeLe4n.Deadline :=
   let (basePrio, dl) := match tcb.schedContextBinding with

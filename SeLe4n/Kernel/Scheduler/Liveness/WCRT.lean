@@ -50,6 +50,28 @@ structure WCRTHypotheses (st : SystemState) (tid : ThreadId) where
   /-- Domain schedule is non-empty -/
   domainScheduleNonEmpty : st.scheduler.domainSchedule ≠ []
 
+/- AF1-D: **WCRTHypotheses Instantiation Guide**
+
+To use the WCRT bound (`bounded_scheduling_latency_exists`) for a concrete
+system, all `WCRTHypotheses` fields must be instantiated:
+
+1. **`threadRunnable`/`threadHasBudget`**: Prove the target thread is runnable
+   with sufficient budget at the analysis start point.
+2. **`N`/`higherPriorityBound`**: Count threads with effective priority ≥
+   target's in the same domain. Derive from `countHigherOrEqualEffectivePriority`.
+3. **`B`/`maxBudgetBound`**: Maximum CBS budget among same-or-higher priority
+   threads. Derive from `maxBudgetInBand`.
+4. **`P`/`maxPeriodBound`**: Maximum CBS period among same-or-higher priority
+   threads. Derive from `maxPeriodInBand`.
+5. **`domainScheduleAdequate`**: Prove the domain schedule entry for the target
+   domain has length ≥ N*(B+P). This is a system configuration requirement.
+6. **`domainEntriesPositive`/`domainScheduleNonEmpty`**: Prove from boot config.
+
+**Current status**: Neither `hDomainActiveRunnable` (required by
+`bounded_scheduling_latency_exists`) nor `hBandProgress` are derived from kernel
+invariants — they are externalized hypotheses. Future work: derive
+`hBandProgress` from CBS budget finiteness + `eventuallyExits` (see AF-14). -/
+
 -- ============================================================================
 -- D5-K: WCRT bound computation
 -- ============================================================================
@@ -109,27 +131,19 @@ theorem wcrtBound_stable_across_states
 -- D5-L: Main WCRT theorem
 -- ============================================================================
 
-/-- D5-L: Bounded scheduling latency — the main WCRT theorem.
+/-- AF1-C: `wcrtBound` definition unfolding. This is a definitional equality, not
+    a scheduling guarantee. The substantive theorem is
+    `bounded_scheduling_latency_exists` (below) which composes domain rotation
+    and band exhaustion bounds under `WCRTHypotheses`.
 
-Given `WCRTHypotheses`, thread `tid` is selected within
-`D × L_max + N × (B + P)` ticks, where:
-- `D` = number of domain schedule entries
-- `L_max` = maximum domain schedule entry length
-- `N` = threads at same or higher effective priority in target domain
-- `B` = maximum budget among those threads
-- `P` = maximum replenishment period among those threads
-
-Proof structure:
-1. By `domain_rotation_bound` (D5-J), the target domain becomes active
-   within `D × L_max` ticks.
-2. Once active, by `bandExhaustionBound` (D5-I) and `fifoProgressBound` (D5-H),
-   the target thread is selected within `N × (B + P)` additional ticks.
-3. Compose via `Nat.add_le_add`.
-
-This is a conditional liveness theorem — it assumes the WCRT hypotheses hold
-at the analysis start point. System integrators instantiate these hypotheses
-with their task-set parameters to derive concrete schedulability bounds. -/
-theorem bounded_scheduling_latency
+    Given `WCRTHypotheses`, thread `tid` is selected within
+    `D × L_max + N × (B + P)` ticks, where:
+    - `D` = number of domain schedule entries
+    - `L_max` = maximum domain schedule entry length
+    - `N` = threads at same or higher effective priority in target domain
+    - `B` = maximum budget among those threads
+    - `P` = maximum replenishment period among those threads -/
+theorem wcrtBound_unfold
     (st : SystemState) (tid : ThreadId)
     (hyp : WCRTHypotheses st tid) :
     let D := st.scheduler.domainSchedule.length
