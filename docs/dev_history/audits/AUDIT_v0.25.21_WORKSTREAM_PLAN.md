@@ -3,8 +3,8 @@
 **Created**: 2026-04-08
 **Baseline version**: 0.25.21
 **Baseline audits**:
-  - `docs/audits/AUDIT_v0.25.21_PRE_RELEASE_COMPREHENSIVE.md` (2 HIGH, 24 MEDIUM, 53 LOW)
-  - `docs/audits/AUDIT_v0.25.21_PRE_RELEASE_REVIEW.md` (1 HIGH, 22 MEDIUM, 30+ LOW)
+  - `docs/dev_history/audits/AUDIT_v0.25.21_PRE_RELEASE_COMPREHENSIVE.md` (2 HIGH, 24 MEDIUM, 53 LOW)
+  - `docs/dev_history/audits/AUDIT_v0.25.21_PRE_RELEASE_REVIEW.md` (1 HIGH, 22 MEDIUM, 30+ LOW)
 **Prior portfolios**: WS-B through WS-AE (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 
