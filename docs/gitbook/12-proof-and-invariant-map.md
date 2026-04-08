@@ -2150,12 +2150,15 @@ builder→execution phase transition.
 switch helpers. Theorems: `frozenLookupObject_state_unchanged`,
 `frozenStoreObject_preserves_scheduler`, `frozenStoreObject_preserves_machine`.
 
-**Q7-B/C/Z8-H/I**: 18 per-subsystem frozen operations (`Operations.lean`) across 6
+**Q7-B/C/Z8-H/I**: 24 per-subsystem frozen operations (`Operations.lean`) across 7
 subsystems: Scheduler (`frozenSchedule`, `frozenHandleYield`, `frozenTimerTick`,
 `frozenTimerTickBudget`), IPC (`frozenNotificationSignal/Wait`,
-`frozenEndpointSend/Receive/Call/Reply`), Capability (`frozenCspaceLookup/Mint/Delete`),
+`frozenEndpointSend/Receive/Call/Reply`), Capability (`frozenCspaceLookup`,
+`frozenCspaceLookupSlot`, `frozenCspaceMint/Delete`),
 VSpace (`frozenVspaceLookup`), Service (`frozenLookupServiceByCap`),
-SchedContext (`frozenSchedContextConfigure/Bind/Unbind`).
+SchedContext (`frozenSchedContextConfigure/Bind/Unbind`, `frozenSetPriority`,
+`frozenSetMCPriority`), Lifecycle (`frozenSuspendThread`, `frozenResumeThread`),
+Architecture (`frozenSetIPCBuffer`).
 
 **Q7-D**: FrozenMap set/get? commutativity proofs (`Commutativity.lean`) —
 roundtrip properties, frame lemmas, structural composition theorems.

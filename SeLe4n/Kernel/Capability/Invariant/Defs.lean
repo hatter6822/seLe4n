@@ -169,7 +169,10 @@ standalone operation-correctness lemmas in `Authority.lean`.
 - CDT-shrinking operations (revoke/delete) prove acyclicity via
   `CapDerivationTree.edgeWellFounded_sub` (edge subset preserves well-foundedness).
 - `cspaceSlotUnique` is retained alongside `cspaceSlotCountBounded` for backward
-  compatibility with the existing proof surface. -/
+  compatibility with the existing proof surface.
+- AF5-F (AF-26): This 7-property conjunction uses right-associative `∧` chains
+  accessed via `.2.2.2...` projections. Refactoring to a named structure is
+  deferred to WS-V (see Builder.lean AF5-F annotation for rationale). -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧

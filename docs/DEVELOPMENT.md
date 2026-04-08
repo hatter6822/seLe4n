@@ -133,8 +133,9 @@ theorems (Q6-A). CNode radix lookup equivalence via generic fold helpers (Q6-B).
 `SeLe4n/Model/FreezeProofs.lean`, 22-scenario test suite (60 checks). Zero
 sorry/axiom.
 **WS-Q7** (v0.17.13) — Frozen kernel operations — **COMPLETED**:
-`FrozenKernel` monad with 14 per-subsystem frozen operations across 5 subsystems
-(Scheduler, IPC, Capability, VSpace, Service). FrozenMap set/get? commutativity
+`FrozenKernel` monad with 24 per-subsystem frozen operations across 7 subsystems
+(Scheduler, IPC, Capability, VSpace, Service, SchedContext, Lifecycle/Architecture).
+FrozenMap set/get? commutativity
 proofs, 18 frozenStoreObject preservation theorems. 15-scenario test suite
 covering TPH-005 through TPH-014. Zero sorry/axiom.
 **WS-Q8** (v0.17.13) — Rust syscall wrappers — **COMPLETED**:

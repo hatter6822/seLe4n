@@ -1286,10 +1286,10 @@ completion for correct field count.
 
 ## 7. Phase AF5 — IPC, Capability, Lifecycle & Documentation
 
-**Status**: PLANNED
+**Status**: COMPLETE
 **Goal**: Fix stale documentation, add missing cross-references, document
 design rationale for IPC/capability/lifecycle patterns.
-**Gate**: `lake build` + `./scripts/test_full.sh`
+**Gate**: `lake build` + `./scripts/test_full.sh` ✓
 **Dependencies**: None (all documentation and minor code changes).
 **Estimated scope**: ~120–170 lines of changes.
 
