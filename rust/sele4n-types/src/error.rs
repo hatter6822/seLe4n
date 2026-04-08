@@ -1,11 +1,14 @@
-//! Kernel error enumeration — 1:1 mapping from `SeLe4n.Model.KernelError`.
+//! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/State.lean` lines 19–62.
+//! Discriminants 0–43 are a 1:1 mapping from the Lean inductive (44 variants).
+//! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 
-/// All kernel error variants, matching the Lean `KernelError` inductive exactly.
+/// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
 ///
-/// The discriminant values are sequential (implicit `#[repr(u32)]`) for ABI
-/// stability. The ordering matches the Lean source declaration order.
+/// Discriminants 0–43 match the Lean `KernelError` inductive exactly.
+/// `UnknownKernelError` (255) is a Rust-side sentinel for unrecognized codes.
+/// The discriminant values use `#[repr(u32)]` for ABI stability.
 ///
 /// U3-F / U-L08: `#[non_exhaustive]` ensures that adding new error variants
 /// in future kernel versions is a non-breaking change for downstream crates.
@@ -235,7 +238,7 @@ mod tests {
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify decode_response fallback: unknown discriminants map to None
+        // Verify from_u32: unknown discriminants in the gap (44–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 

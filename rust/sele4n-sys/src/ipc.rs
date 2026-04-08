@@ -1,8 +1,9 @@
-//! IPC operations — 7 syscall wrappers covering endpoint and notification ops.
+//! IPC operations — 7 syscall wrappers plus 1 checked variant.
 //!
 //! - `endpoint_send` / `endpoint_receive` / `endpoint_call` / `endpoint_reply`
 //! - `notification_signal` / `notification_wait`
 //! - `endpoint_reply_recv` (compound: reply + blocking receive)
+//! - `endpoint_reply_recv_checked` (AF6-B: rejects truncation)
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscall` → `dispatchWithCap`.
 
