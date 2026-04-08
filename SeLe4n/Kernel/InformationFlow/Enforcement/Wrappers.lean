@@ -282,8 +282,11 @@ def enforcementBoundaryComplete : Bool :=
       `enforcementBoundary`.
     - An `enforcementBoundary` entry is removed that was the sole coverage for
       a `SyscallId` variant. -/
+-- AF4-A: Replaced `native_decide` with `decide` to remove Lean runtime
+-- evaluator from the TCB. The 25-element SyscallId enumeration is small enough
+-- for the kernel-checked `decide` tactic (may increase compile time slightly).
 theorem enforcementBoundary_is_complete :
-    enforcementBoundaryComplete = true := by native_decide
+    enforcementBoundaryComplete = true := by decide
 
 -- ============================================================================
 -- WS-E5/M-07: Denied-preserves-state theorems

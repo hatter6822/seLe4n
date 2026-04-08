@@ -1,3 +1,22 @@
+## v0.25.25 — WS-AF Phase AF4: Information Flow, Cross-Subsystem & SchedContext
+
+Phase AF4 of WS-AF Pre-Release Comprehensive Audit Remediation. Eliminates all
+`native_decide` from the codebase (TCB reduction), expands fuel-sufficiency
+documentation, and adds deployment requirement cross-references across
+information flow, cross-subsystem, service, and SchedContext modules. All tests
+pass (test_full.sh Tier 0-3). Zero sorry/axiom.
+
+### Changes
+
+- **AF4-A** (AF-16): Replaced `native_decide` with `decide` in `enforcementBoundary_is_complete` (Wrappers.lean) — removes Lean runtime evaluator from TCB for 25-element SyscallId enumeration
+- **AF4-B** (AF-17): Replaced `native_decide` with `decide` in `crossSubsystem_pairwise_coverage_complete` (CrossSubsystem.lean) — 15-element pairwise disjointness proof now kernel-checked
+- **AF4-B+**: Replaced bonus `native_decide` in `crossSubsystemInvariant_default` (CrossSubsystem.lean:378) — zero `native_decide` remains in production code
+- **AF4-C** (AF-07): Expanded `collectQueueMembers` fuel-sufficiency formal argument sketch with `tcbQueueChainAcyclic` connection
+- **AF4-D** (AF-18): Documented `serviceHasPathTo` conservative fuel-exhaustion semantics (returns `true` on fuel=0 for safe cycle detection)
+- **AF4-E** (AF-33): Added seL4 separation kernel design cross-reference for `LabelingContextValid` deployment requirement; created `labelingContextValid_is_deployment_requirement` witness theorem (AE5-F gap closure)
+- **AF4-F** (AF-08): Documented CBS 8× bandwidth bound precision gap analysis with future proof-tightening roadmap
+- **AF4-G** (AF-30, AF-47): Documented `schedContextYieldTo` kernel-internal design rationale (operates below capability layer, pure function with identity fallback)
+
 ## v0.25.24 — WS-AF Phase AF3: Platform & DeviceTree Hardening
 
 Phase AF3 of WS-AF Pre-Release Comprehensive Audit Remediation. Addresses 7

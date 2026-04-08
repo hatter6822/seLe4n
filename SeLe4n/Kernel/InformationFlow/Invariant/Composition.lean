@@ -667,7 +667,7 @@ theorem projPreserving_preserves_lowEquivalent
     **Deployment requirement**: The system integrator must discharge these
     hypotheses for their specific labeling configuration. The kernel proofs
     assume them as parameters — they are NOT enforced at runtime. -/
-/- LabelingContextValid — Deployment Requirement (AE5-F/IF-14)
+/- LabelingContextValid — Deployment Requirement (AE5-F/IF-14, AF4-E/AF-33)
 
    `LabelingContextValid` ensures the labeling context is coherent:
    all thread labels are consistent with their domain assignments,
@@ -680,7 +680,14 @@ theorem projPreserving_preserves_lowEquivalent
    NI guarantees. The platform binding (H3) must construct a valid labeling
    context during boot, and the boot sequence must be proven (or runtime-
    checked) to produce a valid context. See PLT-01 (U-21) for the boot
-   invariant bridge. -/
+   invariant bridge.
+
+   AF4-E: This design is consistent with seL4's separation kernel architecture:
+   boot-time configuration is trusted (compiled into the system image), and
+   runtime enforcement occurs exclusively via capability checks + NI projection.
+   The `labelingContextValid_is_deployment_requirement` theorem (AE5-F) makes
+   this obligation explicit. See DEPLOYMENT_GUIDE.md §4.1 for the pre-deployment
+   obligation checklist that system integrators must discharge. -/
 structure LabelingContextValid (ctx : LabelingContext) : Prop where
   /-- Thread-object label coherence: the thread label flows to its own object label.
       This is the key domain-separation hypothesis used by `NonInterferenceStep`
@@ -717,6 +724,20 @@ theorem labelingContextValid_provides_coherence
     threadObservable ctx observer tid = false →
     objectObservable ctx observer tid.toObjId = false :=
   hValid.coherenceImpliesObjectHigh observer
+
+/-- AE5-F (IF-14) / AF4-E (AF-33): Witness that `LabelingContextValid` is a
+    deployment-time obligation. The kernel assumes it as a hypothesis — it is
+    NOT checked at runtime. Any `LabelingContextValid ctx` parameter in an NI
+    theorem must be discharged by the platform binding during boot.
+
+    This theorem documents the obligation by requiring an explicit witness:
+    given a proof that the context is valid, the coherence property follows.
+    The obligation is on the deployer to construct `hValid`. -/
+theorem labelingContextValid_is_deployment_requirement
+    (ctx : LabelingContext) (hValid : LabelingContextValid ctx) :
+    ∀ tid : SeLe4n.ThreadId,
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf tid.toObjId) = true :=
+  hValid.threadObjectCoherence
 
 -- ============================================================================
 -- WS-H10/A-39: Declassification non-interference (C.10)

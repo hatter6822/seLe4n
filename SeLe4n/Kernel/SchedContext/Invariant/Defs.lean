@@ -88,7 +88,16 @@ Admission Control Precision (U-13/SC-02, AE3-G)
 which truncates per-context. Aggregate error ≤ n/1000 where n is the
 number of active SchedContexts. For n=64, this is ≤6.4% overcommit.
 The `budgetWithinBounds` invariant provides per-object isolation
-regardless of aggregate admission precision. -/
+regardless of aggregate admission precision.
+
+AF4-F (AF-08): The 8× bandwidth gap is a proof-precision issue, not a
+correctness bug. The bound `totalConsumed ≤ 8 × budget` holds because each
+of up to `maxReplenishments` (= 8) replenishments can refill the full budget
+in the worst case. The ideal 1× bound requires proving that replenishments
+partition the budget (no double-counting across replenishment slots), which
+is tracked for future proof tightening. Per-object `budgetWithinBounds`
+prevents actual overrun at any single scheduling tick regardless of the
+aggregate bound. See AE3-G documentation for the full precision analysis. -/
 def schedContextWellFormed (sc : SchedContext) : Prop :=
   sc.wellFormed ∧ budgetWithinBounds sc ∧
   replenishmentListWellFormed sc ∧ replenishmentAmountsBounded sc
