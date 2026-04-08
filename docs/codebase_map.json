@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-af4-mva3q",
-      "commit_sha": "6ed21503992b0ccb33b5b8ca02e96d58ad21cfcf",
-      "tree_sha": "a81e00e2113294514530fd822f21790f5ee96360",
-      "committed_at_utc": "2026-04-08T01:30:24-04:00"
+      "commit_sha": "d9015dea9d025c8e2c1889de3333d42d43c20df2",
+      "tree_sha": "b80c548b6ed0ee984200104ac6519111abefbb1e",
+      "committed_at_utc": "2026-04-08T05:53:40+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c77de0aaf6f6355282b01a8717861f7c01b2f0e821bf45fb1ef1aad2d7ee1889"
+    "source_digest": "9fe55b89dc6a7d20d908503b9d2b077eb4131987704e1bba82601090d9afa76a"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4638
+    "declaration_count": 4639
   },
   "readme_sync": {
-    "version": "0.25.24",
+    "version": "0.25.25",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 87092,
+    "production_loc": 87108,
     "test_files": 16,
     "test_loc": 11359,
-    "proved_theorem_lemma_decls": 2581,
+    "proved_theorem_lemma_decls": 2583,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -22274,7 +22274,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Composition",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean",
-      "declaration_count": 26,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
@@ -22587,8 +22587,20 @@
         },
         {
           "kind": "theorem",
+          "name": "labelingContextValid_is_deployment_requirement",
+          "line": 736,
+          "called": [
+            "LabelingContext",
+            "LabelingContextValid",
+            "ThreadId",
+            "securityFlowsTo",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "declassifyStore_NI",
-          "line": 741,
+          "line": 755,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -22610,7 +22622,7 @@
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 767,
+          "line": 781,
           "called": [
             "IfObserver",
             "Kernel",
@@ -22622,7 +22634,7 @@
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 777,
+          "line": 791,
           "called": [
             "IfObserver",
             "Kernel",
@@ -22633,7 +22645,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 796,
+          "line": 810,
           "called": [
             "IfObserver",
             "KernelError",
@@ -22644,7 +22656,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 833,
+          "line": 847,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -22659,7 +22671,7 @@
         {
           "kind": "inductive",
           "name": "KernelOperation",
-          "line": 861,
+          "line": 875,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -22686,7 +22698,7 @@
         {
           "kind": "theorem",
           "name": "kernelOperation_count",
-          "line": 901,
+          "line": 915,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -22713,7 +22725,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage",
-          "line": 934,
+          "line": 948,
           "called": [
             "IfObserver",
             "KernelOperation",
@@ -22745,7 +22757,7 @@
         {
           "kind": "def",
           "name": "kernelOperationNiConstructor",
-          "line": 980,
+          "line": 994,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -22773,7 +22785,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_operational",
-          "line": 1019,
+          "line": 1033,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -22802,7 +22814,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_injective",
-          "line": 1037,
+          "line": 1051,
           "called": [
             "KernelOperation",
             "kernelOperationNiConstructor"
@@ -22811,7 +22823,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_count",
-          "line": 1046,
+          "line": 1060,
           "called": [
             "Kernel",
             "chooseThread",
@@ -33190,7 +33202,7 @@
         {
           "kind": "def",
           "name": "schedContextYieldTo",
-          "line": 243,
+          "line": 245,
           "called": [
             "KernelObject",
             "SchedContextId",

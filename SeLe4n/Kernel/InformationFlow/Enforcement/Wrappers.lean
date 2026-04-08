@@ -283,7 +283,7 @@ def enforcementBoundaryComplete : Bool :=
     - An `enforcementBoundary` entry is removed that was the sole coverage for
       a `SyscallId` variant. -/
 -- AF4-A: Replaced `native_decide` with `decide` to remove Lean runtime
--- evaluator from the TCB. The 34-element Bool enumeration is small enough
+-- evaluator from the TCB. The 25-element SyscallId enumeration is small enough
 -- for the kernel-checked `decide` tactic (may increase compile time slightly).
 theorem enforcementBoundary_is_complete :
     enforcementBoundaryComplete = true := by decide

@@ -141,7 +141,7 @@ The traversal correctly handles:
 -- valid edge registration; a false negative would silently allow a cycle in the
 -- service dependency graph, potentially causing deadlock or infinite loops.
 -- Proven correct under `serviceCountBounded` via `serviceBfsFuel_sound` and
--- `serviceBfsFuel_sufficient` (below). Spurious rejection is acceptable because
+-- `serviceBfsFuel_sufficient` (in `Service/Invariant/Acyclicity.lean`). Spurious rejection is acceptable because
 -- fuel is bounded by `serviceBfsFuel st` = `objectIndex.length + 256`, which
 -- exceeds any realistic service count. In practice, fuel exhaustion is
 -- unreachable for well-formed states.

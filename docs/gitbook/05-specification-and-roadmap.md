@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.25.24` |
+| Version | `0.25.25` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 87,043 across 133 Lean files |
 | Test LoC | 11,359 across 16 suites |
 | Proved declarations | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| Active workstream | **WS-AF Phase AF3 COMPLETE** (v0.25.24). Platform & DeviceTree Hardening — DTB parser fuel-exhaustion fix, MMIO byte-range validation, documentation. Prior: AF2 (v0.25.23), AF1 (v0.25.22), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: Raspberry Pi 5 hardware binding.** |
+| Active workstream | **WS-AF Phase AF4 COMPLETE** (v0.25.25). Information Flow, Cross-Subsystem & SchedContext — all `native_decide` eliminated (TCB reduction), fuel-sufficiency documentation, deployment cross-references. Prior: AF3 (v0.25.24), AF2 (v0.25.23), AF1 (v0.25.22), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: Raspberry Pi 5 hardware binding.** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
