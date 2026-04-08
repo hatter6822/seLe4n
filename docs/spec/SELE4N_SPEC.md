@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (2,447 theorem/lemma declarations),
+2. machine-checked invariant preservation (2,581 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.25.24` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 87,007 across 133 Lean files |
+| **Production LoC** | 87,043 across 133 Lean files |
 | **Test LoC** | 11,359 across 16 Lean test suites |
-| **Proved declarations** | 2,578 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
 | **Active workstream** | **WS-AF Phase AF3 COMPLETE** (v0.25.24). Platform & DeviceTree Hardening — 7 sub-tasks. DTB parser fuel-exhaustion fix, full MMIO write byte-range validation, documentation for MMIO semantics, extractPeripherals depth, natKeysNoDup opacity, DTB/boot stubs. Prior: WS-AF AF2 (v0.25.23), AF1 (v0.25.22), WS-AE AE1–AE6 (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.21_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |

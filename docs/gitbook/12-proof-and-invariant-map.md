@@ -75,7 +75,7 @@ in Projection.lean) is intentionally retained.
 - `checkedDispatch_flowDenied_preserves_state` — proves all 3 policy-gated
   wrappers preserve state on flow denial (M-IF-1).
 - `mmioRead`/`mmioWrite` with 4 correctness theorems (M-NEW-7/8).
-- `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` with full byte-range validation (AF3-B).
+- `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` with full byte-range validation (AF3-B); `_rejects_range_overflow` theorems for end-of-range rejection.
 - `MmioReadOutcome` inductive encoding volatile/ram/w1c/fifo read-kind constraints (X1-D).
 - `mkMmioSafe_uart`/`mkMmioSafe_gicDist`/`mkMmioSafe_gicCpu` witness generators (X1-E).
 - `tlbFlushByASID`/`tlbFlushByPage`/`tlbFlushAll` with state frame proofs (M-ARCH-4).

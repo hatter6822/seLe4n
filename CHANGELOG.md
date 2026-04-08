@@ -12,7 +12,7 @@ documentation, and four DTB/boot stub limitation annotations. All tests pass
 ### Changes
 
 - **AF3-A** (AF-05): `parseFdtNodes` fuel exhaustion returns `none` (was `some []`)
-- **AF3-B** (AF-09a): `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` validate full byte range
+- **AF3-B** (AF-09a): `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` validate full byte range; 3 supplementary `_rejects_range_overflow` theorems prove end-of-range rejection when base address is valid but endpoint is not
 - **AF3-C** (AF-09b): MMIO write-semantics model gap documented
 - **AF3-D** (AF-32): `extractPeripherals` 2-level depth limitation documented
 - **AF3-E** (AF-19): `natKeysNoDup` opaque HashSet design tradeoff documented

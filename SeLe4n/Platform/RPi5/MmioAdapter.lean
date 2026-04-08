@@ -383,7 +383,13 @@ def isAligned (addr : PAddr) (alignment : Nat) : Bool :=
     GIC-400 registers require 32-bit aligned writes. This operation
     writes 4 bytes at the target address (little-endian byte order).
 
-    V4-B/M-HW-1: Returns `mmioUnaligned` if `addr` is not 4-byte aligned. -/
+    V4-B/M-HW-1: Returns `mmioUnaligned` if `addr` is not 4-byte aligned.
+
+    AF3-B: Validates both endpoints (`addr` and `addr+3`) are in a device
+    region. This dual-endpoint check assumes device regions are at least
+    4-byte aligned and ≥4 bytes, so an aligned address within a region
+    has its full 4-byte range within the same region. The RPi5 memory map
+    satisfies this (all device regions are ≥4 KiB, page-aligned). -/
 def mmioWrite32 (addr : PAddr) (val : UInt32) : Kernel Unit :=
   fun st =>
     if !isAligned addr 4 then .error .mmioUnaligned
@@ -519,6 +525,14 @@ theorem mmioWrite32W1C_rejects_non_device (addr : PAddr) (val : UInt32) (st : Sy
     mmioWrite32W1C addr val st = .error .policyDenied := by
   simp [mmioWrite32W1C, hNonDevice, hAligned]
 
+/-- AF3-B: W1C write rejected when end-of-range is outside device region. -/
+theorem mmioWrite32W1C_rejects_range_overflow (addr : PAddr) (val : UInt32) (st : SystemState)
+    (hBase : isDeviceAddress addr = true)
+    (hEnd : isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) = false)
+    (hAligned : isAligned addr 4 = true) :
+    mmioWrite32W1C addr val st = .error .policyDenied := by
+  simp [mmioWrite32W1C, hAligned, hBase, hEnd]
+
 /-- V4-C: W1C write with unaligned address is rejected. -/
 theorem mmioWrite32W1C_rejects_unaligned (addr : PAddr) (val : UInt32) (st : SystemState)
     (hUnaligned : isAligned addr 4 = false) :
@@ -587,12 +601,34 @@ theorem mmioWrite32_rejects_non_device (addr : PAddr) (val : UInt32) (st : Syste
     mmioWrite32 addr val st = .error .policyDenied := by
   simp [mmioWrite32, hNonDevice, hAligned]
 
+/-- AF3-B: MMIO 32-bit write rejected when end-of-range is outside device region.
+    Complements `mmioWrite32_rejects_non_device` (base address check) by covering
+    the case where the base address IS in a device region but the last byte
+    (`addr+3`) is not. -/
+theorem mmioWrite32_rejects_range_overflow (addr : PAddr) (val : UInt32) (st : SystemState)
+    (hBase : isDeviceAddress addr = true)
+    (hEnd : isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) = false)
+    (hAligned : isAligned addr 4 = true) :
+    mmioWrite32 addr val st = .error .policyDenied := by
+  simp [mmioWrite32, hAligned, hBase, hEnd]
+
 /-- U6-H/V4-B: MMIO 64-bit write at a non-device, aligned address is rejected. -/
 theorem mmioWrite64_rejects_non_device (addr : PAddr) (val : UInt64) (st : SystemState)
     (hNonDevice : isDeviceAddress addr = false)
     (hAligned : isAligned addr 8 = true) :
     mmioWrite64 addr val st = .error .policyDenied := by
   simp [mmioWrite64, hNonDevice, hAligned]
+
+/-- AF3-B: MMIO 64-bit write rejected when end-of-range is outside device region.
+    Complements `mmioWrite64_rejects_non_device` (base address check) by covering
+    the case where the base address IS in a device region but the last byte
+    (`addr+7`) is not. -/
+theorem mmioWrite64_rejects_range_overflow (addr : PAddr) (val : UInt64) (st : SystemState)
+    (hBase : isDeviceAddress addr = true)
+    (hEnd : isDeviceAddress (PAddr.ofNat (addr.toNat + 7)) = false)
+    (hAligned : isAligned addr 8 = true) :
+    mmioWrite64 addr val st = .error .policyDenied := by
+  simp [mmioWrite64, hAligned, hBase, hEnd]
 
 /-- U6-H/V4-B: MMIO 32-bit write only modifies the 4-byte range [addr, addr+4). -/
 theorem mmioWrite32_frame (addr : PAddr) (val : UInt32) (st st' : SystemState)

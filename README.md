@@ -87,9 +87,9 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.25.24` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 87,007 across 133 files |
+| **Production Lean LoC** | 87,043 across 133 files |
 | **Test Lean LoC** | 11,359 across 16 test suites |
-| **Proved declarations** | 2,578 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -207,7 +207,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
 | **Service management** | Not in kernel | First-class orchestration with dependency graph and acyclicity proofs |
-| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,557 proved declarations, zero sorry/axiom) |
+| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,581 proved declarations, zero sorry/axiom) |
 | **Platform** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ## What's next

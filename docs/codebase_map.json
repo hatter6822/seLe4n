@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-af3-hardening-T5134",
-      "commit_sha": "18b2936ab4b4536298f49d61a3c4c7fed737a248",
-      "tree_sha": "a28f45a20976e6fb087294264560256ee217cea3",
-      "committed_at_utc": "2026-04-07T23:54:59-04:00"
+      "commit_sha": "583dc99587a90bfbba92121024c81eb2ed90b038",
+      "tree_sha": "45251a944bbcd0d77a5044f46cc4a0bb1e9fcac6",
+      "committed_at_utc": "2026-04-08T04:32:29+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "49f0a1bd9308c1f766df5f8601358e1bcc0e24e7ee4334db14c5c4063e7bbb91"
+    "source_digest": "3a816129181c55cac1aa9bf0ef569fe2be0ae19f3ab90d18abc624bb0150016a"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4635
+    "declaration_count": 4638
   },
   "readme_sync": {
     "version": "0.25.24",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 87007,
+    "production_loc": 87043,
     "test_files": 16,
     "test_loc": 11359,
-    "proved_theorem_lemma_decls": 2578,
+    "proved_theorem_lemma_decls": 2581,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -50858,7 +50858,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.MmioAdapter",
       "path": "SeLe4n/Platform/RPi5/MmioAdapter.lean",
-      "declaration_count": 46,
+      "declaration_count": 49,
       "declarations": [
         {
           "kind": "namespace",
@@ -51130,7 +51130,7 @@
         {
           "kind": "def",
           "name": "mmioWrite32",
-          "line": 387,
+          "line": 393,
           "called": [
             "Kernel",
             "PAddr",
@@ -51144,7 +51144,7 @@
         {
           "kind": "def",
           "name": "mmioWrite64",
-          "line": 415,
+          "line": 421,
           "called": [
             "Kernel",
             "PAddr",
@@ -51158,7 +51158,7 @@
         {
           "kind": "def",
           "name": "mmioReadBytes32",
-          "line": 470,
+          "line": 476,
           "called": [
             "PAddr",
             "mem",
@@ -51169,7 +51169,7 @@
         {
           "kind": "def",
           "name": "mmioWrite32W1C",
-          "line": 489,
+          "line": 495,
           "called": [
             "Kernel",
             "PAddr",
@@ -51184,7 +51184,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32W1C_rejects_non_device",
-          "line": 516,
+          "line": 522,
           "called": [
             "PAddr",
             "SystemState",
@@ -51195,8 +51195,22 @@
         },
         {
           "kind": "theorem",
+          "name": "mmioWrite32W1C_rejects_range_overflow",
+          "line": 529,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "isAligned",
+            "isDeviceAddress",
+            "mmioWrite32W1C",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "mmioWrite32W1C_rejects_unaligned",
-          "line": 523,
+          "line": 537,
           "called": [
             "PAddr",
             "SystemState",
@@ -51207,7 +51221,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_unaligned",
-          "line": 533,
+          "line": 547,
           "called": [
             "PAddr",
             "SystemState",
@@ -51218,7 +51232,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_rejects_unaligned",
-          "line": 539,
+          "line": 553,
           "called": [
             "PAddr",
             "SystemState",
@@ -51229,7 +51243,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_rejects_non_device",
-          "line": 549,
+          "line": 563,
           "called": [
             "PAddr",
             "SystemState",
@@ -51240,7 +51254,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_rejects_non_device",
-          "line": 555,
+          "line": 569,
           "called": [
             "PAddr",
             "SystemState",
@@ -51251,7 +51265,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_preserves_state",
-          "line": 561,
+          "line": 575,
           "called": [
             "PAddr",
             "SystemState",
@@ -51261,7 +51275,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_frame",
-          "line": 570,
+          "line": 584,
           "called": [
             "PAddr",
             "SystemState",
@@ -51271,7 +51285,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_non_device",
-          "line": 584,
+          "line": 598,
           "called": [
             "PAddr",
             "SystemState",
@@ -51282,8 +51296,22 @@
         },
         {
           "kind": "theorem",
+          "name": "mmioWrite32_rejects_range_overflow",
+          "line": 608,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "isAligned",
+            "isDeviceAddress",
+            "mmioWrite32",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "mmioWrite64_rejects_non_device",
-          "line": 591,
+          "line": 616,
           "called": [
             "PAddr",
             "SystemState",
@@ -51294,8 +51322,22 @@
         },
         {
           "kind": "theorem",
+          "name": "mmioWrite64_rejects_range_overflow",
+          "line": 626,
+          "called": [
+            "PAddr",
+            "SystemState",
+            "isAligned",
+            "isDeviceAddress",
+            "mmioWrite64",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "mmioWrite32_frame",
-          "line": 598,
+          "line": 634,
           "called": [
             "PAddr",
             "SystemState",
@@ -51307,7 +51349,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_frame",
-          "line": 615,
+          "line": 651,
           "called": [
             "PAddr",
             "SystemState",
@@ -51319,7 +51361,7 @@
         {
           "kind": "def",
           "name": "notInMmioRegion",
-          "line": 642,
+          "line": 678,
           "called": [
             "PAddr",
             "inMmioRegion",
@@ -51329,7 +51371,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_nonMmio_safe",
-          "line": 647,
+          "line": 683,
           "called": [
             "PAddr",
             "SystemState",
@@ -51341,7 +51383,7 @@
         {
           "kind": "theorem",
           "name": "memoryRead_idempotent_nonMmio",
-          "line": 657,
+          "line": 693,
           "called": [
             "PAddr",
             "SystemState",
