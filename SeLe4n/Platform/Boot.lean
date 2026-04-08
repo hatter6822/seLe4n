@@ -1139,9 +1139,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
     · intro oidA _ _ _ hObjA; exact absurd hObjA (hNoVSpace oidA _)
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
-  -- 8. crossSubsystemInvariant (Z9-D + AE5-C: 9 predicates)
+  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B: 10 predicates)
   have hCrossBundle : crossSubsystemInvariant (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
@@ -1203,6 +1203,30 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       simp [SchedContextBinding.scId?] at hB₁
     · -- Z9-C: schedContextRunQueueConsistent — empty runnable list at boot
       intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · -- AF1-B7: blockingAcyclic — all TCBs have ipcState = .ready at boot
+      intro tid hMem
+      -- blockingChain uses fuel = objectIndex.length. If fuel = 0, chain = [].
+      -- If fuel > 0, use step lemma: chain = match blockingServer tid with ...
+      -- All boot TCBs have .ready ipcState → blockingServer = none → chain = []
+      cases hF : (bootFromPlatform config).state.objectIndex.length with
+      | zero =>
+        have : PriorityInheritance.blockingChain (bootFromPlatform config).state tid 0 = [] := rfl
+        rw [show (bootFromPlatform config).state.objectIndex.length = 0 from hF] at hMem
+        rw [this] at hMem; simp at hMem
+      | succ n =>
+        rw [show (bootFromPlatform config).state.objectIndex.length = n + 1 from hF] at hMem
+        rw [PriorityInheritance.blockingChain_step] at hMem
+        -- Show blockingServer returns none for tid at boot
+        have hServer : PriorityInheritance.blockingServer (bootFromPlatform config).state tid = none := by
+          cases hObj : (bootFromPlatform config).state.objects[tid.toObjId]? with
+          | none => simp [PriorityInheritance.blockingServer, hObj]
+          | some obj =>
+            cases obj with
+            | tcb tcb =>
+              have hReady := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl |>.2.1
+              simp [PriorityInheritance.blockingServer, hObj, hReady]
+            | _ => simp [PriorityInheritance.blockingServer, hObj]
+        simp [hServer] at hMem
   -- 9. tlbConsistent
   have hTlbBundle : Architecture.tlbConsistent (bootFromPlatform config).state
       (bootFromPlatform config).state.tlb := by

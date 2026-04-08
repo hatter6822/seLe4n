@@ -110,7 +110,7 @@ open SeLe4n.Model
 
 #check @WCRTHypotheses
 #check @wcrtBound
-#check @bounded_scheduling_latency
+#check @wcrtBound_unfold
 #check @bounded_scheduling_latency_exists
 #check @wcrt_decomposition
 #check @wcrt_domain_component_le
@@ -146,7 +146,7 @@ def main : IO Unit := do
   IO.println "  ✓ Yield: rotateToBack, fifoProgressBound, fifoProgressBound_succ"
   IO.println "  ✓ BandExhaustion: bandExhaustionBound, monotonicity"
   IO.println "  ✓ DomainRotation: domainRotationBound, maxDomainLength_ge_each"
-  IO.println "  ✓ WCRT: WCRTHypotheses, bounded_scheduling_latency"
+  IO.println "  ✓ WCRT: WCRTHypotheses, wcrtBound_unfold"
   IO.println "  ✓ PIP: countHigherOrEqual_mono_threshold, pip_enhanced_wcrt_le_base"
   IO.println "  ✓ D4 integration: pip_bounded_inversion"
   IO.println "=== All 58 surface anchors verified ==="

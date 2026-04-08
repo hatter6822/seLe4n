@@ -181,7 +181,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Yield.lean` — yield/rotation semantics, FIFO progress bounds.
   - `BandExhaustion.lean` — priority-band exhaustion analysis.
   - `DomainRotation.lean` — domain rotation bounds.
-  - `WCRT.lean` — `bounded_scheduling_latency`: WCRT = D×L\_max + N×(B+P), PIP enhancement.
+  - `WCRT.lean` — `wcrtBound_unfold` / `bounded_scheduling_latency_exists`: WCRT = D×L\_max + N×(B+P), PIP enhancement.
 
 ### Capability subsystem
 

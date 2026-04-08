@@ -628,7 +628,7 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - `noStaleNotificationWaitReferences` — every ThreadId in notification `waitingThreads` has a live TCB (T5-H)
   - `registryDependencyConsistent` — every dependency edge references a registered service
   - `registryInterfaceValid` — every registered service has its interfaces in the interface registry (AE5-C/SVC-04)
-  - `crossSubsystemInvariant` — composed 9-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`, AE5-C: added `registryInterfaceValid`)
+  - `crossSubsystemInvariant` — composed 10-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`, AE5-C: added `registryInterfaceValid`, AF1-B: added `blockingAcyclic`)
   - **X3-C/X3-D (v0.22.20)**: 10 predicate interaction pairs fully covered:
     - 6 disjoint pairs with field-disjointness witnesses (V6-A3)
     - 4 sharing pairs with frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`)
@@ -2603,8 +2603,8 @@ on fuel; revert aliases derived from `revert_eq_propagate`.
 
 **Bounded inversion** (`PriorityInheritance/BoundedInversion.lean`):
 `pip_bounded_inversion`: inversion ≤ `objectIndex.length × WCRT`
-(parametric in WCRT — instantiated by D5 `bounded_scheduling_latency`
-where WCRT = D×L\_max + N×(B+P)).
+(parametric in WCRT — instantiated by D5 `wcrtBound_unfold` /
+`bounded_scheduling_latency_exists` where WCRT = D×L\_max + N×(B+P)).
 
 ### Bounded Latency / Liveness (D5)
 
@@ -2634,7 +2634,7 @@ counting functions, `bucketPosition`.
   targetPrio, targetDomain, threadInDomain, N, higherPriorityBound, B,
   maxBudgetBound, P, maxPeriodBound, domainScheduleAdequate,
   domainEntriesPositive, domainScheduleNonEmpty).
-- `bounded_scheduling_latency`: wcrtBound = D×L\_max + N×(B+P).
+- `wcrtBound_unfold`: wcrtBound definitional unfolding = D×L\_max + N×(B+P).
 - `bounded_scheduling_latency_exists`: existential form — ∃ k ≤ bound,
   selectedAt trace k tid. Composes domain rotation + band progress hypotheses.
 - `countHigherOrEqual_mono_threshold`: PIP tightens WCRT (higher threshold →

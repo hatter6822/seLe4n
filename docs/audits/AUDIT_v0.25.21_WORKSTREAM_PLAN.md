@@ -183,7 +183,7 @@ The following findings require no code changes:
 
 ## 3. Phase AF1 — Scheduler Correctness & Proof Gaps
 
-**Status**: PLANNED
+**Status**: COMPLETE
 **Goal**: Address the two HIGH findings (blocking graph acyclicity, WCRT
 naming) and the scheduler priority/domain consistency issues that represent
 the most significant formal-assurance gaps in the codebase.

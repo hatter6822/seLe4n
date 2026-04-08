@@ -854,8 +854,8 @@ def runInformationFlowChecks : IO Unit := do
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode, .tlb ].length = 16)
-  expect "V6-A: crossSubsystemFieldSets has 9 entries"
-    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 9)
+  expect "V6-A: crossSubsystemFieldSets has 10 entries"
+    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 10)
   -- Verify disjointness witnesses compile and have expected values
   expect "V6-A: regDepConsistent disjoint from staleEndpoint"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields

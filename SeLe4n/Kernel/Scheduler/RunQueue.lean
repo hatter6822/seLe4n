@@ -40,6 +40,10 @@ structure RunQueue where
   membership : RHSet ThreadId
   threadPriority : RHTable ThreadId Priority
   flat : List ThreadId
+  /-- AF-40: Cached thread count. Maintained by `insert` (+1) and `remove` (-1)
+      to avoid O(n) `flat.length` traversals. Invariant: `size = flat.length`
+      (structurally maintained, not proof-enforced). Used for capacity checks
+      and diagnostic reporting — not referenced by scheduling selection. -/
   size : Nat
   maxPriority : Option Priority
   /-- WS-G4: Structural invariant — every flat-list entry is in the HashSet.

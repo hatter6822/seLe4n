@@ -349,7 +349,7 @@ kernel code changes (proof-only phase). Key results:
   (threadRunnable, threadHasBudget, targetPrio, targetDomain, threadInDomain,
   N, higherPriorityBound, B, maxBudgetBound, P, maxPeriodBound,
   domainScheduleAdequate, domainEntriesPositive, domainScheduleNonEmpty).
-- **Main theorem**: `bounded_scheduling_latency` proves WCRT =
+- **Main theorem**: `wcrtBound_unfold` / `bounded_scheduling_latency_exists` proves WCRT =
   D * L_max + N * (B + P), where D = domain schedule entries,
   L_max = maximum domain time, N = higher-priority thread count,
   B = max budget, P = max period.
@@ -847,7 +847,7 @@ holds and postcondition feeds into the next step). Query predicates:
 **WCRT theorem** (`Kernel/Scheduler/Liveness/WCRT.lean`): `WCRTHypotheses`
 structure encodes the preconditions (thread runnable with budget, domain
 membership, higher-priority thread count N, budget bound B, period bound P).
-The main theorem `bounded_scheduling_latency` proves:
+The main theorem `wcrtBound_unfold` / `bounded_scheduling_latency_exists` proves:
 
 > WCRT = D * L_max + N * (B + P)
 

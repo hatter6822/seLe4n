@@ -63,7 +63,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **D2** (v0.24.1): Priority Management — `setPriorityOp`/`setMCPriorityOp`, MCP authority non-escalation, run queue bucket migration, 15 tests. Zero sorry/axiom.
 - **D3** (v0.24.2–v0.24.3): IPC Buffer Configuration — `setIPCBufferOp` with 5-step validation, 7 transport lemmas, 17 tests. Zero sorry/axiom.
 - **D4** (v0.25.0): Priority Inheritance Protocol — `pipBoost` TCB field, blocking graph with acyclicity/depth bound, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, 16 frame preservation theorems, parametric bounded inversion, 22 tests. Zero sorry/axiom.
-- **D5** (v0.25.0): Bounded Latency Theorem — proof-only phase, zero kernel code changes. Trace model (`SchedulerStep`, `SchedulerTrace`, `validTrace`), per-mechanism bounds (timer-tick budget, CBS replenishment, FIFO progress, domain rotation), main theorem `bounded_scheduling_latency`: WCRT = D*L_max + N*(B+P). PIP enhancement: `pip_enhanced_wcrt_le_base`. 58 surface anchor tests. New `Scheduler/Liveness/` directory. Zero sorry/axiom.
+- **D5** (v0.25.0): Bounded Latency Theorem — proof-only phase, zero kernel code changes. Trace model (`SchedulerStep`, `SchedulerTrace`, `validTrace`), per-mechanism bounds (timer-tick budget, CBS replenishment, FIFO progress, domain rotation), main theorem `wcrtBound_unfold` / `bounded_scheduling_latency_exists`: WCRT = D*L_max + N*(B+P). PIP enhancement: `pip_enhanced_wcrt_le_base`. 58 surface anchor tests. New `Scheduler/Liveness/` directory. Zero sorry/axiom.
 
 **Next major milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence.

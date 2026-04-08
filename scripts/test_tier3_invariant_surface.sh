@@ -1066,7 +1066,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 -- D5: Bounded Latency Theorem surface anchors
 #check @SeLe4n.Kernel.Liveness.WCRTHypotheses
 #check @SeLe4n.Kernel.Liveness.wcrtBound
-#check @SeLe4n.Kernel.Liveness.bounded_scheduling_latency
+#check @SeLe4n.Kernel.Liveness.wcrtBound_unfold
 #check @SeLe4n.Kernel.Liveness.countHigherOrEqual_mono_threshold
 #check @SeLe4n.Kernel.Liveness.pip_enhanced_wcrt_le_base
 #check @SeLe4n.Kernel.Liveness.domainRotationTotal_le_bound
