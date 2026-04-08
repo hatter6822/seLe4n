@@ -133,6 +133,16 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.PriorityInheritance.pip_bounded_inversion
 
 -- ============================================================================
+-- Surface anchor: AF1 — new theorems and renames
+-- ============================================================================
+
+#check @SeLe4n.Kernel.PriorityInheritance.blockingChain_step
+#check @SeLe4n.Kernel.PriorityInheritance.blockingChain_congr
+#check @SeLe4n.Kernel.PriorityInheritance.blockingAcyclic_frame
+#check @SeLe4n.Kernel.PriorityInheritance.pip_congruence
+#check @SeLe4n.Kernel.PriorityInheritance.pip_revert_congruence
+
+-- ============================================================================
 -- Executable entry point
 -- ============================================================================
 
@@ -149,5 +159,7 @@ def main : IO Unit := do
   IO.println "  ✓ WCRT: WCRTHypotheses, wcrtBound_unfold"
   IO.println "  ✓ PIP: countHigherOrEqual_mono_threshold, pip_enhanced_wcrt_le_base"
   IO.println "  ✓ D4 integration: pip_bounded_inversion"
-  IO.println "=== All 58 surface anchors verified ==="
+  IO.println "  ✓ AF1: blockingChain_step, blockingChain_congr, blockingAcyclic_frame"
+  IO.println "  ✓ AF1: pip_congruence, pip_revert_congruence, crossSubsystem projection"
+  IO.println "=== All 63 surface anchors verified ==="
   return ()

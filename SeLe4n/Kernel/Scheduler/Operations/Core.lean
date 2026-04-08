@@ -289,6 +289,8 @@ def schedule : Kernel Unit :=
     | .ok (some tid, st') =>
         match st'.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
+            -- AF1-G: Domain check uses static `tcb.domain`, safe under
+            -- `boundThreadDomainConsistent` (AE3-A: sc.domain = tcb.domain).
             if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
               -- WS-H12c: save outgoing thread's register context
               let stSaved := saveOutgoingContext st'

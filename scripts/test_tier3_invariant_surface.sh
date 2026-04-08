@@ -1072,6 +1072,13 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Liveness.domainRotationTotal_le_bound
 #check @SeLe4n.Kernel.Liveness.fifoProgressBound
 #check @SeLe4n.Kernel.Liveness.bandExhaustionBound
+-- AF1: New theorems and renames
+#check @SeLe4n.Kernel.PriorityInheritance.blockingChain_step
+#check @SeLe4n.Kernel.PriorityInheritance.blockingChain_congr
+#check @SeLe4n.Kernel.PriorityInheritance.blockingAcyclic_frame
+#check @SeLe4n.Kernel.PriorityInheritance.pip_congruence
+#check @SeLe4n.Kernel.PriorityInheritance.pip_revert_congruence
+#check @SeLe4n.Kernel.crossSubsystemInvariant_to_blockingAcyclic
 EOF'
 
 finalize_report

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-scheduler-phase-ju1S2",
-      "commit_sha": "a05b7e92836008546bcf39384c00f851faa2fcfd",
-      "tree_sha": "aeaa9dfb775a286abcc16cd9bb8484b066075244",
-      "committed_at_utc": "2026-04-07T21:33:18-04:00"
+      "commit_sha": "2cbbaa630377d6fed10ef6577075ead066d73a61",
+      "tree_sha": "ca2c596161cc7d4bcfb04f483ad9450d68a572d7",
+      "committed_at_utc": "2026-04-08T02:15:01+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "22a6f910f2a7c190da4277b8b014f588d405ebf866a9429262162bc0d349e0cb"
+    "source_digest": "6c28bc7dfe22058862726f8eaf9708ee63bf5a53251e2d272797f247fff4220a"
   },
   "summary": {
     "module_count": 149,
     "declaration_count": 4628
   },
   "readme_sync": {
-    "version": "0.25.21",
+    "version": "0.25.22",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 86800,
+    "production_loc": 86802,
     "test_files": 16,
-    "test_loc": 11347,
+    "test_loc": 11359,
     "proved_theorem_lemma_decls": 2572,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -35662,7 +35662,7 @@
         {
           "kind": "def",
           "name": "handleYield",
-          "line": 317,
+          "line": 319,
           "called": [
             "Kernel",
             "insert",
@@ -35675,13 +35675,13 @@
         {
           "kind": "def",
           "name": "defaultTimeSlice",
-          "line": 353,
+          "line": 355,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerTick",
-          "line": 371,
+          "line": 373,
           "called": [
             "Kernel",
             "insert",
@@ -35694,7 +35694,7 @@
         {
           "kind": "def",
           "name": "popDueReplenishments",
-          "line": 409,
+          "line": 411,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -35705,7 +35705,7 @@
         {
           "kind": "def",
           "name": "refillSchedContext",
-          "line": 417,
+          "line": 419,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -35719,7 +35719,7 @@
         {
           "kind": "def",
           "name": "processReplenishmentsDue",
-          "line": 438,
+          "line": 440,
           "called": [
             "SystemState",
             "insert",
@@ -35735,7 +35735,7 @@
         {
           "kind": "def",
           "name": "tcbBlockingInfo",
-          "line": 470,
+          "line": 472,
           "called": [
             "ObjId",
             "TCB",
@@ -35745,7 +35745,7 @@
         {
           "kind": "def",
           "name": "timeoutBlockedThreads",
-          "line": 511,
+          "line": 513,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -35759,7 +35759,7 @@
         {
           "kind": "def",
           "name": "timerTickBudget",
-          "line": 543,
+          "line": 545,
           "called": [
             "Budget",
             "KernelError",
@@ -35779,7 +35779,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 610,
+          "line": 612,
           "called": [
             "Kernel",
             "chooseThreadEffective",
@@ -35794,7 +35794,7 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 644,
+          "line": 646,
           "called": [
             "Kernel",
             "none",
@@ -35808,7 +35808,7 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 680,
+          "line": 682,
           "called": [
             "Budget",
             "Kernel",
@@ -35825,7 +35825,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 726,
+          "line": 728,
           "called": [
             "Kernel",
             "ThreadId",
@@ -35835,7 +35835,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 755,
+          "line": 757,
           "called": [
             "Kernel",
             "insert",
@@ -35848,7 +35848,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 794,
+          "line": 796,
           "called": [
             "DomainScheduleEntry",
             "schedule"
@@ -35857,7 +35857,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 806,
+          "line": 808,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -35868,7 +35868,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 816,
+          "line": 818,
           "called": [
             "SystemState",
             "invExt",
@@ -35879,7 +35879,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 832,
+          "line": 834,
           "called": [
             "Kernel",
             "schedule",
@@ -35889,7 +35889,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 854,
+          "line": 856,
           "called": [
             "SystemState",
             "TCB",
@@ -35900,7 +35900,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 869,
+          "line": 871,
           "called": [
             "SystemState",
             "fold",
@@ -35912,7 +35912,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 881,
+          "line": 883,
           "called": [
             "Kernel",
             "ObjId",
@@ -58141,7 +58141,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 139,
+          "line": 149,
           "called": []
         }
       ]
