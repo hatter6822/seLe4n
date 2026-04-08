@@ -230,7 +230,16 @@ def schedContextUnbind (scId : ObjId) : Kernel Unit :=
 Kernel-internal helper for hierarchical scheduling. Not a userspace syscall.
 Transfers `budgetRemaining` from source to target, capped at target's
 configured `budget`. If the target's bound thread was budget-starved
-(budget was 0, now > 0), enqueue it in the RunQueue. -/
+(budget was 0, now > 0), enqueue it in the RunQueue.
+
+AF4-G (AF-30, AF-47): `schedContextYieldTo` is a KERNEL-INTERNAL helper,
+not a syscall entry point. No capability check is needed because callers
+(API dispatch in `API.lean`) validate capabilities before invoking this
+function. It is a pure function (returns `SystemState`, not monadic)
+because the yield operation cannot fail — both SchedContexts must exist
+(validated by caller), and budget transfer is always well-defined (capped
+at target's configured budget). Pattern-match failures on missing objects
+return `st` unchanged (identity fallback). -/
 def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId)
     : SystemState :=
   match (st.objects[fromScId.toObjId]? : Option KernelObject) with

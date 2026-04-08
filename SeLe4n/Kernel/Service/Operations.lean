@@ -136,6 +136,15 @@ The traversal correctly handles:
 - disconnected components (frontier exhaustion → false),
 - already-visited nodes (skipped without consuming fuel),
 - fuel exhaustion → true (conservative soundness). -/
+-- AF4-D (AF-18): `serviceHasPathTo` returns `true` on fuel exhaustion (line 0 =>
+-- true). This is CONSERVATIVE for cycle detection: a false positive rejects a
+-- valid edge registration; a false negative would silently allow a cycle in the
+-- service dependency graph, potentially causing deadlock or infinite loops.
+-- Proven correct under `serviceCountBounded` via `serviceBfsFuel_sound` and
+-- `serviceBfsFuel_sufficient` (below). Spurious rejection is acceptable because
+-- fuel is bounded by `serviceBfsFuel st` = `objectIndex.length + 256`, which
+-- exceeds any realistic service count. In practice, fuel exhaustion is
+-- unreachable for well-formed states.
 def serviceHasPathTo
     (st : SystemState) (src target : ServiceId) (fuel : Nat) : Bool :=
   go [src] {} fuel

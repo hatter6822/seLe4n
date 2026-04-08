@@ -121,6 +121,15 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
     that `collectQueueMembers` produces a `QueueNextPath`-compatible traversal,
     which involves non-trivial infrastructure. The per-element validity guaranteed
     by `noStaleEndpointQueueReferences` is the operationally relevant property. -/
+-- AF4-C (AF-07): Fuel-sufficiency formal argument sketch:
+--   Given `tcbQueueChainAcyclic st` and `collectQueueMembers` with
+--   fuel = `st.objects.size`:
+--   1. Acyclicity ⟹ chain visits each thread at most once
+--   2. Each visited thread ∈ `objectIndex` (by `noStaleEndpointQueueReferences`)
+--   3. Therefore chain length ≤ `objectIndex.length` ≤ `objects.size` = fuel
+--   Formalizing requires a `QueueNextPath` inductive bridge that connects
+--   the path predicate to `queueNext` field traversal. This is the sole
+--   remaining TPI-DOC item for the IPC subsystem.
 -- TPI-DOC: fuel-sufficiency formal connection to `tcbQueueChainAcyclic` deferred.
 -- Closure requires connecting `QueueNextPath` (inductive path predicate) to
 -- `queueNext` field traversal in `collectQueueMembers`. See INFO-06.
@@ -366,7 +375,7 @@ theorem default_crossSubsystemInvariant :
     intro tid hMem
     -- default objectIndex = [], so objectIndex.length = 0, fuel = 0
     -- blockingChain _ _ 0 = [] by definition, so tid ∈ [] is absurd
-    have hLen : (default : SystemState).objectIndex.length = 0 := by native_decide
+    have hLen : (default : SystemState).objectIndex.length = 0 := by decide
     have hChain : PriorityInheritance.blockingChain (default : SystemState) tid
         (default : SystemState).objectIndex.length = [] := by rw [hLen]; rfl
     rw [hChain] at hMem; simp at hMem
@@ -731,7 +740,10 @@ theorem crossSubsystem_pairwise_coverage_complete :
     , fieldsDisjoint blockingAcyclic_fields registryInterfaceValid_fields  -- AF1-B2
     , fieldsDisjoint blockingAcyclic_fields registryDependencyConsistent_fields  -- AF1-B2
     , fieldsDisjoint blockingAcyclic_fields serviceGraphInvariant_fields  -- AF1-B2
-    ].countP id = 15 := by native_decide
+    -- AF4-B: Replaced `native_decide` with `decide` to remove Lean runtime
+    -- evaluator from the TCB. The 15-element Bool list is small enough for
+    -- kernel-checked `decide` (coordinated with AF1-B 10-predicate count).
+    ].countP id = 15 := by decide
 
 -- ============================================================================
 -- W2-A (H-2): Operation modified-field sets

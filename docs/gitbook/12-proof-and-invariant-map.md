@@ -991,7 +991,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `SyscallId.all_complete` — membership proof for every variant (`cases s <;> decide`, AC4-D),
 - `syscallIdToEnforcementName` — SyscallId → String bridge mapping to enforcement boundary names (AC4-D),
 - `enforcementBoundaryComplete` — Bool check that every SyscallId maps to a boundary entry (AC4-D),
-- `enforcementBoundary_is_complete` — `native_decide` compile-time completeness theorem (AC4-D/IF-01),
+- `enforcementBoundary_is_complete` — `decide` compile-time completeness theorem (AC4-D/IF-01; AF4-A: upgraded from `native_decide` to kernel-checked `decide`),
 - `denied_preserves_state_*` — denial preservation for all 11 policy-gated operations,
 - `enforcement_sufficiency_*` — complete-disjunction coverage proofs for all 11 policy-gated operations.
 

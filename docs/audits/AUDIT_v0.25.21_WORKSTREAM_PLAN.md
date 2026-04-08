@@ -1121,7 +1121,7 @@ code changes; rest are documentation.
 
 ## 6. Phase AF4 — Information Flow, Cross-Subsystem & SchedContext
 
-**Status**: PLANNED
+**Status**: COMPLETE (v0.25.25)
 **Goal**: Replace `native_decide` with `decide` (TCB reduction),
 formalize fuel-sufficiency connections, and document deployment requirements.
 **Gate**: `lake build` + `lake build SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers`
@@ -1129,6 +1129,10 @@ formalize fuel-sufficiency connections, and document deployment requirements.
 **Dependencies**: AF1-B (if `crossSubsystemInvariant` changes to 10 predicates,
 AF4-B must account for this).
 **Estimated scope**: ~90–140 lines of changes.
+**Completion notes**: All 3 `native_decide` usages replaced with `decide` (AF4-A,
+AF4-B, plus bonus fix at CrossSubsystem.lean:378). Zero `native_decide` remains
+in production code. 5 documentation annotations added (AF4-C through AF4-G).
+All 256 modules build. `test_full.sh` passes. Zero sorry/axiom.
 
 ### AF4-A: Replace `native_decide` with `decide` in enforcement boundary (AF-16)
 
