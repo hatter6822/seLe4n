@@ -372,6 +372,25 @@ namespace SchedContextId
 /-- Convert ObjId to SchedContextId. -/
 @[inline] def ofObjId (oid : ObjId) : SchedContextId := ⟨oid.toNat⟩
 
+/-- AF2-B: Checked conversion that rejects the reserved sentinel (value 0).
+    Mirrors `ThreadId.toObjIdChecked` for consistency across typed identifier
+    conversions. Prefer this at ABI boundaries where ObjId 0 could indicate
+    an uninitialized or invalid reference. The unchecked `ofObjId` remains
+    available for internal paths where validity is established by context. -/
+@[inline] def ofObjIdChecked (oid : ObjId) : Option SchedContextId :=
+  if oid.toNat = 0 then .none else .some ⟨oid.toNat⟩
+
+/-- AF2-B: `ofObjIdChecked` agrees with `ofObjId` on non-sentinel inputs. -/
+theorem ofObjIdChecked_eq_some_of_nonzero (oid : ObjId)
+    (hNonZero : oid.toNat ≠ 0) :
+    ofObjIdChecked oid = some (ofObjId oid) := by
+  simp [ofObjIdChecked, ofObjId, hNonZero]
+
+/-- AF2-B: `ofObjIdChecked` rejects the sentinel (ObjId with value 0). -/
+theorem ofObjIdChecked_sentinel :
+    ofObjIdChecked (ObjId.ofNat 0) = none := by
+  simp [ofObjIdChecked, ObjId.toNat, ObjId.ofNat]
+
 instance : ToString SchedContextId where
   toString id := toString id.toNat
 

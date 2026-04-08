@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.19` (`lakefile.toml`) |
+| **Package version** | `0.25.23` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 86,106 across 133 Lean files |
 | **Test LoC** | 11,318 across 16 Lean test suites |
 | **Proved declarations** | 2,557 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AE Phase AE4 COMPLETE** (v0.25.19). Capability, IPC & Architecture Hardening — 10 sub-tasks. CPtr masking, VAddr canonicity, CDT acyclicity proofs, mint completeness bundle, queue link integrity, timeout sentinel docs, TLB flush docs, IPC buffer cross-page theorem, slot targeting plumbing. Prior: WS-AE AE1–AE3 (v0.25.15–v0.25.18), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.14_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-AF Phase AF2 COMPLETE** (v0.25.23). State & Model Hardening — 7 sub-tasks. Machine-checked storeObject capacity safety, SchedContextId sentinel guard, builder-phase W^X enforcement, freeze/model/CDT documentation. Prior: WS-AF AF1 (v0.25.22), WS-AE AE1–AE6 (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.21_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -480,6 +480,10 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   capacity. In-place updates of existing objects are always permitted.
   `storeObject` (infallible) is used by internal operations where
   `objectIndexBounded` is an established invariant precondition.
+  **Machine-checked (AF2-A)**: `storeObject_existing_preserves_objectIndex_length`
+  proves in-place mutations preserve `objectIndex` length exactly;
+  `retypeFromUntyped_capacity_gated` proves the allocation boundary gates
+  on `maxObjects`.
 
 ### 8.2 Word-Boundedness Invariants
 

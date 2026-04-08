@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.25.22.
+Lean 4.28.0 toolchain, Lake build system, version 0.25.23.
 
 ## Build and run
 
@@ -497,6 +497,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-AF Phase AF2 COMPLETE** (v0.25.23): Pre-Release Comprehensive Audit Remediation — Phase AF2: State & Model Hardening. 7 sub-tasks (AF2-A through AF2-G). Machine-checked `storeObject` capacity safety: `storeObject_existing_preserves_objectIndex_length` + `retypeFromUntyped_capacity_gated` + `storeObject_capacity_safe_of_existing` (AF-03), `SchedContextId.ofObjIdChecked` sentinel guard (AF-22), W^X proof obligation in builder-phase `mapPage` with `mapPage_wxCompliant` theorem (AF-24), `apiInvariantBundle_frozenDirect` scope documentation (AF-25), `RegisterFile` non-lawful BEq documentation (AF-23), CDT `descendantsOf` transitive closure completeness deferral documentation (AF-34). Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md`
 - **WS-AF Phase AF1 COMPLETE** (v0.25.22): Pre-Release Comprehensive Audit Remediation — Phase AF1: Scheduler Correctness & Proof Gaps. 10 sub-tasks (AF1-A through AF1-J). `blockingAcyclic` added as 10th predicate of `crossSubsystemInvariant` (AF-01/HIGH-1), `bounded_scheduling_latency` renamed to `wcrtBound_unfold` (AF-02/HIGH-2), `pip_deterministic` renamed to `pip_congruence` (AF-13), `eventuallyExits` hypothesis documentation (AF-14), priority/domain fallback documentation (AF-10/AF-11), RunQueue.size and FIFO documentation (AF-40/AF-49), blockingServer pre-mutation read documentation (AF-29). New theorems: `blockingChain_step`, `blockingChain_congr`, `blockingAcyclic_frame`. Zero sorry/axiom. See `docs/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE6 COMPLETE** (v0.25.21): Production Audit Remediation — Phase AE6: Testing, Documentation & Closure. 8 sub-tasks (AE6-A through AE6-H). PIP suite execution in test scripts (U-25), `buildChecked` upgrade for 4 test suites (T-07/T-F02/T-F03), `test_rust.sh` CI skip logging (T-F17), Rust ABI register comment fix (R-F01), CLAUDE.md large-file list refresh, documentation synchronization, fixture verification. Zero sorry/axiom. WS-AE portfolio complete. See `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`
 - **WS-AE Phase AE5 COMPLETE** (v0.25.20): Production Audit Remediation — Phase AE5: Platform, Service & Cross-Subsystem. 7 sub-tasks (AE5-A through AE5-G). `collectQueueMembers` fuel-safe `Option` return (U-22), `registryEndpointUnique` invariant with duplicate endpoint rejection (U-20), `registryInterfaceValid` added to 9-predicate `crossSubsystemInvariant` (SVC-04), boot invariant bridge limitation documentation (U-21), NI boundary service orchestration documentation (U-10), `LabelingContextValid` deployment requirement documentation (IF-14). Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md`

@@ -617,7 +617,7 @@ then integration). AF1-B is the critical path.
 
 ## 4. Phase AF2 — State & Model Hardening
 
-**Status**: PLANNED
+**Status**: COMPLETE
 **Goal**: Address the `storeObject` capacity enforcement gap (the only
 remaining HIGH from Audit 2), builder-phase W^X enforcement, identifier
 sentinel consistency, and freeze pipeline documentation.

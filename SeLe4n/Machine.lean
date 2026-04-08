@@ -204,7 +204,17 @@ require propositional equality of register files, use `RegisterFile.ext`
 **V7-F: WARNING — non-lawful BEq instance.** Safe for runtime testing and trace
 validation. Do NOT use `==` on `RegisterFile` in proof contexts that require
 propositional equality — use `RegisterFile.ext` instead. See
-`RegisterFile.not_lawfulBEq` for the formal negative witness. -/
+`RegisterFile.not_lawfulBEq` for the formal negative witness.
+
+AF2-E: Non-lawful BEq is a known and accepted limitation. ARM64 has
+exactly 32 GPRs (x0–x30 + xzr). The `not_lawfulBEq` counterexample
+(below) uses index 32 which is unreachable in practice — all kernel
+code constructs `RegisterFile` from 32-element arrays. `LawfulBEq`
+would require dependent typing (`RegisterFile` over `Fin 32`) which
+conflicts with Lean 4 function extensionality for the `gpr` field.
+The safety analysis at X5-G (below) confirms this does NOT affect kernel
+correctness: `BEq` is used only in test infrastructure and trace
+validation, never in proof-critical paths. -/
 instance : BEq RegisterFile where
   beq a b := a.pc == b.pc && a.sp == b.sp &&
     (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
