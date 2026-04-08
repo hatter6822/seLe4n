@@ -670,6 +670,34 @@ def retypeFromUntyped
                 .error .illegalAuthority
     | some _ => .error .untypedTypeMismatch
 
+/-- AF2-A2: The `storeObject` call that creates a new object in
+    `retypeFromUntyped` (line 668) is gated by the capacity check at line 626.
+    If `retypeFromUntyped` succeeds, then `st.objectIndex.length < maxObjects`
+    held at entry. This is the allocation-boundary half of the capacity safety
+    proof; the in-place-mutation half is `storeObject_capacity_safe_of_existing`
+    (Model/State.lean). -/
+theorem retypeFromUntyped_capacity_gated
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (st st' : SystemState)
+    (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    st.objectIndex.length < maxObjects := by
+  unfold retypeFromUntyped at hOk
+  cases h1 : st.objects[untypedId]? with
+  | none => simp [h1] at hOk
+  | some obj =>
+    simp [h1] at hOk
+    cases obj with
+    | untyped ut =>
+      simp at hOk
+      split at hOk
+      · simp at hOk
+      · rename_i hLt; exact Nat.lt_of_not_le hLt
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ =>
+      simp at hOk
+
 /-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
 S5-G: The alignment check is an additional error guard (returns `allocationMisaligned`
 for VSpace/CNode objects on unaligned bases); it does not affect the decomposition

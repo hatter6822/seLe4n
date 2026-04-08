@@ -2712,3 +2712,34 @@ transitive propagation, reversion, frame preservation, zero-fuel identity.
   `AUDIT_v0.25.12_KERNEL_MODULES.md` resolved across 6 phases (AE1–AE6),
   53 sub-tasks. 8 HIGH, 27 MEDIUM, 22 LOW findings addressed. 3 deferred to
   future workstreams (WS-V). Zero sorry/axiom throughout.
+
+### 12.19 State & Model Hardening (WS-AF Phase AF2)
+
+**Machine-checked capacity safety (AF-03/MED-M3/CF-01):**
+- `storeObject_existing_preserves_objectIndex_length` — proves in-place
+  mutations (25+ callsites: IPC, scheduler, capability, VSpace operations)
+  preserve `objectIndex.length` exactly. Covers the common path.
+- `retypeFromUntyped_capacity_gated` — proves the allocation boundary
+  (`retypeFromUntyped`, Lifecycle/Operations.lean:626) gates on `maxObjects`.
+  Covers the only new-object creation path.
+- `storeObject_capacity_safe_of_existing` — composes in-place safety with
+  `objectIndexBounded` to prove capacity invariant preservation.
+
+**Identifier sentinel consistency (AF-22/CF-02):**
+- `SchedContextId.ofObjIdChecked` — checked conversion rejecting reserved
+  sentinel (value 0), mirroring `ThreadId.toObjIdChecked`.
+- `ofObjIdChecked_eq_some_of_nonzero` — correctness theorem.
+
+**Builder-phase W^X enforcement (AF-24/BF-02):**
+- `Builder.mapPage` — new `_hWxSafe : perms.wxCompliant = true` proof
+  obligation parameter. W+X mappings are now statically impossible at
+  the builder layer (compile-time guarantee vs runtime check).
+- `mapPage_wxCompliant` — documentation theorem connecting builder-layer
+  W^X to kernel-layer enforcement at `vspaceMapPage`.
+
+**Documentation theorems and annotations:**
+- `apiInvariantBundle_frozenDirect` (AF-25/BF-03) — existential design
+  scope documented (objects-only field agreement).
+- `RegisterFile` non-lawful BEq (AF-23/CF-03) — safety analysis documented.
+- `descendantsOf` BFS transitive closure completeness (AF-34/MED-M2) —
+  deferral to WS-V/H3 documented with structural argument.

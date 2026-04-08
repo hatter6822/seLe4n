@@ -1081,7 +1081,18 @@ This formulation:
     agrees on all lookups (modulo `freezeObject`) with the frozen state.
     Unlike `apiInvariantBundle_frozen`, the witness does not need to be the
     exact pre-image of `freeze` — only lookup-equivalent. This allows the
-    predicate to survive `FrozenMap.set` mutations. -/
+    predicate to survive `FrozenMap.set` mutations.
+
+    AF2-D: This definition uses an existential witness (`∃ sst`) with
+    objects-only field agreement because `apiInvariantBundle` predicates
+    (scheduler, capability, IPC invariants) read only from `objects`.
+    The theorem `apiInvariantBundle_frozenDirect_iff_frozen` (below) proves
+    equivalence at freeze time. Non-objects fields (scheduler state,
+    machine state) are frozen separately by `freezeSchedulerState`.
+    The `∀ oid` quantifier ensures lookup equivalence modulo
+    `freezeObject`, not bitwise state identity — this is strictly weaker
+    than full state agreement but sufficient for all invariant predicates
+    that only examine per-object structure. -/
 def apiInvariantBundle_frozenDirect (fst : FrozenSystemState) : Prop :=
   ∃ (sst : SystemState),
     SeLe4n.Kernel.apiInvariantBundle sst ∧

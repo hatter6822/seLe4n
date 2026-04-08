@@ -287,6 +287,7 @@ def mapPage (ist : IntermediateState)
     (vs : VSpaceRoot)
     (hLookup : ist.state.objects[vsId]? = some (KernelObject.vspaceRoot vs))
     (_hEmpty : vs.mappings[vaddr]? = none)
+    (_hWxSafe : perms.wxCompliant = true)  -- AF2-C1: W^X proof obligation
     : IntermediateState :=
   let vs' : VSpaceRoot := { vs with mappings := vs.mappings.insert vaddr (paddr, perms) }
   createObject ist vsId (KernelObject.vspaceRoot vs')
@@ -294,5 +295,27 @@ def mapPage (ist : IntermediateState)
     (fun vs'' hEq => by
       cases hEq
       exact RHTable.insert_preserves_invExt _ _ _ (ist.hPerObjectMappings vsId vs hLookup))
+
+set_option linter.unusedVariables false in
+/-- AF2-C3: Every page mapped via builder-phase `mapPage` satisfies W^X.
+    This is a direct consequence of the proof obligation parameter `_hWxSafe`.
+    Callers must supply evidence that `perms.wxCompliant = true` at the call
+    site — making W+X mappings statically impossible at the builder layer.
+
+    All standard permission constructors satisfy W^X by construction:
+    - `PagePermissions.readOnly`:    `wxCompliant = true` (by `rfl`)
+    - `PagePermissions.readWrite`:   `wxCompliant = true` (write=true, execute=false)
+    - `PagePermissions.readExecute`: `wxCompliant = true` (write=false, execute=true)
+
+    This connects to kernel-layer enforcement at `vspaceMapPage`
+    (Architecture/VSpace.lean:95) which checks `perms.wxCompliant` at runtime. -/
+theorem mapPage_wxCompliant {ist : IntermediateState}
+    {vsId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr}
+    {paddr : SeLe4n.PAddr} {perms : PagePermissions}
+    {vs : VSpaceRoot}
+    {hLookup : ist.state.objects[vsId]? = some (KernelObject.vspaceRoot vs)}
+    {hEmpty : vs.mappings[vaddr]? = none}
+    (hWxSafe : perms.wxCompliant = true) :
+    perms.wxCompliant = true := hWxSafe
 
 end SeLe4n.Model.Builder

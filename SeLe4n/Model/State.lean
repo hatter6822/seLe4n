@@ -577,6 +577,55 @@ theorem storeObjectChecked_headroom_eq_storeObject
     omega
   · rfl
 
+-- ============================================================================
+-- AF2-A: Machine-checked storeObject capacity safety (AF-03)
+-- ============================================================================
+
+/-- AF2-A1: `storeObject` on an existing ObjId preserves `objectIndex.length`
+    exactly. The key is already in `objectIndexSet`, so the conditional
+    `if st.objectIndexSet.contains id then st.objectIndex else id :: st.objectIndex`
+    takes the identity branch. This single lemma covers all 25+ in-place
+    mutation callsites generically (IPC, scheduler, capability, VSpace ops). -/
+theorem storeObject_existing_preserves_objectIndex_length
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hExists : st.objectIndexSet.contains id = true)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndex.length = st.objectIndex.length := by
+  unfold storeObject at hStore; cases hStore
+  simp [hExists]
+
+/-- AF2-A3: Capacity safety for in-place mutations. Every `storeObject` call
+    on an existing ObjId preserves `objectIndexBounded`. This covers all 25+
+    in-place mutation callsites (IPC, scheduler, capability, VSpace ops).
+
+    The allocation boundary is separately gated by `retypeFromUntyped`
+    (Lifecycle/Operations.lean:626) — see `retypeFromUntyped_capacity_gated`
+    in that file for the machine-checked proof. Together these two theorems
+    provide full capacity safety:
+    - In-place: `storeObject_capacity_safe_of_existing` (here)
+    - Allocation: `retypeFromUntyped_capacity_gated` (Lifecycle/Operations.lean)
+    - Boot: `default_objectCount_le_maxObjects` (above) -/
+theorem storeObject_capacity_safe_of_existing
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hBound : objectIndexBounded st)
+    (hExists : st.objectIndexSet.contains id = true)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    objectIndexBounded st' := by
+  unfold objectIndexBounded at hBound ⊢
+  have hLen := storeObject_existing_preserves_objectIndex_length st st' id obj hExists hStore
+  omega
+
+/-- AF2-A4: `storeObjectChecked` is UNUSED in operational code by design.
+    Capacity enforcement occurs at the allocation boundary in
+    `retypeFromUntyped` (Lifecycle/Operations.lean:626), not at the storage
+    layer. This function exists for potential future use by external allocation
+    paths that bypass `retypeFromUntyped`. See:
+    - `storeObject_existing_preserves_objectIndex_length` (in-place safety)
+    - `retypeFromUntyped_capacity_gated` (allocation-boundary safety)
+    - `storeObject_capacity_safe_of_existing` (composition)
+    for the machine-checked assurance that capacity is always gated. -/
+abbrev _af2_a4_storeObjectChecked_documentation := storeObjectChecked
+
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
 def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
   fun st =>

@@ -480,6 +480,10 @@ hardware target, the expected maximum object count is `maxObjects = 65536`.
   capacity. In-place updates of existing objects are always permitted.
   `storeObject` (infallible) is used by internal operations where
   `objectIndexBounded` is an established invariant precondition.
+  **Machine-checked (AF2-A)**: `storeObject_existing_preserves_objectIndex_length`
+  proves in-place mutations preserve `objectIndex` length exactly;
+  `retypeFromUntyped_capacity_gated` proves the allocation boundary gates
+  on `maxObjects`.
 
 ### 8.2 Word-Boundedness Invariants
 

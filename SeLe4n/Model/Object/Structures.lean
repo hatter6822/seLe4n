@@ -1014,7 +1014,18 @@ WS-G8/F-P14: Uses `childrenOf` (O(1) via `childMap`) instead of inline
 edge scan, yielding O(N+E) total traversal.
 Y1-E: Uses `Std.HashSet` for O(1) visited-set membership checks (was O(n²)
 with `List.Mem`). The `visited` parameter mirrors `acc` for membership;
-`acc` remains the result list. -/
+`acc` remains the result list.
+
+AF2-F: Transitive closure completeness for the full CDT depth is deferred
+to WS-V/H3 where concrete CDT depth bounds (ARM64 page table levels) are
+available. Direct-child completeness follows from `childrenOf` correctness
+and the BFS frontier expansion. The structural argument for full
+completeness: the CDT is acyclic (proven by `cdtAcyclicity` /
+`edgeWellFounded`), so BFS with `edges.length` fuel visits every
+reachable node — each edge is traversed at most once, and fuel ≥ edge
+count guarantees no premature termination. The formal connection between
+BFS fuel sufficiency and acyclicity-bounded depth requires the
+hardware-binding CDT depth constant (max page table levels × fan-out). -/
 def descendantsOf (cdt : CapDerivationTree) (root : CdtNodeId)
     : List CdtNodeId :=
   go cdt.edges.length [root] {} []
