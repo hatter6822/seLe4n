@@ -3,8 +3,8 @@
 **Created**: 2026-04-06
 **Baseline version**: 0.25.14
 **Baseline audits**:
-  - `docs/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (88 findings)
-  - `docs/audits/AUDIT_v0.25.12_KERNEL_MODULES.md` (166+ findings)
+  - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (88 findings)
+  - `docs/dev_history/audits/AUDIT_v0.25.12_KERNEL_MODULES.md` (166+ findings)
 **Prior portfolios**: WS-B through WS-AD (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
 
