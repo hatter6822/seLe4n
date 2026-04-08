@@ -36,10 +36,12 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
         if regs[0] > u32::MAX as u64 {
             return Err(KernelError::InvalidSyscallNumber);
         }
-        // Kernel error codes are 0–42 (Z6: +IpcTimeout at 42).
-        // Unrecognized codes (≥43) map to InvalidSyscallNumber (protocol violation).
+        // Kernel error codes are 0–43 (D3: +AlignmentError at 43).
+        // AF6-A: Unrecognized codes (≥44, excluding sentinel 255) map to
+        // UnknownKernelError — semantically correct fallback instead of
+        // InvalidSyscallNumber which implies a different kind of protocol error.
         let err = KernelError::from_u32(regs[0] as u32)
-            .unwrap_or(KernelError::InvalidSyscallNumber);
+            .unwrap_or(KernelError::UnknownKernelError);
         return Err(err);
     }
 
@@ -101,9 +103,9 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // error code 44 is beyond the 0-43 range (D3: AlignmentError added at 43)
+        // AF6-A: error code 44 is beyond the 0-43 range — maps to UnknownKernelError
         let regs = [44, 0, 0, 0, 0, 0, 0];
-        assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
+        assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 
     #[test]

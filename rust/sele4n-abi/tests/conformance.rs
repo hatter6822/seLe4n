@@ -783,6 +783,28 @@ fn v1a_decode_response_u64_overflow() {
     assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
 }
 
+/// AF6-A: Unrecognized kernel error codes (≥44) map to UnknownKernelError.
+#[test]
+fn af6a_unknown_kernel_error_fallback() {
+    use sele4n_abi::decode_response;
+
+    // Error code 44 — first unrecognized code after AlignmentError (43)
+    let regs = [44, 0, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+
+    // Error code 100 — arbitrary unrecognized code
+    let regs = [100, 0, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+
+    // Error code 254 — just below sentinel
+    let regs = [254, 0, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+
+    // Error code 255 — sentinel value resolves to UnknownKernelError directly
+    let regs = [255, 0, 0, 0, 0, 0, 0];
+    assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+}
+
 /// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
 #[test]
 fn v1c_lifecycle_retype_invalid_type_tag() {

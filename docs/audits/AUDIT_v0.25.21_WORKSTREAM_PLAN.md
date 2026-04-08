@@ -1474,7 +1474,7 @@ Duplicate `cdt_only_preserves_projection` in Operations.lean.
 
 ## 8. Phase AF6 — Rust ABI Fixes & Documentation Closure
 
-**Status**: PLANNED
+**Status**: COMPLETE
 **Goal**: Fix Rust ABI error mapping, truncation handling, stale comments,
 missing marker types, and synchronize all documentation.
 **Gate**: `./scripts/test_full.sh` + `cargo test --manifest-path rust/Cargo.toml`

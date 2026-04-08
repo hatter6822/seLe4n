@@ -1,3 +1,32 @@
+## v0.25.27 — WS-AF Phase AF6: Rust ABI Fixes & Documentation Closure
+
+Phase AF6 of WS-AF Pre-Release Comprehensive Audit Remediation. Fixes Rust ABI
+error mapping semantics, adds checked truncation detection, corrects stale
+variant counts, adds missing SchedContext marker type, enforces IpcMessage.length
+privacy, and installs shellcheck in CI. All tests pass (test_full.sh Tier 0-3,
+cargo test). Zero sorry/axiom. **WS-AF PORTFOLIO COMPLETE** (6 phases, 49 sub-tasks).
+
+### Changes
+
+- **AF6-A** (AF-20): Added `UnknownKernelError` variant (discriminant 255) — unrecognized error codes now map to semantically correct fallback instead of `InvalidSyscallNumber`
+- **AF6-B** (AF-21): Added `endpoint_reply_recv_checked` with `IpcTruncationError` — rejects messages longer than 3 registers instead of silent truncation
+- **AF6-C** (AF-35, AF-36): Fixed stale doc comments — "43-variant" → "45-variant", "20-variant" → "25-variant", decode range "0–42" → "0–43"
+- **AF6-D** (AF-37): Added `SchedContext` marker type to `sele4n-sys/src/cap.rs` for phantom-typed capability handles
+- **AF6-E** (AF-38): Made `IpcMessage.length` private — added `length()` accessor and `new_with_length()` validated constructor
+- **AF6-F** (AF-46): Added shellcheck installation to CI workflow (`lean_action_ci.yml`)
+- **AF6-G**: Full documentation synchronization — version bump 0.25.26 → 0.25.27 across all 7+ documentation files
+
+### Metrics
+
+| Metric | Value |
+|--------|-------|
+| Production LoC | 87,132 across 133 files |
+| Test LoC | 11,359 across 16 suites |
+| Proved declarations | 2,581 theorem/lemma (zero sorry/axiom) |
+| Gate | `test_full.sh` Tier 0-3, `cargo test --workspace` |
+
+---
+
 ## v0.25.26 — WS-AF Phase AF5: IPC, Capability, Lifecycle & Documentation
 
 Phase AF5 of WS-AF Pre-Release Comprehensive Audit Remediation. Fixes stale

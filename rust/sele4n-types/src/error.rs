@@ -68,6 +68,9 @@ pub enum KernelError {
     IpcTimeout = 42,
     /// D3-B: IPC buffer address not aligned to ipcBufferAlignment (512 bytes)
     AlignmentError = 43,
+    /// AF6-A: Kernel returned an error code not recognized by this ABI version.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–43.
+    UnknownKernelError = 255,
 }
 
 impl KernelError {
@@ -118,6 +121,7 @@ impl KernelError {
             41 => Some(Self::InvalidSyscallArgument),
             42 => Some(Self::IpcTimeout),
             43 => Some(Self::AlignmentError),
+            255 => Some(Self::UnknownKernelError),
             _ => None,
         }
     }
@@ -171,6 +175,7 @@ impl std::fmt::Display for KernelError {
             Self::InvalidSyscallArgument => write!(f, "invalid syscall argument"),
             Self::IpcTimeout => write!(f, "IPC timeout"),
             Self::AlignmentError => write!(f, "alignment error"),
+            Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
 }
@@ -193,9 +198,12 @@ mod tests {
 
     #[test]
     fn from_u32_out_of_range() {
-        // T1-G: Discriminants >= 44 must return None (unknown error)
+        // T1-G: Discriminants in gaps and beyond range must return None
         assert!(KernelError::from_u32(44).is_none());
-        assert!(KernelError::from_u32(255).is_none());
+        assert!(KernelError::from_u32(254).is_none());
+        // 255 is now UnknownKernelError (AF6-A sentinel)
+        assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
+        assert!(KernelError::from_u32(256).is_none());
         assert!(KernelError::from_u32(u32::MAX).is_none());
     }
 
@@ -231,7 +239,7 @@ mod tests {
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — all 44 variants are sequential from 0
+    /// T1-H: Discriminant ordering — kernel variants 0–43 are sequential
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
@@ -242,6 +250,17 @@ mod tests {
                 assert!(p < i, "non-sequential at {i}");
             }
             prev = Some(i);
+        }
+    }
+
+    /// AF6-A: UnknownKernelError sentinel at discriminant 255
+    #[test]
+    fn unknown_kernel_error_sentinel() {
+        assert_eq!(KernelError::UnknownKernelError as u32, 255);
+        assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
+        // Gap between 43 and 255 is all None
+        for i in 44..255u32 {
+            assert!(KernelError::from_u32(i).is_none(), "unexpected variant at {i}");
         }
     }
 }

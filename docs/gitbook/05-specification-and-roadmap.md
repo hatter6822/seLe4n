@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.25.26` |
+| Version | `0.25.27` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 87,132 across 133 Lean files |
 | Test LoC | 11,359 across 16 suites |
 | Proved declarations | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| Active workstream | **WS-AF Phase AF5 COMPLETE** (v0.25.26). IPC, Capability, Lifecycle & Documentation — 10 sub-tasks. Fixed stale `pendingMessage` documentation, FrozenOps count 21→24, duplicate NI definition removal, timeout/Badge/CSpace/suspend documentation. Prior: AF4 (v0.25.25), AF3 (v0.25.24), AF2 (v0.25.23), AF1 (v0.25.22), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: Raspberry Pi 5 hardware binding.** |
+| Active workstream | **WS-AF PORTFOLIO COMPLETE** (v0.25.22–v0.25.27). Pre-Release Comprehensive Audit Remediation — 6 phases (AF1–AF6), 49 sub-tasks. Phase AF6 (v0.25.27): Rust ABI fixes & documentation closure. Prior: AF5 (v0.25.26), AF4 (v0.25.25), AF3 (v0.25.24), AF2 (v0.25.23), AF1 (v0.25.22), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: Raspberry Pi 5 hardware binding.** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
