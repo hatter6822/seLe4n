@@ -137,7 +137,7 @@ Zero forbidden constructs across ~10,000 lines of scheduler code.
 
 | ID | Severity | File:Line | Description |
 |----|----------|-----------|-------------|
-| S-04 | MEDIUM | `Core.lean:460` | `processReplenishmentsDue` re-enqueues a replenished thread at `sc.priority` (base priority) instead of effective priority (base + PIP boost). A PIP-boosted thread would be inserted in the wrong priority bucket after CBS replenishment. The `chooseBestRunnableEffective` selection compensates at schedule-time by scanning all threads, but the bucket mismatch could delay selection if higher-base-priority threads exist. |
+| S-04 | MEDIUM | `Core.lean:460,586,710` + `SchedContext/Operations.lean:268` | **4 call sites** insert threads into RunQueue at base `sc.priority` instead of effective priority (base + PIP boost): `processReplenishmentsDue` (:460), `timerTickBudget` (:586, comment says "effective priority" but uses `sc.priority`), `handleYieldWithBudget` (:710), `schedContextYieldTo` (:268). The `chooseBestRunnableEffective` selection compensates at schedule-time, but bucket mismatches could delay selection. |
 | S-05 | MEDIUM | `Core.lean:525` | `timeoutBlockedThreads` silently swallows errors from failed `timeoutThread` calls — the fold returns the accumulator unchanged on error. Under well-formed invariants, timeout failures should be unreachable, but the defensive fallback masks potential invariant violations rather than surfacing them. |
 | S-06 | MEDIUM | `WCRT.lean:167-212` | WCRT theorem `bounded_scheduling_latency_exists` depends on two externalized hypotheses (`hDomainActiveRunnable`, `hBandProgress`) that are not derived from kernel invariants. The bound `D*L_max + N*(B+P)` is conditional. Documented in AF1-D / AF-14. |
 | S-01 | LOW | `RunQueue.lean` | RunQueue `flat` list is O(n) for membership queries and `toList`. The priority-bucketed structure provides O(1) amortized insert/remove, but proof compatibility requires maintaining a flat projection. Performance is acceptable for typical thread counts (<100). |
@@ -227,7 +227,7 @@ Zero forbidden constructs. The largest proof file (`Structural.lean`, 7591 lines
 |----|----------|-----------|-------------|
 | A-01 | MEDIUM | `IpcBufferValidation.lean` | `setIPCBufferOp` performs alignment check (512 bytes) but no W^X check on the target page. Functionally correct — the operation writes only to the TCB's `ipcBuffer : VAddr` field, not to VSpace mappings. W^X is enforced at `mapPage` time. |
 | IF-02 | MEDIUM | `InformationFlow/Policy.lean` | Default `LabelingContext` has all-permissive flow matrix. Documented as deployment requirement — `labelingContextValid_is_deployment_requirement` witness theorem warns users. |
-| IF-03 | MEDIUM | `InformationFlow/Invariant/Operations.lean` | Service orchestration operations have NI boundary documentation but not full per-operation NI proofs. The `registerServiceChecked` operation has a `NonInterferenceStep` constructor. |
+| IF-03 | MEDIUM | `InformationFlow/Projection.lean` | Service **orchestration internals** (lifecycle transitions, dependency resolution, restart policies) are outside the NI projection boundary — documented at `serviceOrchestrationOutsideNiBoundary`. Note: `registerServiceChecked` itself has full per-operation NI proofs (`registerService_preserves_projection`, `registerServiceChecked_NI`). |
 | A-02 | LOW | `Architecture/Assumptions.lean` | Model-level PA bound (`addressWidth = 48`) is fixed. Real ARM64 supports 48 or 52 bit PA. Acceptable for RPi5 (48-bit). |
 | A-07 | LOW | `SyscallArgDecode.lean` | SchedContext decode accepts unbounded `budget`/`period` Nat values. CBS `admissionControl` enforces bounds downstream. |
 | IF-11 | LOW | `InformationFlow/Policy.lean` | Security labels are static (no dynamic relabeling). Consistent with seL4's static information flow model. |
@@ -281,23 +281,24 @@ All decode functions in `RegisterDecode.lean` and `SyscallArgDecode.lean` return
 | SA-01 | MEDIUM | `SchedContext/Budget.lean` | CBS admission control uses `8 × total_budget ≤ 8 × total_period` bound — 8× weaker than ideal. Documented precision gap (AF-08). Per-object `budgetWithinBounds` prevents actual overrun. |
 | SA-02 | MEDIUM | `SchedContext/Operations.lean:244` | `schedContextYieldTo` has no capability check — intentional kernel-internal operation, not a syscall entry point. Documented in AF-30/AF-47. |
 | SA-03 | LOW | `API.lean:777` | Wildcard arm in `dispatchWithCap` returns `.illegalState`. Provably unreachable (theorems at lines 1222-1249). |
-| SA-04 | LOW | `Service/Invariant/Acyclicity.lean` | `serviceHasPathTo` uses conservative fuel exhaustion — returns `false` on fuel exhaustion rather than `none`. Documented in AF-18. |
+| SA-04 | LOW | `Service/Operations.lean:153` | `serviceHasPathTo` returns `true` on fuel exhaustion (conservative: assume path exists to prevent cycle creation). Documented in AF-18. |
 
 ### API Dispatch Completeness
 All 25 syscall IDs are dispatched with no gaps. Wildcard unreachability is machine-checked. All syscall paths enforce capability checks via `syscallLookupCap`. No bypass paths exist.
 
 ### Cross-Subsystem Invariant
-The 10-predicate `crossSubsystemInvariant` covers:
-1. `schedulerInvariantBundle` (5 scheduler predicates)
-2. `capabilityInvariantBundle` (3 capability predicates)
-3. `ipcInvariantFull` (14 IPC predicates)
-4. `lifecycleInvariant` (lifecycle metadata)
-5. `vspaceInvariantBundle` (7 VSpace predicates)
-6. `serviceInvariantBundle` (3 service predicates)
-7. `schedContextInvariantBundle` (SchedContext predicates)
-8. `registryInterfaceValid` (service registry)
-9. `cdtAcyclic` (CDT well-foundedness)
-10. `blockingAcyclic` (PIP graph acyclicity)
+The 10-predicate `crossSubsystemInvariant` (`CrossSubsystem.lean:295-305`) covers
+cross-subsystem relationships that no single subsystem can prove in isolation:
+1. `registryEndpointValid` — service endpoints reference valid objects
+2. `registryInterfaceValid` — interface specs reference valid services
+3. `registryDependencyConsistent` — dependency targets exist in registry
+4. `noStaleEndpointQueueReferences` — endpoint queues reference live TCBs
+5. `noStaleNotificationWaitReferences` — notification waitlists reference live TCBs
+6. `serviceGraphInvariant` — service dependency graph is acyclic and bounded
+7. `schedContextStoreConsistent` — SchedContext objects match store metadata
+8. `schedContextNotDualBound` — no thread bound to two SchedContexts
+9. `schedContextRunQueueConsistent` — RunQueue members have valid SchedContext bindings
+10. `blockingAcyclic` — PIP blocking graph has no cycles (AF1-B3)
 
 33 per-operation bridge lemmas (2 core + 33 per-operation) cover ALL kernel operations that modify `objects`. 45-pair field disjointness analysis ensures no cross-subsystem interference.
 
@@ -317,7 +318,7 @@ The 10-predicate `crossSubsystemInvariant` covers:
 | P-01 | MEDIUM | `DeviceTree.lean:324` | `classifyMemoryRegion` always returns `.ram` — DTB memory classification is stubbed. Documented in AF-41. Must be implemented before real hardware boot. |
 | P-02 | MEDIUM | `Boot.lean:148` | `bootFromPlatform` accepts empty `PlatformConfig` — produces a valid but minimal kernel state. Documented in AF-44. Not a security issue (empty config = no userspace threads). |
 | P-03 | MEDIUM | `Boot.lean:119-133` | Last-wins semantics on duplicate IRQs/objects during boot config processing. No dedup or conflict detection. |
-| P-04 | MEDIUM | `Boot.lean:278` | `applyMachineConfig` performs partial copy — only `addressWidth` and `interruptCount` are applied, other machine config fields are ignored. Documented in AF-45. |
+| P-04 | MEDIUM | `Boot.lean:278` | `applyMachineConfig` performs partial copy — only `physicalAddressWidth` is applied. All other `MachineConfig` fields (`registerWidth`, `virtualAddressWidth`, `pageSize`, `maxASID`, `memoryMap`, `registerCount`) are silently dropped. Documented in AF-45. |
 | P-05 | MEDIUM | `RPi5/MmioAdapter.lean:349` | MMIO read returns stale value for volatile registers in the formal model. The `MmioSafe` witness system correctly classifies all RPi5 MMIO regions as volatile, but the model returns the last-written value rather than the hardware register state. This is an inherent limitation of pure functional modeling. |
 | P-06 | LOW | `RPi5/Board.lean` | BCM2712 address constants validated against partial BCM2712 ARM Peripherals datasheet. Uses `decide` (not `native_decide`) for all compile-time assertions. |
 | P-07 | LOW | `RPi5/ProofHooks.lean` | Production `rpi5RuntimeContract` does NOT have `AdapterProofHooks` instantiated — only the restrictive variant has complete proof coverage. Gap between production contract and formal proof hooks. |
@@ -408,13 +409,13 @@ All 25 SyscallId discriminants, all 44+1 KernelError discriminants, all register
 | C-07 | Capability | CDT acyclicity externalized | Architectural decision |
 | A-01 | Architecture | setIPCBufferOp no W^X check | Correct — TCB field only |
 | IF-02 | Info Flow | Default labeling insecure | Documented — deployment req |
-| IF-03 | Info Flow | Service NI scope gap | Documented boundary |
+| IF-03 | Info Flow | Service orchestration NI scope gap | Documented boundary (registration proven) |
 | RT-05 | RadixTree | Out-of-bounds key collision | Guarded by buildChecked |
 | FO-03 | FrozenOps | Phase 2 unreachability unproved | Experimental code |
 | SA-01 | SchedContext | CBS 8× precision gap | Known — per-object guard |
 | SA-02 | SchedContext | yieldTo no cap check | Internal-only operation |
 | P-01–P-05 | Platform | Boot/DTB/MMIO stubs | Before H3 hardware bind |
-| S-04 | Scheduler | Replenishment re-enqueue at base priority | Use effective priority |
+| S-04 | Scheduler | 4 sites re-enqueue at base priority | Use effective priority |
 | S-05 | Scheduler | timeoutBlockedThreads error swallowing | Diagnostic logging |
 | S-06 | Scheduler | WCRT externalized hypotheses | Known — tracked |
 | R-01 | Rust ABI | Missing sched_context wrappers | Add before userspace SDK |
@@ -447,9 +448,10 @@ The following subsystems had **zero MEDIUM+ findings**:
 3. **F-T02 (LOW)**: Add `Nodup` invariant on `Notification.waitingThreads` to
    prevent potential double-wakeup, or prove it follows from existing IPC invariants.
 
-3. **S-04 (MEDIUM)**: Fix `processReplenishmentsDue` to use effective priority
-   (base + PIP boost) when re-enqueuing replenished threads, matching the
-   pattern used by `chooseBestRunnableEffective`. Currently uses `sc.priority`
+3. **S-04 (MEDIUM)**: Fix all 4 CBS re-enqueue sites (`processReplenishmentsDue`,
+   `timerTickBudget`, `handleYieldWithBudget`, `schedContextYieldTo`) to use
+   effective priority (base + PIP boost) via `resolveEffectivePrioDeadline`,
+   matching `chooseBestRunnableEffective`. Currently all use `sc.priority`
    which ignores `pipBoost`.
 
 ### Pre-Hardware (Before H3 Binding)
