@@ -965,7 +965,7 @@ target) cannot initiate a new `Call` (its ipcState is not `.ready`),
 breaking any potential chain of length > 2. This structural argument is
 not formalized but follows from the ipcState state machine: only `.ready`
 threads can invoke `endpointCall`, which is the sole creator of donation
-edges via `schedContextDonate`. -/
+edges via `donateSchedContext`. -/
 def donationChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
     (scId1 scId2 : SeLe4n.SchedContextId),
