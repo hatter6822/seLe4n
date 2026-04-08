@@ -1,3 +1,36 @@
+## v0.25.26 — WS-AF Phase AF5: IPC, Capability, Lifecycle & Documentation
+
+Phase AF5 of WS-AF Pre-Release Comprehensive Audit Remediation. Fixes stale
+documentation, corrects FrozenOps operation count, removes duplicate NI
+definitions, and adds design rationale documentation across IPC, capability,
+lifecycle, and scheduler subsystems. All tests pass (test_full.sh Tier 0-3).
+Zero sorry/axiom.
+
+### Changes
+
+- **AF5-A** (AF-12): Fixed stale `pendingMessage = none` documentation in `notificationSignal` — now cross-references proven `waitingThreadsPendingMessageNone` invariant (AC1-A)
+- **AF5-B** (AF-04): Documented timeout sentinel H3 migration path (`timedOut : Bool` on TCB)
+- **AF5-C** (AF-06): Documented `endpointQueueRemove` direct `RHTable.insert` rationale with AE4-E unreachability proof cross-references
+- **AF5-D** (AF-15): Documented Badge Nat round-trip safety via `ofNatMasked` 64-bit masking
+- **AF5-E** (AF-39): Documented `donationChainAcyclic` 2-cycle scope with IPC protocol structural argument
+- **AF5-F** (AF-26): Documented tuple projection maintenance burden in Builder.lean and Capability/Invariant/Defs.lean (deferred to WS-V)
+- **AF5-G** (AF-27): Documented `cspaceResolvePath` vs `resolveCapAddress` CSpace resolution layers
+- **AF5-H** (AF-28): Documented `suspendThread` TCB re-lookup rationale after `cancelIpcBlocking`
+- **AF5-I** (AF-43): Fixed FrozenOps operation count from stale "21" to correct "24" with 4 missing table entries (frozenCspaceLookupSlot, frozenSetPriority, frozenSetMCPriority, frozenSetIPCBuffer)
+- **AF5-I** (AF-48): Removed duplicate `cdt_only_preserves_projection` and `ensureCdtNodeForSlot_preserves_projection` definitions — consolidated to primed canonical versions
+- **AF5-J** (AF-31): Documented high-heartbeat proof fragility (1.6M/800K) with mitigation strategies
+
+### Metrics
+
+| Metric | Value |
+|--------|-------|
+| Production LoC | 87,132 across 133 files |
+| Test LoC | 11,359 across 16 suites |
+| Proved declarations | 2,581 theorem/lemma (zero sorry/axiom) |
+| Gate | `test_full.sh` Tier 0-3 |
+
+---
+
 ## v0.25.25 — WS-AF Phase AF4: Information Flow, Cross-Subsystem & SchedContext
 
 Phase AF4 of WS-AF Pre-Release Comprehensive Audit Remediation. Eliminates all

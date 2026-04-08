@@ -157,11 +157,11 @@ def suspendThread (st : SystemState) (tid : SeLe4n.ThreadId)
       -- G2: Cancel IPC blocking
       let st := cancelIpcBlocking st tid tcb
       -- AF5-H (AF-28): Re-lookup is necessary because `cancelIpcBlocking`
-      -- may modify the TCB's ipcState, queueNext, queuePrev, and
-      -- pendingMessage fields. The `schedContextBinding` field is NOT modified
-      -- by IPC cancellation (proven by `cancelIpcBlocking_preserves_schedCtx`
-      -- transport lemma in SuspendPreservation.lean). However, re-lookup is
-      -- defensive against future IPC cleanup changes and ensures
+      -- modifies the TCB via `clearTcbIpcFields`, which updates `ipcState`,
+      -- `queuePrev`, `queueNext`, and `queuePPrev`. The `schedContextBinding`
+      -- field is NOT modified — `clearTcbIpcFields` uses record-with syntax
+      -- that preserves all unmentioned fields (structurally guaranteed).
+      -- Re-lookup is defensive against future IPC cleanup changes and ensures
       -- `cancelDonation` sees the post-cleanup TCB state.
       let tcb' := match st.objects[tid.toObjId]? with
         | some (.tcb t) => t | _ => tcb

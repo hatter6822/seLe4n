@@ -43,11 +43,11 @@ def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
 
 AF5-G (AF-27): CSpace Resolution Layers
 • `cspaceResolvePath`: Single-level resolution within one CNode (guard check
-  + radix index extraction). Used by `resolveCapAddress` as the base step.
+  + radix index extraction). Used by `cspaceLookupPath` for direct slot access.
 • `resolveCapAddress`: Multi-level recursive resolution through nested CNodes.
   Calls guard/radix extraction at each level, then recurses into child CNodes.
-The single-level function is also used standalone for direct slot access
-when the CNode is already known (e.g., `resolveExtraCaps`). -/
+`cspaceResolvePath` operates on a `CSpacePathAddr` (known CNode + CPtr + depth),
+while `resolveCapAddress` starts from a root CNode and walks arbitrarily deep. -/
 def cspaceResolvePath (addr : CSpacePathAddr) : Kernel CSpaceAddr :=
   fun st =>
     match st.objects[addr.cnode]? with

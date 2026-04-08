@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-workstream-rWSfk",
-      "commit_sha": "226fd33dfce138119b11b3b25628bd0816935bb3",
-      "tree_sha": "c2f2376ae452fa53c8cdd2fb9d3bb7ffb0ed8321",
-      "committed_at_utc": "2026-04-08T02:49:29-04:00"
+      "commit_sha": "29cc80501285afbbe2060737942be6e24dc5f8bb",
+      "tree_sha": "e1e8cd7fbb7f2d828e7607e618c6f3d782279668",
+      "committed_at_utc": "2026-04-08T07:09:33+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f2ca9779ac65ebd12791ee4d276cf3b81cb4d5aa0102802d120730f157e40034"
+    "source_digest": "e779f7101793e092076a67377f26e4bf9e6e13679398b79a1acac8bf6c6b9504"
   },
   "summary": {
     "module_count": 149,
     "declaration_count": 4637
   },
   "readme_sync": {
-    "version": "0.25.25",
+    "version": "0.25.26",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
     "production_loc": 87132,
