@@ -137,6 +137,9 @@ Zero forbidden constructs across ~10,000 lines of scheduler code.
 
 | ID | Severity | File:Line | Description |
 |----|----------|-----------|-------------|
+| S-04 | MEDIUM | `Core.lean:460` | `processReplenishmentsDue` re-enqueues a replenished thread at `sc.priority` (base priority) instead of effective priority (base + PIP boost). A PIP-boosted thread would be inserted in the wrong priority bucket after CBS replenishment. The `chooseBestRunnableEffective` selection compensates at schedule-time by scanning all threads, but the bucket mismatch could delay selection if higher-base-priority threads exist. |
+| S-05 | MEDIUM | `Core.lean:525` | `timeoutBlockedThreads` silently swallows errors from failed `timeoutThread` calls — the fold returns the accumulator unchanged on error. Under well-formed invariants, timeout failures should be unreachable, but the defensive fallback masks potential invariant violations rather than surfacing them. |
+| S-06 | MEDIUM | `WCRT.lean:167-212` | WCRT theorem `bounded_scheduling_latency_exists` depends on two externalized hypotheses (`hDomainActiveRunnable`, `hBandProgress`) that are not derived from kernel invariants. The bound `D*L_max + N*(B+P)` is conditional. Documented in AF1-D / AF-14. |
 | S-01 | LOW | `RunQueue.lean` | RunQueue `flat` list is O(n) for membership queries and `toList`. The priority-bucketed structure provides O(1) amortized insert/remove, but proof compatibility requires maintaining a flat projection. Performance is acceptable for typical thread counts (<100). |
 | S-02 | LOW | `Core.lean:871-879` | `syncThreadStates` folds over all objects — O(n) in total object count. This is an idempotent post-operation synchronization step, not a hot path. |
 | S-03 | LOW | `Core.lean` | `handleYield` gap: when no other thread is runnable in the same domain, the yielding thread is immediately re-selected. Documented in AF-29. Semantically correct (yield is "give up quantum, not time"). |
@@ -389,7 +392,7 @@ All 25 SyscallId discriminants, all 44+1 KernelError discriminants, all register
 |----------|-------|-------------|
 | **CRITICAL** | **0** | No critical vulnerabilities found |
 | **HIGH** | **0** | No high-severity issues found |
-| **MEDIUM** | **15** | Documented design decisions, known precision gaps, platform stubs |
+| **MEDIUM** | **18** | Documented design decisions, known precision gaps, platform stubs, scheduler CBS edge cases |
 | **LOW** | **25** | Minor design observations, maintenance items, documentation |
 | **INFO** | **~80** | Positive observations, correctness confirmations |
 
@@ -410,13 +413,15 @@ All 25 SyscallId discriminants, all 44+1 KernelError discriminants, all register
 | SA-01 | SchedContext | CBS 8× precision gap | Known — per-object guard |
 | SA-02 | SchedContext | yieldTo no cap check | Internal-only operation |
 | P-01–P-05 | Platform | Boot/DTB/MMIO stubs | Before H3 hardware bind |
+| S-04 | Scheduler | Replenishment re-enqueue at base priority | Use effective priority |
+| S-05 | Scheduler | timeoutBlockedThreads error swallowing | Diagnostic logging |
+| S-06 | Scheduler | WCRT externalized hypotheses | Known — tracked |
 | R-01 | Rust ABI | Missing sched_context wrappers | Add before userspace SDK |
 | T-01 | Testing | Runtime invariant coverage gap | Recommended enhancement |
 
 ### Zero-Finding Subsystems
 
 The following subsystems had **zero MEDIUM+ findings**:
-- Scheduler (all 9 invariant components preserved across all 5 operations)
 - IPC (14-conjunct invariant fully preserved across all operations)
 
 ---
@@ -435,6 +440,11 @@ The following subsystems had **zero MEDIUM+ findings**:
 
 3. **F-T02 (LOW)**: Add `Nodup` invariant on `Notification.waitingThreads` to
    prevent potential double-wakeup, or prove it follows from existing IPC invariants.
+
+3. **S-04 (MEDIUM)**: Fix `processReplenishmentsDue` to use effective priority
+   (base + PIP boost) when re-enqueuing replenished threads, matching the
+   pattern used by `chooseBestRunnableEffective`. Currently uses `sc.priority`
+   which ignores `pipBoost`.
 
 ### Pre-Hardware (Before H3 Binding)
 
@@ -475,7 +485,7 @@ for a production-oriented formally verified microkernel:
 - **Verified ABI boundary**: Register-by-register conformance between Lean
   model and Rust userspace library
 
-**No CRITICAL or HIGH findings.** All 15 MEDIUM findings are either documented
+**No CRITICAL or HIGH findings.** All 18 MEDIUM findings are either documented
 design decisions, known precision gaps with compensating controls, or platform
 stubs that must be completed before hardware binding. The codebase is ready
 for benchmarking and hardware bring-up with the recommendations above.
