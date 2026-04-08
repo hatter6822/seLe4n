@@ -4,9 +4,10 @@
 //! kernel model exactly:
 //!
 //! - **14 newtype identifiers**: `ObjId`, `ThreadId`, `CPtr`, `Slot`, etc.
-//! - **`KernelError`**: 43-variant error enum matching `SeLe4n.Model.KernelError`
+//! - **`KernelError`**: 45-variant error enum matching `SeLe4n.Model.KernelError`
+//!   (44 kernel variants at discriminants 0–43, plus `UnknownKernelError` sentinel at 255)
 //! - **`AccessRight` / `AccessRights`**: Capability rights with bitmask operations
-//! - **`SyscallId`**: 20-variant syscall identifier enum
+//! - **`SyscallId`**: 25-variant syscall identifier enum
 //!
 //! # Safety
 //!

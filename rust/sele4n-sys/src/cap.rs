@@ -63,6 +63,12 @@ pub struct Untyped;
 impl sealed::Sealed for Untyped {}
 impl CapObject for Untyped { const NAME: &'static str = "Untyped"; }
 
+/// AF6-D: Scheduling context object marker.
+/// Used with `Cap<SchedContext>` for type-safe SchedContext capability handles.
+pub struct SchedContext;
+impl sealed::Sealed for SchedContext {}
+impl CapObject for SchedContext { const NAME: &'static str = "SchedContext"; }
+
 // ============================================================================
 // Rights markers
 // ============================================================================
@@ -322,5 +328,14 @@ mod tests {
         let restricted = full.restrict(AccessRights::READ).unwrap();
         assert_eq!(restricted.rights(), AccessRights::READ);
         assert_eq!(restricted.rights().raw(), 0x01);
+    }
+
+    /// AF6-D: SchedContext marker type exists and is usable with Cap.
+    #[test]
+    fn cap_sched_context_marker() {
+        let cap: Cap<SchedContext, FullRights> = Cap::from_cptr(CPtr::from(42u64));
+        assert_eq!(cap.cptr(), CPtr::from(42u64));
+        assert_eq!(cap.rights(), AccessRights::ALL);
+        assert_eq!(SchedContext::NAME, "SchedContext");
     }
 }

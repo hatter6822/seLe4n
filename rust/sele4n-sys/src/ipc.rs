@@ -1,8 +1,9 @@
-//! IPC operations — 7 syscall wrappers covering endpoint and notification ops.
+//! IPC operations — 7 syscall wrappers plus 1 checked variant.
 //!
 //! - `endpoint_send` / `endpoint_receive` / `endpoint_call` / `endpoint_reply`
 //! - `notification_signal` / `notification_wait`
 //! - `endpoint_reply_recv` (compound: reply + blocking receive)
+//! - `endpoint_reply_recv_checked` (AF6-B: rejects truncation)
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `dispatchSyscall` → `dispatchWithCap`.
 
@@ -24,21 +25,39 @@ pub const MAX_EXTRA_CAPS: usize = 3;
 pub struct IpcMessage {
     /// Inline message registers (up to 4 on ARM64).
     pub regs: [u64; 4],
-    /// Number of valid registers (0..=4).
-    pub length: u8,
+    /// AF6-E: Private — number of valid registers (0..=4).
+    /// Use `length()` to read, `new_with_length()` or `push()` to set.
+    length: u8,
     /// User-defined label.
     pub label: u64,
 }
 
 impl Default for IpcMessage {
-    fn default() -> Self { Self::new(0) }
+    fn default() -> Self { Self::empty(0) }
 }
 
 impl IpcMessage {
     /// Create an empty message with the given label.
-    pub const fn new(label: u64) -> Self {
+    pub const fn empty(label: u64) -> Self {
         Self { regs: [0; 4], length: 0, label }
     }
+
+    /// Create an empty message with the given label.
+    /// Alias for [`empty`] — preserves backward compatibility.
+    pub const fn new(label: u64) -> Self {
+        Self::empty(label)
+    }
+
+    /// AF6-E: Create a new IPC message with validated length.
+    ///
+    /// Returns `None` if `length > 4` (exceeds ARM64 inline register capacity).
+    pub const fn new_with_length(regs: [u64; 4], length: u8, label: u64) -> Option<Self> {
+        if length > 4 { return None; }
+        Some(Self { regs, length, label })
+    }
+
+    /// Returns the number of valid registers (0..=4).
+    pub const fn length(&self) -> u8 { self.length }
 
     /// Push a register value. Returns `IpcMessageTooLarge` if all 4 inline
     /// ARM64 slots (x2–x5) are full.
@@ -58,7 +77,7 @@ impl IpcMessage {
 /// Lean: `apiEndpointSend` (API.lean) — requires `.write` right.
 #[inline]
 pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+    let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
         cap_addr: dest,
@@ -91,7 +110,7 @@ pub fn endpoint_receive(src: CPtr) -> KernelResult<(Badge, SyscallResponse)> {
 /// Lean: `apiEndpointCall` (API.lean) — requires `.write` right.
 #[inline]
 pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+    let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
         cap_addr: dest,
@@ -106,7 +125,7 @@ pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
 /// Lean: `apiEndpointReply` (API.lean) — requires `.write` right.
 #[inline]
 pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
-    let msg_info = MessageInfo::new(msg.length, 0, msg.label)
+    let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
         cap_addr: reply_cap,
@@ -156,6 +175,16 @@ pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
     Ok(resp.badge())
 }
 
+/// AF6-B: Error type for IPC message truncation.
+///
+/// Returned by checked IPC wrappers when the message payload exceeds the
+/// maximum inline register capacity for the specific operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpcTruncationError {
+    /// Reply message exceeds the 3-register limit for `endpoint_reply_recv`.
+    ReplyMessageTooLong { provided: u8, max: u8 },
+}
+
 /// Atomically reply to a caller and then block waiting for a new message.
 ///
 /// Replies to `reply_target` with the message payload, then blocks waiting
@@ -169,6 +198,9 @@ pub fn notification_wait(ntfn: CPtr) -> KernelResult<Badge> {
 /// `MessageInfo.length` includes the reply\_target slot (user length + 1).
 /// Maximum 3 inline reply data registers (MR\[1\], MR\[2\], MR\[3\]).
 ///
+/// **Note**: Messages longer than 3 registers are silently truncated. Use
+/// [`endpoint_reply_recv_checked`] to detect truncation at call time.
+///
 /// Returns the received badge and response registers from the new message.
 #[inline]
 pub fn endpoint_reply_recv(
@@ -177,7 +209,7 @@ pub fn endpoint_reply_recv(
     msg: &IpcMessage,
 ) -> KernelResult<(Badge, SyscallResponse)> {
     // MR[0] = reply_target, user data in MR[1..3]. Cap at 3 user regs.
-    let user_len = if msg.length > 3 { 3 } else { msg.length };
+    let user_len = if msg.length() > 3 { 3 } else { msg.length() };
     // Kernel length includes MR[0] (reply_target) + user data registers
     let kernel_len = user_len + 1;
     let msg_info = MessageInfo::new(kernel_len, 0, msg.label)
@@ -189,4 +221,24 @@ pub fn endpoint_reply_recv(
         syscall_id: SyscallId::ReplyRecv,
     })?;
     Ok((resp.badge(), resp))
+}
+
+/// AF6-B: Checked variant of [`endpoint_reply_recv`] that rejects messages
+/// longer than 3 registers instead of silently truncating.
+///
+/// Returns `Err(IpcTruncationError::ReplyMessageTooLong)` if `msg.length() > 3`.
+/// Otherwise delegates to [`endpoint_reply_recv`].
+#[inline]
+pub fn endpoint_reply_recv_checked(
+    recv_cap: CPtr,
+    reply_target: ThreadId,
+    msg: &IpcMessage,
+) -> Result<KernelResult<(Badge, SyscallResponse)>, IpcTruncationError> {
+    if msg.length() > 3 {
+        return Err(IpcTruncationError::ReplyMessageTooLong {
+            provided: msg.length(),
+            max: 3,
+        });
+    }
+    Ok(endpoint_reply_recv(recv_cap, reply_target, msg))
 }
