@@ -386,6 +386,11 @@ theorem ofObjIdChecked_eq_some_of_nonzero (oid : ObjId)
     ofObjIdChecked oid = some (ofObjId oid) := by
   simp [ofObjIdChecked, ofObjId, hNonZero]
 
+/-- AF2-B: `ofObjIdChecked` rejects the sentinel (ObjId with value 0). -/
+theorem ofObjIdChecked_sentinel :
+    ofObjIdChecked (ObjId.ofNat 0) = none := by
+  simp [ofObjIdChecked, ObjId.toNat, ObjId.ofNat]
+
 instance : ToString SchedContextId where
   toString id := toString id.toNat
 

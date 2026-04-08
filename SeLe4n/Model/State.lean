@@ -615,16 +615,15 @@ theorem storeObject_capacity_safe_of_existing
   have hLen := storeObject_existing_preserves_objectIndex_length st st' id obj hExists hStore
   omega
 
-/-- AF2-A4: `storeObjectChecked` is UNUSED in operational code by design.
-    Capacity enforcement occurs at the allocation boundary in
-    `retypeFromUntyped` (Lifecycle/Operations.lean:626), not at the storage
-    layer. This function exists for potential future use by external allocation
-    paths that bypass `retypeFromUntyped`. See:
-    - `storeObject_existing_preserves_objectIndex_length` (in-place safety)
-    - `retypeFromUntyped_capacity_gated` (allocation-boundary safety)
-    - `storeObject_capacity_safe_of_existing` (composition)
-    for the machine-checked assurance that capacity is always gated. -/
-abbrev _af2_a4_storeObjectChecked_documentation := storeObjectChecked
+-- AF2-A4: `storeObjectChecked` is UNUSED in operational code by design.
+-- Capacity enforcement occurs at the allocation boundary in
+-- `retypeFromUntyped` (Lifecycle/Operations.lean:626), not at the storage
+-- layer. This function exists for potential future use by external allocation
+-- paths that bypass `retypeFromUntyped`. See:
+-- - `storeObject_existing_preserves_objectIndex_length` (in-place safety)
+-- - `retypeFromUntyped_capacity_gated` (allocation-boundary safety)
+-- - `storeObject_capacity_safe_of_existing` (composition)
+-- for the machine-checked assurance that capacity is always gated.
 
 /-- Record or clear a slot-to-target lifecycle reference mapping. -/
 def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=

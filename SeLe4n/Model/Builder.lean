@@ -302,13 +302,14 @@ set_option linter.unusedVariables false in
     Callers must supply evidence that `perms.wxCompliant = true` at the call
     site — making W+X mappings statically impossible at the builder layer.
 
-    All standard permission constructors satisfy W^X by construction:
-    - `PagePermissions.readOnly`:    `wxCompliant = true` (by `rfl`)
-    - `PagePermissions.readWrite`:   `wxCompliant = true` (write=true, execute=false)
-    - `PagePermissions.readExecute`: `wxCompliant = true` (write=false, execute=true)
+    The named permission constructor satisfies W^X by construction:
+    - `PagePermissions.readOnly`:  `wxCompliant = true` (by `rfl`)
+    - `PagePermissions.ofNat n`:   `wxCompliant` depends on bits 1 (write) and 2 (execute)
 
-    This connects to kernel-layer enforcement at `vspaceMapPage`
-    (Architecture/VSpace.lean:95) which checks `perms.wxCompliant` at runtime. -/
+    Any `PagePermissions` value where `!(write && execute)` holds will satisfy
+    the proof obligation via `by decide` or `by rfl`. This connects to
+    kernel-layer enforcement at `vspaceMapPage` (Architecture/VSpace.lean:95)
+    which checks `perms.wxCompliant` at runtime. -/
 theorem mapPage_wxCompliant {ist : IntermediateState}
     {vsId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr}
     {paddr : SeLe4n.PAddr} {perms : PagePermissions}
