@@ -63,6 +63,11 @@ structure PlatformConfig where
 -- about these functions may require `native_decide`.  For empty-list base
 -- cases the `go` function reduces without touching HashSet, so `decide`
 -- suffices.  See `listAllDistinct` below for a fully transparent alternative.
+-- AF3-E: `natKeysNoDup` uses opaque `Std.HashSet` for O(n) runtime
+-- checking. The transparent O(n²) alternative `listAllDistinct` (below)
+-- is usable by `decide` but too slow for large key sets. Boot-time
+-- callers use `natKeysNoDup` for runtime speed; proofs requiring
+-- kernel-evaluable noDup should use `listAllDistinct`.
 private def natKeysNoDup (keys : List Nat) : Bool :=
   let rec go : List Nat → Std.HashSet Nat → Bool
     | [], _ => true
@@ -133,7 +138,13 @@ Starts from the empty state and applies:
 1. IRQ handler registrations (via `Builder.registerIrq`)
 2. Initial object insertions (via `Builder.createObject`)
 
-The result carries all four IntermediateState invariant witnesses. -/
+The result carries all four IntermediateState invariant witnesses.
+
+AF3-F (AF-44): Currently accepts empty `PlatformConfig` without
+validation. Use `bootFromPlatformChecked` for production boot paths,
+which validates `PlatformConfig.wellFormed` and rejects duplicates.
+Minimum-configuration validation (e.g., at least one initial thread,
+valid scheduler state) is deferred to WS-V. -/
 def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let initial := mkEmptyIntermediateState
   let withIrqs := foldIrqs config.irqTable initial
@@ -258,7 +269,12 @@ theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
     This is a pure machine-state update: it modifies only `state.machine` and
     preserves all kernel-object, scheduler, capability, and CDT state. All
     IntermediateState invariant witnesses carry forward because they do not
-    depend on `MachineState` fields. -/
+    depend on `MachineState` fields.
+
+    AF3-F (AF-45): Currently copies only `physicalAddressWidth` from
+    `MachineConfig`. Other hardware parameters (register width, cache
+    line size, etc.) are not yet propagated. Full `MachineConfig`
+    application is deferred to WS-V. -/
 def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
     IntermediateState where
   state := { ist.state with

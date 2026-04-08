@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (2,447 theorem/lemma declarations),
+2. machine-checked invariant preservation (2,581 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.23` (`lakefile.toml`) |
+| **Package version** | `0.25.24` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 86,106 across 133 Lean files |
-| **Test LoC** | 11,318 across 16 Lean test suites |
-| **Proved declarations** | 2,557 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 87,043 across 133 Lean files |
+| **Test LoC** | 11,359 across 16 Lean test suites |
+| **Proved declarations** | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AF Phase AF2 COMPLETE** (v0.25.23). State & Model Hardening — 7 sub-tasks. Machine-checked storeObject capacity safety, SchedContextId sentinel guard, builder-phase W^X enforcement, freeze/model/CDT documentation. Prior: WS-AF AF1 (v0.25.22), WS-AE AE1–AE6 (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.21_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-AF Phase AF3 COMPLETE** (v0.25.24). Platform & DeviceTree Hardening — 7 sub-tasks. DTB parser fuel-exhaustion fix, full MMIO write byte-range validation, documentation for MMIO semantics, extractPeripherals depth, natKeysNoDup opacity, DTB/boot stubs. Prior: WS-AF AF2 (v0.25.23), AF1 (v0.25.22), WS-AE AE1–AE6 (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.21_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -630,9 +630,10 @@ Every kernel object has a decidable well-formedness predicate:
   cspaceMint/Copy/Move, registerService). `checkedDispatch_flowDenied_preserves_state`
   proves state preservation on flow denial.
 - **MMIO adapter**: `mmioRead`/`mmioWrite` in `Platform/RPi5/MmioAdapter.lean`
-  validate device-region membership. `MemoryBarrier` inductive (DMB, DSB, ISB)
-  models ARM64 memory ordering. `mmioAccessAllowed` runtime contract predicate
-  gates access.
+  validate device-region membership. `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C`
+  validate the full byte range of the write (AF3-B: prevents boundary-spill into
+  adjacent memory). `MemoryBarrier` inductive (DMB, DSB, ISB) models ARM64
+  memory ordering. `mmioAccessAllowed` runtime contract predicate gates access.
 - **TLB flush operations**: `tlbFlushByASID`, `tlbFlushByPage`, `tlbFlushAll`
   with state frame proofs for targeted invalidation.
 

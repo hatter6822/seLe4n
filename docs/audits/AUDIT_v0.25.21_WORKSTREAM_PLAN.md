@@ -935,7 +935,7 @@ obligation (LOW risk — standard permissions satisfy W^X by `decide`).
 
 ## 5. Phase AF3 — Platform & DeviceTree Hardening
 
-**Status**: PLANNED
+**Status**: COMPLETE (v0.25.24)
 **Goal**: Fix the DTB parser fuel-exhaustion silent truncation, MMIO range
 validation, and other platform-layer issues needed before RPi5 deployment.
 **Gate**: `lake build` + `lake build SeLe4n.Platform.DeviceTree` +
