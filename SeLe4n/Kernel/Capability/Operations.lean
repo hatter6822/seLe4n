@@ -39,7 +39,15 @@ def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
         | some (.cnode _) => .error .invalidCapability
         | _ => .error .objectNotFound
 
-/-- Resolve a CSpace path address into a concrete slot using CNode guard/radix semantics. -/
+/-- Resolve a CSpace path address into a concrete slot using CNode guard/radix semantics.
+
+AF5-G (AF-27): CSpace Resolution Layers
+• `cspaceResolvePath`: Single-level resolution within one CNode (guard check
+  + radix index extraction). Used by `cspaceLookupPath` for direct slot access.
+• `resolveCapAddress`: Multi-level recursive resolution through nested CNodes.
+  Calls guard/radix extraction at each level, then recurses into child CNodes.
+`cspaceResolvePath` operates on a `CSpacePathAddr` (known CNode + CPtr + depth),
+while `resolveCapAddress` starts from a root CNode and walks arbitrarily deep. -/
 def cspaceResolvePath (addr : CSpacePathAddr) : Kernel CSpaceAddr :=
   fun st =>
     match st.objects[addr.cnode]? with

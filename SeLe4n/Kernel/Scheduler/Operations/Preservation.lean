@@ -2406,6 +2406,13 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
 -- Factoring into sub-lemmas was attempted (V7) but the intermediate state
 -- between enqueue and schedule requires carrying all scheduler hypotheses,
 -- preventing meaningful heartbeat reduction.
+-- AF5-J (AF-31): High heartbeats (1.6M for handleYield, 800K for timerTick
+-- below) are caused by EDF reasoning requiring full run queue analysis after
+-- enqueue + schedule composition. Potential mitigations:
+-- (1) Extract intermediate lemmas to reduce per-proof complexity
+-- (2) Introduce custom tactics for EDF property threading
+-- (3) Accept and pin Lean toolchain version during release cycles
+-- Tracked for post-release maintenance.
 set_option maxHeartbeats 1600000 in
 /-- WS-H6/WS-H12b: `handleYield` preserves `edfCurrentHasEarliestDeadline`.
 

@@ -333,8 +333,11 @@ overwrites any previous `pendingMessage` value. This is safe because:
 2. The `storeTcbIpcStateAndMessage` call atomically sets both `ipcState := .ready`
    AND `pendingMessage := some badgeMsg`, so the overwrite is the intended
    delivery mechanism, not a loss of prior state.
-No formal `pendingMessage = none` invariant is currently proven for waiting
-threads — the safety argument is structural (entry path analysis). -/
+AF5-A (AF-12): `pendingMessage = none` for waiting threads IS formally proven:
+defined as `waitingThreadsPendingMessageNone` in IPC/Invariant/Defs.lean
+with preservation theorems in IPC/Invariant/WaitingThreadHelpers.lean
+(helper extraction in WS-AC Phase AC1-A). The safety argument is now both
+structural (entry path analysis above) AND formally verified. -/
 def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : Kernel Unit :=
   fun st =>
     match st.objects[notificationId]? with
@@ -366,6 +369,10 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             -- masking Badge values to 2^64 - 1 at the platform boundary.
             -- Badge.ofNatMasked already applies a 64-bit mask, and Badge.bor
             -- preserves the mask (see Badge.bor definition in Prelude.lean).
+            -- AF5-D (AF-15): Nat round-trip via `Badge.ofNatMasked badge.toNat`
+            -- is safe: `ofNatMasked` applies `% machineWordMax` (64-bit masking).
+            -- `bor_valid` theorem (AC3/I-04) proves result validity.
+            -- H3 hardware binding: verify masking consistency at ABI boundary.
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge

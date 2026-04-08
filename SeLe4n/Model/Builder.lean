@@ -112,6 +112,14 @@ private theorem allTablesInvExtK_membership {st : SystemState}
 -- WARNING: Do not use raw tuple projections (.2.2.2...) on allTablesInvExtK.
 -- Use the named accessors above instead. Raw projections are fragile and break
 -- silently when fields are added or reordered.
+-- AF5-F (AF-26): Deep tuple projections (.2.2.2...) are a known maintenance
+-- burden across the codebase (here and in Capability/Invariant/Defs.lean for
+-- `capabilityInvariantBundle`, and in CrossSubsystem.lean for
+-- `schedulerInvariantBundleExtended`). Refactoring to named structures is
+-- deferred to post-release because: (1) it would require updating 100+ proof
+-- sites that destructure tuples, (2) named structures in Lean 4 have different
+-- `cases`/`rcases` behavior, (3) current approach is functionally correct.
+-- Tracked for WS-V code quality phase.
 
 -- ============================================================================
 -- Q3-B.1: registerIrq — insert into irqHandlers

@@ -955,45 +955,10 @@ theorem cspaceRevoke_preserves_projection
           · rfl
           · rw [List.filter_cons]; simp [hAddrHigh]
 
-/-- WS-H9: A state modification that only changes CDT fields preserves projection. -/
-private theorem cdt_only_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState)
-    (st' : SystemState)
-    (hObjects : st'.objects = st.objects)
-    (hScheduler : st'.scheduler = st.scheduler)
-    (hServices : st'.services = st.services)
-    (hIrq : st'.irqHandlers = st.irqHandlers)
-    (hObjIdx : st'.objectIndex = st.objectIndex)
-    (hMachine : st'.machine = st.machine) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · funext oid; simp only [projectObjects, hObjects]
-  · simp [projectRunnable, hScheduler]
-  · simp [projectCurrent, hScheduler]
-  · funext sid; simp only [projectServicePresence, lookupService, hServices]
-  · simp [projectActiveDomain, hScheduler]
-  · funext irq; simp only [projectIrqHandlers, hIrq]
-  · simp only [projectObjectIndex, hObjIdx]
-  · simp [projectDomainTimeRemaining, hScheduler]
-  · simp [projectDomainSchedule, hScheduler]
-  · simp [projectDomainScheduleIndex, hScheduler]
-  · simp [projectMachineRegs, hScheduler, hMachine]
-  · -- R5-C.1: memory
-    exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
-  · -- V6-E: serviceRegistry
-    exact projectServiceRegistry_eq_of_services_eq ctx observer st' st hServices
-
-/-- WS-H9: ensureCdtNodeForSlot preserves projection (modifies only CDT). -/
-private theorem ensureCdtNodeForSlot_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (ref : SlotRef) :
-    projectState ctx observer (SystemState.ensureCdtNodeForSlot st ref).2 =
-      projectState ctx observer st := by
-  unfold SystemState.ensureCdtNodeForSlot
-  cases st.cdtSlotNode[ref]? with
-  | some _ => rfl
-  | none => exact cdt_only_preserves_projection ctx observer st _ rfl rfl rfl rfl rfl rfl
+-- AF5-I (AF-48): Duplicate `cdt_only_preserves_projection` and
+-- `ensureCdtNodeForSlot_preserves_projection` removed. The canonical
+-- definitions are `cdt_only_preserves_projection'` and
+-- `ensureCdtNodeForSlot_preserves_projection'` (defined earlier in this file).
 
 /-- WS-H9: attachSlotToCdtNode preserves projection (modifies only CDT). -/
 private theorem attachSlotToCdtNode_preserves_projection
@@ -1001,7 +966,7 @@ private theorem attachSlotToCdtNode_preserves_projection
     (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
     projectState ctx observer (SystemState.attachSlotToCdtNode st ref node) =
       projectState ctx observer st := by
-  exact cdt_only_preserves_projection ctx observer st _
+  exact cdt_only_preserves_projection' ctx observer st _
     (SystemState.attachSlotToCdtNode_objects_eq st ref node) rfl rfl rfl rfl rfl
 
 /-- WS-H9: cspaceInsertSlot at non-observable CNode preserves projection. -/
@@ -1070,8 +1035,8 @@ theorem cspaceCopy_preserves_projection
           projectState ctx observer stx := by
         intro stx _; simp only [projectState]; congr 1
       rw [hAddEdge,
-          ensureCdtNodeForSlot_preserves_projection ctx observer _ dst,
-          ensureCdtNodeForSlot_preserves_projection ctx observer _ src,
+          ensureCdtNodeForSlot_preserves_projection' ctx observer _ dst,
+          ensureCdtNodeForSlot_preserves_projection' ctx observer _ src,
           cspaceInsertSlot_preserves_projection ctx observer dst cap st stIns hDstHigh hObjInv hInsert]
 
 /-- WS-H9: cspaceCopy preserves low-equivalence. -/

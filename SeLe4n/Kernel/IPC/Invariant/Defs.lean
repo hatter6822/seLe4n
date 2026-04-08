@@ -956,7 +956,16 @@ from circular donation where no thread can return the SchedContext.
 
 Formalized as: for every pair of threads with donated bindings, the donation
 edges do not form a cycle of length 2. Longer cycles are prevented by the
-IPC structure: a thread blocked on reply cannot initiate another Call. -/
+IPC structure: a thread blocked on reply cannot initiate another Call.
+
+AF5-E (AF-39): `donationChainAcyclic` explicitly prevents 2-cycles (mutual
+donation pairs). Longer cycles (k > 2) are prevented by IPC protocol:
+a thread in `.blockedOnReply` state (waiting for reply from its donation
+target) cannot initiate a new `Call` (its ipcState is not `.ready`),
+breaking any potential chain of length > 2. This structural argument is
+not formalized but follows from the ipcState state machine: only `.ready`
+threads can invoke `endpointCall`, which is the sole creator of donation
+edges via `donateSchedContext`. -/
 def donationChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
     (scId1 scId2 : SeLe4n.SchedContextId),

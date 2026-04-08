@@ -12,9 +12,10 @@ import SeLe4n.Kernel.SchedContext.Budget
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
-Implements 21 frozen kernel operations that operate on `FrozenSystemState`
-using O(1) array-indexed lookups. Each mirrors a builder-phase operation
-but uses `FrozenMap.get?`/`FrozenMap.set` instead of `RHTable` operations.
+AF5-I (AF-43): Implements 24 frozen kernel operations that operate on
+`FrozenSystemState` using O(1) array-indexed lookups. Each mirrors a
+builder-phase operation but uses `FrozenMap.get?`/`FrozenMap.set` instead
+of `RHTable` operations.
 
 ## Operation Table
 
@@ -31,15 +32,19 @@ but uses `FrozenMap.get?`/`FrozenMap.set` instead of `RHTable` operations.
 | 9 | `frozenEndpointCall`         | `endpointCall`             | IPC          |
 |10 | `frozenEndpointReply`        | `endpointReply`            | IPC          |
 |11 | `frozenCspaceLookup`         | `cspaceLookupSlot`         | Capability   |
-|12 | `frozenCspaceMint`           | `cspaceMint`               | Capability   |
-|13 | `frozenCspaceDelete`         | `cspaceDeleteSlot`         | Capability   |
-|14 | `frozenVspaceLookup`         | `vspaceLookupFull`         | VSpace       |
-|15 | `frozenLookupServiceByCap`   | `lookupServiceByCap`       | Service      |
-|16 | `frozenSchedContextConfigure`| `schedContextConfigure`    | SchedContext |
-|17 | `frozenSchedContextBind`     | `schedContextBind`         | SchedContext |
-|18 | `frozenSchedContextUnbind`   | `schedContextUnbind`       | SchedContext |
-|19 | `frozenSuspendThread`        | `suspendThread`            | Lifecycle    |
-|20 | `frozenResumeThread`         | `resumeThread`             | Lifecycle    |
+|12 | `frozenCspaceLookupSlot`     | `cspaceLookupSlot` (root)  | Capability   |
+|13 | `frozenCspaceMint`           | `cspaceMint`               | Capability   |
+|14 | `frozenCspaceDelete`         | `cspaceDeleteSlot`         | Capability   |
+|15 | `frozenVspaceLookup`         | `vspaceLookupFull`         | VSpace       |
+|16 | `frozenLookupServiceByCap`   | `lookupServiceByCap`       | Service      |
+|17 | `frozenSchedContextConfigure`| `schedContextConfigure`    | SchedContext |
+|18 | `frozenSchedContextBind`     | `schedContextBind`         | SchedContext |
+|19 | `frozenSchedContextUnbind`   | `schedContextUnbind`       | SchedContext |
+|20 | `frozenSuspendThread`        | `suspendThread`            | Lifecycle    |
+|21 | `frozenResumeThread`         | `resumeThread`             | Lifecycle    |
+|22 | `frozenSetPriority`          | `setPriorityOp`            | SchedContext |
+|23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
+|24 | `frozenSetIPCBuffer`         | `setIPCBufferOp`           | Architecture |
 
 **Lifecycle operations** (`lifecycleRetype`) are builder-only — they add new
 keys, which is incompatible with the frozen map's fixed key set.

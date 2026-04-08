@@ -156,7 +156,13 @@ def suspendThread (st : SystemState) (tid : SeLe4n.ThreadId)
       let st := PriorityInheritance.revertPriorityInheritance st tid
       -- G2: Cancel IPC blocking
       let st := cancelIpcBlocking st tid tcb
-      -- Re-lookup TCB after IPC cleanup (state may have changed)
+      -- AF5-H (AF-28): Re-lookup is necessary because `cancelIpcBlocking`
+      -- modifies the TCB via `clearTcbIpcFields`, which updates `ipcState`,
+      -- `queuePrev`, `queueNext`, and `queuePPrev`. The `schedContextBinding`
+      -- field is NOT modified — `clearTcbIpcFields` uses record-with syntax
+      -- that preserves all unmentioned fields (structurally guaranteed).
+      -- Re-lookup is defensive against future IPC cleanup changes and ensures
+      -- `cancelDonation` sees the post-cleanup TCB state.
       let tcb' := match st.objects[tid.toObjId]? with
         | some (.tcb t) => t | _ => tcb
       -- G3: Cancel donation

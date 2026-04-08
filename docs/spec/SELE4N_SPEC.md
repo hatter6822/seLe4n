@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.25` (`lakefile.toml`) |
+| **Package version** | `0.25.26` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 87,043 across 133 Lean files |
+| **Production LoC** | 87,132 across 133 Lean files |
 | **Test LoC** | 11,359 across 16 Lean test suites |
 | **Proved declarations** | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AF Phase AF4 COMPLETE** (v0.25.25). Information Flow, Cross-Subsystem & SchedContext — 8 sub-tasks. All `native_decide` eliminated (TCB reduction), fuel-sufficiency documentation, deployment cross-references. Prior: AF3 (v0.25.24), AF2 (v0.25.23), AF1 (v0.25.22), WS-AE AE1–AE6 (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.21_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-AF Phase AF5 COMPLETE** (v0.25.26). IPC, Capability, Lifecycle & Documentation — 10 sub-tasks. Fixed stale `pendingMessage` documentation (AF-12), FrozenOps count 21→24 (AF-43), duplicate NI definition removal (AF-48), timeout sentinel/Badge/CSpace/suspend documentation. Prior: AF4 (v0.25.25), AF3 (v0.25.24), AF2 (v0.25.23), AF1 (v0.25.22), WS-AE AE1–AE6 (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.21_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

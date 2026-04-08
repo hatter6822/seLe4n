@@ -32,10 +32,10 @@ delivered via `pendingMessage` and set ipcState to `.waitingForReply` or
 `.blocked`, not `.ready`. The gpr x0 sentinel is only written by
 `timeoutThread`, which also sets ipcState to `.ready`.
 
-For H3 hardware binding, consider replacing with a dedicated
-`timedOut : Bool` field on TCB to eliminate the sentinel pattern entirely.
-The composite check is sound for the current model but fragile if future
-operations modify gpr x0 without updating ipcState simultaneously. -/
+AF5-B (AF-04): Migration path for H3 hardware binding: add `timedOut : Bool`
+to TCB, eliminating the gpr x0 sentinel entirely. The composite check is
+sound for the current model but fragile if future operations modify gpr x0
+without updating ipcState simultaneously. See AE4-F for full design rationale. -/
 def timeoutErrorCode : SeLe4n.RegValue := ⟨0xFFFFFFFF⟩
 
 /-- Z6-C1/C2/C3: Unblock a thread whose IPC operation has timed out due to

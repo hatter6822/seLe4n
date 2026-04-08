@@ -488,6 +488,12 @@ def endpointQueueRemove
     | none => .error .objectNotFound
     | some tcb =>
       let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+      -- AF5-C (AF-06): Direct RHTable.insert (bypassing storeObject) is
+      -- intentional for the queue-remove path where only queue links and
+      -- ipcState are modified, not object lifecycle. Fallback unreachability
+      -- proven by `queueRemove_predecessor_exists` and
+      -- `queueRemove_successor_exists` (AE4-E). See dualQueueSystemInvariant
+      -- for correctness proof.
       -- Step 1: Patch predecessor's queueNext to skip tid
       let objs := st.objects
       let objs := match tcb.queuePrev with
