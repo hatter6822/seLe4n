@@ -221,8 +221,6 @@ history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 |------------|-------|---------|
 | **WS-AE** | Production Audit Remediation — Phase AE1: API dispatch & NI composition (8 tasks). Phase AE2: Data structure hardening (8 tasks). Phase AE3: Scheduler & SchedContext correctness (12 tasks). Phase AE4: Capability, IPC & architecture hardening (10 tasks). Phase AE5: Platform, service & cross-subsystem (7 tasks). Phase AE6: Testing, documentation & closure (8 tasks). **PORTFOLIO COMPLETE** (6 phases, 53 tasks) | v0.25.15–v0.25.21 |
 
-Detailed plans: [WS-AB](docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md) | [WS-Z](docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md)
-
 ### Next major milestone
 
 **Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt
