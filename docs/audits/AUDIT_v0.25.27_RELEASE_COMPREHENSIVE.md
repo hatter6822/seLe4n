@@ -278,7 +278,7 @@ All decode functions in `RegisterDecode.lean` and `SyscallArgDecode.lean` return
 
 | ID | Severity | File:Line | Description |
 |----|----------|-----------|-------------|
-| SA-01 | MEDIUM | `SchedContext/Budget.lean` | CBS admission control uses `8 × total_budget ≤ 8 × total_period` bound — 8× weaker than ideal. Documented precision gap (AF-08). Per-object `budgetWithinBounds` prevents actual overrun. |
+| SA-01 | MEDIUM | `SchedContext/Invariant/Defs.lean:488` | CBS proven bandwidth bound is `totalConsumed ≤ 8 × budget` per SchedContext (8× weaker than ideal `1 × budget` per period). The 8× comes from `maxReplenishments = 8` — worst case each refills the full budget. Admission control arithmetic itself is correct. Documented precision gap (AF-08). Per-object `budgetWithinBounds` prevents actual overrun. |
 | SA-02 | MEDIUM | `SchedContext/Operations.lean:244` | `schedContextYieldTo` has no capability check — intentional kernel-internal operation, not a syscall entry point. Documented in AF-30/AF-47. |
 | SA-03 | LOW | `API.lean:777` | Wildcard arm in `dispatchWithCap` returns `.illegalState`. Provably unreachable (theorems at lines 1222-1249). |
 | SA-04 | LOW | `Service/Operations.lean:153` | `serviceHasPathTo` returns `true` on fuel exhaustion (conservative: assume path exists to prevent cycle creation). Documented in AF-18. |
