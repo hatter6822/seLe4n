@@ -358,6 +358,7 @@ BCM2712 addresses are thoroughly validated. GIC-400 configuration is correctly m
 | ID | Severity | File:Line | Description |
 |----|----------|-----------|-------------|
 | R-01 | MEDIUM | `sele4n-sys/src/` | **Missing `sched_context` module**: `sele4n-sys` provides high-level wrappers for 22 of 25 syscalls. The 3 SchedContext syscalls (configure=17, bind=18, unbind=19) have no wrapper. The ABI encoding layer (`sele4n-abi/src/args/sched_context.rs`) exists with correct types, but no `sele4n-sys/src/sched_context.rs` file provides the typed entry points. |
+| R-05 | MEDIUM | `sele4n-abi/src/args/sched_context.rs:13` | **SchedContext domain validation mismatch**: Rust `MAX_DOMAIN = 255` but Lean kernel rejects `domain >= numDomainsVal` where `numDomainsVal = 16`. The Rust ABI accepts domain values 16-255 that the kernel will reject with `invalidArgument`. Not a security vulnerability (kernel enforces the correct bound), but a Lean-Rust ABI contract divergence that could surprise userspace. |
 | R-02 | LOW | `trap.rs:31-53` | The single `unsafe` block uses `clobber_abi("C")` correctly. All caller-saved registers are declared clobbered. x0-x5 use `inout`, x7 uses `in`, x6 uses `lateout`. Correct for AAPCS64. |
 | R-03 | LOW | `decode.rs:36-44` | u64→u32 truncation guard prevents false-success interpretation. Values > u32::MAX return `InvalidSyscallNumber`. Unrecognized error codes (44-254) map to `UnknownKernelError` sentinel. |
 | R-04 | LOW | `ipc.rs:212` | `endpoint_reply_recv` silently truncates messages > 3 registers. The `endpoint_reply_recv_checked` variant (AF6-B) correctly detects and rejects truncation. |
@@ -392,7 +393,7 @@ All 25 SyscallId discriminants, all 44+1 KernelError discriminants, all register
 |----------|-------|-------------|
 | **CRITICAL** | **0** | No critical vulnerabilities found |
 | **HIGH** | **0** | No high-severity issues found |
-| **MEDIUM** | **18** | Documented design decisions, known precision gaps, platform stubs, scheduler CBS edge cases |
+| **MEDIUM** | **19** | Documented design decisions, known precision gaps, platform stubs, scheduler CBS edge cases, ABI mismatch |
 | **LOW** | **25** | Minor design observations, maintenance items, documentation |
 | **INFO** | **~80** | Positive observations, correctness confirmations |
 
@@ -417,6 +418,7 @@ All 25 SyscallId discriminants, all 44+1 KernelError discriminants, all register
 | S-05 | Scheduler | timeoutBlockedThreads error swallowing | Diagnostic logging |
 | S-06 | Scheduler | WCRT externalized hypotheses | Known — tracked |
 | R-01 | Rust ABI | Missing sched_context wrappers | Add before userspace SDK |
+| R-05 | Rust ABI | Domain MAX_DOMAIN=255 vs Lean numDomains=16 | Fix to match Lean |
 | T-01 | Testing | Runtime invariant coverage gap | Recommended enhancement |
 
 ### Zero-Finding Subsystems
@@ -434,7 +436,11 @@ The following subsystems had **zero MEDIUM+ findings**:
    for `SchedContextConfigure`, `SchedContextBind`, `SchedContextUnbind`. The
    ABI encoding layer already exists in `sele4n-abi/src/args/sched_context.rs`.
 
-2. **T-01 (MEDIUM)**: Add runtime invariant checks for `crossSubsystemInvariant`
+2. **R-05 (MEDIUM)**: Fix `MAX_DOMAIN` in `sele4n-abi/src/args/sched_context.rs`
+   from 255 to 15 (matching Lean `numDomainsVal = 16`, 0-indexed). The current
+   value accepts domain IDs that the kernel will reject.
+
+3. **T-01 (MEDIUM)**: Add runtime invariant checks for `crossSubsystemInvariant`
    predicates in test harness. Currently only formal proofs cover these — runtime
    regression detection would catch proof-code desynchronization earlier.
 
@@ -485,7 +491,7 @@ for a production-oriented formally verified microkernel:
 - **Verified ABI boundary**: Register-by-register conformance between Lean
   model and Rust userspace library
 
-**No CRITICAL or HIGH findings.** All 18 MEDIUM findings are either documented
+**No CRITICAL or HIGH findings.** All 19 MEDIUM findings are either documented
 design decisions, known precision gaps with compensating controls, or platform
 stubs that must be completed before hardware binding. The codebase is ready
 for benchmarking and hardware bring-up with the recommendations above.
