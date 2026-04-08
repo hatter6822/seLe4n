@@ -93,7 +93,7 @@ estimates. Phases are ordered by severity impact and dependency chain:
 | AF5 | IPC, capability, lifecycle & documentation | 10 | IP-02, MED-I1, MED-I2, MED-I3, CA-02/BF-01, CA-03, LS-01, MED-S3 | `lake build` + `test_full.sh` |
 | AF6 | Rust ABI fixes & documentation closure | 7 | MED-R1, MED-R2, LOW-R1, LOW-R3, LOW-R7, LOW-R8, doc sync | `test_full.sh` + doc sync |
 
-**Estimated scope**: ~643 base, ~993 worst-case total lines of changes.
+**Estimated scope**: ~719 base, ~929 worst-case total lines of changes.
 
 
 ---
@@ -108,7 +108,7 @@ estimates. Phases are ordered by severity impact and dependency chain:
 | AF-02 | HIGH-2 (A1) | Scheduler/Liveness | `bounded_scheduling_latency` (WCRT.lean:132–139) proves `wcrtBound D L N B P = D * L + N * (B + P)` via `simp [wcrtBound]` — definitional unfolding with zero assurance beyond the definition. `bounded_scheduling_latency_exists` (line 153) IS genuine composition with real hypotheses (`hDomainActiveRunnable`, `hBandProgress`) but `WCRTHypotheses` must be instantiated externally. `pip_enhanced_wcrt_le_base` (line 278) is a genuine inequality. | YES — definitional vs genuine confirmed | AF1 |
 | AF-03 | MED-M3 (A1) / CF-01 (A2) | Model/State | `storeObject` (State.lean:471–496) always returns `.ok` regardless of object store size. `storeObjectChecked` (State.lean:511–523) exists with `maxObjects = 65536` gate but `storeObject` is not restricted to internal use. Manual callsite audit (lines 458–470) is thorough but not machine-checked. | YES — both functions confirmed | AF2 |
 
-### 2.2 MEDIUM Findings (28 actionable, after deduplication and refutation)
+### 2.2 MEDIUM Findings (31 actionable, after deduplication and refutation)
 
 | Unified ID | Source | Subsystem | Description | Phase |
 |------------|--------|-----------|-------------|-------|
@@ -144,7 +144,7 @@ estimates. Phases are ordered by severity impact and dependency chain:
 | AF-33 | IF-01 (A2) | InformationFlow | `LabelingContextValid` (Composition.lean:670–695) is a deployment requirement, not runtime-enforced. Documented in AE5-F. | AF4 |
 | AF-34 | MED-M2 / CF-05 | Model/CDT | `descendantsOf` BFS transitive closure completeness deferred (Structures.lean:2232–2240). Direct children proven; full transitive closure deferred to hardware binding phase. | AF2 |
 
-### 2.3 LOW Findings (18 actionable — selected for inclusion)
+### 2.3 LOW Findings (15 actionable — selected for inclusion)
 
 | Unified ID | Source | Subsystem | Description | Phase |
 |------------|--------|-----------|-------------|-------|
@@ -190,7 +190,7 @@ the most significant formal-assurance gaps in the codebase.
 **Gate**: `lake build` + `lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph`
 + `lake build SeLe4n.Kernel.Scheduler.Liveness.WCRT` + `./scripts/test_smoke.sh`
 **Dependencies**: None (first phase).
-**Estimated scope**: ~180–260 lines of changes.
+**Estimated scope**: ~267 lines of changes (base), ~467 worst-case.
 
 ### AF1-A: Correct misleading `blockingAcyclic` comments (AF-01)
 
@@ -216,51 +216,228 @@ trivial restatement, not a proof from invariants.
 
 ### AF1-B: Add `blockingAcyclic` to `crossSubsystemInvariant` (AF-01)
 
-**Finding**: The predicate exists but is not part of any invariant bundle.
+**Finding**: The predicate `blockingAcyclic` (BlockingGraph.lean:115–117)
+is defined as `∀ tid : ThreadId, tid ∉ blockingChain st tid` but is absent
+from the 9-predicate `crossSubsystemInvariant` (CrossSubsystem.lean:284–293).
 PIP correctness structurally depends on it.
 
-**Change**: Extend `crossSubsystemInvariant` from 9 to 10 predicates by adding
-`blockingAcyclic st` as the 10th conjunct. This requires:
+**Dependency analysis**: `blockingAcyclic` depends on `st.objects` → TCB →
+`ipcState` field. Specifically, `blockingChain` reads
+`tcb.ipcState = .blockedOnReply _ (some server)` to traverse the blocking
+graph. It also reads `st.objectIndex.length` for the default fuel parameter.
 
-1. Add `blockingAcyclic` import to CrossSubsystem.lean (check for import cycle:
-   `Scheduler.PriorityInheritance.BlockingGraph` — this is already transitively
-   imported via Liveness import chain added in AE2-F, so no new cycle risk).
+**Import cycle check**: `BlockingGraph.lean` is already transitively imported
+via the AE2-F Liveness import chain:
+`CrossSubsystem.lean → Scheduler.Liveness → ... → TraceModel → BoundedInversion
+→ Preservation → Propagate → Compute → BlockingGraph`. **No new import needed.**
 
-2. Add predicate to `crossSubsystemInvariant`:
-   ```lean
-   def crossSubsystemInvariant (st : SystemState) : Prop :=
-     registryEndpointValid st ∧ registryInterfaceValid st ∧
-     registryDependencyConsistent st ∧ noStaleEndpointQueueReferences st ∧
-     noStaleNotificationWaitReferences st ∧ serviceGraphInvariant st ∧
-     schedContextStoreConsistent st ∧ schedContextNotDualBound st ∧
-     schedContextRunQueueConsistent st ∧ blockingAcyclic st  -- AF1-B
-   ```
+**Bridge lemma threading pattern** (verified from source): Each per-operation
+bridge lemma (33 total, CrossSubsystem.lean:1450–2209) delegates to
+`crossSubsystemInvariant_objects_change_bridge` (line 1419), which:
+- Takes `hPre : crossSubsystemInvariant st` (pre-state)
+- Requires field-equality hypotheses: `hServices`, `hSvcReg`, `hIfaceReg`, `hObjIdx`
+- Requires 6 post-state proofs for objects-reading predicates
+- Auto-preserves 3 services-reading predicates via frame lemmas
 
-3. Update `crossSubsystemFieldSets` (9→10 entries, currently lines 865–874)
-   and the `native_decide` pairwise coverage proof. The theorem
-   `crossSubsystemFieldSets.length = 9` (line 877) must become `= 10`.
-   New pairwise disjointness entries needed for `blockingAcyclic` vs each
-   existing predicate (9 new pairs to prove).
+Adding `blockingAcyclic` means the core bridge gains one more hypothesis
+(`hBlockAcyclic : blockingAcyclic st'`) which each per-operation bridge must
+provide. Operations that don't modify `ipcState` can provide this via a
+frame argument; operations that DO modify `ipcState` need per-operation proofs.
 
-4. Thread `hBlockAcyclic` through all 33+ per-operation bridge lemmas. Since
-   `blockingAcyclic` depends only on `objects` (TCB `ipcState` fields),
-   operations that don't modify `ipcState` can use a frame argument. Operations
-   that DO modify `ipcState` (IPC send, receive, call, reply, notification,
-   timeout) need per-operation proofs.
+**Decomposition into 7 atomic sub-steps**:
 
-**Decomposition**:
-- AF1-B1: Add predicate to bundle + update field disjointness (~20 lines)
-- AF1-B2: Frame lemma for non-IPC operations (~30 lines, covers ~26 ops)
-- AF1-B3: Per-operation proofs for IPC operations modifying `ipcState` (~40 lines, ~7 ops)
-- AF1-B4: Boot state proof `bootState_blockingAcyclic` (~10 lines — empty state trivial)
+#### AF1-B1: Define `blockingAcyclic_fields` and add to `crossSubsystemFieldSets`
 
-**Risk**: Largest sub-task in AF1. If import cycle is discovered despite AE2-F
-chain, fall back to AF1-A (comment correction only) and defer integration
-to H3 workstream.
+Add the field-set for `blockingAcyclic` (it reads `objects` only):
+```lean
+def blockingAcyclic_fields : List StateField := [.objects]
+```
+
+Add to `crossSubsystemFieldSets` (lines 865–874, currently 9 entries → 10):
+```lean
+, ("blockingAcyclic", blockingAcyclic_fields)
+```
+
+Update `crossSubsystemFieldSets_count` (line 877): `= 9` → `= 10`.
+
+**Files**: `SeLe4n/Kernel/CrossSubsystem.lean` (~8 lines)
+
+#### AF1-B2: Prove pairwise disjointness for `blockingAcyclic`
+
+`blockingAcyclic_fields = [.objects]`. Compare against each existing predicate's
+field set to determine disjointness:
+
+| Predicate | Fields | Disjoint with `[.objects]`? |
+|-----------|--------|-----------------------------|
+| `registryEndpointValid` | `[.objects, .serviceRegistry]` | NO (shares `.objects`) |
+| `registryInterfaceValid` | `[.interfaceRegistry, .services]` | YES |
+| `registryDependencyConsistent` | `[.services]` | YES |
+| `noStaleEndpointQueueReferences` | `[.objects, .serviceRegistry]` | NO |
+| `noStaleNotificationWaitReferences` | `[.objects]` | NO |
+| `serviceGraphInvariant` | `[.services]` | YES |
+| `schedContextStoreConsistent` | `[.objects]` | NO |
+| `schedContextNotDualBound` | `[.objects]` | NO |
+| `schedContextRunQueueConsistent` | `[.objects, .scheduler]` | NO |
+
+3 disjoint pairs to add to the `fieldsDisjoint` list. The `native_decide`
+count (currently 12) changes to 15 (3 new disjoint pairs).
+
+**Files**: `SeLe4n/Kernel/CrossSubsystem.lean` (~10 lines)
+
+#### AF1-B3: Add `blockingAcyclic` to `crossSubsystemInvariant` definition
+
+```lean
+def crossSubsystemInvariant (st : SystemState) : Prop :=
+  registryEndpointValid st ∧ registryInterfaceValid st ∧
+  registryDependencyConsistent st ∧ noStaleEndpointQueueReferences st ∧
+  noStaleNotificationWaitReferences st ∧ serviceGraphInvariant st ∧
+  schedContextStoreConsistent st ∧ schedContextNotDualBound st ∧
+  schedContextRunQueueConsistent st ∧
+  blockingAcyclic st  -- AF1-B3
+```
+
+Update all extraction patterns and destructuring in the file. The 10th
+conjunct is accessed as `.2.2.2.2.2.2.2.2.2` in the right-associative chain.
+
+**Files**: `SeLe4n/Kernel/CrossSubsystem.lean` (~5 lines)
+
+#### AF1-B4: Add `hBlockAcyclic` to core bridge lemma
+
+Add `(hBlockAcyclic : blockingAcyclic st')` as a new hypothesis to
+`crossSubsystemInvariant_objects_change_bridge` (line 1419) and compose it
+into the output conjunction.
+
+**Files**: `SeLe4n/Kernel/CrossSubsystem.lean` (~5 lines)
+
+#### AF1-B5: Add `blockingAcyclic` frame lemma for non-ipcState operations
+
+Prove a frame lemma: if an operation preserves `ipcState` for all threads
+and preserves `objectIndex`, then `blockingAcyclic` is preserved:
+
+```lean
+theorem blockingAcyclic_frame
+    (st st' : SystemState)
+    (hPre : blockingAcyclic st)
+    (hIpcState : ∀ tid, blockingServer st' tid = blockingServer st tid) :
+    blockingAcyclic st' := by
+  intro tid hMem
+  have := hPre tid
+  -- blockingChain st' tid = blockingChain st tid (by hIpcState induction on fuel)
+  ...
+```
+
+This requires an intermediate lemma `blockingChain_congr` proving that
+identical `blockingServer` results yield identical `blockingChain` results.
+
+**Applies to 24 operations** that do NOT modify `ipcState`:
+- Scheduler: `schedule`, `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`
+- Capability: `cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceMutate`,
+  `cspaceInsertSlot`, `cspaceDeleteSlot`, `cspaceRevoke`
+- SchedContext: `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`,
+  `schedContextYieldTo`
+- Priority: `setPriority`, `setMCPriority`
+- VSpace: `vspaceMapPage`, `vspaceUnmapPage`
+- Other: `setIPCBuffer`, `lifecycleRetype`, `lifecycleRetypeWithCleanup`,
+  `retypeFromUntyped`
+
+**Files**: `SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean` (~25 lines)
+
+#### AF1-B6: Thread `blockingAcyclic` through 33 per-operation bridge lemmas
+
+For each of the 33 bridge lemmas (lines 1450–2209):
+
+**24 non-ipcState operations**: Add `(hBlockAcyclic : blockingAcyclic st')`
+hypothesis and supply it from `blockingAcyclic_frame` + an `ipcState`
+preservation lemma (most already exist as frame theorems in their respective
+subsystem preservation files). Each bridge gains ~2 lines:
+```lean
+    (hBlockAcyclic : blockingAcyclic st') :  -- new hypothesis
+    -- ... body delegates to core bridge with hBlockAcyclic
+```
+
+**9 ipcState-modifying operations** (need per-operation proofs):
+1. `ipcSend` — Sets receiver `ipcState := .ready` (waking). Blocking chain
+   for receiver is shortened (acyclicity preserved by removal of edge).
+2. `ipcReceive` — Sets receiver `ipcState := .blockedOnReceive`. This does
+   NOT create a `.blockedOnReply` edge, so blocking graph unchanged.
+3. `ipcReply` — Unblocks target from `.blockedOnReply`. Removes an edge from
+   the blocking graph (acyclicity preserved by edge removal).
+4. `ipcCall` — Sets caller `ipcState := .blockedOnReply _ (some receiver)`.
+   Adds one edge. Must prove no cycle: caller was `.ready` before (no existing
+   incoming edges) + `tcbQueueChainAcyclic` ensures no back-edge.
+5. `ipcReplyRecv` — Composition of reply (edge removal) + receive (possible
+   blocking). Similar to ipcReply + ipcReceive.
+6. `notificationSignal` — Wakes waiter from `.blockedOnNotification`. Not a
+   `.blockedOnReply` state, so blocking graph is unchanged.
+7. `notificationWait` — Blocks waiter with `.blockedOnNotification`. Not
+   `.blockedOnReply`, so blocking graph is unchanged.
+8. `resumeThread` — Sets `ipcState := .ready`. Removes any blocking edge
+   (acyclicity preserved by edge removal).
+9. `suspendThread` — Cancels IPC blocking (via `cancelIpcBlocking`). Removes
+   blocking edges (acyclicity preserved by edge removal).
+
+**Key insight**: Only `ipcCall` (operation 4) actually ADDS a blocking graph
+edge. All other ipcState-modifying operations either REMOVE edges or modify
+non-blocking states (`.blockedOnReceive`, `.blockedOnNotification`). This
+dramatically simplifies the proof obligations:
+
+- **Edge-removing operations** (ipcSend, ipcReply, ipcReplyRecv, resumeThread,
+  suspendThread): Prove `blockingAcyclic_of_edge_removal` — removing an edge
+  from an acyclic graph preserves acyclicity. (~15 lines, shared lemma)
+- **Non-blocking-state operations** (ipcReceive, notificationSignal,
+  notificationWait): Prove `blockingAcyclic_of_non_reply_state` — changing
+  `ipcState` to a non-`.blockedOnReply` state doesn't affect blocking graph.
+  (~10 lines, shared lemma)
+- **Edge-adding operation** (ipcCall): Prove new edge doesn't create cycle.
+  The caller was in `.ready` state before call (precondition of `endpointCall`),
+  meaning no thread was blocked on the caller. Adding edge
+  `caller → receiver` cannot create a cycle if caller has no incoming blocking
+  edges. (~20 lines, the most complex individual proof)
+
+**Files**: `SeLe4n/Kernel/CrossSubsystem.lean` (~80 lines total for 33 bridges)
+
+#### AF1-B7: Boot state proof
+
+```lean
+theorem bootState_blockingAcyclic
+    (config : PlatformConfig) :
+    blockingAcyclic (bootFromPlatform config).state := by
+  intro tid hMem
+  -- Boot state has all TCBs with ipcState = .ready
+  -- blockingChain returns [] for .ready threads
+  -- tid ∉ [] is trivially true
+  simp [blockingAcyclic, blockingChain]
+```
+
+**Files**: `SeLe4n/Platform/Boot.lean` (~10 lines)
+
+#### AF1-B Summary (revised)
+
+| Sub-step | Description | Lines | Dependencies |
+|----------|-------------|-------|--------------|
+| AF1-B1 | Field-set definition + fieldSets list | ~8 | None |
+| AF1-B2 | Pairwise disjointness proofs (3 new pairs) | ~10 | AF1-B1 |
+| AF1-B3 | Add to `crossSubsystemInvariant` definition | ~5 | AF1-B1 |
+| AF1-B4 | Add to core bridge lemma hypothesis | ~5 | AF1-B3 |
+| AF1-B5 | Frame lemma + `blockingChain_congr` | ~25 | None |
+| AF1-B6 | Thread through 33 bridge lemmas (24 frame + 9 per-op) | ~80 | AF1-B4, AF1-B5 |
+| AF1-B7 | Boot state proof | ~10 | AF1-B3 |
+| **Total** | | **~143** | |
+
+**Parallelism**: AF1-B1/B2/B3 are sequential (definition → field sets →
+disjointness). AF1-B5 is independent (can run in parallel). AF1-B6 depends
+on both AF1-B4 and AF1-B5. AF1-B7 depends on AF1-B3 only.
+
+**Risk**: AF1-B6's `ipcCall` edge-addition proof is the hardest sub-step.
+If the precondition "caller was `.ready` before call" is not available as
+a formal hypothesis in the bridge context, the proof may require threading
+an additional hypothesis from the IPC subsystem. Fallback: externalize
+`ipcCall_blockingAcyclic` as a hypothesis (documented TPI) rather than
+proving from first principles.
 
 **Files modified**:
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~60 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean` (~15 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~108 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean` (~25 lines)
 - `SeLe4n/Platform/Boot.lean` (~10 lines)
 
 **Verification**: `lake build SeLe4n.Kernel.CrossSubsystem` +
@@ -280,11 +457,41 @@ definitional unfolding (`simp [wcrtBound]`).
 theorem wcrtBound_unfold ...
 ```
 
-Grep for `bounded_scheduling_latency` (excluding `_exists` and `_pip`) and
-rename all references. Update Liveness test suite anchors if needed.
+**Complete rename inventory** (verified by source search):
 
-**Files modified**: `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean` (~10 lines)
-**Verification**: `lake build SeLe4n.Kernel.Scheduler.Liveness.WCRT`
+| # | File | Line | Context | Change |
+|---|------|------|---------|--------|
+| **Lean source** (3 sites) | | | | |
+| 1 | `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean` | 132 | `theorem bounded_scheduling_latency` (DEFINITION) | Rename to `wcrtBound_unfold` |
+| 2 | `tests/LivenessSuite.lean` | 113 | `#check @bounded_scheduling_latency` | Update to `@wcrtBound_unfold` |
+| 3 | `tests/LivenessSuite.lean` | 149 | `"bounded_scheduling_latency"` in print | Update string literal |
+| **Documentation** (8+ sites) | | | | |
+| 4 | `docs/gitbook/03-architecture-and-module-map.md` | 184 | WCRT.lean description | Update name |
+| 5 | `docs/gitbook/12-proof-and-invariant-map.md` | 2606 | "instantiated by D5 `bounded_scheduling_latency`" | Update name |
+| 6 | `docs/gitbook/12-proof-and-invariant-map.md` | 2637 | Theorem listing | Update name |
+| 7 | `docs/spec/SELE4N_SPEC.md` | 352 | "Main theorem: `bounded_scheduling_latency`" | Update name + add clarification |
+| 8 | `docs/spec/SELE4N_SPEC.md` | 850 | "The main theorem `bounded_scheduling_latency`" | Update name + add clarification |
+| 9 | `docs/DEVELOPMENT.md` | 66 | "main theorem `bounded_scheduling_latency`" | Update name |
+| 10 | `docs/CLAIM_EVIDENCE_INDEX.md` | 211 | Evidence block referencing theorem | Update name |
+| 11 | `docs/WORKSTREAM_HISTORY.md` | 64 | Workstream history reference | Update name |
+
+**Note**: References in audit documents (`docs/audits/`) and dev history
+(`docs/dev_history/`) are NOT updated — they are historical records referring
+to the theorem by its original name at audit time.
+
+**Documentation update pattern**: In all doc sites, the rename should also
+clarify that `wcrtBound_unfold` is the definitional equality while
+`bounded_scheduling_latency_exists` is the substantive composition theorem:
+```
+-- Old: "Main theorem `bounded_scheduling_latency`: WCRT = D*L_max + N*(B+P)"
+-- New: "Main theorem `bounded_scheduling_latency_exists`: WCRT ≤ D*L_max + N*(B+P)
+--       (see also `wcrtBound_unfold` for the definition unfolding)"
+```
+
+**Files modified**: `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean` (~10 lines),
+`tests/LivenessSuite.lean` (~4 lines), 6 documentation files (~25 lines total)
+**Verification**: `lake build SeLe4n.Kernel.Scheduler.Liveness.WCRT` +
+`lake build tests.LivenessSuite`
 
 ### AF1-D: Document `WCRTHypotheses` instantiation obligation (AF-02)
 
@@ -390,8 +597,8 @@ theorem pip_congruence ...
 | Sub-task | Findings | Type | Lines | Dependencies |
 |----------|----------|------|-------|--------------|
 | AF1-A | AF-01 | Comment fix | ~15 | None |
-| AF1-B | AF-01 | Proof + code | ~100 | AF1-A |
-| AF1-C | AF-02 | Rename | ~10 | None |
+| AF1-B | AF-01 | Proof + code (7 sub-steps) | ~143 | AF1-A |
+| AF1-C | AF-02 | Rename (3 Lean + 8 doc sites) | ~39 | None |
 | AF1-D | AF-02 | Documentation | ~15 | None |
 | AF1-E | AF-13 | Rename | ~5 | None |
 | AF1-F | AF-14 | Documentation | ~10 | None |
@@ -399,7 +606,7 @@ theorem pip_congruence ...
 | AF1-H | AF-11 | Documentation | ~8 | None |
 | AF1-I | AF-40, AF-49 | Documentation | ~10 | None |
 | AF1-J | AF-29 | Documentation | ~6 | None |
-| **Total** | | | **~195** | |
+| **Total** | | | **~267** | |
 
 **Parallelism**: AF1-C through AF1-J can all run in parallel (no
 interdependencies). AF1-B depends on AF1-A (comment correction first,
@@ -417,40 +624,120 @@ sentinel consistency, and freeze pipeline documentation.
 **Gate**: `lake build` + `lake build SeLe4n.Model.State` +
 `lake build SeLe4n.Model.Builder` + `./scripts/test_smoke.sh`
 **Dependencies**: None (independent of AF1).
-**Estimated scope**: ~120–180 lines of changes.
+**Estimated scope**: ~105 lines of changes.
 
-### AF2-A: Make `storeObject` private or add machine-checked callsite proof (AF-03)
+### AF2-A: Machine-check `storeObject` capacity safety (AF-03)
 
 **Finding**: `storeObject` (State.lean:471–496) always returns `.ok`.
 `storeObjectChecked` (State.lean:511–523) gates on `maxObjects` but
 `storeObject` is publicly callable. Manual callsite audit at lines 458–470
 is thorough but not machine-checked.
 
-**Strategy**: Two options (choose one during implementation):
+**Source verification (complete callsite inventory)**:
 
-**Option A** (preferred): Add a machine-checked callsite theorem proving all
-production `storeObject` callers are either (a) in-place mutations (ObjId
-already in `objectIndexSet`) or (b) preceded by a `storeObjectChecked` gate.
+`storeObjectChecked` is **completely unused** in operational code — zero
+callsites. All capacity enforcement occurs inline in `retypeFromUntyped`.
+
+All `storeObject` callsites (26+ runtime calls) fall into exactly 2 categories:
+
+| Category | Count | Key Files | Nature |
+|----------|-------|-----------|--------|
+| **In-place mutations** (PRE-EXISTING ObjId) | 25+ | IPC/Operations/Endpoint (12+), Capability/Operations (4), Architecture/VSpace (2), IPC/DualQueue/Core (4), IPC/DualQueue/Transport (2), SchedContext/Operations (1+) | Update existing TCB, CNode, Endpoint, VSpaceRoot, SchedContext, Notification objects in `objectIndex` — no size growth |
+| **New object creation** | **1** | Lifecycle/Operations.lean:**668** | `retypeFromUntyped` — the ONLY place a new ObjId enters `objectIndex` |
+
+**Critical architectural invariant**: `retypeFromUntyped` (lines 615–671)
+performs an inline capacity check at **line 626**:
 ```lean
-/-- All non-retype callers of `storeObject` operate on existing ObjIds.
-    New ObjId insertions go through `retypeFromUntyped` which uses
-    `storeObjectChecked`. -/
-theorem storeObject_callers_are_mutations_or_gated ...
+if st.objectIndex.length ≥ maxObjects then
+  .error .objectStoreCapacityExceeded
 ```
 
-**Option B** (simpler): Mark `storeObject` as `private` and expose only
-`storeObjectChecked`. This requires auditing all direct `storeObject` callers
-(~40+ sites) and routing them through `storeObjectChecked` or a new
-`storeObjectExisting` variant that asserts ObjId already exists.
+This means capacity is gated at the allocation boundary, not at `storeObject`.
+All other 25+ callsites are in-place mutations that don't grow `objectIndex`.
 
-**Risk**: Option B has high blast radius (~40 callsite changes). Option A
-is proof-only but requires a callsite enumeration lemma.
+**Decomposition into 4 sub-steps**:
 
-**Recommended approach**: Option A — add the callsite proof without modifying
-the operational code. This preserves existing proof chains while providing
-machine-checked assurance.
+#### AF2-A1: Prove in-place mutation doesn't grow `objectIndex`
 
-**Files modified**: `SeLe4n/Model/State.lean` (~30–50 lines for proof)
+```lean
+/-- AF2-A1: `storeObject` on an existing ObjId does not change the set of
+    keys in `objectIndex`. The object at that slot is replaced, not inserted. -/
+theorem storeObject_existing_preserves_objectIndex_keys
+    (oid : ObjId) (obj : KernelObject) (st : SystemState)
+    (hExists : st.objects[oid]? ≠ none)
+    (hOk : storeObject oid obj st = .ok ((), st')) :
+    st'.objectIndex.length = st.objectIndex.length := by
+  -- storeObject uses RHTable.insert which replaces existing keys
+  ...
+```
+
+This single lemma covers all 25+ in-place mutation callsites generically.
+
+**Files**: `SeLe4n/Model/State.lean` (~15 lines)
+
+#### AF2-A2: Prove `retypeFromUntyped` gates capacity before `storeObject`
+
+```lean
+/-- AF2-A2: The new-object `storeObject` call at line 668 is gated by the
+    capacity check at line 626. If the system reaches line 668, then
+    `st.objectIndex.length < maxObjects`. -/
+theorem retypeFromUntyped_capacity_gated
+    (untypedId childId : ObjId) (objType : TypeTag) (st st' : SystemState)
+    (hOk : retypeFromUntyped untypedId childId objType st = .ok ((), st')) :
+    st.objectIndex.length < maxObjects := by
+  -- Unfold retypeFromUntyped; the .error branch fires at line 626
+  -- if length ≥ maxObjects. hOk implies the guard passed.
+  ...
+```
+
+**Files**: `SeLe4n/Kernel/Lifecycle/Operations.lean` (~15 lines)
+
+#### AF2-A3: Compose into capacity safety theorem
+
+```lean
+/-- AF2-A3: Capacity safety for the entire kernel. Every kernel operation
+    that calls `storeObject` either (a) operates on a pre-existing ObjId
+    (proven by AF2-A1 to not grow objectIndex) or (b) goes through
+    `retypeFromUntyped` which gates on `maxObjects` (proven by AF2-A2). -/
+theorem storeObject_capacity_safe : ... := by
+  -- Composition of AF2-A1 and AF2-A2
+  ...
+```
+
+**Files**: `SeLe4n/Model/State.lean` (~10 lines)
+
+#### AF2-A4: Document `storeObjectChecked` as unused
+
+Add documentation explaining why `storeObjectChecked` exists but is unused:
+```lean
+/-- AF2-A4: `storeObjectChecked` is UNUSED in operational code by design.
+    Capacity enforcement occurs at the allocation boundary in
+    `retypeFromUntyped` (Lifecycle/Operations.lean:626), not at the
+    storage layer. This function exists for potential future use by
+    external allocation paths. See `storeObject_capacity_safe` for the
+    machine-checked assurance that capacity is always gated. -/
+```
+
+**Files**: `SeLe4n/Model/State.lean` (~8 lines)
+
+#### AF2-A Summary (revised)
+
+| Sub-step | Description | Lines | Dependencies |
+|----------|-------------|-------|--------------|
+| AF2-A1 | In-place mutation key preservation theorem | ~15 | None |
+| AF2-A2 | `retypeFromUntyped` capacity gate theorem | ~15 | None |
+| AF2-A3 | Composition theorem | ~10 | AF2-A1, AF2-A2 |
+| AF2-A4 | `storeObjectChecked` documentation | ~8 | None |
+| **Total** | | **~48** | |
+
+**Risk**: MEDIUM — AF2-A1 requires reasoning about `RHTable.insert` key
+preservation. If the RHTable library doesn't expose a direct key-set
+preservation lemma, one must be added to `RobinHood/Invariant/Lookup.lean`
+(~10 additional lines). AF2-A2 requires unfolding `retypeFromUntyped`'s
+guard chain — straightforward but involves 6 nested guards.
+
+**Files modified**: `SeLe4n/Model/State.lean` (~33 lines),
+`SeLe4n/Kernel/Lifecycle/Operations.lean` (~15 lines)
 
 ### AF2-B: Add `SchedContextId.ofObjIdChecked` sentinel guard (AF-22)
 
@@ -473,25 +760,101 @@ that `ofObjIdChecked` should be preferred at ABI boundaries.
 ### AF2-C: Enforce W^X in builder-phase `mapPage` (AF-24)
 
 **Finding**: `mapPage` (Builder.lean:284–296) accepts `perms : PagePermissions`
-without W^X validation. Boot could construct W+X mappings.
+without W^X validation. Boot could construct W+X mappings that freeze into
+the execution state.
 
-**Change**: Add W^X check to `mapPage`:
+**Source verification** (critical — original plan was incorrect):
+- `mapPage` signature (Builder.lean:284–290):
+  ```lean
+  def mapPage (ist : IntermediateState)
+      (vsId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr)
+      (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+      (vs : VSpaceRoot)
+      (hLookup : ist.state.objects[vsId]? = some (KernelObject.vspaceRoot vs))
+      (_hEmpty : vs.mappings[vaddr]? = none)
+      : IntermediateState :=
+  ```
+- Returns `IntermediateState` **directly** (NOT `Except`)
+- Takes proof obligation parameters (`hLookup`, `_hEmpty`)
+- This is a **proof-carrying function** — callers must supply evidence
+- Boot.lean does NOT call `mapPage` (0 callsites found)
+- W^X IS enforced at the kernel syscall layer: `vspaceMapPage`
+  (VSpace.lean:95) checks `perms.wxCompliant` before mapping
+
+**Corrected approach**: Adding `Except String` return type would break the
+proof-carrying design (callers supply `hLookup`/`_hEmpty` proofs, not runtime
+checks). Instead, add W^X compliance as a **proof obligation parameter**:
+
+**Decomposition into 3 sub-steps**:
+
+#### AF2-C1: Add `wxCompliant` proof obligation to `mapPage`
+
 ```lean
 def mapPage (ist : IntermediateState)
     (vsId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr)
     (paddr : SeLe4n.PAddr) (perms : PagePermissions)
-    : Except String IntermediateState :=
-  if !perms.wxCompliant then
-    .error "mapPage: W^X violation — write+execute permissions not permitted"
-  else
-    -- existing implementation
+    (vs : VSpaceRoot)
+    (hLookup : ist.state.objects[vsId]? = some (KernelObject.vspaceRoot vs))
+    (_hEmpty : vs.mappings[vaddr]? = none)
+    (hWxSafe : perms.wxCompliant = true)  -- AF2-C1: W^X proof obligation
+    : IntermediateState :=
 ```
 
-Update callers to handle the new error return. Boot sequence must use
-W^X-compliant permissions.
+This makes W+X mappings **statically impossible** at the builder layer — the
+caller must supply a proof that `!(perms.write && perms.execute)`. No runtime
+check needed; the Lean type checker enforces it at compile time.
 
-**Files modified**: `SeLe4n/Model/Builder.lean` (~15 lines),
-`SeLe4n/Platform/Boot.lean` (~5 lines for caller update)
+**Files**: `SeLe4n/Model/Builder.lean` (~3 lines)
+
+#### AF2-C2: Update all `mapPage` callers to supply `hWxSafe`
+
+Search for all `mapPage` callsites. Since Boot.lean does NOT call `mapPage`,
+the callers are in Builder.lean itself (internal helpers) and any test files.
+Each caller must supply `(hWxSafe := by decide)` or `(hWxSafe := rfl)` for
+compile-time-known permissions like `PagePermissions.readOnly` or
+`PagePermissions.readWrite`.
+
+For `PagePermissions.readOnly`: `wxCompliant = !(false && false) = true` ✓
+For `PagePermissions.readWrite`: `wxCompliant = !(true && false) = true` ✓
+For `PagePermissions.readExecute`: `wxCompliant = !(false && true) = true` ✓
+
+All standard permission constructors satisfy W^X by construction, so
+`by decide` suffices.
+
+**Files**: `SeLe4n/Model/Builder.lean` + test files (~10 lines total)
+
+#### AF2-C3: Add `mapPage_wxCompliant` theorem
+
+```lean
+/-- AF2-C3: Every page mapped via builder-phase `mapPage` satisfies W^X. -/
+theorem mapPage_wxCompliant (ist : IntermediateState)
+    (vsId vaddr paddr perms vs hLookup hEmpty hWxSafe) :
+    let ist' := mapPage ist vsId vaddr paddr perms vs hLookup hEmpty hWxSafe
+    -- All mappings in the resulting state satisfy wxCompliant
+    perms.wxCompliant = true := hWxSafe
+```
+
+This is trivially the hypothesis itself, but serves as a documentation anchor
+connecting builder-phase W^X to the kernel-layer enforcement at
+`vspaceMapPage` (VSpace.lean:95).
+
+**Files**: `SeLe4n/Model/Builder.lean` (~8 lines)
+
+#### AF2-C Summary (revised)
+
+| Sub-step | Description | Lines | Dependencies |
+|----------|-------------|-------|--------------|
+| AF2-C1 | Add `hWxSafe` proof obligation parameter | ~3 | None |
+| AF2-C2 | Update callers with `by decide` | ~10 | AF2-C1 |
+| AF2-C3 | Documentation theorem | ~8 | AF2-C1 |
+| **Total** | | **~21** | |
+
+**Risk**: LOW — proof obligations are satisfied by `decide` for all standard
+permission constructors. No runtime code changes. No boot sequence changes.
+This is strictly stronger than a runtime check (compile-time guarantee vs
+runtime guard).
+
+**Files modified**: `SeLe4n/Model/Builder.lean` (~21 lines)
 
 ### AF2-D: Document `apiInvariantBundle_frozenDirect` scope (AF-25)
 
@@ -554,17 +917,18 @@ Build all modified modules and run `test_smoke.sh`.
 
 | Sub-task | Findings | Type | Lines | Dependencies |
 |----------|----------|------|-------|--------------|
-| AF2-A | AF-03 | Proof | ~40 | None |
+| AF2-A | AF-03 | Proof (4 sub-steps) | ~48 | None |
 | AF2-B | AF-22 | Code + doc | ~10 | None |
-| AF2-C | AF-24 | Code | ~20 | None |
+| AF2-C | AF-24 | Proof obligation | ~21 | None |
 | AF2-D | AF-25 | Documentation | ~8 | None |
 | AF2-E | AF-23 | Documentation | ~8 | None |
 | AF2-F | AF-34 | Documentation | ~10 | None |
 | AF2-G | — | Gate | — | AF2-A–F |
-| **Total** | | | **~96** | |
+| **Total** | | | **~105** | |
 
-**Parallelism**: AF2-A through AF2-F are all independent. AF2-C is the
-riskiest (changes `mapPage` return type).
+**Parallelism**: AF2-A through AF2-F are all independent. AF2-A is the
+highest-risk (RHTable key-preservation reasoning). AF2-C adds a proof
+obligation (LOW risk — standard permissions satisfy W^X by `decide`).
 
 
 ---
@@ -577,29 +941,75 @@ validation, and other platform-layer issues needed before RPi5 deployment.
 **Gate**: `lake build` + `lake build SeLe4n.Platform.DeviceTree` +
 `lake build SeLe4n.Platform.RPi5.MmioAdapter` + `./scripts/test_smoke.sh`
 **Dependencies**: None (independent of AF1/AF2).
-**Estimated scope**: ~100–160 lines of changes.
+**Estimated scope**: ~79 lines of changes.
 
 ### AF3-A: Fix `parseFdtNodes` fuel exhaustion to return `none` (AF-05)
 
 **Finding**: `parseFdtNodes` fuel exhaustion returns `some ([], offset)` (silent
 success) at lines 585 and 616. `findMemoryRegProperty` correctly returns `none`.
 
-**Change**: Change the fuel-exhaustion branch from:
+**Source verification (single-caller analysis)**:
+- Definition: `parseFdtNodes` at DeviceTree.lean:576 (with nested helpers
+  `go` at ~582 and `parseNodeContents` at ~607)
+- Fuel-exhaustion branches: line 585 (`go`) and line 616 (`parseNodeContents`)
+- **Exactly 1 caller** outside the definition: `fromDtbFull` at line 800
+- Caller code (lines 800–802):
+  ```lean
+  let nodes := match parseFdtNodes blob hdr with
+    | some ns => ns
+    | none => []
+  ```
+- Caller **already handles `none`** → falls back to empty list
+- **1 theorem dependency**: `parseFdtHeader_fromDtbFull_some` (line 822) uses
+  `fromDtbFull` which calls `parseFdtNodes`. Theorem proves: if header is valid
+  and memory region property found, then `fromDtbFull` returns `some`. This
+  theorem is NOT affected by changing fuel exhaustion from `some []` to `none`
+  because it operates under the assumption that parsing succeeds (valid DTB
+  with sufficient structure).
+
+**Decomposition into 3 sub-steps**:
+
+#### AF3-A1: Change fuel-exhaustion branches to `none`
+
 ```lean
-| 0 => some ([], offset) -- Fuel exhausted
-```
-to:
-```lean
+-- In `go` (line 585):
+| 0 => none -- AF3-A: Fuel exhausted — signal parse failure
+
+-- In `parseNodeContents` (line 616):
 | 0 => none -- AF3-A: Fuel exhausted — signal parse failure
 ```
 
-Similarly update `parseNodeContents` (line 616). Update callers that pattern
-match on `parseFdtNodes` to handle `none` as parse failure. The caller at
-line 800 (`match parseFdtNodes blob hdr with | some ns => ns | none => []`)
-already handles `none` by falling back to empty list — verify this is
-acceptable or propagate the error upward.
+**Files**: `SeLe4n/Platform/DeviceTree.lean` (~4 lines)
 
-**Files modified**: `SeLe4n/Platform/DeviceTree.lean` (~15 lines)
+#### AF3-A2: Verify caller handles `none` correctly
+
+The sole caller at line 800 already matches `| none => []`, producing an
+empty node list on fuel exhaustion. This is the desired behavior: fuel
+exhaustion during DTB parsing means the tree is incomplete, so downstream
+consumers (e.g., `extractPeripherals`, `findMemoryRegProperty`) operate on
+an empty/partial result rather than silently treating truncated data as
+complete.
+
+No caller changes needed. Add a clarifying comment:
+```lean
+-- AF3-A2: `none` from parseFdtNodes indicates fuel exhaustion or malformed
+-- DTB. Empty fallback is safe: downstream extractors return their own
+-- `none`/defaults when expected nodes are missing.
+```
+
+**Files**: `SeLe4n/Platform/DeviceTree.lean` (~4 lines)
+
+#### AF3-A3: Verify theorem `parseFdtHeader_fromDtbFull_some`
+
+Confirm that `parseFdtHeader_fromDtbFull_some` (line 822) still type-checks
+after the change. The theorem's proof relies on the DTB being well-formed
+(valid header + findable memory region), which implies parsing succeeds
+before fuel runs out. If the proof breaks, add a fuel-sufficiency hypothesis.
+
+**Files**: verification only (~0 lines, build check)
+
+**Files modified (total)**: `SeLe4n/Platform/DeviceTree.lean` (~8 lines)
+**Verification**: `lake build SeLe4n.Platform.DeviceTree`
 
 ### AF3-B: Validate full MMIO write byte range (AF-09a)
 
@@ -694,14 +1104,14 @@ Build all modified platform modules and run `test_smoke.sh`.
 
 | Sub-task | Findings | Type | Lines | Dependencies |
 |----------|----------|------|-------|--------------|
-| AF3-A | AF-05 | Code fix | ~15 | None |
+| AF3-A | AF-05 | Code fix (3 sub-steps) | ~8 | None |
 | AF3-B | AF-09a | Code fix | ~20 | None |
 | AF3-C | AF-09b | Documentation | ~15 | None |
 | AF3-D | AF-32 | Documentation | ~8 | None |
 | AF3-E | AF-19 | Documentation | ~8 | None |
 | AF3-F | AF-41,42,44,45 | Documentation | ~20 | None |
 | AF3-G | — | Gate | — | AF3-A–F |
-| **Total** | | | **~86** | |
+| **Total** | | | **~79** | |
 
 **Parallelism**: All sub-tasks are independent. AF3-A and AF3-B are the
 code changes; rest are documentation.
@@ -1073,51 +1483,78 @@ missing marker types, and synchronize all documentation.
 **Finding**: Unrecognized error codes (≥44) mapped to `InvalidSyscallNumber` —
 semantic mismatch.
 
-**Change**: Add a new variant to `KernelError` in `sele4n-types/src/error.rs`:
+**Source verification**:
+- `KernelError` enum: `sele4n-types/src/error.rs`, `#[non_exhaustive]` at
+  line 14, `#[repr(u32)]` at line 15, 44 variants (0–43), last variant
+  `AlignmentError = 43` at lines 69–70
+- Decode logic: `sele4n-abi/src/decode.rs` lines 40–42:
+  ```rust
+  let err = KernelError::from_u32(regs[0] as u32)
+      .unwrap_or(KernelError::InvalidSyscallNumber);
+  ```
+- Conformance tests: `sele4n-abi/tests/conformance.rs` exists with 19 tests
+  (RUST-XVAL-001 through RUST-XVAL-019)
+
+**Change**: Add `UnknownKernelError` variant (discriminant 255 — reserved
+sentinel outside the kernel range 0–43):
 ```rust
+// In sele4n-types/src/error.rs, after AlignmentError = 43:
 /// Kernel returned an error code not recognized by this ABI version.
-/// This indicates a version mismatch between the kernel and ABI crate.
-#[non_exhaustive]
-UnknownKernelError = 255,  // Reserved sentinel outside kernel range
+UnknownKernelError = 255,
 ```
 
-Update `decode.rs` to map unrecognized codes to `UnknownKernelError` instead
-of `InvalidSyscallNumber`:
+Update decode fallback (decode.rs:42):
 ```rust
-KernelError::from_u32(regs[0] as u32)
-    .unwrap_or(KernelError::UnknownKernelError)
+.unwrap_or(KernelError::UnknownKernelError)
 ```
 
-Update conformance tests. Note: `#[non_exhaustive]` on the enum already
-allows this addition without breaking downstream.
+No conformance test changes needed — existing tests validate known error
+codes. Add one new test for the unknown-code fallback path.
 
-**Files modified**: `rust/sele4n-types/src/error.rs` (~5 lines),
-`rust/sele4n-abi/src/decode.rs` (~3 lines),
-`rust/sele4n-abi/tests/conformance.rs` (~5 lines)
+**Files modified**: `rust/sele4n-types/src/error.rs` (~3 lines),
+`rust/sele4n-abi/src/decode.rs` (~1 line),
+`rust/sele4n-abi/tests/conformance.rs` (~8 lines for new test)
 
 ### AF6-B: Return error for `endpoint_reply_recv` truncation (AF-21)
 
 **Finding**: Silent truncation to 3 registers when `msg.length > 3`.
 
-**Change**: Return an error instead of silently truncating:
+**Source verification**: `sele4n-sys/src/ipc.rs` lines 174–192:
 ```rust
 pub fn endpoint_reply_recv(
-    cap: Cap<Endpoint>, reply_target: u64, msg: &IpcMessage,
-) -> Result<IpcResult, TruncationError> {
+    recv_cap: CPtr, reply_target: ThreadId, msg: &IpcMessage,
+) -> KernelResult<(Badge, SyscallResponse)> {
+    let user_len = if msg.length > 3 { 3 } else { msg.length };
+    // MR[0] = reply_target, user data in MR[1..3]
+    let kernel_len = user_len + 1;
+    ...
+}
+```
+Line 180 silently caps `msg.length` at 3 with no error feedback to caller.
+
+**Recommended approach**: Backward-compatible — add `endpoint_reply_recv_checked`
+that returns `Result`, add `#[deprecated]` hint on the truncating version:
+```rust
+/// Checked variant that rejects messages longer than 3 registers.
+pub fn endpoint_reply_recv_checked(
+    recv_cap: CPtr, reply_target: ThreadId, msg: &IpcMessage,
+) -> Result<KernelResult<(Badge, SyscallResponse)>, IpcTruncationError> {
     if msg.length > 3 {
-        return Err(TruncationError::ReplyMessageTooLong {
+        return Err(IpcTruncationError::ReplyMessageTooLong {
             provided: msg.length, max: 3
         });
     }
-    // ... existing implementation
+    Ok(endpoint_reply_recv(recv_cap, reply_target, msg))
 }
 ```
 
-Alternative (backward compatible): Add `endpoint_reply_recv_checked` that
-returns `Result`, keep existing function with documentation warning.
-
-**Recommended**: Backward-compatible approach — add checked variant and
-document the existing function's truncation behavior.
+Add `IpcTruncationError` to `sele4n-sys/src/ipc.rs`:
+```rust
+#[derive(Debug, Clone, Copy)]
+pub enum IpcTruncationError {
+    ReplyMessageTooLong { provided: u8, max: u8 },
+}
+```
 
 **Files modified**: `rust/sele4n-sys/src/ipc.rs` (~20 lines)
 
@@ -1126,44 +1563,80 @@ document the existing function's truncation behavior.
 **Finding**: Doc comment says "43-variant" (should be "44-variant").
 Decode comment says "0–42" (should be "0–43").
 
-**Change**:
-1. `sele4n-types/src/lib.rs`: Change "43-variant" to "44-variant"
-2. `sele4n-abi/src/decode.rs:39`: Change "0–42" to "0–43"
+**Source verification**:
+- `sele4n-types/src/lib.rs` line 7: `"43-variant error enum"` → should be
+  `"44-variant"` (44 variants, discriminants 0–43)
+- `sele4n-abi/src/decode.rs` line 39: `"Kernel error codes are 0–42"` →
+  should be `"0–43"` (AlignmentError = 43 added in WS-AB)
+- `sele4n-abi/src/decode.rs` line 40: `"≥43"` → should be `"≥44"` after
+  AF6-A adds `UnknownKernelError = 255`
 
-**Files modified**: 2 files (~2 lines each)
+**Change**:
+1. `sele4n-types/src/lib.rs:7`: `"43-variant"` → `"44-variant"`
+2. `sele4n-abi/src/decode.rs:39`: `"0–42"` → `"0–43"`
+3. `sele4n-abi/src/decode.rs:40`: `"≥43"` → `"≥44"`
+
+**Files modified**: 2 files (~3 lines total)
 
 ### AF6-D: Add `SchedContext` marker type (AF-37)
 
 **Finding**: Missing from `sele4n-sys/src/cap.rs` while all other object
 types have markers.
 
-**Change**: Add:
+**Source verification**: `sele4n-sys/src/cap.rs` has 6 existing markers
+(lines 36–64): `Endpoint` (37), `Notification` (42), `CNode` (47),
+`Tcb` (52), `VSpaceRoot` (57), `Untyped` (62). `SchedContext` is absent
+despite being a first-class kernel object type.
+
+**Change**: Add after `Untyped` (line 62), following the established pattern:
 ```rust
 /// Marker type for scheduling context capabilities.
+/// Used with `Cap<SchedContext>` for type-safe SchedContext capability handles.
 pub struct SchedContext;
 ```
 
-**Files modified**: `rust/sele4n-sys/src/cap.rs` (~3 lines)
+**Files modified**: `rust/sele4n-sys/src/cap.rs` (~4 lines)
 
 ### AF6-E: Make `IpcMessage.length` private (AF-38)
 
-**Finding**: Public field allows external mutation bypassing invariant.
+**Finding**: Public `length` field allows external mutation bypassing the
+`length ≤ 4` invariant.
 
-**Change**: Make `length` field private and add accessor:
+**Source verification**: `sele4n-sys/src/ipc.rs` lines 23–31:
 ```rust
 pub struct IpcMessage {
-    pub(crate) length: u8,
-    pub registers: [u64; 4],
+    pub regs: [u64; 4],     // Inline message registers
+    pub length: u8,         // Number of valid registers (0..=4)
+    pub label: u64,         // User-defined label
+}
+```
+`length` is `pub` — external code can set `length = 255` and then pass the
+message to `endpoint_reply_recv`, which reads `msg.length` at line 180.
+
+**Change**: Make `length` field `pub(crate)` and add accessor + builder:
+```rust
+pub struct IpcMessage {
+    pub regs: [u64; 4],
+    pub(crate) length: u8,  // AF6-E: Private — use length() / new()
+    pub label: u64,
 }
 
 impl IpcMessage {
+    /// Returns the number of valid registers (0..=4).
     pub fn length(&self) -> u8 { self.length }
+
+    /// Creates a new IPC message with validated length.
+    pub fn new(regs: [u64; 4], length: u8, label: u64) -> Option<Self> {
+        if length > 4 { return None; }
+        Some(Self { regs, length, label })
+    }
 }
 ```
 
-Update callers that directly set `length`.
+Audit callers within the crate that set `length` directly and route through
+`new()`. External callers cannot set `length` directly after this change.
 
-**Files modified**: `rust/sele4n-sys/src/ipc.rs` (~15 lines)
+**Files modified**: `rust/sele4n-sys/src/ipc.rs` (~18 lines)
 
 ### AF6-F: Install shellcheck in CI (AF-46)
 
@@ -1198,14 +1671,14 @@ checking in DEVELOPMENT.md.
 
 | Sub-task | Findings | Type | Lines | Dependencies |
 |----------|----------|------|-------|--------------|
-| AF6-A | AF-20 | Code fix | ~13 | None |
-| AF6-B | AF-21 | Code fix | ~20 | None |
-| AF6-C | AF-35, AF-36 | Comment fix | ~4 | None |
-| AF6-D | AF-37 | Code | ~3 | None |
-| AF6-E | AF-38 | Code | ~15 | None |
+| AF6-A | AF-20 | Code fix (3 files) | ~12 | None |
+| AF6-B | AF-21 | Code fix (checked variant) | ~20 | None |
+| AF6-C | AF-35, AF-36 | Comment fix (2 files, 3 lines) | ~3 | None |
+| AF6-D | AF-37 | Code (marker type) | ~4 | None |
+| AF6-E | AF-38 | Code (privacy + builder) | ~18 | None |
 | AF6-F | AF-46 | CI/doc | ~5 | None |
 | AF6-G | — | Doc sync | ~50 | AF1–AF5 |
-| **Total** | | | **~110** | |
+| **Total** | | | **~112** | |
 
 **Parallelism**: AF6-A through AF6-F are independent. AF6-G requires
 all prior phases to complete.
@@ -1219,18 +1692,19 @@ all prior phases to complete.
 
 | Phase | Code | Proof | Documentation | Total Lines | Risk |
 |-------|------|-------|---------------|-------------|------|
-| AF1 | ~15 | ~100 | ~80 | ~195 | HIGH (AF1-B bridge lemmas) |
-| AF2 | ~45 | ~40 | ~36 | ~96 | MEDIUM (AF2-A callsite proof, AF2-C return type) |
-| AF3 | ~35 | ~0 | ~51 | ~86 | LOW |
+| AF1 | ~15 | ~143 | ~109 | ~267 | HIGH (AF1-B bridge lemmas) |
+| AF2 | ~13 | ~69 | ~26 | ~105 | MEDIUM (AF2-A callsite proof) |
+| AF3 | ~28 | ~0 | ~51 | ~79 | LOW |
 | AF4 | ~6 | ~0 | ~48 | ~54 | LOW (AF4-A/B may need fallback decomposition) |
 | AF5 | ~22 | ~0 | ~80 | ~102 | LOW |
-| AF6 | ~55 | ~0 | ~55 | ~110 | LOW |
-| **Total** | **~178** | **~140** | **~350** | **~643** | |
+| AF6 | ~57 | ~0 | ~55 | ~112 | LOW |
+| **Total** | **~141** | **~212** | **~366** | **~719** | |
 
 **Worst-case**: If AF1-B requires individual per-operation proofs for all 33
 bridge lemmas (~15 lines each) instead of a shared frame argument, add ~200
-lines. If AF2-A Option B is chosen (~40 callsite changes), add ~150 lines.
-**Worst-case total**: ~643 + 350 = ~993 lines.
+lines. If AF2-A1 requires an RHTable key-preservation lemma in
+`RobinHood/Invariant/Lookup.lean`, add ~10 lines.
+**Worst-case total**: ~719 + 210 = ~929 lines.
 
 ### 9.2 Dependency Graph
 
@@ -1269,7 +1743,7 @@ implementer is:
 |------|-------------|--------|------------|
 | AF1-B import cycle discovered | LOW | HIGH | AE2-F already established Liveness import chain through CrossSubsystem; BlockingGraph is transitively imported. If cycle found, fall back to AF1-A (comment-only fix) and defer integration to H3. |
 | AF1-B bridge lemma explosion | MEDIUM | MEDIUM | If frame argument doesn't cover non-IPC operations, individual proofs needed for all 33 operations. Mitigated by: most operations don't modify `ipcState`, so `blockingAcyclic_frame` should cover ~26/33. |
-| AF2-C `mapPage` return type change breaks boot | MEDIUM | MEDIUM | Boot sequence must use W^X-compliant permissions. Verify boot test fixtures. Fallback: make the check a warning annotation instead of hard error. |
+| AF2-C `mapPage` proof obligation breaks callers | LOW | LOW | All standard `PagePermissions` constructors satisfy `wxCompliant` by construction (`by decide` suffices). Boot.lean does not call `mapPage`. No runtime code changes. |
 | AF4-A `decide` timeout | LOW | LOW | If `decide` takes >60s for 33-element enumeration, decompose into per-SyscallId cases or use `simp [enforcementBoundaryComplete, SyscallId.all]; decide`. |
 | AF6-E `IpcMessage.length` privacy breaks callers | LOW | MEDIUM | If external crates set `length` directly, add a `pub fn set_length(len: u8)` with bounds check. Current codebase has no external crate consumers. |
 | High heartbeat proofs break on Lean update | MEDIUM | LOW | Not addressed in this workstream (documented in AF5-J). Pin Lean toolchain version. |
@@ -1298,8 +1772,9 @@ Each phase follows this verification protocol before merge:
 ## 12. Conclusion
 
 This workstream remediates all actionable findings from two independent
-pre-release audits. The 7 refuted findings were rigorously disproven against
-source evidence, preventing wasted effort on erroneous items. The remaining 49
+pre-release audits. Five erroneous findings were rigorously disproven against
+source evidence (plus 2 self-retracted by Audit 1's errata), preventing wasted
+effort on false positives. The remaining 49
 sub-tasks across 6 phases are organized by severity and dependency, with the
 most impactful work (blocking acyclicity integration, storeObject capacity
 assurance) front-loaded.
@@ -1309,13 +1784,13 @@ assurance) front-loaded.
   preservation proofs for all kernel operations
 - WCRT theorem naming reflects actual assurance level
 - `storeObject` capacity gating machine-checked
-- Builder-phase W^X enforcement prevents boot-time violations
+- Builder-phase W^X statically enforced via proof obligation parameter
 - DTB parser fails safely on fuel exhaustion
 - MMIO writes validate full byte range
 - `native_decide` eliminated from TCB (replaced with `decide`)
 - Rust ABI error mapping semantically correct
 - All documentation synchronized with current codebase state
 
-**Estimated total**: ~643–993 lines of changes across ~30 files.
+**Estimated total**: ~719–929 lines of changes across ~35 files.
 Zero sorry/axiom throughout.
 
