@@ -75,6 +75,7 @@ in Projection.lean) is intentionally retained.
 - `checkedDispatch_flowDenied_preserves_state` — proves all 3 policy-gated
   wrappers preserve state on flow denial (M-IF-1).
 - `mmioRead`/`mmioWrite` with 4 correctness theorems (M-NEW-7/8).
+- `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` with full byte-range validation (AF3-B).
 - `MmioReadOutcome` inductive encoding volatile/ram/w1c/fifo read-kind constraints (X1-D).
 - `mkMmioSafe_uart`/`mkMmioSafe_gicDist`/`mkMmioSafe_gicCpu` witness generators (X1-E).
 - `tlbFlushByASID`/`tlbFlushByPage`/`tlbFlushAll` with state frame proofs (M-ARCH-4).
@@ -2245,7 +2246,11 @@ trust boundary specification.
 **Device tree abstraction** (`Platform/DeviceTree.lean`):
 - `DeviceTree` structure — platform-independent board configuration.
 - `DeviceTree.fromBoardConstants` — static construction from hardcoded constants.
-- `DeviceTree.fromDtb` — stub for future DTB parsing (WS-T).
+- `DeviceTree.fromDtb` — stub (AF3-F/AF-42: always returns `none`, deferred to WS-V).
+- `DeviceTree.fromDtbFull` — full FDT parsing pipeline with `parseFdtNodes`.
+- `parseFdtNodes` — FDT structure block traversal (AF3-A: fuel exhaustion returns `none`).
+- `extractPeripherals` — peripheral device extraction (AF3-D: 2-level depth, sufficient for RPi5).
+- `parseFdtHeader_fromDtbFull_some` — correctness: valid header + memory node implies `some`.
 - `rpi5DeviceTree` — RPi5 instance with validation proof (`rpi5DeviceTree_valid`).
 
 **IPC Buffer Configuration** (`Architecture/IpcBufferValidation.lean`, D3):

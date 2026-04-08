@@ -1,3 +1,23 @@
+## v0.25.24 — WS-AF Phase AF3: Platform & DeviceTree Hardening
+
+Phase AF3 of WS-AF Pre-Release Comprehensive Audit Remediation. Addresses 7
+findings across platform, DeviceTree, and MMIO subsystems — DTB parser
+fuel-exhaustion fix (`parseFdtNodes` returns `none` on fuel exhaustion instead
+of silent truncation), full MMIO write byte-range validation (`mmioWrite32`,
+`mmioWrite64`, `mmioWrite32W1C`), MMIO write-semantics model documentation,
+`extractPeripherals` depth limitation documentation, `natKeysNoDup` opacity
+documentation, and four DTB/boot stub limitation annotations. All tests pass
+(test_smoke.sh). Zero sorry/axiom.
+
+### Changes
+
+- **AF3-A** (AF-05): `parseFdtNodes` fuel exhaustion returns `none` (was `some []`)
+- **AF3-B** (AF-09a): `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C` validate full byte range
+- **AF3-C** (AF-09b): MMIO write-semantics model gap documented
+- **AF3-D** (AF-32): `extractPeripherals` 2-level depth limitation documented
+- **AF3-E** (AF-19): `natKeysNoDup` opaque HashSet design tradeoff documented
+- **AF3-F** (AF-41/42/44/45): DTB/boot stubs documented (deferred to WS-V)
+
 ## v0.25.19 — WS-AE Phase AE4: Capability, IPC & Architecture Hardening
 
 Phase AE4 of WS-AE Production Audit Remediation. Addresses 10 findings across

@@ -131,7 +131,11 @@ def DeviceTree.fromBoardConstants
     `fromDtbFull` or `fromDtbParsed` directly.
 
     W4-D (LOW-02): Removed stale `@[implemented_by]` comment. No such
-    attribute exists; `fromDtbFull` is a separate function, not an override. -/
+    attribute exists; `fromDtbFull` is a separate function, not an override.
+
+    AF3-F (AF-42): Stub — always returns `none`. Use `fromDtbFull` for
+    actual DTB parsing. Wiring this entry point to `fromDtbFull` or
+    deprecating in favor of `fromDtbParsed` is deferred to WS-V. -/
 def DeviceTree.fromDtb (_blob : ByteArray) : Option DeviceTree :=
   none  -- Stub: use `fromDtbFull` for actual DTB parsing
 
@@ -313,7 +317,10 @@ theorem extractMemoryRegions_truncated (blob : ByteArray) (h : blob.size < 16) :
 /-- T6-M: Classify an FDT memory region as a `MemoryKind`.
     RAM regions have `kind = .ram`. Device regions are not present in the
     `/memory` node — they come from individual device nodes (deferred to WS-U).
-    Reserved regions are identified by the memory reservation block. -/
+    Reserved regions are identified by the memory reservation block.
+
+    AF3-F (AF-41): Always returns `.ram`. ARM64 device memory type
+    classification from DTB `device_type` property is deferred to WS-V. -/
 def classifyMemoryRegion (_region : FdtMemoryRegion) : MemoryKind :=
   .ram  -- /memory node entries are always RAM
 
@@ -582,7 +589,7 @@ where
       offset past the last consumed token, or `none` on malformed input. -/
   go (blob : ByteArray) (offset offStrings : Nat) :
       Nat → Option (List FdtNode × Nat)
-  | 0 => some ([], offset) -- Fuel exhausted — return what we have
+  | 0 => none -- AF3-A: Fuel exhausted — signal parse failure
   | fuel + 1 =>
     match readBE32 blob offset with
     | none => some ([], offset) -- Read failure — stop
@@ -613,7 +620,7 @@ where
       Returns (properties, children, offset past FDT_END_NODE). -/
   parseNodeContents (blob : ByteArray) (offset offStrings : Nat) :
       Nat → Option (List FdtProperty × List FdtNode × Nat)
-  | 0 => some ([], [], offset) -- Fuel exhausted
+  | 0 => none -- AF3-A: Fuel exhausted — signal parse failure
   | fuel + 1 =>
     match readBE32 blob offset with
     | none => some ([], [], offset)
@@ -746,7 +753,13 @@ def extractTimerFrequency (nodes : List FdtNode) : Nat :=
 
 /-- X4-A/H-7: Extract peripheral device entries from FDT nodes.
     Walks top-level and one level of children, extracting nodes that have
-    both `compatible` and `reg` properties as peripheral devices. -/
+    both `compatible` and `reg` properties as peripheral devices.
+
+    AF3-D: Searches top-level + direct children only (2 levels).
+    DTB standard allows arbitrary nesting depth. RPi5 BCM2712 DTB has
+    peripherals at depth 1–2, so this is sufficient for the target platform.
+    Recursive descent for non-RPi5 platforms with deeper nesting is
+    deferred to H3 hardware bring-up. -/
 def extractPeripherals (nodes : List FdtNode) : List DeviceEntry :=
   let allNodes := nodes ++ (nodes.map (·.children)).flatten
   allNodes.filterMap fun node =>
@@ -797,6 +810,9 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat := 48)
       memoryMap := memRegions
     }
     -- X4-A/B/C: Parse full FDT node tree for device discovery
+    -- AF3-A2: `none` from parseFdtNodes indicates fuel exhaustion or malformed
+    -- DTB. Empty fallback is safe: downstream extractors return their own
+    -- `none`/defaults when expected nodes are missing.
     let nodes := match parseFdtNodes blob hdr with
       | some ns => ns
       | none => []

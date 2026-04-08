@@ -387,7 +387,8 @@ def isAligned (addr : PAddr) (alignment : Nat) : Bool :=
 def mmioWrite32 (addr : PAddr) (val : UInt32) : Kernel Unit :=
   fun st =>
     if !isAligned addr 4 then .error .mmioUnaligned
-    else if isDeviceAddress addr then
+    -- AF3-B: Validate entire write range [addr, addr+3] for 32-bit writes
+    else if isDeviceAddress addr && isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) then
       let b0 : UInt8 := val.toNat % 256 |>.toUInt8
       let b1 : UInt8 := (val.toNat / 256) % 256 |>.toUInt8
       let b2 : UInt8 := (val.toNat / 65536) % 256 |>.toUInt8
@@ -414,7 +415,8 @@ def mmioWrite32 (addr : PAddr) (val : UInt32) : Kernel Unit :=
 def mmioWrite64 (addr : PAddr) (val : UInt64) : Kernel Unit :=
   fun st =>
     if !isAligned addr 8 then .error .mmioUnaligned
-    else if isDeviceAddress addr then
+    -- AF3-B: Validate entire write range [addr, addr+7] for 64-bit writes
+    else if isDeviceAddress addr && isDeviceAddress (PAddr.ofNat (addr.toNat + 7)) then
       let n := val.toNat
       let a0 := addr
       let a1 := PAddr.ofNat (addr.toNat + 1)
@@ -438,6 +440,25 @@ def mmioWrite64 (addr : PAddr) (val : UInt64) : Kernel Unit :=
       .ok ((), { st with machine := { st.machine with memory := mem' } })
     else
       .error .policyDenied
+
+-- ============================================================================
+-- AF3-C: MMIO Write Semantics Model
+-- ============================================================================
+--
+-- The abstract model provides three write semantics:
+-- • `mmioWrite32`/`mmioWrite64`: Direct byte-by-byte replacement (standard store)
+-- • `mmioWrite32W1C`: Write-one-to-clear (new = old & ~write)
+-- • [Missing] Set-only: new = old | write
+--
+-- Hardware W1C registers (e.g., GIC-400 ICPENDR) MUST use `mmioWrite32W1C`.
+-- Using `mmioWrite32` on a W1C register produces model-correct but
+-- hardware-incorrect behavior.
+--
+-- `MmioWriteSafe` witness type gating correct write function usage per
+-- register address range is deferred to H3 hardware bring-up. Until then,
+-- callers must manually select the correct write function based on hardware
+-- documentation.
+-- ============================================================================
 
 -- ============================================================================
 -- V4-C/M-HW-2: Write-one-clear (W1C) semantics for GIC registers
@@ -468,7 +489,8 @@ def mmioReadBytes32 (mem : PAddr → UInt8) (addr : PAddr) : UInt32 :=
 def mmioWrite32W1C (addr : PAddr) (clearMask : UInt32) : Kernel Unit :=
   fun st =>
     if !isAligned addr 4 then .error .mmioUnaligned
-    else if isDeviceAddress addr then
+    -- AF3-B: Validate entire write range [addr, addr+3] for W1C 32-bit writes
+    else if isDeviceAddress addr && isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) then
       let oldVal := mmioReadBytes32 st.machine.memory addr
       let newVal := oldVal &&& (~~~ clearMask)
       let b0 : UInt8 := newVal.toNat % 256 |>.toUInt8
