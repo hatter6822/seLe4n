@@ -1,3 +1,82 @@
+## v0.26.7 — WS-AG Phase AG6: Memory Management (ARMv8 Page Tables)
+
+Phase AG6 of WS-AG H3 Hardware Binding Audit Remediation. ARMv8-A 4-level
+page table implementation with shadow-based refinement proofs, TLB and cache
+maintenance HAL wrappers, and ASID generation/management with uniqueness proofs.
+9 sub-tasks (AG6-A through AG6-I) closing 7 findings from the H3 hardware
+binding audit.
+Gate: `cargo test --workspace` (306 tests) + `cargo clippy --workspace`
+(0 warnings) + `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh`.
+Zero sorry/axiom.
+
+### Changes
+
+- **AG6-A** (H3-ARCH-01): ARMv8 page table descriptor types in `PageTable.lean`.
+  `PageTableLevel` (L0–L3), `Shareability`, `AccessPermission` (kernelRW/RO,
+  userRW/RO), `PageAttributes`, `PageTableDescriptor` (invalid/block/table/page).
+  `descriptorToUInt64`/`uint64ToDescriptor` encode/decode with round-trip.
+  `encodePageAttributes`/`decodePageAttributes`. W^X bridge proof
+  `hwDescriptor_wxCompliant_bridge` linking hardware AP/PXN/UXN to
+  `PagePermissions.wxCompliant`
+- **AG6-B** (H3-ARCH-01): 4-level page table walk in `PageTable.lean`.
+  Index extraction via div/mod (omega-compatible). `readUInt64` little-endian
+  memory read. `pageTableWalk` via structural recursion on `PageTableLevel`
+  (no fuel). `pageTableWalk_deterministic` proof. `pageTableWalkPerms` wrapper
+- **AG6-C** (H3-ARCH-01): `VSpaceBackend` ARMv8 instance in `VSpaceARMv8.lean`.
+  `ARMv8VSpace` with shadow `VSpaceRoot` + hardware page tables + `Memory`.
+  Shadow-first design: `mapPage`/`unmapPage` update shadow then hardware.
+  `lookupPage` delegates to shadow for proof tractability. `ensureTable`
+  allocates L0→L3 chain. All 7 VSpaceBackend obligations discharged
+- **AG6-D** (H3-ARCH-01): Shadow-based refinement proof. `simulationRelation`
+  linking hardware walk to shadow HashMap. `lookupPage_refines` and
+  `hwLookupAddr_refines` refinement theorems. `vspaceProperty_transfer`
+  master invariant transfer theorem
+- **AG6-E** (H3-RUST-05): TLB flush wrappers in `tlb.rs`. `tlbi_vmalle1()`,
+  `tlbi_vae1(asid, vaddr)`, `tlbi_aside1(asid)`, `tlbi_vale1(asid, vaddr)`.
+  Each followed by DSB ISH + ISB per ARM ARM D8.11. 7 tests
+- **AG6-F** (H3-ARCH-02): TLB flush model integration in `TlbModel.lean`.
+  Hardware adapter functions + 3 equivalence theorems + 3 consistency
+  preservation theorems + unmap-flush composition theorem
+- **AG6-G** (H3-ARCH-03): TLB barrier model. `tlbBarrierComplete` predicate.
+  Barrier completion theorems. `adapterFlushTlbHw_safe` combined safety
+- **AG6-H** (H3-ARCH-04): ASID management in `AsidManager.lean`. `AsidPool`
+  bump allocator with generation tracking, free list, and exhaustion guard.
+  `wellFormed` predicate with 3 preservation theorems. `asidPoolUnique`
+  uniqueness invariant with allocation/free preservation
+- **AG6-I** (H3-RUST-06): Cache maintenance in `cache.rs`. DC CIVAC/CVAC/IVAC/
+  ZVA, IC IALLU/IALLUIS. `cache_range` aligned iteration. Convenience wrappers.
+  11 tests
+
+### New files
+
+- `SeLe4n/Kernel/Architecture/PageTable.lean` (433 lines)
+- `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean` (341 lines)
+- `SeLe4n/Kernel/Architecture/AsidManager.lean` (231 lines)
+- `rust/sele4n-hal/src/tlb.rs` (153 lines)
+- `rust/sele4n-hal/src/cache.rs` (253 lines)
+
+### Modified files
+
+- `SeLe4n/Kernel/Architecture/TlbModel.lean` (+113 lines)
+- `rust/sele4n-hal/src/lib.rs` (+2 lines: `pub mod tlb; pub mod cache;`)
+
+### Post-implementation audit fixes
+
+- **FINDING-01** (MEDIUM): `uint64ToDescriptor` now treats bits[1:0]=0b10 as
+  invalid per ARM ARM D8.3 (bit[0]=0 → fault). Previously fell through to
+  table/page decode, creating model-hardware disagreement
+- **FINDING-02** (MEDIUM): `cache_range` loop uses `saturating_add` instead of
+  `+=` to prevent integer overflow infinite loop near u64::MAX
+- **FINDING-03** (LOW): `pageTableWalk_deterministic` strengthened from bare
+  existence to unique existence (`∃ result, ... ∧ ∀ result', ... → result' = result`)
+- **FINDING-04** (INFO): Documented simulation relation preservation gap —
+  `mapPage_refines`/`unmapPage_refines` deferred to AG7 FFI integration
+- **FINDING-05** (INFO): Documented ASID freshness connection gap — formal
+  connection between `AsidPool.allocate` and uniqueness precondition deferred
+  to AG8 kernel integration
+
+---
+
 ## v0.26.6 — WS-AG Phase AG5: Interrupts + Timer
 
 Phase AG5 of WS-AG H3 Hardware Binding Audit Remediation. Full GIC-400

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/complete-ag5-interrupts-timer-OgW16",
-      "commit_sha": "27cca3cd6d6de2de8e5abbe19052675e1b87d399",
-      "tree_sha": "74ec9864ff17e606b3452d043a40d76d34f52d5d",
-      "committed_at_utc": "2026-04-09T19:21:59+00:00"
+      "branch": "claude/review-hardware-binding-audit-mONbF",
+      "commit_sha": "f817c1d5fcdb18dd5e4f0e2ec63b5cc9989f9a2a",
+      "tree_sha": "37628644f2dcb0344446b621984d118af176071c",
+      "committed_at_utc": "2026-04-09T20:18:41+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3d6594fe93f4dc59e0da8d0cbb509cae7018e809559fca259ce386b7175753bb"
+    "source_digest": "d080d017ab4c9d1f7ab96fe8c6ac38da2bef8dd35e70796f6484f16195b46932"
   },
   "summary": {
-    "module_count": 152,
-    "declaration_count": 4761
+    "module_count": 155,
+    "declaration_count": 4857
   },
   "readme_sync": {
-    "version": "0.26.6",
+    "version": "0.26.7",
     "lean_toolchain": "v4.28.0",
-    "production_files": 136,
-    "production_loc": 88667,
+    "production_files": 139,
+    "production_loc": 89805,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2643,
+    "proved_theorem_lemma_decls": 2674,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1331,6 +1331,148 @@
             "SystemState",
             "adapterReadMemory",
             "readMem"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.AsidManager",
+      "path": "SeLe4n/Kernel/Architecture/AsidManager.lean",
+      "declaration_count": 15,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 39,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "maxAsidValue",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "AsidPool",
+          "line": 58,
+          "called": [
+            "ASID"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "AsidPool.initial",
+          "line": 66,
+          "called": [
+            "AsidPool"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "AsidAllocResult",
+          "line": 74,
+          "called": [
+            "ASID",
+            "AsidPool"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "AsidPool.allocate",
+          "line": 90,
+          "called": [
+            "AsidAllocResult",
+            "AsidPool",
+            "maxAsidValue",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "AsidPool.free",
+          "line": 118,
+          "called": [
+            "ASID",
+            "AsidPool"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "AsidPool.wellFormed",
+          "line": 131,
+          "called": [
+            "AsidPool",
+            "maxAsidValue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "AsidPool.initial_wellFormed",
+          "line": 137,
+          "called": [
+            "initial",
+            "maxAsidValue",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "AsidPool.allocate_preserves_wellFormed",
+          "line": 142,
+          "called": [
+            "AsidAllocResult",
+            "AsidPool",
+            "allocate",
+            "maxAsidValue",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "AsidPool.allocate_asid_valid",
+          "line": 176,
+          "called": [
+            "AsidAllocResult",
+            "AsidPool",
+            "allocate",
+            "maxAsidValue",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "asidPoolUnique",
+          "line": 215,
+          "called": [
+            "ASID"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "asidPoolUnique_empty",
+          "line": 219,
+          "called": [
+            "asidPoolUnique"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "asidPoolUnique_allocate_fresh",
+          "line": 223,
+          "called": [
+            "ASID",
+            "asidPoolUnique"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "asidPoolUnique_free",
+          "line": 232,
+          "called": [
+            "ASID",
+            "asidPoolUnique",
+            "filter"
           ]
         }
       ]
@@ -2784,6 +2926,420 @@
             "ThreadId",
             "VAddr",
             "setIPCBufferOp"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.PageTable",
+      "path": "SeLe4n/Kernel/Architecture/PageTable.lean",
+      "declaration_count": 43,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 36,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "PageTableLevel",
+          "line": 48,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "Shareability",
+          "line": 53,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "AccessPermission",
+          "line": 61,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "PageAttributes",
+          "line": 70,
+          "called": [
+            "AccessPermission",
+            "Shareability"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:81>",
+          "line": 81,
+          "called": [
+            "PageTableLevel"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:86>",
+          "line": 86,
+          "called": [
+            "Shareability"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:93>",
+          "line": 93,
+          "called": [
+            "AccessPermission"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:99>",
+          "line": 99,
+          "called": [
+            "PageAttributes"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "PageTableDescriptor",
+          "line": 114,
+          "called": [
+            "PAddr",
+            "PageAttributes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "levelValid",
+          "line": 122,
+          "called": [
+            "PageTableDescriptor",
+            "PageTableLevel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeShareability",
+          "line": 138,
+          "called": [
+            "Shareability"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeAccessPermission",
+          "line": 145,
+          "called": [
+            "AccessPermission"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodePageAttributes",
+          "line": 162,
+          "called": [
+            "PageAttributes",
+            "encodeAccessPermission",
+            "encodeShareability"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "outputAddrMask",
+          "line": 175,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tableAddrMask",
+          "line": 179,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "descriptorToUInt64",
+          "line": 182,
+          "called": [
+            "PageTableDescriptor",
+            "encodePageAttributes",
+            "outputAddrMask",
+            "tableAddrMask"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeShareability",
+          "line": 200,
+          "called": [
+            "Shareability",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeAccessPermission",
+          "line": 207,
+          "called": [
+            "AccessPermission",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodePageAttributes",
+          "line": 215,
+          "called": [
+            "PageAttributes",
+            "decodeAccessPermission",
+            "decodeShareability",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "uint64ToDescriptor",
+          "line": 228,
+          "called": [
+            "PageTableDescriptor",
+            "PageTableLevel",
+            "decodePageAttributes",
+            "ofNat",
+            "outputAddrMask",
+            "tableAddrMask",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "AccessPermission.isReadOnly",
+          "line": 254,
+          "called": [
+            "AccessPermission"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "descriptorWxCompliant",
+          "line": 262,
+          "called": [
+            "PageTableDescriptor",
+            "isReadOnly"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "descriptorWxCompliantDec",
+          "line": 269,
+          "called": [
+            "PageTableDescriptor",
+            "isReadOnly"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "toPagePermissions",
+          "line": 277,
+          "called": [
+            "PageAttributes",
+            "PagePermissions"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "hwDescriptor_wxCompliant_bridge",
+          "line": 290,
+          "called": [
+            "AccessPermission.isReadOnly",
+            "PageAttributes",
+            "PagePermissions.wxCompliant",
+            "isReadOnly",
+            "toPagePermissions"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "l0Index",
+          "line": 304,
+          "called": [
+            "VAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "l1Index",
+          "line": 308,
+          "called": [
+            "VAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "l2Index",
+          "line": 312,
+          "called": [
+            "VAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "l3Index",
+          "line": 316,
+          "called": [
+            "VAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pageOffset",
+          "line": 320,
+          "called": [
+            "VAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "l0Index_lt",
+          "line": 324,
+          "called": [
+            "VAddr",
+            "l0Index"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "l1Index_lt",
+          "line": 328,
+          "called": [
+            "VAddr",
+            "l1Index"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "l2Index_lt",
+          "line": 332,
+          "called": [
+            "VAddr",
+            "l2Index"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "l3Index_lt",
+          "line": 336,
+          "called": [
+            "VAddr",
+            "l3Index"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageOffset_lt",
+          "line": 340,
+          "called": [
+            "VAddr",
+            "pageOffset"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "readUInt64",
+          "line": 349,
+          "called": [
+            "Memory",
+            "PAddr",
+            "mem",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "readDescriptor",
+          "line": 362,
+          "called": [
+            "Memory",
+            "PAddr",
+            "PageTableDescriptor",
+            "PageTableLevel",
+            "mem",
+            "ofNat",
+            "readUInt64",
+            "toNat",
+            "uint64ToDescriptor"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockOffset1G",
+          "line": 371,
+          "called": [
+            "VAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockOffset2M",
+          "line": 375,
+          "called": [
+            "VAddr",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pageTableWalk",
+          "line": 390,
+          "called": [
+            "Memory",
+            "PAddr",
+            "PageAttributes",
+            "VAddr",
+            "blockOffset1G",
+            "blockOffset2M",
+            "l0Index",
+            "l1Index",
+            "l2Index",
+            "l3Index",
+            "mem",
+            "none",
+            "ofNat",
+            "pageOffset",
+            "readDescriptor",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableWalk_deterministic",
+          "line": 424,
+          "called": [
+            "Memory",
+            "PAddr",
+            "VAddr",
+            "mem",
+            "pageTableWalk"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pageTableWalkPerms",
+          "line": 431,
+          "called": [
+            "Memory",
+            "PAddr",
+            "PagePermissions",
+            "VAddr",
+            "mem",
+            "pageTableWalk",
+            "toPagePermissions"
           ]
         }
       ]
@@ -4623,7 +5179,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TlbModel",
       "path": "SeLe4n/Kernel/Architecture/TlbModel.lean",
-      "declaration_count": 18,
+      "declaration_count": 33,
       "declarations": [
         {
           "kind": "namespace",
@@ -4840,6 +5396,173 @@
           "called": [
             "SystemState",
             "resolveAsidRoot",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "adapterFlushTlbHw",
+          "line": 282,
+          "called": [
+            "SystemState",
+            "adapterFlushTlb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "adapterFlushTlbByAsidHw",
+          "line": 287,
+          "called": [
+            "ASID",
+            "SystemState",
+            "adapterFlushTlbByAsid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "adapterFlushTlbByVAddrHw",
+          "line": 292,
+          "called": [
+            "ASID",
+            "SystemState",
+            "VAddr",
+            "adapterFlushTlbByVAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "hardwareFlushAll_equiv_modelFlush",
+          "line": 296,
+          "called": [
+            "TlbState",
+            "TlbState.empty",
+            "adapterFlushTlb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "hardwareFlushByAsid_equiv_modelFlush",
+          "line": 301,
+          "called": [
+            "ASID",
+            "TlbState",
+            "adapterFlushTlbByAsid",
+            "filter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "hardwareFlushByVAddr_equiv_modelFlush",
+          "line": 307,
+          "called": [
+            "ASID",
+            "TlbState",
+            "VAddr",
+            "adapterFlushTlbByVAddr",
+            "filter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbHw_preserves_tlbConsistent",
+          "line": 313,
+          "called": [
+            "SystemState",
+            "adapterFlushTlbHw",
+            "adapterFlushTlb_restores_tlbConsistent",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByAsidHw_preserves_tlbConsistent",
+          "line": 319,
+          "called": [
+            "ASID",
+            "SystemState",
+            "adapterFlushTlbByAsidHw",
+            "adapterFlushTlbByAsid_preserves_tlbConsistent",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByVAddrHw_preserves_tlbConsistent",
+          "line": 326,
+          "called": [
+            "ASID",
+            "SystemState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw",
+            "adapterFlushTlbByVAddr_preserves_tlbConsistent",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPage_fullFlush_preserves_tlbConsistent",
+          "line": 341,
+          "called": [
+            "ASID",
+            "SystemState",
+            "VAddr",
+            "adapterFlushTlbHw",
+            "adapterFlushTlbHw_preserves_tlbConsistent",
+            "tlbConsistent",
+            "vspaceUnmapPage"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tlbBarrierComplete",
+          "line": 357,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbHw_barrier_complete",
+          "line": 366,
+          "called": [
+            "SystemState",
+            "adapterFlushTlbHw",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByAsidHw_barrier_complete",
+          "line": 371,
+          "called": [
+            "ASID",
+            "SystemState",
+            "adapterFlushTlbByAsidHw",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbByVAddrHw_barrier_complete",
+          "line": 376,
+          "called": [
+            "ASID",
+            "SystemState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbHw_safe",
+          "line": 383,
+          "called": [
+            "SystemState",
+            "adapterFlushTlbHw",
+            "adapterFlushTlbHw_barrier_complete",
+            "adapterFlushTlbHw_preserves_tlbConsistent",
+            "tlbBarrierComplete",
             "tlbConsistent"
           ]
         }
@@ -5150,6 +5873,302 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Architecture.VSpaceARMv8",
+      "path": "SeLe4n/Kernel/Architecture/VSpaceARMv8.lean",
+      "declaration_count": 23,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 44,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "BumpAllocator",
+          "line": 56,
+          "called": [
+            "PAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "BumpAllocator.allocate",
+          "line": 63,
+          "called": [
+            "BumpAllocator",
+            "PAddr",
+            "none",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "ARMv8VSpace",
+          "line": 72,
+          "called": [
+            "ASID",
+            "BumpAllocator",
+            "Memory",
+            "PAddr",
+            "VSpaceRoot"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "writeByte",
+          "line": 84,
+          "called": [
+            "Memory",
+            "PAddr",
+            "mem"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "writeUInt64",
+          "line": 88,
+          "called": [
+            "Memory",
+            "PAddr",
+            "mem",
+            "ofNat",
+            "toNat",
+            "writeByte"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "writeDescriptor",
+          "line": 99,
+          "called": [
+            "Memory",
+            "PAddr",
+            "PageTableDescriptor",
+            "descriptorToUInt64",
+            "mem",
+            "ofNat",
+            "toNat",
+            "writeUInt64"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "zeroPage",
+          "line": 105,
+          "called": [
+            "Memory",
+            "PAddr",
+            "mem",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ARMv8VSpace.hwLookupPage",
+          "line": 117,
+          "called": [
+            "ARMv8VSpace",
+            "PAddr",
+            "PagePermissions",
+            "VAddr",
+            "pageTableWalkPerms"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ARMv8VSpace.hwLookupAddr",
+          "line": 122,
+          "called": [
+            "ARMv8VSpace",
+            "PAddr",
+            "VAddr",
+            "hwLookupPage"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fromPagePermissions",
+          "line": 130,
+          "called": [
+            "PageAttributes",
+            "PagePermissions"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ensureTable",
+          "line": 145,
+          "called": [
+            "BumpAllocator",
+            "Memory",
+            "PAddr",
+            "PageTableLevel",
+            "allocate",
+            "mem",
+            "none",
+            "readDescriptor",
+            "writeDescriptor",
+            "zeroPage"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ARMv8VSpace.mapPage",
+          "line": 162,
+          "called": [
+            "ARMv8VSpace",
+            "PAddr",
+            "PagePermissions",
+            "VAddr",
+            "ensureTable",
+            "fromPagePermissions",
+            "l0Index",
+            "l1Index",
+            "l2Index",
+            "l3Index",
+            "none",
+            "writeDescriptor"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ARMv8VSpace.unmapPage",
+          "line": 189,
+          "called": [
+            "ARMv8VSpace",
+            "VAddr",
+            "l0Index",
+            "l1Index",
+            "l2Index",
+            "l3Index",
+            "none",
+            "readDescriptor",
+            "writeDescriptor"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ARMv8VSpace.mapPage_preserves_asid",
+          "line": 213,
+          "called": [
+            "ARMv8VSpace",
+            "PAddr",
+            "PagePermissions",
+            "VAddr",
+            "mapPage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ARMv8VSpace.unmapPage_preserves_asid",
+          "line": 228,
+          "called": [
+            "ARMv8VSpace",
+            "VAddr",
+            "unmapPage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ARMv8VSpace.mapPage_shadow_eq",
+          "line": 238,
+          "called": [
+            "ARMv8VSpace",
+            "PAddr",
+            "PagePermissions",
+            "VAddr",
+            "mapPage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ARMv8VSpace.unmapPage_shadow_eq",
+          "line": 256,
+          "called": [
+            "ARMv8VSpace",
+            "VAddr",
+            "unmapPage"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "armv8VSpaceBackend",
+          "line": 277,
+          "called": [
+            "ARMv8VSpace",
+            "ARMv8VSpace.mapPage_preserves_asid",
+            "ARMv8VSpace.mapPage_shadow_eq",
+            "ARMv8VSpace.unmapPage_preserves_asid",
+            "ARMv8VSpace.unmapPage_shadow_eq",
+            "RHTable.invExtK_invExt",
+            "VSpaceBackend",
+            "invExtK",
+            "lookup",
+            "lookupAddr",
+            "lookup_mapPage_eq",
+            "lookup_mapPage_ne",
+            "lookup_unmapPage_eq_none",
+            "lookup_unmapPage_ne",
+            "mapPage",
+            "mapPage_preserves_asid",
+            "unmapPage",
+            "unmapPage_preserves_asid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "simulationRelation",
+          "line": 326,
+          "called": [
+            "ARMv8VSpace",
+            "hwLookupPage",
+            "lookup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "hwLookupPage_refines",
+          "line": 330,
+          "called": [
+            "ARMv8VSpace",
+            "VAddr",
+            "hwLookupPage",
+            "lookup",
+            "simulationRelation"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "hwLookupAddr_refines",
+          "line": 335,
+          "called": [
+            "ARMv8VSpace",
+            "ARMv8VSpace.hwLookupAddr",
+            "VAddr",
+            "hwLookupAddr",
+            "lookupAddr",
+            "simulationRelation"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceProperty_transfer",
+          "line": 342,
+          "called": [
+            "ARMv8VSpace",
+            "PAddr",
+            "PagePermissions",
+            "VAddr",
+            "hwLookupPage",
+            "lookup",
+            "simulationRelation"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Architecture.VSpaceBackend",
       "path": "SeLe4n/Kernel/Architecture/VSpaceBackend.lean",
       "declaration_count": 3,
@@ -5171,8 +6190,10 @@
             "VAddr",
             "lookupAddr",
             "mapPage",
+            "mapPage_preserves_asid",
             "none",
-            "unmapPage"
+            "unmapPage",
+            "unmapPage_preserves_asid"
           ]
         },
         {
@@ -5192,8 +6213,10 @@
             "lookup_unmapPage_ne",
             "mapPage",
             "mapPage_asid_eq",
+            "mapPage_preserves_asid",
             "unmapPage",
-            "unmapPage_asid_eq"
+            "unmapPage_asid_eq",
+            "unmapPage_preserves_asid"
           ]
         }
       ]
@@ -49943,6 +50966,7 @@
             "config",
             "foldIrqs",
             "foldObjects",
+            "initial",
             "mkEmptyIntermediateState"
           ]
         },
