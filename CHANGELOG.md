@@ -13,6 +13,7 @@ cargo clippy: zero warnings). Zero sorry/axiom.
 - **DomainId comment**: Clarified `DomainId::MAX_VALID = 255` in `sele4n-types/src/identifiers.rs` is a type-level bound (seL4 8-bit domain space), distinct from the ABI-level `MAX_DOMAIN = 15` enforced by `sele4n-abi`
 - Conformance test `ag2b_sys_sched_context_module_exports` updated to verify `&mut IpcBuffer` in function signature
 - GitBook chapter 15: Added IPC buffer overflow documentation for 5-register syscalls
+- **CI fix**: Reverted `is_multiple_of()` in `tcb.rs` to `% != 0` with `#[allow(clippy::manual_is_multiple_of)]` — `u64::is_multiple_of()` requires Rust 1.87+ but CI pins toolchain 1.82.0
 
 ---
 
@@ -29,7 +30,7 @@ Zero sorry/axiom.
 - **AG2-A** (R-05): Fixed `MAX_DOMAIN` constant from 255 to 15 in `sele4n-abi/src/args/sched_context.rs` — now matches Lean `numDomainsVal = 16` (zero-indexed 0..=15). Domain values 16-255 previously accepted by Rust ABI but rejected by kernel with `invalidArgument`. Updated decode boundary validation, 2 existing unit tests, 2 existing conformance tests, and added 4 new AG2-A conformance tests (boundary validation, exhaustive valid/invalid domain coverage)
 - **AG2-B** (R-01): Created `rust/sele4n-sys/src/sched_context.rs` with 3 typed wrapper functions (`sched_context_configure`, `sched_context_bind`, `sched_context_unbind`) for syscalls 17-19 — completes sele4n-sys coverage for all 25 syscalls. `sched_context_configure` correctly writes the 5th parameter (domain) to the IPC buffer overflow slot via `buf.set_mr(4, encoded[4])`, matching the `service_register` pattern for 5-register syscalls. Module registered in `sele4n-sys/src/lib.rs`. AG2-B conformance test verifies function signature exports
 - **AG2-C** (RUST-04): Synchronized Rust workspace version from `0.25.6` to `0.26.1` in `rust/Cargo.toml` — now tracks Lean `lakefile.toml` version. Added version-tracking comment
-- **Bonus**: Fixed pre-existing clippy warning in `sele4n-abi/src/args/tcb.rs:123` — replaced manual `% != 0` with `.is_multiple_of()` per Rust 1.94 idiom
+- **Bonus**: Suppressed `manual_is_multiple_of` clippy lint in `sele4n-abi/src/args/tcb.rs:123` via `#[allow]` — `u64::is_multiple_of()` requires Rust 1.87+ but CI pins 1.82.0
 
 ### Metrics
 

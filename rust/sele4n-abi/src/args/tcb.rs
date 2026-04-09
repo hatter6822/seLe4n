@@ -118,9 +118,11 @@ impl SetIPCBufferArgs {
 
     /// Decode from message registers. Requires 1 register.
     /// Validates alignment to `IPC_BUFFER_ALIGNMENT` (512 bytes).
+    // CI pins Rust 1.82.0 where `u64::is_multiple_of` is unstable.
+    #[allow(clippy::manual_is_multiple_of)]
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        if !regs[0].is_multiple_of(IPC_BUFFER_ALIGNMENT) {
+        if regs[0] % IPC_BUFFER_ALIGNMENT != 0 {
             return Err(KernelError::AlignmentError);
         }
         Ok(Self { buffer_addr: regs[0] })
