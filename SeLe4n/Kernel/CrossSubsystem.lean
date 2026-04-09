@@ -1437,6 +1437,7 @@ operations that grow `objectIndex` (new object creation).
 | vspaceMapPage | A | ✓ | ✓ |
 | vspaceUnmapPage | A | ✓ | ✓ |
 | setIPCBufferOp | A | ✓ | ✓ |
+| handleInterrupt | A | ✓ | ✓ |
 | lifecycleRetypeObject | B | ✓ | grows |
 | lifecycleRetypeWithCleanup | B | ✓ | grows |
 | retypeFromUntyped | B | ✓ | grows |

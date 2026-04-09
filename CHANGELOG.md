@@ -61,7 +61,10 @@ Gate: `cargo test --workspace` (288 tests) + `cargo clippy --workspace`
   `restoreIncomingContext_preserves_interruptsEnabled`,
   `setCurrentThread_preserves_interruptsEnabled`,
   `interruptDispatchSequence_preserves_interruptsEnabled_spurious`,
-  `handleInterrupt_timer_eq_timerTick`
+  `chooseThread_preserves_interruptsEnabled`,
+  `schedule_preserves_interruptsEnabled`,
+  `timerTick_preserves_interruptsEnabled`,
+  `handleInterrupt_timer_preserves_interruptsEnabled`
 
 ### Metrics
 

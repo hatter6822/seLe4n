@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-ag5-interrupts-timer-OgW16",
-      "commit_sha": "921f56a85de5d84116581453601fa44e7894d57a",
-      "tree_sha": "d7edbace8dc5e17b86a17ef112fddc946bdd90d0",
-      "committed_at_utc": "2026-04-09T19:04:23+00:00"
+      "commit_sha": "3ae9b9055375de791d323c82a66f43a995406f90",
+      "tree_sha": "e2f3d612b203d2e9027dcb1c659b37fd68def877",
+      "committed_at_utc": "2026-04-09T19:08:33+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0c7ba05068ab9c51f6db0db1b911d9e4b6609b0dee62f4040de5cabf609bd6ec"
+    "source_digest": "3d6594fe93f4dc59e0da8d0cbb509cae7018e809559fca259ce386b7175753bb"
   },
   "summary": {
     "module_count": 152,
@@ -27,7 +27,7 @@
     "version": "0.27.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 136,
-    "production_loc": 88666,
+    "production_loc": 88667,
     "test_files": 16,
     "test_loc": 11374,
     "proved_theorem_lemma_decls": 2643,
@@ -10543,7 +10543,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_change_bridge",
-          "line": 1468,
+          "line": 1469,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10562,7 +10562,7 @@
         {
           "kind": "theorem",
           "name": "ipcSend_crossSubsystemInvariant_bridge",
-          "line": 1500,
+          "line": 1501,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10579,7 +10579,7 @@
         {
           "kind": "theorem",
           "name": "ipcReceive_crossSubsystemInvariant_bridge",
-          "line": 1523,
+          "line": 1524,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10596,7 +10596,7 @@
         {
           "kind": "theorem",
           "name": "ipcReply_crossSubsystemInvariant_bridge",
-          "line": 1546,
+          "line": 1547,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10613,7 +10613,7 @@
         {
           "kind": "theorem",
           "name": "ipcCall_crossSubsystemInvariant_bridge",
-          "line": 1570,
+          "line": 1571,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10630,7 +10630,7 @@
         {
           "kind": "theorem",
           "name": "ipcReplyRecv_crossSubsystemInvariant_bridge",
-          "line": 1594,
+          "line": 1595,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10647,7 +10647,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_crossSubsystemInvariant_bridge",
-          "line": 1618,
+          "line": 1619,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10664,7 +10664,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_crossSubsystemInvariant_bridge",
-          "line": 1642,
+          "line": 1643,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10681,7 +10681,7 @@
         {
           "kind": "theorem",
           "name": "schedule_crossSubsystemInvariant_bridge",
-          "line": 1671,
+          "line": 1672,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10698,7 +10698,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_crossSubsystemInvariant_bridge",
-          "line": 1695,
+          "line": 1696,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10715,7 +10715,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_crossSubsystemInvariant_bridge",
-          "line": 1718,
+          "line": 1719,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10732,7 +10732,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_crossSubsystemInvariant_bridge",
-          "line": 1741,
+          "line": 1742,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10749,7 +10749,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_crossSubsystemInvariant_bridge",
-          "line": 1764,
+          "line": 1765,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10766,7 +10766,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_crossSubsystemInvariant_bridge",
-          "line": 1789,
+          "line": 1790,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10783,7 +10783,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_crossSubsystemInvariant_bridge",
-          "line": 1813,
+          "line": 1814,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10800,7 +10800,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_retype_bridge",
-          "line": 1839,
+          "line": 1840,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10819,7 +10819,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMint_crossSubsystemInvariant_bridge",
-          "line": 1871,
+          "line": 1872,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10836,7 +10836,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_crossSubsystemInvariant_bridge",
-          "line": 1892,
+          "line": 1893,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10853,7 +10853,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_crossSubsystemInvariant_bridge",
-          "line": 1913,
+          "line": 1914,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10870,7 +10870,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_crossSubsystemInvariant_bridge",
-          "line": 1933,
+          "line": 1934,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10887,7 +10887,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_crossSubsystemInvariant_bridge",
-          "line": 1953,
+          "line": 1954,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10904,7 +10904,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_crossSubsystemInvariant_bridge",
-          "line": 1973,
+          "line": 1974,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10921,7 +10921,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_crossSubsystemInvariant_bridge",
-          "line": 1994,
+          "line": 1995,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10938,7 +10938,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_crossSubsystemInvariant_bridge",
-          "line": 2019,
+          "line": 2020,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10955,7 +10955,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_crossSubsystemInvariant_bridge",
-          "line": 2041,
+          "line": 2042,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10972,7 +10972,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_crossSubsystemInvariant_bridge",
-          "line": 2062,
+          "line": 2063,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10989,7 +10989,7 @@
         {
           "kind": "theorem",
           "name": "schedContextYieldTo_crossSubsystemInvariant_bridge",
-          "line": 2084,
+          "line": 2085,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11006,7 +11006,7 @@
         {
           "kind": "theorem",
           "name": "setPriority_crossSubsystemInvariant_bridge",
-          "line": 2110,
+          "line": 2111,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11023,7 +11023,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriority_crossSubsystemInvariant_bridge",
-          "line": 2132,
+          "line": 2133,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11040,7 +11040,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_crossSubsystemInvariant_bridge",
-          "line": 2158,
+          "line": 2159,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11057,7 +11057,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_crossSubsystemInvariant_bridge",
-          "line": 2179,
+          "line": 2180,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11074,7 +11074,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBuffer_crossSubsystemInvariant_bridge",
-          "line": 2207,
+          "line": 2208,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11091,7 +11091,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetype_crossSubsystemInvariant_bridge",
-          "line": 2233,
+          "line": 2234,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11108,7 +11108,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge",
-          "line": 2255,
+          "line": 2256,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11125,7 +11125,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_crossSubsystemInvariant_bridge",
-          "line": 2277,
+          "line": 2278,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -11142,7 +11142,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_crossSubsystemInvariant_bridge",
-          "line": 2309,
+          "line": 2310,
           "called": [
             "Kernel",
             "SystemState",
