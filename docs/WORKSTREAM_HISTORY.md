@@ -32,9 +32,11 @@ WS-AD Phase AD3 complete.
 WS-AD Phase AD4 complete. Phase AD5 complete. **WS-AD PORTFOLIO COMPLETE.**
 WS-AE Phase AE1 complete. Phase AE2 complete. Phase AE3 complete. Phase AE4 complete. Phase AE5 complete. Phase AE6 complete. **WS-AE PORTFOLIO COMPLETE.**
 WS-AF Phase AF1 complete. Phase AF2 complete. Phase AF3 complete. Phase AF4 complete. Phase AF5 complete. Phase AF6 complete. **WS-AF PORTFOLIO COMPLETE.**
-WS-AG Phase AG1 complete. Phase AG2 complete.
+WS-AG Phase AG1 complete. Phase AG2 complete. Phase AG2 Audit complete.
 
 ### WS-AG: H3 Hardware Binding Audit Remediation (IN PROGRESS)
+
+- **Phase AG2 Audit COMPLETE** (v0.26.2): Post-implementation audit of AG2. Fixed critical `sched_context_configure` IPC buffer overflow bug — the 5th parameter (domain) was never written to the IPC buffer overflow slot; on ARM64 hardware, the kernel's `requireMsgReg decoded.msgRegs 4` would read a stale/zero value. Added `&mut IpcBuffer` parameter and `buf.set_mr(4, encoded[4])?` matching the `service_register` pattern. Clarified `DomainId::MAX_VALID = 255` type-level vs ABI-level distinction. Corrected CHANGELOG AG2-C version text (0.26.0→0.26.1). Updated conformance test signature. Gate: `cargo test --workspace` (239 tests), `cargo clippy --workspace` (0 warnings). Zero sorry/axiom.
 
 - **Phase AG2 COMPLETE** (v0.26.1): Pre-Hardware Rust ABI Fixes — 3 sub-tasks (AG2-A through AG2-C). AG2-A (R-05): Fixed `MAX_DOMAIN` constant from 255 to 15 in `sele4n-abi/src/args/sched_context.rs` — now matches Lean `numDomainsVal = 16` (zero-indexed 0..=15); domain values 16-255 previously accepted by Rust ABI decode but rejected by kernel; updated 2 existing unit tests, 2 existing conformance tests, added 4 new AG2-A conformance tests (boundary validation, exhaustive domain coverage). AG2-B (R-01): Created `rust/sele4n-sys/src/sched_context.rs` with 3 typed wrapper functions (`sched_context_configure`, `sched_context_bind`, `sched_context_unbind`) for syscalls 17-19 — completes sele4n-sys coverage for all 25 syscalls; module registered in `sele4n-sys/src/lib.rs`; AG2-B conformance test verifies function signature exports. AG2-C (RUST-04): Synchronized Rust workspace version from `0.25.6` to `0.26.0` in `rust/Cargo.toml` — now tracks Lean `lakefile.toml` version; added version-tracking comment. Bonus: fixed pre-existing clippy `manual_is_multiple_of` warning in `tcb.rs`. Gate: `cargo test --workspace` (239 tests), `cargo clippy --workspace` (0 warnings). Zero sorry/axiom.
 

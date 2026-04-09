@@ -1,3 +1,21 @@
+## v0.26.2 — WS-AG Phase AG2 Audit: IPC Buffer Correctness Fix
+
+Post-implementation audit of Phase AG2. Found and fixed a critical correctness
+bug in `sched_context_configure`: the 5th parameter (domain) was never written
+to the IPC buffer overflow slot, meaning the kernel would read a stale/zero
+value on real ARM64 hardware. All tests pass (cargo test --workspace: 239 tests,
+cargo clippy: zero warnings). Zero sorry/axiom.
+
+### Changes
+
+- **AG2-B fix**: `sched_context_configure` in `sele4n-sys/src/sched_context.rs` now takes `&mut IpcBuffer` and writes `buf.set_mr(4, encoded[4])?` before `invoke_syscall`, matching the `service_register` pattern for 5-register syscalls. Without this fix, on ARM64 hardware the kernel's `requireMsgReg decoded.msgRegs 4` (SyscallArgDecode.lean:962) would read a stale IPC buffer value for the domain field
+- **AG2-C fix**: Corrected CHANGELOG v0.26.1 entry — AG2-C version sync target was `0.26.1` not `0.26.0`
+- **DomainId comment**: Clarified `DomainId::MAX_VALID = 255` in `sele4n-types/src/identifiers.rs` is a type-level bound (seL4 8-bit domain space), distinct from the ABI-level `MAX_DOMAIN = 15` enforced by `sele4n-abi`
+- Conformance test `ag2b_sys_sched_context_module_exports` updated to verify `&mut IpcBuffer` in function signature
+- GitBook chapter 15: Added IPC buffer overflow documentation for 5-register syscalls
+
+---
+
 ## v0.26.1 — WS-AG Phase AG2: Pre-Hardware Rust ABI Fixes
 
 Phase AG2 of WS-AG H3 Hardware Binding Audit Remediation. Fixes Rust ABI
@@ -10,7 +28,7 @@ Zero sorry/axiom.
 
 - **AG2-A** (R-05): Fixed `MAX_DOMAIN` constant from 255 to 15 in `sele4n-abi/src/args/sched_context.rs` — now matches Lean `numDomainsVal = 16` (zero-indexed 0..=15). Domain values 16-255 previously accepted by Rust ABI but rejected by kernel with `invalidArgument`. Updated decode boundary validation, 2 existing unit tests, 2 existing conformance tests, and added 4 new AG2-A conformance tests (boundary validation, exhaustive valid/invalid domain coverage)
 - **AG2-B** (R-01): Created `rust/sele4n-sys/src/sched_context.rs` with 3 typed wrapper functions (`sched_context_configure`, `sched_context_bind`, `sched_context_unbind`) for syscalls 17-19 — completes sele4n-sys coverage for all 25 syscalls. `sched_context_configure` correctly writes the 5th parameter (domain) to the IPC buffer overflow slot via `buf.set_mr(4, encoded[4])`, matching the `service_register` pattern for 5-register syscalls. Module registered in `sele4n-sys/src/lib.rs`. AG2-B conformance test verifies function signature exports
-- **AG2-C** (RUST-04): Synchronized Rust workspace version from `0.25.6` to `0.26.0` in `rust/Cargo.toml` — now tracks Lean `lakefile.toml` version. Added version-tracking comment
+- **AG2-C** (RUST-04): Synchronized Rust workspace version from `0.25.6` to `0.26.1` in `rust/Cargo.toml` — now tracks Lean `lakefile.toml` version. Added version-tracking comment
 - **Bonus**: Fixed pre-existing clippy warning in `sele4n-abi/src/args/tcb.rs:123` — replaced manual `% != 0` with `.is_multiple_of()` per Rust 1.94 idiom
 
 ### Metrics

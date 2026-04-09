@@ -125,8 +125,10 @@ impl DomainId {
     #[inline]
     pub const fn raw(&self) -> u64 { self.0 }
 
-    /// V1-H (M-RS-7): seL4 uses 8-bit domain IDs (256 domains max).
-    /// Lean: `numDomains` is bounded. Values ≥ 256 are invalid.
+    /// V1-H (M-RS-7): Type-level maximum — seL4 uses 8-bit domain IDs (256 max).
+    /// Values ≥ 256 are invalid at the type level. Note: the seLe4n kernel
+    /// enforces a stricter ABI-level limit of `MAX_DOMAIN = 15` (Lean
+    /// `numDomainsVal = 16`) in `sele4n-abi::args::sched_context`.
     pub const MAX_VALID: u64 = 255;
 
     /// Returns `true` if this domain ID exceeds the valid range.
