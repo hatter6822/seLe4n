@@ -1,4 +1,4 @@
-## v0.27.0 — WS-AG Phase AG5: Interrupts + Timer
+## v0.26.6 — WS-AG Phase AG5: Interrupts + Timer
 
 Phase AG5 of WS-AG H3 Hardware Binding Audit Remediation. Full GIC-400
 interrupt controller and ARM Generic Timer bring-up, connecting hardware

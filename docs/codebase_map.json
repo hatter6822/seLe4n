@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-ag5-interrupts-timer-OgW16",
-      "commit_sha": "3ae9b9055375de791d323c82a66f43a995406f90",
-      "tree_sha": "e2f3d612b203d2e9027dcb1c659b37fd68def877",
-      "committed_at_utc": "2026-04-09T19:08:33+00:00"
+      "commit_sha": "27cca3cd6d6de2de8e5abbe19052675e1b87d399",
+      "tree_sha": "74ec9864ff17e606b3452d043a40d76d34f52d5d",
+      "committed_at_utc": "2026-04-09T19:21:59+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 4761
   },
   "readme_sync": {
-    "version": "0.27.0",
+    "version": "0.26.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 136,
     "production_loc": 88667,
