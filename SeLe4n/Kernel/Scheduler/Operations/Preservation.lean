@@ -2668,6 +2668,7 @@ private theorem schedule_preserves_contextMatchesCurrent
               have ⟨tcb', hTcb'⟩ := saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hObj hObjInvC
               -- restoreIncomingContext reads from stDequeued.objects = (saveOutgoingContext stChoose).objects
               simp only [restoreIncomingContext, hTcb']
+              exact RegisterFile.beq_self _
             · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
                   tcb.domain = stChoose.scheduler.activeDomain) := by
                 simpa [RunQueue.mem_iff_contains] using hOk

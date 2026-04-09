@@ -65,7 +65,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     vspaceInvariantBundle st ∧
     crossSubsystemInvariant st ∧
     tlbConsistent st st.tlb ∧
-    schedulerInvariantBundleExtended st
+    schedulerInvariantBundleExtended st ∧
+    notificationWaiterConsistent st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -264,6 +265,7 @@ theorem contextSwitchState_preserves_contextMatchesCurrent
     (hRegs : newRegs = tcb.registerContext) :
     contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
   simp [contextMatchesCurrent, contextSwitchState, hLookup, hRegs]
+  exact RegisterFile.beq_self _
 
 /-- X1-G: Context-switch preserves `currentThreadValid` when the target
     thread has a valid TCB in the object store. -/
@@ -463,7 +465,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -509,6 +511,8 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_schedContextsWellFormed, default_replenishQueueValid,
            default_schedContextBindingConsistent, default_effectiveParamsMatchRunQueue,
            default_boundThreadDomainConsistent⟩
+  -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
+  · intro oid _ _ hObj; exact default_objects_absurd hObj
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -705,10 +709,10 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
     proofLayerInvariantBundle (advanceTimerState ticks st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt⟩
+         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, by exact hNWC⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,
@@ -734,6 +738,333 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
            PriorityInheritance.blockingAcyclic_frame st (advanceTimerState ticks st) h9
              (fun _ => by simp [PriorityInheritance.blockingServer, advanceTimerState])
              (by simp [advanceTimerState])⟩
+
+-- ============================================================================
+-- AG7-D: writeRegisterState preserves proofLayerInvariantBundle
+-- ============================================================================
+
+private theorem writeRegisterState_preserves_capabilityInvariantBundle
+    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (hCap : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (writeRegisterState reg value st) := by
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hCap
+  exact ⟨by exact h1, by exact h2, by exact h3,
+         by exact h4, by exact h5, by exact h6⟩
+
+private theorem writeRegisterState_preserves_ipcInvariantFull
+    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (hIpc : ipcInvariantFull st) :
+    ipcInvariantFull (writeRegisterState reg value st) := by
+  have hObjs : (writeRegisterState reg value st).objects = st.objects := rfl
+  have hLk : ∀ (x : SeLe4n.ObjId),
+      (writeRegisterState reg value st).objects[x]? = st.objects[x]? := fun x => congrArg (·.get? x) hObjs
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · obtain ⟨hEp, hLink, hAcyc⟩ := h2
+    exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
+           ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
+              fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
+            fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp
+              fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
+           fun tid hp => hAcyc tid (writeRegState_transportPath hObjs hp)⟩
+  · intro tid tcb hObj; exact h5 tid tcb (hObjs ▸ hObj)
+  · intro oid ep hObj; rw [hLk] at hObj; exact h6 oid ep hObj
+  · exact ipcStateQueueMembershipConsistent_of_objects_eq st _ hLk h7
+  · intro a b tcbA tcbB hA hB hN; exact h8 a b tcbA tcbB (hObjs ▸ hA) (hObjs ▸ hB) hN
+  · intro epId ep hd tcb hEp hTcb; exact h9 epId ep hd tcb (hObjs ▸ hEp) (hObjs ▸ hTcb)
+  · intro tid tcb scId hObj hTimeout; exact h10 tid tcb scId (hObjs ▸ hObj) hTimeout
+  · intro t1 t2 tc1 tc2 s1 s2 h1O h2O hB1 hB2
+    exact h11 t1 t2 tc1 tc2 s1 s2 (hObjs ▸ h1O) (hObjs ▸ h2O) hB1 hB2
+  · intro tid tcb scId owner hObj hBinding
+    have ⟨hSc, hOwner⟩ := h12 tid tcb scId owner (hObjs ▸ hObj) hBinding
+    exact ⟨hSc.imp fun sc hSc => hObjs ▸ hSc, hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
+  · intro tid tcb hObj hUnbound hNotInRQ hNotCurr; exact h13 tid tcb (hObjs ▸ hObj) hUnbound hNotInRQ hNotCurr
+  · intro t1 t2 tc1 tc2 scId h1O h2O hNe hB1 hB2
+    exact h14 t1 t2 tc1 tc2 scId (hObjs ▸ h1O) (hObjs ▸ h2O) hNe hB1 hB2
+  · intro oid ntfn hObj; exact h15 oid ntfn (hObjs ▸ hObj)
+  where
+    writeRegState_transportPath {a b : SeLe4n.ThreadId}
+        (hObjs : (writeRegisterState reg value st).objects = st.objects)
+        (hp : QueueNextPath (writeRegisterState reg value st) a b) :
+        QueueNextPath st a b :=
+      match hp with
+      | .single _ _ tcb hObj hN => .single _ _ tcb (hObjs ▸ hObj) hN
+      | .cons _ _ _ tcb hObj hN tail => .cons _ _ _ tcb (hObjs ▸ hObj) hN (writeRegState_transportPath hObjs tail)
+
+/-- AG7-D: Register writes preserve the full `proofLayerInvariantBundle` when
+    `contextMatchesCurrent` holds for the post-state.
+
+    `writeRegisterState` only modifies `machine.regs`. All other system state
+    fields (objects, scheduler, services, lifecycle, etc.) are definitionally
+    unchanged. The only non-trivial predicate is `contextMatchesCurrent`, which
+    compares `machine.regs` with the current TCB's `registerContext`. This is
+    provided as a hypothesis — the RPi5 production contract validates it via
+    `registerContextStablePred`. -/
+theorem writeRegisterState_preserves_proofLayerInvariantBundle
+    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (hInv : proofLayerInvariantBundle st)
+    (hCtx : contextMatchesCurrent (writeRegisterState reg value st)) :
+    proofLayerInvariantBundle (writeRegisterState reg value st) := by
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  -- writeRegisterState only changes machine.regs — establish definitional equalities
+  have hEq : writeRegisterState reg value st =
+      { st with machine := { st.machine with regs := SeLe4n.writeReg st.machine.regs reg value } } :=
+    rfl
+  -- Most predicates transfer via `by exact` since objects/scheduler/services are unchanged
+  -- at the struct level; others need the rewrite for Lean to see through the record update
+  refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
+         writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
+         ?_, by exact hTlb, ?_, by exact hNWC⟩
+  -- schedulerInvariantBundleFull: swap contextMatchesCurrent
+  · obtain ⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩ := hSched
+    exact ⟨hBase, hTs, hCts, hEdf, hCtx, hRunn, hPri, hDom, hDomE⟩
+  -- capabilityInvariantBundle
+  · exact writeRegisterState_preserves_capabilityInvariantBundle reg value st hCap
+  -- coreIpcInvariantBundle
+  · obtain ⟨hS, hC, hI⟩ := hIpc
+    exact ⟨by exact hS,
+           writeRegisterState_preserves_capabilityInvariantBundle reg value st hC,
+           writeRegisterState_preserves_ipcInvariantFull reg value st hI⟩
+  -- ipcSchedulerCouplingInvariantBundle: swap contextMatchesCurrent
+  · obtain ⟨⟨hS, hC, hI⟩, hCoh, _, hDeq⟩ := hCoupling
+    exact ⟨⟨by exact hS,
+            writeRegisterState_preserves_capabilityInvariantBundle reg value st hC,
+            writeRegisterState_preserves_ipcInvariantFull reg value st hI⟩,
+           by exact hCoh, hCtx, by exact hDeq⟩
+  -- serviceLifecycleCapabilityInvariantBundle
+  · obtain ⟨hP, hL, hC, hR⟩ := hSvc
+    exact ⟨by exact hP, by exact hL,
+           writeRegisterState_preserves_capabilityInvariantBundle reg value st hC,
+           by exact hR⟩
+  -- crossSubsystemInvariant: objects/scheduler/services unchanged
+  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hCross
+    have hSvcEq : (writeRegisterState reg value st).services = st.services := rfl
+    refine ⟨by exact h1, by exact h1i, by exact h2, by exact h3, by exact h4, ?_,
+           by exact h6, by exact h7, by exact h8, ?_⟩
+    -- serviceGraphInvariant
+    · obtain ⟨hAcyc, hBound⟩ := h5
+      exact ⟨fun a hPath => hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath),
+             hBound⟩
+    -- blockingAcyclic
+    · exact PriorityInheritance.blockingAcyclic_frame st (writeRegisterState reg value st) h9
+        (fun _ => by simp [PriorityInheritance.blockingServer, writeRegisterState])
+        (by simp [writeRegisterState])
+  -- schedulerInvariantBundleExtended: swap contextMatchesCurrent in inner Full
+  · obtain ⟨⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩,
+            hBud, hCBud, hWf, hRq, hBind, hEff, hBound⟩ := hExt
+    exact ⟨⟨by exact hBase, by exact hTs, by exact hCts, by exact hEdf, hCtx,
+            by exact hRunn, by exact hPri, by exact hDom, by exact hDomE⟩,
+           by exact hBud, by exact hCBud, by exact hWf, by exact hRq,
+           by exact hBind, by exact hEff, by exact hBound⟩
+
+-- ============================================================================
+-- AG7-D: contextSwitchState helpers
+-- ============================================================================
+
+/-- AG7-D: `ipcInvariantFull` is preserved through `contextSwitchState`.
+    All 15 conjuncts depend only on `st.objects` except `passiveServerIdle`
+    which also references `scheduler.current` and `scheduler.runQueue`.
+    `passiveServerIdle` transfers because the old current thread (if any) has
+    `ipcState = .ready` (from `currentThreadIpcReady`), satisfying the
+    conclusion directly. -/
+private theorem contextSwitchState_preserves_ipcInvariantFull
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SystemState)
+    (hIpc : ipcInvariantFull st)
+    (hCurIpc : currentThreadIpcReady st) :
+    ipcInvariantFull (contextSwitchState newTid newRegs st) := by
+  have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
+  have hLk : ∀ (x : SeLe4n.ObjId),
+      (contextSwitchState newTid newRegs st).objects[x]? = st.objects[x]? :=
+    fun x => congrArg (·.get? x) hObjs
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · obtain ⟨hEp, hLink, hAcyc⟩ := h2
+    exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
+           ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
+              fun tcbB ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩,
+            fun b tcbB hB a hP => (hLink.2 b tcbB (hObjs ▸ hB) a hP).imp
+              fun tcbA ⟨h1, h2⟩ => ⟨hObjs ▸ h1, h2⟩⟩,
+           fun tid hp => hAcyc tid (ctxSwitch_transportPath hObjs hp)⟩
+  · intro tid tcb hObj; exact h5 tid tcb (hObjs ▸ hObj)
+  · intro oid ep hObj; rw [hLk] at hObj; exact h6 oid ep hObj
+  · exact ipcStateQueueMembershipConsistent_of_objects_eq st _ hLk h7
+  · intro a b tcbA tcbB hA hB hN; exact h8 a b tcbA tcbB (hObjs ▸ hA) (hObjs ▸ hB) hN
+  · intro epId ep hd tcb hEp hTcb; exact h9 epId ep hd tcb (hObjs ▸ hEp) (hObjs ▸ hTcb)
+  · intro tid tcb scId hObj hTimeout; exact h10 tid tcb scId (hObjs ▸ hObj) hTimeout
+  · intro t1 t2 tc1 tc2 s1 s2 h1O h2O hB1 hB2
+    exact h11 t1 t2 tc1 tc2 s1 s2 (hObjs ▸ h1O) (hObjs ▸ h2O) hB1 hB2
+  · intro tid tcb scId owner hObj hBinding
+    have ⟨hSc, hOwner⟩ := h12 tid tcb scId owner (hObjs ▸ hObj) hBinding
+    exact ⟨hSc.imp fun sc hSc => hObjs ▸ hSc,
+           hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
+  -- passiveServerIdle: scheduler.current changes from old to some newTid
+  · intro tid tcb hObj hUnbound hNotInRQ hNotCurr
+    -- hNotCurr : (contextSwitchState ...).scheduler.current ≠ some tid
+    -- i.e., some newTid ≠ some tid
+    -- Case split on whether tid was the old current thread
+    by_cases hOld : st.scheduler.current = some tid
+    · -- tid was old current; currentThreadIpcReady gives ipcState = .ready
+      simp [currentThreadIpcReady, hOld] at hCurIpc
+      exact Or.inl (hCurIpc tcb (hObjs ▸ hObj))
+    · -- tid was not old current; transfer from pre-state passiveServerIdle
+      exact h13 tid tcb (hObjs ▸ hObj) hUnbound hNotInRQ hOld
+  · intro t1 t2 tc1 tc2 scId h1O h2O hNe hB1 hB2
+    exact h14 t1 t2 tc1 tc2 scId (hObjs ▸ h1O) (hObjs ▸ h2O) hNe hB1 hB2
+  · intro oid ntfn hObj; exact h15 oid ntfn (hObjs ▸ hObj)
+  where
+    ctxSwitch_transportPath {a b : SeLe4n.ThreadId}
+        (hObjs : (contextSwitchState newTid newRegs st).objects = st.objects)
+        (hp : QueueNextPath (contextSwitchState newTid newRegs st) a b) :
+        QueueNextPath st a b :=
+      match hp with
+      | .single _ _ tcb hObj hN => .single _ _ tcb (hObjs ▸ hObj) hN
+      | .cons _ _ _ tcb hObj hN tail =>
+        .cons _ _ _ tcb (hObjs ▸ hObj) hN (ctxSwitch_transportPath hObjs tail)
+
+-- ============================================================================
+-- AG7-D: contextSwitchState preserves proofLayerInvariantBundle
+-- ============================================================================
+
+/-- AG7-D: Context switch preserves the full `proofLayerInvariantBundle` when
+    the target thread satisfies all current-thread predicates.
+
+    `contextSwitchState` atomically sets `scheduler.current := some newTid`
+    and `machine.regs := newRegs`. All other fields (objects, runnable queue,
+    services, lifecycle, etc.) are unchanged. Current-thread-dependent predicates
+    are re-established from the explicit hypotheses; all other predicates are
+    preserved by frame reasoning (unchanged fields).
+
+    The hypotheses correspond to what the RPi5 production runtime contract
+    (`registerContextStableCheck`) validates:
+    1. TCB lookup for the new thread
+    2. Register match (newRegs = tcb.registerContext)
+    3. Not in runnable queue (dequeue-on-dispatch)
+    4. Time-slice positivity
+    5. IPC readiness (ipcState = .ready)
+    6. EDF compatibility (deadline = 0)
+    7. Budget sufficiency -/
+theorem contextSwitchState_preserves_proofLayerInvariantBundle
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SystemState)
+    (tcb : TCB)
+    (hInv : proofLayerInvariantBundle st)
+    (hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb))
+    (hRegs : (newRegs == tcb.registerContext) = true)
+    (hNotRunnable : newTid ∉ st.scheduler.runnable)
+    (hTimeSlice : tcb.timeSlice > 0)
+    (hIpcReady : tcb.ipcState = .ready)
+    (hDeadline : tcb.deadline.toNat = 0)
+    (hBudgetPost : currentBudgetPositive (contextSwitchState newTid newRegs st)) :
+    proofLayerInvariantBundle (contextSwitchState newTid newRegs st) := by
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  -- contextSwitchState changes machine.regs and scheduler.current; objects unchanged
+  have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
+  -- Extract currentThreadIpcReady from the coupling bundle (needed for passiveServerIdle)
+  have hCurIpcReady : currentThreadIpcReady st := hCoupling.2.2.2.1
+  -- contextMatchesCurrent for the post-state: directly from BEq hypothesis
+  have hCtxPost : contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
+    simp [contextMatchesCurrent, contextSwitchState, hLookup]; exact hRegs
+  -- currentThreadValid for the post-state
+  have hValidPost : currentThreadValid (contextSwitchState newTid newRegs st) :=
+    contextSwitchState_preserves_currentThreadValid st newTid newRegs tcb hLookup
+  -- currentNotEndpointQueueHead: ipcState = .ready contradicts queueHeadBlockedConsistent
+  have hIpcFull := hIpc.2.2
+  have hQHBC : queueHeadBlockedConsistent st := hIpcFull.2.2.2.2.2.2.2.2.1
+  have hNotEpHead : currentNotEndpointQueueHead (contextSwitchState newTid newRegs st) := by
+    show currentNotEndpointQueueHead { st with machine := _, scheduler := _ }
+    unfold currentNotEndpointQueueHead; simp
+    intro oid ep hObj
+    have ⟨hRecv, hSend⟩ := hQHBC oid ep newTid tcb hObj hLookup
+    constructor
+    · intro hH; have := hRecv hH; rw [hIpcReady] at this; exact absurd this (by simp)
+    · intro hH; have := hSend hH
+      rcases this with h | h <;> { rw [hIpcReady] at h; exact absurd h (by simp) }
+  -- currentNotOnNotificationWaitList: ipcState = .ready + notificationWaiterConsistent
+  have hNotNtfnWait : currentNotOnNotificationWaitList
+      (contextSwitchState newTid newRegs st) := by
+    show currentNotOnNotificationWaitList { st with machine := _, scheduler := _ }
+    unfold currentNotOnNotificationWaitList; simp
+    intro oid ntfn hObj
+    exact not_mem_waitingThreads_of_ipcState_ne st oid ntfn newTid tcb hNWC hObj hLookup
+      (by rw [hIpcReady]; simp)
+  -- currentThreadIpcReady for the post-state
+  have hIpcReadyPost : currentThreadIpcReady (contextSwitchState newTid newRegs st) := by
+    show currentThreadIpcReady { st with machine := _, scheduler := _ }
+    unfold currentThreadIpcReady; simp
+    intro tcb' hTcb'; rw [hLookup] at hTcb'; cases hTcb'; exact hIpcReady
+  -- currentTimeSlicePositive for the post-state
+  have hTsPost : currentTimeSlicePositive (contextSwitchState newTid newRegs st) := by
+    show currentTimeSlicePositive { st with machine := _, scheduler := _ }
+    unfold currentTimeSlicePositive; simp; rw [hLookup]; exact hTimeSlice
+  -- edfCurrentHasEarliestDeadline: deadline = 0 → trivially satisfied
+  have hEdfPost : edfCurrentHasEarliestDeadline (contextSwitchState newTid newRegs st) := by
+    show edfCurrentHasEarliestDeadline { st with machine := _, scheduler := _ }
+    unfold edfCurrentHasEarliestDeadline; simp; rw [hLookup]
+    intro tid _
+    cases h : st.objects[tid.toObjId]? with
+    | none => trivial
+    | some obj =>
+      cases obj with
+      | tcb _ => intro _ _; left; exact hDeadline
+      | _ => trivial
+  -- Compose the 11-tuple
+  refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
+         contextSwitchState_preserves_vspaceInvariantBundle newTid newRegs st hVsp,
+         ?_, by exact hTlb, ?_, ?_⟩
+  -- 1. schedulerInvariantBundleFull
+  · obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hSched
+    have hQCC : queueCurrentConsistent
+        { st.scheduler with current := some newTid } := by
+      unfold queueCurrentConsistent; simp; exact hNotRunnable
+    exact ⟨⟨hQCC, hUniq, hValidPost⟩,
+           hTs, hTsPost, hEdfPost, hCtxPost, hRunn, hPri, hDom, hDomE⟩
+  -- 2. capabilityInvariantBundle: objects unchanged
+  · obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hCap
+    exact ⟨by exact h1, by exact h2, by exact h3, by exact h4, by exact h5, by exact h6⟩
+  -- 3. coreIpcInvariantBundle: scheduler base + cap + ipcFull preserved
+  · obtain ⟨⟨_, hUniq, _⟩, hC, hI⟩ := hIpc
+    have hQCC : queueCurrentConsistent
+        { st.scheduler with current := some newTid } := by
+      unfold queueCurrentConsistent; simp; exact hNotRunnable
+    exact ⟨⟨hQCC, hUniq, hValidPost⟩, hC,
+           contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI hCurIpcReady⟩
+  -- 4. ipcSchedulerCouplingInvariantBundle: rebuild with new current-thread predicates
+  · obtain ⟨⟨⟨_, hUniq, _⟩, hC, hI⟩, hCoh, _, _⟩ := hCoupling
+    have hQCC : queueCurrentConsistent
+        { st.scheduler with current := some newTid } := by
+      unfold queueCurrentConsistent; simp; exact hNotRunnable
+    exact ⟨⟨⟨hQCC, hUniq, hValidPost⟩, hC,
+            contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI hCurIpcReady⟩,
+           hCoh, hCtxPost, ⟨hIpcReadyPost, hNotEpHead, hNotNtfnWait⟩⟩
+  -- 6. serviceLifecycleCapabilityInvariantBundle
+  · obtain ⟨hP, hL, hC, hR⟩ := hSvc
+    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hC
+    exact ⟨by exact hP, by exact hL,
+           ⟨by exact h1, by exact h2, by exact h3, by exact h4, by exact h5, by exact h6⟩,
+           by exact hR⟩
+  -- 8. crossSubsystemInvariant: objects/services/serviceRegistry unchanged
+  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hCross
+    have hSvcEq : (contextSwitchState newTid newRegs st).services = st.services := rfl
+    refine ⟨by exact h1, by exact h1i, by exact h2, by exact h3, by exact h4, ?_,
+           by exact h6, by exact h7, by exact h8, ?_⟩
+    -- serviceGraphInvariant
+    · obtain ⟨hAcyc, hBound⟩ := h5
+      exact ⟨fun a hPath => hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath),
+             hBound⟩
+    -- blockingAcyclic
+    · exact PriorityInheritance.blockingAcyclic_frame st (contextSwitchState newTid newRegs st) h9
+        (fun _ => by simp [PriorityInheritance.blockingServer, contextSwitchState])
+        (by simp [contextSwitchState])
+  -- 10. schedulerInvariantBundleExtended: rebuild with new current-thread predicates
+  · obtain ⟨hFull, hBud, _, hWf, hRq, hBind, hEff, hBound⟩ := hExt
+    obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hFull
+    have hQCC : queueCurrentConsistent
+        { st.scheduler with current := some newTid } := by
+      unfold queueCurrentConsistent; simp; exact hNotRunnable
+    exact ⟨⟨⟨hQCC, hUniq, hValidPost⟩,
+            hTs, hTsPost, hEdfPost, hCtxPost, hRunn, hPri, hDom, hDomE⟩,
+           hBud, hBudgetPost, hWf, hRq, hBind, hEff, hBound⟩
+  -- 11. notificationWaiterConsistent: objects unchanged
+  · exact hNWC
 
 -- ============================================================================
 -- WS-J1-D: Register decode consistency predicate

@@ -279,6 +279,13 @@ instance : BEq RegisterFile where
   beq a b := a.pc == b.pc && a.sp == b.sp &&
     (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩
 
+/-- AG7-D: BEq reflexivity for RegisterFile. Although the BEq instance is not
+    lawful in general (due to the function-typed `gpr` field), `a == a = true`
+    holds for any `RegisterFile` because each component comparison (`pc == pc`,
+    `sp == sp`, `gpr ⟨i⟩ == gpr ⟨i⟩`) is reflexive via `RegValue`'s lawful BEq. -/
+theorem RegisterFile.beq_self (a : RegisterFile) : (a == a) = true := by
+  simp [BEq.beq]
+
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `RegisterFile`.
     `BEq RegisterFile` checks equality at 32 GPR indices but cannot prove
     `a == b = true → a = b` because `gpr` is a function — two extensionally

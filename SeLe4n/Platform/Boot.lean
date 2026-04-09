@@ -1376,9 +1376,15 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
           have hTcbProps := (hBS tid.toObjId _ hLookup).2.2.2.1 tcb rfl
           rw [hTcbProps.2.2.2.2.2] at hBound; cases hBound
         | _ => trivial
-  -- Compose all 10 components
+  -- AG7-D: notificationWaiterConsistent — boot notifications have empty waitingThreads
+  have hNtfnWaiter : notificationWaiterConsistent (bootFromPlatform config).state := by
+    intro oid ntfn tid hObj hMem
+    have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
+    rw [hNtfn.2.1] at hMem; simp at hMem
+  -- Compose all 11 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
-         hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle⟩
+         hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
+         hNtfnWaiter⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs

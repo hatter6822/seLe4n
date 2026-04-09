@@ -1,3 +1,74 @@
+## v0.26.8 — WS-AG Phase AG7: FFI Bridge + Proof Hooks
+
+Phase AG7 of WS-AG H3 Hardware Binding Audit Remediation. Lean-to-Rust FFI
+bridge with `@[extern]` declarations, MMIO volatile primitives, system register
+accessors, and production `AdapterProofHooks` for the RPi5 runtime contract.
+Key deliverable: substantive (non-vacuous) proof hooks for both register writes
+and atomic context switches on the production contract.
+6 sub-tasks (AG7-A through AG7-F).
+Gate: `lake build` (256 jobs) + `cargo test --workspace` + `test_smoke.sh` +
+`test_full.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AG7-A** (H3-FFI-01): Lean `@[extern]` declarations in `FFI.lean` for 17
+  Rust HAL functions across 6 groups (Timer, GIC, TLB, MMIO, UART, Interrupts).
+  Corresponding `#[no_mangle] pub extern "C"` implementations in
+  `rust/sele4n-hal/src/ffi.rs`
+- **AG7-B** (H3-FFI-02): System register accessor extensions in
+  `rust/sele4n-hal/src/registers.rs`. MRS/MSR wrappers for SCTLR_EL1,
+  TCR_EL1, MAIR_EL1, TTBR0_EL1, VBAR_EL1, ESR_EL1, ELR_EL1, FAR_EL1
+- **AG7-C** (H3-FFI-03): MMIO volatile read/write primitives in
+  `rust/sele4n-hal/src/mmio.rs`. 32/64-bit volatile operations, debug
+  UART output via PL011 MMIO, Lean-side `MmioAdapter.lean` with
+  `mmioAccessAllowed` predicate and region disjointness proof
+- **AG7-D** (H3-PROOF-01): Production `AdapterProofHooks` for
+  `rpi5RuntimeContract`. `rpi5ProductionAdapterProofHooks` with substantive
+  (non-vacuous) preservation proofs for all 4 adapter paths:
+  - `preserveAdvanceTimer`: delegates to generic timer preservation lemma
+  - `preserveWriteRegister`: extracts `contextMatchesCurrent` from
+    production `registerContextStablePred` via boolean decomposition
+  - `preserveReadMemory`: state-preserving identity
+  - `preserveContextSwitch`: extracts all 6 TCB conditions (register match,
+    dequeue-on-dispatch, time-slice positivity, IPC readiness, EDF
+    compatibility, budget sufficiency) from `registerContextStablePred` and
+    delegates to `contextSwitchState_preserves_proofLayerInvariantBundle`.
+    Key helper: `contextSwitchState_preserves_ipcInvariantFull` handles
+    `passiveServerIdle` transfer via `currentThreadIpcReady` contrapositive.
+  `proofLayerInvariantBundle` extended to 11 conjuncts (added
+  `notificationWaiterConsistent` as 11th) to close context-switch proof gap
+- **AG7-E** (H3-PROOF-02): TLB flush composition theorems verified complete
+  from AG6-F/G: `hardwareFlushAll_equiv_modelFlush`,
+  `hardwareFlushByAsid_equiv_modelFlush`, `hardwareFlushByVAddr_equiv_modelFlush`,
+  `vspaceUnmapPageWithFlush_preserves_tlbConsistent`
+- **AG7-F** (H3-PROOF-03): End-to-end context switch proof hooks.
+  `rpi5Production_adapterContextSwitch_preserves`: when `adapterContextSwitch`
+  succeeds under the production runtime contract, `proofLayerInvariantBundle`
+  holds for the post-state. `registerContextStableCheck_budget` bridge theorem
+  connecting boolean budget check to `currentBudgetPositive` proposition
+
+### Key theorems
+
+- `contextSwitchState_preserves_proofLayerInvariantBundle`: 11-conjunct
+  invariant bundle preserved through atomic context switch
+- `contextSwitchState_preserves_ipcInvariantFull`: 15-conjunct IPC invariant
+  preserved with `passiveServerIdle` transfer via old-current-thread IPC
+  readiness
+- `rpi5Production_adapterContextSwitch_preserves`: end-to-end production
+  contract context-switch preservation
+- `registerContextStableCheck_budget`: boolean budget check → proposition
+  bridge
+
+### Modified files
+
+- `SeLe4n/Kernel/Architecture/Invariant.lean` — `proofLayerInvariantBundle`
+  11th conjunct, context-switch + IPC preservation theorems
+- `SeLe4n/Platform/RPi5/RuntimeContract.lean` — budget bridge theorem,
+  import update
+- `SeLe4n/Platform/RPi5/ProofHooks.lean` — production `AdapterProofHooks`
+  instance + end-to-end theorems
+- `SeLe4n/Platform/Boot.lean` — 11th conjunct in boot proof
+
 ## v0.26.7 — WS-AG Phase AG6: Memory Management (ARMv8 Page Tables)
 
 Phase AG6 of WS-AG H3 Hardware Binding Audit Remediation. ARMv8-A 4-level

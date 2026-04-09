@@ -19,6 +19,8 @@
 //! - `interrupts` — Interrupt management / critical sections (AG5-G)
 //! - `tlb`        — TLB maintenance instruction wrappers (AG6-E)
 //! - `cache`      — Cache maintenance operations (AG6-I)
+//! - `mmio`       — MMIO volatile read/write primitives (AG7-C)
+//! - `ffi`        — Lean FFI bridge exports (AG7-A)
 
 #![no_std]
 // HAL crate requires unsafe code for hardware instructions (MRS/MSR, MMIO,
@@ -39,3 +41,5 @@ pub mod timer;
 pub mod interrupts;
 pub mod tlb;
 pub mod cache;
+pub mod mmio;
+pub mod ffi;

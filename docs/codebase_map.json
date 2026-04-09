@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-hardware-binding-audit-mONbF",
-      "commit_sha": "f817c1d5fcdb18dd5e4f0e2ec63b5cc9989f9a2a",
-      "tree_sha": "37628644f2dcb0344446b621984d118af176071c",
-      "committed_at_utc": "2026-04-09T20:18:41+00:00"
+      "branch": "claude/review-hardware-binding-audit-k92jW",
+      "commit_sha": "668f64cff2a591fc68e42463e0d1cc821cbb4f07",
+      "tree_sha": "914e67fed86da24517d91cf5e564b6b798caea03",
+      "committed_at_utc": "2026-04-09T18:07:34-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d080d017ab4c9d1f7ab96fe8c6ac38da2bef8dd35e70796f6484f16195b46932"
+    "source_digest": "e6b26c6d32ca715858ead8eea7c689d2b5afd69e3f8fef4584d1067d7968c472"
   },
   "summary": {
-    "module_count": 155,
-    "declaration_count": 4857
+    "module_count": 156,
+    "declaration_count": 4889
   },
   "readme_sync": {
     "version": "0.26.7",
     "lean_toolchain": "v4.28.0",
-    "production_files": 139,
-    "production_loc": 89805,
+    "production_files": 140,
+    "production_loc": 90483,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2674,
+    "proved_theorem_lemma_decls": 2687,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2005,7 +2005,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Invariant",
       "path": "SeLe4n/Kernel/Architecture/Invariant.lean",
-      "declaration_count": 57,
+      "declaration_count": 62,
       "declarations": [
         {
           "kind": "namespace",
@@ -2024,6 +2024,7 @@
             "crossSubsystemInvariant",
             "ipcSchedulerCouplingInvariantBundle",
             "lifecycleInvariantBundle",
+            "notificationWaiterConsistent",
             "schedulerInvariantBundleExtended",
             "schedulerInvariantBundleFull",
             "serviceLifecycleCapabilityInvariantBundle",
@@ -2034,7 +2035,7 @@
         {
           "kind": "structure",
           "name": "AdapterProofHooks",
-          "line": 71,
+          "line": 72,
           "called": [
             "RuntimeBoundaryContract",
             "advanceTimerState",
@@ -2046,7 +2047,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle",
-          "line": 94,
+          "line": 95,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -2061,7 +2062,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_ok_preserves_proofLayerInvariantBundle",
-          "line": 116,
+          "line": 117,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -2077,7 +2078,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_ok_preserves_proofLayerInvariantBundle",
-          "line": 134,
+          "line": 135,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -2092,7 +2093,7 @@
         {
           "kind": "theorem",
           "name": "adapterContextSwitch_ok_preserves_proofLayerInvariantBundle",
-          "line": 153,
+          "line": 154,
           "called": [
             "AdapterProofHooks",
             "RegisterFile",
@@ -2108,7 +2109,7 @@
         {
           "kind": "theorem",
           "name": "adapterContextSwitch_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 170,
+          "line": 171,
           "called": [
             "RegisterFile",
             "RuntimeBoundaryContract",
@@ -2123,7 +2124,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle",
-          "line": 181,
+          "line": 182,
           "called": [
             "RuntimeBoundaryContract",
             "SystemState",
@@ -2135,7 +2136,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 189,
+          "line": 190,
           "called": [
             "RuntimeBoundaryContract",
             "SystemState",
@@ -2148,7 +2149,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 200,
+          "line": 201,
           "called": [
             "RegName",
             "RegValue",
@@ -2163,7 +2164,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 211,
+          "line": 212,
           "called": [
             "PAddr",
             "RuntimeBoundaryContract",
@@ -2176,7 +2177,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_vspaceInvariantBundle",
-          "line": 223,
+          "line": 224,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2186,7 +2187,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_vspaceInvariantBundle",
-          "line": 232,
+          "line": 233,
           "called": [
             "RegName",
             "RegValue",
@@ -2198,7 +2199,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_vspaceInvariantBundle",
-          "line": 246,
+          "line": 247,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -2210,9 +2211,10 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_contextMatchesCurrent",
-          "line": 260,
+          "line": 261,
           "called": [
             "RegisterFile",
+            "RegisterFile.beq_self",
             "SystemState",
             "TCB",
             "ThreadId",
@@ -2224,7 +2226,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_currentThreadValid",
-          "line": 270,
+          "line": 272,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -2238,7 +2240,7 @@
         {
           "kind": "theorem",
           "name": "default_objects_none",
-          "line": 287,
+          "line": 289,
           "called": [
             "ObjId",
             "RHTable_get",
@@ -2250,7 +2252,7 @@
         {
           "kind": "theorem",
           "name": "default_objects_absurd",
-          "line": 294,
+          "line": 296,
           "called": [
             "KernelObject",
             "ObjId",
@@ -2262,7 +2264,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantBundle",
-          "line": 303,
+          "line": 305,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -2274,7 +2276,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariant",
-          "line": 315,
+          "line": 317,
           "called": [
             "SystemState",
             "default",
@@ -2285,7 +2287,7 @@
         {
           "kind": "theorem",
           "name": "default_lifecycleInvariantBundle",
-          "line": 319,
+          "line": 321,
           "called": [
             "SystemState",
             "default",
@@ -2297,7 +2299,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcSchedulerContractPredicates",
-          "line": 323,
+          "line": 325,
           "called": [
             "SystemState",
             "default",
@@ -2308,7 +2310,7 @@
         {
           "kind": "theorem",
           "name": "default_capabilityInvariantBundle",
-          "line": 337,
+          "line": 339,
           "called": [
             "RHTable_empty_invExt",
             "RHTable_get",
@@ -2325,7 +2327,7 @@
         {
           "kind": "theorem",
           "name": "default_dualQueueSystemInvariant",
-          "line": 353,
+          "line": 355,
           "called": [
             "SystemState",
             "default",
@@ -2336,7 +2338,7 @@
         {
           "kind": "theorem",
           "name": "default_allPendingMessagesBounded",
-          "line": 365,
+          "line": 367,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -2347,7 +2349,7 @@
         {
           "kind": "theorem",
           "name": "default_badgeWellFormed",
-          "line": 369,
+          "line": 371,
           "called": [
             "SystemState",
             "badgeWellFormed",
@@ -2358,7 +2360,7 @@
         {
           "kind": "theorem",
           "name": "default_waitingThreadsPendingMessageNone",
-          "line": 374,
+          "line": 376,
           "called": [
             "SystemState",
             "default",
@@ -2369,7 +2371,7 @@
         {
           "kind": "theorem",
           "name": "default_endpointQueueNoDup",
-          "line": 378,
+          "line": 380,
           "called": [
             "SystemState",
             "default",
@@ -2380,7 +2382,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcStateQueueMembershipConsistent",
-          "line": 382,
+          "line": 384,
           "called": [
             "SystemState",
             "default",
@@ -2391,7 +2393,7 @@
         {
           "kind": "theorem",
           "name": "default_queueNextBlockingConsistent",
-          "line": 386,
+          "line": 388,
           "called": [
             "SystemState",
             "default",
@@ -2402,7 +2404,7 @@
         {
           "kind": "theorem",
           "name": "default_queueHeadBlockedConsistent",
-          "line": 390,
+          "line": 392,
           "called": [
             "SystemState",
             "default",
@@ -2413,7 +2415,7 @@
         {
           "kind": "theorem",
           "name": "default_blockedThreadTimeoutConsistent",
-          "line": 394,
+          "line": 396,
           "called": [
             "SystemState",
             "blockedThreadTimeoutConsistent",
@@ -2425,7 +2427,7 @@
         {
           "kind": "theorem",
           "name": "default_donationChainAcyclic",
-          "line": 398,
+          "line": 400,
           "called": [
             "SystemState",
             "default",
@@ -2436,7 +2438,7 @@
         {
           "kind": "theorem",
           "name": "default_donationOwnerValid",
-          "line": 402,
+          "line": 404,
           "called": [
             "SystemState",
             "default",
@@ -2447,7 +2449,7 @@
         {
           "kind": "theorem",
           "name": "default_passiveServerIdle",
-          "line": 406,
+          "line": 408,
           "called": [
             "SystemState",
             "default",
@@ -2458,7 +2460,7 @@
         {
           "kind": "theorem",
           "name": "default_donationBudgetTransfer",
-          "line": 410,
+          "line": 412,
           "called": [
             "SystemState",
             "default",
@@ -2469,7 +2471,7 @@
         {
           "kind": "theorem",
           "name": "default_uniqueWaiters",
-          "line": 414,
+          "line": 416,
           "called": [
             "SystemState",
             "default",
@@ -2480,7 +2482,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariantFull",
-          "line": 418,
+          "line": 420,
           "called": [
             "SystemState",
             "default",
@@ -2505,7 +2507,7 @@
         {
           "kind": "theorem",
           "name": "default_contextMatchesCurrent",
-          "line": 429,
+          "line": 431,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -2515,7 +2517,7 @@
         {
           "kind": "theorem",
           "name": "default_currentThreadDequeueCoherent",
-          "line": 433,
+          "line": 435,
           "called": [
             "SystemState",
             "currentNotEndpointQueueHead",
@@ -2528,7 +2530,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantBundleFull",
-          "line": 443,
+          "line": 445,
           "called": [
             "SystemState",
             "currentTimeSlicePositive",
@@ -2549,7 +2551,7 @@
         {
           "kind": "theorem",
           "name": "default_system_state_proofLayerInvariantBundle",
-          "line": 464,
+          "line": 466,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -2582,7 +2584,7 @@
         {
           "kind": "theorem",
           "name": "deterministicTimerProgress_consumed_by_advanceTimer",
-          "line": 540,
+          "line": 544,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -2594,7 +2596,7 @@
         {
           "kind": "theorem",
           "name": "deterministicRegisterContext_consumed_by_writeRegister",
-          "line": 553,
+          "line": 557,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -2608,7 +2610,7 @@
         {
           "kind": "theorem",
           "name": "memoryAccessSafety_consumed_by_readMemory",
-          "line": 566,
+          "line": 570,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -2620,7 +2622,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_capabilityInvariantBundle",
-          "line": 608,
+          "line": 612,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2630,7 +2632,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_ipcInvariantFull",
-          "line": 616,
+          "line": 620,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -2646,7 +2648,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_of_services_eq",
-          "line": 673,
+          "line": 677,
           "called": [
             "ServiceId",
             "SystemState",
@@ -2657,7 +2659,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_services_eq",
-          "line": 680,
+          "line": 684,
           "called": [
             "ServiceId",
             "SystemState",
@@ -2668,7 +2670,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_serviceGraphInvariant",
-          "line": 689,
+          "line": 693,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2679,7 +2681,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
-          "line": 704,
+          "line": 708,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2693,9 +2695,111 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "writeRegisterState_preserves_capabilityInvariantBundle",
+          "line": 746,
+          "called": [
+            "RegName",
+            "RegValue",
+            "SystemState",
+            "capabilityInvariantBundle",
+            "writeRegisterState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writeRegisterState_preserves_ipcInvariantFull",
+          "line": 754,
+          "called": [
+            "ObjId",
+            "QueueNextPath",
+            "RegName",
+            "RegValue",
+            "SystemState",
+            "ThreadId",
+            "get",
+            "ipcInvariantFull",
+            "ipcStateQueueMembershipConsistent_of_objects_eq",
+            "scId",
+            "writeRegisterState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writeRegisterState_preserves_proofLayerInvariantBundle",
+          "line": 803,
+          "called": [
+            "RegName",
+            "RegValue",
+            "SystemState",
+            "blockingAcyclic_frame",
+            "blockingServer",
+            "contextMatchesCurrent",
+            "proofLayerInvariantBundle",
+            "serviceNontrivialPath_of_services_eq",
+            "writeReg",
+            "writeRegisterState",
+            "writeRegisterState_preserves_capabilityInvariantBundle",
+            "writeRegisterState_preserves_ipcInvariantFull",
+            "writeRegisterState_preserves_vspaceInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contextSwitchState_preserves_ipcInvariantFull",
+          "line": 870,
+          "called": [
+            "ObjId",
+            "QueueNextPath",
+            "RegisterFile",
+            "SystemState",
+            "ThreadId",
+            "contextSwitchState",
+            "currentThreadIpcReady",
+            "get",
+            "ipcInvariantFull",
+            "ipcStateQueueMembershipConsistent_of_objects_eq",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "contextSwitchState_preserves_proofLayerInvariantBundle",
+          "line": 946,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "blockingAcyclic_frame",
+            "blockingServer",
+            "contextMatchesCurrent",
+            "contextSwitchState",
+            "contextSwitchState_preserves_currentThreadValid",
+            "contextSwitchState_preserves_ipcInvariantFull",
+            "contextSwitchState_preserves_vspaceInvariantBundle",
+            "currentBudgetPositive",
+            "currentNotEndpointQueueHead",
+            "currentNotOnNotificationWaitList",
+            "currentThreadIpcReady",
+            "currentThreadValid",
+            "currentTimeSlicePositive",
+            "edfCurrentHasEarliestDeadline",
+            "none",
+            "not_mem_waitingThreads_of_ipcState_ne",
+            "proofLayerInvariantBundle",
+            "queueCurrentConsistent",
+            "queueHeadBlockedConsistent",
+            "runnable",
+            "serviceNontrivialPath_of_services_eq",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 768,
+          "line": 1099,
           "called": [
             "SystemState",
             "toObjId"
@@ -2704,7 +2808,7 @@
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 774,
+          "line": 1105,
           "called": [
             "SystemState",
             "default",
@@ -2714,7 +2818,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 781,
+          "line": 1112,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -2725,7 +2829,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 795,
+          "line": 1126,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -2735,7 +2839,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 803,
+          "line": 1134,
           "called": [
             "RegName",
             "RegValue",
@@ -35771,7 +35875,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 49,
+      "declaration_count": 50,
       "declarations": [
         {
           "kind": "namespace",
@@ -35891,9 +35995,22 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "contextMatchesCurrent_of_regs_eq",
+          "line": 176,
+          "called": [
+            "RegisterFile.beq_self",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "contextMatchesCurrent",
+            "toObjId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "runnableThreadsAreTCBs",
-          "line": 194,
+          "line": 205,
           "called": [
             "SystemState",
             "TCB",
@@ -35904,7 +36021,7 @@
         {
           "kind": "theorem",
           "name": "default_runnableThreadsAreTCBs",
-          "line": 199,
+          "line": 210,
           "called": [
             "SystemState",
             "default",
@@ -35915,7 +36032,7 @@
         {
           "kind": "def",
           "name": "schedulerPriorityMatch",
-          "line": 222,
+          "line": 233,
           "called": [
             "SystemState",
             "toObjId"
@@ -35924,7 +36041,7 @@
         {
           "kind": "def",
           "name": "domainTimeRemainingPositive",
-          "line": 242,
+          "line": 253,
           "called": [
             "SystemState"
           ]
@@ -35932,7 +36049,7 @@
         {
           "kind": "def",
           "name": "domainScheduleEntriesPositive",
-          "line": 250,
+          "line": 261,
           "called": [
             "SystemState"
           ]
@@ -35940,7 +36057,7 @@
         {
           "kind": "theorem",
           "name": "default_domainScheduleEntriesPositive",
-          "line": 254,
+          "line": 265,
           "called": [
             "SystemState",
             "default",
@@ -35950,7 +36067,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleFull",
-          "line": 269,
+          "line": 280,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -35967,7 +36084,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_base",
-          "line": 277,
+          "line": 288,
           "called": [
             "SystemState",
             "schedulerInvariantBundle",
@@ -35977,7 +36094,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_contextMatchesCurrent",
-          "line": 282,
+          "line": 293,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -35987,7 +36104,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_priorityMatch",
-          "line": 287,
+          "line": 298,
           "called": [
             "SystemState",
             "schedulerInvariantBundleFull",
@@ -35997,7 +36114,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainTimeRemainingPositive",
-          "line": 292,
+          "line": 303,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -36007,7 +36124,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainScheduleEntriesPositive",
-          "line": 297,
+          "line": 308,
           "called": [
             "SystemState",
             "domainScheduleEntriesPositive",
@@ -36017,7 +36134,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_of_runQueue_objects_eq",
-          "line": 303,
+          "line": 314,
           "called": [
             "SystemState",
             "schedulerPriorityMatch"
@@ -36026,7 +36143,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_insert",
-          "line": 314,
+          "line": 325,
           "called": [
             "RHTable_getElem",
             "SystemState",
@@ -36045,7 +36162,7 @@
         {
           "kind": "def",
           "name": "budgetPositive",
-          "line": 361,
+          "line": 372,
           "called": [
             "SystemState",
             "runnable",
@@ -36056,7 +36173,7 @@
         {
           "kind": "theorem",
           "name": "default_budgetPositive",
-          "line": 374,
+          "line": 385,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -36067,7 +36184,7 @@
         {
           "kind": "def",
           "name": "currentBudgetPositive",
-          "line": 388,
+          "line": 399,
           "called": [
             "SystemState",
             "none",
@@ -36078,7 +36195,7 @@
         {
           "kind": "theorem",
           "name": "default_currentBudgetPositive",
-          "line": 403,
+          "line": 414,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -36088,7 +36205,7 @@
         {
           "kind": "def",
           "name": "schedContextsWellFormed",
-          "line": 414,
+          "line": 425,
           "called": [
             "ObjId",
             "SchedContext",
@@ -36099,7 +36216,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextsWellFormed",
-          "line": 422,
+          "line": 433,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -36113,7 +36230,7 @@
         {
           "kind": "def",
           "name": "replenishQueueValid",
-          "line": 437,
+          "line": 448,
           "called": [
             "SystemState",
             "replenishQueueSizeConsistent",
@@ -36123,7 +36240,7 @@
         {
           "kind": "theorem",
           "name": "default_replenishQueueValid",
-          "line": 442,
+          "line": 453,
           "called": [
             "SystemState",
             "default",
@@ -36135,7 +36252,7 @@
         {
           "kind": "def",
           "name": "schedContextBindingConsistent",
-          "line": 457,
+          "line": 468,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -36149,7 +36266,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextBindingConsistent",
-          "line": 471,
+          "line": 482,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -36165,7 +36282,7 @@
         {
           "kind": "def",
           "name": "effectiveParamsMatchRunQueue",
-          "line": 493,
+          "line": 504,
           "called": [
             "SystemState",
             "scId",
@@ -36175,7 +36292,7 @@
         {
           "kind": "theorem",
           "name": "default_effectiveParamsMatchRunQueue",
-          "line": 508,
+          "line": 519,
           "called": [
             "RHSet.contains_empty",
             "SystemState",
@@ -36188,7 +36305,7 @@
         {
           "kind": "def",
           "name": "boundThreadDomainConsistent",
-          "line": 525,
+          "line": 536,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -36201,7 +36318,7 @@
         {
           "kind": "theorem",
           "name": "default_boundThreadDomainConsistent",
-          "line": 536,
+          "line": 547,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -36215,7 +36332,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleExtended",
-          "line": 553,
+          "line": 564,
           "called": [
             "SystemState",
             "boundThreadDomainConsistent",
@@ -36231,7 +36348,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_full",
-          "line": 561,
+          "line": 572,
           "called": [
             "SystemState",
             "schedulerInvariantBundleExtended",
@@ -36241,7 +36358,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_budgetPositive",
-          "line": 566,
+          "line": 577,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -36251,7 +36368,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_currentBudgetPositive",
-          "line": 571,
+          "line": 582,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -36261,7 +36378,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextsWellFormed",
-          "line": 576,
+          "line": 587,
           "called": [
             "SystemState",
             "schedContextsWellFormed",
@@ -36271,7 +36388,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_replenishQueueValid",
-          "line": 581,
+          "line": 592,
           "called": [
             "SystemState",
             "replenishQueueValid",
@@ -36281,7 +36398,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextBindingConsistent",
-          "line": 586,
+          "line": 597,
           "called": [
             "SystemState",
             "schedContextBindingConsistent",
@@ -36291,7 +36408,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue",
-          "line": 591,
+          "line": 602,
           "called": [
             "SystemState",
             "effectiveParamsMatchRunQueue",
@@ -36301,7 +36418,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_boundThreadDomainConsistent",
-          "line": 596,
+          "line": 607,
           "called": [
             "Kernel",
             "SystemState",
@@ -38954,6 +39071,7 @@
           "name": "schedule_preserves_contextMatchesCurrent",
           "line": 2630,
           "called": [
+            "RegisterFile.beq_self",
             "SystemState",
             "chooseThread",
             "chooseThread_preserves_state",
@@ -38973,7 +39091,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_contextMatchesCurrent",
-          "line": 2680,
+          "line": 2681,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -38987,7 +39105,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_contextMatchesCurrent",
-          "line": 2708,
+          "line": 2709,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -39004,7 +39122,7 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrent_frame",
-          "line": 2752,
+          "line": 2753,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -39015,7 +39133,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerPriorityMatch",
-          "line": 2795,
+          "line": 2796,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -39045,7 +39163,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerPriorityMatch",
-          "line": 2924,
+          "line": 2925,
           "called": [
             "RHTable_getElem",
             "SchedulerState.runnable",
@@ -39070,7 +39188,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerPriorityMatch",
-          "line": 2990,
+          "line": 2991,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -39094,7 +39212,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundleFull",
-          "line": 3088,
+          "line": 3089,
           "called": [
             "SystemState",
             "invExt",
@@ -39117,7 +39235,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundleFull",
-          "line": 3111,
+          "line": 3112,
           "called": [
             "SystemState",
             "handleYield",
@@ -39140,7 +39258,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundleFull",
-          "line": 3135,
+          "line": 3136,
           "called": [
             "SystemState",
             "invExt",
@@ -39163,7 +39281,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_runQueueWellFormed",
-          "line": 3164,
+          "line": 3165,
           "called": [
             "SystemState",
             "insert_preserves_wellFormed",
@@ -39176,7 +39294,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_preserves_schedulerInvariantBundleFull",
-          "line": 3200,
+          "line": 3201,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -39197,7 +39315,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_nopreempt_scheduler_eq",
-          "line": 3259,
+          "line": 3260,
           "called": [
             "SystemState",
             "TCB",
@@ -39208,7 +39326,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_preempt_replenishQueue_eq",
-          "line": 3269,
+          "line": 3270,
           "called": [
             "SystemState",
             "TCB",
@@ -39219,7 +39337,7 @@
         {
           "kind": "theorem",
           "name": "popDueReplenishments_sorted",
-          "line": 3282,
+          "line": 3283,
           "called": [
             "SystemState",
             "popDueReplenishments",
@@ -39230,7 +39348,7 @@
         {
           "kind": "theorem",
           "name": "popDueReplenishments_sizeConsistent",
-          "line": 3291,
+          "line": 3292,
           "called": [
             "SystemState",
             "popDueReplenishments",
@@ -39241,7 +39359,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_noop",
-          "line": 3302,
+          "line": 3303,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -39256,13 +39374,13 @@
         {
           "kind": "theorem",
           "name": "budget_decrement_stays_positive",
-          "line": 3323,
+          "line": 3324,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "consumeBudget_positive_of_gt_one",
-          "line": 3329,
+          "line": 3330,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -39272,7 +39390,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_nopreempt_objects_key",
-          "line": 3340,
+          "line": 3341,
           "called": [
             "SystemState",
             "TCB",
@@ -39285,7 +39403,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_preempt_objects_key",
-          "line": 3356,
+          "line": 3357,
           "called": [
             "SystemState",
             "TCB",
@@ -39298,7 +39416,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_wf",
-          "line": 3374,
+          "line": 3375,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -39309,7 +39427,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_schedContextWellFormed_full",
-          "line": 3381,
+          "line": 3382,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -39323,7 +39441,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_schedContextWellFormed_full",
-          "line": 3398,
+          "line": 3399,
           "called": [
             "Budget",
             "SchedContext",
@@ -39338,7 +39456,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadEffective_state_unchanged",
-          "line": 3416,
+          "line": 3417,
           "called": [
             "SystemState",
             "ThreadId",
@@ -39349,7 +39467,7 @@
         {
           "kind": "theorem",
           "name": "budgetPositive_subset",
-          "line": 3425,
+          "line": 3426,
           "called": [
             "SystemState",
             "ThreadId",
@@ -39362,7 +39480,7 @@
         {
           "kind": "theorem",
           "name": "effectivePriority_unbound_legacy",
-          "line": 3445,
+          "line": 3446,
           "called": [
             "SystemState",
             "TCB",
@@ -39373,7 +39491,7 @@
         {
           "kind": "theorem",
           "name": "hasSufficientBudget_unbound_legacy",
-          "line": 3453,
+          "line": 3454,
           "called": [
             "SystemState",
             "TCB",
@@ -39383,7 +39501,7 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_wf",
-          "line": 3462,
+          "line": 3463,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
@@ -43522,7 +43640,7 @@
     {
       "module": "SeLe4n.Machine",
       "path": "SeLe4n/Machine.lean",
-      "declaration_count": 112,
+      "declaration_count": 113,
       "declarations": [
         {
           "kind": "namespace",
@@ -43912,8 +44030,16 @@
         },
         {
           "kind": "theorem",
+          "name": "RegisterFile.beq_self",
+          "line": 286,
+          "called": [
+            "RegisterFile"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RegisterFile.not_lawfulBEq",
-          "line": 287,
+          "line": 294,
           "called": [
             "RegName",
             "RegValue",
@@ -43923,7 +44049,7 @@
         {
           "kind": "theorem",
           "name": "RegisterFile.ext",
-          "line": 323,
+          "line": 330,
           "called": [
             "RegisterFile"
           ]
@@ -43931,13 +44057,13 @@
         {
           "kind": "structure",
           "name": "SystemRegisterFile",
-          "line": 338,
+          "line": 345,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:361>",
-          "line": 361,
+          "name": "<anonymous:instance:368>",
+          "line": 368,
           "called": [
             "SystemRegisterFile",
             "default"
@@ -43946,7 +44072,7 @@
         {
           "kind": "structure",
           "name": "MachineState",
-          "line": 368,
+          "line": 375,
           "called": [
             "Memory",
             "MemoryRegion",
@@ -43957,8 +44083,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:399>",
-          "line": 399,
+          "name": "<anonymous:instance:406>",
+          "line": 406,
           "called": [
             "MachineState",
             "default"
@@ -43967,7 +44093,7 @@
         {
           "kind": "def",
           "name": "machineWordBounded",
-          "line": 413,
+          "line": 420,
           "called": [
             "MachineState",
             "RegName",
@@ -43978,7 +44104,7 @@
         {
           "kind": "theorem",
           "name": "machineWordBounded_default",
-          "line": 419,
+          "line": 426,
           "called": [
             "MachineState",
             "default",
@@ -43988,7 +44114,7 @@
         {
           "kind": "def",
           "name": "readReg",
-          "line": 426,
+          "line": 433,
           "called": [
             "RegName",
             "RegValue",
@@ -43998,7 +44124,7 @@
         {
           "kind": "def",
           "name": "writeReg",
-          "line": 429,
+          "line": 436,
           "called": [
             "RegName",
             "RegValue",
@@ -44008,7 +44134,7 @@
         {
           "kind": "def",
           "name": "readMem",
-          "line": 432,
+          "line": 439,
           "called": [
             "MachineState",
             "PAddr"
@@ -44017,7 +44143,7 @@
         {
           "kind": "def",
           "name": "writeMem",
-          "line": 435,
+          "line": 442,
           "called": [
             "MachineState",
             "PAddr"
@@ -44026,7 +44152,7 @@
         {
           "kind": "def",
           "name": "setPC",
-          "line": 438,
+          "line": 445,
           "called": [
             "MachineState",
             "RegValue"
@@ -44035,7 +44161,7 @@
         {
           "kind": "def",
           "name": "tick",
-          "line": 441,
+          "line": 448,
           "called": [
             "MachineState"
           ]
@@ -44043,7 +44169,7 @@
         {
           "kind": "def",
           "name": "disableInterrupts",
-          "line": 450,
+          "line": 457,
           "called": [
             "MachineState"
           ]
@@ -44051,7 +44177,7 @@
         {
           "kind": "def",
           "name": "enableInterrupts",
-          "line": 455,
+          "line": 462,
           "called": [
             "MachineState"
           ]
@@ -44059,15 +44185,6 @@
         {
           "kind": "def",
           "name": "withInterruptsDisabled",
-          "line": 463,
-          "called": [
-            "MachineState",
-            "disableInterrupts"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "disableInterrupts_sets_false",
           "line": 470,
           "called": [
             "MachineState",
@@ -44076,8 +44193,17 @@
         },
         {
           "kind": "theorem",
+          "name": "disableInterrupts_sets_false",
+          "line": 477,
+          "called": [
+            "MachineState",
+            "disableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "enableInterrupts_sets_true",
-          "line": 474,
+          "line": 481,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -44086,7 +44212,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_timer",
-          "line": 478,
+          "line": 485,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -44095,7 +44221,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_regs",
-          "line": 482,
+          "line": 489,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -44104,7 +44230,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_memory",
-          "line": 486,
+          "line": 493,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -44113,7 +44239,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_timer",
-          "line": 490,
+          "line": 497,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -44122,7 +44248,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_regs",
-          "line": 494,
+          "line": 501,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -44131,7 +44257,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_memory",
-          "line": 498,
+          "line": 505,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -44140,7 +44266,7 @@
         {
           "kind": "theorem",
           "name": "withInterruptsDisabled_restores",
-          "line": 503,
+          "line": 510,
           "called": [
             "MachineState",
             "withInterruptsDisabled"
@@ -44149,7 +44275,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_interruptsEnabled",
-          "line": 508,
+          "line": 515,
           "called": [
             "MachineState",
             "tick"
@@ -44158,7 +44284,7 @@
         {
           "kind": "theorem",
           "name": "readReg_writeReg_eq",
-          "line": 515,
+          "line": 522,
           "called": [
             "RegName",
             "RegValue",
@@ -44170,7 +44296,7 @@
         {
           "kind": "theorem",
           "name": "readReg_writeReg_ne",
-          "line": 519,
+          "line": 526,
           "called": [
             "RegName",
             "RegValue",
@@ -44183,7 +44309,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_eq",
-          "line": 526,
+          "line": 533,
           "called": [
             "MachineState",
             "PAddr",
@@ -44194,7 +44320,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_ne",
-          "line": 530,
+          "line": 537,
           "called": [
             "MachineState",
             "PAddr",
@@ -44205,7 +44331,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_pc",
-          "line": 535,
+          "line": 542,
           "called": [
             "RegName",
             "RegValue",
@@ -44216,7 +44342,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_sp",
-          "line": 538,
+          "line": 545,
           "called": [
             "RegName",
             "RegValue",
@@ -44227,7 +44353,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_regs",
-          "line": 541,
+          "line": 548,
           "called": [
             "MachineState",
             "PAddr",
@@ -44237,7 +44363,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_timer",
-          "line": 544,
+          "line": 551,
           "called": [
             "MachineState",
             "PAddr",
@@ -44247,7 +44373,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_memory",
-          "line": 547,
+          "line": 554,
           "called": [
             "MachineState",
             "RegValue",
@@ -44257,7 +44383,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_timer",
-          "line": 550,
+          "line": 557,
           "called": [
             "MachineState",
             "RegValue",
@@ -44267,7 +44393,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_regs",
-          "line": 553,
+          "line": 560,
           "called": [
             "MachineState",
             "tick"
@@ -44276,7 +44402,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_memory",
-          "line": 556,
+          "line": 563,
           "called": [
             "MachineState",
             "tick"
@@ -44285,7 +44411,7 @@
         {
           "kind": "theorem",
           "name": "tick_timer_succ",
-          "line": 559,
+          "line": 566,
           "called": [
             "MachineState",
             "tick"
@@ -44294,7 +44420,7 @@
         {
           "kind": "theorem",
           "name": "default_memory_returns_zero",
-          "line": 568,
+          "line": 575,
           "called": [
             "MachineState",
             "PAddr",
@@ -44304,7 +44430,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_pc_zero",
-          "line": 573,
+          "line": 580,
           "called": [
             "RegisterFile",
             "default"
@@ -44313,7 +44439,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_sp_zero",
-          "line": 577,
+          "line": 584,
           "called": [
             "RegisterFile",
             "default"
@@ -44322,7 +44448,7 @@
         {
           "kind": "theorem",
           "name": "default_timer_zero",
-          "line": 581,
+          "line": 588,
           "called": [
             "MachineState",
             "default"
@@ -44331,7 +44457,7 @@
         {
           "kind": "def",
           "name": "zeroMemoryRange",
-          "line": 602,
+          "line": 609,
           "called": [
             "MachineState",
             "PAddr",
@@ -44342,7 +44468,7 @@
         {
           "kind": "def",
           "name": "memoryZeroed",
-          "line": 609,
+          "line": 616,
           "called": [
             "MachineState",
             "PAddr",
@@ -44353,7 +44479,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_establishes_memoryZeroed",
-          "line": 614,
+          "line": 621,
           "called": [
             "MachineState",
             "PAddr",
@@ -44365,7 +44491,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_frame",
-          "line": 624,
+          "line": 631,
           "called": [
             "MachineState",
             "PAddr",
@@ -44377,7 +44503,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_regs",
-          "line": 634,
+          "line": 641,
           "called": [
             "MachineState",
             "PAddr",
@@ -44388,7 +44514,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_timer",
-          "line": 639,
+          "line": 646,
           "called": [
             "MachineState",
             "PAddr",
@@ -44399,7 +44525,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_zero_size_memory",
-          "line": 644,
+          "line": 651,
           "called": [
             "MachineState",
             "PAddr",
@@ -44409,13 +44535,13 @@
         {
           "kind": "inductive",
           "name": "SystemRegisterIndex",
-          "line": 657,
+          "line": 664,
           "called": []
         },
         {
           "kind": "def",
           "name": "readSystemRegister",
-          "line": 663,
+          "line": 670,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -44424,7 +44550,7 @@
         {
           "kind": "def",
           "name": "writeSystemRegister",
-          "line": 677,
+          "line": 684,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -44433,7 +44559,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_regs",
-          "line": 696,
+          "line": 703,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -44443,7 +44569,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_memory",
-          "line": 702,
+          "line": 709,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -44453,7 +44579,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_timer",
-          "line": 708,
+          "line": 715,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -44463,7 +44589,7 @@
         {
           "kind": "theorem",
           "name": "readSystemRegister_writeSystemRegister_eq",
-          "line": 714,
+          "line": 721,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -44474,7 +44600,7 @@
         {
           "kind": "structure",
           "name": "MachineConfig",
-          "line": 735,
+          "line": 742,
           "called": [
             "MemoryRegion"
           ]
@@ -44482,7 +44608,7 @@
         {
           "kind": "theorem",
           "name": "registerFileGPRCount_eq_registerCount_default",
-          "line": 756,
+          "line": 763,
           "called": [
             "registerFileGPRCount"
           ]
@@ -44490,13 +44616,13 @@
         {
           "kind": "namespace",
           "name": "MachineConfig",
-          "line": 759,
+          "line": 766,
           "called": []
         },
         {
           "kind": "def",
           "name": "noOverlapAux",
-          "line": 765,
+          "line": 772,
           "called": [
             "MemoryRegion",
             "all",
@@ -44506,13 +44632,13 @@
         {
           "kind": "def",
           "name": "isPowerOfTwo",
-          "line": 771,
+          "line": 778,
           "called": []
         },
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 781,
+          "line": 788,
           "called": [
             "MachineConfig",
             "all",
@@ -44525,7 +44651,7 @@
         {
           "kind": "structure",
           "name": "SyscallRegisterLayout",
-          "line": 802,
+          "line": 809,
           "called": [
             "RegName"
           ]
@@ -44533,7 +44659,7 @@
         {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 814,
+          "line": 821,
           "called": [
             "SyscallRegisterLayout"
           ]
@@ -52084,6 +52210,7 @@
             "none",
             "notificationInvariant",
             "notificationQueueWellFormed",
+            "notificationWaiterConsistent",
             "proofLayerInvariantBundle",
             "queueCurrentConsistent",
             "replenishQueueValid",
@@ -52106,7 +52233,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 1389,
+          "line": 1395,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -52711,6 +52838,121 @@
             "isEmpty",
             "parseAndValidateFdtHeader"
           ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.FFI",
+      "path": "SeLe4n/Platform/FFI.lean",
+      "declaration_count": 18,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.FFI",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTimerReadCounter",
+          "line": 45,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTimerReprogram",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTimerGetTickCount",
+          "line": 56,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiGicAcknowledge",
+          "line": 66,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiGicEoi",
+          "line": 71,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiGicIsSpurious",
+          "line": 76,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTlbiAll",
+          "line": 85,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTlbiByAsid",
+          "line": 90,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTlbiByVaddr",
+          "line": 95,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioRead32",
+          "line": 104,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioWrite32",
+          "line": 109,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioRead64",
+          "line": 114,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioWrite64",
+          "line": 119,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiUartPutc",
+          "line": 128,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiDisableInterrupts",
+          "line": 137,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiRestoreInterrupts",
+          "line": 142,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiEnableInterrupts",
+          "line": 147,
+          "called": []
         }
       ]
     },
@@ -53551,7 +53793,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.ProofHooks",
       "path": "SeLe4n/Platform/RPi5/ProofHooks.lean",
-      "declaration_count": 6,
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "namespace",
@@ -53625,34 +53867,129 @@
             "rpi5RestrictiveAdapterProofHooks",
             "rpi5RuntimeContractRestrictive"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerContextStable_writeRegister_contextMatch",
+          "line": 123,
+          "called": [
+            "RegName",
+            "RegValue",
+            "SystemState",
+            "contextMatchesCurrent",
+            "none",
+            "registerContextStableCheck",
+            "registerContextStablePred",
+            "toObjId",
+            "writeRegisterState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rpi5ProductionAdapterProofHooks",
+          "line": 162,
+          "called": [
+            "AdapterProofHooks",
+            "advanceTimerState_preserves_proofLayerInvariantBundle",
+            "contextSwitchState",
+            "contextSwitchState_preserves_proofLayerInvariantBundle",
+            "currentBudgetPositive",
+            "none",
+            "registerContextStableCheck",
+            "registerContextStableCheck_budget",
+            "registerContextStablePred",
+            "registerContextStable_writeRegister_contextMatch",
+            "rpi5RuntimeContract",
+            "runnable",
+            "toNat",
+            "toObjId",
+            "writeRegisterState_preserves_proofLayerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Production_adapterContextSwitch_preserves",
+          "line": 207,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "ThreadId",
+            "adapterContextSwitch",
+            "adapterContextSwitch_ok_preserves_proofLayerInvariantBundle",
+            "proofLayerInvariantBundle",
+            "rpi5ProductionAdapterProofHooks",
+            "rpi5RuntimeContract"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Production_adapterAdvanceTimer_preserves",
+          "line": 217,
+          "called": [
+            "SystemState",
+            "adapterAdvanceTimer",
+            "adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle",
+            "proofLayerInvariantBundle",
+            "rpi5ProductionAdapterProofHooks",
+            "rpi5RuntimeContract"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5Production_adapterWriteRegister_preserves",
+          "line": 229,
+          "called": [
+            "RegName",
+            "RegValue",
+            "SystemState",
+            "adapterWriteRegister",
+            "adapterWriteRegister_ok_preserves_proofLayerInvariantBundle",
+            "proofLayerInvariantBundle",
+            "rpi5ProductionAdapterProofHooks",
+            "rpi5RuntimeContract"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Platform.RPi5.RuntimeContract",
       "path": "SeLe4n/Platform/RPi5/RuntimeContract.lean",
-      "declaration_count": 9,
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5",
-          "line": 33,
+          "line": 34,
           "called": []
         },
         {
           "kind": "def",
-          "name": "registerContextStableCheck",
-          "line": 79,
+          "name": "budgetSufficientCheck",
+          "line": 73,
           "called": [
             "SystemState",
+            "TCB",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "registerContextStableCheck",
+          "line": 93,
+          "called": [
+            "SystemState",
+            "budgetSufficientCheck",
+            "contains",
             "none",
+            "toNat",
             "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "registerContextStablePred",
-          "line": 95,
+          "line": 116,
           "called": [
             "SystemState",
             "registerContextStableCheck"
@@ -53661,7 +53998,7 @@
         {
           "kind": "instance",
           "name": "registerContextStablePred_decidable",
-          "line": 99,
+          "line": 120,
           "called": [
             "SystemState",
             "registerContextStablePred"
@@ -53670,7 +54007,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContract",
-          "line": 103,
+          "line": 124,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -53683,7 +54020,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContractRestrictive",
-          "line": 137,
+          "line": 158,
           "called": [
             "RuntimeBoundaryContract",
             "contains",
@@ -53694,7 +54031,7 @@
         {
           "kind": "def",
           "name": "mmioAccessAllowed",
-          "line": 163,
+          "line": 184,
           "called": [
             "PAddr",
             "SystemState",
@@ -53704,7 +54041,7 @@
         {
           "kind": "instance",
           "name": "mmioAccessAllowed_decidable",
-          "line": 168,
+          "line": 189,
           "called": [
             "PAddr",
             "SystemState",
@@ -53716,9 +54053,27 @@
         {
           "kind": "theorem",
           "name": "mmioAccess_ram_kind_disjoint",
-          "line": 177,
+          "line": 198,
           "called": [
             "MemoryRegion"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerContextStableCheck_budget",
+          "line": 207,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "budgetSufficientCheck",
+            "contextSwitchState",
+            "currentBudgetPositive",
+            "none",
+            "registerContextStableCheck",
+            "scId",
+            "toObjId"
           ]
         }
       ]
