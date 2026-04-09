@@ -60,6 +60,21 @@ Zero sorry/axiom.
 - `SeLe4n/Kernel/Architecture/TlbModel.lean` (+113 lines)
 - `rust/sele4n-hal/src/lib.rs` (+2 lines: `pub mod tlb; pub mod cache;`)
 
+### Post-implementation audit fixes
+
+- **FINDING-01** (MEDIUM): `uint64ToDescriptor` now treats bits[1:0]=0b10 as
+  invalid per ARM ARM D8.3 (bit[0]=0 → fault). Previously fell through to
+  table/page decode, creating model-hardware disagreement
+- **FINDING-02** (MEDIUM): `cache_range` loop uses `saturating_add` instead of
+  `+=` to prevent integer overflow infinite loop near u64::MAX
+- **FINDING-03** (LOW): `pageTableWalk_deterministic` strengthened from bare
+  existence to unique existence (`∃ result, ... ∧ ∀ result', ... → result' = result`)
+- **FINDING-04** (INFO): Documented simulation relation preservation gap —
+  `mapPage_refines`/`unmapPage_refines` deferred to AG7 FFI integration
+- **FINDING-05** (INFO): Documented ASID freshness connection gap — formal
+  connection between `AsidPool.allocate` and uniqueness precondition deferred
+  to AG8 kernel integration
+
 ---
 
 ## v0.26.6 — WS-AG Phase AG5: Interrupts + Timer

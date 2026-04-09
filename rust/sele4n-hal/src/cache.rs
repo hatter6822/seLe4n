@@ -155,7 +155,10 @@ pub fn cache_range(op: fn(u64), start: u64, end: u64) {
     let mut addr = aligned_start;
     while addr < end {
         op(addr);
-        addr += CACHE_LINE_SIZE;
+        // Use saturating_add to prevent overflow near u64::MAX.
+        // If addr saturates to u64::MAX, the loop terminates because
+        // u64::MAX >= end for any valid end address.
+        addr = addr.saturating_add(CACHE_LINE_SIZE);
     }
     barriers::dsb_ish();
 }

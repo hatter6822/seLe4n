@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-mONbF",
-      "commit_sha": "06493f4e26a953da3d9bca7aa1ad521dbd225039",
-      "tree_sha": "53d12464720b9d927530dd8777517a5fe0cfd761",
-      "committed_at_utc": "2026-04-09T15:37:47-04:00"
+      "commit_sha": "f817c1d5fcdb18dd5e4f0e2ec63b5cc9989f9a2a",
+      "tree_sha": "37628644f2dcb0344446b621984d118af176071c",
+      "committed_at_utc": "2026-04-09T20:18:41+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "eea495878fbe9680a922cc32ceaefdeab07d76d25b73f34d09048ea5d4e9adee"
+    "source_digest": "d080d017ab4c9d1f7ab96fe8c6ac38da2bef8dd35e70796f6484f16195b46932"
   },
   "summary": {
     "module_count": 155,
@@ -27,7 +27,7 @@
     "version": "0.26.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 139,
-    "production_loc": 89785,
+    "production_loc": 89805,
     "test_files": 16,
     "test_loc": 11374,
     "proved_theorem_lemma_decls": 2674,
@@ -1443,7 +1443,7 @@
         {
           "kind": "def",
           "name": "asidPoolUnique",
-          "line": 207,
+          "line": 215,
           "called": [
             "ASID"
           ]
@@ -1451,7 +1451,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_empty",
-          "line": 211,
+          "line": 219,
           "called": [
             "asidPoolUnique"
           ]
@@ -1459,7 +1459,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_allocate_fresh",
-          "line": 215,
+          "line": 223,
           "called": [
             "ASID",
             "asidPoolUnique"
@@ -1468,7 +1468,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_free",
-          "line": 224,
+          "line": 232,
           "called": [
             "ASID",
             "asidPoolUnique",
@@ -3099,7 +3099,7 @@
         {
           "kind": "def",
           "name": "uint64ToDescriptor",
-          "line": 227,
+          "line": 228,
           "called": [
             "PageTableDescriptor",
             "PageTableLevel",
@@ -3113,7 +3113,7 @@
         {
           "kind": "def",
           "name": "AccessPermission.isReadOnly",
-          "line": 252,
+          "line": 254,
           "called": [
             "AccessPermission"
           ]
@@ -3121,7 +3121,7 @@
         {
           "kind": "def",
           "name": "descriptorWxCompliant",
-          "line": 260,
+          "line": 262,
           "called": [
             "PageTableDescriptor",
             "isReadOnly"
@@ -3130,7 +3130,7 @@
         {
           "kind": "def",
           "name": "descriptorWxCompliantDec",
-          "line": 267,
+          "line": 269,
           "called": [
             "PageTableDescriptor",
             "isReadOnly"
@@ -3139,7 +3139,7 @@
         {
           "kind": "def",
           "name": "toPagePermissions",
-          "line": 275,
+          "line": 277,
           "called": [
             "PageAttributes",
             "PagePermissions"
@@ -3148,7 +3148,7 @@
         {
           "kind": "theorem",
           "name": "hwDescriptor_wxCompliant_bridge",
-          "line": 288,
+          "line": 290,
           "called": [
             "AccessPermission.isReadOnly",
             "PageAttributes",
@@ -3160,7 +3160,7 @@
         {
           "kind": "def",
           "name": "l0Index",
-          "line": 302,
+          "line": 304,
           "called": [
             "VAddr",
             "toNat"
@@ -3169,7 +3169,7 @@
         {
           "kind": "def",
           "name": "l1Index",
-          "line": 306,
+          "line": 308,
           "called": [
             "VAddr",
             "toNat"
@@ -3178,7 +3178,7 @@
         {
           "kind": "def",
           "name": "l2Index",
-          "line": 310,
+          "line": 312,
           "called": [
             "VAddr",
             "toNat"
@@ -3187,7 +3187,7 @@
         {
           "kind": "def",
           "name": "l3Index",
-          "line": 314,
+          "line": 316,
           "called": [
             "VAddr",
             "toNat"
@@ -3196,7 +3196,7 @@
         {
           "kind": "def",
           "name": "pageOffset",
-          "line": 318,
+          "line": 320,
           "called": [
             "VAddr",
             "toNat"
@@ -3205,7 +3205,7 @@
         {
           "kind": "theorem",
           "name": "l0Index_lt",
-          "line": 322,
+          "line": 324,
           "called": [
             "VAddr",
             "l0Index"
@@ -3214,7 +3214,7 @@
         {
           "kind": "theorem",
           "name": "l1Index_lt",
-          "line": 326,
+          "line": 328,
           "called": [
             "VAddr",
             "l1Index"
@@ -3223,7 +3223,7 @@
         {
           "kind": "theorem",
           "name": "l2Index_lt",
-          "line": 330,
+          "line": 332,
           "called": [
             "VAddr",
             "l2Index"
@@ -3232,7 +3232,7 @@
         {
           "kind": "theorem",
           "name": "l3Index_lt",
-          "line": 334,
+          "line": 336,
           "called": [
             "VAddr",
             "l3Index"
@@ -3241,7 +3241,7 @@
         {
           "kind": "theorem",
           "name": "pageOffset_lt",
-          "line": 338,
+          "line": 340,
           "called": [
             "VAddr",
             "pageOffset"
@@ -3250,7 +3250,7 @@
         {
           "kind": "def",
           "name": "readUInt64",
-          "line": 347,
+          "line": 349,
           "called": [
             "Memory",
             "PAddr",
@@ -3262,7 +3262,7 @@
         {
           "kind": "def",
           "name": "readDescriptor",
-          "line": 360,
+          "line": 362,
           "called": [
             "Memory",
             "PAddr",
@@ -3278,7 +3278,7 @@
         {
           "kind": "def",
           "name": "blockOffset1G",
-          "line": 369,
+          "line": 371,
           "called": [
             "VAddr",
             "toNat"
@@ -3287,7 +3287,7 @@
         {
           "kind": "def",
           "name": "blockOffset2M",
-          "line": 373,
+          "line": 375,
           "called": [
             "VAddr",
             "toNat"
@@ -3296,7 +3296,7 @@
         {
           "kind": "def",
           "name": "pageTableWalk",
-          "line": 388,
+          "line": 390,
           "called": [
             "Memory",
             "PAddr",
@@ -3319,7 +3319,7 @@
         {
           "kind": "theorem",
           "name": "pageTableWalk_deterministic",
-          "line": 422,
+          "line": 424,
           "called": [
             "Memory",
             "PAddr",
@@ -3331,7 +3331,7 @@
         {
           "kind": "def",
           "name": "pageTableWalkPerms",
-          "line": 428,
+          "line": 431,
           "called": [
             "Memory",
             "PAddr",
@@ -6120,7 +6120,7 @@
         {
           "kind": "def",
           "name": "simulationRelation",
-          "line": 317,
+          "line": 326,
           "called": [
             "ARMv8VSpace",
             "hwLookupPage",
@@ -6130,7 +6130,7 @@
         {
           "kind": "theorem",
           "name": "hwLookupPage_refines",
-          "line": 321,
+          "line": 330,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -6142,7 +6142,7 @@
         {
           "kind": "theorem",
           "name": "hwLookupAddr_refines",
-          "line": 326,
+          "line": 335,
           "called": [
             "ARMv8VSpace",
             "ARMv8VSpace.hwLookupAddr",
@@ -6155,7 +6155,7 @@
         {
           "kind": "theorem",
           "name": "vspaceProperty_transfer",
-          "line": 333,
+          "line": 342,
           "called": [
             "ARMv8VSpace",
             "PAddr",

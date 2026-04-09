@@ -223,17 +223,19 @@ def decodePageAttributes (raw : UInt64) : PageAttributes :=
     uxn        := ((raw >>> 54) &&& 0x1) == 1 }
 
 /-- Decode a UInt64 to a page table descriptor.
-    Requires the level to distinguish block vs table vs page at bits [1:0] = 0b11. -/
+    Requires the level to distinguish block vs table vs page at bits [1:0] = 0b11.
+    Per ARM ARM D8.3: bit[0] = 0 means invalid (covers both 0b00 and 0b10). -/
 def uint64ToDescriptor (raw : UInt64) (level : PageTableLevel) : PageTableDescriptor :=
   let typeBits := raw &&& 0b11
-  if typeBits == 0 then
+  if typeBits == 0 || typeBits == 0b10 then
+    -- ARM ARM D8.3: bit[0] = 0 → invalid entry (fault)
     .invalid
   else if typeBits == 0b01 then
     -- Block descriptor (L1: 1GiB, L2: 2MiB)
     let addr := PAddr.ofNat (raw &&& outputAddrMask).toNat
     .block addr (decodePageAttributes raw)
   else
-    -- typeBits == 0b11 or 0b10
+    -- typeBits == 0b11
     match level with
     | .l3 =>
       -- At L3, 0b11 is a page descriptor
@@ -420,8 +422,9 @@ def pageTableWalk (mem : Memory) (ttbr : PAddr) (va : VAddr)
     is exactly one result. This holds trivially because `pageTableWalk` is a
     pure function with all `match` arms covered. -/
 theorem pageTableWalk_deterministic (mem : Memory) (ttbr : PAddr) (va : VAddr) :
-    ∃ result, pageTableWalk mem ttbr va = result :=
-  ⟨_, rfl⟩
+    ∃ result, pageTableWalk mem ttbr va = result ∧
+    ∀ result', pageTableWalk mem ttbr va = result' → result' = result :=
+  ⟨_, rfl, fun _ h => h.symm⟩
 
 /-- Page table walk with permissions: wraps `pageTableWalk` to return
     `(PAddr × PagePermissions)` by converting hardware attributes. -/

@@ -203,7 +203,15 @@ theorem AsidPool.allocate_asid_valid
 -- ============================================================================
 
 /-- ASID uniqueness: no two distinct active VSpaces share the same ASID.
-    This is the core security property for TLB isolation. -/
+    This is the core security property for TLB isolation.
+
+    Design note: the freshness precondition (`hFresh : newAsid ∉ activeAsids`)
+    in `asidPoolUnique_allocate_fresh` is the caller's responsibility. The
+    bump allocator guarantees freshness within a generation (monotonically
+    increasing nextAsid), and rollover is protected by a full TLB flush
+    (`requiresFlush = true`). Formal connection between `AsidPool.allocate`
+    and the freshness property is deferred to the kernel integration layer
+    (AG8) which tracks the active ASID set alongside the pool. -/
 def asidPoolUnique (activeAsids : List ASID) : Prop :=
   activeAsids.Nodup
 

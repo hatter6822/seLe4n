@@ -313,7 +313,16 @@ instance armv8VSpaceBackend : VSpaceBackend ARMv8VSpace where
 
 /-- Simulation relation: the ARMv8 hardware page table walk and the shadow
     HashMap produce identical results for all virtual addresses.
-    This is the core refinement invariant. -/
+    This is the core refinement invariant.
+
+    Design note: `mapPage_refines` and `unmapPage_refines` (proving that
+    mapPage/unmapPage preserve the simulation relation) are deferred to AG7
+    FFI integration. These proofs require showing that `writeDescriptor`
+    chains produce exactly the right page table walk — a deep hardware
+    verification task. The VSpaceBackend correctness proofs go through the
+    shadow and do not require simulation preservation. The simulation
+    relation is established at VSpace construction time and is maintained
+    by the lockstep shadow+hardware update design in mapPage/unmapPage. -/
 def simulationRelation (hw : ARMv8VSpace) : Prop :=
   ∀ va, hw.hwLookupPage va = hw.shadow.lookup va
 
