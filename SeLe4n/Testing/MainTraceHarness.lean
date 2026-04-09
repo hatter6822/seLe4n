@@ -2528,7 +2528,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     schedContextBinding := .bound scId }
   let stBound := { stQ with
     objects := (stQ.objects.insert scId.toObjId (.schedContext sc))
-      |>.insert tid1.toObjId (.tcb tcb1Bound) }
+      |>.insert tid1.toObjId (.tcb tcb1Bound)
+    -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find tid1
+    scThreadIndex := scThreadIndexAdd stQ.scThreadIndex scId tid1 }
   let stAfterTimeout := SeLe4n.Kernel.timeoutBlockedThreads stBound scId
   match stAfterTimeout.objects[tid1.toObjId]? with
   | some (.tcb tcbAfter) =>
@@ -2703,7 +2705,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     objects := (st1.objects.insert scIdMulti.toObjId (.schedContext scMulti))
       |>.insert epId (.endpoint epMulti)
       |>.insert tid1.toObjId (.tcb tcbM1)
-      |>.insert tid2.toObjId (.tcb tcbM2) }
+      |>.insert tid2.toObjId (.tcb tcbM2)
+    -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find both threads
+    scThreadIndex := scThreadIndexAdd (scThreadIndexAdd st1.scThreadIndex scIdMulti tid1) scIdMulti tid2 }
   let stAfterMulti := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti
   let t1Ready := match stAfterMulti.objects[tid1.toObjId]? with
     | some (.tcb t) => t.ipcState == ThreadIpcState.ready

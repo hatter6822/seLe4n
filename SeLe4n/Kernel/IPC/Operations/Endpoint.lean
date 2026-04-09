@@ -204,7 +204,10 @@ def donateSchedContext
           schedContextBinding := .donated clientScId clientTid }
         match storeObject serverTid.toObjId (.tcb serverTcb') st1 with
         | .error e => .error e
-        | .ok ((), st2) => .ok st2
+        | .ok ((), st2) =>
+          -- S-05/PERF-O1: Add server to per-SchedContext thread index
+          .ok { st2 with scThreadIndex :=
+            (scThreadIndexAdd st2.scThreadIndex clientScId serverTid) }
   | _ => .error .objectNotFound
 
 /-- Z7-C2: Return a donated SchedContext from a server back to the original
@@ -256,7 +259,10 @@ def returnDonatedSchedContext
               schedContextBinding := .unbound }
             match storeObject serverTid.toObjId (.tcb serverTcb') st2 with
             | .error e => .error e
-            | .ok ((), st3) => .ok st3
+            | .ok ((), st3) =>
+              -- S-05/PERF-O1: Remove server from per-SchedContext thread index
+              .ok { st3 with scThreadIndex :=
+                (scThreadIndexRemove st3.scThreadIndex scId serverTid) }
   | _ => .error .objectNotFound
 
 /-- Z7-E: Clean up an active donation when a server with `.donated` binding

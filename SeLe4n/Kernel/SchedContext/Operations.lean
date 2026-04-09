@@ -163,7 +163,10 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
               let rqInserted := rqRemoved.insert threadId sc.priority
               { st2 with scheduler := { st2.scheduler with runQueue := rqInserted } }
             else st2
-            .ok ((), st3)
+            -- S-05/PERF-O1: Add thread to per-SchedContext thread index
+            let st4 := { st3 with scThreadIndex :=
+              (scThreadIndexAdd st3.scThreadIndex scIdTyped threadId) }
+            .ok ((), st4)
           | _ => .error .illegalState
         | _ => .error .objectNotFound
     | _ => .error .objectNotFound
@@ -211,7 +214,10 @@ def schedContextUnbind (scId : ObjId) : Kernel Unit :=
           let scIdTyped : SchedContextId := ⟨scId.toNat⟩
           let cleanedQueue := ReplenishQueue.remove st3.scheduler.replenishQueue scIdTyped
           let st4 := { st3 with scheduler := { st3.scheduler with replenishQueue := cleanedQueue } }
-          .ok ((), st4)
+          -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
+          let st5 := { st4 with scThreadIndex :=
+            (scThreadIndexRemove st4.scThreadIndex scIdTyped tid) }
+          .ok ((), st5)
         -- Bound thread's TCB not found — clear SC side anyway
         | _ =>
           let updatedSc := { sc with boundThread := none, isActive := false }
