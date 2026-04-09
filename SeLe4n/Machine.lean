@@ -456,10 +456,15 @@ def enableInterrupts (ms : MachineState) : MachineState :=
   { ms with interruptsEnabled := true }
 
 /-- AG5-G: Execute a function with interrupts disabled, then restore.
-    Models the Rust `with_interrupts_disabled()` critical section. -/
+    Models the Rust `with_interrupts_disabled()` critical section.
+    Saves the original interrupt state, disables interrupts, runs `f`,
+    then restores the saved state — matching the DAIF save/restore
+    semantics in `interrupts.rs`. -/
 def withInterruptsDisabled (f : MachineState → MachineState) (ms : MachineState) :
     MachineState :=
-  enableInterrupts (f (disableInterrupts ms))
+  let saved := ms.interruptsEnabled
+  let result := f (disableInterrupts ms)
+  { result with interruptsEnabled := saved }
 
 /-- AG5-G: `disableInterrupts` sets interruptsEnabled to false. -/
 theorem disableInterrupts_sets_false (ms : MachineState) :
@@ -484,6 +489,20 @@ theorem disableInterrupts_preserves_memory (ms : MachineState) :
 /-- AG5-G: `enableInterrupts` preserves timer. -/
 theorem enableInterrupts_preserves_timer (ms : MachineState) :
     (enableInterrupts ms).timer = ms.timer := rfl
+
+/-- AG5-G: `enableInterrupts` preserves registers. -/
+theorem enableInterrupts_preserves_regs (ms : MachineState) :
+    (enableInterrupts ms).regs = ms.regs := rfl
+
+/-- AG5-G: `enableInterrupts` preserves memory. -/
+theorem enableInterrupts_preserves_memory (ms : MachineState) :
+    (enableInterrupts ms).memory = ms.memory := rfl
+
+/-- AG5-G: `withInterruptsDisabled` restores the original interrupt state.
+    This matches the Rust `with_interrupts_disabled()` DAIF save/restore. -/
+theorem withInterruptsDisabled_restores (f : MachineState → MachineState)
+    (ms : MachineState) :
+    (withInterruptsDisabled f ms).interruptsEnabled = ms.interruptsEnabled := rfl
 
 /-- AG5-G: `tick` preserves interrupt state. -/
 theorem tick_preserves_interruptsEnabled (ms : MachineState) :

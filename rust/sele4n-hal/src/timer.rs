@@ -126,6 +126,8 @@ pub fn is_timer_pending() -> bool {
 ///
 /// * `tick_hz` — Desired tick rate in Hz (e.g., 1000 for 1ms ticks)
 pub fn init_timer(tick_hz: u32) {
+    assert!(tick_hz > 0, "tick_hz must be > 0 to avoid division by zero");
+
     let freq = read_frequency();
     // Use compile-time constant if frequency register returns 0 (non-aarch64)
     let effective_freq = if freq == 0 { COUNTER_FREQ_HZ } else { freq };
@@ -241,5 +243,40 @@ mod tests {
     fn timer_interval_storage() {
         TIMER_INTERVAL.store(54_000, Ordering::Relaxed);
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 54_000);
+    }
+
+    #[test]
+    fn init_timer_stores_interval() {
+        // On non-aarch64, read_frequency returns 0 so fallback to COUNTER_FREQ_HZ.
+        // 54000000 / 1000 = 54000
+        init_timer(1000);
+        assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 54_000);
+        assert_eq!(get_tick_count(), 0);
+    }
+
+    #[test]
+    fn init_timer_100hz_interval() {
+        init_timer(100);
+        assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 540_000);
+    }
+
+    #[test]
+    fn reprogram_timer_no_panic() {
+        TIMER_INTERVAL.store(54_000, Ordering::Relaxed);
+        // On non-aarch64, read_counter returns 0, set_comparator is no-op.
+        reprogram_timer();
+    }
+
+    #[test]
+    fn reprogram_timer_uninit_noop() {
+        TIMER_INTERVAL.store(0, Ordering::Relaxed);
+        // Should return early without panicking
+        reprogram_timer();
+    }
+
+    #[test]
+    #[should_panic(expected = "tick_hz must be > 0")]
+    fn init_timer_zero_hz_panics() {
+        init_timer(0);
     }
 }

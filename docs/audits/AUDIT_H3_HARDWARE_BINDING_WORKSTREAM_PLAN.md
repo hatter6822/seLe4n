@@ -2319,14 +2319,14 @@ future workstreams:
 | AG2 complete | v0.26.1–v0.26.2 | `main` |
 | AG3 complete | v0.26.3–v0.26.4 | `main` |
 | AG4 complete | v0.26.5 | `main` |
-| AG5 complete | v0.26.6 | `main` |
-| AG6 complete | v0.26.7 | `main` |
-| AG7 complete | v0.26.8 | `main` |
-| AG8 complete | v0.26.9 | `main` |
-| AG9 complete | v0.26.10 | `main` |
-| AG10 complete (WS-AG COMPLETE) | v0.26.5 | `main` |
+| AG5 complete | v0.27.0 | `main` |
+| AG6 complete | TBD | `main` |
+| AG7 complete | TBD | `main` |
+| AG8 complete | TBD | `main` |
+| AG9 complete | TBD | `main` |
+| AG10 complete (WS-AG COMPLETE) | TBD | `main` |
 
-Version v0.26.5 marks the first hardware-ready release of seLe4n.
+Version TBD marks the first hardware-ready release of seLe4n.
 
 ---
 

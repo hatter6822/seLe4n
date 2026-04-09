@@ -7,7 +7,7 @@ drivers. Lean model extended with interrupt-disabled region semantics,
 timer interrupt binding, and handleInterrupt information-flow proof.
 7 sub-tasks (AG5-A through AG5-G) closing 7 findings from the H3 hardware
 binding audit.
-Gate: `cargo test --workspace` (281 tests) + `cargo clippy --workspace`
+Gate: `cargo test --workspace` (288 tests) + `cargo clippy --workspace`
 (0 warnings) + `lake build` (256 jobs) + `test_smoke.sh`. Zero sorry/axiom.
 
 ### Changes
@@ -53,19 +53,22 @@ Gate: `cargo test --workspace` (281 tests) + `cargo clippy --workspace`
   `restore_interrupts(saved)`, `enable_irq()`, `are_interrupts_enabled()`,
   `with_interrupts_disabled<F,R>()`. 4 unit tests.
   Lean: `interruptsEnabled : Bool` field on `MachineState`. `disableInterrupts`,
-  `enableInterrupts`, `withInterruptsDisabled` operations with 7 frame/
-  preservation theorems. AG5-G atomicity proofs in `ExceptionModel.lean`:
+  `enableInterrupts`, `withInterruptsDisabled` (save/restore semantics)
+  operations with 10 frame/preservation theorems including
+  `withInterruptsDisabled_restores`. AG5-G atomicity proofs in
+  `ExceptionModel.lean`:
   `saveOutgoingContext_preserves_interruptsEnabled`,
   `restoreIncomingContext_preserves_interruptsEnabled`,
   `setCurrentThread_preserves_interruptsEnabled`,
-  `interruptDispatchSequence_preserves_interruptsEnabled_spurious`
+  `interruptDispatchSequence_preserves_interruptsEnabled_spurious`,
+  `handleInterrupt_timer_eq_timerTick`
 
 ### Metrics
 
 - **New files**: 1 (`rust/sele4n-hal/src/interrupts.rs`)
 - **Modified files**: 11 (6 Lean, 5 Rust)
 - **Lines changed**: ~1184 added, ~106 removed
-- **Rust workspace**: 4 crates, 281 tests, 0 clippy warnings
+- **Rust workspace**: 4 crates, 288 tests, 0 clippy warnings
 - **Lean**: 256 build jobs, zero sorry/axiom
 - **NI coverage**: 35 kernel operations (was 34)
 

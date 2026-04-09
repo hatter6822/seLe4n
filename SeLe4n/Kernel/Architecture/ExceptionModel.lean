@@ -307,4 +307,17 @@ theorem interruptDispatchSequence_preserves_interruptsEnabled_spurious
   rw [interruptDispatchSequence_spurious st rawIntId hSpurious] at hStep
   simp at hStep; exact hStep.symm ▸ rfl
 
+/-- AG5-G: `handleInterrupt` for timer path (INTID = timerInterruptId)
+    delegates to `timerTick`. Since `timerTick` only modifies `objects`,
+    `scheduler`, and `machine.timer` (never `machine.interruptsEnabled`),
+    the interrupt-disabled invariant is preserved.
+
+    This theorem reduces the timer interrupt path to `timerTick`,
+    allowing the general non-spurious case to be proven by case analysis:
+    timer path → this theorem + `timerTick` frame properties;
+    device path → `notificationSignal` frame properties. -/
+theorem handleInterrupt_timer_eq_timerTick (st : SystemState) :
+    handleInterrupt st timerInterruptId = timerTick st := by
+  unfold handleInterrupt; simp [timerInterruptId]
+
 end SeLe4n.Kernel.Architecture

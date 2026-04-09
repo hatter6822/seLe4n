@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.25.19-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.27.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -73,7 +73,7 @@ demostración de Lean 4:
 
 ### Seguridad y verificación
 
-- **Flujo de información de N dominios** — políticas de flujo parametrizadas que generalizan la partición binaria de seL4. Frontera de aplicación de 33 entradas con demostraciones de no interferencia por operación (inductivo `NonInterferenceStep` de 34 constructores)
+- **Flujo de información de N dominios** — políticas de flujo parametrizadas que generalizan la partición binaria de seL4. Frontera de aplicación de 33 entradas con demostraciones de no interferencia por operación (inductivo `NonInterferenceStep` de 35 constructores)
 - **Capa de demostración compuesta** — `proofLayerInvariantBundle` compone 10 invariantes de subsistema (planificador, capacidad, IPC, ciclo de vida, servicio, VSpace, intersubsistema, TLB y extensiones CBS) en una única obligación de nivel superior verificada desde el arranque a través de todas las operaciones
 - **Arquitectura de estado en dos fases** — la fase de construcción con testigos de invariantes alimenta una representación inmutable congelada con equivalencia de consulta demostrada. 20 operaciones congeladas replican la API en vivo
 - **Conjunto completo de operaciones** — todas las operaciones de seL4 implementadas con preservación de invariantes, incluyendo las 5 operaciones diferidas (suspend/resume, setPriority/setMCPriority, setIPCBuffer)

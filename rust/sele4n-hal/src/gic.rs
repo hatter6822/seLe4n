@@ -104,8 +104,9 @@ fn mmio_write32(addr: usize, val: u32) {
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid GIC MMIO address within the
-        // mapped device memory region (0xFF841000-0xFF842FFF). Volatile write
-        // ensures the write reaches the device. (ARM GIC-400 TRM §4.1)
+        // mapped device memory region (0xFF841000-0xFF843FFF: distributor
+        // 0x1000 + CPU interface 0x2000). Volatile write ensures the write
+        // reaches the device. (ARM GIC-400 TRM §4.1)
         unsafe { core::ptr::write_volatile(addr as *mut u32, val) }
     }
     #[cfg(not(target_arch = "aarch64"))]
@@ -375,5 +376,24 @@ mod tests {
         // Test the spurious path explicitly:
         assert!(is_spurious(1023));
         assert!(!is_spurious(0));
+    }
+
+    #[test]
+    fn init_gic_no_panic() {
+        // On non-aarch64, all MMIO ops are no-ops. Verify init sequence
+        // runs without panicking.
+        init_gic();
+    }
+
+    #[test]
+    fn dispatch_irq_calls_handler() {
+        // On non-aarch64, acknowledge_irq returns 0 (INTID 0, not spurious).
+        // Handler should be called with INTID 0.
+        let mut called_with = None;
+        let handled = dispatch_irq(|intid| {
+            called_with = Some(intid);
+        });
+        assert!(handled);
+        assert_eq!(called_with, Some(0));
     }
 }

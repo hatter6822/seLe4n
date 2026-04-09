@@ -71,7 +71,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 ### Security and verification
 
-- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (34-constructor `NonInterferenceStep` inductive)
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive)
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 10 subsystem invariants (scheduler, capability, IPC, lifecycle, service, VSpace, cross-subsystem, TLB, and CBS extensions) into a single top-level obligation verified from boot through all operations
 - **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 20 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, including the 5 deferred operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
@@ -87,9 +87,9 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.27.0` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 88,559 across 136 files |
+| **Production Lean LoC** | 88,591 across 136 files |
 | **Test Lean LoC** | 11,374 across 16 test suites |
-| **Proved declarations** | 2,635 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,639 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |

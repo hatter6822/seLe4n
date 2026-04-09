@@ -12,9 +12,9 @@ coverage was at ~5-10% of what published seL4 proofs establish (CRIT-02, CRIT-03
 
 **Current state (post WS-K, v0.16.8):** NI coverage exceeds **80%** of kernel
 operations. The proof surface includes NI preservation theorems across all
-subsystems, a **34-constructor** `NonInterferenceStep` inductive (extended by
-WS-J1-D and WS-K-G), `composedNonInterference_trace` covering all constructors,
-`syscallNI_coverage_witness` documenting exhaustive 34-constructor match, BIBA
+subsystems, a **35-constructor** `NonInterferenceStep` inductive (extended by
+WS-J1-D, WS-K-G, and AG5-F), `composedNonInterference_trace` covering all constructors,
+`syscallNI_coverage_witness` documenting exhaustive 35-constructor match, BIBA
 lattice alternatives with refl/trans proofs, `DeclassificationPolicy` with
 `declassifyStore_NI`, and `InformationFlowConfigInvariant` bundle. IF-M1 through
 IF-M4 and WS-F3 are all completed. WS-J1-D added `syscallDecodeError` and
@@ -234,7 +234,7 @@ Delivered (WS-F3 closeout):
   preservation theorem chaining three sub-operations.
 - `cspaceRevoke_preserves_projection` — extracted for compositional reuse.
 - `NonInterferenceStep` extended from 33 to 34 constructors with
-  `lifecycleRevokeDeleteRetype` constructor.
+  `lifecycleRevokeDeleteRetype` constructor (later 35 with AG5-F `handleInterrupt`).
 - All deferred NI proofs now fully resolved — zero `sorry`/`axiom`.
 
 ## WS-H10 — Security model foundations ✅ completed (v0.13.6)
