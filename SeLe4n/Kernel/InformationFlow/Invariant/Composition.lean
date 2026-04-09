@@ -870,7 +870,7 @@ theorem syscallNI_coverage_witness
     -- Every NI step composes into a single-step trace
     (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
       NonInterferenceTrace ctx observer st st') ∧
-    -- step_preserves_projection is total (exhaustive match on all 34 constructors)
+    -- step_preserves_projection is total (exhaustive match on all 35 constructors)
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,
@@ -952,7 +952,7 @@ theorem kernelOperation_count : (List.length
 
 /-- U4-F (U-H10): Every `KernelOperation` variant has a witnessing
     `NonInterferenceStep` constructor. This is proven by exhaustive match on
-    all 34 `KernelOperation` variants, each providing a concrete
+    all 35 `KernelOperation` variants, each providing a concrete
     `NonInterferenceStep` constructor.
 
     If a new `KernelOperation` variant is added, the match becomes
@@ -962,7 +962,7 @@ theorem kernelOperation_count : (List.length
     The proof uses `syscallDecodeError` as the universal witness (state
     unchanged = trivially NI-preserving) — this demonstrates constructor
     existence, not operational correspondence. Operational correspondence
-    is established by `step_preserves_projection` which handles all 34
+    is established by `step_preserves_projection` which handles all 35
     constructors. -/
 theorem niStepCoverage
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1079,7 +1079,7 @@ theorem niStepCoverage_injective :
   cases op₁ <;> cases op₂ <;> (first | rfl | simp [kernelOperationNiConstructor] at hEq)
 
 /-- V6-I5: The number of distinct NI constructor names matches the
-    KernelOperation count (34), confirming surjective coverage. -/
+    KernelOperation count (35), confirming surjective coverage. -/
 theorem niStepCoverage_count :
     ([ kernelOperationNiConstructor .chooseThread
      , kernelOperationNiConstructor .endpointSendDual
