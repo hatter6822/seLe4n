@@ -4,7 +4,8 @@
 //!
 //! Phase 1: UART initialization → boot banner
 //! Phase 2: MMU initialization → VBAR_EL1 setup
-//! Phase 3: Handoff to Lean kernel (AG7 — FFI bridge)
+//! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
+//! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
 const KERNEL_VERSION: &str = "0.27.0";
