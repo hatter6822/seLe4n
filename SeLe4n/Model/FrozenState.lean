@@ -257,6 +257,9 @@ structure FrozenSystemState where
   /-- WS-G2/F-P10: Frozen shadow set for O(1) objectIndex membership checks.
   Mirrors `SystemState.objectIndexSet` (RHSet → FrozenSet). -/
   objectIndexSet    : FrozenSet SeLe4n.ObjId
+  /-- S-05/PERF-O1: Per-SchedContext thread index, frozen from `SystemState.scThreadIndex`.
+  Maps each SchedContextId to the list of ThreadIds referencing it. -/
+  scThreadIndex     : FrozenMap SeLe4n.SchedContextId (List SeLe4n.ThreadId)
   /-- T2-D (M-NEW-1): Abstract TLB state, transferred from `SystemState.tlb`
   during freeze. The TLB is immutable in the frozen phase (no frozen TLB
   operations), so this is a direct field copy for completeness. -/
@@ -370,6 +373,7 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     machine := st.machine
     objectIndex := st.objectIndex
     objectIndexSet := freezeMap st.objectIndexSet.table
+    scThreadIndex := freezeMap st.scThreadIndex
     tlb := st.tlb }
 
 -- ============================================================================

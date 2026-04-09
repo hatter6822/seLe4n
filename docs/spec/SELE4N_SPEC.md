@@ -550,16 +550,18 @@ RunQueue.
 - **`timeoutThread`** (`Timeout.lean`): Removes thread from endpoint queue
   via `endpointQueueRemove`, resets IPC state to `.ready`, writes timeout
   error code, re-enqueues via `ensureRunnable`.
-- **`timeoutBlockedThreads`** (`Core.lean`): Scans object store for TCBs
-  bound to an exhausted SchedContext and calls `timeoutThread` on each.
+- **`timeoutBlockedThreads`** (`Core.lean`): Looks up the per-SchedContext
+  thread index (`scThreadIndex`) for O(1) identification of threads bound
+  to an exhausted SchedContext, then calls `timeoutThread` on each.
 - **`timeoutAwareReceive`** (`Timeout.lean`): Wrapper that detects prior
   timeout via error code in register context.
 - **`blockedThreadTimeoutConsistent`** invariant: Threads with
   `timeoutBudget = some scId` must reference a valid SchedContext and be
   in a blocking IPC state.
 
-The timeout scan is triggered in `timerTickBudget` on budget exhaustion,
-using `schedContextBinding.scId?` to identify affected threads.
+The timeout lookup is triggered in `timerTickBudget` on budget exhaustion,
+using the `scThreadIndex` (a Robin Hood hash table mapping `SchedContextId`
+to `List ThreadId`) for O(1) identification of affected threads.
 
 ### 8.6 Memory Scrubbing on Delete (WS-S Phase S6)
 

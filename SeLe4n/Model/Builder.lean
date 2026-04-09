@@ -89,10 +89,14 @@ private theorem allTablesInvExtK_threadPriority {st : SystemState}
 
 /-- Y1-F: Extract scheduler.runQueue.membership.table invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_membership {st : SystemState}
-    (h : st.allTablesInvExtK) : st.scheduler.runQueue.membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    (h : st.allTablesInvExtK) : st.scheduler.runQueue.membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
--- Y1-G: Completeness note — all 16 conjuncts of `allTablesInvExtK` have named
--- accessors. The full list (matching the definition order in State.lean:302-324):
+/-- S-05/PERF-O1: Extract scThreadIndex invExtK from allTablesInvExtK. -/
+private theorem allTablesInvExtK_scThreadIndex {st : SystemState}
+    (h : st.allTablesInvExtK) : st.scThreadIndex.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+
+-- Y1-G: Completeness note — all 17 conjuncts of `allTablesInvExtK` have named
+-- accessors. The full list (matching the definition order in State.lean):
 --  1. allTablesInvExtK_objects         (objects)
 --  2. allTablesInvExtK_irqHandlers     (irqHandlers)
 --  3. allTablesInvExtK_asidTable       (asidTable)
@@ -109,6 +113,7 @@ private theorem allTablesInvExtK_membership {st : SystemState}
 -- 14. allTablesInvExtK_threadPriority (scheduler.runQueue.threadPriority)
 -- 15. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
 -- 16. allTablesInvExtK_membership     (scheduler.runQueue.membership.table)
+-- 17. allTablesInvExtK_scThreadIndex  (scThreadIndex)
 -- WARNING: Do not use raw tuple projections (.2.2.2...) on allTablesInvExtK.
 -- Use the named accessors above instead. Raw projections are fragile and break
 -- silently when fields are added or reordered.
@@ -162,7 +167,9 @@ def registerService (ist : IntermediateState) (sid : ServiceId)
            h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
            h.2.2.2.2.2.2.2.2.2.2.1,
            RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2⟩
+           h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
   hPerObjectSlots := by
     intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
   hPerObjectMappings := by
@@ -214,7 +221,8 @@ def createObject (ist : IntermediateState)
            h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
            h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
            h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           ?_, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+           ?_, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
     exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
   hPerObjectSlots := by
     unfold perObjectSlotsInvariant

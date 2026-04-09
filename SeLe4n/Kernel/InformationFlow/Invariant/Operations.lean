@@ -2466,7 +2466,7 @@ theorem applyCallDonation_preserves_projection
                           ctx observer st p1.2 clientScId.toObjId _ hScObjHigh hObjInv hS1
                         have hProj2 := storeObject_preserves_projection
                           ctx observer p1.2 p2.2 receiver.toObjId _ hReceiverObjHigh hInv1 hS2
-                        rw [hProj2, hProj1]
+                        rw [projectState_scThreadIndex_eq, hProj2, hProj1]
               | _ => simp only []; intro h; cases h
 
 /-- AE1-F3: `propagatePriorityInheritance` preserves NI projection when

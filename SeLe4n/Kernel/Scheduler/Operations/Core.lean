@@ -482,50 +482,40 @@ has been exhausted.
 
 When a SchedContext's budget reaches zero, any thread that was relying on
 that SchedContext's budget to bound its IPC blocking time must be unblocked.
-This function scans all TCBs in the object store, finds those with
-`schedContextBinding.scId? = some scId`, and calls `timeoutThread` to
-unblock them from their respective endpoint queues.
+This function looks up the per-SchedContext thread index (`scThreadIndex`)
+to find threads with `schedContextBinding.scId? = some scId`, then calls
+`timeoutThread` to unblock each from its respective endpoint queue.
 
-**Complexity**: O(n) in the total number of objects in the store, where
-n = `st.objects.size` (up to `maxObjects` = 65536 on RPi5). The fold visits
-every object, not just TCBs, because the `RHTable` does not support type-
-filtered iteration. This cost is incurred only on SchedContext budget
-exhaustion events — typically once per CBS period per active SchedContext,
-not per timer tick.
+**Complexity**: O(1) RHTable lookup + O(k) iteration where k is the number
+of threads referencing the exhausted SchedContext (typically 1–3 due to the
+1:1 binding model + IPC donation). This replaces the prior O(n) full
+object-store scan (finding S-05/AE3-K).
 
 **Frequency**: Budget exhaustion is rare under well-configured CBS admission
 control. The admission check (`admissionControl` in Budget.lean) ensures
 total bandwidth ≤ 1.0, so exhaustion occurs only when a thread fully consumes
 its allocated budget within a single period.
 
--- PERF-NOTE (S-05/AE3-K): O(n) scan over all objects. Acceptable for
--- current object counts (≤65K). If RPi5 benchmarking shows this as a
--- bottleneck, replace with per-SchedContext bound-thread index
--- (`HashMap SchedContextId (List ThreadId)`) maintained by bind/unbind/delete
--- operations. This would reduce timeout scanning from O(n) to O(k) where k is
--- the number of threads bound to the exhausted SchedContext (typically 1–3).
--- Deferred to post-benchmarking optimization.
-
 Note: threads in `blockedOnReply` are also timed out. In seL4 MCS, this
 handles the case where a client's donated budget expires while the server
 is running — the client is unblocked with a timeout error (Z6-E integration
-with future Z7 donation). -/
+with Z7 donation). -/
 def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
     : SystemState :=
-  st.objects.fold st fun acc oid obj =>
-    match obj with
-    | .tcb tcb =>
-      -- Check if this thread's SchedContext matches the exhausted one
-      if tcb.schedContextBinding.scId? = some scId then
-        match tcbBlockingInfo tcb with
-        | some (epId, isReceiveQ) =>
-          -- Attempt to timeout this thread
-          match timeoutThread epId isReceiveQ ⟨oid.val⟩ acc with
-          | .ok st' => st'
-          | .error _ => acc  -- defensive: skip if queue removal fails
-        | none => acc  -- not blocked on IPC
-      else acc
-    | _ => acc
+  -- S-05/PERF-O1: O(1) RHTable lookup replaces O(n) object store scan
+  let tids := st.scThreadIndex[scId]?.getD []
+  tids.foldl (fun acc tid =>
+    match (acc.objects[tid.toObjId]? : Option KernelObject) with
+    | some (.tcb tcb) =>
+      match tcbBlockingInfo tcb with
+      | some (epId, isReceiveQ) =>
+        -- Attempt to timeout this thread
+        match timeoutThread epId isReceiveQ tid acc with
+        | .ok st' => st'
+        | .error _ => acc  -- defensive: skip if queue removal fails
+      | none => acc  -- not blocked on IPC
+    | _ => acc  -- defensive: index entry for non-TCB (invariant violation)
+  ) st
 
 -- ============================================================================
 -- Z4-F: SchedContext-aware budget decrement (timerTickBudget)

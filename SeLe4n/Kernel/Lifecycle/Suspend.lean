@@ -103,6 +103,9 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
     let st2 := { st1 with scheduler := { st1.scheduler with
         replenishQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scId } }
+    -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
+    let st2 := { st2 with scThreadIndex :=
+      (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
     match (st2.objects[tid.toObjId]? : Option KernelObject) with
     | some (.tcb tcb') =>

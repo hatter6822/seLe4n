@@ -244,6 +244,7 @@ private def emptyFrozenState : FrozenSystemState := {
   machine := default
   objectIndex := []
   objectIndexSet := freezeMap (RHTable.empty 16)
+  scThreadIndex := freezeMap (RHTable.empty 16)
   tlb := TlbState.empty
 }
 

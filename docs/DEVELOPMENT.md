@@ -371,7 +371,7 @@ when hardware profiling data is available.
 
 | Operation | Complexity | Trigger Frequency | Location |
 |-----------|-----------|-------------------|----------|
-| `timeoutBlockedThreads` | O(n) in object count | Once per CBS period on budget exhaustion | `Core.lean` |
+| `timeoutBlockedThreads` | O(1) lookup + O(k) per bound threads | Once per CBS period on budget exhaustion | `Core.lean` |
 | `RunQueue.insert` | O(n) in queue size | Every enqueue (preemption, unblock) | `RunQueue.lean` |
 | `RunQueue.remove` | O(k + n), k = bucket size | Every dequeue (dispatch, block) | `RunQueue.lean` |
 | `RunQueue.rotateToBack` | O(k + n) | Round-robin rotation within priority band | `RunQueue.lean` |

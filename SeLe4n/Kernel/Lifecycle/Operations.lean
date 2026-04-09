@@ -346,6 +346,16 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   let st := match currentObj with
     | .tcb tcb => cleanupDonatedSchedContext st tcb.tid
     | _ => st
+  -- S-05/PERF-O1: Remove thread from scThreadIndex before destroying TCB.
+  -- cleanupDonatedSchedContext handles .donated (via returnDonatedSchedContext);
+  -- this handles .bound TCBs being retyped without prior suspension.
+  let st := match currentObj with
+    | .tcb tcb =>
+      match tcb.schedContextBinding with
+      | .bound scId => { st with scThreadIndex :=
+          (scThreadIndexRemove st.scThreadIndex scId tcb.tid) }
+      | _ => st  -- .donated already handled above; .unbound is a no-op
+    | _ => st
   let st := match currentObj with
     | .tcb tcb => cleanupTcbReferences st tcb.tid
     | _ => st
@@ -407,8 +417,15 @@ private theorem lifecyclePreRetypeCleanup_flat_subset
     -- cleanupDonatedSchedContext preserves scheduler, so we can rewrite through it
     have hDonSched : (cleanupDonatedSchedContext st tcb.tid).scheduler = st.scheduler :=
       cleanupDonatedSchedContext_scheduler_eq st tcb.tid
+    -- S-05/PERF-O1: scThreadIndex cleanup preserves scheduler (both branches)
+    have hScIdxSched : (match tcb.schedContextBinding with
+      | .bound scId => { cleanupDonatedSchedContext st tcb.tid with scThreadIndex :=
+          (scThreadIndexRemove (cleanupDonatedSchedContext st tcb.tid).scThreadIndex scId tcb.tid) }
+      | _ => cleanupDonatedSchedContext st tcb.tid).scheduler =
+        (cleanupDonatedSchedContext st tcb.tid).scheduler := by
+      cases tcb.schedContextBinding <;> rfl
     rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
-    unfold removeRunnable at h; rw [hDonSched] at h; simp only [] at h
+    unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h; simp only [] at h
     exact (List.mem_filter.mp h).1
   | cnode cn =>
     simp only [] at h
@@ -1227,7 +1244,9 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     rw [hSchedEq, scrubObjectMemory_scheduler_eq]
     unfold lifecyclePreRetypeCleanup
     simp only []
-    exact cleanupTcbReferences_removes_from_runnable (cleanupDonatedSchedContext st tcb.tid) tcb.tid
+    -- S-05/PERF-O1: cleanupTcbReferences_removes_from_runnable is polymorphic in
+    -- the input state; use _ to let Lean unify with the scThreadIndex-cleaned state
+    exact cleanupTcbReferences_removes_from_runnable _ tcb.tid
 
 -- ============================================================================
 -- WS-K-D: Lifecycle syscall dispatch helpers

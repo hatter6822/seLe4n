@@ -662,6 +662,13 @@ theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
     ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
+/-- S-05/PERF-O1: Lookup equivalence for scThreadIndex across freeze. -/
+theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedContextId) :
+    ist.state.scThreadIndex.get? k =
+      (freeze ist).scThreadIndex.get? k := by
+  exact freezeMap_get?_eq ist.state.scThreadIndex k
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
 -- ============================================================================
 -- Q6-B: CNode Radix Lookup Equivalence
 -- ============================================================================

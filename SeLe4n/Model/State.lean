@@ -271,6 +271,21 @@ structure SystemState where
   cdtSlotNode : RHTable SlotRef CdtNodeId := {}
   cdtNodeSlot : RHTable CdtNodeId SlotRef := {}
   cdtNextNode : CdtNodeId := ⟨0⟩
+  /-- S-05/PERF-O1: Per-SchedContext thread index — maps each `SchedContextId`
+      to the list of `ThreadId`s whose `TCB.schedContextBinding.scId?` equals
+      that SchedContext. Maintained by `schedContextBind`, `schedContextUnbind`,
+      `donateSchedContext`, `returnDonatedSchedContext`, and `cancelDonation`.
+
+      **Purpose**: Eliminates the O(n) full object-store scan in
+      `timeoutBlockedThreads` (finding S-05). With this index, timeout on
+      budget exhaustion is O(1) RHTable lookup + O(k) iteration where
+      k = number of threads referencing the exhausted SchedContext (typically
+      1–3 due to the 1:1 binding + donation model).
+
+      **Invariant (`scThreadIndexConsistent`)**: A thread `tid` appears in
+      `scThreadIndex[scId]` iff `tid` exists as a TCB in `objects` with
+      `schedContextBinding.scId? = some scId`. -/
+  scThreadIndex : RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId) := {}
   /-- R7-A.1/M-17: Abstract TLB state, tracking cached address translations.
       Empty by default (no stale entries at boot). Operations that modify page
       tables must flush the TLB to maintain `tlbConsistent`. -/
@@ -302,6 +317,7 @@ instance : Inhabited SystemState where
     cdtSlotNode := {}
     cdtNodeSlot := {}
     cdtNextNode := ⟨0⟩
+    scThreadIndex := {}
     tlb := TlbState.empty
   }
 
@@ -342,7 +358,9 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.scheduler.runQueue.threadPriority.invExtK ∧
   -- RHSet invExtK (via table field)
   st.objectIndexSet.table.invExtK ∧
-  st.scheduler.runQueue.membership.table.invExtK
+  st.scheduler.runQueue.membership.table.invExtK ∧
+  -- S-05/PERF-O1: Per-SchedContext thread index
+  st.scThreadIndex.invExtK
 
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
@@ -362,10 +380,11 @@ theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := b
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
-  exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
+  constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
+  exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 16 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 17 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
@@ -384,7 +403,33 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.scheduler.runQueue.byPriority.invExtK ∧
     st.scheduler.runQueue.threadPriority.invExtK ∧
     st.objectIndexSet.table.invExtK ∧
-    st.scheduler.runQueue.membership.table.invExtK := h
+    st.scheduler.runQueue.membership.table.invExtK ∧
+    st.scThreadIndex.invExtK := h
+
+-- ============================================================================
+-- S-05/PERF-O1: scThreadIndex maintenance helpers
+-- ============================================================================
+
+/-- S-05/PERF-O1: Add a thread to the per-SchedContext thread index.
+If the SchedContext already has an entry, the thread is prepended to the list.
+If not, a new entry is created with a singleton list. -/
+def scThreadIndexAdd (idx : RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
+    (scId : SeLe4n.SchedContextId) (tid : SeLe4n.ThreadId)
+    : RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId) :=
+  let existing := idx[scId]?.getD []
+  idx.insert scId (tid :: existing)
+
+/-- S-05/PERF-O1: Remove a thread from the per-SchedContext thread index.
+Filters the thread out of the SchedContext's list. If the list becomes empty,
+the entry is erased entirely to avoid accumulating empty lists. -/
+def scThreadIndexRemove (idx : RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
+    (scId : SeLe4n.SchedContextId) (tid : SeLe4n.ThreadId)
+    : RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId) :=
+  match idx[scId]? with
+  | none => idx
+  | some tids =>
+    let remaining := tids.filter (· != tid)
+    if remaining.isEmpty then idx.erase scId else idx.insert scId remaining
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
@@ -1399,10 +1444,10 @@ theorem capabilityRefs_fold_preserves_invExtK
 
 /-- T2-G (M-NEW-2): Bundled preservation theorem for `storeObject`.
 
-    Composes the 16+ component preservation proofs (objects, objectIndex,
+    Composes the 17 component preservation proofs (objects, objectIndex,
     objectIndexSet, lifecycle.objectTypes, lifecycle.capabilityRefs, asidTable,
-    etc.) into a single theorem. Callers can invoke this instead of manually
-    composing each component.
+    scThreadIndex, etc.) into a single theorem. Callers can invoke this instead
+    of manually composing each component.
 
     The proof works by showing that `storeObject` only modifies fields via
     `insert`, `filter`, or `erase` — all of which preserve `invExt` — and
@@ -1434,7 +1479,8 @@ theorem storeObject_preserves_allTablesInvExtK
   have hByPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.1
   have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
   have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hScThreadIdx := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
   -- Prove objects insert preserves invExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
@@ -1467,10 +1513,10 @@ theorem storeObject_preserves_allTablesInvExtK
     cases obj with
     | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
-  -- Compose all 16 components
+  -- Compose all 17 components (S-05/PERF-O1: scThreadIndex added)
   exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes', hCapRefs',
          hChildMap, hParentMap, hServices, hIfaceReg, hSvcReg,
-         hByPri, hThreadPri, hObjIdxSet', hMembership⟩
+         hByPri, hThreadPri, hObjIdxSet', hMembership, hScThreadIdx⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proof
