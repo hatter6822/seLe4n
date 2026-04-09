@@ -450,12 +450,12 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (14-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer`, WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I)
+- `ipcInvariantFull` (15-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ uniqueWaiters`, WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C)
 - `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
 Cross-subsystem composition (WS-H12e + WS-F5):
 
-- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (14-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `blockedThreadTimeoutConsistent`, `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, and `donationBudgetTransfer` were defined but not composed into the cross-subsystem proof surface
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (15-conjunct), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `blockedThreadTimeoutConsistent`, `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`, and `uniqueWaiters` were defined but not composed into the cross-subsystem proof surface
 - Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`, `coreIpcInvariantBundle_to_endpointQueueNoDup`, `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`, `coreIpcInvariantBundle_to_queueNextBlockingConsistent`, `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`
 
 Component level:
@@ -629,7 +629,7 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - `noStaleNotificationWaitReferences` — every ThreadId in notification `waitingThreads` has a live TCB (T5-H)
   - `registryDependencyConsistent` — every dependency edge references a registered service
   - `registryInterfaceValid` — every registered service has its interfaces in the interface registry (AE5-C/SVC-04)
-  - `crossSubsystemInvariant` — composed 10-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`, AE5-C: added `registryInterfaceValid`, AF1-B: added `blockingAcyclic`)
+  - `crossSubsystemInvariant` — composed 10-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`, AE5-C: added `registryInterfaceValid`, AF1-B: added `blockingAcyclic`). **AG1-F**: 6 decidable runtime checks added (`checkNoStaleEndpointQueueRefs`, `checkNoStaleNotificationWaitRefs`, `checkSchedContextStoreConsistent`, `checkSchedContextNotDualBound`, `checkSchedContextRunQueueConsistent`, `checkBlockingAcyclic`) composed into `checkCrossSubsystemInvariant` and integrated into test harness `checkInvariants`.
   - **X3-C/X3-D (v0.22.20)**: 10 predicate interaction pairs fully covered:
     - 6 disjoint pairs with field-disjointness witnesses (V6-A3)
     - 4 sharing pairs with frame theorems (`sharingPair1_objects_frame`, `sharingPair23_objects_frame`, `sharingPair4_services_frame`)
@@ -1270,7 +1270,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | Bundle | Change | Effect |
 |---|---|---|
 | `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12) | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches TCB priority |
-| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (5-conjunct) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, and `waitingThreadsPendingMessageNone` now composed into cross-subsystem proof surface |
+| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (15-conjunct, AG1-C: +`uniqueWaiters`) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, and `uniqueWaiters` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
 | `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle`; extended from 9 to 10 conjuncts (Z9: + `schedulerInvariantBundleExtended`) | Top-level proof surface includes all 7 scheduler conjuncts plus full CBS scheduler extension |
 

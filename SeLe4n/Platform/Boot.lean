@@ -258,6 +258,53 @@ theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
   simp [bootFromPlatformChecked, hNotWf]
   split <;> rfl
 
+/-- AG1-D: Boot with duplicate detection warnings.
+
+Provides a middle ground between the silent `bootFromPlatform` (last-wins, no
+feedback) and the rejecting `bootFromPlatformChecked` (fails on duplicates).
+Returns the booted `IntermediateState` alongside a list of warning strings
+describing any detected duplicates.
+
+This is useful for development and debugging: the boot always succeeds (like
+`bootFromPlatform`), but callers can inspect warnings to detect configuration
+issues. Production boot paths should still use `bootFromPlatformChecked`.
+
+**Warning categories**:
+- Duplicate IRQ INTIDs: "duplicate IRQ: INTID {n} (last-wins)"
+- Duplicate object IDs: "duplicate object ID: {n} (last-wins)" -/
+def bootFromPlatformWithWarnings (config : PlatformConfig)
+    : IntermediateState × List String :=
+  let irqWarnings := if irqsUnique config.irqTable then []
+    else config.irqTable.foldl (fun (acc : List Nat × List String) entry =>
+      if entry.irq.toNat ∈ acc.1 then
+        (acc.1, acc.2 ++ [s!"duplicate IRQ: INTID {entry.irq.toNat} (last-wins)"])
+      else
+        (entry.irq.toNat :: acc.1, acc.2)
+    ) ([], []) |>.2
+  let objWarnings := if objectIdsUnique config.initialObjects then []
+    else config.initialObjects.foldl (fun (acc : List Nat × List String) entry =>
+      if entry.id.toNat ∈ acc.1 then
+        (acc.1, acc.2 ++ [s!"duplicate object ID: {entry.id.toNat} (last-wins)"])
+      else
+        (entry.id.toNat :: acc.1, acc.2)
+    ) ([], []) |>.2
+  (bootFromPlatform config, irqWarnings ++ objWarnings)
+
+/-- AG1-D: `bootFromPlatformWithWarnings` returns no warnings on well-formed configs. -/
+theorem bootFromPlatformWithWarnings_wellFormed_no_warnings (config : PlatformConfig)
+    (hWf : config.wellFormed = true) :
+    (bootFromPlatformWithWarnings config).2 = [] := by
+  simp [bootFromPlatformWithWarnings]
+  constructor
+  · -- irqsUnique holds when wellFormed
+    have : irqsUnique config.irqTable = true := by
+      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.1
+    simp [this]
+  · -- objectIdsUnique holds when wellFormed
+    have : objectIdsUnique config.initialObjects = true := by
+      unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.2
+    simp [this]
+
 -- ============================================================================
 -- X2-D: Post-boot machine configuration
 -- ============================================================================
@@ -996,9 +1043,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
     lifecycleInvariantBundle_of_metadata_consistent _
       (bootFromPlatform config).hLifecycleConsistent
-  -- 3. ipcInvariantFull (14 sub-components)
+  -- 3. ipcInvariantFull (15 sub-components, AG1-C: +uniqueWaiters)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -1098,6 +1145,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro tid1 _ tcb1 _ _ h1 _ _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
       simp [hTcb1.2.2.2.2.2, SchedContextBinding.scId?] at hB1
+    · -- AG1-C: uniqueWaiters (boot notifications have empty waitingThreads)
+      intro oid ntfn hObj
+      have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
+      rw [hNtfn.2.1]; exact .nil
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

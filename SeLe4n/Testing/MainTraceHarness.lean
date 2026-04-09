@@ -48,9 +48,10 @@ def bootstrapServiceIds : List ServiceId :=
 
 /-- WS-I1/R-01: Inter-transition invariant check with counter tracking.
 Runs `assertStateInvariantsFor` (which applies `syncThreadStates` internally)
-and increments the shared check counter. -/
+and AG1-F cross-subsystem invariant checks, then increments the shared check counter. -/
 private def checkInvariants (counter : IO.Ref Nat) (label : String) (st : SystemState) : IO Unit := do
   assertStateInvariantsFor label bootstrapInvariantObjectIds st bootstrapServiceIds
+  assertCrossSubsystemInvariant label st
   counter.modify (· + 1)
 
 def bootstrapState : SystemState :=
@@ -2531,7 +2532,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.insert tid1.toObjId (.tcb tcb1Bound)
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find tid1
     scThreadIndex := scThreadIndexAdd stQ.scThreadIndex scId tid1 }
-  let stAfterTimeout := SeLe4n.Kernel.timeoutBlockedThreads stBound scId
+  let (stAfterTimeout, _timeoutErrs) := SeLe4n.Kernel.timeoutBlockedThreads stBound scId
   match stAfterTimeout.objects[tid1.toObjId]? with
   | some (.tcb tcbAfter) =>
     let wasTimedOut := tcbAfter.ipcState == .ready
@@ -2540,7 +2541,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- SCO-028: timeoutBlockedThreads — skips threads with non-matching SchedContext
   let otherScId : SeLe4n.SchedContextId := ⟨6011⟩
-  let stAfterOther := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId
+  let (stAfterOther, _otherErrs) := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId
   match stAfterOther.objects[tid1.toObjId]? with
   | some (.tcb tcbAfter) =>
     let stillBlocked := tcbAfter.ipcState == .blockedOnSend epId
@@ -2708,7 +2709,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.insert tid2.toObjId (.tcb tcbM2)
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find both threads
     scThreadIndex := scThreadIndexAdd (scThreadIndexAdd st1.scThreadIndex scIdMulti tid1) scIdMulti tid2 }
-  let stAfterMulti := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti
+  let (stAfterMulti, _multiErrs) := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti
   let t1Ready := match stAfterMulti.objects[tid1.toObjId]? with
     | some (.tcb t) => t.ipcState == ThreadIpcState.ready
     | _ => false

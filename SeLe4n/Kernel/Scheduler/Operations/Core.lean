@@ -454,10 +454,11 @@ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
         match sc.boundThread with
         | some tid =>
           -- Only re-enqueue if the thread is not already current or in queue
+          -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
           if tid ∈ refilled.scheduler.runQueue then refilled
           else if refilled.scheduler.current == some tid then refilled
           else { refilled with scheduler := { refilled.scheduler with
-            runQueue := refilled.scheduler.runQueue.insert tid sc.priority } }
+            runQueue := refilled.scheduler.runQueue.insert tid (resolveInsertPriority refilled tid sc) } }
         | none => refilled
       else refilled
     | _ => refilled
@@ -501,21 +502,24 @@ handles the case where a client's donated budget expires while the server
 is running — the client is unblocked with a timeout error (Z6-E integration
 with Z7 donation). -/
 def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
-    : SystemState :=
+    : SystemState × List (SeLe4n.ThreadId × KernelError) :=
   -- S-05/PERF-O1: O(1) RHTable lookup replaces O(n) object store scan
   let tids := st.scThreadIndex[scId]?.getD []
-  tids.foldl (fun acc tid =>
-    match (acc.objects[tid.toObjId]? : Option KernelObject) with
+  tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
+    let (st', errs) := acc
+    match (st'.objects[tid.toObjId]? : Option KernelObject) with
     | some (.tcb tcb) =>
       match tcbBlockingInfo tcb with
       | some (epId, isReceiveQ) =>
-        -- Attempt to timeout this thread
-        match timeoutThread epId isReceiveQ tid acc with
-        | .ok st' => st'
-        | .error _ => acc  -- defensive: skip if queue removal fails
-      | none => acc  -- not blocked on IPC
-    | _ => acc  -- defensive: index entry for non-TCB (invariant violation)
-  ) st
+        match timeoutThread epId isReceiveQ tid st' with
+        | .ok st'' => (st'', errs)
+        -- AG1-B: Collect errors instead of silently swallowing.
+        -- Under crossSubsystemInvariant, timeoutThread failures are unreachable.
+        -- A non-empty error list indicates an invariant violation.
+        | .error e => (st', errs ++ [(tid, e)])
+      | none => (st', errs)  -- not blocked on IPC
+    | _ => (st', errs)  -- index entry for non-TCB (invariant violation)
+  ) (st, [])
 
 -- ============================================================================
 -- Z4-F: SchedContext-aware budget decrement (timerTickBudget)
@@ -570,13 +574,15 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
           machine := tick st.machine }
         -- Insert into system replenish queue for future refill
         let rq := st'.scheduler.replenishQueue.insert scId (now + sc.period.val)
-        -- Re-enqueue current thread at its effective priority
+        -- AG1-A: Re-enqueue current thread at effective priority (base + PIP boost)
         let st'' := { st' with scheduler := { st'.scheduler with
           replenishQueue := rq,
-          runQueue := st'.scheduler.runQueue.insert tid sc.priority } }
+          runQueue := st'.scheduler.runQueue.insert tid (resolveInsertPriority st' tid sc) } }
         -- Z6-E: Timeout any threads blocked on IPC whose timeout was bounded
         -- by this SchedContext. Budget is now 0, so all such threads must unblock.
-        let st''' := timeoutBlockedThreads st'' scId
+        -- AG1-B: Errors are collected for diagnostic purposes. Under
+        -- crossSubsystemInvariant, the error list should always be empty.
+        let (st''', _timeoutErrors) := timeoutBlockedThreads st'' scId
         .ok (st''', true)
       else
         -- Z4-F2: Budget remains — decrement and continue
@@ -696,8 +702,8 @@ def handleYieldWithBudget : Kernel Unit :=
             let st' := { st with
               objects := st.objects.insert scId.toObjId (.schedContext sc''),
               scheduler := { st.scheduler with replenishQueue := rq } }
-            -- Re-enqueue thread and reschedule
-            let rq' := st'.scheduler.runQueue.insert tid sc.priority
+            -- AG1-A: Re-enqueue thread at effective priority (base + PIP boost)
+            let rq' := st'.scheduler.runQueue.insert tid (resolveInsertPriority st' tid sc)
             let st'' := { st' with scheduler := { st'.scheduler with runQueue := rq' } }
             scheduleEffective st''
           | _ =>
