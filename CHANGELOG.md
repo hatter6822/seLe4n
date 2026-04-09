@@ -1,3 +1,57 @@
+## v0.26.2 — WS-AG Phase AG2 Audit: IPC Buffer Correctness Fix
+
+Post-implementation audit of Phase AG2. Found and fixed a critical correctness
+bug in `sched_context_configure`: the 5th parameter (domain) was never written
+to the IPC buffer overflow slot, meaning the kernel would read a stale/zero
+value on real ARM64 hardware. All tests pass (cargo test --workspace: 239 tests,
+cargo clippy: zero warnings). Zero sorry/axiom.
+
+### Changes
+
+- **AG2-B fix**: `sched_context_configure` in `sele4n-sys/src/sched_context.rs` now takes `&mut IpcBuffer` and writes `buf.set_mr(4, encoded[4])?` before `invoke_syscall`, matching the `service_register` pattern for 5-register syscalls. Without this fix, on ARM64 hardware the kernel's `requireMsgReg decoded.msgRegs 4` (SyscallArgDecode.lean:962) would read a stale IPC buffer value for the domain field
+- **AG2-C fix**: Corrected CHANGELOG v0.26.1 entry — AG2-C version sync target was `0.26.1` not `0.26.0`
+- **DomainId comment**: Clarified `DomainId::MAX_VALID = 255` in `sele4n-types/src/identifiers.rs` is a type-level bound (seL4 8-bit domain space), distinct from the ABI-level `MAX_DOMAIN = 15` enforced by `sele4n-abi`
+- Conformance test `ag2b_sys_sched_context_module_exports` updated to verify `&mut IpcBuffer` in function signature
+- GitBook chapter 15: Added IPC buffer overflow documentation for 5-register syscalls
+- **CI fix**: Reverted `is_multiple_of()` in `tcb.rs` to `% != 0` with `#[allow(clippy::manual_is_multiple_of)]` — `u64::is_multiple_of()` requires Rust 1.87+ but CI pins toolchain 1.82.0
+
+---
+
+## v0.26.1 — WS-AG Phase AG2: Pre-Hardware Rust ABI Fixes
+
+Phase AG2 of WS-AG H3 Hardware Binding Audit Remediation. Fixes Rust ABI
+domain validation mismatch, adds missing SchedContext typed syscall wrappers,
+synchronizes workspace version, and resolves pre-existing clippy warning.
+All tests pass (cargo test --workspace: 239 tests, cargo clippy: zero warnings).
+Zero sorry/axiom.
+
+### Changes
+
+- **AG2-A** (R-05): Fixed `MAX_DOMAIN` constant from 255 to 15 in `sele4n-abi/src/args/sched_context.rs` — now matches Lean `numDomainsVal = 16` (zero-indexed 0..=15). Domain values 16-255 previously accepted by Rust ABI but rejected by kernel with `invalidArgument`. Updated decode boundary validation, 2 existing unit tests, 2 existing conformance tests, and added 4 new AG2-A conformance tests (boundary validation, exhaustive valid/invalid domain coverage)
+- **AG2-B** (R-01): Created `rust/sele4n-sys/src/sched_context.rs` with 3 typed wrapper functions (`sched_context_configure`, `sched_context_bind`, `sched_context_unbind`) for syscalls 17-19 — completes sele4n-sys coverage for all 25 syscalls. `sched_context_configure` correctly writes the 5th parameter (domain) to the IPC buffer overflow slot via `buf.set_mr(4, encoded[4])`, matching the `service_register` pattern for 5-register syscalls. Module registered in `sele4n-sys/src/lib.rs`. AG2-B conformance test verifies function signature exports
+- **AG2-C** (RUST-04): Synchronized Rust workspace version from `0.25.6` to `0.26.1` in `rust/Cargo.toml` — now tracks Lean `lakefile.toml` version. Added version-tracking comment
+- **Bonus**: Suppressed `manual_is_multiple_of` clippy lint in `sele4n-abi/src/args/tcb.rs:123` via `#[allow]` — `u64::is_multiple_of()` requires Rust 1.87+ but CI pins 1.82.0
+
+### Metrics
+
+| Metric | Value |
+|--------|-------|
+| Rust workspace version | 0.26.1 (synced with Lean) |
+| Unit tests | 91 (sele4n-abi) + 13 (sele4n-sys) + 42 (sele4n-types) |
+| Conformance tests | 93 (sele4n-abi/tests/conformance.rs) |
+| Clippy warnings | 0 |
+| Gate | `cargo test --workspace` + `cargo clippy --workspace` |
+
+---
+
+## v0.26.0 — WS-AG Phase AG1: Pre-Hardware Lean Code Fixes
+
+Phase AG1 of WS-AG H3 Hardware Binding Audit Remediation. Fixes 6 verified
+Lean-side code issues from the release audit before beginning hardware work.
+Establishes a clean baseline. All tests pass (test_smoke.sh). Zero sorry/axiom.
+
+---
+
 ## v0.25.27 — WS-AF Phase AF6: Rust ABI Fixes & Documentation Closure
 
 Phase AF6 of WS-AF Pre-Release Comprehensive Audit Remediation. Fixes Rust ABI

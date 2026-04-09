@@ -9,8 +9,9 @@ use sele4n_types::{KernelError, KernelResult};
 /// Maximum configurable priority value (8-bit, matching Lean scheduler).
 pub const MAX_PRIORITY: u64 = 255;
 
-/// Maximum configurable domain value (matching Lean DomainId range).
-pub const MAX_DOMAIN: u64 = 255;
+/// Maximum configurable domain value (zero-indexed).
+/// Matches Lean `numDomainsVal = 16`, so valid domains are 0..=15.
+pub const MAX_DOMAIN: u64 = 15;
 
 /// Arguments for `schedContextConfigure` (syscall 17).
 /// Register mapping: regs[0]=budget, regs[1]=period, regs[2]=priority, regs[3]=deadline, regs[4]=domain.
@@ -32,7 +33,7 @@ impl SchedContextConfigureArgs {
 
     /// Decode from message registers. Requires 5 registers.
     ///
-    /// Validates priority ≤ 255 and domain ≤ 255 at the decode boundary.
+    /// Validates priority ≤ 255 and domain ≤ 15 at the decode boundary.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.len() < 5 { return Err(KernelError::InvalidMessageInfo); }
         if regs[2] > MAX_PRIORITY {
@@ -117,6 +118,12 @@ mod tests {
 
     #[test]
     fn configure_domain_out_of_range() {
+        // Domain 16 is the first invalid value (numDomainsVal = 16, zero-indexed 0..=15)
+        assert_eq!(
+            SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 16]),
+            Err(KernelError::InvalidSyscallArgument)
+        );
+        // Domain 256 is also invalid (original boundary)
         assert_eq!(
             SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 256]),
             Err(KernelError::InvalidSyscallArgument)
@@ -125,9 +132,10 @@ mod tests {
 
     #[test]
     fn configure_max_valid_priority_and_domain() {
-        let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 255]).unwrap();
+        // Priority max = 255, domain max = 15 (Lean numDomainsVal = 16)
+        let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 15]).unwrap();
         assert_eq!(args.priority, 255);
-        assert_eq!(args.domain, 255);
+        assert_eq!(args.domain, 15);
     }
 
     #[test]

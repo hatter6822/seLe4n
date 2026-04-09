@@ -507,14 +507,15 @@ regression detection is absent.
 
 ---
 
-### Phase AG2 — Pre-Hardware Rust ABI Fixes
+### Phase AG2 — Pre-Hardware Rust ABI Fixes (COMPLETE, v0.26.1)
 
 **Goal**: Fix verified Rust ABI issues from the release audit. Ensures the
 user-space ABI layer is correct before building kernel-side Rust code.
 
 **Dependencies**: None (independent of AG1, can run in parallel).
-**Gate**: `cd rust && cargo test --workspace` + `cargo clippy --workspace`
+**Gate**: `cd rust && cargo test --workspace` + `cargo clippy --workspace` — **PASSED** (239 tests, 0 warnings)
 **Estimated scope**: ~150–200 lines of Rust changes.
+**Actual scope**: ~190 lines of Rust changes + 4 conformance tests + documentation sync.
 
 #### AG2-A: MAX_DOMAIN Constant Fix (R-05)
 

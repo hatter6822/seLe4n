@@ -1159,23 +1159,31 @@ fn aa1f_sched_context_bind_insufficient_regs() {
     assert_eq!(SchedContextBindArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
 }
 
-/// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain (256).
+/// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain.
+/// AG2-A: Domain 16 is first invalid (Lean numDomainsVal = 16, zero-indexed 0..=15).
 #[test]
 fn aa1f_sched_context_configure_invalid_domain() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    // Domain 16 is the first invalid value
+    assert_eq!(
+        SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 16]),
+        Err(KernelError::InvalidSyscallArgument)
+    );
+    // Domain 256 is also invalid (well beyond range)
     assert_eq!(
         SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 256]),
         Err(KernelError::InvalidSyscallArgument)
     );
 }
 
-/// AA1-F-8: SchedContextConfigureArgs — max valid priority and domain (255).
+/// AA1-F-8: SchedContextConfigureArgs — max valid priority (255) and domain (15).
+/// AG2-A: Domain max updated from 255 to 15 to match Lean numDomainsVal = 16.
 #[test]
 fn aa1f_sched_context_configure_max_valid() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
-    let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 255]).unwrap();
+    let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 15]).unwrap();
     assert_eq!(args.priority, 255);
-    assert_eq!(args.domain, 255);
+    assert_eq!(args.domain, 15);
     assert_eq!(args.budget, 1000);
     assert_eq!(args.period, 5000);
     assert_eq!(args.deadline, 10000);
@@ -1368,4 +1376,66 @@ fn d6_sys_tcb_module_exports() {
     let _set_prio: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_priority;
     let _set_mcp: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_mcp;
     let _set_buf: fn(CPtr, u64) -> KernelResult<SyscallResponse> = sele4n_sys::tcb::tcb_set_ipc_buffer;
+}
+
+// ============================================================================
+// AG2 — Pre-Hardware Rust ABI Fixes conformance tests
+// ============================================================================
+
+/// AG2-A-1: MAX_DOMAIN matches Lean numDomainsVal = 16 (zero-indexed 0..=15).
+#[test]
+fn ag2a_max_domain_matches_lean() {
+    use sele4n_abi::args::sched_context::MAX_DOMAIN;
+    assert_eq!(MAX_DOMAIN, 15, "MAX_DOMAIN must be 15 (Lean numDomainsVal = 16, zero-indexed)");
+}
+
+/// AG2-A-2: Domain 15 accepted, domain 16 rejected at decode boundary.
+#[test]
+fn ag2a_domain_boundary_validation() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+
+    // Domain 15 (max valid) — accepted
+    let args = SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 15]).unwrap();
+    assert_eq!(args.domain, 15);
+
+    // Domain 16 (first invalid) — rejected
+    assert_eq!(
+        SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, 16]),
+        Err(KernelError::InvalidSyscallArgument)
+    );
+}
+
+/// AG2-A-3: All valid domain values (0..=15) accepted at decode.
+#[test]
+fn ag2a_all_valid_domains_accepted() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    for domain in 0..=15u64 {
+        let result = SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, domain]);
+        assert!(result.is_ok(), "Domain {} should be accepted", domain);
+        assert_eq!(result.unwrap().domain, domain);
+    }
+}
+
+/// AG2-A-4: All invalid domain values (16..=255 and beyond) rejected at decode.
+#[test]
+fn ag2a_invalid_domains_rejected() {
+    use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
+    for domain in [16u64, 17, 100, 255, 256, u64::MAX] {
+        assert_eq!(
+            SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, domain]),
+            Err(KernelError::InvalidSyscallArgument),
+            "Domain {} should be rejected", domain
+        );
+    }
+}
+
+/// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
+#[test]
+fn ag2b_sys_sched_context_module_exports() {
+    let _configure: fn(CPtr, u64, u64, u64, u64, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
+        sele4n_sys::sched_context::sched_context_configure;
+    let _bind: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
+        sele4n_sys::sched_context::sched_context_bind;
+    let _unbind: fn(CPtr) -> KernelResult<SyscallResponse> =
+        sele4n_sys::sched_context::sched_context_unbind;
 }
