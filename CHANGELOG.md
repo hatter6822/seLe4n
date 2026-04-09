@@ -1,3 +1,61 @@
+## v0.26.4 — WS-AG Phase AG3: Platform Model Completion + Audit
+
+Phase AG3 of WS-AG H3 Hardware Binding Audit Remediation. Completes all Lean
+model gaps that block hardware bring-up. Post-implementation audit found and
+fixed critical Rust ABI desynchronization (5 missing KernelError variants),
+misleading DeviceTree docstring, and documentation gaps. 8 sub-tasks
+(AG3-A through AG3-H) closing 8 findings from the H3 hardware binding audit.
+Gate: `lake build` + `test_full.sh` + `cargo test --workspace`. Zero sorry/axiom.
+
+### Changes
+
+- **AG3-A** (P-01): `classifyMemoryRegion` now accepts a platform memory map
+  (`List MemoryRegion`) for address-based classification. `classifyAddress`
+  standalone function added. Two correctness theorems proven
+- **AG3-B** (P-04): `applyMachineConfig` copies all 7 `MachineConfig` fields
+  (was: only `physicalAddressWidth`). 6 new `MachineState` fields added:
+  `registerWidth`, `virtualAddressWidth`, `pageSize`, `maxASID`, `memoryMap`,
+  `registerCount`. `MemoryKind`/`MemoryRegion` moved before `MachineState` to
+  enable `memoryMap` field. 6 new preservation theorems proven
+- **AG3-C** (FINDING-04): ARM64 exception model in `ExceptionModel.lean`.
+  `ExceptionType` (4 variants), `ExceptionSource` (4 variants),
+  `SynchronousExceptionClass` (6 variants), `ExceptionContext` structure.
+  ESR classification via EC field extraction (bits [31:26]). SVC dispatch
+  wired to `syscallEntry`. 6 dispatch/preservation theorems
+- **AG3-D** (FINDING-06): Interrupt dispatch in `InterruptDispatch.lean`.
+  `InterruptId` (GIC-400 bounded `Fin 224`), `timerInterruptId` (PPI 30).
+  Acknowledge→handle→EOI sequence. Timer interrupt → `timerTick`, mapped
+  IRQ → `notificationSignal`, unmapped → `.invalidIrq`. IRQ dispatch wired
+  into `dispatchException` IRQ branch. 3 theorems proven
+- **AG3-E** (FINDING-08): Timer model binding in `TimerModel.lean`.
+  `HardwareTimerConfig` with `counterFrequencyHz`, `tickIntervalNs`,
+  `comparatorValue`. `hardwareTimerToModelTick` conversion with monotonicity
+  proof. `reprogramComparator` for evenly-spaced interrupts. RPi5 config at
+  54 MHz with 54000 counts/tick proven via `decide`
+- **AG3-F** (H3-ARCH-05): Exception level model in `ExceptionModel.lean`.
+  `ExceptionLevel` (el0/el1), `exceptionLevelFromSpsr`,
+  `exceptionLevelFromSource`, `canAccessSystemRegisters`, `canExecutePrivileged`
+- **AG3-G** (H3-ARCH-06): System register model in `Machine.lean`.
+  `SystemRegisterFile` structure (10 registers: ELR, ESR, SPSR, FAR, SCTLR,
+  TCR, TTBR0, TTBR1, MAIR, VBAR). `SystemRegisterIndex` enum.
+  `readSystemRegister`/`writeSystemRegister` with 4 frame lemmas proven
+- **AG3-H** (H3-ARCH-10): `hashMapVSpaceBackend` instance for `VSpaceRoot`.
+  All 8 typeclass obligations discharged: ASID preservation (2), round-trip
+  correctness (2), non-interference (4). `rootWF = invExtK`
+- `KernelError` extended from 44 to 49 variants: `vmFault`, `userException`,
+  `hardwareFault`, `notSupported`, `invalidIrq`
+- **Rust ABI sync**: `KernelError` in `sele4n-types/src/error.rs` updated with
+  5 new variants (VmFault=44, UserException=45, HardwareFault=46,
+  NotSupported=47, InvalidIrq=48). All conformance tests updated
+  (discriminant count 44→49, gap assertions 44→49, roundtrip range 0-48).
+  `sele4n-abi/src/decode.rs` unknown error threshold updated (44→49).
+  239 Rust tests pass, zero clippy warnings
+- **Second audit pass**: Fixed 2 stale Rust comments referencing pre-AG3
+  error range (decode.rs "0–43"→"0–48", error.rs "0–43"→"0–48"). All
+  documentation verified accurate. Full test suite re-validated
+
+---
+
 ## v0.26.2 — WS-AG Phase AG2 Audit: IPC Buffer Correctness Fix
 
 Post-implementation audit of Phase AG2. Found and fixed a critical correctness

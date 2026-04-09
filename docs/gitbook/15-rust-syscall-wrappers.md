@@ -23,8 +23,8 @@ Core type definitions with zero `unsafe` and zero external dependencies:
   `Priority`, `Deadline`, `Irq`, `ServiceId`, `InterfaceId`, `Badge`, `Asid`,
   `VAddr`, `PAddr`, `RegValue` — inner fields are `pub(crate)` with `.raw()`
   accessors (R8-E/L-11 encapsulation)
-- **`KernelError`**: 44-variant `#[non_exhaustive]` enum (1:1 with Lean
-  `KernelError`; U3-F, W1-D: +MmioUnaligned, AA1: +IpcTimeout, D3: +AlignmentError)
+- **`KernelError`**: 49-variant `#[non_exhaustive]` enum (1:1 with Lean
+  `KernelError`; AG3: +VmFault, +UserException, +HardwareFault, +NotSupported, +InvalidIrq)
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
@@ -108,7 +108,7 @@ parameter.
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
   AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.82.0)
-- AA1 ABI drift detection: variant count assertions for KernelError (44) and
+- AA1 ABI drift detection: variant count assertions for KernelError (49) and
   SyscallId (25), TypeTag (7), compile-time constant checks for MAX_LABEL,
   MAX_MSG_LENGTH, MAX_EXTRA_CAPS
 - AG2-A domain conformance: MAX_DOMAIN matches Lean `numDomainsVal = 16`

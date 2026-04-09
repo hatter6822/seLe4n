@@ -1,12 +1,12 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
-//! Lean source: `SeLe4n/Model/State.lean` lines 19–62.
-//! Discriminants 0–43 are a 1:1 mapping from the Lean inductive (44 variants).
+//! Lean source: `SeLe4n/Model/State.lean` lines 19–84.
+//! Discriminants 0–48 are a 1:1 mapping from the Lean inductive (49 variants).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
 ///
-/// Discriminants 0–43 match the Lean `KernelError` inductive exactly.
+/// Discriminants 0–48 match the Lean `KernelError` inductive exactly.
 /// `UnknownKernelError` (255) is a Rust-side sentinel for unrecognized codes.
 /// The discriminant values use `#[repr(u32)]` for ABI stability.
 ///
@@ -71,8 +71,18 @@ pub enum KernelError {
     IpcTimeout = 42,
     /// D3-B: IPC buffer address not aligned to ipcBufferAlignment (512 bytes)
     AlignmentError = 43,
+    /// AG3-C: Virtual memory fault (data abort or instruction abort)
+    VmFault = 44,
+    /// AG3-C: User-mode exception (alignment, unknown reason)
+    UserException = 45,
+    /// AG3-C: Hardware fault (SError/asynchronous abort)
+    HardwareFault = 46,
+    /// AG3-C: Operation not supported (e.g., FIQ on this platform)
+    NotSupported = 47,
+    /// AG3-D: Unmapped interrupt received (no handler registered)
+    InvalidIrq = 48,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–43.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–48.
     UnknownKernelError = 255,
 }
 
@@ -124,6 +134,11 @@ impl KernelError {
             41 => Some(Self::InvalidSyscallArgument),
             42 => Some(Self::IpcTimeout),
             43 => Some(Self::AlignmentError),
+            44 => Some(Self::VmFault),
+            45 => Some(Self::UserException),
+            46 => Some(Self::HardwareFault),
+            47 => Some(Self::NotSupported),
+            48 => Some(Self::InvalidIrq),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -178,6 +193,11 @@ impl std::fmt::Display for KernelError {
             Self::InvalidSyscallArgument => write!(f, "invalid syscall argument"),
             Self::IpcTimeout => write!(f, "IPC timeout"),
             Self::AlignmentError => write!(f, "alignment error"),
+            Self::VmFault => write!(f, "virtual memory fault"),
+            Self::UserException => write!(f, "user exception"),
+            Self::HardwareFault => write!(f, "hardware fault"),
+            Self::NotSupported => write!(f, "not supported"),
+            Self::InvalidIrq => write!(f, "invalid IRQ"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -192,8 +212,8 @@ mod tests {
 
     #[test]
     fn from_u32_roundtrip() {
-        // T1-H: All 44 variants (0-43) must roundtrip
-        for i in 0..=43u32 {
+        // T1-H: All 49 variants (0-48) must roundtrip
+        for i in 0..=48u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -202,7 +222,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(44).is_none());
+        assert!(KernelError::from_u32(49).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
@@ -223,6 +243,12 @@ mod tests {
         assert_eq!(KernelError::InvalidSyscallArgument as u32, 41);
         assert_eq!(KernelError::IpcTimeout as u32, 42);
         assert_eq!(KernelError::AlignmentError as u32, 43);
+        // AG3: Exception/interrupt error variants
+        assert_eq!(KernelError::VmFault as u32, 44);
+        assert_eq!(KernelError::UserException as u32, 45);
+        assert_eq!(KernelError::HardwareFault as u32, 46);
+        assert_eq!(KernelError::NotSupported as u32, 47);
+        assert_eq!(KernelError::InvalidIrq as u32, 48);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
@@ -233,20 +259,20 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // Verify total variant count matches Lean (44 variants, 0-43)
-        let max_valid = 43u32;
+        // Verify total variant count matches Lean (49 variants, 0-48)
+        let max_valid = 48u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (44–254) return None
+        // Verify from_u32: unknown discriminants in the gap (49–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–43 are sequential
+    /// T1-H: Discriminant ordering — kernel variants 0–48 are sequential
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=43u32 {
+        for i in 0..=48u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
@@ -261,8 +287,8 @@ mod tests {
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
-        // Gap between 43 and 255 is all None
-        for i in 44..255u32 {
+        // Gap between 48 and 255 is all None
+        for i in 49..255u32 {
             assert!(KernelError::from_u32(i).is_none(), "unexpected variant at {i}");
         }
     }

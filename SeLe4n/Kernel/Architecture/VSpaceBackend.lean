@@ -139,7 +139,38 @@ class VSpaceBackend (Root : Type) where
       lookupPage root' vaddr' = lookupPage root vaddr'
 
 -- ============================================================================
--- HashMap-based VSpaceBackend instance (current model) — WS-G6/F-P05
+-- AG3-H (H3-ARCH-10): HashMap-based VSpaceBackend instance — WS-G6/F-P05
 -- ============================================================================
+
+/-- AG3-H: HashMap-backed VSpaceBackend instance using the existing `VSpaceRoot`
+    type. Delegates all operations to `VSpaceRoot.mapPage`, `VSpaceRoot.unmapPage`,
+    `VSpaceRoot.lookup`, and `VSpaceRoot.lookupAddr`. Well-formedness is
+    `invExtK` (= invExt ∧ size < capacity ∧ 4 ≤ capacity), the kernel-level
+    RHTable invariant required for both insert and erase correctness.
+
+    This instance serves as the specification against which the ARMv8
+    hierarchical page-table instance (AG6) will be proven to refine. -/
+instance hashMapVSpaceBackend : VSpaceBackend VSpaceRoot where
+  mapPage := fun root vaddr paddr perms => root.mapPage vaddr paddr perms
+  unmapPage := fun root vaddr => root.unmapPage vaddr
+  lookupPage := fun root vaddr => root.lookup vaddr
+  lookupAddr := fun root vaddr => root.lookupAddr vaddr
+  rootAsid := fun root => root.asid
+  rootWF := fun root => root.mappings.invExtK
+  mapPage_preserves_asid := fun root root' vaddr paddr perms hMap =>
+    VSpaceRoot.mapPage_asid_eq root root' vaddr paddr perms hMap
+  unmapPage_preserves_asid := fun root root' vaddr hUnmap =>
+    VSpaceRoot.unmapPage_asid_eq root root' vaddr hUnmap
+  lookup_after_map := fun root root' vaddr paddr perms hWF hMap =>
+    VSpaceRoot.lookup_mapPage_eq root root' vaddr paddr perms
+      (SeLe4n.Kernel.RobinHood.RHTable.invExtK_invExt hWF) hMap
+  lookup_map_other := fun root root' vaddr vaddr' paddr perms hWF hNe hMap =>
+    VSpaceRoot.lookup_mapPage_ne root root' vaddr vaddr' paddr perms hNe
+      (SeLe4n.Kernel.RobinHood.RHTable.invExtK_invExt hWF) hMap
+  lookup_after_unmap := fun root root' vaddr hWF hUnmap =>
+    VSpaceRoot.lookup_unmapPage_eq_none root root' vaddr
+      (SeLe4n.Kernel.RobinHood.RHTable.invExtK_invExt hWF) hUnmap
+  lookup_unmap_other := fun root root' vaddr vaddr' hWF hNe hUnmap =>
+    VSpaceRoot.lookup_unmapPage_ne root root' vaddr vaddr' hNe hWF hUnmap
 
 end SeLe4n.Kernel.Architecture

@@ -299,13 +299,13 @@ corrections noted) and require code, proof, or documentation changes.
 
 ## 3. Detailed Phase Specifications
 
-### Phase AG1 — Pre-Hardware Lean Code Fixes
+### Phase AG1 — Pre-Hardware Lean Code Fixes (COMPLETE, v0.26.0)
 
 **Goal**: Fix verified Lean-side code issues from the release audit before
 beginning hardware work. Establishes a clean baseline.
 
 **Dependencies**: None (first phase).
-**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh`
+**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh` — **PASSED**
 **Estimated scope**: ~200–300 lines of Lean changes.
 
 #### AG1-A: CBS Re-enqueue at Effective Priority (S-04)
@@ -564,14 +564,16 @@ project is at `0.25.27`. 21 minor versions behind.
 
 ---
 
-### Phase AG3 — Platform Model Completion
+### Phase AG3 — Platform Model Completion (COMPLETE, v0.26.4)
 
 **Goal**: Complete Lean model gaps that block hardware bring-up. All changes
 are pure Lean — no hardware code yet.
 
 **Dependencies**: AG1 (clean baseline). AG2 independent.
-**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_full.sh`
+**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_full.sh` — **PASSED**
 **Estimated scope**: ~600–900 lines of new Lean code.
+**Completion**: All 8 sub-tasks (AG3-A through AG3-H) complete. Zero sorry/axiom.
+3 new files created, 3 existing files extended. Full build + test_full.sh pass.
 
 #### AG3-A: classifyMemoryRegion Implementation (P-01)
 
@@ -2309,15 +2311,15 @@ future workstreams:
 
 | Phase Completion | Version Tag | Branch |
 |------------------|-------------|--------|
-| AG1 complete | v0.26.1 | `main` |
-| AG2 complete | v0.26.2 | `main` |
-| AG3 complete | v0.26.3 | `main` |
-| AG4 complete | v0.26.4 | `main` |
-| AG5 complete | v0.26.5 | `main` |
-| AG6 complete | v0.26.6 | `main` |
-| AG7 complete | v0.26.7 | `main` |
-| AG8 complete | v0.26.8 | `main` |
-| AG9 complete | v0.26.9 | `main` |
+| AG1 complete | v0.26.0 | `main` |
+| AG2 complete | v0.26.1–v0.26.2 | `main` |
+| AG3 complete | v0.26.3–v0.26.4 | `main` |
+| AG4 complete | v0.26.5 | `main` |
+| AG5 complete | v0.26.6 | `main` |
+| AG6 complete | v0.26.7 | `main` |
+| AG7 complete | v0.26.8 | `main` |
+| AG8 complete | v0.26.9 | `main` |
+| AG9 complete | v0.26.10 | `main` |
 | AG10 complete (WS-AG COMPLETE) | v0.27.0 | `main` |
 
 Version v0.27.0 marks the first hardware-ready release of seLe4n.

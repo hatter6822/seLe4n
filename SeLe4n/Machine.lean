@@ -143,6 +143,66 @@ The `RuntimeBoundaryContract.memoryAccessAllowed` predicate already provides
 the extension point for this transition. -/
 abbrev Memory := PAddr → UInt8
 
+-- ============================================================================
+-- AG3-B: MemoryKind and MemoryRegion (moved before MachineState for field use)
+-- ============================================================================
+
+/-- H3-prep: Classification of physical memory region kinds.
+
+Used by platform bindings to declare the hardware memory map. Kernel-level
+proofs remain total over `Memory = PAddr → UInt8`; the `MemoryKind` annotation
+enables platform-specific access checks and MMU permission assignments. -/
+inductive MemoryKind where
+  | ram
+  | device
+  | reserved
+  deriving Repr, DecidableEq
+
+/-- H3-prep: A contiguous physical memory region with a declared kind.
+
+Platforms declare their memory map as a list of `MemoryRegion` entries. The
+abstract kernel does not enforce these bounds directly — enforcement happens
+at the `RuntimeBoundaryContract.memoryAccessAllowed` predicate. This type
+provides the vocabulary for platform bindings to express address constraints
+that the contract can reference. -/
+structure MemoryRegion where
+  base : PAddr
+  size : Nat
+  kind : MemoryKind
+  deriving Repr, DecidableEq
+
+namespace MemoryRegion
+
+/-- The end address (exclusive) of a memory region. -/
+@[inline] def endAddr (r : MemoryRegion) : Nat := r.base.toNat + r.size
+
+/-- Check whether a physical address falls within this region. -/
+@[inline] def contains (r : MemoryRegion) (addr : PAddr) : Bool :=
+  r.base.toNat ≤ addr.toNat && addr.toNat < r.endAddr
+
+/-- Two regions overlap if their address ranges intersect. -/
+def overlaps (r₁ r₂ : MemoryRegion) : Bool :=
+  r₁.base.toNat < r₂.endAddr && r₂.base.toNat < r₁.endAddr
+
+theorem contains_iff (r : MemoryRegion) (addr : PAddr) :
+    r.contains addr = true ↔ r.base.toNat ≤ addr.toNat ∧ addr.toNat < r.endAddr := by
+  simp [contains, endAddr]
+
+/-- WS-H11/A-05: A memory region is well-formed when its size is positive and its end
+    address does not overflow the physical address space. This is a `Prop` proof
+    obligation — callers must provide evidence that the region satisfies both
+    conditions. S1-B: Converted from `Bool` runtime check to `Prop` to ensure
+    malformed regions cannot be constructed without explicit proof. -/
+def wellFormed (r : MemoryRegion) (physAddrWidth : Nat) : Prop :=
+  r.size > 0 ∧ r.endAddr ≤ 2 ^ physAddrWidth
+
+/-- Decidable instance for `MemoryRegion.wellFormed`, enabling `decide`/`native_decide`
+    and `if`-expressions over the predicate. -/
+instance (r : MemoryRegion) (w : Nat) : Decidable (r.wellFormed w) :=
+  inferInstanceAs (Decidable (_ ∧ _))
+
+end MemoryRegion
+
 /-- Pure register file state used by scheduler/context-switch modeling.
 
 S4-F: **Design rationale for `gpr : RegName → RegValue` (function representation).**
@@ -265,7 +325,46 @@ theorem RegisterFile.ext {a b : RegisterFile}
     a = b := by
   cases a; cases b; simp at *; exact ⟨hpc, hsp, funext hgpr⟩
 
-/-- Top-level abstract machine state manipulated by kernel transitions. -/
+-- ============================================================================
+-- AG3-G (H3-ARCH-06): System Register Model
+-- ============================================================================
+
+/-- AG3-G: ARM64 system register file.
+    Models the key system registers used during exception handling and
+    MMU configuration. All values are `UInt64` matching 64-bit register width.
+
+    **Exception registers**: Saved/restored on exception entry/return.
+    **Configuration registers**: Set during boot, read during page table walks. -/
+structure SystemRegisterFile where
+  /-- ELR_EL1: Exception Link Register (return address on exception) -/
+  elr_el1 : UInt64 := 0
+  /-- ESR_EL1: Exception Syndrome Register (exception cause encoding) -/
+  esr_el1 : UInt64 := 0
+  /-- SPSR_EL1: Saved Program Status Register -/
+  spsr_el1 : UInt64 := 0
+  /-- FAR_EL1: Fault Address Register -/
+  far_el1 : UInt64 := 0
+  /-- SCTLR_EL1: System Control Register (MMU enable, caches, alignment) -/
+  sctlr_el1 : UInt64 := 0
+  /-- TCR_EL1: Translation Control Register (page table granule, address sizes) -/
+  tcr_el1 : UInt64 := 0
+  /-- TTBR0_EL1: Translation Table Base Register 0 (user-space page table) -/
+  ttbr0_el1 : UInt64 := 0
+  /-- TTBR1_EL1: Translation Table Base Register 1 (kernel-space page table) -/
+  ttbr1_el1 : UInt64 := 0
+  /-- MAIR_EL1: Memory Attribute Indirection Register -/
+  mair_el1 : UInt64 := 0
+  /-- VBAR_EL1: Vector Base Address Register (exception vector table base) -/
+  vbar_el1 : UInt64 := 0
+  deriving Repr, DecidableEq
+
+instance : Inhabited SystemRegisterFile where
+  default := {}
+
+/-- Top-level abstract machine state manipulated by kernel transitions.
+    AG3-B (P-04): All `MachineConfig` fields are now carried in machine state
+    so that kernel transitions can reference platform parameters without
+    requiring a separate config parameter. -/
 structure MachineState where
   regs : RegisterFile
   memory : Memory
@@ -275,9 +374,23 @@ structure MachineState where
       a separate `MachineConfig` parameter.  Default 52 (ARM64 LPA maximum);
       real platforms override at boot (e.g., 44 for BCM2712). -/
   physicalAddressWidth : Nat := 52
+  /-- AG3-B: Register width in bits (e.g., 64 for ARM64). -/
+  registerWidth : Nat := 64
+  /-- AG3-B: Virtual address width in bits (e.g., 48 for ARMv8). -/
+  virtualAddressWidth : Nat := 48
+  /-- AG3-B: Standard page size in bytes (e.g., 4096). -/
+  pageSize : Nat := 4096
+  /-- AG3-B: Maximum number of address-space identifiers (e.g., 65536). -/
+  maxASID : Nat := 65536
+  /-- AG3-B: Platform memory map: declared physical memory regions. -/
+  memoryMap : List MemoryRegion := []
+  /-- AG3-B: Number of general-purpose registers (ARM64: 32). -/
+  registerCount : Nat := 32
+  /-- AG3-G: ARM64 system registers (exception, MMU configuration). -/
+  systemRegisters : SystemRegisterFile := default
 
 instance : Inhabited MachineState where
-  default := { regs := default, memory := (fun _ => 0), timer := 0, physicalAddressWidth := 52 }
+  default := { regs := default, memory := (fun _ => 0), timer := 0 }
 
 /-- R7-C/L-03: Machine-state word-boundedness invariant.
     Asserts that all register values (PC, SP, and all GPRs) fit in one machine
@@ -463,64 +576,71 @@ theorem zeroMemoryRange_zero_size_memory
   · rfl
 
 -- ============================================================================
--- H3 preparation: MachineConfig and MemoryRegion (platform-binding readiness)
+-- AG3-G: System register read/write operations and frame lemmas
 -- ============================================================================
 
-/-- H3-prep: Classification of physical memory region kinds.
-
-Used by platform bindings to declare the hardware memory map. Kernel-level
-proofs remain total over `Memory = PAddr → UInt8`; the `MemoryKind` annotation
-enables platform-specific access checks and MMU permission assignments. -/
-inductive MemoryKind where
-  | ram
-  | device
-  | reserved
+/-- AG3-G: System register index for type-safe read/write operations. -/
+inductive SystemRegisterIndex where
+  | elr_el1 | esr_el1 | spsr_el1 | far_el1
+  | sctlr_el1 | tcr_el1 | ttbr0_el1 | ttbr1_el1 | mair_el1 | vbar_el1
   deriving Repr, DecidableEq
 
-/-- H3-prep: A contiguous physical memory region with a declared kind.
+/-- AG3-G: Read a system register by index. -/
+def readSystemRegister (ms : MachineState) (idx : SystemRegisterIndex) : UInt64 :=
+  match idx with
+  | .elr_el1   => ms.systemRegisters.elr_el1
+  | .esr_el1   => ms.systemRegisters.esr_el1
+  | .spsr_el1  => ms.systemRegisters.spsr_el1
+  | .far_el1   => ms.systemRegisters.far_el1
+  | .sctlr_el1 => ms.systemRegisters.sctlr_el1
+  | .tcr_el1   => ms.systemRegisters.tcr_el1
+  | .ttbr0_el1 => ms.systemRegisters.ttbr0_el1
+  | .ttbr1_el1 => ms.systemRegisters.ttbr1_el1
+  | .mair_el1  => ms.systemRegisters.mair_el1
+  | .vbar_el1  => ms.systemRegisters.vbar_el1
 
-Platforms declare their memory map as a list of `MemoryRegion` entries. The
-abstract kernel does not enforce these bounds directly — enforcement happens
-at the `RuntimeBoundaryContract.memoryAccessAllowed` predicate. This type
-provides the vocabulary for platform bindings to express address constraints
-that the contract can reference. -/
-structure MemoryRegion where
-  base : PAddr
-  size : Nat
-  kind : MemoryKind
-  deriving Repr, DecidableEq
+/-- AG3-G: Write a system register by index. -/
+def writeSystemRegister (ms : MachineState) (idx : SystemRegisterIndex)
+    (val : UInt64) : MachineState :=
+  let sr := ms.systemRegisters
+  let sr' := match idx with
+    | .elr_el1   => { sr with elr_el1 := val }
+    | .esr_el1   => { sr with esr_el1 := val }
+    | .spsr_el1  => { sr with spsr_el1 := val }
+    | .far_el1   => { sr with far_el1 := val }
+    | .sctlr_el1 => { sr with sctlr_el1 := val }
+    | .tcr_el1   => { sr with tcr_el1 := val }
+    | .ttbr0_el1 => { sr with ttbr0_el1 := val }
+    | .ttbr1_el1 => { sr with ttbr1_el1 := val }
+    | .mair_el1  => { sr with mair_el1 := val }
+    | .vbar_el1  => { sr with vbar_el1 := val }
+  { ms with systemRegisters := sr' }
 
-namespace MemoryRegion
+/-- AG3-G: System register writes don't modify the object store or scheduler.
+    Frame lemma (a): preserves objects. Since MachineState doesn't contain
+    objects, this is expressed as preserving all non-systemRegisters fields. -/
+theorem writeSystemRegister_preserves_regs (ms : MachineState)
+    (idx : SystemRegisterIndex) (val : UInt64) :
+    (writeSystemRegister ms idx val).regs = ms.regs := by
+  cases idx <;> rfl
 
-/-- The end address (exclusive) of a memory region. -/
-@[inline] def endAddr (r : MemoryRegion) : Nat := r.base.toNat + r.size
+/-- AG3-G: System register writes don't modify memory. -/
+theorem writeSystemRegister_preserves_memory (ms : MachineState)
+    (idx : SystemRegisterIndex) (val : UInt64) :
+    (writeSystemRegister ms idx val).memory = ms.memory := by
+  cases idx <;> rfl
 
-/-- Check whether a physical address falls within this region. -/
-@[inline] def contains (r : MemoryRegion) (addr : PAddr) : Bool :=
-  r.base.toNat ≤ addr.toNat && addr.toNat < r.endAddr
+/-- AG3-G: System register writes don't modify the timer. -/
+theorem writeSystemRegister_preserves_timer (ms : MachineState)
+    (idx : SystemRegisterIndex) (val : UInt64) :
+    (writeSystemRegister ms idx val).timer = ms.timer := by
+  cases idx <;> rfl
 
-/-- Two regions overlap if their address ranges intersect. -/
-def overlaps (r₁ r₂ : MemoryRegion) : Bool :=
-  r₁.base.toNat < r₂.endAddr && r₂.base.toNat < r₁.endAddr
-
-theorem contains_iff (r : MemoryRegion) (addr : PAddr) :
-    r.contains addr = true ↔ r.base.toNat ≤ addr.toNat ∧ addr.toNat < r.endAddr := by
-  simp [contains, endAddr]
-
-/-- WS-H11/A-05: A memory region is well-formed when its size is positive and its end
-    address does not overflow the physical address space. This is a `Prop` proof
-    obligation — callers must provide evidence that the region satisfies both
-    conditions. S1-B: Converted from `Bool` runtime check to `Prop` to ensure
-    malformed regions cannot be constructed without explicit proof. -/
-def wellFormed (r : MemoryRegion) (physAddrWidth : Nat) : Prop :=
-  r.size > 0 ∧ r.endAddr ≤ 2 ^ physAddrWidth
-
-/-- Decidable instance for `MemoryRegion.wellFormed`, enabling `decide`/`native_decide`
-    and `if`-expressions over the predicate. -/
-instance (r : MemoryRegion) (w : Nat) : Decidable (r.wellFormed w) :=
-  inferInstanceAs (Decidable (_ ∧ _))
-
-end MemoryRegion
+/-- AG3-G: Read-after-write returns the written value. -/
+theorem readSystemRegister_writeSystemRegister_eq (ms : MachineState)
+    (idx : SystemRegisterIndex) (val : UInt64) :
+    readSystemRegister (writeSystemRegister ms idx val) idx = val := by
+  cases idx <;> rfl
 
 /-- H3-prep: Platform-declared machine configuration parameters.
 
