@@ -225,7 +225,10 @@ def schedContextUnbind (scId : ObjId) : Kernel Unit :=
           let scIdTyped : SchedContextId := ⟨scId.toNat⟩
           let cleanedQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scIdTyped
           let st2 := { st1 with scheduler := { st1.scheduler with replenishQueue := cleanedQueue } }
-          .ok ((), st2)
+          -- S-05/PERF-O1: Remove stale index entry even when TCB is missing
+          let st3 := { st2 with scThreadIndex :=
+            (scThreadIndexRemove st2.scThreadIndex scIdTyped tid) }
+          .ok ((), st3)
     | _ => .error .objectNotFound
 
 -- ============================================================================
