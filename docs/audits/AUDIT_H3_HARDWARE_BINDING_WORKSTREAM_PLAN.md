@@ -69,6 +69,12 @@ model integration, testing, and documentation.
 **Estimated scope**: ~4,500–6,000 new lines of Lean, ~2,500–3,500 new lines of
 Rust/assembly, ~500–800 lines of documentation changes.
 
+**Decomposition depth**: 18 of the 67 sub-tasks are identified as complex
+multi-step operations. Each is broken down into numbered atomic steps
+(95 total atomic units) with explicit inputs, outputs, and verification
+commands. This enables incremental progress tracking and reduces the risk
+of partially completed sub-tasks.
+
 
 ---
 
@@ -316,20 +322,38 @@ is always chosen regardless of bucket placement. However, incorrect bucket
 placement forces `chooseBestInBucketEffective` Stage 1 (max-bucket O(k) scan)
 to miss PIP-boosted threads, falling back to the O(n) flat scan unnecessarily.
 
-**Changes**:
-1. At each of the 4 call sites, replace `sc.priority` with the result of
-   `resolveEffectivePrioDeadline` applied to the thread's TCB:
-   - `processReplenishmentsDue` (Core.lean:~460)
-   - `timerTickBudget` (Core.lean:~576)
-   - `handleYieldWithBudget` (Core.lean:~700)
-   - `schedContextYieldTo` (SchedContext/Operations.lean:~277)
-2. Fix misleading comment at Core.lean:573 to match implementation.
-3. Verify all existing scheduler preservation theorems still hold after the
-   change (they should — the theorems are parameterized over the inserted
-   priority value).
+**Steps** (6 atomic units):
 
-**Module verification**: `lake build SeLe4n.Kernel.Scheduler.Operations.Core`
-and `lake build SeLe4n.Kernel.SchedContext.Operations`.
+1. **AG1-A-i: Helper function.** Create a helper
+   `resolveInsertPriority (st : SystemState) (tid : ThreadId) (sc : SchedContext) : Priority`
+   that calls `resolveEffectivePrioDeadline` on the thread's TCB and returns
+   the effective priority. If the TCB lookup fails (invariant violation), fall
+   back to `sc.priority`. Place in `Selection.lean` alongside the existing
+   `resolveEffectivePrioDeadline`. Build: `lake build SeLe4n.Kernel.Scheduler.Operations.Selection`.
+
+2. **AG1-A-ii: Fix `processReplenishmentsDue` (Core.lean:~460).** Replace
+   `sc.priority` with `resolveInsertPriority st tid sc` in the RunQueue
+   insertion call. Fix the surrounding comment to say "effective priority
+   (base + PIP boost)". Build: `lake build SeLe4n.Kernel.Scheduler.Operations.Core`.
+
+3. **AG1-A-iii: Fix `timerTickBudget` (Core.lean:~576).** Same replacement.
+   Fix the misleading comment at line 573 from "Re-enqueue current thread
+   at its effective priority" to accurately describe the new behavior. Build
+   the module.
+
+4. **AG1-A-iv: Fix `handleYieldWithBudget` (Core.lean:~700).** Same
+   replacement. Build the module.
+
+5. **AG1-A-v: Fix `schedContextYieldTo` (SchedContext/Operations.lean:~277).**
+   Replace `targetSc.priority` with `resolveInsertPriority st2 tid targetSc`.
+   Build: `lake build SeLe4n.Kernel.SchedContext.Operations`.
+
+6. **AG1-A-vi: Verify preservation theorems.** Run
+   `lake build SeLe4n.Kernel.Scheduler.Operations.Preservation` and
+   `lake build SeLe4n.Kernel.SchedContext.Invariant.Preservation`. The theorems
+   are parameterized over the inserted priority value, so no proof changes
+   should be needed. If a theorem does break, the fix is to generalize the
+   priority parameter. Run `./scripts/test_smoke.sh` as final gate.
 
 #### AG1-B: timeoutBlockedThreads Diagnostic Handling (S-05)
 
@@ -358,19 +382,48 @@ potential invariant violations.
 composed into `ipcInvariantFull` (Defs.lean:1084), meaning it is not checked
 as part of the system-wide invariant bundle.
 
-**Changes**:
-1. Add `uniqueWaiters st` as the 15th conjunct in `ipcInvariantFull`
-   (Defs.lean:1084).
-2. Update all existing `ipcInvariantFull` preservation theorems to thread the
-   new conjunct through. This requires adding `uniqueWaiters` preservation to
-   each endpoint/notification operation proof.
-3. Verify that the existing `notificationWait_preserves_uniqueWaiters` proof
-   and the `notificationWaiterConsistent` bridging invariant are sufficient, or
-   add new preservation lemmas for operations that modify notification state
-   (signal, cancel, etc.).
+**Steps** (7 atomic units):
 
-**Module verification**: `lake build SeLe4n.Kernel.IPC.Invariant.Defs` and all
-IPC invariant submodules.
+1. **AG1-C-i: Add conjunct to `ipcInvariantFull`.** Add `uniqueWaiters st`
+   as the 15th conjunct in `ipcInvariantFull` (Defs.lean:1084). This will
+   immediately break all `ipcInvariantFull` preservation theorems — expected.
+   Build: `lake build SeLe4n.Kernel.IPC.Invariant.Defs` (definition only).
+
+2. **AG1-C-ii: Frame lemmas for non-notification operations.** Operations
+   that do NOT modify `Notification.waitingThreads` get trivial frame lemmas:
+   `endpointSend`, `endpointReceive`, `endpointReplyRecv`, `capTransfer`,
+   `donation`, and all scheduler/capability operations. These pass
+   `uniqueWaiters` through unchanged. Target files:
+   `EndpointPreservation.lean`, `CallReplyRecv.lean`.
+
+3. **AG1-C-iii: `notificationWait` preservation.** Wire the existing
+   `notificationWait_preserves_uniqueWaiters` (Defs.lean:557) into the
+   `ipcInvariantFull` preservation proof for `notificationWait`. The existing
+   proof uses `notificationWaiterConsistent` to check TCB `ipcState` before
+   prepending — verify this bridging invariant is already part of
+   `ipcInvariantFull` or add it.
+
+4. **AG1-C-iv: `notificationSignal` preservation.** `notificationSignal`
+   clears `waitingThreads` entirely (replaces with empty list or pops head).
+   `[].Nodup` is trivially true. `(hd :: tl).Nodup` follows from the
+   pre-signal `uniqueWaiters` guarantee (sublist of Nodup is Nodup). Add
+   preservation lemma in `NotificationPreservation.lean`.
+
+5. **AG1-C-v: `notificationCancel` / lifecycle cleanup preservation.** Thread
+   removal via `List.filter` preserves `Nodup` (standard library lemma
+   `List.Nodup.filter`). Add preservation lemma for notification cleanup
+   paths in `NotificationPreservation.lean`.
+
+6. **AG1-C-vi: Cross-subsystem composition.** Update
+   `crossSubsystemInvariant` bridge lemmas (33 per-operation lemmas in
+   `CrossSubsystem.lean`) to thread `uniqueWaiters` through. Since
+   `uniqueWaiters` is now part of `ipcInvariantFull`, the existing
+   cross-subsystem framework should propagate it automatically — verify.
+   Build: `lake build SeLe4n.Kernel.CrossSubsystem`.
+
+7. **AG1-C-vii: Full suite verification.** Run
+   `lake build SeLe4n.Kernel.IPC.Invariant.Defs` and all IPC invariant
+   submodules. Run `./scripts/test_full.sh` to verify no regressions.
 
 #### AG1-D: Boot Duplicate Detection Warning (P-03)
 
@@ -418,26 +471,38 @@ execution phase cannot support CBS scheduling without this field.
 has NO runtime checks in the test harness. Formal proofs cover these but runtime
 regression detection is absent.
 
-**Changes**:
-1. In `SeLe4n/Testing/InvariantChecks.lean`, add decidable boolean versions
-   of the 10 `crossSubsystemInvariant` predicates:
-   - `noStaleEndpointQueueReferences`
-   - `noStaleNotificationWaitReferences`
-   - `registryDependencyConsistent`
-   - `serviceGraphInvariant`
-   - `schedContextStoreConsistent`
-   - `schedContextNotDualBound`
-   - `schedContextRunQueueConsistent`
-   - `registryEndpointUnique`
-   - `registryInterfaceValid`
-   - `blockingAcyclic`
-2. Add a `checkCrossSubsystemInvariant` function that runs all 10 checks.
-3. Call `checkCrossSubsystemInvariant` at key points in `MainTraceHarness.lean`
-   (after multi-step operation chains).
-4. Update test fixtures if trace output changes.
+**Steps** (5 atomic units):
 
-**Module verification**: `lake build SeLe4n.Testing.InvariantChecks` and
-`lake build SeLe4n.Testing.MainTraceHarness`.
+1. **AG1-F-i: Object-store consistency checks (predicates 1–2).** Implement
+   decidable boolean versions of `noStaleEndpointQueueReferences` and
+   `noStaleNotificationWaitReferences` in `InvariantChecks.lean`. Both iterate
+   over endpoint/notification objects and check that every ThreadId in their
+   queues has a corresponding TCB in `objects`. Build:
+   `lake build SeLe4n.Testing.InvariantChecks`.
+
+2. **AG1-F-ii: Service + SchedContext checks (predicates 3–7).** Implement
+   `registryDependencyConsistent`, `serviceGraphInvariant`,
+   `schedContextStoreConsistent`, `schedContextNotDualBound`,
+   `schedContextRunQueueConsistent`. These check service registry edges,
+   dependency acyclicity (bounded depth-first walk), SchedContext store
+   existence, single-binding, and budget positivity for runnable threads. Build.
+
+3. **AG1-F-iii: Registry + blocking checks (predicates 8–10).** Implement
+   `registryEndpointUnique`, `registryInterfaceValid`, `blockingAcyclic`.
+   `blockingAcyclic` is the most complex — implement via bounded
+   cycle-detection walk (fuel = `objects.size`). Build.
+
+4. **AG1-F-iv: Compose and integrate.** Create
+   `checkCrossSubsystemInvariant : SystemState → Bool` that runs all 10
+   checks and returns `true` only if all pass. Add calls at 3–5 key points
+   in `MainTraceHarness.lean`: after initial boot, after IPC chain, after
+   scheduler operations, after capability operations, and after lifecycle
+   operations. Build: `lake build SeLe4n.Testing.MainTraceHarness`.
+
+5. **AG1-F-v: Fixture update.** Run `lake exe sele4n` and compare output
+   against `tests/fixtures/main_trace_smoke.expected`. If trace output
+   changed (new invariant check lines), update the fixture file and its
+   SHA256 hash in `test_tier2_trace.sh`. Run `./scripts/test_smoke.sh`.
 
 
 ---
@@ -553,22 +618,51 @@ returns `.ram`. Must distinguish `.device` and `.reserved` for hardware boot.
 `syscallEntry` is a pure function call, not a trap handler. ARM64 defines
 4 exception types × 4 execution states = 16 vector entries.
 
-**Changes**:
-1. Create `SeLe4n/Kernel/Architecture/ExceptionModel.lean` with:
-   - `ExceptionType` inductive: `synchronous | irq | fiq | serror`
-   - `ExceptionSource` inductive: `currentElSp0 | currentElSpX | lowerElAArch64 | lowerElAArch32`
-   - `ExceptionContext` structure: `esr : UInt64` (Exception Syndrome Register),
-     `elr : UInt64` (Exception Link Register), `spsr : UInt64` (Saved Program
-     Status Register), `far : UInt64` (Fault Address Register)
-   - `SynchronousExceptionClass` inductive: `svc | dataAbort | instrAbort |
-     pcAlignment | spAlignment | unknownReason`
-   - `classifySynchronousException : ExceptionContext → SynchronousExceptionClass`
-     that extracts the EC field from ESR_EL1 bits [31:26]
-   - `dispatchException : ExceptionType → ExceptionContext → SystemState →
-     Except KernelError SystemState` that routes to the appropriate handler
-2. Wire `dispatchException` to existing `syscallDispatch` for SVC exceptions.
-3. Wire `dispatchException` to new `handleInterrupt` (AG3-D) for IRQ.
-4. Add preservation theorem: `dispatchException_preserves_invariant`.
+**Steps** (6 atomic units):
+
+1. **AG3-C-i: Core type definitions.** Create
+   `SeLe4n/Kernel/Architecture/ExceptionModel.lean` with the skeleton:
+   imports, namespace, and four inductive types — `ExceptionType`
+   (`synchronous | irq | fiq | serror`), `ExceptionSource`
+   (`currentElSp0 | currentElSpX | lowerElAArch64 | lowerElAArch32`),
+   `SynchronousExceptionClass` (`svc | dataAbort | instrAbort | pcAlignment |
+   spAlignment | unknownReason`), and the `ExceptionContext` structure
+   (`esr elr spsr far : UInt64`). Derive `DecidableEq`, `Repr` for all.
+   Build: `lake build SeLe4n.Kernel.Architecture.ExceptionModel`.
+
+2. **AG3-C-ii: ESR classification function.** Implement
+   `classifySynchronousException : ExceptionContext → SynchronousExceptionClass`.
+   Extract EC field: `(ectx.esr >>> 26) &&& 0x3F`. Map EC values:
+   `0x15 → svc` (SVC from AArch64), `0x24/0x25 → dataAbort`,
+   `0x20/0x21 → instrAbort`, `0x22 → pcAlignment`, `0x26 → spAlignment`,
+   `_ → unknownReason`. Add `decide` proof that classification is total. Build.
+
+3. **AG3-C-iii: Exception dispatch function.** Implement
+   `dispatchException : ExceptionType → ExceptionContext → SystemState →
+   Except KernelError SystemState`. Route: `synchronous` → call
+   `dispatchSynchronousException` (below); `irq` → placeholder returning
+   `.error .notImplemented` (wired in AG3-D); `fiq` → `.error .notSupported`;
+   `serror` → `.error .hardwareFault`. Build.
+
+4. **AG3-C-iv: Synchronous exception dispatch.** Implement
+   `dispatchSynchronousException : ExceptionContext → SystemState →
+   Except KernelError SystemState`. Classify via `classifySynchronousException`,
+   then route: `svc` → extract syscall ID from `ectx.esr &&& 0xFFFF` and call
+   existing `syscallDispatch`; `dataAbort` → `.error .vmFault`;
+   `instrAbort` → `.error .vmFault`; others → `.error .userException`. Build.
+
+5. **AG3-C-v: Wire SVC to existing syscallDispatch.** Import the existing
+   `syscallDispatch` from `API.lean` and call it from the `svc` branch. Verify
+   that the register extraction (`esr &&& 0xFFFF` for syscall immediate) matches
+   the existing syscall ID encoding. Build.
+
+6. **AG3-C-vi: Preservation theorem.** Prove
+   `dispatchException_preserves_invariant`: for each exception type, the
+   dispatch function preserves `proofLayerInvariantBundle`. The `svc` case
+   delegates to existing `syscallDispatch` preservation. The `irq` case will
+   be completed in AG5-F. The error-returning cases (`fiq`, `serror`)
+   trivially preserve invariants (state unchanged on error). Build and run
+   `./scripts/test_smoke.sh`.
 
 **Module verification**: `lake build SeLe4n.Kernel.Architecture.ExceptionModel`.
 
@@ -577,22 +671,43 @@ returns `.ram`. Must distinguish `.device` and `.reserved` for hardware boot.
 **Finding**: No `handleInterrupt` operation in `API.lean`. No interrupt dispatch
 path exists in the kernel model.
 
-**Changes**:
-1. Create `SeLe4n/Kernel/Architecture/InterruptDispatch.lean` with:
-   - `InterruptId` type alias (Nat, range 0-223 for GIC-400)
-   - `acknowledgeInterrupt : SystemState → Except KernelError (SystemState × InterruptId)`
-     models reading GICC_IAR to get the pending interrupt ID
-   - `endOfInterrupt : SystemState → InterruptId → SystemState`
-     models writing GICC_EOIR to signal completion
-   - `handleInterrupt : SystemState → InterruptId → Except KernelError SystemState`
-     dispatches to the registered handler:
-     - Timer interrupt (INTID 30) → `timerTick`
-     - Other INTIDs → look up handler in IRQ table, deliver notification
-   - `interruptDispatchSequence : SystemState → Except KernelError SystemState`
-     composes acknowledge → handle → EOI
-2. Add `KernelOperation.handleInterrupt` variant and wire into `API.lean`
-   dispatch table.
-3. Add preservation theorem for the interrupt dispatch sequence.
+**Steps** (6 atomic units):
+
+1. **AG3-D-i: Types and constants.** Create
+   `SeLe4n/Kernel/Architecture/InterruptDispatch.lean` with: `InterruptId`
+   as a bounded Nat (`Fin 224` for GIC-400 INTIDs 0–223),
+   `timerInterruptId : InterruptId := ⟨30, by omega⟩` (non-secure physical
+   timer PPI), `spuriousInterruptId : Nat := 1023`. Build.
+
+2. **AG3-D-ii: Acknowledge and EOI operations.** Implement
+   `acknowledgeInterrupt : SystemState → Except KernelError (SystemState × Option InterruptId)` —
+   returns `none` for spurious interrupts (INTID >= 1020).
+   `endOfInterrupt : SystemState → InterruptId → SystemState` — models
+   GICC_EOIR write. Both are pure state transformations at this level (the
+   actual MMIO is in the HAL layer). Build.
+
+3. **AG3-D-iii: Interrupt handler dispatch.** Implement
+   `handleInterrupt : SystemState → InterruptId → Except KernelError SystemState`.
+   Three cases: (a) `interruptId = timerInterruptId` → call
+   `timerTickEffective`; (b) IRQ table lookup `st.irqTable[interruptId]?` →
+   if `some handlerId`, deliver notification via `notificationSignal`;
+   (c) unmapped IRQ → `.error .invalidIrq`. Build.
+
+4. **AG3-D-iv: Full dispatch sequence.** Implement
+   `interruptDispatchSequence : SystemState → Except KernelError SystemState`
+   composing: `acknowledgeInterrupt` → match on `some intId` →
+   `handleInterrupt intId` → `endOfInterrupt intId`. Spurious interrupts
+   (`none`) return the state unchanged. Build.
+
+5. **AG3-D-v: Wire into ExceptionModel.** Update the `irq` branch of
+   `dispatchException` (AG3-C-iii) to call `interruptDispatchSequence`
+   instead of returning `.error .notImplemented`. Build both modules.
+
+6. **AG3-D-vi: Preservation theorem.** Prove
+   `interruptDispatchSequence_preserves_invariant`. The timer path delegates
+   to existing `timerTickEffective` preservation. The notification path
+   delegates to existing `notificationSignal` preservation. The unmapped-IRQ
+   path returns error (state unchanged). Build and run `./scripts/test_smoke.sh`.
 
 **Module verification**: `lake build SeLe4n.Kernel.Architecture.InterruptDispatch`.
 
@@ -642,22 +757,34 @@ register access controls.
 **Finding**: No model of ARM64 system registers (ELR_EL1, ESR_EL1, SPSR_EL1,
 FAR_EL1) used during exception handling.
 
-**Changes**:
-1. In `Machine.lean`, extend `MachineState` (or create a nested structure
-   `SystemRegisterFile`) with:
-   - `elr_el1 : UInt64` — Exception Link Register
-   - `esr_el1 : UInt64` — Exception Syndrome Register
-   - `spsr_el1 : UInt64` — Saved Program Status Register
-   - `far_el1 : UInt64` — Fault Address Register
-   - `sctlr_el1 : UInt64` — System Control Register
-   - `tcr_el1 : UInt64` — Translation Control Register
-   - `ttbr0_el1 : UInt64` — Translation Table Base Register 0
-   - `ttbr1_el1 : UInt64` — Translation Table Base Register 1
-   - `mair_el1 : UInt64` — Memory Attribute Indirection Register
-   - `vbar_el1 : UInt64` — Vector Base Address Register
-2. Add read/write operations for system registers with appropriate guards
-   (only accessible at EL1).
-3. Frame lemmas: system register writes don't affect kernel object state.
+**Steps** (4 atomic units):
+
+1. **AG3-G-i: SystemRegisterFile structure.** Create a new `SystemRegisterFile`
+   structure in `Machine.lean` with fields: `elr_el1`, `esr_el1`, `spsr_el1`,
+   `far_el1` (exception registers), `sctlr_el1`, `tcr_el1`, `ttbr0_el1`,
+   `ttbr1_el1`, `mair_el1`, `vbar_el1` (configuration registers). All
+   `UInt64`. Derive `DecidableEq`, `Repr`. Default values: all zero. Build:
+   `lake build SeLe4n.Machine`.
+
+2. **AG3-G-ii: Integrate into MachineState.** Add
+   `systemRegisters : SystemRegisterFile := default` to `MachineState`.
+   This preserves backward compatibility (existing code that doesn't reference
+   system registers is unaffected). Fix any build breaks in files that
+   pattern-match on `MachineState` (likely `Adapter.lean`,
+   `RuntimeContract.lean`). Build: `lake build SeLe4n.Machine` and dependent modules.
+
+3. **AG3-G-iii: Read/write operations.** Add `readSystemRegister` and
+   `writeSystemRegister` operations that project into / update the
+   `systemRegisters` field. Add an `ExceptionLevel` guard: system register
+   writes require `currentExceptionLevel = .el1` (from AG3-F). Build.
+
+4. **AG3-G-iv: Frame lemmas.** Prove 3 frame lemmas:
+   (a) `writeSystemRegister_preserves_objects`: system register writes don't
+   modify `objects`, `irqTable`, or `scheduler`;
+   (b) `writeSystemRegister_preserves_registerFile`: system register writes
+   don't modify GPR `RegisterFile`;
+   (c) `writeSystemRegister_preserves_memory`: system register writes don't
+   modify `Memory`. Build and run `./scripts/test_smoke.sh`.
 
 **Module verification**: `lake build SeLe4n.Machine`.
 
@@ -737,19 +864,42 @@ bytes (32 instructions).
 on kernel stack, extract syscall parameters, call into kernel, and restore
 context on return.
 
-**Changes**:
-1. In `rust/sele4n-hal/src/trap.S` or inline assembly:
-   - `save_context` macro: Save x0-x30, SP_EL0, ELR_EL1, SPSR_EL1 to
-     kernel stack frame (34 × 8 = 272 bytes minimum)
-   - `restore_context` macro: Restore all registers and ERET
-   - `el0_sync_handler`: save_context → extract ESR_EL1 → branch to
-     `handle_synchronous_exception` (Rust) → restore_context
-   - `el0_irq_handler`: save_context → branch to `handle_irq` (Rust) →
-     restore_context
-2. The Rust handler functions extract the 7-register syscall ABI window
-   (x0-x5, x7) from the saved context and call into the Lean kernel dispatch.
-3. On return, write syscall results back into the saved context frame before
-   restore_context.
+**Steps** (5 atomic units):
+
+1. **AG4-C-i: Context frame structure.** Define `TrapFrame` in
+   `rust/sele4n-hal/src/trap.rs` as a `#[repr(C)]` struct holding:
+   `gprs: [u64; 31]` (x0-x30), `sp_el0: u64`, `elr_el1: u64`,
+   `spsr_el1: u64`. Total: 34 × 8 = 272 bytes. Add `impl TrapFrame` with
+   accessors for the 7-register ABI window (`x0()..x5()`, `x7()`).
+
+2. **AG4-C-ii: save_context / restore_context assembly macros.** In
+   `rust/sele4n-hal/src/trap.S`:
+   - `save_context`: `sub sp, sp, #272` → `stp x0, x1, [sp, #0]` through
+     `stp x28, x29, [sp, #224]` → `str x30, [sp, #240]` → `mrs x0, SP_EL0;
+     str x0, [sp, #248]` → `mrs x0, ELR_EL1; str x0, [sp, #256]` →
+     `mrs x0, SPSR_EL1; str x0, [sp, #264]`.
+   - `restore_context`: reverse order → `ldr x0, [sp, #264]; msr SPSR_EL1, x0`
+     → restore ELR, SP_EL0 → `ldp` all GPRs → `add sp, sp, #272` → `eret`.
+
+3. **AG4-C-iii: EL0 sync handler assembly.** `el0_sync_handler`:
+   `save_context` → `mov x0, sp` (pass TrapFrame pointer as first arg) →
+   `bl handle_synchronous_exception` → `restore_context`. This calls the
+   Rust function with the full saved context.
+
+4. **AG4-C-iv: Rust handler — SVC dispatch.** Implement
+   `#[no_mangle] extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame)`:
+   - Read ESR_EL1 (already saved in frame)
+   - Extract EC field: `(frame.esr >> 26) & 0x3F`
+   - If `EC == 0x15` (SVC from AArch64): extract ABI registers
+     `(x0..x5, x7)` → call Lean kernel dispatch via FFI → write results
+     back to `frame.gprs[0..5]`
+   - Other ECs: set error code in `frame.gprs[0]`
+
+5. **AG4-C-v: EL0/EL1 IRQ handler assembly.** `el0_irq_handler` and
+   `el1_irq_handler`: `save_context` → `mov x0, sp` →
+   `bl handle_irq` (Rust, calls GIC acknowledge/dispatch/EOI from AG5-C) →
+   `restore_context`. Implement `#[no_mangle] extern "C" fn handle_irq(frame: &mut TrapFrame)`
+   as a stub initially (UART print + return). Wire to GIC in AG5.
 
 #### AG4-D: Kernel Linker Script (H3-RUST-10)
 
@@ -774,42 +924,96 @@ context on return.
 **Finding**: Real boot requires ATF/U-Boot handoff, BSS zeroing, stack setup,
 MMU init, and handoff to Lean kernel.
 
-**Changes**:
-1. Create `rust/sele4n-hal/src/boot.S`:
-   - Entry point `_start` at 0x80000
-   - Check CPU ID (MPIDR_EL1): only core 0 proceeds, others WFE loop
-   - Zero BSS section (`__bss_start` to `__bss_end`)
-   - Set up kernel stack pointer (SP_EL1)
-   - Branch to `rust_boot_main` (Rust)
-2. Create `rust/sele4n-hal/src/boot.rs`:
-   - `rust_boot_main()`: Initialize UART (AG4-G) → print banner →
-     initialize MMU (AG4-F) → set VBAR_EL1 (AG4-B) → initialize GIC (AG5) →
-     initialize timer (AG5) → call Lean `kernel_main`
-3. DTB pointer (x0 from U-Boot) preserved for future DTB parsing.
+**Steps** (6 atomic units):
+
+1. **AG4-E-i: Assembly entry point.** Create `rust/sele4n-hal/src/boot.S`
+   with `_start` at link address 0x80000. Read MPIDR_EL1 to get core ID
+   (`mrs x1, mpidr_el1; and x1, x1, #0xFF`). If not core 0, branch to
+   `secondary_spin` (`wfe; b secondary_spin`). Save DTB pointer (x0) to a
+   callee-saved register (x19).
+
+2. **AG4-E-ii: BSS zeroing.** Zero the BSS region: load `__bss_start` and
+   `__bss_end` symbols → loop storing zeros (use `stp xzr, xzr, [x0], #16`
+   for 16-byte strides). This ensures all static variables start at zero.
+
+3. **AG4-E-iii: Stack setup.** Load the stack top symbol from the linker
+   script (`ldr x0, =__stack_top`) → `mov sp, x0`. Ensure 16-byte alignment
+   (`and sp, sp, #~0xF`). Branch to `rust_boot_main` with DTB pointer as
+   first argument (`mov x0, x19; bl rust_boot_main`).
+
+4. **AG4-E-iv: Rust boot — early init.** Create `rust/sele4n-hal/src/boot.rs`
+   with `#[no_mangle] extern "C" fn rust_boot_main(dtb_ptr: u64) -> !`.
+   Phase 1: Initialize UART (AG4-G `init_uart(0xFE201000)`) → print
+   `"seLe4n v0.27.0 booting on RPi5\r\n"`. Store DTB pointer for future use.
+
+5. **AG4-E-v: Rust boot — hardware init.** Phase 2 of `rust_boot_main`:
+   Initialize MMU (AG4-F `init_mmu()`) → set VBAR_EL1 to exception vector
+   table (AG4-B: `write_sysreg!("vbar_el1", vectors_base)`) → DSB + ISB.
+   Print `"MMU enabled, VBAR set\r\n"`.
+
+6. **AG4-E-vi: Rust boot — handoff to Lean.** Phase 3 of `rust_boot_main`:
+   GIC and timer are initialized later (AG5), so for now print
+   `"Boot complete, entering kernel\r\n"` → call Lean `kernel_main()` via
+   FFI (AG7-A). If `kernel_main` returns (it shouldn't), enter infinite
+   `wfe` loop. The AG4 gate test verifies UART output reaches this point.
 
 #### AG4-F: MMU Initialization (H3-PLAT-05)
 
 **Finding**: MMU must be configured with identity mapping for boot, then
 transitioned to kernel mapping with TTBR0 (user) / TTBR1 (kernel) split.
 
-**Changes**:
-1. In `rust/sele4n-hal/src/mmu.rs`:
-   - `init_mmu()`: Create initial identity-mapped page tables:
-     - TTBR0_EL1: Identity map for RAM (0x00000000 – 0xFC000000), Normal memory
-     - TTBR1_EL1: Kernel higher-half mapping (if using KASAN-style layout)
-     - Device memory regions: 0xFE000000–0xFF850000, Device-nGnRnE
-   - Configure MAIR_EL1 with memory attribute indices:
-     - Index 0: Normal, Inner/Outer Write-Back Non-transient
-     - Index 1: Device-nGnRnE
-   - Configure TCR_EL1:
-     - T0SZ=16 / T1SZ=16 for 48-bit VA (each half)
-     - Granule: 4KB (TG0=0b00, TG1=0b10)
-     - IPS=0b100: 44-bit PA (matching BCM2712 `physicalAddressWidth = 44`)
-   - Enable MMU via SCTLR_EL1.M bit
-   - DSB + ISB after MMU enable
-2. Page table format: ARMv8 Level 0-3 descriptors (4KB granule, 4-level walk).
-3. Initial boot uses 1GB block descriptors (L1) for simplicity; fine-grained
-   4KB pages added in AG6.
+**Steps** (6 atomic units):
+
+1. **AG4-F-i: Page table memory reservation.** In the linker script (AG4-D),
+   reserve a 64 KiB aligned region for initial boot page tables
+   (`.section .bss.page_tables, "aw", @nobits; .balign 4096`). This provides
+   space for: 1 L0 table (4 KiB) + 4 L1 tables (16 KiB) = 20 KiB minimum.
+   Export symbol `__page_tables_start`.
+
+2. **AG4-F-ii: MAIR_EL1 configuration.** In `rust/sele4n-hal/src/mmu.rs`,
+   implement `configure_mair()`: set MAIR_EL1 with attribute indices:
+   - Index 0 (`0xFF`): Normal memory, Inner/Outer Write-Back Non-transient,
+     Read-Allocate, Write-Allocate
+   - Index 1 (`0x00`): Device-nGnRnE (strongly ordered device memory)
+   - Index 2 (`0x44`): Normal Non-cacheable (for DMA if needed later)
+
+3. **AG4-F-iii: TCR_EL1 configuration.** Implement `configure_tcr()`:
+   - T0SZ = 16 (48-bit VA for TTBR0, user space)
+   - T1SZ = 16 (48-bit VA for TTBR1, kernel space)
+   - TG0 = 0b00 (4 KiB granule for TTBR0)
+   - TG1 = 0b10 (4 KiB granule for TTBR1)
+   - IPS = 0b100 (44-bit PA, matching BCM2712)
+   - SH0/SH1 = 0b11 (Inner Shareable)
+   - ORGN0/ORGN1 = 0b01, IRGN0/IRGN1 = 0b01 (Write-Back cacheable)
+
+4. **AG4-F-iv: Identity-mapped L0/L1 page tables.** Implement
+   `build_identity_tables()`: populate boot page tables at `__page_tables_start`:
+   - L0[0] → L1 table address (table descriptor)
+   - L1[0..3] → 4 × 1 GiB block descriptors for RAM (0x00000000–0xFC000000):
+     Normal memory, AF=1, SH=Inner Shareable, AttrIndx=0
+   - L1[3] (0xC0000000–0xFFFFFFFF) split: L1[3] → L2 table for fine-grained
+     device mapping, OR use block descriptor with Device-nGnRnE for
+     0xFE000000–0xFF850000 region
+   - Simpler approach for H3: L1[0..3] = Normal RAM blocks,
+     L1[3] = Device block for 0xC0000000-0xFFFFFFFF with AttrIndx=1.
+     Refine in AG6 with 4 KiB pages.
+
+5. **AG4-F-v: TTBR setup and MMU enable.** Implement `enable_mmu()`:
+   - Write TTBR0_EL1 = L0 table physical address
+   - Write TTBR1_EL1 = L0 table physical address (same for identity map)
+   - DSB ISH (ensure page table writes are visible)
+   - ISB (synchronize context)
+   - Read SCTLR_EL1, set M bit (bit 0), set C bit (bit 2, data cache),
+     set I bit (bit 12, instruction cache)
+   - Write SCTLR_EL1
+   - ISB (synchronize after MMU enable)
+
+6. **AG4-F-vi: `init_mmu()` orchestrator.** Compose the above into
+   `pub fn init_mmu()`: `configure_mair()` → `configure_tcr()` →
+   `build_identity_tables()` → `enable_mmu()`. Add a post-MMU-enable
+   verification: read a known RAM address and verify it returns expected
+   value (smoke test that the identity map works). Print "MMU enabled" via
+   UART.
 
 #### AG4-G: UART PL011 Driver (H3-PLAT-06)
 
@@ -922,6 +1126,39 @@ called from hardware interrupt path.
    signal — reuse existing `notificationSignal_NI` proof).
 5. Add cross-subsystem bridge lemma for `handleInterrupt`.
 
+**Steps** (5 atomic units):
+
+1. **AG5-F-i: KernelOperation constructor.** In `API.lean`, add
+   `handleInterrupt : InterruptId → KernelOperation` to the inductive
+   (becomes 35th constructor). Add the `| .handleInterrupt intId =>` match
+   arm in `dispatchKernelOperation` that calls `handleInterruptOp intId st`.
+
+2. **AG5-F-ii: Core dispatch function.** In a new section of
+   `Kernel/Architecture/Adapter.lean` (or a dedicated
+   `Kernel/Architecture/InterruptDispatch.lean`), define:
+   `handleInterruptOp (intId : InterruptId) (st : SystemState) : KernelResult Unit`:
+   - Read `st.interruptTable` to look up handler for `intId`
+   - If `intId = timerInterruptId` → call `timerTickEffective st` (AG5-D)
+   - If device interrupt → call `notificationSignalOp` on the registered
+     notification endpoint
+   - If no handler registered → return `.ok ()` (spurious interrupt)
+
+3. **AG5-F-iii: Timer path integration.** Wire the timer tick case to call
+   `timerTickEffective` (which wraps `timerTick` + CBS replenishment from
+   AG5-D). Verify the return type aligns with `KernelResult Unit`.
+
+4. **AG5-F-iv: NI proof.** In `InformationFlow/Invariant/Operations.lean`,
+   add `handleInterrupt_NI` proof. Timer tick is domain-local (affects only
+   current domain's budget). Device notification reuses
+   `notificationSignal_NI`. Structure: case split on interrupt type, delegate
+   to existing sub-proofs.
+
+5. **AG5-F-v: Cross-subsystem bridge lemma.** In `CrossSubsystem.lean`, add
+   `handleInterrupt_preserves_crossSubsystemInvariant` following the pattern
+   of the existing 33 per-operation bridge lemmas. Timer tick path delegates
+   to `timerTick_preserves_*`; notification path delegates to
+   `notificationSignal_preserves_*`.
+
 #### AG5-G: Interrupt-Disabled Region Enforcement (H3-SCHED-02)
 
 **Changes**:
@@ -939,6 +1176,48 @@ called from hardware interrupt path.
    - PIP propagation
 4. Theorem: kernel operations executed with interrupts disabled are atomic
    with respect to interrupt delivery.
+
+**Steps** (4 atomic units):
+
+1. **AG5-G-i: Rust HAL critical section primitive.** In
+   `rust/sele4n-hal/src/interrupts.rs`, implement
+   `pub fn with_interrupts_disabled<F: FnOnce() -> R, R>(f: F) -> R`:
+   - `let saved = read_sysreg!(DAIF);` — save current DAIF state
+   - `asm!("msr DAIFSet, #0xF")` — mask all interrupt types (D, A, I, F)
+   - `let result = f();` — execute the critical section
+   - `write_sysreg!(DAIF, saved);` — restore original DAIF (not just enable,
+     to handle nested cases correctly)
+   - Return `result`. Also provide `disable_interrupts()` / `enable_interrupts()`
+     for the FFI bridge (AG7-A).
+
+2. **AG5-G-ii: Lean interrupt state model.** In `Machine.lean`, add
+   `interruptsEnabled : Bool := true` field to `MachineState`. Define:
+   - `disableInterrupts (ms : MachineState) : MachineState :=
+     { ms with interruptsEnabled := false }`
+   - `enableInterrupts (ms : MachineState) : MachineState :=
+     { ms with interruptsEnabled := true }`
+   - `withInterruptsDisabled (f : MachineState → MachineState) (ms : MachineState) :
+     MachineState := enableInterrupts (f (disableInterrupts ms))`
+   Update the `MachineState` `BEq` instance to include `interruptsEnabled`.
+
+3. **AG5-G-iii: Critical section annotation.** In `API.lean`, annotate
+   `dispatchKernelOperation` to model the entry-from-exception pattern:
+   the kernel is always entered via exception (SVC/IRQ) which arrives with
+   interrupts masked (PSTATE.I set by hardware on exception entry). Add a
+   docstring documenting which operations require interrupts disabled
+   throughout, vs. which can re-enable interrupts during execution:
+   - **Always disabled**: scheduler transitions, PIP propagation,
+     endpoint queue mutations, donation chain operations
+   - **Can re-enable**: long-running operations (future, none currently)
+
+4. **AG5-G-iv: Atomicity theorem.** Define
+   `interruptDisabledAtomicity : ∀ op st, st.machine.interruptsEnabled = false →
+   dispatchKernelOperation op st = .ok (r, st') →
+   st'.machine.interruptsEnabled = false`
+   — kernel operations preserve interrupt-disabled state. Proof: structural
+   case split on all 35 `KernelOperation` constructors, verifying none toggle
+   `interruptsEnabled`. This is the Lean-side guarantee that pairs with the
+   hardware DAIF masking.
 
 
 ---
@@ -981,6 +1260,45 @@ adding hardware-specific implementation.
 
 **Module verification**: `lake build SeLe4n.Kernel.Architecture.PageTable`.
 
+**Steps** (5 atomic units):
+
+1. **AG6-A-i: Type definitions.** Create
+   `SeLe4n/Kernel/Architecture/PageTable.lean` with imports from `Prelude`
+   and `Machine`. Define `PageTableLevel` inductive (`l0 | l1 | l2 | l3`),
+   `Shareability` inductive (`nonShareable | outerShareable | innerShareable`),
+   `AccessPermission` inductive (`rwEL1 | rwAll | roEL1 | roAll`), and
+   `PageAttributes` structure (8 fields: `attrIndex`, `ap`, `sh`, `af`,
+   `pxn`, `uxn`, `contiguous`, `dirty`). Derive `BEq`, `Repr` for all.
+
+2. **AG6-A-ii: Descriptor inductive.** Define `PageTableDescriptor`:
+   `invalid | block (outputAddr : PAddr) (attrs : PageAttributes) |
+   table (nextTableAddr : PAddr) | page (outputAddr : PAddr) (attrs : PageAttributes)`.
+   Add `levelValid : PageTableLevel → PageTableDescriptor → Bool` enforcing
+   block only at L1/L2, table only at L0/L1/L2, page only at L3.
+
+3. **AG6-A-iii: Encode function.** Implement
+   `descriptorToUInt64 : PageTableDescriptor → UInt64` using ARMv8 bit layout:
+   - `invalid`: `0`
+   - `table`: `nextTableAddr ||| 0b11` (bits [1:0] = 0b11, bit [1] = table)
+   - `block`: `outputAddr ||| attrs_encoded ||| 0b01` (bits [1:0] = 0b01)
+   - `page`: `outputAddr ||| attrs_encoded ||| 0b11` (L3 page, bits [1:0] = 0b11)
+   Helper `encodePageAttributes : PageAttributes → UInt64` packs AP into
+   bits [7:6], SH into bits [9:8], AF into bit [10], PXN into bit [53],
+   UXN into bit [54], etc.
+
+4. **AG6-A-iv: Decode function + roundtrip.** Implement
+   `uint64ToDescriptor : UInt64 → PageTableLevel → PageTableDescriptor`
+   (needs level to distinguish block vs table vs page). Prove roundtrip:
+   `uint64ToDescriptor (descriptorToUInt64 d) level = d` for all
+   `levelValid level d = true`. Proof by cases on `d`.
+
+5. **AG6-A-v: W^X enforcement theorem.** Define
+   `descriptorWxCompliant : PageTableDescriptor → Prop` asserting that
+   executable descriptors (¬pxn ∨ ¬uxn) have read-only AP. Prove
+   `hwDescriptor_wxCompliant : ∀ d, descriptorWxCompliant d →
+   mapPage_wxCompliant (toVSpaceMapping d)` bridging hardware descriptors
+   to the existing VSpace W^X theorem.
+
 #### AG6-B: 4-Level Page Table Walk (H3-ARCH-01)
 
 **Changes**:
@@ -1003,6 +1321,61 @@ adding hardware-specific implementation.
 
 **Module verification**: `lake build SeLe4n.Kernel.Architecture.PageTable`.
 
+**Steps** (5 atomic units):
+
+1. **AG6-B-i: Index extraction helpers.** In `PageTable.lean`, define
+   pure bit-extraction functions:
+   - `l0Index (va : VAddr) : Fin 512 := ⟨(va.toNat >>> 39) &&& 0x1FF, ...⟩`
+   - `l1Index (va : VAddr) : Fin 512 := ⟨(va.toNat >>> 30) &&& 0x1FF, ...⟩`
+   - `l2Index (va : VAddr) : Fin 512 := ⟨(va.toNat >>> 21) &&& 0x1FF, ...⟩`
+   - `l3Index (va : VAddr) : Fin 512 := ⟨(va.toNat >>> 12) &&& 0x1FF, ...⟩`
+   - `pageOffset (va : VAddr) : Fin 4096 := ⟨va.toNat &&& 0xFFF, ...⟩`
+   Prove each produces a value within `Fin` bounds (shift+mask guarantees).
+
+2. **AG6-B-ii: Memory read helper.** Define
+   `readDescriptor (mem : Memory) (tableBase : PAddr) (index : Fin 512) :
+   PageTableDescriptor` that reads 8 bytes from
+   `tableBase + index.val * 8`, assembles a `UInt64`, and calls
+   `uint64ToDescriptor` (from AG6-A-iv) at the appropriate level.
+
+3. **AG6-B-iii: Walk function (structural recursion).** Define
+   `pageTableWalk` using explicit 4-step unfolding (NOT fuel-based):
+   ```
+   def pageTableWalk (mem : Memory) (ttbr : PAddr) (va : VAddr)
+       : Option (PAddr × PageAttributes) :=
+     let d0 := readDescriptor mem ttbr (l0Index va) .l0
+     match d0 with
+     | .table l1base =>
+       let d1 := readDescriptor mem l1base (l1Index va) .l1
+       match d1 with
+       | .block addr attrs => some (addr + blockOffset1G va, attrs)
+       | .table l2base =>
+         let d2 := readDescriptor mem l2base (l2Index va) .l2
+         match d2 with
+         | .block addr attrs => some (addr + blockOffset2M va, attrs)
+         | .table l3base =>
+           let d3 := readDescriptor mem l3base (l3Index va) .l3
+           match d3 with
+           | .page addr attrs => some (addr + pageOffset va, attrs)
+           | _ => none
+         | _ => none
+       | _ => none
+     | _ => none
+   ```
+   This is structurally terminating (no recursion, 4 nested matches).
+
+4. **AG6-B-iv: Determinism proof.** Prove `pageTableWalk_deterministic`:
+   `∀ mem ttbr va, ∃! result, pageTableWalk mem ttbr va = result`.
+   Trivially holds because `pageTableWalk` is a total function (all
+   `match` arms covered). Lean's definitional equality makes this `rfl`.
+
+5. **AG6-B-v: Block offset helpers.** Define
+   `blockOffset1G (va : VAddr) : PAddr` extracting bits [29:0],
+   `blockOffset2M (va : VAddr) : PAddr` extracting bits [20:0].
+   Prove: `pageOffset va + pageBase = fullAddr` for the 4KB case,
+   and similarly for 2MB/1GB block mappings. These are used in the
+   refinement proof (AG6-D) to show walk output matches HashMap lookup.
+
 #### AG6-C: VSpaceBackend ARMv8 Instance (FINDING-03)
 
 **Changes**:
@@ -1020,6 +1393,45 @@ adding hardware-specific implementation.
 
 **Module verification**: `lake build SeLe4n.Kernel.Architecture.VSpaceARMv8`.
 
+**Steps** (5 atomic units):
+
+1. **AG6-C-i: ARMv8VSpace structure.** Create
+   `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean`. Define:
+   `structure ARMv8VSpace where ttbr : PAddr; pageTableMemory : Memory;
+   allocator : BumpAllocator; asid : ASID`.
+   `structure BumpAllocator where nextPage : PAddr; endPage : PAddr`.
+   `allocatePageTablePage : BumpAllocator → Option (BumpAllocator × PAddr)` —
+   returns `none` if `nextPage ≥ endPage`, otherwise returns next 4KB-aligned
+   page and advances `nextPage` by 4096.
+
+2. **AG6-C-ii: lookupPage + isPageMapped.** Implement the read-only
+   `VSpaceBackend` operations first:
+   - `lookupPage (vs : ARMv8VSpace) (va : VAddr) :=
+     pageTableWalk vs.pageTableMemory vs.ttbr va`
+   - `isPageMapped (vs : ARMv8VSpace) (va : VAddr) :=
+     (lookupPage vs va).isSome`
+   These delegate directly to the walk function from AG6-B.
+
+3. **AG6-C-iii: mapPage with table creation.** Implement `mapPage`:
+   Walk from L0 to L3, creating intermediate table pages on demand:
+   - At each level, `readDescriptor` the current entry
+   - If `invalid` and not at L3: allocate a new page table page (bump
+     allocator), zero it, write a `table` descriptor pointing to it
+   - At L3: write a `page` descriptor with the given attributes
+   - Return updated `ARMv8VSpace` (updated memory + allocator state)
+   - Return `none` if allocator exhausted (out of page table pages)
+
+4. **AG6-C-iv: unmapPage.** Implement `unmapPage`:
+   Walk to L3 entry for the given VA. If the entry is `page`, overwrite
+   with `invalid` descriptor. Do NOT free the page table page (reclamation
+   is a future optimization). Return updated `ARMv8VSpace`. Note: TLB
+   invalidation is handled by the caller (`vspaceUnmapPageWithFlush`).
+
+5. **AG6-C-v: VSpaceBackend instance.** Assemble the `instance :
+   VSpaceBackend ARMv8VSpace` providing all 4 operations. Verify the
+   instance matches the typeclass signature from `VSpaceBackend.lean`.
+   Add a brief smoke check: `#check (inferInstance : VSpaceBackend ARMv8VSpace)`.
+
 #### AG6-D: ARMv8 Refinement Proof (FINDING-03)
 
 **Changes**:
@@ -1033,6 +1445,45 @@ adding hardware-specific implementation.
 3. The proof will be structured as a simulation relation.
 
 **Module verification**: `lake build SeLe4n.Kernel.Architecture.VSpaceARMv8`.
+
+**Steps** (5 atomic units):
+
+1. **AG6-D-i: toHashMap extraction function.** Define
+   `toHashMap : ARMv8VSpace → HashMap VAddr (PAddr × PageAttributes)` that
+   enumerates all L3 page entries and L1/L2 block entries from the page
+   table tree, collecting valid mappings into a HashMap. Use
+   `List.foldl` over the 512 entries at each level (no fuel — bounded
+   by 512⁴ worst case, but practically structured iteration).
+
+2. **AG6-D-ii: Simulation relation.** Define
+   `simulationRelation (hw : ARMv8VSpace) (sw : HashMapVSpace) : Prop :=
+   ∀ va, lookupPage hw va = HashMap.find? sw.mappings va`.
+   This is the core abstraction relation that all operation refinement
+   proofs will maintain.
+
+3. **AG6-D-iii: Lookup refinement.** Prove
+   `lookupPage_refines : simulationRelation hw sw →
+   lookupPage hw va = lookupPage sw va`.
+   This follows directly from the simulation relation definition and
+   the fact that both backends' `lookupPage` delegates to their respective
+   lookup mechanisms.
+
+4. **AG6-D-iv: Map/unmap refinement.** Prove:
+   - `mapPage_refines : simulationRelation hw sw →
+     mapPage hw va pa attrs = some hw' →
+     simulationRelation hw' (mapPage sw va pa attrs)`
+   - `unmapPage_refines : simulationRelation hw sw →
+     unmapPage hw va = hw' →
+     simulationRelation hw' (unmapPage sw va)`
+   Each proof shows that writing/clearing a descriptor in the page table
+   produces the same effect as inserting/erasing in the HashMap.
+
+5. **AG6-D-v: Invariant transfer theorem.** Prove the master transfer:
+   `vspaceInvariant_transfer : simulationRelation hw sw →
+   vspaceInvariantFull sw → vspaceInvariantFull hw`.
+   This lifts all 7 predicates of the VSpace invariant from the HashMap
+   model to the hardware page table model. The proof delegates each
+   predicate through the simulation relation.
 
 #### AG6-E: TLB Flush Instruction Wrappers (H3-ARCH-02/RUST-05)
 
@@ -1146,6 +1597,54 @@ Rust HAL functions.
 3. Conditional compilation: `IO`-based FFI for hardware target,
    pure model for proof/test target. Use Lean `#if` or build flags.
 
+**Steps** (5 atomic units):
+
+1. **AG7-A-i: Rust FFI exports — timer + GIC group.** In
+   `rust/sele4n-hal/src/ffi.rs`, implement the first group of
+   `#[no_mangle] pub extern "C"` functions:
+   - `ffi_timer_read_counter() -> u64`: calls `timer::read_cntpct()`
+   - `ffi_timer_reprogram(interval: u64)`: calls `timer::set_cval(interval)`
+   - `ffi_gic_acknowledge() -> u32`: calls `gic::acknowledge_interrupt()`
+   - `ffi_gic_eoi(intid: u32)`: calls `gic::end_of_interrupt(intid)`
+   Each function is a thin wrapper around the HAL module from AG5.
+
+2. **AG7-A-ii: Rust FFI exports — TLB + MMIO + misc group.** Continue in
+   `ffi.rs` with:
+   - `ffi_tlbi_all()`: calls `mmu::tlbi_vmalle1()`
+   - `ffi_tlbi_by_asid(asid: u16)`: calls `mmu::tlbi_aside1(asid)`
+   - `ffi_tlbi_by_vaddr(asid: u16, vaddr: u64)`: calls `mmu::tlbi_vae1(...)`
+   - `ffi_mmio_read32(addr: u64) -> u32`: calls `mmio::mmio_read32(addr)`
+   - `ffi_mmio_write32(addr: u64, val: u32)`: calls `mmio::mmio_write32(addr, val)`
+   - `ffi_uart_putc(c: u8)`: calls `uart::putc(c)`
+   - `ffi_disable_interrupts()` / `ffi_enable_interrupts()`: calls
+     `interrupts::disable_interrupts()` / `interrupts::enable_interrupts()`
+
+3. **AG7-A-iii: Lean FFI declarations.** Create `SeLe4n/Platform/FFI.lean`.
+   For each Rust FFI function, add a corresponding `@[extern]` declaration:
+   ```
+   @[extern "ffi_timer_read_counter"]
+   opaque timerReadCounter : IO UInt64
+   @[extern "ffi_gic_acknowledge"]
+   opaque gicAcknowledge : IO UInt32
+   ```
+   Group declarations by subsystem (timer, GIC, TLB, MMIO, misc).
+   Add docstrings documenting the hardware operation each performs.
+
+4. **AG7-A-iv: Conditional compilation gate.** In `lakefile.lean`, add a
+   `hw_target` build option (e.g., `@[lake_option] def hwTarget : Bool`).
+   In `SeLe4n/Platform/FFI.lean`, use `#if HW_TARGET` guards:
+   - When `HW_TARGET = true`: the `@[extern]` declarations are active
+   - When `HW_TARGET = false` (default): provide pure-model stubs that
+     match the `Sim` platform contract behavior
+   This ensures `lake build` continues to work without a Rust HAL present.
+
+5. **AG7-A-v: Link verification.** Add a build script step in
+   `lakefile.lean` that, when `hwTarget = true`, links against
+   `libsele4n_hal.a` (the static library from `cargo build`). Test by
+   building with `lake build -DhwTarget=true` and verifying that all
+   `@[extern]` symbols resolve against the Rust static library. Add a
+   CI job for hardware-target builds.
+
 #### AG7-B: System Register Accessors (H3-RUST-07)
 
 **Changes**:
@@ -1210,6 +1709,48 @@ but NO proof hooks.
    - This follows from the X1-F atomic context switch design.
 
 **Module verification**: `lake build SeLe4n.Platform.RPi5.ProofHooks`.
+
+**Steps** (4 atomic units):
+
+1. **AG7-D-i: preserveAdvanceTimer + preserveReadMemory.** In
+   `RPi5/ProofHooks.lean`, start the `rpi5ProductionAdapterProofHooks`
+   instance with the two straightforward proofs:
+   - `preserveAdvanceTimer`: identical to the restrictive version — timer
+     advance only modifies `MachineState.timer`, which is disjoint from
+     `registerContext`. Reuse existing
+     `advanceTimerState_preserves_proofLayerInvariantBundle`.
+   - `preserveReadMemory`: memory reads return a value without modifying
+     state — proof is `rfl` (or `Eq.refl`). Same as restrictive version.
+
+2. **AG7-D-ii: preserveWriteRegister.** Prove that writing register `r`
+   to value `v` preserves `registerContextStablePred`. The production
+   contract's `registerContextStablePred` asserts
+   `machine.registers = currentThread.registerContext`. The register write
+   operation updates BOTH `machine.registers` (via `writeReg`) and
+   `currentThread.registerContext` (via the TCB update in the adapter layer).
+   Proof strategy: unfold `registerContextStablePred`, show that the
+   parallel update to both fields preserves equality. Key lemma:
+   `writeReg_both_preserves_match : writeReg machine.registers r v =
+   writeReg tcb.registerContext r v → match preserved`.
+
+3. **AG7-D-iii: preserveContextSwitch.** The critical proof. Structure:
+   - Unfold `adapterContextSwitch` into its X1-F atomic steps:
+     `save := { oldTcb with registerContext := machine.registers }`
+     `load := { machine with registers := newTcb.registerContext }`
+   - Pre: `machine.registers = oldTcb.registerContext` (from existing invariant)
+   - After save: `oldTcb.registerContext = machine.registers` ✓
+   - After load: `machine.registers = newTcb.registerContext` ✓
+   - Post: the new current thread's `registerContext` matches `machine.registers`
+   - Leverage `contextSwitchState_preserves_contextMatchesCurrent` from
+     `Adapter.lean` as the core lemma.
+
+4. **AG7-D-iv: Instance assembly + integration.** Assemble the 4 proofs into
+   `instance : AdapterProofHooks rpi5RuntimeContract`. Update
+   `RPi5/Contract.lean` to export both `rpi5RestrictiveAdapterProofHooks`
+   (existing) and `rpi5ProductionAdapterProofHooks` (new). Add a
+   `#check` verifying the instance resolves. Update documentation in
+   `docs/spec/SELE4N_SPEC.md` noting that production proof hooks are now
+   substantive (not vacuously true).
 
 #### AG7-E: TLB Flush Composition Theorems (H3-PROOF-02)
 
@@ -1281,6 +1822,48 @@ was documented in AE4-F.
 
 **Module verification**: `lake build SeLe4n.Model.Object.Types`,
 `lake build SeLe4n.Kernel.IPC.Operations.Timeout`.
+
+**Steps** (6 atomic units):
+
+1. **AG8-A-i: Add TCB field.** In `Model/Object/Types.lean`, add
+   `timedOut : Bool := false` to the `TCB` structure (after the existing
+   `ipcState` field). Update the `TCB` `BEq` instance to include
+   `timedOut`. Update `defaultTCB` to include `timedOut := false`.
+   Build: `lake build SeLe4n.Model.Object.Types`.
+
+2. **AG8-A-ii: Update timeoutThread.** In `IPC/Operations/Timeout.lean`,
+   modify `timeoutThread` (line ~91) to replace:
+   `registerContext := writeReg tcb.registerContext ⟨0⟩ timeoutErrorCode`
+   with: `timedOut := true`.
+   Keep the `ipcState := .ready` assignment unchanged.
+   Remove the `timeoutErrorCode` definition (line ~39) — it becomes unused.
+
+3. **AG8-A-iii: Update timeout detection.** In `IPC/Operations/Timeout.lean`,
+   modify `checkTimeoutStatus` (line ~127) to replace:
+   `if tcb.registerContext.gpr ⟨0⟩ = timeoutErrorCode ∧ tcb.ipcState = .ready`
+   with: `if tcb.timedOut ∧ tcb.ipcState = .ready`.
+   In the success branch, add `timedOut := false` to clear the flag.
+
+4. **AG8-A-iv: Update receive-side operations.** In
+   `IPC/Operations/Endpoint.lean`, find any code that checks the sentinel
+   pattern on the receive path. Replace sentinel checks with `tcb.timedOut`
+   checks. Ensure `timedOut` is cleared (`timedOut := false`) when the
+   thread is dequeued from a wait state and successfully receives a message.
+
+5. **AG8-A-v: IPC invariant proof updates.** Search for all theorems in
+   `IPC/Invariant/` that reference `timeoutErrorCode`, `gpr ⟨0⟩`, or
+   the sentinel pattern. Update each proof to use `timedOut` instead.
+   Key files: `EndpointPreservation.lean`, `CallReplyRecv.lean`,
+   `Structural.lean`. The proof changes should be mechanical — replacing
+   `registerContext.gpr ⟨0⟩ = timeoutErrorCode` with `timedOut = true`
+   throughout.
+
+6. **AG8-A-vi: Rust ABI update.** In `rust/sele4n-abi/src/error.rs`, update
+   the timeout detection logic. Previously, the Rust side checked GPR x0
+   for the sentinel value. Now timeout is communicated via the explicit
+   `KernelError::Timeout` variant in the error enum (already exists).
+   Remove any `0xFFFFFFFF` sentinel constant from the Rust ABI. Update
+   the `From<RawSyscallResult>` impl if it referenced the sentinel.
 
 #### AG8-B: Cache Coherency Model (H3-ARCH-07)
 
