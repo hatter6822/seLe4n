@@ -4,10 +4,11 @@
 //!
 //! Phase 1: UART initialization → boot banner
 //! Phase 2: MMU initialization → VBAR_EL1 setup
-//! Phase 3: Handoff to Lean kernel (AG7 — FFI bridge)
+//! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
+//! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.26.5";
+const KERNEL_VERSION: &str = "0.26.6";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -41,15 +42,30 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] VBAR_EL1 set to exception vector table");
 
     // -----------------------------------------------------------------------
-    // Phase 3: Handoff summary
+    // Phase 3: GIC-400 and timer initialization (AG5)
+    // -----------------------------------------------------------------------
+    crate::kprintln!("[boot] Initializing GIC-400...");
+    crate::gic::init_gic();
+    crate::kprintln!("[boot] GIC-400 initialized (distributor + CPU interface)");
+
+    crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
+    crate::timer::init_timer(crate::timer::DEFAULT_TICK_HZ);
+    crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
+
+    // Enable IRQ delivery now that GIC and timer are configured
+    crate::interrupts::enable_irq();
+    crate::kprintln!("[boot] IRQ delivery enabled");
+
+    // -----------------------------------------------------------------------
+    // Phase 4: Handoff summary
     // -----------------------------------------------------------------------
     crate::kprintln!();
     crate::kprintln!("[boot] Hardware initialization complete:");
     crate::kprintln!("  UART   : PL011 @ 0xFE201000 (115200 8N1)");
     crate::kprintln!("  MMU    : identity map (3 GiB RAM + 1 GiB device)");
     crate::kprintln!("  VBAR   : exception vectors installed");
-    crate::kprintln!("  GIC    : not initialized (AG5)");
-    crate::kprintln!("  Timer  : not initialized (AG5)");
+    crate::kprintln!("  GIC    : GIC-400 distributor + CPU interface");
+    crate::kprintln!("  Timer  : 1000 Hz (54 MHz / 54000 counts per tick)");
     crate::kprintln!();
     crate::kprintln!("[boot] Boot complete, entering kernel");
 

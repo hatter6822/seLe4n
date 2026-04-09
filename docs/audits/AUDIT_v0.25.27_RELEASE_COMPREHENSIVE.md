@@ -239,7 +239,7 @@ Complete. The 7-tuple `vspaceInvariantBundle` covers ASID uniqueness, non-overla
 All decode functions in `RegisterDecode.lean` and `SyscallArgDecode.lean` return `Except KernelError` — total by construction. `decodeMsgRegs_length` proves output array size matches layout. All 20 per-syscall decoders are covered by `DecodingSuite.lean` (40 tests).
 
 ### Non-Interference
-`NonInterferenceStep` has 34 constructors covering all `KernelOperation` variants. `niStepCoverage` theorem proves exhaustive coverage. `composedNonInterference_trace` provides trace-level NI composition.
+`NonInterferenceStep` has 35 constructors covering all `KernelOperation` variants (34 at time of this audit + AG5-F `handleInterrupt`). `niStepCoverage` theorem proves exhaustive coverage. `composedNonInterference_trace` provides trace-level NI composition.
 
 ---
 

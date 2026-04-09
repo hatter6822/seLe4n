@@ -111,4 +111,64 @@ def rpi5TimerConfig : HardwareTimerConfig where
 theorem rpi5TimerConfig_countsPerTick :
     rpi5TimerConfig.countsPerTick = 54000 := by decide
 
+-- ============================================================================
+-- AG5-E: Timer interrupt → timerTick binding
+-- ============================================================================
+
+/-- AG5-E: Timer interrupt handler configuration.
+    Captures the state needed by the Rust timer interrupt handler to bind
+    hardware timer events to the Lean model's `timerTick` function.
+
+    The handler is invoked when INTID 30 (timer PPI) fires:
+    1. Reprogram the comparator for the next tick
+    2. Call `timerTick` to advance the model timer
+    3. The comparator reprogramming is modeled by `reprogramComparator`
+
+    This structure is pure — the actual hardware interaction is in the
+    Rust HAL (`sele4n-hal/src/timer.rs`). -/
+structure TimerInterruptBinding where
+  /-- Timer configuration (frequency, interval, comparator). -/
+  config : HardwareTimerConfig
+  /-- Number of tick interrupts processed so far. -/
+  tickCount : Nat := 0
+  deriving Repr, DecidableEq
+
+namespace TimerInterruptBinding
+
+/-- AG5-E: Process a timer interrupt event.
+    Advances the comparator and increments the tick count.
+    Returns the updated binding state.
+
+    This models the Rust side: `reprogram_timer()` + `increment_tick_count()`. -/
+def handleTimerInterrupt (binding : TimerInterruptBinding) : TimerInterruptBinding :=
+  { binding with
+    config := binding.config.reprogramComparator
+    tickCount := binding.tickCount + 1 }
+
+/-- AG5-E: Timer interrupt increments tick count by exactly 1. -/
+theorem handleTimerInterrupt_incrementsTickCount (binding : TimerInterruptBinding) :
+    (binding.handleTimerInterrupt).tickCount = binding.tickCount + 1 := rfl
+
+/-- AG5-E: Timer interrupt advances comparator by exactly one interval. -/
+theorem handleTimerInterrupt_advancesComparator (binding : TimerInterruptBinding) :
+    (binding.handleTimerInterrupt).config.comparatorValue =
+    binding.config.comparatorValue + binding.config.countsPerTick := rfl
+
+/-- AG5-E: Timer interrupt preserves frequency. -/
+theorem handleTimerInterrupt_preservesFrequency (binding : TimerInterruptBinding) :
+    (binding.handleTimerInterrupt).config.counterFrequencyHz =
+    binding.config.counterFrequencyHz := rfl
+
+/-- AG5-E: Timer interrupt preserves tick interval. -/
+theorem handleTimerInterrupt_preservesInterval (binding : TimerInterruptBinding) :
+    (binding.handleTimerInterrupt).config.tickIntervalNs =
+    binding.config.tickIntervalNs := rfl
+
+end TimerInterruptBinding
+
+/-- AG5-E: Default RPi5 timer interrupt binding (starts at tick 0). -/
+def rpi5TimerBinding : TimerInterruptBinding where
+  config := rpi5TimerConfig
+  tickCount := 0
+
 end SeLe4n.Kernel.Architecture

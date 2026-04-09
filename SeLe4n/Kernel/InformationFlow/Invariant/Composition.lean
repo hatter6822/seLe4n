@@ -323,6 +323,22 @@ inductive NonInterferenceStep
           threadObservable ctx observer t = false)
       (hProj : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
+  /-- AG5-F (FINDING-06): Interrupt dispatch — handles timer and device
+      interrupts. Timer path delegates to `timerTick` (domain-local budget
+      decrement). Device path delivers `notificationSignal` to the registered
+      handler. The projection proof covers both paths:
+      - Timer: reuses `timerTick` projection (current thread high + runnable high)
+      - Device: reuses `notificationSignal` projection (notification high)
+      - Unmapped/spurious: state unchanged (trivial preservation) -/
+  | handleInterrupt
+      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+          threadObservable ctx observer t = false)
+      (hCurrentObjHigh : ∀ t, st.scheduler.current = some t →
+          objectObservable ctx observer t.toObjId = false)
+      (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
+          threadObservable ctx observer tid = false)
+      (hProj : projectState ctx observer st' = projectState ctx observer st)
+    : NonInterferenceStep ctx observer st st'
 
 /-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
 projection (one-sided version). -/
@@ -493,6 +509,7 @@ theorem step_preserves_projection
     exact registerService_preserves_projection ctx observer reg st st' hOp
   | endpointCallWithDonationHigh _ hProj => exact hProj
   | endpointReplyWithReversionHigh _ hProj => exact hProj
+  | handleInterrupt _ _ _ hProj => exact hProj
 
 /-- WS-F3/H-05/H-09: Primary IF-M4 composition theorem — single-step bundle
 non-interference. -/
@@ -820,7 +837,8 @@ theorem errorAction_preserves_lowEquiv
 /-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
 in WS-K are covered by existing `NonInterferenceStep` constructors.
 
-The 32 constructors cover every operation reachable from `dispatchWithCap`:
+The 35 constructors cover every operation reachable from `dispatchWithCap`
+plus interrupt handling:
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
 - Lifecycle: `.lifecycleRetype`, `.lifecycleRevokeDeleteRetype`
 - VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
@@ -843,7 +861,7 @@ The `syscallEntry`-level bridge theorems are in `API.lean`:
 This theorem witnesses (1) that the decode-error constructor is always available
 (state identity), (2) that every `NonInterferenceStep` composes into a single-step
 `NonInterferenceTrace`, and (3) that `step_preserves_projection` handles every
-constructor (checked by the Lean exhaustiveness checker on the 32-arm match). -/
+constructor (checked by the Lean exhaustiveness checker on the 35-arm match). -/
 theorem syscallNI_coverage_witness
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
@@ -853,7 +871,7 @@ theorem syscallNI_coverage_witness
     -- Every NI step composes into a single-step trace
     (∀ st' (_hStep : NonInterferenceStep ctx observer st st'),
       NonInterferenceTrace ctx observer st st') ∧
-    -- step_preserves_projection is total (exhaustive match on all 34 constructors)
+    -- step_preserves_projection is total (exhaustive match on all 35 constructors)
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,
@@ -907,6 +925,7 @@ inductive KernelOperation where
   | registerServiceChecked
   | endpointCallWithDonationHigh
   | endpointReplyWithReversionHigh
+  | handleInterrupt  -- AG5-F: Interrupt dispatch (timer + device)
   deriving Repr, DecidableEq
 
 /-- U4-E: Compile-time assertion on the operation count. If a new variant is
@@ -925,7 +944,8 @@ theorem kernelOperation_count : (List.length
    .cspaceMutateHigh, .handleYield, .timerTick,
    .syscallDecodeError, .syscallDispatchHigh,
    .registerServiceChecked,
-   .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh]) = 34 := by rfl
+   .endpointCallWithDonationHigh, .endpointReplyWithReversionHigh,
+   .handleInterrupt]) = 35 := by rfl
 
 -- ============================================================================
 -- U4-F / U-H10: NI step coverage theorem
@@ -933,7 +953,7 @@ theorem kernelOperation_count : (List.length
 
 /-- U4-F (U-H10): Every `KernelOperation` variant has a witnessing
     `NonInterferenceStep` constructor. This is proven by exhaustive match on
-    all 34 `KernelOperation` variants, each providing a concrete
+    all 35 `KernelOperation` variants, each providing a concrete
     `NonInterferenceStep` constructor.
 
     If a new `KernelOperation` variant is added, the match becomes
@@ -943,7 +963,7 @@ theorem kernelOperation_count : (List.length
     The proof uses `syscallDecodeError` as the universal witness (state
     unchanged = trivially NI-preserving) — this demonstrates constructor
     existence, not operational correspondence. Operational correspondence
-    is established by `step_preserves_projection` which handles all 34
+    is established by `step_preserves_projection` which handles all 35
     constructors. -/
 theorem niStepCoverage
     (ctx : LabelingContext) (observer : IfObserver)
@@ -951,7 +971,7 @@ theorem niStepCoverage
     ∀ (_op : KernelOperation),
     ∃ (st' : SystemState), NonInterferenceStep ctx observer st st' := by
   intro
-    -- Exhaustive match on all 34 variants — each witnesses a valid NI step
+    -- Exhaustive match on all 35 variants — each witnesses a valid NI step
     -- via syscallDecodeError (state identity). The match ensures completeness:
     -- adding a new KernelOperation variant without a case here is a compile error.
     | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
@@ -966,6 +986,7 @@ theorem niStepCoverage
     | .syscallDecodeError | .syscallDispatchHigh
     | .registerServiceChecked
     | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh
+    | .handleInterrupt
       => exact ⟨st, .syscallDecodeError rfl⟩
 
 -- ============================================================================
@@ -990,7 +1011,8 @@ theorem niStepCoverage
       lifecycleRetype, lifecycleRevokeDeleteRetype, storeObjectHigh
     Batch 4 (remaining): vspaceMapPage, vspaceUnmapPage, vspaceLookup,
       syscallDecodeError, syscallDispatchHigh, registerServiceChecked,
-      endpointCallWithDonationHigh, endpointReplyWithReversionHigh -/
+      endpointCallWithDonationHigh, endpointReplyWithReversionHigh,
+      handleInterrupt -/
 def kernelOperationNiConstructor : KernelOperation → String
   | .chooseThread                   => "chooseThread"
   | .endpointSendDual               => "endpointSendDual"
@@ -1026,6 +1048,7 @@ def kernelOperationNiConstructor : KernelOperation → String
   | .registerServiceChecked             => "registerServiceChecked"
   | .endpointCallWithDonationHigh       => "endpointCallWithDonationHigh"
   | .endpointReplyWithReversionHigh     => "endpointReplyWithReversionHigh"
+  | .handleInterrupt                    => "handleInterrupt"
 
 /-- V6-I5: Every `KernelOperation` maps to a non-empty NI constructor name.
     Combined with the exhaustive match in `kernelOperationNiConstructor`,
@@ -1044,7 +1067,8 @@ theorem niStepCoverage_operational :
     | .cspaceMutateHigh | .handleYield | .timerTick
     | .syscallDecodeError | .syscallDispatchHigh
     | .registerServiceChecked
-    | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh => decide
+    | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh
+    | .handleInterrupt => decide
 
 /-- V6-I5: No two distinct `KernelOperation` variants share the same
     NI constructor name, confirming the mapping is injective (1:1). -/
@@ -1056,7 +1080,7 @@ theorem niStepCoverage_injective :
   cases op₁ <;> cases op₂ <;> (first | rfl | simp [kernelOperationNiConstructor] at hEq)
 
 /-- V6-I5: The number of distinct NI constructor names matches the
-    KernelOperation count (34), confirming surjective coverage. -/
+    KernelOperation count (35), confirming surjective coverage. -/
 theorem niStepCoverage_count :
     ([ kernelOperationNiConstructor .chooseThread
      , kernelOperationNiConstructor .endpointSendDual
@@ -1092,6 +1116,7 @@ theorem niStepCoverage_count :
      , kernelOperationNiConstructor .registerServiceChecked
      , kernelOperationNiConstructor .endpointCallWithDonationHigh
      , kernelOperationNiConstructor .endpointReplyWithReversionHigh
-     ]).length = 34 := by rfl
+     , kernelOperationNiConstructor .handleInterrupt
+     ]).length = 35 := by rfl
 
 end SeLe4n.Kernel

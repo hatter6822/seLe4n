@@ -1397,7 +1397,7 @@ The 6 objects-reading predicates require per-subsystem post-state proofs:
 | `schedContextNotDualBound` | objects |
 | `schedContextRunQueueConsistent` | scheduler + objects |
 
-### Operation Coverage (33 operations, 2 core bridges)
+### Operation Coverage (34 operations, 2 core bridges)
 
 **Core bridge A** (`crossSubsystemInvariant_objects_change_bridge`): For
 operations preserving `objectIndex` (in-place object mutations).
@@ -1437,6 +1437,7 @@ operations that grow `objectIndex` (new object creation).
 | vspaceMapPage | A | ✓ | ✓ |
 | vspaceUnmapPage | A | ✓ | ✓ |
 | setIPCBufferOp | A | ✓ | ✓ |
+| handleInterrupt | A | ✓ | ✓ |
 | lifecycleRetypeObject | B | ✓ | grows |
 | lifecycleRetypeWithCleanup | B | ✓ | grows |
 | retypeFromUntyped | B | ✓ | grows |
@@ -2290,6 +2291,38 @@ theorem retypeFromUntyped_crossSubsystemInvariant_bridge
     (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_retype_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdxGrow
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+
+-- ============================================================================
+-- AG5-F: Interrupt dispatch cross-subsystem bridge
+-- ============================================================================
+
+/-- AG5-F (FINDING-06): `handleInterrupt` preserves `crossSubsystemInvariant`.
+    Interrupt dispatch modifies `objects` (timer tick: TCB timeSlice + scheduler;
+    notification signal: TCB ipcState + Notification state) and `scheduler`
+    (re-enqueue, context switch). Does not modify `services`, `serviceRegistry`,
+    `interfaceRegistry`, or `objectIndex`.
+
+    Timer path: delegates to existing `timerTick` which modifies TCB.timeSlice
+    and may call `schedule`. Notification path: delegates to `notificationSignal`
+    which modifies TCB.ipcState and Notification.waitingThreads. Both paths
+    use the core bridge (`crossSubsystemInvariant_objects_change_bridge`). -/
+theorem handleInterrupt_crossSubsystemInvariant_bridge
+    (st st' : SystemState)
+    (hPre : crossSubsystemInvariant st)
+    (hServices : st'.services = st.services)
+    (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
+    (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hRegEpValid : registryEndpointValid st')
+    (hEndpointQ : noStaleEndpointQueueReferences st')
+    (hNotifWait : noStaleNotificationWaitReferences st')
+    (hScStore : schedContextStoreConsistent st')
+    (hScDual : schedContextNotDualBound st')
+    (hScRunQ : schedContextRunQueueConsistent st')
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    crossSubsystemInvariant st' :=
+  crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
     hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
 
 end SeLe4n.Kernel

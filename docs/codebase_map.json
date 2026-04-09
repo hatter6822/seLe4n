@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-hardware-binding-audit-eCvW0",
-      "commit_sha": "ad77bcb4fde782959c20961c186072d0c4585e7e",
-      "tree_sha": "9f101a14e6ba18b87bd31da9ce69e5402976aa4e",
-      "committed_at_utc": "2026-04-09T07:26:42+00:00"
+      "branch": "claude/complete-ag5-interrupts-timer-OgW16",
+      "commit_sha": "27cca3cd6d6de2de8e5abbe19052675e1b87d399",
+      "tree_sha": "74ec9864ff17e606b3452d043a40d76d34f52d5d",
+      "committed_at_utc": "2026-04-09T19:21:59+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "03395e153d03f8cbe5147ff6989c5160b7085607aa50dc90dec6b887f0205d53"
+    "source_digest": "3d6594fe93f4dc59e0da8d0cbb509cae7018e809559fca259ce386b7175753bb"
   },
   "summary": {
     "module_count": 152,
-    "declaration_count": 4727
+    "declaration_count": 4761
   },
   "readme_sync": {
-    "version": "0.26.5",
+    "version": "0.26.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 136,
-    "production_loc": 88274,
+    "production_loc": 88667,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2617,
+    "proved_theorem_lemma_decls": 2643,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1428,7 +1428,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.ExceptionModel",
       "path": "SeLe4n/Kernel/Architecture/ExceptionModel.lean",
-      "declaration_count": 21,
+      "declaration_count": 30,
       "declarations": [
         {
           "kind": "namespace",
@@ -1616,13 +1616,110 @@
             "classifySynchronousException",
             "dispatchSynchronousException"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveOutgoingContext_preserves_interruptsEnabled",
+          "line": 273,
+          "called": [
+            "SystemState",
+            "saveOutgoingContext"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoreIncomingContext_preserves_interruptsEnabled",
+          "line": 282,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "restoreIncomingContext"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_preserves_interruptsEnabled",
+          "line": 291,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "setCurrentThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "interruptDispatchSequence_preserves_interruptsEnabled_spurious",
+          "line": 301,
+          "called": [
+            "SystemState",
+            "interruptDispatchSequence",
+            "interruptDispatchSequence_spurious",
+            "spuriousInterruptThreshold"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_preserves_interruptsEnabled",
+          "line": 312,
+          "called": [
+            "SystemState",
+            "chooseThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_preserves_ie",
+          "line": 321,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "setCurrentThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_interruptsEnabled",
+          "line": 331,
+          "called": [
+            "SystemState",
+            "chooseThread_preserves_interruptsEnabled",
+            "none",
+            "restoreIncomingContext_preserves_interruptsEnabled",
+            "saveOutgoingContext",
+            "saveOutgoingContext_preserves_interruptsEnabled",
+            "schedule",
+            "setCurrentThread_preserves_ie"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_interruptsEnabled",
+          "line": 365,
+          "called": [
+            "SystemState",
+            "schedule_preserves_interruptsEnabled",
+            "tick_preserves_interruptsEnabled",
+            "timerTick"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleInterrupt_timer_preserves_interruptsEnabled",
+          "line": 388,
+          "called": [
+            "SystemState",
+            "handleInterrupt",
+            "timerInterruptId",
+            "timerTick",
+            "timerTick_preserves_interruptsEnabled"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Architecture.InterruptDispatch",
       "path": "SeLe4n/Kernel/Architecture/InterruptDispatch.lean",
-      "declaration_count": 11,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -1730,6 +1827,35 @@
             "handleInterrupt",
             "none",
             "timerInterruptId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "timerInterruptHandler",
+          "line": 179,
+          "called": [
+            "Kernel",
+            "timerTick"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerInterruptHandler_eq_timerTick",
+          "line": 185,
+          "called": [
+            "timerInterruptHandler",
+            "timerTick"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleInterrupt_timer",
+          "line": 190,
+          "called": [
+            "SystemState",
+            "handleInterrupt",
+            "timerInterruptId",
+            "timerTick"
           ]
         }
       ]
@@ -4321,7 +4447,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TimerModel",
       "path": "SeLe4n/Kernel/Architecture/TimerModel.lean",
-      "declaration_count": 12,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
@@ -4418,6 +4544,78 @@
           "line": 111,
           "called": [
             "countsPerTick"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "TimerInterruptBinding",
+          "line": 129,
+          "called": [
+            "HardwareTimerConfig",
+            "config"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "TimerInterruptBinding",
+          "line": 136,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "handleTimerInterrupt",
+          "line": 143,
+          "called": [
+            "TimerInterruptBinding",
+            "config",
+            "reprogramComparator"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleTimerInterrupt_incrementsTickCount",
+          "line": 149,
+          "called": [
+            "TimerInterruptBinding",
+            "handleTimerInterrupt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleTimerInterrupt_advancesComparator",
+          "line": 153,
+          "called": [
+            "TimerInterruptBinding",
+            "countsPerTick",
+            "handleTimerInterrupt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleTimerInterrupt_preservesFrequency",
+          "line": 158,
+          "called": [
+            "TimerInterruptBinding",
+            "handleTimerInterrupt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleTimerInterrupt_preservesInterval",
+          "line": 163,
+          "called": [
+            "TimerInterruptBinding",
+            "handleTimerInterrupt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rpi5TimerBinding",
+          "line": 170,
+          "called": [
+            "TimerInterruptBinding",
+            "config",
+            "rpi5TimerConfig"
           ]
         }
       ]
@@ -9268,7 +9466,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 133,
+      "declaration_count": 134,
       "declarations": [
         {
           "kind": "namespace",
@@ -10345,7 +10543,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_objects_change_bridge",
-          "line": 1468,
+          "line": 1469,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10364,7 +10562,7 @@
         {
           "kind": "theorem",
           "name": "ipcSend_crossSubsystemInvariant_bridge",
-          "line": 1500,
+          "line": 1501,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10381,7 +10579,7 @@
         {
           "kind": "theorem",
           "name": "ipcReceive_crossSubsystemInvariant_bridge",
-          "line": 1523,
+          "line": 1524,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10398,7 +10596,7 @@
         {
           "kind": "theorem",
           "name": "ipcReply_crossSubsystemInvariant_bridge",
-          "line": 1546,
+          "line": 1547,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10415,7 +10613,7 @@
         {
           "kind": "theorem",
           "name": "ipcCall_crossSubsystemInvariant_bridge",
-          "line": 1570,
+          "line": 1571,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10432,7 +10630,7 @@
         {
           "kind": "theorem",
           "name": "ipcReplyRecv_crossSubsystemInvariant_bridge",
-          "line": 1594,
+          "line": 1595,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10449,7 +10647,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_crossSubsystemInvariant_bridge",
-          "line": 1618,
+          "line": 1619,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10466,7 +10664,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_crossSubsystemInvariant_bridge",
-          "line": 1642,
+          "line": 1643,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10483,7 +10681,7 @@
         {
           "kind": "theorem",
           "name": "schedule_crossSubsystemInvariant_bridge",
-          "line": 1671,
+          "line": 1672,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10500,7 +10698,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_crossSubsystemInvariant_bridge",
-          "line": 1695,
+          "line": 1696,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10517,7 +10715,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_crossSubsystemInvariant_bridge",
-          "line": 1718,
+          "line": 1719,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10534,7 +10732,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_crossSubsystemInvariant_bridge",
-          "line": 1741,
+          "line": 1742,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10551,7 +10749,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_crossSubsystemInvariant_bridge",
-          "line": 1764,
+          "line": 1765,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10568,7 +10766,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_crossSubsystemInvariant_bridge",
-          "line": 1789,
+          "line": 1790,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10585,7 +10783,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_crossSubsystemInvariant_bridge",
-          "line": 1813,
+          "line": 1814,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10602,7 +10800,7 @@
         {
           "kind": "theorem",
           "name": "crossSubsystemInvariant_retype_bridge",
-          "line": 1839,
+          "line": 1840,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10621,7 +10819,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMint_crossSubsystemInvariant_bridge",
-          "line": 1871,
+          "line": 1872,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10638,7 +10836,7 @@
         {
           "kind": "theorem",
           "name": "cspaceCopy_crossSubsystemInvariant_bridge",
-          "line": 1892,
+          "line": 1893,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10655,7 +10853,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMove_crossSubsystemInvariant_bridge",
-          "line": 1913,
+          "line": 1914,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10672,7 +10870,7 @@
         {
           "kind": "theorem",
           "name": "cspaceMutate_crossSubsystemInvariant_bridge",
-          "line": 1933,
+          "line": 1934,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10689,7 +10887,7 @@
         {
           "kind": "theorem",
           "name": "cspaceInsertSlot_crossSubsystemInvariant_bridge",
-          "line": 1953,
+          "line": 1954,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10706,7 +10904,7 @@
         {
           "kind": "theorem",
           "name": "cspaceDeleteSlot_crossSubsystemInvariant_bridge",
-          "line": 1973,
+          "line": 1974,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10723,7 +10921,7 @@
         {
           "kind": "theorem",
           "name": "cspaceRevoke_crossSubsystemInvariant_bridge",
-          "line": 1994,
+          "line": 1995,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10740,7 +10938,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_crossSubsystemInvariant_bridge",
-          "line": 2019,
+          "line": 2020,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10757,7 +10955,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_crossSubsystemInvariant_bridge",
-          "line": 2041,
+          "line": 2042,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10774,7 +10972,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_crossSubsystemInvariant_bridge",
-          "line": 2062,
+          "line": 2063,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10791,7 +10989,7 @@
         {
           "kind": "theorem",
           "name": "schedContextYieldTo_crossSubsystemInvariant_bridge",
-          "line": 2084,
+          "line": 2085,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10808,7 +11006,7 @@
         {
           "kind": "theorem",
           "name": "setPriority_crossSubsystemInvariant_bridge",
-          "line": 2110,
+          "line": 2111,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10825,7 +11023,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriority_crossSubsystemInvariant_bridge",
-          "line": 2132,
+          "line": 2133,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10842,7 +11040,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_crossSubsystemInvariant_bridge",
-          "line": 2158,
+          "line": 2159,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10859,7 +11057,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_crossSubsystemInvariant_bridge",
-          "line": 2179,
+          "line": 2180,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10876,7 +11074,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBuffer_crossSubsystemInvariant_bridge",
-          "line": 2207,
+          "line": 2208,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10893,7 +11091,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetype_crossSubsystemInvariant_bridge",
-          "line": 2233,
+          "line": 2234,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10910,7 +11108,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge",
-          "line": 2255,
+          "line": 2256,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -10927,13 +11125,30 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_crossSubsystemInvariant_bridge",
-          "line": 2277,
+          "line": 2278,
+          "called": [
+            "SystemState",
+            "blockingAcyclic",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_retype_bridge",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryEndpointValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent",
+            "schedContextStoreConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleInterrupt_crossSubsystemInvariant_bridge",
+          "line": 2310,
           "called": [
             "Kernel",
             "SystemState",
             "blockingAcyclic",
             "crossSubsystemInvariant",
-            "crossSubsystemInvariant_retype_bridge",
+            "crossSubsystemInvariant_objects_change_bridge",
             "noStaleEndpointQueueReferences",
             "noStaleNotificationWaitReferences",
             "registryEndpointValid",
@@ -22793,6 +23008,7 @@
             "endpointReplyRecv",
             "endpointSendDual",
             "ensureRunnable",
+            "handleInterrupt",
             "handleYield",
             "lifecycleRetypeObject",
             "lifecycleRevokeDeleteRetype",
@@ -22821,7 +23037,7 @@
         {
           "kind": "theorem",
           "name": "step_preserves_projection",
-          "line": 329,
+          "line": 345,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -22858,6 +23074,7 @@
             "endpointSendDual_preserves_projection",
             "enforcementSoundness_registerServiceChecked",
             "ensureRunnable_preserves_projection",
+            "handleInterrupt",
             "handleYield",
             "handleYield_preserves_projection",
             "invExt",
@@ -22910,7 +23127,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_step",
-          "line": 499,
+          "line": 516,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -22924,7 +23141,7 @@
         {
           "kind": "inductive",
           "name": "NonInterferenceTrace",
-          "line": 513,
+          "line": 530,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -22936,7 +23153,7 @@
         {
           "kind": "theorem",
           "name": "trace_preserves_projection",
-          "line": 524,
+          "line": 541,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -22949,7 +23166,7 @@
         {
           "kind": "theorem",
           "name": "composedNonInterference_trace",
-          "line": 535,
+          "line": 552,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -22962,7 +23179,7 @@
         {
           "kind": "inductive",
           "name": "ComposedNonInterferenceStep",
-          "line": 564,
+          "line": 581,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -22975,7 +23192,7 @@
         {
           "kind": "theorem",
           "name": "composedNI_withSwitchDomain",
-          "line": 592,
+          "line": 609,
           "called": [
             "ComposedNonInterferenceStep",
             "IfObserver",
@@ -22991,7 +23208,7 @@
         {
           "kind": "theorem",
           "name": "composedNI_two_steps",
-          "line": 610,
+          "line": 627,
           "called": [
             "ComposedNonInterferenceStep",
             "IfObserver",
@@ -23005,7 +23222,7 @@
         {
           "kind": "theorem",
           "name": "projPreserving_preserves_lowEquivalent",
-          "line": 635,
+          "line": 652,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -23017,7 +23234,7 @@
         {
           "kind": "structure",
           "name": "LabelingContextValid",
-          "line": 691,
+          "line": 708,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -23031,7 +23248,7 @@
         {
           "kind": "theorem",
           "name": "defaultLabelingContext_valid",
-          "line": 707,
+          "line": 724,
           "called": [
             "LabelingContextValid",
             "confidentialityFlowsTo",
@@ -23046,7 +23263,7 @@
         {
           "kind": "theorem",
           "name": "labelingContextValid_provides_coherence",
-          "line": 720,
+          "line": 737,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -23060,7 +23277,7 @@
         {
           "kind": "theorem",
           "name": "labelingContextValid_is_deployment_requirement",
-          "line": 736,
+          "line": 753,
           "called": [
             "LabelingContext",
             "LabelingContextValid",
@@ -23072,7 +23289,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_NI",
-          "line": 755,
+          "line": 772,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -23094,7 +23311,7 @@
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 781,
+          "line": 798,
           "called": [
             "IfObserver",
             "Kernel",
@@ -23106,7 +23323,7 @@
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 791,
+          "line": 808,
           "called": [
             "IfObserver",
             "Kernel",
@@ -23117,7 +23334,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 810,
+          "line": 827,
           "called": [
             "IfObserver",
             "KernelError",
@@ -23128,7 +23345,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 847,
+          "line": 865,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -23143,7 +23360,7 @@
         {
           "kind": "inductive",
           "name": "KernelOperation",
-          "line": 875,
+          "line": 893,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -23154,6 +23371,7 @@
             "cspaceRevoke",
             "endpointReply",
             "endpointSendDual",
+            "handleInterrupt",
             "handleYield",
             "lifecycleRevokeDeleteRetype",
             "notificationSignal",
@@ -23170,7 +23388,7 @@
         {
           "kind": "theorem",
           "name": "kernelOperation_count",
-          "line": 915,
+          "line": 934,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -23181,6 +23399,7 @@
             "cspaceRevoke",
             "endpointReply",
             "endpointSendDual",
+            "handleInterrupt",
             "handleYield",
             "lifecycleRevokeDeleteRetype",
             "notificationSignal",
@@ -23197,7 +23416,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage",
-          "line": 948,
+          "line": 968,
           "called": [
             "IfObserver",
             "KernelOperation",
@@ -23213,6 +23432,7 @@
             "cspaceRevoke",
             "endpointReply",
             "endpointSendDual",
+            "handleInterrupt",
             "handleYield",
             "lifecycleRevokeDeleteRetype",
             "notificationSignal",
@@ -23229,7 +23449,7 @@
         {
           "kind": "def",
           "name": "kernelOperationNiConstructor",
-          "line": 994,
+          "line": 1016,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -23241,6 +23461,7 @@
             "cspaceRevoke",
             "endpointReply",
             "endpointSendDual",
+            "handleInterrupt",
             "handleYield",
             "lifecycleRevokeDeleteRetype",
             "notificationSignal",
@@ -23257,7 +23478,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_operational",
-          "line": 1033,
+          "line": 1056,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -23269,6 +23490,7 @@
             "cspaceRevoke",
             "endpointReply",
             "endpointSendDual",
+            "handleInterrupt",
             "handleYield",
             "kernelOperationNiConstructor",
             "lifecycleRevokeDeleteRetype",
@@ -23286,7 +23508,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_injective",
-          "line": 1051,
+          "line": 1075,
           "called": [
             "KernelOperation",
             "kernelOperationNiConstructor"
@@ -23295,7 +23517,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_count",
-          "line": 1060,
+          "line": 1084,
           "called": [
             "Kernel",
             "chooseThread",
@@ -23307,6 +23529,7 @@
             "cspaceRevoke",
             "endpointReply",
             "endpointSendDual",
+            "handleInterrupt",
             "handleYield",
             "kernelOperationNiConstructor",
             "lifecycleRevokeDeleteRetype",
@@ -42276,7 +42499,7 @@
     {
       "module": "SeLe4n.Machine",
       "path": "SeLe4n/Machine.lean",
-      "declaration_count": 99,
+      "declaration_count": 112,
       "declarations": [
         {
           "kind": "namespace",
@@ -42711,8 +42934,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:392>",
-          "line": 392,
+          "name": "<anonymous:instance:399>",
+          "line": 399,
           "called": [
             "MachineState",
             "default"
@@ -42721,7 +42944,7 @@
         {
           "kind": "def",
           "name": "machineWordBounded",
-          "line": 406,
+          "line": 413,
           "called": [
             "MachineState",
             "RegName",
@@ -42732,7 +42955,7 @@
         {
           "kind": "theorem",
           "name": "machineWordBounded_default",
-          "line": 412,
+          "line": 419,
           "called": [
             "MachineState",
             "default",
@@ -42742,7 +42965,7 @@
         {
           "kind": "def",
           "name": "readReg",
-          "line": 419,
+          "line": 426,
           "called": [
             "RegName",
             "RegValue",
@@ -42752,7 +42975,7 @@
         {
           "kind": "def",
           "name": "writeReg",
-          "line": 422,
+          "line": 429,
           "called": [
             "RegName",
             "RegValue",
@@ -42762,7 +42985,7 @@
         {
           "kind": "def",
           "name": "readMem",
-          "line": 425,
+          "line": 432,
           "called": [
             "MachineState",
             "PAddr"
@@ -42771,7 +42994,7 @@
         {
           "kind": "def",
           "name": "writeMem",
-          "line": 428,
+          "line": 435,
           "called": [
             "MachineState",
             "PAddr"
@@ -42780,7 +43003,7 @@
         {
           "kind": "def",
           "name": "setPC",
-          "line": 431,
+          "line": 438,
           "called": [
             "MachineState",
             "RegValue"
@@ -42789,15 +43012,130 @@
         {
           "kind": "def",
           "name": "tick",
-          "line": 434,
+          "line": 441,
           "called": [
             "MachineState"
           ]
         },
         {
+          "kind": "def",
+          "name": "disableInterrupts",
+          "line": 450,
+          "called": [
+            "MachineState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "enableInterrupts",
+          "line": 455,
+          "called": [
+            "MachineState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "withInterruptsDisabled",
+          "line": 463,
+          "called": [
+            "MachineState",
+            "disableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "disableInterrupts_sets_false",
+          "line": 470,
+          "called": [
+            "MachineState",
+            "disableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enableInterrupts_sets_true",
+          "line": 474,
+          "called": [
+            "MachineState",
+            "enableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "disableInterrupts_preserves_timer",
+          "line": 478,
+          "called": [
+            "MachineState",
+            "disableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "disableInterrupts_preserves_regs",
+          "line": 482,
+          "called": [
+            "MachineState",
+            "disableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "disableInterrupts_preserves_memory",
+          "line": 486,
+          "called": [
+            "MachineState",
+            "disableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enableInterrupts_preserves_timer",
+          "line": 490,
+          "called": [
+            "MachineState",
+            "enableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enableInterrupts_preserves_regs",
+          "line": 494,
+          "called": [
+            "MachineState",
+            "enableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enableInterrupts_preserves_memory",
+          "line": 498,
+          "called": [
+            "MachineState",
+            "enableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "withInterruptsDisabled_restores",
+          "line": 503,
+          "called": [
+            "MachineState",
+            "withInterruptsDisabled"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tick_preserves_interruptsEnabled",
+          "line": 508,
+          "called": [
+            "MachineState",
+            "tick"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "readReg_writeReg_eq",
-          "line": 441,
+          "line": 515,
           "called": [
             "RegName",
             "RegValue",
@@ -42809,7 +43147,7 @@
         {
           "kind": "theorem",
           "name": "readReg_writeReg_ne",
-          "line": 445,
+          "line": 519,
           "called": [
             "RegName",
             "RegValue",
@@ -42822,7 +43160,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_eq",
-          "line": 452,
+          "line": 526,
           "called": [
             "MachineState",
             "PAddr",
@@ -42833,7 +43171,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_ne",
-          "line": 456,
+          "line": 530,
           "called": [
             "MachineState",
             "PAddr",
@@ -42844,7 +43182,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_pc",
-          "line": 461,
+          "line": 535,
           "called": [
             "RegName",
             "RegValue",
@@ -42855,7 +43193,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_sp",
-          "line": 464,
+          "line": 538,
           "called": [
             "RegName",
             "RegValue",
@@ -42866,7 +43204,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_regs",
-          "line": 467,
+          "line": 541,
           "called": [
             "MachineState",
             "PAddr",
@@ -42876,7 +43214,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_timer",
-          "line": 470,
+          "line": 544,
           "called": [
             "MachineState",
             "PAddr",
@@ -42886,7 +43224,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_memory",
-          "line": 473,
+          "line": 547,
           "called": [
             "MachineState",
             "RegValue",
@@ -42896,7 +43234,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_timer",
-          "line": 476,
+          "line": 550,
           "called": [
             "MachineState",
             "RegValue",
@@ -42906,7 +43244,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_regs",
-          "line": 479,
+          "line": 553,
           "called": [
             "MachineState",
             "tick"
@@ -42915,7 +43253,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_memory",
-          "line": 482,
+          "line": 556,
           "called": [
             "MachineState",
             "tick"
@@ -42924,7 +43262,7 @@
         {
           "kind": "theorem",
           "name": "tick_timer_succ",
-          "line": 485,
+          "line": 559,
           "called": [
             "MachineState",
             "tick"
@@ -42933,7 +43271,7 @@
         {
           "kind": "theorem",
           "name": "default_memory_returns_zero",
-          "line": 494,
+          "line": 568,
           "called": [
             "MachineState",
             "PAddr",
@@ -42943,7 +43281,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_pc_zero",
-          "line": 499,
+          "line": 573,
           "called": [
             "RegisterFile",
             "default"
@@ -42952,7 +43290,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_sp_zero",
-          "line": 503,
+          "line": 577,
           "called": [
             "RegisterFile",
             "default"
@@ -42961,7 +43299,7 @@
         {
           "kind": "theorem",
           "name": "default_timer_zero",
-          "line": 507,
+          "line": 581,
           "called": [
             "MachineState",
             "default"
@@ -42970,7 +43308,7 @@
         {
           "kind": "def",
           "name": "zeroMemoryRange",
-          "line": 528,
+          "line": 602,
           "called": [
             "MachineState",
             "PAddr",
@@ -42981,7 +43319,7 @@
         {
           "kind": "def",
           "name": "memoryZeroed",
-          "line": 535,
+          "line": 609,
           "called": [
             "MachineState",
             "PAddr",
@@ -42992,7 +43330,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_establishes_memoryZeroed",
-          "line": 540,
+          "line": 614,
           "called": [
             "MachineState",
             "PAddr",
@@ -43004,7 +43342,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_frame",
-          "line": 550,
+          "line": 624,
           "called": [
             "MachineState",
             "PAddr",
@@ -43016,7 +43354,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_regs",
-          "line": 560,
+          "line": 634,
           "called": [
             "MachineState",
             "PAddr",
@@ -43027,7 +43365,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_timer",
-          "line": 565,
+          "line": 639,
           "called": [
             "MachineState",
             "PAddr",
@@ -43038,7 +43376,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_zero_size_memory",
-          "line": 570,
+          "line": 644,
           "called": [
             "MachineState",
             "PAddr",
@@ -43048,13 +43386,13 @@
         {
           "kind": "inductive",
           "name": "SystemRegisterIndex",
-          "line": 583,
+          "line": 657,
           "called": []
         },
         {
           "kind": "def",
           "name": "readSystemRegister",
-          "line": 589,
+          "line": 663,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -43063,7 +43401,7 @@
         {
           "kind": "def",
           "name": "writeSystemRegister",
-          "line": 603,
+          "line": 677,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -43072,7 +43410,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_regs",
-          "line": 622,
+          "line": 696,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -43082,7 +43420,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_memory",
-          "line": 628,
+          "line": 702,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -43092,7 +43430,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_timer",
-          "line": 634,
+          "line": 708,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -43102,7 +43440,7 @@
         {
           "kind": "theorem",
           "name": "readSystemRegister_writeSystemRegister_eq",
-          "line": 640,
+          "line": 714,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -43113,7 +43451,7 @@
         {
           "kind": "structure",
           "name": "MachineConfig",
-          "line": 661,
+          "line": 735,
           "called": [
             "MemoryRegion"
           ]
@@ -43121,7 +43459,7 @@
         {
           "kind": "theorem",
           "name": "registerFileGPRCount_eq_registerCount_default",
-          "line": 682,
+          "line": 756,
           "called": [
             "registerFileGPRCount"
           ]
@@ -43129,13 +43467,13 @@
         {
           "kind": "namespace",
           "name": "MachineConfig",
-          "line": 685,
+          "line": 759,
           "called": []
         },
         {
           "kind": "def",
           "name": "noOverlapAux",
-          "line": 691,
+          "line": 765,
           "called": [
             "MemoryRegion",
             "all",
@@ -43145,13 +43483,13 @@
         {
           "kind": "def",
           "name": "isPowerOfTwo",
-          "line": 697,
+          "line": 771,
           "called": []
         },
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 707,
+          "line": 781,
           "called": [
             "MachineConfig",
             "all",
@@ -43164,7 +43502,7 @@
         {
           "kind": "structure",
           "name": "SyscallRegisterLayout",
-          "line": 728,
+          "line": 802,
           "called": [
             "RegName"
           ]
@@ -43172,7 +43510,7 @@
         {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 740,
+          "line": 814,
           "called": [
             "SyscallRegisterLayout"
           ]

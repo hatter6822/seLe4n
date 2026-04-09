@@ -107,7 +107,7 @@ parameter.
 
 ## Testing
 
-- **267 unit tests** across 4 crates (91 abi + 93 conformance + 28 hal + 13 sys + 42 types)
+- **288 unit tests** across 4 crates (91 abi + 93 conformance + 49 hal + 13 sys + 42 types)
 - **93 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests + AG2-A domain boundary tests + AG2-B wrapper export tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).

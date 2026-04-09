@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.26.5-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.26.6-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -71,7 +71,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 ### Security and verification
 
-- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (34-constructor `NonInterferenceStep` inductive)
+- **N-domain information-flow** — parameterized flow policies generalizing seL4's binary partition. 33-entry enforcement boundary with per-operation non-interference proofs (35-constructor `NonInterferenceStep` inductive)
 - **Composed proof layer** — `proofLayerInvariantBundle` composes 10 subsystem invariants (scheduler, capability, IPC, lifecycle, service, VSpace, cross-subsystem, TLB, and CBS extensions) into a single top-level obligation verified from boot through all operations
 - **Three-phase state architecture** — builder phase with invariant witnesses flows to a frozen immutable representation with proven lookup equivalence. 20 frozen operations mirror the live API
 - **Complete operation set** — all seL4 operations implemented with invariant preservation, including the 5 deferred operations (suspend/resume, setPriority/setMCPriority, setIPCBuffer)
@@ -85,11 +85,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.26.5` |
+| **Version** | `0.26.6` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 88,274 across 136 files |
+| **Production Lean LoC** | 88,666 across 136 files |
 | **Test Lean LoC** | 11,374 across 16 test suites |
-| **Proved declarations** | 2,617 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,643 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
@@ -207,7 +207,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
 | **Service management** | Not in kernel | First-class orchestration with dependency graph and acyclicity proofs |
-| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,581 proved declarations, zero sorry/axiom) |
+| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,643 proved declarations, zero sorry/axiom) |
 | **Platform** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ## What's next

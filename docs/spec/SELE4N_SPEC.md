@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (2,581 theorem/lemma declarations),
+2. machine-checked invariant preservation (2,643 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.26.5` (`lakefile.toml`) |
+| **Package version** | `0.26.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 88,274 across 136 Lean files |
+| **Production LoC** | 88,666 across 136 Lean files |
 | **Test LoC** | 11,374 across 16 Lean test suites |
-| **Proved declarations** | 2,617 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,643 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AG Phase AG4 COMPLETE** (v0.26.5). H3 Hardware Binding Audit Remediation — Phase AG4: HAL Crate + Boot Foundation. New `sele4n-hal` Rust crate (4th workspace crate) with ARM64 boot, MMU, UART, trap/vectors, linker script (7 sub-tasks). Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG3 (v0.26.0–v0.26.4), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG5–AG10 (interrupts, memory management, FFI, integration).** |
+| **Active workstream** | **WS-AG Phase AG5 COMPLETE** (v0.26.6). H3 Hardware Binding Audit Remediation — Phase AG5: Interrupts + Timer. GIC-400 full driver, ARM Generic Timer, DAIF interrupt management, Lean interrupt model + NI step (35th KernelOperation). Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG4 (v0.26.0–v0.26.5), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG6–AG10 (memory management, FFI, integration).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -382,7 +382,7 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 | **H0** | Architecture-neutral semantics and proofs | Complete (M1–M7, WS-B..E) |
 | **H1** | Architecture-boundary interfaces and adapters | Complete (M6) |
 | **H2** | Audit-driven proof deepening (close critical gaps) | Complete (WS-F and WS-H portfolios) |
-| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **H3-prep complete** |
+| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **AG5 complete** (GIC-400 + timer + interrupts) |
 | **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
 
 **H3 preparation (structural):** The `Platform/` directory now provides the
@@ -393,12 +393,21 @@ organizational foundation for hardware binding:
 - `VSpaceBackend` abstraction with permissions-enriched `hashMapVSpaceBackend` instance (WS-G6/WS-H11)
 - `ExtendedBootBoundaryContract` with platform boot fields
 - Simulation platform (`Platform/Sim/`) for testing
-- RPi5 stubs (`Platform/RPi5/`) with BCM2712 memory map, GIC-400 constants,
+- RPi5 platform (`Platform/RPi5/`) with BCM2712 memory map, GIC-400 constants,
   ARM64 machine config, and platform-specific runtime contract
+- GIC-400 interrupt controller driver (`sele4n-hal/src/gic.rs`) with
+  distributor/CPU interface init, acknowledge/dispatch/EOI sequence
+- ARM Generic Timer driver (`sele4n-hal/src/timer.rs`) at 54 MHz with
+  configurable tick rate and counter-relative reprogramming
+- Interrupt-disabled region primitives (`sele4n-hal/src/interrupts.rs`) via
+  DAIF register for critical section enforcement
+- Lean interrupt model: `MachineState.interruptsEnabled`, exception-entry
+  atomicity proofs, timer interrupt → `timerTick` binding, `handleInterrupt`
+  NI step (35th `KernelOperation`)
 
-The critical prerequisite for full H3 execution is closing the remaining WS-F
-proof gaps. Untyped memory (WS-F2) and information-flow completeness (WS-F3)
-are now complete.
+**H3 binding progress**: AG1 (Lean code fixes) → AG2 (Rust ABI fixes) → AG3
+(platform model) → AG4 (HAL crate + boot) → AG5 (interrupts + timer) complete.
+Remaining: AG6–AG10 (FFI bridge, kernel main, system calls, testing, QEMU).
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions (T6-G/M-NEW-8)
 

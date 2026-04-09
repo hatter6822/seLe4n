@@ -181,12 +181,23 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 
 /// IRQ handler — called from assembly after context save.
 ///
-/// Stub implementation for AG4. AG5 will wire this to the GIC-400
-/// acknowledge → dispatch → EOI sequence.
+/// AG5-C: Wired to GIC-400 acknowledge → dispatch → EOI sequence.
+/// The dispatch routes timer interrupts (INTID 30) to the timer handler,
+/// which reprograms the comparator and increments the tick count.
 #[no_mangle]
 pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
-    // AG5-C will implement: GIC acknowledge → handler dispatch → GIC EOI
-    crate::kprintln!("IRQ received (stub handler)");
+    crate::gic::dispatch_irq(|intid| {
+        if intid == crate::gic::TIMER_PPI_ID {
+            // Timer interrupt: reprogram comparator and increment tick count
+            crate::timer::reprogram_timer();
+            crate::timer::increment_tick_count();
+            // AG7 will wire this to Lean timerTick via FFI
+        } else {
+            // Non-timer interrupt: log for debugging
+            // AG7 will wire device interrupts to notification signals via FFI
+            crate::kprintln!("IRQ: unhandled INTID {}", intid);
+        }
+    });
 }
 
 /// SError handler — called from assembly on system error exceptions.
