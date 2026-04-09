@@ -428,12 +428,12 @@ private def checkNoStaleNotificationWaitRefs (st : SystemState) : Bool :=
       ntfn.waitingThreads.all fun tid => st.objects[tid.toObjId]? != none
     | _ => true
 
-/-- AG1-F-ii: Check registryDependencyConsistent — every service dependency
-edge references a registered service. -/
+/-- AG1-F-ii: Check registryDependencyConsistent — every dependency edge in the
+service graph references a registered service. -/
 private def checkRegistryDependencyConsistent (st : SystemState) : Bool :=
-  st.objectIndex.all fun _oid => true  -- Services use serviceRegistry, not objectIndex
-  -- Check via services field: all dependency edges reference live services
-  && st.objectIndex.length == st.objectIndex.length  -- placeholder true to compose
+  st.services.toList.all fun (_, entry) =>
+    entry.dependencies.all fun depId =>
+      st.services[depId]? != none
 
 /-- AG1-F-ii: Check schedContextStoreConsistent — every SchedContext referenced
 by a TCB binding exists in the store. -/
@@ -504,11 +504,42 @@ private def checkBlockingAcyclic (st : SystemState) : Bool :=
       | _ => true  -- not in a donation chain
     | _ => true
 
+/-- AG1-F audit: checkRegistryEndpointValid — every registered service's endpoint
+targets an existing kernel object. -/
+private def checkRegistryEndpointValid (st : SystemState) : Bool :=
+  st.serviceRegistry.toList.all fun (_, reg) =>
+    match reg.endpointCap.target with
+    | .object epId => st.objects[epId]? != none
+    | _ => false
+
+/-- AG1-F audit: checkRegistryInterfaceValid — every registered service references
+a known interface specification. -/
+private def checkRegistryInterfaceValid (st : SystemState) : Bool :=
+  st.serviceRegistry.toList.all fun (_, reg) =>
+    st.interfaceRegistry[reg.iface.ifaceId]? != none
+
+/-- AG1-F audit: checkServiceGraphInvariant — service dependency graph is acyclic
+and service count is bounded. -/
+private def checkServiceGraphInvariant (st : SystemState) : Bool :=
+  let fuel := st.objectIndex.length
+  let serviceIds := st.services.toList.map Prod.fst
+  let acyclic := serviceIds.all fun sid =>
+    let deps := match st.services[sid]? with
+      | some entry => entry.dependencies
+      | none => []
+    !(deps.any fun dep => SeLe4n.Kernel.serviceHasPathTo st dep sid fuel)
+  let bounded := st.services.size ≤ st.objectIndex.length
+  acyclic && bounded
+
 /-- AG1-F-iv: Compose all 10 cross-subsystem predicate checks into a single
 boolean function. Returns `true` only if all checks pass. -/
 def checkCrossSubsystemInvariant (st : SystemState) : List (String × Bool) :=
-  [ ("crossSub:noStaleEndpointQueueRefs", checkNoStaleEndpointQueueRefs st)
+  [ ("crossSub:registryEndpointValid", checkRegistryEndpointValid st)
+  , ("crossSub:registryInterfaceValid", checkRegistryInterfaceValid st)
+  , ("crossSub:registryDependencyConsistent", checkRegistryDependencyConsistent st)
+  , ("crossSub:noStaleEndpointQueueRefs", checkNoStaleEndpointQueueRefs st)
   , ("crossSub:noStaleNotificationWaitRefs", checkNoStaleNotificationWaitRefs st)
+  , ("crossSub:serviceGraphInvariant", checkServiceGraphInvariant st)
   , ("crossSub:schedContextStoreConsistent", checkSchedContextStoreConsistent st)
   , ("crossSub:schedContextNotDualBound", checkSchedContextNotDualBound st)
   , ("crossSub:schedContextRunQueueConsistent", checkSchedContextRunQueueConsistent st)
