@@ -103,8 +103,8 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // AF6-A: error code 44 is beyond the 0-43 range — maps to UnknownKernelError
-        let regs = [44, 0, 0, 0, 0, 0, 0];
+        // AF6-A: error code 49 is beyond the 0-48 range — maps to UnknownKernelError
+        let regs = [49, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 

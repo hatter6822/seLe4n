@@ -42,8 +42,11 @@ open SeLe4n.Kernel
 -- AG3-D-i: Types and constants
 -- ============================================================================
 
-/-- AG3-D: GIC-400 interrupt ID.
-    Bounded to 224 INTIDs (0–223): SGIs (0–15), PPIs (16–31), SPIs (32–223). -/
+/-- AG3-D: GIC-400 interrupt ID for RPi5 (BCM2712).
+    Bounded to 224 INTIDs (0–223): SGIs (0–15), PPIs (16–31), SPIs (32–223).
+    This bound is RPi5/BCM2712-specific. The GIC-400 architecture supports
+    up to 480 INTIDs, but BCM2712 only implements 192 SPIs (32–223).
+    A future multi-platform build would parameterize this bound. -/
 abbrev InterruptId := Fin 224
 
 /-- AG3-D: Non-secure physical timer PPI (INTID 30). -/
@@ -86,7 +89,22 @@ def endOfInterrupt (_st : SystemState) (_intId : InterruptId) : SystemState :=
     Routes based on interrupt type:
     - Timer interrupt (PPI 30): Delegate to `timerTick`
     - Mapped IRQ: Deliver notification via `notificationSignal`
-    - Unmapped IRQ: Return `.invalidIrq` error -/
+    - Unmapped IRQ: Return `.invalidIrq` error
+
+    Design notes:
+    - Uses `timerTick` (not `timerTickChecked`) because the timer interrupt
+      is a hardware event, not a user-initiated syscall. Context save is
+      the responsibility of the exception entry path in ExceptionModel, not
+      the interrupt handler. This matches seL4's design where `handleInterrupt`
+      is called after exception context has already been saved.
+    - Badge is derived from the INTID value via `Badge.ofNatMasked`. In seL4,
+      badges are configured per-IRQ-handler at bind time. This simplification
+      is sufficient for the abstract model; the hardware binding phase (AG5)
+      will add per-handler badge configuration.
+    - On error, EOI is skipped in `interruptDispatchSequence`. On real
+      hardware, the interrupt would remain active until a subsequent EOI.
+      The hardware binding phase must ensure EOI is always written,
+      potentially in a `finally`-style cleanup. -/
 def handleInterrupt (st : SystemState) (intId : InterruptId) :
     Except KernelError (Unit × SystemState) :=
   if intId = timerInterruptId then

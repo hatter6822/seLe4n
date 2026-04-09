@@ -314,15 +314,21 @@ theorem extractMemoryRegions_truncated (blob : ByteArray) (h : blob.size < 16) :
   rw [hFuel]
   simp [extractMemoryRegions.go]
 
-/-- AG3-A (P-01): Classify an address against a platform memory map.
-    Looks up the address in the provided memory map regions:
-    - If it falls within a `.ram` region → `.ram`
-    - If it falls within a `.device` region → `.device`
-    - If it falls within a `.reserved` region → that region's kind
-    - If no region matches → `.reserved` (unmapped = reserved)
+/-- AG3-A (P-01): Classify an FDT memory region against a platform memory map.
+    Checks whether the region's **base address** falls within a declared
+    platform region:
+    - If a match is found → returns that platform region's kind
+    - If no match is found → defaults to `.ram`
 
-    The platform memory map is provided by `MachineConfig.memoryMap` and
-    contains all declared physical memory regions with their kinds. -/
+    The default-to-`.ram` behavior is correct because `classifyMemoryRegion`
+    is called on entries from the FDT `/memory` node, which by DTB convention
+    declare RAM regions. When a platform memory map is provided (e.g., from
+    `MachineConfig.memoryMap`), it can override this default for addresses
+    that fall within declared `.device` or `.reserved` regions.
+
+    Note: only the base address is checked, not the full region extent.
+    See `classifyAddress` for standalone address classification (which
+    defaults to `.reserved` for unmapped addresses). -/
 def classifyMemoryRegion (region : FdtMemoryRegion)
     (platformMemory : List MemoryRegion := []) : MemoryKind :=
   match platformMemory.find? fun r => r.contains ⟨region.base⟩ with

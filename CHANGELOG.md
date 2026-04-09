@@ -1,9 +1,11 @@
-## v0.26.3 — WS-AG Phase AG3: Platform Model Completion
+## v0.26.4 — WS-AG Phase AG3: Platform Model Completion + Audit
 
 Phase AG3 of WS-AG H3 Hardware Binding Audit Remediation. Completes all Lean
-model gaps that block hardware bring-up. All changes are pure Lean — no hardware
-code yet. 8 sub-tasks (AG3-A through AG3-H) closing 8 findings from the H3
-hardware binding audit. Gate: `lake build` + `test_full.sh`. Zero sorry/axiom.
+model gaps that block hardware bring-up. Post-implementation audit found and
+fixed critical Rust ABI desynchronization (5 missing KernelError variants),
+misleading DeviceTree docstring, and documentation gaps. 8 sub-tasks
+(AG3-A through AG3-H) closing 8 findings from the H3 hardware binding audit.
+Gate: `lake build` + `test_full.sh` + `cargo test --workspace`. Zero sorry/axiom.
 
 ### Changes
 
@@ -42,6 +44,12 @@ hardware binding audit. Gate: `lake build` + `test_full.sh`. Zero sorry/axiom.
   correctness (2), non-interference (4). `rootWF = invExtK`
 - `KernelError` extended from 44 to 49 variants: `vmFault`, `userException`,
   `hardwareFault`, `notSupported`, `invalidIrq`
+- **Rust ABI sync**: `KernelError` in `sele4n-types/src/error.rs` updated with
+  5 new variants (VmFault=44, UserException=45, HardwareFault=46,
+  NotSupported=47, InvalidIrq=48). All conformance tests updated
+  (discriminant count 44→49, gap assertions 44→49, roundtrip range 0-48).
+  `sele4n-abi/src/decode.rs` unknown error threshold updated (44→49).
+  239 Rust tests pass, zero clippy warnings
 
 ---
 

@@ -564,7 +564,7 @@ project is at `0.25.27`. 21 minor versions behind.
 
 ---
 
-### Phase AG3 — Platform Model Completion (COMPLETE, v0.26.3)
+### Phase AG3 — Platform Model Completion (COMPLETE, v0.26.4)
 
 **Goal**: Complete Lean model gaps that block hardware bring-up. All changes
 are pure Lean — no hardware code yet.
@@ -2311,15 +2311,15 @@ future workstreams:
 
 | Phase Completion | Version Tag | Branch |
 |------------------|-------------|--------|
-| AG1 complete | v0.26.1 | `main` |
-| AG2 complete | v0.26.2 | `main` |
-| AG3 complete | v0.26.3 | `main` |
-| AG4 complete | v0.26.4 | `main` |
-| AG5 complete | v0.26.5 | `main` |
-| AG6 complete | v0.26.6 | `main` |
-| AG7 complete | v0.26.7 | `main` |
-| AG8 complete | v0.26.8 | `main` |
-| AG9 complete | v0.26.9 | `main` |
+| AG1 complete | v0.26.0 | `main` |
+| AG2 complete | v0.26.1–v0.26.2 | `main` |
+| AG3 complete | v0.26.3–v0.26.4 | `main` |
+| AG4 complete | v0.26.5 | `main` |
+| AG5 complete | v0.26.6 | `main` |
+| AG6 complete | v0.26.7 | `main` |
+| AG7 complete | v0.26.8 | `main` |
+| AG8 complete | v0.26.9 | `main` |
+| AG9 complete | v0.26.10 | `main` |
 | AG10 complete (WS-AG COMPLETE) | v0.27.0 | `main` |
 
 Version v0.27.0 marks the first hardware-ready release of seLe4n.

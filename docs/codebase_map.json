@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-eCvW0",
-      "commit_sha": "19ed8b1e4e830c8250db9b173030c375ca366288",
-      "tree_sha": "2c93506bc3b0c8157b55277cf1852921d1811578",
-      "committed_at_utc": "2026-04-09T02:30:28-04:00"
+      "commit_sha": "65c3a1efd9842a5c052c5b3c11b3cb34fb307c7b",
+      "tree_sha": "f62cad83c43b18d429402effb0472de10bca746a",
+      "committed_at_utc": "2026-04-09T07:10:41+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2b69213b5b165027e190485bed607ccee4f590078f061a938bd7f550a4691623"
+    "source_digest": "03395e153d03f8cbe5147ff6989c5160b7085607aa50dc90dec6b887f0205d53"
   },
   "summary": {
     "module_count": 152,
     "declaration_count": 4727
   },
   "readme_sync": {
-    "version": "0.26.3",
+    "version": "0.26.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 136,
-    "production_loc": 88250,
+    "production_loc": 88274,
     "test_files": 16,
     "test_loc": 11374,
     "proved_theorem_lemma_decls": 2617,
@@ -1633,13 +1633,13 @@
         {
           "kind": "abbrev",
           "name": "InterruptId",
-          "line": 47,
+          "line": 50,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerInterruptId",
-          "line": 50,
+          "line": 53,
           "called": [
             "InterruptId"
           ]
@@ -1647,13 +1647,13 @@
         {
           "kind": "def",
           "name": "spuriousInterruptThreshold",
-          "line": 54,
+          "line": 57,
           "called": []
         },
         {
           "kind": "def",
           "name": "acknowledgeInterrupt",
-          "line": 68,
+          "line": 71,
           "called": [
             "InterruptId",
             "none",
@@ -1663,7 +1663,7 @@
         {
           "kind": "def",
           "name": "endOfInterrupt",
-          "line": 78,
+          "line": 81,
           "called": [
             "InterruptId",
             "SystemState"
@@ -1672,7 +1672,7 @@
         {
           "kind": "def",
           "name": "handleInterrupt",
-          "line": 90,
+          "line": 108,
           "called": [
             "InterruptId",
             "Irq",
@@ -1688,7 +1688,7 @@
         {
           "kind": "def",
           "name": "interruptDispatchSequence",
-          "line": 109,
+          "line": 127,
           "called": [
             "KernelError",
             "SystemState",
@@ -1701,7 +1701,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_spurious",
-          "line": 123,
+          "line": 141,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -1712,7 +1712,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_eq",
-          "line": 129,
+          "line": 147,
           "called": [
             "InterruptId",
             "SystemState",
@@ -1722,7 +1722,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_unmapped",
-          "line": 133,
+          "line": 151,
           "called": [
             "InterruptId",
             "Irq",
@@ -51033,7 +51033,7 @@
         {
           "kind": "def",
           "name": "classifyMemoryRegion",
-          "line": 326,
+          "line": 332,
           "called": [
             "FdtMemoryRegion",
             "MemoryKind",
@@ -51045,7 +51045,7 @@
         {
           "kind": "def",
           "name": "classifyAddress",
-          "line": 334,
+          "line": 340,
           "called": [
             "MemoryKind",
             "MemoryRegion",
@@ -51057,7 +51057,7 @@
         {
           "kind": "def",
           "name": "fdtRegionsToMemoryRegions",
-          "line": 341,
+          "line": 347,
           "called": [
             "FdtMemoryRegion",
             "MemoryRegion",
@@ -51068,7 +51068,7 @@
         {
           "kind": "theorem",
           "name": "classifyMemoryRegion_default",
-          "line": 347,
+          "line": 353,
           "called": [
             "FdtMemoryRegion",
             "classifyMemoryRegion"
@@ -51077,7 +51077,7 @@
         {
           "kind": "theorem",
           "name": "classifyAddress_unmapped",
-          "line": 351,
+          "line": 357,
           "called": [
             "MemoryRegion",
             "PAddr",
@@ -51089,7 +51089,7 @@
         {
           "kind": "theorem",
           "name": "classifyAddress_found",
-          "line": 357,
+          "line": 363,
           "called": [
             "MemoryRegion",
             "PAddr",
@@ -51100,7 +51100,7 @@
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbWithRegions",
-          "line": 369,
+          "line": 375,
           "called": [
             "DeviceTree",
             "MachineConfig",
@@ -51117,7 +51117,7 @@
         {
           "kind": "theorem",
           "name": "extractMemoryRegions_empty",
-          "line": 400,
+          "line": 406,
           "called": [
             "empty",
             "extractMemoryRegions"
@@ -51126,7 +51126,7 @@
         {
           "kind": "def",
           "name": "readCells",
-          "line": 414,
+          "line": 420,
           "called": [
             "none",
             "readBE32",
@@ -51138,7 +51138,7 @@
         {
           "kind": "def",
           "name": "extractMemoryRegionsGeneral",
-          "line": 425,
+          "line": 431,
           "called": [
             "FdtMemoryRegion",
             "readCells",
@@ -51148,13 +51148,13 @@
         {
           "kind": "theorem",
           "name": "extractMemoryRegionsGeneral_entrySize_eq",
-          "line": 448,
+          "line": 454,
           "called": []
         },
         {
           "kind": "def",
           "name": "readCString",
-          "line": 462,
+          "line": 468,
           "called": [
             "none",
             "ofList",
@@ -51166,7 +51166,7 @@
         {
           "kind": "def",
           "name": "lookupFdtString",
-          "line": 486,
+          "line": 492,
           "called": [
             "none",
             "readCString"
@@ -51175,13 +51175,13 @@
         {
           "kind": "structure",
           "name": "FdtSearchResult",
-          "line": 499,
+          "line": 505,
           "called": []
         },
         {
           "kind": "def",
           "name": "findMemoryRegProperty",
-          "line": 511,
+          "line": 517,
           "called": [
             "FdtHeader",
             "FdtSearchResult",
@@ -51201,13 +51201,13 @@
         {
           "kind": "structure",
           "name": "FdtProperty",
-          "line": 567,
+          "line": 573,
           "called": []
         },
         {
           "kind": "structure",
           "name": "FdtNode",
-          "line": 573,
+          "line": 579,
           "called": [
             "FdtProperty"
           ]
@@ -51215,7 +51215,7 @@
         {
           "kind": "def",
           "name": "FdtNode.findProperty",
-          "line": 579,
+          "line": 585,
           "called": [
             "FdtNode",
             "none"
@@ -51224,7 +51224,7 @@
         {
           "kind": "def",
           "name": "FdtNode.compatibleString",
-          "line": 587,
+          "line": 593,
           "called": [
             "FdtNode",
             "findProperty",
@@ -51239,7 +51239,7 @@
         {
           "kind": "def",
           "name": "parseFdtNodes",
-          "line": 612,
+          "line": 618,
           "called": [
             "FdtHeader",
             "FdtNode",
@@ -51260,7 +51260,7 @@
         {
           "kind": "def",
           "name": "extractInterruptController",
-          "line": 706,
+          "line": 712,
           "called": [
             "FdtNode",
             "InterruptControllerInfo",
@@ -51276,7 +51276,7 @@
         {
           "kind": "def",
           "name": "extractTimerFrequency",
-          "line": 754,
+          "line": 760,
           "called": [
             "FdtNode",
             "compatibleString",
@@ -51291,7 +51291,7 @@
         {
           "kind": "def",
           "name": "extractPeripherals",
-          "line": 792,
+          "line": 798,
           "called": [
             "DeviceEntry",
             "FdtNode",
@@ -51306,7 +51306,7 @@
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbFull",
-          "line": 825,
+          "line": 831,
           "called": [
             "DeviceTree",
             "MachineConfig",
@@ -51328,7 +51328,7 @@
         {
           "kind": "abbrev",
           "name": "DeviceTree.fromDtbParsed",
-          "line": 858,
+          "line": 864,
           "called": [
             "DeviceTree",
             "DeviceTree.fromDtbFull"
@@ -51337,7 +51337,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_fromDtbFull_some",
-          "line": 867,
+          "line": 873,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtHeader",
