@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-k92jW",
-      "commit_sha": "668f64cff2a591fc68e42463e0d1cc821cbb4f07",
-      "tree_sha": "914e67fed86da24517d91cf5e564b6b798caea03",
-      "committed_at_utc": "2026-04-09T18:07:34-04:00"
+      "commit_sha": "34a10912f6fd0853aa8fb66b24aa2d0b2e4cf94f",
+      "tree_sha": "362362dfc4388557093b9f516367f708c881d778",
+      "committed_at_utc": "2026-04-09T23:34:49+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 4889
   },
   "readme_sync": {
-    "version": "0.26.7",
+    "version": "0.26.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 140,
     "production_loc": 90483,

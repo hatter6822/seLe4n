@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.26.6` (`lakefile.toml`) |
+| **Package version** | `0.26.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 88,666 across 136 Lean files |
 | **Test LoC** | 11,374 across 16 Lean test suites |
 | **Proved declarations** | 2,643 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AG Phase AG6 COMPLETE** (v0.26.7). H3 Hardware Binding Audit Remediation — Phase AG6: Memory Management (ARMv8 Page Tables). 4-level page table walk, shadow-based VSpaceBackend refinement, TLB/cache HAL wrappers, ASID management. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG5 (v0.26.0–v0.26.6), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG7–AG10 (FFI bridge, integration, testing, documentation).** |
+| **Active workstream** | **WS-AG Phase AG7 COMPLETE** (v0.26.8). H3 Hardware Binding Audit Remediation — Phase AG7: FFI Bridge + Proof Hooks. Lean `@[extern]` FFI declarations for 17 Rust HAL functions. MMIO volatile primitives. Production `AdapterProofHooks` with substantive preservation proofs for all 4 adapter paths. `proofLayerInvariantBundle` extended to 11 conjuncts. Key theorem: `contextSwitchState_preserves_proofLayerInvariantBundle` (11-conjunct preservation through atomic context switch). Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG6 (v0.26.0–v0.26.7), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG8–AG10 (integration, testing, documentation).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
