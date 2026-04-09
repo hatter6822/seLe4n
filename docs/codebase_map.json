@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-oEyMP",
-      "commit_sha": "7ab366c29c27fd3502b119561c131f0e93a65641",
-      "tree_sha": "85f688a24b3f60375039ab523d03cdb3bdd5ea35",
-      "committed_at_utc": "2026-04-09T04:07:32+00:00"
+      "commit_sha": "ed16df92ba985de1c1587c5a85a89e77f34689bc",
+      "tree_sha": "3e6c303fcb4afddcd16238d9af81b14ff1841e9b",
+      "committed_at_utc": "2026-04-09T04:38:02+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "932bf7b8d726910110d8b051042fde2f27a98a7ff355f09645f9129a738c5bf0"
+    "source_digest": "0c930a4e51c24de54888a4ca8c7b25ffc965cb20bce2c15def13017af329ac3a"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4662
+    "declaration_count": 4663
   },
   "readme_sync": {
     "version": "0.25.28",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 87517,
+    "production_loc": 87541,
     "test_files": 16,
     "test_loc": 11374,
     "proved_theorem_lemma_decls": 2589,
@@ -54650,7 +54650,7 @@
     {
       "module": "SeLe4n.Testing.InvariantChecks",
       "path": "SeLe4n/Testing/InvariantChecks.lean",
-      "declaration_count": 43,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
@@ -55025,11 +55025,23 @@
         },
         {
           "kind": "def",
+          "name": "collectQueueMembersB",
+          "line": 414,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "checkNoStaleEndpointQueueRefs",
-          "line": 413,
+          "line": 427,
           "called": [
             "SystemState",
             "all",
+            "collectQueueMembersB",
             "none",
             "toObjId"
           ]
@@ -55037,7 +55049,7 @@
         {
           "kind": "def",
           "name": "checkNoStaleNotificationWaitRefs",
-          "line": 424,
+          "line": 448,
           "called": [
             "SystemState",
             "all",
@@ -55048,7 +55060,7 @@
         {
           "kind": "def",
           "name": "checkRegistryDependencyConsistent",
-          "line": 433,
+          "line": 457,
           "called": [
             "SystemState",
             "all",
@@ -55058,7 +55070,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextStoreConsistent",
-          "line": 440,
+          "line": 464,
           "called": [
             "SystemState",
             "all",
@@ -55070,7 +55082,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextNotDualBound",
-          "line": 454,
+          "line": 478,
           "called": [
             "KernelObject",
             "SystemState",
@@ -55082,7 +55094,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextRunQueueConsistent",
-          "line": 468,
+          "line": 492,
           "called": [
             "SystemState",
             "all",
@@ -55094,7 +55106,7 @@
         {
           "kind": "def",
           "name": "checkBlockingAcyclic",
-          "line": 482,
+          "line": 506,
           "called": [
             "ObjId",
             "SystemState",
@@ -55105,7 +55117,7 @@
         {
           "kind": "def",
           "name": "checkRegistryEndpointValid",
-          "line": 509,
+          "line": 533,
           "called": [
             "SystemState",
             "all",
@@ -55115,7 +55127,7 @@
         {
           "kind": "def",
           "name": "checkRegistryInterfaceValid",
-          "line": 517,
+          "line": 541,
           "called": [
             "SystemState",
             "all",
@@ -55125,7 +55137,7 @@
         {
           "kind": "def",
           "name": "checkServiceGraphInvariant",
-          "line": 523,
+          "line": 547,
           "called": [
             "SystemState",
             "acyclic",
@@ -55139,7 +55151,7 @@
         {
           "kind": "def",
           "name": "checkCrossSubsystemInvariant",
-          "line": 536,
+          "line": 560,
           "called": [
             "SystemState",
             "checkBlockingAcyclic",
@@ -55157,7 +55169,7 @@
         {
           "kind": "def",
           "name": "assertCrossSubsystemInvariant",
-          "line": 549,
+          "line": 573,
           "called": [
             "SystemState",
             "checkCrossSubsystemInvariant",

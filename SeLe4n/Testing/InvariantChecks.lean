@@ -408,15 +408,39 @@ def assertStateInvariantsWithoutSync (label : String) (objectIds : List SeLe4n.O
 -- AG1-F: Runtime crossSubsystemInvariant checks (10 predicates)
 -- ============================================================================
 
+/-- AG1-F audit: Collect queue members by following queueNext pointers.
+Mirrors the private `collectQueueMembers` in CrossSubsystem.lean.
+Returns `none` on fuel exhaustion (invariant violation signal). -/
+private def collectQueueMembersB
+    (st : SystemState) (start : Option SeLe4n.ThreadId) (fuel : Nat)
+    : Option (List SeLe4n.ThreadId) :=
+  match fuel, start with
+  | 0, some _ => none
+  | _, none => some []
+  | fuel + 1, some tid =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => (collectQueueMembersB st tcb.queueNext fuel).map (tid :: ·)
+    | _ => some [tid]
+
 /-- AG1-F-i: Check noStaleEndpointQueueReferences — every thread ID in
-endpoint queues has a live TCB in the object store. -/
+endpoint queues (head, tail, AND interior members) has a live TCB. -/
 private def checkNoStaleEndpointQueueRefs (st : SystemState) : Bool :=
   st.objectIndex.all fun oid =>
     match st.objects[oid]? with
     | some (.endpoint ep) =>
       let checkTid := fun tid => st.objects[tid.toObjId]? != none
-      (ep.sendQ.head.all checkTid) && (ep.sendQ.tail.all checkTid) &&
-      (ep.receiveQ.head.all checkTid) && (ep.receiveQ.tail.all checkTid)
+      let headTailOk :=
+        (ep.sendQ.head.all checkTid) && (ep.sendQ.tail.all checkTid) &&
+        (ep.receiveQ.head.all checkTid) && (ep.receiveQ.tail.all checkTid)
+      -- T5-I: Interior member validation via queueNext traversal
+      let fuel := st.objectIndex.length
+      let sendInteriorOk := match collectQueueMembersB st ep.sendQ.head fuel with
+        | some members => members.all fun tid => st.objects[tid.toObjId]? != none
+        | none => false  -- fuel exhaustion signals invariant violation
+      let recvInteriorOk := match collectQueueMembersB st ep.receiveQ.head fuel with
+        | some members => members.all fun tid => st.objects[tid.toObjId]? != none
+        | none => false
+      headTailOk && sendInteriorOk && recvInteriorOk
     | _ => true
 
 /-- AG1-F-i: Check noStaleNotificationWaitReferences — every thread ID in
