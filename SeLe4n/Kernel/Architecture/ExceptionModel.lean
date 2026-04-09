@@ -307,17 +307,91 @@ theorem interruptDispatchSequence_preserves_interruptsEnabled_spurious
   rw [interruptDispatchSequence_spurious st rawIntId hSpurious] at hStep
   simp at hStep; exact hStep.symm ▸ rfl
 
-/-- AG5-G: `handleInterrupt` for timer path (INTID = timerInterruptId)
-    delegates to `timerTick`. Since `timerTick` only modifies `objects`,
-    `scheduler`, and `machine.timer` (never `machine.interruptsEnabled`),
-    the interrupt-disabled invariant is preserved.
+/-- AG5-G: `chooseThread` preserves `interruptsEnabled`.
+    `chooseThread` is a pure lookup — it returns the input state unchanged. -/
+theorem chooseThread_preserves_interruptsEnabled (st : SystemState) :
+    ∀ result st', chooseThread st = .ok (result, st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  intro result st' hStep
+  unfold chooseThread at hStep
+  split at hStep <;> simp_all
 
-    This theorem reduces the timer interrupt path to `timerTick`,
-    allowing the general non-spurious case to be proven by case analysis:
-    timer path → this theorem + `timerTick` frame properties;
-    device path → `notificationSignal` frame properties. -/
-theorem handleInterrupt_timer_eq_timerTick (st : SystemState) :
-    handleInterrupt st timerInterruptId = timerTick st := by
-  unfold handleInterrupt; simp [timerInterruptId]
+/-- AG5-G: `setCurrentThread` preserves `interruptsEnabled` (unwrapped form).
+    Unlike the `Kernel`-monad form, this extracts the preservation directly. -/
+private theorem setCurrentThread_preserves_ie
+    (tid : Option SeLe4n.ThreadId) (st : SystemState) (st' : SystemState)
+    (h : setCurrentThread tid st = .ok ((), st')) :
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  unfold setCurrentThread at h; simp at h; rw [← h]
+
+/-- AG5-G: `schedule` preserves `interruptsEnabled`.
+    `schedule` composes `chooseThread` (state unchanged), `saveOutgoingContext`
+    (preserves), struct updates to `scheduler` (preserves), `restoreIncomingContext`
+    (preserves), and `setCurrentThread` (preserves). -/
+theorem schedule_preserves_interruptsEnabled (st : SystemState) :
+    ∀ st', schedule st = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  intro st' hStep
+  unfold schedule at hStep
+  -- Case split on chooseThread result
+  split at hStep
+  · -- chooseThread error
+    simp at hStep
+  · -- chooseThread returned (none, st₁)
+    rename_i st₁ _
+    -- Path: saveOutgoingContext st₁ → setCurrentThread none
+    have hIE := setCurrentThread_preserves_ie none (saveOutgoingContext st₁) st' hStep
+    rw [hIE, saveOutgoingContext_preserves_interruptsEnabled]
+    exact (chooseThread_preserves_interruptsEnabled st none st₁ (by assumption)).symm ▸ rfl
+  · -- chooseThread returned (some tid, st₁)
+    rename_i tid st₁ _
+    split at hStep
+    · -- TCB found
+      split at hStep
+      · -- Domain check passed: saveOutgoing → dequeue → restoreIncoming → setCurrentThread
+        -- The state chain preserves machine.interruptsEnabled at each step
+        -- since only scheduler.runQueue and objects are modified
+        have hIE := setCurrentThread_preserves_ie (some tid) _ st' hStep
+        rw [hIE]
+        simp [restoreIncomingContext_preserves_interruptsEnabled,
+              saveOutgoingContext_preserves_interruptsEnabled]
+        exact (chooseThread_preserves_interruptsEnabled st (some tid) st₁ (by assumption)).symm ▸ rfl
+      · simp at hStep
+    · simp at hStep
+
+/-- AG5-G: `timerTick` preserves `interruptsEnabled`.
+    All three paths (no current thread, time-slice not expired, time-slice
+    expired → schedule) preserve the interrupt state. -/
+theorem timerTick_preserves_interruptsEnabled (st : SystemState) :
+    ∀ st', timerTick st = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  intro st' hStep
+  unfold timerTick at hStep
+  split at hStep
+  · -- No current thread: { st with machine := tick st.machine }
+    simp at hStep; rw [← hStep]; exact tick_preserves_interruptsEnabled st.machine
+  · -- Current thread exists
+    split at hStep
+    · -- TCB found
+      split at hStep
+      · -- Time-slice expired → schedule on modified state
+        have hSched := schedule_preserves_interruptsEnabled _ st' hStep
+        simp at hSched
+        rw [hSched]; exact tick_preserves_interruptsEnabled st.machine
+      · -- Time-slice not expired
+        simp at hStep; rw [← hStep]; exact tick_preserves_interruptsEnabled st.machine
+    · simp at hStep
+
+/-- AG5-G: `handleInterrupt` for the timer path preserves `interruptsEnabled`.
+    Proven by reducing to `timerTick` via `handleInterrupt` dispatch and
+    applying `timerTick_preserves_interruptsEnabled`. -/
+theorem handleInterrupt_timer_preserves_interruptsEnabled (st : SystemState) :
+    ∀ st', handleInterrupt st timerInterruptId = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  intro st' hStep
+  have hReduce : handleInterrupt st timerInterruptId = timerTick st := by
+    unfold handleInterrupt; simp [timerInterruptId]
+  rw [hReduce] at hStep
+  exact timerTick_preserves_interruptsEnabled st st' hStep
 
 end SeLe4n.Kernel.Architecture

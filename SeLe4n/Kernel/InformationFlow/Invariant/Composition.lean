@@ -837,7 +837,8 @@ theorem errorAction_preserves_lowEquiv
 /-- WS-K-F6: NI coverage verification — all syscall dispatch paths introduced
 in WS-K are covered by existing `NonInterferenceStep` constructors.
 
-The 32 constructors cover every operation reachable from `dispatchWithCap`:
+The 35 constructors cover every operation reachable from `dispatchWithCap`
+plus interrupt handling:
 - CSpace: `.cspaceMint`, `.cspaceCopy`, `.cspaceMove`, `.cspaceDeleteSlot`
 - Lifecycle: `.lifecycleRetype`, `.lifecycleRevokeDeleteRetype`
 - VSpace: `.vspaceMapPage`, `.vspaceUnmapPage`
@@ -860,7 +861,7 @@ The `syscallEntry`-level bridge theorems are in `API.lean`:
 This theorem witnesses (1) that the decode-error constructor is always available
 (state identity), (2) that every `NonInterferenceStep` composes into a single-step
 `NonInterferenceTrace`, and (3) that `step_preserves_projection` handles every
-constructor (checked by the Lean exhaustiveness checker on the 32-arm match). -/
+constructor (checked by the Lean exhaustiveness checker on the 35-arm match). -/
 theorem syscallNI_coverage_witness
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)

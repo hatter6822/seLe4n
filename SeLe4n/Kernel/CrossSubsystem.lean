@@ -1397,7 +1397,7 @@ The 6 objects-reading predicates require per-subsystem post-state proofs:
 | `schedContextNotDualBound` | objects |
 | `schedContextRunQueueConsistent` | scheduler + objects |
 
-### Operation Coverage (33 operations, 2 core bridges)
+### Operation Coverage (34 operations, 2 core bridges)
 
 **Core bridge A** (`crossSubsystemInvariant_objects_change_bridge`): For
 operations preserving `objectIndex` (in-place object mutations).

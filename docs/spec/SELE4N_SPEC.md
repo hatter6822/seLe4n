@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.27.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 88,591 across 136 Lean files |
+| **Production LoC** | 88,666 across 136 Lean files |
 | **Test LoC** | 11,374 across 16 Lean test suites |
-| **Proved declarations** | 2,639 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,643 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
 | **Active workstream** | **WS-AG Phase AG5 COMPLETE** (v0.27.0). H3 Hardware Binding Audit Remediation — Phase AG5: Interrupts + Timer. GIC-400 full driver, ARM Generic Timer, DAIF interrupt management, Lean interrupt model + NI step (35th KernelOperation). Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG4 (v0.26.0–v0.26.5), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG6–AG10 (memory management, FFI, integration).** |

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-ag5-interrupts-timer-OgW16",
-      "commit_sha": "0510c52ff7060e459e620b85f9620a074e565bb2",
-      "tree_sha": "56c13973ff02068e8cab82ff7f21d2d98d34918b",
-      "committed_at_utc": "2026-04-09T18:41:43+00:00"
+      "commit_sha": "921f56a85de5d84116581453601fa44e7894d57a",
+      "tree_sha": "d7edbace8dc5e17b86a17ef112fddc946bdd90d0",
+      "committed_at_utc": "2026-04-09T19:04:23+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ba764e93fa398f475b34716d611cb92f7fe0b466f7c6b19077df652d0fa23716"
+    "source_digest": "0c7ba05068ab9c51f6db0db1b911d9e4b6609b0dee62f4040de5cabf609bd6ec"
   },
   "summary": {
     "module_count": 152,
-    "declaration_count": 4757
+    "declaration_count": 4761
   },
   "readme_sync": {
     "version": "0.27.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 136,
-    "production_loc": 88591,
+    "production_loc": 88666,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2639,
+    "proved_theorem_lemma_decls": 2643,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1428,7 +1428,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.ExceptionModel",
       "path": "SeLe4n/Kernel/Architecture/ExceptionModel.lean",
-      "declaration_count": 26,
+      "declaration_count": 30,
       "declarations": [
         {
           "kind": "namespace",
@@ -1659,13 +1659,59 @@
         },
         {
           "kind": "theorem",
-          "name": "handleInterrupt_timer_eq_timerTick",
-          "line": 319,
+          "name": "chooseThread_preserves_interruptsEnabled",
+          "line": 312,
+          "called": [
+            "SystemState",
+            "chooseThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setCurrentThread_preserves_ie",
+          "line": 321,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "setCurrentThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_interruptsEnabled",
+          "line": 331,
+          "called": [
+            "SystemState",
+            "chooseThread_preserves_interruptsEnabled",
+            "none",
+            "restoreIncomingContext_preserves_interruptsEnabled",
+            "saveOutgoingContext",
+            "saveOutgoingContext_preserves_interruptsEnabled",
+            "schedule",
+            "setCurrentThread_preserves_ie"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_interruptsEnabled",
+          "line": 365,
+          "called": [
+            "SystemState",
+            "schedule_preserves_interruptsEnabled",
+            "tick_preserves_interruptsEnabled",
+            "timerTick"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleInterrupt_timer_preserves_interruptsEnabled",
+          "line": 388,
           "called": [
             "SystemState",
             "handleInterrupt",
             "timerInterruptId",
-            "timerTick"
+            "timerTick",
+            "timerTick_preserves_interruptsEnabled"
           ]
         }
       ]
@@ -23299,7 +23345,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 864,
+          "line": 865,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -23314,7 +23360,7 @@
         {
           "kind": "inductive",
           "name": "KernelOperation",
-          "line": 892,
+          "line": 893,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -23342,7 +23388,7 @@
         {
           "kind": "theorem",
           "name": "kernelOperation_count",
-          "line": 933,
+          "line": 934,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -23370,7 +23416,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage",
-          "line": 967,
+          "line": 968,
           "called": [
             "IfObserver",
             "KernelOperation",
@@ -23403,7 +23449,7 @@
         {
           "kind": "def",
           "name": "kernelOperationNiConstructor",
-          "line": 1015,
+          "line": 1016,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -23432,7 +23478,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_operational",
-          "line": 1055,
+          "line": 1056,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -23462,7 +23508,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_injective",
-          "line": 1074,
+          "line": 1075,
           "called": [
             "KernelOperation",
             "kernelOperationNiConstructor"
@@ -23471,7 +23517,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_count",
-          "line": 1083,
+          "line": 1084,
           "called": [
             "Kernel",
             "chooseThread",
