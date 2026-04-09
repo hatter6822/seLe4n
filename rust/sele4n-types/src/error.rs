@@ -268,7 +268,7 @@ mod tests {
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–43 are sequential
+    /// T1-H: Discriminant ordering — kernel variants 0–48 are sequential
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;

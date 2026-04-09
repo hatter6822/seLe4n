@@ -50,6 +50,9 @@ Gate: `lake build` + `test_full.sh` + `cargo test --workspace`. Zero sorry/axiom
   (discriminant count 44→49, gap assertions 44→49, roundtrip range 0-48).
   `sele4n-abi/src/decode.rs` unknown error threshold updated (44→49).
   239 Rust tests pass, zero clippy warnings
+- **Second audit pass**: Fixed 2 stale Rust comments referencing pre-AG3
+  error range (decode.rs "0–43"→"0–48", error.rs "0–43"→"0–48"). All
+  documentation verified accurate. Full test suite re-validated
 
 ---
 
