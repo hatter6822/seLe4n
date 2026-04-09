@@ -44,13 +44,14 @@ def bootstrapInvariantObjectIds : List SeLe4n.ObjId :=
   [⟨1⟩, ⟨10⟩, ⟨11⟩, ⟨12⟩, ⟨20⟩, demoEndpoint, demoNotification, demoUntyped]
 
 def bootstrapServiceIds : List ServiceId :=
-  [svcDb, svcApi, svcDenied, svcBroken, svcRestart, svcRestartBroken, svcMissingBacking]
+  [svcDb, svcApi, svcDenied, svcRestart, svcMissingBacking]
 
 /-- WS-I1/R-01: Inter-transition invariant check with counter tracking.
 Runs `assertStateInvariantsFor` (which applies `syncThreadStates` internally)
-and increments the shared check counter. -/
+and AG1-F cross-subsystem invariant checks, then increments the shared check counter. -/
 private def checkInvariants (counter : IO.Ref Nat) (label : String) (st : SystemState) : IO Unit := do
   assertStateInvariantsFor label bootstrapInvariantObjectIds st bootstrapServiceIds
+  assertCrossSubsystemInvariant label st
   counter.modify (· + 1)
 
 def bootstrapState : SystemState :=
@@ -123,19 +124,9 @@ def bootstrapState : SystemState :=
       dependencies := []
       isolatedFrom := []
     }
-    |>.withService svcBroken {
-      identity := { sid := svcBroken, backingObject := ⟨1⟩, owner := ⟨10⟩ }
-      dependencies := [⟨999⟩]
-      isolatedFrom := []
-    }
     |>.withService svcRestart {
       identity := { sid := svcRestart, backingObject := ⟨12⟩, owner := ⟨10⟩ }
       dependencies := [svcDb]
-      isolatedFrom := []
-    }
-    |>.withService svcRestartBroken {
-      identity := { sid := svcRestartBroken, backingObject := ⟨12⟩, owner := ⟨10⟩ }
-      dependencies := [⟨999⟩]
       isolatedFrom := []
     }
     |>.withService svcMissingBacking {
@@ -283,7 +274,15 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   IO.println s!"[SST-014] service isolation api↔db: {reprStr <| SeLe4n.Model.hasIsolationEdge st1 svcApi svcDb}"
   -- SST-019/020: Service entry with missing backing object (still stored — backing check is caller responsibility)
   IO.println s!"[SST-019] service lookup missing-backing: {reprStr <| (SeLe4n.Model.lookupService st1 svcMissingBacking).map ServiceGraphEntry.identity}"
-  IO.println s!"[SST-020] service lookup svcBroken deps: {reprStr <| (SeLe4n.Model.lookupService st1 svcBroken).map ServiceGraphEntry.dependencies}"
+  -- SST-020: Broken-dependency fixture injected inline (not in bootstrap) to
+  -- preserve crossSubsystemInvariant for the shared state.  The lookup runs
+  -- against a local copy so the fixture never leaks into checked states.
+  let stBrokenLocal := SeLe4n.Model.storeServiceState svcBroken {
+    identity := { sid := svcBroken, backingObject := ⟨1⟩, owner := ⟨10⟩ }
+    dependencies := [⟨999⟩]
+    isolatedFrom := []
+  } st1
+  IO.println s!"[SST-020] service lookup svcBroken deps: {reprStr <| (SeLe4n.Model.lookupService stBrokenLocal svcBroken).map ServiceGraphEntry.dependencies}"
   -- V8-C: Post-mutation invariant checks on service registry result states
   match SeLe4n.Kernel.storeServiceEntry newSid newEntry st1 with
   | .ok (_, stStoredMut) => checkInvariants counter "post-service-store-mutated" stStoredMut
@@ -2531,7 +2530,10 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.insert tid1.toObjId (.tcb tcb1Bound)
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find tid1
     scThreadIndex := scThreadIndexAdd stQ.scThreadIndex scId tid1 }
-  let stAfterTimeout := SeLe4n.Kernel.timeoutBlockedThreads stBound scId
+  let (stAfterTimeout, timeoutErrs) := SeLe4n.Kernel.timeoutBlockedThreads stBound scId
+  -- AG1-B audit: surface diagnostic errors if any
+  if !timeoutErrs.isEmpty then
+    IO.println s!"[SCO-027] DIAGNOSTIC: timeoutBlockedThreads returned {timeoutErrs.length} error(s)"
   match stAfterTimeout.objects[tid1.toObjId]? with
   | some (.tcb tcbAfter) =>
     let wasTimedOut := tcbAfter.ipcState == .ready
@@ -2540,7 +2542,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- SCO-028: timeoutBlockedThreads — skips threads with non-matching SchedContext
   let otherScId : SeLe4n.SchedContextId := ⟨6011⟩
-  let stAfterOther := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId
+  let (stAfterOther, otherErrs) := SeLe4n.Kernel.timeoutBlockedThreads stBound otherScId
+  if !otherErrs.isEmpty then
+    IO.println s!"[SCO-028] DIAGNOSTIC: timeoutBlockedThreads returned {otherErrs.length} error(s)"
   match stAfterOther.objects[tid1.toObjId]? with
   | some (.tcb tcbAfter) =>
     let stillBlocked := tcbAfter.ipcState == .blockedOnSend epId
@@ -2708,7 +2712,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       |>.insert tid2.toObjId (.tcb tcbM2)
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find both threads
     scThreadIndex := scThreadIndexAdd (scThreadIndexAdd st1.scThreadIndex scIdMulti tid1) scIdMulti tid2 }
-  let stAfterMulti := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti
+  let (stAfterMulti, multiErrs) := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti
+  if !multiErrs.isEmpty then
+    IO.println s!"[SCO-035] DIAGNOSTIC: timeoutBlockedThreads returned {multiErrs.length} error(s)"
   let t1Ready := match stAfterMulti.objects[tid1.toObjId]? with
     | some (.tcb t) => t.ipcState == ThreadIpcState.ready
     | _ => false

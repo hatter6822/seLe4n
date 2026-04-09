@@ -76,6 +76,7 @@ private def emptyFrozenState : FrozenSystemState := {
     domainSchedule := []
     domainScheduleIndex := 0
     configDefaultTimeSlice := 5
+    replenishQueue := { entries := [], size := 0 }
   }
   objectTypes := freezeMap (RHTable.empty 16)
   capabilityRefs := freezeMap (RHTable.empty 16)
@@ -264,6 +265,7 @@ private def tph006b_timerTickExpiry : IO Unit := do
       domainSchedule := []
       domainScheduleIndex := 0
       configDefaultTimeSlice := 5
+      replenishQueue := { entries := [], size := 0 }
     } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
@@ -300,6 +302,7 @@ private def tph006c_timerTickExpiryCustomConfig : IO Unit := do
       domainSchedule := []
       domainScheduleIndex := 0
       configDefaultTimeSlice := 12
+      replenishQueue := { entries := [], size := 0 }
     } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
@@ -412,6 +415,7 @@ private def tph014a_frozenSchedule : IO Unit := do
       domainSchedule := []
       domainScheduleIndex := 0
       configDefaultTimeSlice := 5
+      replenishQueue := { entries := [], size := 0 }
     } }
   match frozenSchedule fst with
   | .ok ((), fst') =>
@@ -437,6 +441,7 @@ private def tph014b_frozenYield : IO Unit := do
       domainSchedule := []
       domainScheduleIndex := 0
       configDefaultTimeSlice := 5
+      replenishQueue := { entries := [], size := 0 }
     } }
   match frozenHandleYield fst with
   | .ok ((), fst') =>
@@ -464,6 +469,7 @@ private def tph014c_scheduleNoEligible : IO Unit := do
       domainSchedule := []
       domainScheduleIndex := 0
       configDefaultTimeSlice := 5
+      replenishQueue := { entries := [], size := 0 }
     } }
   match frozenSchedule fst with
   | .ok ((), fst') =>

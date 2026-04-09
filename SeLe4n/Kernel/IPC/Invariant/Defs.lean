@@ -1071,16 +1071,19 @@ theorem donationBudgetTransfer_of_no_shared
   simp [this, SchedContextBinding.scId?] at hB1
 
 -- ============================================================================
--- Full IPC invariant bundle (14 conjuncts)
+-- Full IPC invariant bundle (15 conjuncts)
 -- ============================================================================
 
-/-- Full IPC invariant: conjunction of all fourteen IPC sub-invariants.
+/-- Full IPC invariant: conjunction of all fifteen IPC sub-invariants.
 
 Z7 extends the bundle with 4 donation invariants:
 - `donationChainAcyclic`: no circular donation chains
 - `donationOwnerValid`: donated bindings reference valid objects
 - `passiveServerIdle`: unbound non-runnable threads are idle/receiving
-- `donationBudgetTransfer`: at most one thread per SchedContext -/
+- `donationBudgetTransfer`: at most one thread per SchedContext
+
+AG1-C adds `uniqueWaiters` as the 15th conjunct:
+- `uniqueWaiters`: notification waiting thread lists have no duplicates -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
@@ -1088,6 +1091,7 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
-  passiveServerIdle st ∧ donationBudgetTransfer st
+  passiveServerIdle st ∧ donationBudgetTransfer st ∧
+  uniqueWaiters st
 
 end SeLe4n.Kernel

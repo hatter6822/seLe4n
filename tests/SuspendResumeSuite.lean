@@ -172,6 +172,7 @@ private def emptyFrozenState : FrozenSystemState := {
     domainSchedule := []
     domainScheduleIndex := 0
     configDefaultTimeSlice := 5
+    replenishQueue := { entries := [], size := 0 }
   }
   objectTypes := freezeMap (RHTable.empty 16)
   capabilityRefs := freezeMap (RHTable.empty 16)

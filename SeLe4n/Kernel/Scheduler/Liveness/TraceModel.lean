@@ -111,7 +111,7 @@ def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError Syst
     ) { st with scheduler := { st.scheduler with replenishQueue := rq' } }
     .ok st'
   | .ipcTimeoutTick scId =>
-    .ok (timeoutBlockedThreads st scId)
+    .ok (timeoutBlockedThreads st scId).1
 
 -- ============================================================================
 -- D5-A4: Valid trace predicate

@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.25.27` (`lakefile.toml`) |
+| **Package version** | `0.26.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 87,132 across 133 Lean files |
 | **Test LoC** | 11,359 across 16 Lean test suites |
 | **Proved declarations** | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AF PORTFOLIO COMPLETE** (v0.25.22–v0.25.27). Pre-Release Comprehensive Audit Remediation — 6 phases (AF1–AF6), 49 sub-tasks. Phase AF6 (v0.25.27): Rust ABI fixes & documentation closure. Prior: AF5 (v0.25.26), AF4 (v0.25.25), AF3 (v0.25.24), AF2 (v0.25.23), AF1 (v0.25.22), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). Plan: [`AUDIT_v0.25.21_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md). **Next: Raspberry Pi 5 hardware binding.** |
+| **Active workstream** | **WS-AG Phase AG1 COMPLETE** (v0.26.0). H3 Hardware Binding Audit Remediation — Phase AG1: Pre-Hardware Lean Code Fixes (6 sub-tasks: effective priority re-enqueue, timeout diagnostics, `uniqueWaiters` in `ipcInvariantFull` 14→15, boot duplicate detection, frozen replenish queue, runtime cross-subsystem checks). Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: WS-AF (v0.25.22–v0.25.27), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: AG2–AG10 (Rust ABI, ARMv8 page tables, GIC-400, boot sequence).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -134,7 +134,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 
 | Area | seL4 | seLe4n Improvement |
 |------|------|-------------------|
-| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle (8 predicates, Z9-extended) in `proofLayerInvariantBundle` (10 conjuncts, Z9-extended) |
+| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle (10 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic) in `proofLayerInvariantBundle` (10 conjuncts, Z9-extended) |
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
@@ -780,13 +780,15 @@ IPC functions (`endpointCall`, `endpointReply`, `endpointReplyRecv`) are not
 modified. Key helpers: `donateSchedContext`, `returnDonatedSchedContext`,
 `applyCallDonation`, `applyReplyDonation`, `cleanupPreReceiveDonation`.
 
-**Invariants** (`ipcInvariantFull` extended from 10 to 14 conjuncts):
+**Invariants** (`ipcInvariantFull` extended from 10 to 15 conjuncts):
 - `donationChainAcyclic`: no circular donation chains (A→B and B→A)
 - `donationOwnerValid`: donated bindings reference valid objects with
   bidirectional consistency (`sc.boundThread = some server`,
   `owner.schedContextBinding = .bound scId`, `owner.ipcState = .blockedOnReply`)
 - `passiveServerIdle`: unbound non-runnable threads are ready/receiving
 - `donationBudgetTransfer`: at most one thread per SchedContext
+- `uniqueWaiters`: no notification has duplicate thread IDs in `waitingThreads`
+  (AG1-C, F-T02)
 
 **Lifecycle**: `cleanupDonatedSchedContext` in `lifecyclePreRetypeCleanup`
 returns donated SchedContexts before TCB destruction.

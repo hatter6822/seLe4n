@@ -333,6 +333,21 @@ when SchedContext lookup fails is safe because:
   | none => (basePrio, dl)
   | some boostPrio => (⟨Nat.max basePrio.val boostPrio.val⟩, dl)
 
+/-- AG1-A: Resolve the effective insertion priority for RunQueue re-enqueue.
+
+When a thread is re-inserted into the RunQueue (budget refill, yield, bind),
+the insertion priority must account for PIP boost — not just the base
+SchedContext priority. This helper looks up the thread's TCB and calls
+`resolveEffectivePrioDeadline` to get the correct effective priority.
+
+If the TCB lookup fails (invariant violation — unreachable under
+`crossSubsystemInvariant`), falls back to `sc.priority` for safety. -/
+@[inline] def resolveInsertPriority (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sc : SchedContext) : SeLe4n.Priority :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb tcb) => (resolveEffectivePrioDeadline st tcb).1
+  | _ => sc.priority  -- defensive fallback
+
 /-- Z4-D/E: SchedContext-aware three-level scheduling selection.
 
 Extends `chooseBestRunnableBy` with two SchedContext enhancements:

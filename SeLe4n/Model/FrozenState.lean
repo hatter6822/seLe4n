@@ -201,6 +201,13 @@ theorem FrozenKernelObject.objectType_schedContext (sc : SeLe4n.Kernel.SchedCont
 -- Q5-B: FrozenSchedulerState
 -- ============================================================================
 
+/-- AG1-E: Frozen replenish queue — immutable sorted list of
+(SchedContextId × eligibleAt) pairs mirroring the runtime `ReplenishQueue`.
+Entries are ordered by eligibility time (ascending). -/
+structure FrozenReplenishQueue where
+  entries : List (SeLe4n.SchedContextId × Nat)
+  size    : Nat
+
 /-- Q5-B: Frozen scheduler state — mirrors `SchedulerState` with frozen
 backing stores. `byPriority`, `threadPriority`, and `membership` are
 converted from `RHTable`/`RHSet` to `FrozenMap`/`FrozenSet`. -/
@@ -214,6 +221,8 @@ structure FrozenSchedulerState where
   domainSchedule      : List DomainScheduleEntry
   domainScheduleIndex : Nat
   configDefaultTimeSlice : Nat
+  -- AG1-E: CBS replenishment queue (previously omitted)
+  replenishQueue      : FrozenReplenishQueue
 
 -- ============================================================================
 -- Q5-B: FrozenSystemState
@@ -320,7 +329,8 @@ theorem freezeObject_preserves_type (obj : KernelObject) :
     (freezeObject obj).objectType = obj.objectType := by
   cases obj <;> rfl
 
-/-- Q5-C: Freeze the scheduler state. -/
+/-- Q5-C: Freeze the scheduler state.
+AG1-E: Now includes `replenishQueue` for CBS scheduling support. -/
 def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
   { byPriority := freezeMap sched.runQueue.byPriority
     threadPriority := freezeMap sched.runQueue.threadPriority
@@ -330,7 +340,9 @@ def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
     domainTimeRemaining := sched.domainTimeRemaining
     domainSchedule := sched.domainSchedule
     domainScheduleIndex := sched.domainScheduleIndex
-    configDefaultTimeSlice := sched.configDefaultTimeSlice }
+    configDefaultTimeSlice := sched.configDefaultTimeSlice
+    replenishQueue := { entries := sched.replenishQueue.entries
+                        size := sched.replenishQueue.size } }
 
 /-- Q5-C: Master freeze function — converts an `IntermediateState` (builder
 phase with invariant witnesses) into a `FrozenSystemState` (execution phase

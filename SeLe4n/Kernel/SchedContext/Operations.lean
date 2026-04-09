@@ -155,12 +155,11 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
             -- the effective priority resolves from the SchedContext, so we must
             -- update the RunQueue entry to match.
             -- AE3-J/SC-09: Run queue insertion uses pre-update sc.priority.
-            -- This is correct because schedContextBind does not modify priority.
-            -- If future changes to bind modify priority, this must be updated
-            -- to read from the post-update SchedContext.
+            -- AG1-A: Now uses effective priority (base + PIP boost) to ensure
+            -- PIP-boosted threads are placed in the correct bucket.
             let st3 := if threadId ∈ st2.scheduler.runQueue then
               let rqRemoved := st2.scheduler.runQueue.remove threadId
-              let rqInserted := rqRemoved.insert threadId sc.priority
+              let rqInserted := rqRemoved.insert threadId (resolveInsertPriority st2 threadId sc)
               { st2 with scheduler := { st2.scheduler with runQueue := rqInserted } }
             else st2
             -- S-05/PERF-O1: Add thread to per-SchedContext thread index
@@ -272,9 +271,10 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
       if wasBudgetStarved && newTargetBudget > 0 then
         match targetSc.boundThread with
         | some tid =>
+          -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
           if tid ∉ st2.scheduler.runQueue && st2.scheduler.current != some tid then
             { st2 with scheduler := { st2.scheduler with
-                runQueue := st2.scheduler.runQueue.insert tid targetSc.priority } }
+                runQueue := st2.scheduler.runQueue.insert tid (resolveInsertPriority st2 tid targetSc) } }
           else st2
         | none => st2
       else st2

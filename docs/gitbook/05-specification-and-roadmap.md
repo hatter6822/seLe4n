@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.25.27` |
+| Version | `0.26.0` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 87,132 across 133 Lean files |
 | Test LoC | 11,359 across 16 suites |
 | Proved declarations | 2,581 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| Active workstream | **WS-AF PORTFOLIO COMPLETE** (v0.25.22–v0.25.27). Pre-Release Comprehensive Audit Remediation — 6 phases (AF1–AF6), 49 sub-tasks. Phase AF6 (v0.25.27): Rust ABI fixes & documentation closure. Prior: AF5 (v0.25.26), AF4 (v0.25.25), AF3 (v0.25.24), AF2 (v0.25.23), AF1 (v0.25.22), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: Raspberry Pi 5 hardware binding.** |
+| Active workstream | **WS-AG Phase AG1 COMPLETE** (v0.26.0). H3 Hardware Binding Audit Remediation — Phase AG1: Pre-Hardware Lean Code Fixes (6 sub-tasks). Prior: WS-AF (v0.25.22–v0.25.27), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: AG2–AG10 (Rust ABI, ARMv8 page tables, GIC-400, boot sequence).** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
@@ -114,7 +114,7 @@ API surface with frozen operations, and cross-subsystem invariant composition.
 - **Z4** (v0.23.7–v0.23.8): Scheduler integration — `schedulerInvariantBundleExtended` (15-tuple), 6 new invariants.
 - **Z5** (v0.23.9–v0.23.11): Capability-controlled binding — 3 new SyscallId variants, configure/bind/unbind/yieldTo, 7 preservation theorems.
 - **Z6** (v0.23.12–v0.23.14): Timeout endpoints — budget-driven IPC timeout, `endpointQueueRemove`, `blockedThreadTimeoutConsistent` invariant.
-- **Z7** (v0.23.15–v0.23.16): SchedContext donation — `donateSchedContext`, donation-aware IPC wrappers, 4 new invariants, `ipcInvariantFull` extended to 14 conjuncts.
+- **Z7** (v0.23.15–v0.23.16): SchedContext donation — `donateSchedContext`, donation-aware IPC wrappers, 4 new invariants, `ipcInvariantFull` extended to 14 conjuncts (AG1-C: 15th conjunct `uniqueWaiters` added).
 - **Z8** (v0.23.17–v0.23.18): API surface — 3 error-exclusivity theorems, 4 frozen operations, enforcement boundary 22→25.
 - **Z9** (v0.23.20): Invariant composition — `crossSubsystemInvariant` 5→8 predicates, `proofLayerInvariantBundle` 9→10 conjuncts, 14 disjointness witnesses, 3 frame lemmas, boot/operation preservation.
 

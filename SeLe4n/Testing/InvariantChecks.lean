@@ -404,4 +404,178 @@ def assertStateInvariantsWithoutSync (label : String) (objectIds : List SeLe4n.O
   else
     throw <| IO.userError s!"{label}: invariant checks failed (without sync): {reprStr failures}"
 
+-- ============================================================================
+-- AG1-F: Runtime crossSubsystemInvariant checks (10 predicates)
+-- ============================================================================
+
+/-- AG1-F audit: Collect queue members by following queueNext pointers.
+Mirrors the private `collectQueueMembers` in CrossSubsystem.lean.
+Returns `none` on fuel exhaustion (invariant violation signal). -/
+private def collectQueueMembersB
+    (st : SystemState) (start : Option SeLe4n.ThreadId) (fuel : Nat)
+    : Option (List SeLe4n.ThreadId) :=
+  match fuel, start with
+  | 0, some _ => none
+  | _, none => some []
+  | fuel + 1, some tid =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => (collectQueueMembersB st tcb.queueNext fuel).map (tid :: ·)
+    | _ => some [tid]
+
+/-- AG1-F-i: Check noStaleEndpointQueueReferences — every thread ID in
+endpoint queues (head, tail, AND interior members) has a live TCB. -/
+private def checkNoStaleEndpointQueueRefs (st : SystemState) : Bool :=
+  st.objectIndex.all fun oid =>
+    match st.objects[oid]? with
+    | some (.endpoint ep) =>
+      let checkTid := fun tid => st.objects[tid.toObjId]? != none
+      let headTailOk :=
+        (ep.sendQ.head.all checkTid) && (ep.sendQ.tail.all checkTid) &&
+        (ep.receiveQ.head.all checkTid) && (ep.receiveQ.tail.all checkTid)
+      -- T5-I: Interior member validation via queueNext traversal
+      let fuel := st.objectIndex.length
+      let sendInteriorOk := match collectQueueMembersB st ep.sendQ.head fuel with
+        | some members => members.all fun tid => st.objects[tid.toObjId]? != none
+        | none => false  -- fuel exhaustion signals invariant violation
+      let recvInteriorOk := match collectQueueMembersB st ep.receiveQ.head fuel with
+        | some members => members.all fun tid => st.objects[tid.toObjId]? != none
+        | none => false
+      headTailOk && sendInteriorOk && recvInteriorOk
+    | _ => true
+
+/-- AG1-F-i: Check noStaleNotificationWaitReferences — every thread ID in
+notification waiting lists has a live TCB. -/
+private def checkNoStaleNotificationWaitRefs (st : SystemState) : Bool :=
+  st.objectIndex.all fun oid =>
+    match st.objects[oid]? with
+    | some (.notification ntfn) =>
+      ntfn.waitingThreads.all fun tid => st.objects[tid.toObjId]? != none
+    | _ => true
+
+/-- AG1-F-ii: Check registryDependencyConsistent — every dependency edge in the
+service graph references a registered service. -/
+private def checkRegistryDependencyConsistent (st : SystemState) : Bool :=
+  st.services.toList.all fun (_, entry) =>
+    entry.dependencies.all fun depId =>
+      st.services[depId]? != none
+
+/-- AG1-F-ii: Check schedContextStoreConsistent — every SchedContext referenced
+by a TCB binding exists in the store. -/
+private def checkSchedContextStoreConsistent (st : SystemState) : Bool :=
+  st.objectIndex.all fun oid =>
+    match st.objects[oid]? with
+    | some (.tcb tcb) =>
+      match tcb.schedContextBinding.scId? with
+      | some scId =>
+        match st.objects[scId.toObjId]? with
+        | some (.schedContext _) => true
+        | _ => false
+      | none => true
+    | _ => true
+
+/-- AG1-F-ii: Check schedContextNotDualBound — at most one thread references
+any given SchedContext. Uses a simple O(n²) pairwise check. -/
+private def checkSchedContextNotDualBound (st : SystemState) : Bool :=
+  let bindings := st.objectIndex.filterMap fun oid =>
+    match (st.objects[oid]? : Option KernelObject) with
+    | some (KernelObject.tcb tcb) =>
+      match tcb.schedContextBinding.scId? with
+      | some scId => some (oid, scId)
+      | none => none
+    | _ => none
+  bindings.all fun (oid1, scId1) =>
+    bindings.all fun (oid2, scId2) =>
+      oid1 == oid2 || scId1 != scId2
+
+/-- AG1-F-ii: Check schedContextRunQueueConsistent — runnable SC-bound threads
+have a live SchedContext with positive budget. -/
+private def checkSchedContextRunQueueConsistent (st : SystemState) : Bool :=
+  st.scheduler.runQueue.toList.all fun tid =>
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) =>
+      match tcb.schedContextBinding.scId? with
+      | some scId =>
+        match st.objects[scId.toObjId]? with
+        | some (.schedContext sc) => sc.budgetRemaining.val > 0
+        | _ => false
+      | none => true  -- unbound threads pass vacuously
+    | _ => false
+
+/-- AG1-F-iii: Check blockingAcyclic via bounded cycle detection.
+Uses fuel = number of objects to bound the walk. -/
+private def checkBlockingAcyclic (st : SystemState) : Bool :=
+  let fuel := st.objectIndex.length
+  st.objectIndex.all fun oid =>
+    match st.objects[oid]? with
+    | some (.tcb tcb) =>
+      match tcb.schedContextBinding with
+      | .donated _ owner =>
+        -- Walk the blocking chain from `owner`; if we see `oid` again, there's a cycle
+        let rec walk (current : SeLe4n.ObjId) (visited : List SeLe4n.ObjId)
+            (steps : Nat) : Bool :=
+          match steps with
+          | 0 => true  -- fuel exhaustion: conservative — assume OK
+          | steps + 1 =>
+            if current ∈ visited then false  -- cycle detected
+            else
+              match st.objects[current]? with
+              | some (.tcb tcb2) =>
+                match tcb2.schedContextBinding with
+                | .donated _ owner2 => walk owner2.toObjId (current :: visited) steps
+                | _ => true  -- chain ends
+              | _ => true  -- chain ends
+        walk owner.toObjId [oid] fuel
+      | _ => true  -- not in a donation chain
+    | _ => true
+
+/-- AG1-F audit: checkRegistryEndpointValid — every registered service's endpoint
+targets an existing kernel object. -/
+private def checkRegistryEndpointValid (st : SystemState) : Bool :=
+  st.serviceRegistry.toList.all fun (_, reg) =>
+    match reg.endpointCap.target with
+    | .object epId => st.objects[epId]? != none
+    | _ => false
+
+/-- AG1-F audit: checkRegistryInterfaceValid — every registered service references
+a known interface specification. -/
+private def checkRegistryInterfaceValid (st : SystemState) : Bool :=
+  st.serviceRegistry.toList.all fun (_, reg) =>
+    st.interfaceRegistry[reg.iface.ifaceId]? != none
+
+/-- AG1-F audit: checkServiceGraphInvariant — service dependency graph is acyclic
+and service count is bounded. -/
+private def checkServiceGraphInvariant (st : SystemState) : Bool :=
+  let fuel := st.objectIndex.length
+  let serviceIds := st.services.toList.map Prod.fst
+  let acyclic := serviceIds.all fun sid =>
+    let deps := match st.services[sid]? with
+      | some entry => entry.dependencies
+      | none => []
+    !(deps.any fun dep => SeLe4n.Kernel.serviceHasPathTo st dep sid fuel)
+  let bounded := st.services.size ≤ st.objectIndex.length
+  acyclic && bounded
+
+/-- AG1-F-iv: Compose all 10 cross-subsystem predicate checks into a single
+boolean function. Returns `true` only if all checks pass. -/
+def checkCrossSubsystemInvariant (st : SystemState) : List (String × Bool) :=
+  [ ("crossSub:registryEndpointValid", checkRegistryEndpointValid st)
+  , ("crossSub:registryInterfaceValid", checkRegistryInterfaceValid st)
+  , ("crossSub:registryDependencyConsistent", checkRegistryDependencyConsistent st)
+  , ("crossSub:noStaleEndpointQueueRefs", checkNoStaleEndpointQueueRefs st)
+  , ("crossSub:noStaleNotificationWaitRefs", checkNoStaleNotificationWaitRefs st)
+  , ("crossSub:serviceGraphInvariant", checkServiceGraphInvariant st)
+  , ("crossSub:schedContextStoreConsistent", checkSchedContextStoreConsistent st)
+  , ("crossSub:schedContextNotDualBound", checkSchedContextNotDualBound st)
+  , ("crossSub:schedContextRunQueueConsistent", checkSchedContextRunQueueConsistent st)
+  , ("crossSub:blockingAcyclic", checkBlockingAcyclic st) ]
+
+/-- AG1-F-iv: Assert cross-subsystem invariants, throwing IO error on failure. -/
+def assertCrossSubsystemInvariant (label : String) (st : SystemState) : IO Unit := do
+  let checks := checkCrossSubsystemInvariant st
+  let failures := checks.filterMap fun (name, ok) => if ok then none else some name
+  if failures.isEmpty then
+    pure ()
+  else
+    throw <| IO.userError s!"{label}: cross-subsystem invariant failed: {reprStr failures}"
+
 end SeLe4n.Testing
