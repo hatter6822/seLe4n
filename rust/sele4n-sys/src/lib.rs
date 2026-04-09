@@ -13,6 +13,7 @@
 //! - `vspace` — VSpace operations: map (with W^X enforcement), unmap
 //! - `service` — Service registry: register, revoke, query
 //! - `tcb` — TCB operations: suspend, resume, set priority/MCP, set IPC buffer
+//! - `sched_context` — SchedContext operations: configure, bind, unbind
 //! - `cap` — Phantom-typed capability handles (`Cap<Obj, Rts>`)
 //!
 //! # Safety
@@ -32,6 +33,7 @@ pub mod lifecycle;
 pub mod vspace;
 pub mod service;
 pub mod tcb;
+pub mod sched_context;
 pub mod cap;
 
 pub use sele4n_abi;

@@ -120,7 +120,7 @@ impl SetIPCBufferArgs {
     /// Validates alignment to `IPC_BUFFER_ALIGNMENT` (512 bytes).
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        if regs[0] % IPC_BUFFER_ALIGNMENT != 0 {
+        if !regs[0].is_multiple_of(IPC_BUFFER_ALIGNMENT) {
             return Err(KernelError::AlignmentError);
         }
         Ok(Self { buffer_addr: regs[0] })

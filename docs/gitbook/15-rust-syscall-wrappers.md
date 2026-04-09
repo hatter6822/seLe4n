@@ -62,6 +62,7 @@ Safe high-level wrappers for all 25 syscalls:
 | Lifecycle | `lifecycle_retype`, `retype_tcb`, `retype_endpoint`, `retype_notification`, `retype_cnode`, `retype_vspace_root` |
 | VSpace | `vspace_map` (W^X pre-check), `vspace_unmap` |
 | Service | `service_register`, `service_revoke`, `service_query` |
+| SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |
 | TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer` |
 
 ### Phantom-Typed Capabilities
@@ -95,14 +96,16 @@ x7  → Syscall number (SyscallId)
 
 ## Testing
 
-- **231 unit tests** across 3 crates (91 abi + 87 conformance + 12 sys + 41 types)
-- **87 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests)
+- **239 unit tests** across 3 crates (91 abi + 93 conformance + 13 sys + 42 types)
+- **93 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests + AG2-A domain boundary tests + AG2-B wrapper export tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
   AA2: Rust toolchain SHA-pinned via `dtolnay/rust-toolchain` (v1, 1.82.0)
 - AA1 ABI drift detection: variant count assertions for KernelError (44) and
   SyscallId (25), TypeTag (7), compile-time constant checks for MAX_LABEL,
   MAX_MSG_LENGTH, MAX_EXTRA_CAPS
+- AG2-A domain conformance: MAX_DOMAIN matches Lean `numDomainsVal = 16`
+  (zero-indexed 0..=15), exhaustive valid/invalid domain boundary tests
 
 ## Canonical Sources
 
