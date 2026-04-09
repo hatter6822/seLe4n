@@ -873,7 +873,7 @@ The information-flow subsystem is organized in three architectural layers:
    preserve `lowEquivalent` for unobservable state changes. The composition
    layer (`composedNonInterference_trace`) chains single-step NI proofs into
    trace-level non-interference using the `NonInterferenceStep` inductive type
-   (34 constructors as of v0.25.15).
+   (35 constructors as of v0.27.0).
 
 ### IF-M1 baseline (WS-B7 complete)
 
@@ -944,8 +944,8 @@ WS-H8 enforcement soundness (5 theorems):
 
 **H-05 — Composed bundle-level non-interference:**
 
-- `NonInterferenceStep` inductive (34 constructors; extended from 32 by AE1-F: added `endpointCallWithDonationHigh`, `endpointReplyWithReversionHigh`. Extended from 31 by R5-B/M-02: added `registerServiceChecked`. Extended from 28 by v0.13.5 audit: added `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh`. Added `syscallDecodeError`, `syscallDispatchHigh` by WS-J1-D. Original 28 from WS-H9),
-- `step_preserves_projection` — single-step projection preservation (all 34 constructors),
+- `NonInterferenceStep` inductive (35 constructors; extended from 34 by AG5-F: added `handleInterrupt`. Extended from 32 by AE1-F: added `endpointCallWithDonationHigh`, `endpointReplyWithReversionHigh`. Extended from 31 by R5-B/M-02: added `registerServiceChecked`. Extended from 28 by v0.13.5 audit: added `endpointReceiveDualHigh`, `endpointCallHigh`, `endpointReplyRecvHigh`. Added `syscallDecodeError`, `syscallDispatchHigh` by WS-J1-D. Original 28 from WS-H9),
+- `step_preserves_projection` — single-step projection preservation (all 35 constructors),
 - `composedNonInterference_step` — primary IF-M4 single-step theorem,
 - `NonInterferenceTrace` inductive (`nil`/`cons`),
 - `trace_preserves_projection`, `composedNonInterference_trace` — multi-step lift,
@@ -1007,7 +1007,7 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `LabelingContextValid` predicate with `defaultLabelingContext_valid` — NI deployment requirements (V6-D),
 - `endpointPolicyRestricted` — per-endpoint policy subset of global policy well-formedness (V6-G),
 - `DeclassificationEvent` structure with `authorizationBasis` field and `recordDeclassification` audit trail (V6-H),
-- `kernelOperationNiConstructor` — 34-variant operation→constructor mapping (V6-I),
+- `kernelOperationNiConstructor` — 35-variant operation→constructor mapping (V6-I),
 - `niStepCoverage_operational`, `niStepCoverage_injective`, `niStepCoverage_count` — NI coverage documentation (V6-I),
 - `acceptedCovertChannel_scheduling` — documented scheduling covert channel (V6-J),
 - `defaultLabelingContext_insecure` — warning that default labeling provides no security (V6-K),
@@ -1751,7 +1751,7 @@ functions depend only on `msgRegs` (two results with same `msgRegs` produce same
 `dispatchWithCap_preservation_composition_witness` structural preservation theorem.
 `retypeFromUntyped_preserves_lowEquivalent` NI theorem (two-stage store composition).
 `syscallNI_coverage_witness` witnesses decode-error NI step availability, step→trace
-composition, and `step_preserves_projection` totality over all 34 constructors.
+composition, and `step_preserves_projection` totality over all 35 constructors.
 Zero sorry/axiom.
 
 **Completed — K-G (v0.16.7) — Lifecycle NI proof completion and deferred proof resolution:**
@@ -1761,7 +1761,7 @@ three sub-operations (`cspaceRevoke`, `cspaceDeleteSlot`, `lifecycleRetypeObject
 `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` two-run NI theorem completes the
 deferred `lifecycleRevokeDeleteRetype` NI proof. `NonInterferenceStep` extended with
 `lifecycleRevokeDeleteRetype` constructor (34 total). `syscallNI_coverage_witness` updated
-to reflect 34-constructor exhaustive match. Zero sorry/axiom.
+to reflect 34-constructor exhaustive match (later 35 with AG5-F `handleInterrupt`). Zero sorry/axiom.
 
 **Completed — K-H (v0.16.8) — Documentation sync and workstream closeout:**
 All project documentation synchronized with WS-K implementation. Metrics
@@ -1793,7 +1793,7 @@ The WS-K portfolio delivered 44+ new theorems across 4 proof categories:
 - `cspaceRevoke_preserves_projection` — standalone revoke projection preservation
 - `lifecycleRevokeDeleteRetype_preserves_projection` — chained 3-op projection
 - `lifecycleRevokeDeleteRetype_preserves_lowEquivalent` — two-run NI
-- `syscallNI_coverage_witness` — exhaustive 34-constructor match
+- `syscallNI_coverage_witness` — exhaustive 35-constructor match
 
 **Error-exclusivity theorems** (SyscallArgDecode.lean, K-B):
 - 10 theorems: `decodeCSpaceMintArgs_error_iff` through `decodeServiceQueryArgs_error_iff` (WS-Q1: +3 service decode structures)
@@ -1937,7 +1937,7 @@ scheduler transitions, notification signal/wait, service start/stop) has a
 target does not change the observable state for any observer.
 
 **Composition** (`Invariant/Composition.lean`): the `NonInterferenceStep`
-inductive (34 constructors, one per kernel operation with domain-separation
+inductive (35 constructors, one per kernel operation with domain-separation
 hypotheses) plus the primary theorems:
 
 - `composedNonInterference_step` — single-step IF-M4.

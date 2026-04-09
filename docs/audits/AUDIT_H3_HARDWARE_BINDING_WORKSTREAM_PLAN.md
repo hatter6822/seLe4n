@@ -1039,7 +1039,7 @@ transitioned to kernel mapping with TTBR0 (user) / TTBR1 (kernel) split.
 
 ---
 
-### Phase AG5 — Interrupts + Timer
+### Phase AG5 — Interrupts + Timer ✅ COMPLETE (v0.27.0)
 
 **Goal**: GIC-400 interrupt controller and ARM Generic Timer bring-up.
 Connects hardware interrupts to the Lean kernel model.

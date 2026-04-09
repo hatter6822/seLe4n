@@ -14,8 +14,9 @@
 //! - `mmu`       — MMU configuration (MAIR, TCR, TTBR, SCTLR)
 //! - `trap`      — Trap frame and handler dispatch
 //! - `boot`      — Boot sequence (BSS zero, stack, hardware init)
-//! - `gic`       — GIC-400 driver (stub, completed in AG5)
-//! - `timer`     — ARM Generic Timer (stub, completed in AG5)
+//! - `gic`        — GIC-400 interrupt controller driver (AG5-A/B/C)
+//! - `timer`      — ARM Generic Timer driver (AG5-D)
+//! - `interrupts` — Interrupt management / critical sections (AG5-G)
 
 #![no_std]
 // HAL crate requires unsafe code for hardware instructions (MRS/MSR, MMIO,
@@ -33,3 +34,4 @@ pub mod trap;
 pub mod boot;
 pub mod gic;
 pub mod timer;
+pub mod interrupts;

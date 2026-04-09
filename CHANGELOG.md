@@ -1,3 +1,76 @@
+## v0.27.0 — WS-AG Phase AG5: Interrupts + Timer
+
+Phase AG5 of WS-AG H3 Hardware Binding Audit Remediation. Full GIC-400
+interrupt controller and ARM Generic Timer bring-up, connecting hardware
+interrupts to the Lean kernel model. Rust HAL upgraded from stubs to complete
+drivers. Lean model extended with interrupt-disabled region semantics,
+timer interrupt binding, and handleInterrupt information-flow proof.
+7 sub-tasks (AG5-A through AG5-G) closing 7 findings from the H3 hardware
+binding audit.
+Gate: `cargo test --workspace` (281 tests) + `cargo clippy --workspace`
+(0 warnings) + `lake build` (256 jobs) + `test_smoke.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AG5-A** (H3-PLAT-02): GIC-400 distributor initialization in `gic.rs`.
+  `init_distributor()`: disable GICD_CTLR, configure GICD_IGROUPR (Group 0),
+  set GICD_IPRIORITYR (default 0xA0), route GICD_ITARGETSR to CPU 0, clear
+  pending via GICD_ICPENDR, enable via GICD_ISENABLER, re-enable GICD_CTLR.
+  GIC-400 distributor base 0xFF841000 (BCM2712). All register offsets and MMIO
+  helpers modeled with `cfg(target_arch = "aarch64")` guards
+- **AG5-B** (H3-PLAT-02): GIC-400 CPU interface initialization in `gic.rs`.
+  `init_cpu_interface()`: set GICC_PMR = 0xFF (accept all priorities),
+  GICC_BPR = 0 (no grouping), GICC_CTLR = 1 (enable). CPU interface base
+  0xFF842000 (BCM2712)
+- **AG5-C** (H3-RUST-04): GIC-400 acknowledge/dispatch/EOI in `gic.rs`.
+  `acknowledge_irq() -> u32` reads GICC_IAR. `end_of_interrupt(intid)` writes
+  GICC_EOIR. `dispatch_irq<F>(handler)` composes acknowledge → spurious check
+  (INTID ≥ 1020) → dispatch → EOI. `init_gic()` convenience function
+  initializes both distributor and CPU interface. 14 unit tests
+- **AG5-D** (H3-PLAT-03): ARM Generic Timer driver in `timer.rs`.
+  `read_counter() -> u64` (CNTPCT_EL0), `read_frequency() -> u32`
+  (CNTFRQ_EL0), `set_comparator(u64)` (CNTP_CVAL_EL0), `enable_timer()`/
+  `disable_timer()` (CNTP_CTL_EL0), `is_timer_pending() -> bool`. Static state
+  via `AtomicU64` (`TICK_COUNT`, `TIMER_INTERVAL`). `init_timer(tick_hz)`:
+  compute interval from frequency, set first comparator, enable.
+  `reprogram_timer()`: counter-relative advancement. `increment_tick_count()`/
+  `get_tick_count()`. RPi5 54 MHz, default 1000 Hz tick. 8 unit tests
+- **AG5-E** (H3-SCHED-01): Timer interrupt → `timerTick` binding in Lean.
+  `TimerInterruptBinding` structure in `TimerModel.lean` with `config` and
+  `tickCount` fields. `handleTimerInterrupt` composes acknowledge → timerTick →
+  reprogram. 4 preservation theorems (all `rfl`). `rpi5TimerBinding` default
+  instance. `timerInterruptHandler` in `InterruptDispatch.lean` delegates to
+  `timerTick`; `handleInterrupt_timer` theorem proves timer INTID dispatch
+- **AG5-F** (FINDING-06): `handleInterrupt` kernel integration.
+  `NonInterferenceStep.handleInterrupt` constructor added to `Composition.lean`
+  with `hCurrentHigh`/`hCurrentObjHigh`/`hAllRunnable`/`hProj` hypotheses.
+  `KernelOperation.handleInterrupt` added (35th constructor). Coverage proof
+  `niStepCoverage_count` updated 34→35. `step_preserves_projection` extended.
+  `handleInterrupt_crossSubsystemInvariant_bridge` in `CrossSubsystem.lean`
+  delegates to `crossSubsystemInvariant_objects_change_bridge`
+- **AG5-G** (H3-DAIF): Interrupt-disabled region model (Rust + Lean).
+  Rust: `interrupts.rs` with `disable_interrupts() → u64` (saves DAIF),
+  `restore_interrupts(saved)`, `enable_irq()`, `are_interrupts_enabled()`,
+  `with_interrupts_disabled<F,R>()`. 4 unit tests.
+  Lean: `interruptsEnabled : Bool` field on `MachineState`. `disableInterrupts`,
+  `enableInterrupts`, `withInterruptsDisabled` operations with 7 frame/
+  preservation theorems. AG5-G atomicity proofs in `ExceptionModel.lean`:
+  `saveOutgoingContext_preserves_interruptsEnabled`,
+  `restoreIncomingContext_preserves_interruptsEnabled`,
+  `setCurrentThread_preserves_interruptsEnabled`,
+  `interruptDispatchSequence_preserves_interruptsEnabled_spurious`
+
+### Metrics
+
+- **New files**: 1 (`rust/sele4n-hal/src/interrupts.rs`)
+- **Modified files**: 11 (6 Lean, 5 Rust)
+- **Lines changed**: ~1184 added, ~106 removed
+- **Rust workspace**: 4 crates, 281 tests, 0 clippy warnings
+- **Lean**: 256 build jobs, zero sorry/axiom
+- **NI coverage**: 35 kernel operations (was 34)
+
+---
+
 ## v0.26.5 — WS-AG Phase AG4: HAL Crate + Boot Foundation
 
 Phase AG4 of WS-AG H3 Hardware Binding Audit Remediation. Creates the

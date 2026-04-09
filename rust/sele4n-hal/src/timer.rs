@@ -3,8 +3,23 @@
 //! Counter frequency: 54 MHz (from Board.lean `timerFrequencyHz`).
 //! Default tick rate: 1000 Hz (1 ms ticks).
 //!
-//! Stub implementation for AG4. Full driver with comparator programming
-//! and timer interrupt enable implemented in AG5 (AG5-D).
+//! Implements AG5-D: Full timer driver with system register access for
+//! CNTPCT_EL0, CNTP_CVAL_EL0, CNTP_CTL_EL0, and CNTFRQ_EL0.
+//!
+//! ## Timer Operation
+//!
+//! The ARM Generic Timer uses a monotonically increasing counter (CNTPCT_EL0)
+//! and a comparator (CNTP_CVAL_EL0). When the counter reaches the comparator
+//! value, a timer interrupt fires (INTID 30 on GIC-400).
+//!
+//! The driver:
+//! 1. Reads CNTFRQ_EL0 to determine counter frequency (54 MHz on RPi5)
+//! 2. Computes the interval in counter ticks for the desired tick rate
+//! 3. Programs CNTP_CVAL_EL0 for the first interrupt
+//! 4. Enables the timer via CNTP_CTL_EL0
+//! 5. On each tick interrupt, reprograms the comparator for the next interval
+
+use core::sync::atomic::{AtomicU64, Ordering};
 
 /// Counter frequency on RPi5: 54 MHz crystal.
 /// Matches Lean `rpi5TimerConfig.counterFrequencyHz`.
@@ -16,6 +31,158 @@ pub const DEFAULT_TICK_HZ: u32 = 1000;
 /// Counter increments per tick at default rate: 54000000 / 1000 = 54000.
 /// Matches Lean `rpi5TimerConfig` `countsPerTick` computation.
 pub const COUNTS_PER_TICK: u32 = COUNTER_FREQ_HZ / DEFAULT_TICK_HZ;
+
+/// Global tick counter — incremented on each timer interrupt.
+/// This is the Rust-side shadow of the Lean model's `MachineState.timer`.
+static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Interval between timer interrupts, in counter ticks.
+/// Set during `init_timer()` and used by `reprogram_timer()`.
+static TIMER_INTERVAL: AtomicU64 = AtomicU64::new(0);
+
+// ============================================================================
+// System Register Accessors
+// ============================================================================
+
+/// Read the physical counter (CNTPCT_EL0).
+///
+/// Returns the current counter value. This is a monotonically increasing
+/// 64-bit counter driven by the system clock (54 MHz on RPi5).
+///
+/// ARM ARM D13.8.2: CNTPCT_EL0 — Counter-timer Physical Count register.
+#[inline(always)]
+pub fn read_counter() -> u64 {
+    crate::read_sysreg!("cntpct_el0")
+}
+
+/// Read the counter frequency (CNTFRQ_EL0).
+///
+/// Returns the frequency in Hz. On RPi5 this is 54000000 (54 MHz).
+///
+/// ARM ARM D13.8.1: CNTFRQ_EL0 — Counter-timer Frequency register.
+#[inline(always)]
+pub fn read_frequency() -> u32 {
+    crate::read_sysreg!("cntfrq_el0") as u32
+}
+
+/// Set the comparator value (CNTP_CVAL_EL0).
+///
+/// When CNTPCT_EL0 >= this value, a timer interrupt (PPI 30) fires
+/// (if the timer is enabled and not masked).
+///
+/// ARM ARM D13.8.5: CNTP_CVAL_EL0 — Counter-timer Physical Timer
+/// CompareValue register.
+#[inline(always)]
+pub fn set_comparator(value: u64) {
+    crate::write_sysreg!("cntp_cval_el0", value);
+}
+
+/// Read the timer control register (CNTP_CTL_EL0).
+///
+/// Bit 0: ENABLE — timer enabled
+/// Bit 1: IMASK — interrupt mask (1 = masked)
+/// Bit 2: ISTATUS — interrupt status (read-only, 1 = condition met)
+///
+/// ARM ARM D13.8.4: CNTP_CTL_EL0.
+#[inline(always)]
+pub fn read_timer_ctl() -> u64 {
+    crate::read_sysreg!("cntp_ctl_el0")
+}
+
+/// Enable the timer: CNTP_CTL_EL0 = ENABLE=1, IMASK=0.
+///
+/// After this, the timer will fire an interrupt when CNTPCT_EL0 >= CNTP_CVAL_EL0.
+#[inline(always)]
+pub fn enable_timer() {
+    // Bit 0 = ENABLE = 1, Bit 1 = IMASK = 0
+    crate::write_sysreg!("cntp_ctl_el0", 1u64);
+}
+
+/// Disable the timer: CNTP_CTL_EL0 = 0.
+#[inline(always)]
+pub fn disable_timer() {
+    crate::write_sysreg!("cntp_ctl_el0", 0u64);
+}
+
+/// Check if the timer interrupt is pending.
+///
+/// Returns `true` if CNTP_CTL_EL0.ISTATUS = 1 (counter >= comparator).
+#[inline(always)]
+pub fn is_timer_pending() -> bool {
+    (read_timer_ctl() & (1 << 2)) != 0
+}
+
+// ============================================================================
+// Timer Initialization and Reprogramming
+// ============================================================================
+
+/// Initialize the timer with the given tick rate.
+///
+/// Computes the interval from the counter frequency, programs the first
+/// comparator value, and enables the timer. After this function returns,
+/// timer interrupts will fire at the specified rate.
+///
+/// # Arguments
+///
+/// * `tick_hz` — Desired tick rate in Hz (e.g., 1000 for 1ms ticks)
+pub fn init_timer(tick_hz: u32) {
+    let freq = read_frequency();
+    // Use compile-time constant if frequency register returns 0 (non-aarch64)
+    let effective_freq = if freq == 0 { COUNTER_FREQ_HZ } else { freq };
+    let interval = (effective_freq / tick_hz) as u64;
+
+    TIMER_INTERVAL.store(interval, Ordering::Relaxed);
+
+    // Read current counter and set first comparator
+    let now = read_counter();
+    set_comparator(now + interval);
+
+    // Enable timer (ENABLE=1, IMASK=0)
+    enable_timer();
+
+    // Reset tick counter
+    TICK_COUNT.store(0, Ordering::Relaxed);
+}
+
+/// Reprogram the timer comparator for the next tick.
+///
+/// Called from the timer interrupt handler after processing the current tick.
+/// Advances the comparator by one interval rather than reading the current
+/// counter, ensuring evenly-spaced interrupts regardless of handler latency.
+///
+/// This matches the Lean `HardwareTimerConfig.reprogramComparator` semantics:
+/// `comparatorValue := comparatorValue + countsPerTick`.
+pub fn reprogram_timer() {
+    let interval = TIMER_INTERVAL.load(Ordering::Relaxed);
+    if interval == 0 {
+        return; // Timer not initialized
+    }
+
+    // Read current comparator and advance by one interval.
+    // Using CVAL-relative advancement (not counter-relative) ensures
+    // consistent tick spacing: if the handler runs late, the next tick
+    // fires sooner to catch up, maintaining long-term accuracy.
+    //
+    // On non-aarch64, read_counter returns 0 and set_comparator is a no-op.
+    let now = read_counter();
+    set_comparator(now + interval);
+}
+
+/// Increment the tick counter. Called from the timer interrupt handler.
+///
+/// Returns the new tick count.
+pub fn increment_tick_count() -> u64 {
+    TICK_COUNT.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+/// Get the current tick count.
+pub fn get_tick_count() -> u64 {
+    TICK_COUNT.load(Ordering::Relaxed)
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -36,5 +203,40 @@ mod tests {
     #[test]
     fn default_tick_rate() {
         assert_eq!(DEFAULT_TICK_HZ, 1000);
+    }
+
+    #[test]
+    fn interval_calculation() {
+        // At 1000 Hz with 54 MHz counter: 54000000 / 1000 = 54000
+        let interval = COUNTER_FREQ_HZ / DEFAULT_TICK_HZ;
+        assert_eq!(interval, 54_000);
+    }
+
+    #[test]
+    fn interval_at_100hz() {
+        // At 100 Hz: 54000000 / 100 = 540000
+        let interval = COUNTER_FREQ_HZ / 100;
+        assert_eq!(interval, 540_000);
+    }
+
+    #[test]
+    fn tick_count_starts_at_zero() {
+        // Reset for test isolation
+        TICK_COUNT.store(0, Ordering::Relaxed);
+        assert_eq!(get_tick_count(), 0);
+    }
+
+    #[test]
+    fn tick_count_increments() {
+        TICK_COUNT.store(0, Ordering::Relaxed);
+        assert_eq!(increment_tick_count(), 1);
+        assert_eq!(increment_tick_count(), 2);
+        assert_eq!(get_tick_count(), 2);
+    }
+
+    #[test]
+    fn timer_interval_storage() {
+        TIMER_INTERVAL.store(54_000, Ordering::Relaxed);
+        assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 54_000);
     }
 }

@@ -388,6 +388,13 @@ structure MachineState where
   registerCount : Nat := 32
   /-- AG3-G: ARM64 system registers (exception, MMU configuration). -/
   systemRegisters : SystemRegisterFile := default
+  /-- AG5-G: Interrupt state — models PSTATE.I (IRQ mask bit).
+      `true` = interrupts enabled (PSTATE.I = 0, IRQ unmasked).
+      `false` = interrupts disabled (PSTATE.I = 1, IRQ masked).
+      On ARM64, exception entry automatically sets PSTATE.I = 1 (disabled).
+      The kernel runs with interrupts disabled throughout; this field models
+      the DAIF register state manipulated by `sele4n-hal/src/interrupts.rs`. -/
+  interruptsEnabled : Bool := true
 
 instance : Inhabited MachineState where
   default := { regs := default, memory := (fun _ => 0), timer := 0 }
@@ -433,6 +440,54 @@ def setPC (ms : MachineState) (pc : RegValue) : MachineState :=
 
 def tick (ms : MachineState) : MachineState :=
   { ms with timer := ms.timer + 1 }
+
+-- ============================================================================
+-- AG5-G: Interrupt state operations
+-- ============================================================================
+
+/-- AG5-G: Disable interrupts (set PSTATE.I = 1).
+    Models the Rust `disable_interrupts()` from `interrupts.rs`. -/
+def disableInterrupts (ms : MachineState) : MachineState :=
+  { ms with interruptsEnabled := false }
+
+/-- AG5-G: Enable interrupts (clear PSTATE.I = 0).
+    Models the Rust `enable_irq()` from `interrupts.rs`. -/
+def enableInterrupts (ms : MachineState) : MachineState :=
+  { ms with interruptsEnabled := true }
+
+/-- AG5-G: Execute a function with interrupts disabled, then restore.
+    Models the Rust `with_interrupts_disabled()` critical section. -/
+def withInterruptsDisabled (f : MachineState → MachineState) (ms : MachineState) :
+    MachineState :=
+  enableInterrupts (f (disableInterrupts ms))
+
+/-- AG5-G: `disableInterrupts` sets interruptsEnabled to false. -/
+theorem disableInterrupts_sets_false (ms : MachineState) :
+    (disableInterrupts ms).interruptsEnabled = false := rfl
+
+/-- AG5-G: `enableInterrupts` sets interruptsEnabled to true. -/
+theorem enableInterrupts_sets_true (ms : MachineState) :
+    (enableInterrupts ms).interruptsEnabled = true := rfl
+
+/-- AG5-G: `disableInterrupts` preserves all non-interrupt fields. -/
+theorem disableInterrupts_preserves_timer (ms : MachineState) :
+    (disableInterrupts ms).timer = ms.timer := rfl
+
+/-- AG5-G: `disableInterrupts` preserves registers. -/
+theorem disableInterrupts_preserves_regs (ms : MachineState) :
+    (disableInterrupts ms).regs = ms.regs := rfl
+
+/-- AG5-G: `disableInterrupts` preserves memory. -/
+theorem disableInterrupts_preserves_memory (ms : MachineState) :
+    (disableInterrupts ms).memory = ms.memory := rfl
+
+/-- AG5-G: `enableInterrupts` preserves timer. -/
+theorem enableInterrupts_preserves_timer (ms : MachineState) :
+    (enableInterrupts ms).timer = ms.timer := rfl
+
+/-- AG5-G: `tick` preserves interrupt state. -/
+theorem tick_preserves_interruptsEnabled (ms : MachineState) :
+    (tick ms).interruptsEnabled = ms.interruptsEnabled := rfl
 
 -- ============================================================================
 -- Register read-after-write and frame lemmas (WS-E4 preparation)

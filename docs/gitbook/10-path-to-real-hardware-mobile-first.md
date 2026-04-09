@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG4 complete** (HAL crate + boot foundation) | ~~WS-F1..F4~~ (done) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG5 complete** (interrupts + timer) | ~~WS-F1..F4~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Proof deepening (critical gaps resolved)
@@ -39,13 +39,26 @@ user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 ### H3 — In progress: Raspberry Pi 5 binding
 
+**Phase AG5 (Interrupts + Timer) is complete.** 7 sub-tasks connect hardware
+interrupts to the Lean kernel model. Rust HAL: full GIC-400 driver with
+distributor/CPU interface initialization, acknowledge/dispatch/EOI sequence
+(`dispatch_irq<F>()` generic handler), and `init_gic()` convenience function
+(14 tests). ARM Generic Timer driver with system register accessors, `AtomicU64`
+state, `init_timer(tick_hz)` at 54 MHz, `reprogram_timer()` with counter-relative
+advancement (8 tests). Interrupt management via DAIF register: `disable_interrupts`,
+`restore_interrupts`, `enable_irq`, `with_interrupts_disabled<F,R>()` (4 tests).
+Lean: `TimerInterruptBinding` with `handleTimerInterrupt` (acknowledge → timerTick →
+reprogram), `MachineState.interruptsEnabled` field with 7 frame theorems, AG5-G
+atomicity proofs in `ExceptionModel.lean`, `handleInterrupt` as 35th
+`KernelOperation` with NI step and cross-subsystem bridge. Boot sequence updated
+with GIC → timer → IRQ enable phase.
+
 **Phase AG4 (HAL Crate + Boot Foundation) is complete.** 7 sub-tasks created the
 first hardware-executable code: the `sele4n-hal` Rust crate (4th workspace crate)
 with ARM64 boot sequence, PL011 UART driver (0xFE201000, 115200 8N1), MMU
 initialization (identity-mapped L1 block descriptors), exception vector table
 (16 entries, 2048-byte aligned for VBAR_EL1), trap entry/exit assembly (272-byte
 TrapFrame with full GPR save/restore), and kernel linker script (0x80000 entry).
-GIC-400 and timer stubs prepared for AG5.
 
 **Phase AG3 (Platform Model Completion) is complete.** 8 sub-tasks closed all
 Lean model gaps blocking hardware bring-up: `classifyMemoryRegion` platform
@@ -117,12 +130,12 @@ provides the organizational infrastructure for hardware binding:
   against BCM2712 documentation and ARM specifications. Validation results
   documented in Board.lean.
 
-**Remaining H3 work** (WS-H15 has now populated substantive predicates):
+**Remaining H3 work** (AG5 complete, AG6–AG10 remaining):
 
 1. ~~Populate RPi5 runtime contract with hardware-validated predicates.~~ **DONE** (WS-H15b).
 2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance (with `PagePermissions` support from WS-H11).
-3. Implement interrupt routing for GIC-400 with IRQ acknowledgment.
-4. Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).
+3. ~~Implement interrupt routing for GIC-400 with IRQ acknowledgment.~~ **DONE** (AG5-A/B/C: full GIC-400 driver with distributor/CPU interface init, acknowledge/dispatch/EOI).
+4. ~~Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).~~ **DONE** (AG5-D/E: timer driver + `timerTick` binding).
 5. Define boot sequence as a verified initial state construction.
 6. ~~Implement DTB parsing in `DeviceTree.fromDtb`.~~ **DONE** (X4-A/B/C: full FDT node traversal, GIC discovery, timer extraction).
 

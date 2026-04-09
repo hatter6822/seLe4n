@@ -382,7 +382,7 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 | **H0** | Architecture-neutral semantics and proofs | Complete (M1–M7, WS-B..E) |
 | **H1** | Architecture-boundary interfaces and adapters | Complete (M6) |
 | **H2** | Audit-driven proof deepening (close critical gaps) | Complete (WS-F and WS-H portfolios) |
-| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **H3-prep complete** |
+| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **AG5 complete** (GIC-400 + timer + interrupts) |
 | **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
 
 **H3 preparation (structural):** The `Platform/` directory now provides the
@@ -393,12 +393,21 @@ organizational foundation for hardware binding:
 - `VSpaceBackend` abstraction with permissions-enriched `hashMapVSpaceBackend` instance (WS-G6/WS-H11)
 - `ExtendedBootBoundaryContract` with platform boot fields
 - Simulation platform (`Platform/Sim/`) for testing
-- RPi5 stubs (`Platform/RPi5/`) with BCM2712 memory map, GIC-400 constants,
+- RPi5 platform (`Platform/RPi5/`) with BCM2712 memory map, GIC-400 constants,
   ARM64 machine config, and platform-specific runtime contract
+- GIC-400 interrupt controller driver (`sele4n-hal/src/gic.rs`) with
+  distributor/CPU interface init, acknowledge/dispatch/EOI sequence
+- ARM Generic Timer driver (`sele4n-hal/src/timer.rs`) at 54 MHz with
+  configurable tick rate and counter-relative reprogramming
+- Interrupt-disabled region primitives (`sele4n-hal/src/interrupts.rs`) via
+  DAIF register for critical section enforcement
+- Lean interrupt model: `MachineState.interruptsEnabled`, exception-entry
+  atomicity proofs, timer interrupt → `timerTick` binding, `handleInterrupt`
+  NI step (35th `KernelOperation`)
 
-The critical prerequisite for full H3 execution is closing the remaining WS-F
-proof gaps. Untyped memory (WS-F2) and information-flow completeness (WS-F3)
-are now complete.
+**H3 binding progress**: AG1 (Lean code fixes) → AG2 (Rust ABI fixes) → AG3
+(platform model) → AG4 (HAL crate + boot) → AG5 (interrupts + timer) complete.
+Remaining: AG6–AG10 (FFI bridge, kernel main, system calls, testing, QEMU).
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions (T6-G/M-NEW-8)
 

@@ -230,4 +230,81 @@ theorem dispatchSynchronousException_instrAbort (ectx : ExceptionContext)
     dispatchSynchronousException ectx st = .error .vmFault := by
   simp [dispatchSynchronousException, hCls]
 
+-- ============================================================================
+-- AG5-G: Interrupt-disabled region enforcement
+-- ============================================================================
+
+/-!
+## AG5-G: Kernel Exception Entry Interrupt Semantics
+
+On ARM64, exception entry automatically masks IRQ (PSTATE.I = 1). The kernel
+runs with interrupts disabled throughout all kernel operations. This is
+enforced at the hardware level:
+
+1. **SVC (syscall)**: User → EL1 transition masks IRQ via PSTATE save/restore
+2. **IRQ**: Hardware masks further IRQs on entry to the IRQ vector
+3. **ERET**: Restores PSTATE.I from SPSR_EL1, re-enabling IRQ for user mode
+
+### Operations requiring interrupts disabled
+
+**Always disabled** (entire kernel transition is atomic w.r.t. interrupts):
+- Scheduler transitions (`schedule`, `handleYield`, `timerTick`)
+- PIP propagation (`propagatePriorityInheritance`, `revertPriorityInheritance`)
+- Endpoint queue mutations (`endpointSendDual`, `endpointReceiveDual`)
+- Donation chain operations (`applyCallDonation`, `returnDonation`)
+- Notification signal/wait (`notificationSignal`, `notificationWait`)
+
+**Can re-enable** (future, none currently):
+- Long-running operations would use `withInterruptsDisabled` for critical
+  sections with periodic re-enablement. No current kernel operation requires
+  this pattern.
+
+### Atomicity guarantee
+
+The `timerTick` and `handleInterrupt` operations preserve the interrupt-disabled
+invariant: if entered with `interruptsEnabled = false`, the state remains
+`interruptsEnabled = false` on exit. This follows from the structure of kernel
+operations, which only modify `objects`, `scheduler`, `services`, etc. —
+none toggle `machine.interruptsEnabled`.
+-/
+
+/-- AG5-G: `saveOutgoingContext` preserves `interruptsEnabled`.
+    Context save only modifies `objects` (writes register context to TCB). -/
+theorem saveOutgoingContext_preserves_interruptsEnabled (st : SystemState) :
+    (saveOutgoingContext st).machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · split <;> simp_all
+
+/-- AG5-G: `restoreIncomingContext` preserves `interruptsEnabled`.
+    Context restore only modifies `machine.regs`, not `machine.interruptsEnabled`. -/
+theorem restoreIncomingContext_preserves_interruptsEnabled
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContext st tid).machine.interruptsEnabled =
+    st.machine.interruptsEnabled := by
+  unfold restoreIncomingContext
+  split <;> simp_all
+
+/-- AG5-G: `setCurrentThread` preserves `interruptsEnabled`.
+    Only modifies `scheduler.current`. -/
+theorem setCurrentThread_preserves_interruptsEnabled
+    (tid : Option SeLe4n.ThreadId) (st : SystemState) :
+    ∀ st', setCurrentThread tid st = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  intro st' hStep
+  unfold setCurrentThread at hStep
+  simp at hStep; rw [← hStep]
+
+/-- AG5-G: `interruptDispatchSequence` for spurious interrupts preserves
+    interrupt-disabled state (state is unchanged). -/
+theorem interruptDispatchSequence_preserves_interruptsEnabled_spurious
+    (st : SystemState) (rawIntId : Nat)
+    (hSpurious : rawIntId ≥ spuriousInterruptThreshold) :
+    ∀ st', interruptDispatchSequence st rawIntId = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
+  intro st' hStep
+  rw [interruptDispatchSequence_spurious st rawIntId hSpurious] at hStep
+  simp at hStep; exact hStep.symm ▸ rfl
+
 end SeLe4n.Kernel.Architecture

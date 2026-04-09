@@ -155,4 +155,41 @@ theorem handleInterrupt_unmapped (st : SystemState) (intId : InterruptId)
   unfold handleInterrupt
   simp [hNotTimer, hNoHandler]
 
+-- ============================================================================
+-- AG5-E: Timer interrupt handler (model-level binding)
+-- ============================================================================
+
+/-- AG5-E: Timer interrupt handler — the model-level function that the
+    Rust HAL's timer interrupt path calls via FFI (AG7).
+
+    Composes:
+    1. Acknowledge timer interrupt (modeled as identity — hardware-level)
+    2. Execute `timerTick` to advance the model timer
+    3. Reprogram comparator (modeled as identity — hardware-level)
+
+    Steps 1 and 3 are hardware operations with no kernel state effect.
+    The only state-affecting operation is `timerTick`, which is the existing
+    scheduler tick function. This handler therefore inherits all `timerTick`
+    preservation theorems automatically.
+
+    Note: uses `timerTick` (not `timerTickWithBudget`) to match the seL4
+    design where the basic timer tick is the hardware interrupt handler's
+    responsibility. Budget-aware processing is a higher-level scheduler
+    concern handled in the full `timerTickWithBudget` path. -/
+def timerInterruptHandler : Kernel Unit :=
+  fun st => timerTick st
+
+/-- AG5-E: Timer interrupt handler is equivalent to `timerTick`.
+    This allows all existing `timerTick` preservation theorems to be
+    reused directly for the timer interrupt path. -/
+theorem timerInterruptHandler_eq_timerTick :
+    timerInterruptHandler = timerTick := rfl
+
+/-- AG5-E: Timer interrupt handler dispatched via handleInterrupt
+    when INTID = timerInterruptId (30). -/
+theorem handleInterrupt_timer (st : SystemState) :
+    handleInterrupt st timerInterruptId = timerTick st := by
+  unfold handleInterrupt
+  simp [timerInterruptId]
+
 end SeLe4n.Kernel.Architecture
