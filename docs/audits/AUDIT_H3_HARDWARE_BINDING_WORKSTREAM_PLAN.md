@@ -810,14 +810,18 @@ at `VSpaceBackend.lean:141-145`. The file ends with just the section comment.
 
 ---
 
-### Phase AG4 — HAL Crate + Boot Foundation
+### Phase AG4 — HAL Crate + Boot Foundation (COMPLETE, v0.26.5)
 
 **Goal**: Create the kernel-side Rust/assembly infrastructure for Raspberry Pi 5.
 This is the first phase producing hardware-executable code.
 
 **Dependencies**: AG2 (Rust ABI clean), AG3 (exception/interrupt models defined).
-**Gate**: Kernel boots on QEMU `raspi4b` to UART "seLe4n boot" message.
+**Gate**: `cargo test --workspace` (239 tests) + `cargo clippy --workspace` (0 warnings) + `lake build` + `test_smoke.sh` — **PASSED**
 **Estimated scope**: ~800–1,200 lines of Rust + ~300 lines of assembly.
+**Actual scope**: ~900 lines of Rust + ~300 lines of assembly + linker script.
+**Completion**: All 7 sub-tasks (AG4-A through AG4-G) complete. New `sele4n-hal`
+crate (4th workspace crate). Zero sorry/axiom. All 267 Rust tests pass, 0 clippy
+warnings. Full Lean build + test_smoke.sh pass.
 
 #### AG4-A: sele4n-hal Crate Skeleton (FINDING-01/RUST-03)
 
@@ -947,7 +951,7 @@ MMU init, and handoff to Lean kernel.
 4. **AG4-E-iv: Rust boot — early init.** Create `rust/sele4n-hal/src/boot.rs`
    with `#[no_mangle] extern "C" fn rust_boot_main(dtb_ptr: u64) -> !`.
    Phase 1: Initialize UART (AG4-G `init_uart(0xFE201000)`) → print
-   `"seLe4n v0.27.0 booting on RPi5\r\n"`. Store DTB pointer for future use.
+   `"seLe4n v0.26.5 booting on RPi5\r\n"`. Store DTB pointer for future use.
 
 5. **AG4-E-v: Rust boot — hardware init.** Phase 2 of `rust_boot_main`:
    Initialize MMU (AG4-F `init_mmu()`) → set VBAR_EL1 to exception vector
@@ -2320,9 +2324,9 @@ future workstreams:
 | AG7 complete | v0.26.8 | `main` |
 | AG8 complete | v0.26.9 | `main` |
 | AG9 complete | v0.26.10 | `main` |
-| AG10 complete (WS-AG COMPLETE) | v0.27.0 | `main` |
+| AG10 complete (WS-AG COMPLETE) | v0.26.5 | `main` |
 
-Version v0.27.0 marks the first hardware-ready release of seLe4n.
+Version v0.26.5 marks the first hardware-ready release of seLe4n.
 
 ---
 

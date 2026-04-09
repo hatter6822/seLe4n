@@ -4,11 +4,12 @@ members = [
     "sele4n-types",
     "sele4n-abi",
     "sele4n-sys",
+    "sele4n-hal",
 ]
 
 [workspace.package]
-# Version tracks the Lean lakefile.toml version (currently 0.26.4)
-version = "0.26.4"
+# Version tracks the Lean lakefile.toml version (currently 0.26.5)
+version = "0.26.5"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/hatter6822/seLe4n"
