@@ -1432,7 +1432,7 @@ fn ag2a_invalid_domains_rejected() {
 /// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
 #[test]
 fn ag2b_sys_sched_context_module_exports() {
-    let _configure: fn(CPtr, u64, u64, u64, u64, u64) -> KernelResult<SyscallResponse> =
+    let _configure: fn(CPtr, u64, u64, u64, u64, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_configure;
     let _bind: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_bind;

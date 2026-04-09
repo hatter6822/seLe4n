@@ -94,6 +94,13 @@ x2–x5 → Message registers [0..3]
 x7  → Syscall number (SyscallId)
 ```
 
+Syscalls requiring more than 4 message registers (e.g., `service_register`,
+`sched_context_configure`) write the 5th+ values to the IPC buffer overflow
+slots via `buf.set_mr(index, value)`. The kernel reads these via
+`requireMsgReg` which falls through to the IPC buffer when the inline array
+has only 4 entries. These wrappers take `&mut IpcBuffer` as an additional
+parameter.
+
 ## Testing
 
 - **239 unit tests** across 3 crates (91 abi + 93 conformance + 13 sys + 42 types)
