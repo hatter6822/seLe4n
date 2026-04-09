@@ -1229,7 +1229,7 @@ called from hardware interrupt path.
 
 ---
 
-### Phase AG6 — Memory Management (ARMv8 Page Tables)
+### Phase AG6 — Memory Management (ARMv8 Page Tables) ✅ COMPLETE (v0.26.7)
 
 **Goal**: Implement hardware page tables for ARMv8, proving they refine the
 existing HashMap VSpace model. This preserves all existing VSpace proofs while
@@ -2320,7 +2320,7 @@ future workstreams:
 | AG3 complete | v0.26.3–v0.26.4 | `main` |
 | AG4 complete | v0.26.5 | `main` |
 | AG5 complete | v0.26.6 | `main` |
-| AG6 complete | TBD | `main` |
+| AG6 complete | v0.26.7 | `main` |
 | AG7 complete | TBD | `main` |
 | AG8 complete | TBD | `main` |
 | AG9 complete | TBD | `main` |

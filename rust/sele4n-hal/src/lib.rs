@@ -17,6 +17,8 @@
 //! - `gic`        — GIC-400 interrupt controller driver (AG5-A/B/C)
 //! - `timer`      — ARM Generic Timer driver (AG5-D)
 //! - `interrupts` — Interrupt management / critical sections (AG5-G)
+//! - `tlb`        — TLB maintenance instruction wrappers (AG6-E)
+//! - `cache`      — Cache maintenance operations (AG6-I)
 
 #![no_std]
 // HAL crate requires unsafe code for hardware instructions (MRS/MSR, MMIO,
@@ -35,3 +37,5 @@ pub mod boot;
 pub mod gic;
 pub mod timer;
 pub mod interrupts;
+pub mod tlb;
+pub mod cache;
