@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-lean-rust-kernel-RT1E4",
-      "commit_sha": "59b88deeee7bc8a1753044f0b6d9545e4f09684d",
-      "tree_sha": "53b286db28cc763fc6c6fddc6675c98e37bd5c68",
-      "committed_at_utc": "2026-04-09T00:33:23+00:00"
+      "commit_sha": "20ed3dea3a284a0afc81300ed4347342c49674dd",
+      "tree_sha": "d067dd81fabd48c4be07b0b4c08c30747858363e",
+      "committed_at_utc": "2026-04-09T01:36:00+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c0b4116ef9a2d1e12fb2dc3a4db76820e62a1d141efceaba78c70761fa72c002"
+    "source_digest": "40c1de61adc6ccb9cfe4abdddbd25be32f9bf37b77e936c796f31014969e9cd3"
   },
   "summary": {
     "module_count": 149,
-    "declaration_count": 4641
+    "declaration_count": 4642
   },
   "readme_sync": {
     "version": "0.25.27",
     "lean_toolchain": "v4.28.0",
     "production_files": 133,
-    "production_loc": 87208,
+    "production_loc": 87237,
     "test_files": 16,
     "test_loc": 11364,
-    "proved_theorem_lemma_decls": 2583,
+    "proved_theorem_lemma_decls": 2584,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -27401,13 +27401,15 @@
             "cleanupDonatedSchedContext",
             "cleanupEndpointServiceRegistrations",
             "cleanupTcbReferences",
-            "detachCNodeSlots"
+            "detachCNodeSlots",
+            "scId",
+            "scThreadIndexRemove"
           ]
         },
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_flat_subset",
-          "line": 366,
+          "line": 376,
           "called": [
             "SystemState",
             "ThreadId",
@@ -27420,7 +27422,7 @@
         {
           "kind": "theorem",
           "name": "detachCNodeSlots_scheduler_eq",
-          "line": 378,
+          "line": 388,
           "called": [
             "CNode",
             "ObjId",
@@ -27434,7 +27436,7 @@
         {
           "kind": "theorem",
           "name": "cleanupTcbReferences_scheduler_eq_removeRunnable",
-          "line": 389,
+          "line": 399,
           "called": [
             "SystemState",
             "ThreadId",
@@ -27447,7 +27449,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_flat_subset",
-          "line": 398,
+          "line": 408,
           "called": [
             "KernelObject",
             "ObjId",
@@ -27460,13 +27462,15 @@
             "detachCNodeSlots",
             "detachCNodeSlots_scheduler_eq",
             "lifecyclePreRetypeCleanup",
-            "removeRunnable"
+            "removeRunnable",
+            "scId",
+            "scThreadIndexRemove"
           ]
         },
         {
           "kind": "def",
           "name": "lifecycleRetypeObject",
-          "line": 452,
+          "line": 469,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -27482,7 +27486,7 @@
         {
           "kind": "def",
           "name": "lifecycleRevokeDeleteRetype",
-          "line": 489,
+          "line": 506,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -27497,7 +27501,7 @@
         {
           "kind": "def",
           "name": "objectTypeAllocSize",
-          "line": 517,
+          "line": 534,
           "called": [
             "KernelObjectType"
           ]
@@ -27505,7 +27509,7 @@
         {
           "kind": "def",
           "name": "requiresPageAlignment",
-          "line": 530,
+          "line": 547,
           "called": [
             "KernelObjectType"
           ]
@@ -27513,7 +27517,7 @@
         {
           "kind": "def",
           "name": "allocationBasePageAligned",
-          "line": 537,
+          "line": 554,
           "called": [
             "UntypedObject",
             "toNat"
@@ -27522,7 +27526,7 @@
         {
           "kind": "def",
           "name": "scrubObjectMemory",
-          "line": 561,
+          "line": 578,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -27537,7 +27541,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objects_eq",
-          "line": 568,
+          "line": 585,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -27548,7 +27552,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_scheduler_eq",
-          "line": 573,
+          "line": 590,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -27559,7 +27563,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_lifecycle_eq",
-          "line": 578,
+          "line": 595,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -27570,7 +27574,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_establishes_memoryZeroed",
-          "line": 584,
+          "line": 601,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -27587,7 +27591,7 @@
         {
           "kind": "def",
           "name": "retypeFromUntyped",
-          "line": 615,
+          "line": 632,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -27608,7 +27612,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_capacity_gated",
-          "line": 679,
+          "line": 696,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27622,7 +27626,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_decompose",
-          "line": 705,
+          "line": 722,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27642,7 +27646,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_typeMismatch",
-          "line": 830,
+          "line": 847,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27654,7 +27658,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_allocSizeTooSmall",
-          "line": 849,
+          "line": 866,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27670,7 +27674,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_regionExhausted",
-          "line": 875,
+          "line": 892,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -27693,7 +27697,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_eq",
-          "line": 912,
+          "line": 929,
           "called": [
             "KernelObject",
             "ObjId",
@@ -27706,7 +27710,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_ne",
-          "line": 921,
+          "line": 938,
           "called": [
             "KernelObject",
             "ObjId",
@@ -27719,7 +27723,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_scheduler_eq",
-          "line": 931,
+          "line": 948,
           "called": [
             "KernelObject",
             "ObjId",
@@ -27731,7 +27735,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_state_eq",
-          "line": 939,
+          "line": 956,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -27744,7 +27748,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_as_storeObject",
-          "line": 958,
+          "line": 975,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27762,7 +27766,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_lookup_preserved_ne",
-          "line": 989,
+          "line": 1006,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27777,7 +27781,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_runnable_membership",
-          "line": 1002,
+          "line": 1019,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27793,7 +27797,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_not_runnable_membership",
-          "line": 1017,
+          "line": 1034,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27809,7 +27813,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalState",
-          "line": 1032,
+          "line": 1049,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27822,7 +27826,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalAuthority",
-          "line": 1043,
+          "line": 1060,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -27838,7 +27842,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_success_updates_object",
-          "line": 1058,
+          "line": 1075,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -27859,7 +27863,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias",
-          "line": 1088,
+          "line": 1105,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27871,7 +27875,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup",
-          "line": 1098,
+          "line": 1115,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27884,7 +27888,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_staged_steps",
-          "line": 1111,
+          "line": 1128,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -27900,7 +27904,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanup",
-          "line": 1183,
+          "line": 1200,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -27917,14 +27921,13 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_ok_runnable_no_dangling",
-          "line": 1204,
+          "line": 1221,
           "called": [
             "CSpaceAddr",
             "KernelObject",
             "ObjId",
             "SystemState",
             "TCB",
-            "cleanupDonatedSchedContext",
             "cleanupTcbReferences_removes_from_runnable",
             "lifecyclePreRetypeCleanup",
             "lifecycleRetypeObject_ok_as_storeObject",
@@ -27938,7 +27941,7 @@
         {
           "kind": "def",
           "name": "objectOfTypeTag",
-          "line": 1244,
+          "line": 1263,
           "called": [
             "KernelError",
             "KernelObject",
@@ -27950,7 +27953,7 @@
         {
           "kind": "def",
           "name": "objectOfKernelType",
-          "line": 1277,
+          "line": 1296,
           "called": [
             "KernelObject",
             "KernelObjectType",
@@ -27963,7 +27966,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirect",
-          "line": 1332,
+          "line": 1351,
           "called": [
             "Capability",
             "Kernel",
@@ -27978,7 +27981,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirectWithCleanup",
-          "line": 1363,
+          "line": 1382,
           "called": [
             "Capability",
             "Kernel",
@@ -33182,7 +33185,7 @@
         {
           "kind": "def",
           "name": "schedContextYieldTo",
-          "line": 251,
+          "line": 254,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -42893,7 +42896,7 @@
     {
       "module": "SeLe4n.Model.FreezeProofs",
       "path": "SeLe4n/Model/FreezeProofs.lean",
-      "declaration_count": 59,
+      "declaration_count": 60,
       "declarations": [
         {
           "kind": "namespace",
@@ -43247,8 +43250,20 @@
         },
         {
           "kind": "theorem",
+          "name": "lookup_freeze_scThreadIndex",
+          "line": 666,
+          "called": [
+            "IntermediateState",
+            "SchedContextId",
+            "freeze",
+            "freezeMap_get",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "get_ne_none_of_slot_occupied",
-          "line": 672,
+          "line": 679,
           "called": [
             "RHEntry",
             "RHTable",
@@ -43266,7 +43281,7 @@
         {
           "kind": "theorem",
           "name": "foldl_generic_preserves_lookup",
-          "line": 702,
+          "line": 709,
           "called": [
             "CNodeRadix",
             "CNodeRadix.insert_radixWidth",
@@ -43284,7 +43299,7 @@
         {
           "kind": "theorem",
           "name": "foldl_generic_preserves_none",
-          "line": 740,
+          "line": 747,
           "called": [
             "CNodeRadix",
             "CNodeRadix.insert_radixWidth",
@@ -43302,7 +43317,7 @@
         {
           "kind": "theorem",
           "name": "foldl_generic_establishes_lookup",
-          "line": 780,
+          "line": 787,
           "called": [
             "CNodeRadix",
             "CNodeRadix.insert_radixWidth",
@@ -43322,7 +43337,7 @@
         {
           "kind": "theorem",
           "name": "lookup_freeze_cnode_slots_some",
-          "line": 874,
+          "line": 881,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -43349,7 +43364,7 @@
         {
           "kind": "theorem",
           "name": "lookup_freeze_cnode_slots_none",
-          "line": 931,
+          "line": 938,
           "called": [
             "CNode",
             "CNodeConfig.ofCNode",
@@ -43375,7 +43390,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_preserves_size",
-          "line": 964,
+          "line": 971,
           "called": [
             "FrozenMap.size",
             "RHTable",
@@ -43386,7 +43401,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_preserves_membership",
-          "line": 972,
+          "line": 979,
           "called": [
             "RHTable",
             "freezeMap",
@@ -43398,7 +43413,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_no_duplicates",
-          "line": 979,
+          "line": 986,
           "called": [
             "RHTable",
             "invExt",
@@ -43409,7 +43424,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_total_coverage",
-          "line": 987,
+          "line": 994,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -43429,7 +43444,7 @@
         {
           "kind": "def",
           "name": "apiInvariantBundle_frozen",
-          "line": 1029,
+          "line": 1036,
           "called": [
             "FrozenSystemState",
             "IntermediateState",
@@ -43440,7 +43455,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_invariants",
-          "line": 1041,
+          "line": 1048,
           "called": [
             "IntermediateState",
             "apiInvariantBundle",
@@ -43451,7 +43466,7 @@
         {
           "kind": "theorem",
           "name": "frozen_lookup_transfer",
-          "line": 1050,
+          "line": 1057,
           "called": [
             "RHTable",
             "freezeMap",
@@ -43463,7 +43478,7 @@
         {
           "kind": "def",
           "name": "apiInvariantBundle_frozenDirect",
-          "line": 1096,
+          "line": 1103,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -43476,7 +43491,7 @@
         {
           "kind": "theorem",
           "name": "apiInvariantBundle_frozenDirect_iff_frozen",
-          "line": 1102,
+          "line": 1109,
           "called": [
             "IntermediateState",
             "apiInvariantBundle",
@@ -43489,7 +43504,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_direct_invariants",
-          "line": 1114,
+          "line": 1121,
           "called": [
             "IntermediateState",
             "apiInvariantBundle",
@@ -43501,7 +43516,7 @@
         {
           "kind": "theorem",
           "name": "frozenDirect_preserved_by_set",
-          "line": 1126,
+          "line": 1133,
           "called": [
             "FrozenKernelObject",
             "FrozenMap",
@@ -43517,7 +43532,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_lookup_commutes",
-          "line": 1177,
+          "line": 1184,
           "called": [
             "RHTable",
             "freezeMap",
@@ -43529,7 +43544,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_store_commutes_at_key",
-          "line": 1189,
+          "line": 1196,
           "called": [
             "RHTable",
             "RHTable.getElem",
@@ -43545,7 +43560,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_frozenSet_at_key",
-          "line": 1199,
+          "line": 1206,
           "called": [
             "FrozenMap.get",
             "FrozenMap.set",
@@ -43562,7 +43577,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_store_commutes_other_key",
-          "line": 1221,
+          "line": 1228,
           "called": [
             "RHTable",
             "RHTable.getElem",
@@ -43577,7 +43592,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_store_commutes_all",
-          "line": 1233,
+          "line": 1240,
           "called": [
             "RHTable",
             "freezeMap",
@@ -43592,7 +43607,7 @@
         {
           "kind": "theorem",
           "name": "thread_lookup_commutes",
-          "line": 1255,
+          "line": 1262,
           "called": [
             "IntermediateState",
             "ThreadId",
@@ -43606,7 +43621,7 @@
         {
           "kind": "theorem",
           "name": "thread_store_commutes_at_key",
-          "line": 1264,
+          "line": 1271,
           "called": [
             "IntermediateState",
             "RHTable.getElem",
@@ -43625,7 +43640,7 @@
         {
           "kind": "theorem",
           "name": "thread_store_preserves_irqHandlers_freeze",
-          "line": 1284,
+          "line": 1291,
           "called": [
             "IntermediateState",
             "Irq",
@@ -43637,7 +43652,7 @@
         {
           "kind": "theorem",
           "name": "cdt_childMap_lookup_commutes",
-          "line": 1300,
+          "line": 1307,
           "called": [
             "CdtNodeId",
             "IntermediateState",
@@ -43649,7 +43664,7 @@
         {
           "kind": "theorem",
           "name": "cdt_parentMap_lookup_commutes",
-          "line": 1309,
+          "line": 1316,
           "called": [
             "CdtNodeId",
             "IntermediateState",
@@ -43661,7 +43676,7 @@
         {
           "kind": "theorem",
           "name": "cdt_childMap_store_commutes_at_key",
-          "line": 1318,
+          "line": 1325,
           "called": [
             "CdtNodeId",
             "RHTable",
@@ -43676,7 +43691,7 @@
         {
           "kind": "theorem",
           "name": "cdt_parentMap_store_commutes_at_key",
-          "line": 1329,
+          "line": 1336,
           "called": [
             "CdtNodeId",
             "RHTable",
@@ -43691,7 +43706,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_sequential_stores_commute",
-          "line": 1348,
+          "line": 1355,
           "called": [
             "RHTable",
             "freezeMap",
@@ -43706,7 +43721,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_insert_step",
-          "line": 1374,
+          "line": 1381,
           "called": [
             "RHTable",
             "freezeMap",
