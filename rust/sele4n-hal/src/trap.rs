@@ -199,3 +199,95 @@ pub extern "C" fn handle_serror(_frame: &mut TrapFrame) {
         crate::cpu::wfe();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trap_frame_size_is_272_bytes() {
+        assert_eq!(TRAP_FRAME_SIZE, 272);
+        assert_eq!(core::mem::size_of::<TrapFrame>(), 272);
+    }
+
+    #[test]
+    fn trap_frame_field_offsets() {
+        // Verify field offsets match assembly save_context/restore_context macros
+        assert_eq!(core::mem::offset_of!(TrapFrame, gprs), 0);
+        assert_eq!(core::mem::offset_of!(TrapFrame, sp_el0), 248);
+        assert_eq!(core::mem::offset_of!(TrapFrame, elr_el1), 256);
+        assert_eq!(core::mem::offset_of!(TrapFrame, spsr_el1), 264);
+    }
+
+    #[test]
+    fn trap_frame_gpr_accessors() {
+        let mut frame = TrapFrame {
+            gprs: [0; 31],
+            sp_el0: 0,
+            elr_el1: 0,
+            spsr_el1: 0,
+        };
+
+        // Set ABI registers
+        frame.gprs[0] = 0xCAFE;
+        frame.gprs[1] = 0xBEEF;
+        frame.gprs[2] = 0x1111;
+        frame.gprs[3] = 0x2222;
+        frame.gprs[4] = 0x3333;
+        frame.gprs[5] = 0x4444;
+        frame.gprs[7] = 0x7777;
+
+        assert_eq!(frame.x0(), 0xCAFE);
+        assert_eq!(frame.x1(), 0xBEEF);
+        assert_eq!(frame.x2(), 0x1111);
+        assert_eq!(frame.x3(), 0x2222);
+        assert_eq!(frame.x4(), 0x3333);
+        assert_eq!(frame.x5(), 0x4444);
+        assert_eq!(frame.x7(), 0x7777);
+    }
+
+    #[test]
+    fn trap_frame_setters() {
+        let mut frame = TrapFrame {
+            gprs: [0; 31],
+            sp_el0: 0,
+            elr_el1: 0,
+            spsr_el1: 0,
+        };
+
+        frame.set_x0(42);
+        frame.set_x1(99);
+        assert_eq!(frame.gprs[0], 42);
+        assert_eq!(frame.gprs[1], 99);
+    }
+
+    #[test]
+    fn esr_ec_extraction() {
+        // SVC from AArch64: EC = 0x15, bits [31:26]
+        let esr_svc = 0x15u64 << 26;
+        assert_eq!(esr_ec(esr_svc), ec::SVC_AARCH64);
+
+        // Data Abort from lower EL: EC = 0x24
+        let esr_dabt = 0x24u64 << 26;
+        assert_eq!(esr_ec(esr_dabt), ec::DABT_LOWER);
+
+        // Instruction Abort from lower EL: EC = 0x20
+        let esr_iabt = 0x20u64 << 26;
+        assert_eq!(esr_ec(esr_iabt), ec::IABT_LOWER);
+
+        // PC alignment fault: EC = 0x22
+        let esr_pc = 0x22u64 << 26;
+        assert_eq!(esr_ec(esr_pc), ec::PC_ALIGN);
+
+        // SP alignment fault: EC = 0x26
+        let esr_sp = 0x26u64 << 26;
+        assert_eq!(esr_ec(esr_sp), ec::SP_ALIGN);
+    }
+
+    #[test]
+    fn esr_ec_preserves_lower_bits() {
+        // EC = 0x15 with ISS = 0x42 (lower 25 bits should be ignored)
+        let esr = (0x15u64 << 26) | 0x42;
+        assert_eq!(esr_ec(esr), ec::SVC_AARCH64);
+    }
+}

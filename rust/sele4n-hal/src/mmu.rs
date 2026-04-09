@@ -191,3 +191,89 @@ pub fn init_mmu() {
     build_identity_tables();
     enable_mmu();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mair_attribute_indices() {
+        // Attr0 (bits [7:0]) = 0xFF: Normal, Inner/Outer WB-WA-RA
+        assert_eq!(MAIR_VALUE & 0xFF, 0xFF);
+        // Attr1 (bits [15:8]) = 0x00: Device-nGnRnE
+        assert_eq!((MAIR_VALUE >> 8) & 0xFF, 0x00);
+        // Attr2 (bits [23:16]) = 0x44: Normal Non-cacheable
+        assert_eq!((MAIR_VALUE >> 16) & 0xFF, 0x44);
+    }
+
+    #[test]
+    fn tcr_t0sz_is_16() {
+        // T0SZ in bits [5:0] = 16 → 48-bit VA for TTBR0
+        assert_eq!(TCR_VALUE & 0x3F, 16);
+    }
+
+    #[test]
+    fn tcr_t1sz_is_16() {
+        // T1SZ in bits [21:16] = 16 → 48-bit VA for TTBR1
+        assert_eq!((TCR_VALUE >> 16) & 0x3F, 16);
+    }
+
+    #[test]
+    fn tcr_granule_4kib() {
+        // TG0 in bits [15:14] = 0b00 → 4 KiB granule for TTBR0
+        assert_eq!((TCR_VALUE >> 14) & 0x3, 0b00);
+        // TG1 in bits [31:30] = 0b10 → 4 KiB granule for TTBR1
+        assert_eq!((TCR_VALUE >> 30) & 0x3, 0b10);
+    }
+
+    #[test]
+    fn tcr_ips_44bit() {
+        // IPS in bits [34:32] = 0b100 → 44-bit PA (BCM2712)
+        assert_eq!((TCR_VALUE >> 32) & 0x7, 0b100);
+    }
+
+    #[test]
+    fn tcr_inner_shareable() {
+        // SH0 in bits [13:12] = 0b11 → Inner Shareable
+        assert_eq!((TCR_VALUE >> 12) & 0x3, 0b11);
+        // SH1 in bits [29:28] = 0b11 → Inner Shareable
+        assert_eq!((TCR_VALUE >> 28) & 0x3, 0b11);
+    }
+
+    #[test]
+    fn block_normal_has_valid_and_af() {
+        // Valid bit (bit 0) must be set
+        assert_ne!(BLOCK_NORMAL & DESC_VALID, 0);
+        // Access Flag (bit 10) must be set
+        assert_ne!(BLOCK_NORMAL & AF, 0);
+        // Inner Shareable
+        assert_ne!(BLOCK_NORMAL & SH_INNER, 0);
+        // AttrIndx = 0 (Normal memory)
+        assert_eq!(BLOCK_NORMAL & ATTR_IDX_DEVICE, 0);
+        // UXN set (no user execute from kernel pages)
+        assert_ne!(BLOCK_NORMAL & UXN, 0);
+    }
+
+    #[test]
+    fn block_device_has_pxn_and_uxn() {
+        // Device memory must have PXN and UXN (never execute from MMIO)
+        assert_ne!(BLOCK_DEVICE & PXN, 0);
+        assert_ne!(BLOCK_DEVICE & UXN, 0);
+        // AttrIndx = 1 (Device-nGnRnE)
+        assert_ne!(BLOCK_DEVICE & ATTR_IDX_DEVICE, 0);
+        // No Inner Shareable for device memory
+        assert_eq!(BLOCK_DEVICE & SH_INNER, 0);
+    }
+
+    #[test]
+    fn l1_table_alignment() {
+        // PageTable must be 4096-byte aligned for ARMv8 TTBR
+        assert_eq!(core::mem::align_of::<PageTable>(), 4096);
+    }
+
+    #[test]
+    fn l1_table_has_512_entries() {
+        assert_eq!(L1_ENTRIES, 512);
+        assert_eq!(core::mem::size_of::<PageTable>(), 512 * 8);
+    }
+}

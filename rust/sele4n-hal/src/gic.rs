@@ -33,3 +33,39 @@ pub const MAX_INTID: u32 = 224;
 pub const fn is_spurious(intid: u32) -> bool {
     intid >= SPURIOUS_THRESHOLD
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gic_addresses_match_board_lean() {
+        // Board.lean: gicDistributorBase : PAddr := ⟨0xFF841000⟩
+        assert_eq!(GICD_BASE, 0xFF841000);
+        // Board.lean: gicCpuInterfaceBase : PAddr := ⟨0xFF842000⟩
+        assert_eq!(GICC_BASE, 0xFF842000);
+    }
+
+    #[test]
+    fn timer_ppi_matches_lean() {
+        // InterruptDispatch.lean: timerInterruptId : InterruptId := ⟨30, ...⟩
+        assert_eq!(TIMER_PPI_ID, 30);
+    }
+
+    #[test]
+    fn spi_count_matches_lean() {
+        // InterruptDispatch.lean: gicSpiCount = 192 (INTIDs 32-223)
+        assert_eq!(SPI_COUNT, 192);
+        assert_eq!(MAX_INTID, 224); // SGI(16) + PPI(16) + SPI(192)
+    }
+
+    #[test]
+    fn spurious_detection() {
+        assert!(!is_spurious(0));
+        assert!(!is_spurious(30));    // timer PPI
+        assert!(!is_spurious(223));   // last valid SPI
+        assert!(!is_spurious(1019));  // just below threshold
+        assert!(is_spurious(1020));   // spurious threshold
+        assert!(is_spurious(1023));   // standard spurious ID
+    }
+}

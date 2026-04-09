@@ -84,8 +84,8 @@ impl Uart {
     /// Initialize the UART: disable, set baud rate (115200 8N1), enable.
     ///
     /// Baud rate divisor for 48 MHz clock at 115200 baud:
-    ///   BRD = 48000000 / (16 × 115200) = 26.041...
-    ///   IBRD = 26, FBRD = round(0.041 × 64) = 3
+    ///   BRD = 48000000 / (16 × 115200) = 26.0416...
+    ///   IBRD = 26, FBRD = round(0.0416 × 64) = round(2.67) = 3
     pub fn init(&self) {
         self.init_with_baud(DEFAULT_BAUD);
     }
@@ -98,10 +98,13 @@ impl Uart {
         // Clear all interrupts
         self.write_reg(regs::UARTICR, 0x7FF);
 
-        // Calculate baud rate divisors:
+        // Calculate baud rate divisors per PL011 TRM Section 3.3.6:
         //   BRD = UART_CLK / (16 * baud)
         //   IBRD = integer part, FBRD = round(fractional * 64)
-        let brd_times_64 = (UART_CLOCK_HZ as u64 * 4) / baud as u64;
+        // We compute (UART_CLK * 4 * 2 + baud) / (baud * 2) for rounding,
+        // then extract IBRD = result/64, FBRD = result%64.
+        let divisor = baud as u64 * 2;
+        let brd_times_64 = (UART_CLOCK_HZ as u64 * 4 * 2 + baud as u64) / divisor;
         let ibrd = (brd_times_64 / 64) as u32;
         let fbrd = (brd_times_64 % 64) as u32;
 
@@ -228,4 +231,54 @@ macro_rules! kprintln {
         $crate::kprint!($($arg)*);
         $crate::kprint!("\n");
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uart0_base_matches_board_lean() {
+        // Board.lean: uart0Base : PAddr := ⟨0xFE201000⟩
+        assert_eq!(UART0_BASE, 0xFE201000);
+    }
+
+    #[test]
+    fn baud_rate_divisor_115200() {
+        // For 48 MHz clock at 115200 baud:
+        //   BRD = 48000000 / (16 × 115200) = 26.0416...
+        //   IBRD = 26, FBRD = round(0.0416 × 64) = round(2.667) = 3
+        let baud: u32 = 115_200;
+        let divisor = baud as u64 * 2;
+        let brd_times_64 = (UART_CLOCK_HZ as u64 * 4 * 2 + baud as u64) / divisor;
+        let ibrd = (brd_times_64 / 64) as u32;
+        let fbrd = (brd_times_64 % 64) as u32;
+
+        assert_eq!(ibrd, 26);
+        assert_eq!(fbrd, 3);
+    }
+
+    #[test]
+    fn uart_clock_48mhz() {
+        assert_eq!(UART_CLOCK_HZ, 48_000_000);
+    }
+
+    #[test]
+    fn pl011_register_offsets() {
+        // ARM PrimeCell UART (PL011) Technical Reference Manual
+        assert_eq!(regs::UARTDR, 0x000);
+        assert_eq!(regs::UARTFR, 0x018);
+        assert_eq!(regs::UARTIBRD, 0x024);
+        assert_eq!(regs::UARTFBRD, 0x028);
+        assert_eq!(regs::UARTLCR_H, 0x02C);
+        assert_eq!(regs::UARTCR, 0x030);
+        assert_eq!(regs::UARTICR, 0x044);
+    }
+
+    #[test]
+    fn flag_register_bits() {
+        assert_eq!(flags::TXFF, 1 << 5);
+        assert_eq!(flags::RXFE, 1 << 4);
+        assert_eq!(flags::BUSY, 1 << 3);
+    }
 }

@@ -6,7 +6,7 @@ producing hardware-executable code. New `sele4n-hal` crate with ARM64 boot
 sequence, PL011 UART driver, MMU initialization, exception vector table, and
 trap entry/exit assembly. 7 sub-tasks (AG4-A through AG4-G) closing 7 findings
 from the H3 hardware binding audit. Rust workspace now has 4 crates.
-Gate: `cargo test --workspace` (239 tests) + `cargo clippy --workspace`
+Gate: `cargo test --workspace` (267 tests) + `cargo clippy --workspace`
 (0 warnings) + `lake build` + `test_smoke.sh`. Zero sorry/axiom.
 
 ### Changes
@@ -66,7 +66,7 @@ Gate: `cargo test --workspace` (239 tests) + `cargo clippy --workspace`
 - **New files**: 13 (10 Rust `.rs`, 3 assembly `.S`, 1 `build.rs`, 1 `link.ld`,
   1 `Cargo.toml`)
 - **Lines added**: ~900 Rust + ~300 assembly + linker script
-- **Rust workspace**: 4 crates, 239 tests, 0 clippy warnings
+- **Rust workspace**: 4 crates, 267 tests, 0 clippy warnings
 - **Lean**: Zero changes to production proofs (zero sorry/axiom maintained)
 
 ---

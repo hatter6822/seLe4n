@@ -820,7 +820,7 @@ This is the first phase producing hardware-executable code.
 **Estimated scope**: ~800–1,200 lines of Rust + ~300 lines of assembly.
 **Actual scope**: ~900 lines of Rust + ~300 lines of assembly + linker script.
 **Completion**: All 7 sub-tasks (AG4-A through AG4-G) complete. New `sele4n-hal`
-crate (4th workspace crate). Zero sorry/axiom. All 239 Rust tests pass, 0 clippy
+crate (4th workspace crate). Zero sorry/axiom. All 267 Rust tests pass, 0 clippy
 warnings. Full Lean build + test_smoke.sh pass.
 
 #### AG4-A: sele4n-hal Crate Skeleton (FINDING-01/RUST-03)

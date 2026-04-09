@@ -16,3 +16,25 @@ pub const DEFAULT_TICK_HZ: u32 = 1000;
 /// Counter increments per tick at default rate: 54000000 / 1000 = 54000.
 /// Matches Lean `rpi5TimerConfig` `countsPerTick` computation.
 pub const COUNTS_PER_TICK: u32 = COUNTER_FREQ_HZ / DEFAULT_TICK_HZ;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timer_frequency_matches_board_lean() {
+        // Board.lean: timerFrequencyHz := 54000000
+        assert_eq!(COUNTER_FREQ_HZ, 54_000_000);
+    }
+
+    #[test]
+    fn counts_per_tick_at_1khz() {
+        // 54 MHz / 1000 Hz = 54000 counts per tick
+        assert_eq!(COUNTS_PER_TICK, 54_000);
+    }
+
+    #[test]
+    fn default_tick_rate() {
+        assert_eq!(DEFAULT_TICK_HZ, 1000);
+    }
+}
