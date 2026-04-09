@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG3 complete** (platform model completion) | ~~WS-F1..F4~~ (done) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG4 complete** (HAL crate + boot foundation) | ~~WS-F1..F4~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Proof deepening (critical gaps resolved)
@@ -38,6 +38,14 @@ and WS-K (full syscall dispatch) are also complete, providing the typed
 user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 ### H3 — In progress: Raspberry Pi 5 binding
+
+**Phase AG4 (HAL Crate + Boot Foundation) is complete.** 7 sub-tasks created the
+first hardware-executable code: the `sele4n-hal` Rust crate (4th workspace crate)
+with ARM64 boot sequence, PL011 UART driver (0xFE201000, 115200 8N1), MMU
+initialization (identity-mapped L1 block descriptors), exception vector table
+(16 entries, 2048-byte aligned for VBAR_EL1), trap entry/exit assembly (272-byte
+TrapFrame with full GPR save/restore), and kernel linker script (0x80000 entry).
+GIC-400 and timer stubs prepared for AG5.
 
 **Phase AG3 (Platform Model Completion) is complete.** 8 sub-tasks closed all
 Lean model gaps blocking hardware bring-up: `classifyMemoryRegion` platform

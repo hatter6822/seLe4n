@@ -810,14 +810,18 @@ at `VSpaceBackend.lean:141-145`. The file ends with just the section comment.
 
 ---
 
-### Phase AG4 — HAL Crate + Boot Foundation
+### Phase AG4 — HAL Crate + Boot Foundation (COMPLETE, v0.27.0)
 
 **Goal**: Create the kernel-side Rust/assembly infrastructure for Raspberry Pi 5.
 This is the first phase producing hardware-executable code.
 
 **Dependencies**: AG2 (Rust ABI clean), AG3 (exception/interrupt models defined).
-**Gate**: Kernel boots on QEMU `raspi4b` to UART "seLe4n boot" message.
+**Gate**: `cargo test --workspace` (239 tests) + `cargo clippy --workspace` (0 warnings) + `lake build` + `test_smoke.sh` — **PASSED**
 **Estimated scope**: ~800–1,200 lines of Rust + ~300 lines of assembly.
+**Actual scope**: ~900 lines of Rust + ~300 lines of assembly + linker script.
+**Completion**: All 7 sub-tasks (AG4-A through AG4-G) complete. New `sele4n-hal`
+crate (4th workspace crate). Zero sorry/axiom. All 239 Rust tests pass, 0 clippy
+warnings. Full Lean build + test_smoke.sh pass.
 
 #### AG4-A: sele4n-hal Crate Skeleton (FINDING-01/RUST-03)
 

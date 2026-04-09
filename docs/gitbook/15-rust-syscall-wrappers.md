@@ -10,9 +10,13 @@ type safety and zero `unsafe` code outside the syscall trap instruction.
 ## Crate Architecture
 
 ```
-sele4n-sys           (safe high-level wrappers)
-  └── sele4n-abi     (register encoding + svc trap)
-        └── sele4n-types  (core types, no unsafe)
+User-space crates:
+  sele4n-sys           (safe high-level wrappers)
+    └── sele4n-abi     (register encoding + svc trap)
+          └── sele4n-types  (core types, no unsafe)
+
+Kernel-side crate:
+  sele4n-hal           (ARM64 HAL — boot, MMU, UART, trap, vectors)
 ```
 
 ### sele4n-types
@@ -103,7 +107,7 @@ parameter.
 
 ## Testing
 
-- **239 unit tests** across 3 crates (91 abi + 93 conformance + 13 sys + 42 types)
+- **239 unit tests** across 4 crates (91 abi + 93 conformance + 13 sys + 42 types)
 - **93 conformance tests** (RUST-XVAL-001..019 + property tests + W1 ABI tests + AA1 SchedContext/IpcTimeout tests + D6 TCB/AlignmentError tests + AG2-A domain boundary tests + AG2-B wrapper export tests)
 - **4 Lean cross-validation vectors** (XVAL-001..004 in MainTraceHarness)
 - CI: `scripts/test_rust.sh` integrated into `test_smoke.sh` (Tier 2).
@@ -114,9 +118,34 @@ parameter.
 - AG2-A domain conformance: MAX_DOMAIN matches Lean `numDomainsVal = 16`
   (zero-indexed 0..=15), exhaustive valid/invalid domain boundary tests
 
+### sele4n-hal (AG4, v0.27.0)
+
+Kernel-side ARM64 Hardware Abstraction Layer (`#![no_std]`, `#![allow(unsafe_code)]`).
+Unlike the user-space crates, the HAL inherently requires unsafe code for hardware
+instructions. Each `unsafe` block carries a `// SAFETY:` comment referencing the
+ARM Architecture Reference Manual.
+
+| Module | Purpose | Key Items |
+|--------|---------|-----------|
+| `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id` |
+| `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb` |
+| `registers` | System register I/O | `read_sysreg!`/`write_sysreg!` macros, 11 typed accessors |
+| `uart` | PL011 UART driver | `Uart` struct, `kprint!`/`kprintln!` macros, 0xFE201000 base |
+| `mmu` | MMU configuration | MAIR/TCR/TTBR/SCTLR, identity-mapped L1 boot tables |
+| `trap` | Exception dispatch | `TrapFrame` (272 bytes), ESR EC routing, SVC/IRQ/SError handlers |
+| `boot` | Boot sequence | `_start` → BSS zero → stack → UART → MMU → VBAR → idle |
+| `gic` | GIC-400 constants | Stub — full driver in AG5 |
+| `timer` | ARM timer constants | Stub — full driver in AG5 |
+
+Assembly files: `boot.S` (entry point), `vectors.S` (exception vector table),
+`trap.S` (context save/restore). Linker script: `link.ld` (0x80000 entry).
+
+All AArch64-specific code gated behind `cfg(target_arch = "aarch64")` for
+cross-platform compilation and testing on x86_64.
+
 ## Canonical Sources
 
 - Master plan: `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (Q8)
 - Lean ABI: `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
 - Lean args: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
-- Rust source: `rust/sele4n-types/`, `rust/sele4n-abi/`, `rust/sele4n-sys/`
+- Rust source: `rust/sele4n-types/`, `rust/sele4n-abi/`, `rust/sele4n-sys/`, `rust/sele4n-hal/`

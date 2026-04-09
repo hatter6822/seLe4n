@@ -1,3 +1,76 @@
+## v0.27.0 — WS-AG Phase AG4: HAL Crate + Boot Foundation
+
+Phase AG4 of WS-AG H3 Hardware Binding Audit Remediation. Creates the
+kernel-side Rust/assembly infrastructure for Raspberry Pi 5 — the first phase
+producing hardware-executable code. New `sele4n-hal` crate with ARM64 boot
+sequence, PL011 UART driver, MMU initialization, exception vector table, and
+trap entry/exit assembly. 7 sub-tasks (AG4-A through AG4-G) closing 7 findings
+from the H3 hardware binding audit. Rust workspace now has 4 crates.
+Gate: `cargo test --workspace` (239 tests) + `cargo clippy --workspace`
+(0 warnings) + `lake build` + `test_smoke.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AG4-A** (FINDING-01/RUST-03): `sele4n-hal` crate created. `#![no_std]`,
+  ARM64 HAL for seLe4n kernel. Modules: `cpu` (WFE, WFI, NOP, ERET,
+  `current_core_id`), `barriers` (DMB ISH/SY, DSB ISH/SY, ISB), `registers`
+  (MRS/MSR macros, 11 system register accessors), `uart`, `mmu`, `trap`,
+  `boot`, `gic` (stub), `timer` (stub). All AArch64-specific code gated behind
+  `cfg(target_arch = "aarch64")` for cross-platform compilation. `build.rs`
+  assembles `.S` files via `cc` crate. Added to workspace members
+- **AG4-B** (H3-PLAT-04/RUST-01): ARM64 exception vector table in `vectors.S`.
+  16 entries (4 exception types × 4 source states), 2048-byte aligned for
+  VBAR_EL1. Current EL SPx routes: sync → `__el1_sync_entry`, IRQ →
+  `__el1_irq_entry`, SError → `__el1_serror_entry`. Lower EL AArch64 routes:
+  sync → `__el0_sync_entry` (SVC syscall path), IRQ → `__el0_irq_entry`.
+  Unused entries branch to WFE stub. AArch32 lower EL not supported
+- **AG4-C** (H3-RUST-02): Trap entry/exit assembly in `trap.S`. `save_context`
+  macro: saves 31 GPRs (x0-x30) + SP_EL0 + ELR_EL1 + SPSR_EL1 into 272-byte
+  `TrapFrame` on kernel stack. `restore_context` macro: reverse restore + ERET.
+  `TrapFrame` Rust struct in `trap.rs` with ABI register accessors (x0-x5, x7)
+  matching seLe4n syscall convention. `handle_synchronous_exception`: ESR EC
+  dispatch (SVC → syscall stub, data/instruction abort → vmFault, alignment →
+  userException). `handle_irq`: GIC stub (AG5). `handle_serror`: fatal halt.
+  Compile-time assertion: `TrapFrame` is exactly 272 bytes
+- **AG4-D** (H3-RUST-10): Kernel linker script `link.ld`. Entry at `_start`,
+  load address 0x80000 (standard RPi5 kernel entry). Sections: `.text.boot` →
+  `.text.vectors` (2048-aligned) → `.text` → `.rodata` → `.data` → `.bss` →
+  `.bss.page_tables` (4096-aligned) → `.stack` (64 KiB). Exports `__bss_start`,
+  `__bss_end`, `__stack_top`, `__page_tables_start` linker symbols. RAM origin
+  at 0x80000 with 0xFBF80000 length
+- **AG4-E** (H3-PLAT-08): Boot sequence in `boot.S` + `boot.rs`. Assembly
+  entry `_start`: MPIDR core ID check (park non-core-0), DTB pointer save
+  (x19), BSS zeroing (16-byte stride STP), stack setup (`__stack_top`), branch
+  to `rust_boot_main`. Rust boot: Phase 1 (UART init, boot banner), Phase 2
+  (MMU init, VBAR set), Phase 3 (hardware init summary, idle loop). Secondary
+  cores enter WFE spin loop (SMP deferred to WS-V)
+- **AG4-F** (H3-PLAT-05): MMU initialization in `mmu.rs`. MAIR_EL1: 3
+  attribute indices (Normal WB-WA-RA at idx 0, Device-nGnRnE at idx 1, Normal
+  NC at idx 2). TCR_EL1: T0SZ/T1SZ = 16 (48-bit VA), TG0/TG1 = 4 KiB
+  granule, IPS = 44-bit PA (BCM2712), Inner Shareable, WB cacheable. Boot page
+  tables: L1 identity map with 1 GiB block descriptors — 3 entries Normal RAM
+  (0x00-0xBF_FFFF_FFFF) + 1 entry Device (0xC0-0xFF_FFFF_FFFF covering
+  peripherals). SCTLR_EL1: M + C + I bits set. DSB ISH + ISB barriers around
+  MMU enable
+- **AG4-G** (H3-PLAT-06): PL011 UART driver in `uart.rs`. Base address
+  0xFE201000 (BCM2712 UART0, matching Board.lean `uart0Base`). 48 MHz UART
+  clock, 115200 baud (IBRD=26, FBRD=3). 8N1 line control with FIFO enabled.
+  Blocking `putc` (polls TXFF), `puts` with CR/LF conversion, non-blocking
+  `getc`. `core::fmt::Write` implementation for `write!`/`writeln!` macros.
+  `kprint!`/`kprintln!` global macros using `&raw mut` for safe static access.
+  Global `BOOT_UART` instance with `init_boot_uart()` initializer
+
+### Metrics
+
+- **New Rust crate**: `sele4n-hal` (4th workspace crate)
+- **New files**: 13 (10 Rust `.rs`, 3 assembly `.S`, 1 `build.rs`, 1 `link.ld`,
+  1 `Cargo.toml`)
+- **Lines added**: ~900 Rust + ~300 assembly + linker script
+- **Rust workspace**: 4 crates, 239 tests, 0 clippy warnings
+- **Lean**: Zero changes to production proofs (zero sorry/axiom maintained)
+
+---
+
 ## v0.26.4 — WS-AG Phase AG3: Platform Model Completion + Audit
 
 Phase AG3 of WS-AG H3 Hardware Binding Audit Remediation. Completes all Lean
