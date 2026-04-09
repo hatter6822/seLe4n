@@ -299,13 +299,13 @@ corrections noted) and require code, proof, or documentation changes.
 
 ## 3. Detailed Phase Specifications
 
-### Phase AG1 — Pre-Hardware Lean Code Fixes
+### Phase AG1 — Pre-Hardware Lean Code Fixes (COMPLETE, v0.26.0)
 
 **Goal**: Fix verified Lean-side code issues from the release audit before
 beginning hardware work. Establishes a clean baseline.
 
 **Dependencies**: None (first phase).
-**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh`
+**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_smoke.sh` — **PASSED**
 **Estimated scope**: ~200–300 lines of Lean changes.
 
 #### AG1-A: CBS Re-enqueue at Effective Priority (S-04)
@@ -564,14 +564,16 @@ project is at `0.25.27`. 21 minor versions behind.
 
 ---
 
-### Phase AG3 — Platform Model Completion
+### Phase AG3 — Platform Model Completion (COMPLETE, v0.26.3)
 
 **Goal**: Complete Lean model gaps that block hardware bring-up. All changes
 are pure Lean — no hardware code yet.
 
 **Dependencies**: AG1 (clean baseline). AG2 independent.
-**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_full.sh`
+**Gate**: `source ~/.elan/env && lake build` + `./scripts/test_full.sh` — **PASSED**
 **Estimated scope**: ~600–900 lines of new Lean code.
+**Completion**: All 8 sub-tasks (AG3-A through AG3-H) complete. Zero sorry/axiom.
+3 new files created, 3 existing files extended. Full build + test_full.sh pass.
 
 #### AG3-A: classifyMemoryRegion Implementation (P-01)
 

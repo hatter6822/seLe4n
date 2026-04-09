@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG1 complete** (pre-hardware Lean fixes) | ~~WS-F1..F4~~ (done) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG3 complete** (platform model completion) | ~~WS-F1..F4~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Proof deepening (critical gaps resolved)
@@ -39,10 +39,17 @@ user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 ### H3 — In progress: Raspberry Pi 5 binding
 
+**Phase AG3 (Platform Model Completion) is complete.** 8 sub-tasks closed all
+Lean model gaps blocking hardware bring-up: `classifyMemoryRegion` platform
+classification (P-01), `applyMachineConfig` full field application (P-04),
+ARM64 exception model with ESR classification (FINDING-04), GIC-400 interrupt
+dispatch (FINDING-06), 54 MHz hardware timer model (FINDING-08), EL0/EL1
+exception level model (H3-ARCH-05), system register file with frame lemmas
+(H3-ARCH-06), and VSpaceBackend HashMap instance (H3-ARCH-10).
+
 **Phase AG1 (Pre-Hardware Lean Code Fixes) is complete.** 6 sub-tasks resolved
-scheduler priority insertion bugs (S-04), timeout diagnostic handling (S-05),
-`uniqueWaiters` invariant composition (F-T02), boot duplicate detection (P-03),
-frozen replenish queue fidelity (F-F04), and runtime cross-subsystem checks (T-01).
+scheduler priority insertion bugs, timeout diagnostics, `uniqueWaiters`,
+boot duplicate detection, frozen replenish queue, and runtime checks.
 Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md).
 
 **H3-prep (structural foundation) is complete.** The `Platform/` directory

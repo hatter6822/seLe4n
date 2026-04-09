@@ -138,7 +138,7 @@ SeLe4n/Kernel/Service/*          Service orchestration + policy
     Invariant/Acyclicity.lean    Dependency acyclicity proofs
 SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace + VSpaceBackend + RegisterDecode
   VSpace.lean                    VSpace HashMap map/unmap/lookup, W^X enforcement
-  VSpaceBackend.lean             VSpace backend operations
+  VSpaceBackend.lean             VSpace backend operations + HashMap instance (AG3-H)
   VSpaceInvariant.lean           VSpace invariant proofs
   TlbModel.lean                  TLB flush model
   Adapter.lean                   Architecture adapter
@@ -147,6 +147,9 @@ SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace + VSpaceBacke
   RegisterDecode.lean            Total deterministic decode: raw registers → typed kernel IDs
   SyscallArgDecode.lean          Per-syscall typed argument decode (msgRegs → typed structs)
   IpcBufferValidation.lean       D3: IPC buffer address validation and setIPCBufferOp
+  ExceptionModel.lean            AG3-C/F: ARM64 exception types, ESR classification, dispatch, EL0/EL1
+  InterruptDispatch.lean         AG3-D: GIC-400 interrupt dispatch (acknowledge→handle→EOI)
+  TimerModel.lean                AG3-E: Hardware timer binding (54 MHz RPi5, monotonicity proof)
 SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
   Enforcement.lean               Re-export hub
     Enforcement/Wrappers.lean    Policy-gated operation wrappers
@@ -497,6 +500,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-AG Phase AG3 COMPLETE** (v0.26.3): H3 Hardware Binding Audit Remediation — Phase AG3: Platform Model Completion. 8 sub-tasks (AG3-A through AG3-H). `classifyMemoryRegion` platform memory map classification (P-01). `applyMachineConfig` full field application with 6 new `MachineState` fields (P-04). ARM64 exception model with ESR classification and SVC→syscall dispatch (FINDING-04). Interrupt dispatch with GIC-400 acknowledge→handle→EOI sequence (FINDING-06). Hardware timer model binding at 54 MHz for RPi5 (FINDING-08). Exception level EL0/EL1 model with privilege predicates (H3-ARCH-05). System register file with read/write operations and frame lemmas (H3-ARCH-06). VSpaceBackend HashMap instance with all typeclass laws proven (H3-ARCH-10). KernelError 44→49 variants. Gate: `lake build` + `test_full.sh`. Zero sorry/axiom. See `docs/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`
 - **WS-AG Phase AG2 Audit COMPLETE** (v0.26.2): Post-implementation audit of AG2. Fixed critical `sched_context_configure` IPC buffer overflow bug — 5th parameter (domain) was never written to IPC buffer overflow slot, would cause stale domain read on ARM64 hardware. Added `&mut IpcBuffer` parameter matching `service_register` pattern. Clarified `DomainId::MAX_VALID` type-level vs ABI-level comment. Fixed CHANGELOG AG2-C version text. Gate: `cargo test --workspace` (239 tests), `cargo clippy --workspace` (0 warnings). Zero sorry/axiom.
 - **WS-AG Phase AG2 COMPLETE** (v0.26.1): H3 Hardware Binding Audit Remediation — Phase AG2: Pre-Hardware Rust ABI Fixes. 3 sub-tasks (AG2-A through AG2-C). `MAX_DOMAIN` constant fix 255→15 matching Lean `numDomainsVal = 16` (R-05). `sele4n-sys/src/sched_context.rs` typed wrappers for syscalls 17-19 completing all 25 syscall coverage (R-01). Rust workspace version sync 0.25.6→0.26.1 (RUST-04). Bonus clippy fix in `tcb.rs`. Gate: `cargo test --workspace` (239 tests), `cargo clippy --workspace` (0 warnings). Zero sorry/axiom. See `docs/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`
 - **WS-AG Phase AG1 COMPLETE** (v0.26.0): H3 Hardware Binding Audit Remediation — Phase AG1: Pre-Hardware Lean Code Fixes. 6 sub-tasks (AG1-A through AG1-F). CBS re-enqueue at effective priority with `resolveInsertPriority` helper, 5 call sites fixed (S-04). `timeoutBlockedThreads` diagnostic error collection (S-05). `uniqueWaiters` composed as 15th conjunct of `ipcInvariantFull` (F-T02). `bootFromPlatformWithWarnings` duplicate detection (P-03). `FrozenSchedulerState` `replenishQueue` field + 2 freeze proofs (F-F04). Runtime `crossSubsystemInvariant` checks — 10 decidable predicates (full coverage) integrated into test harness (T-01). Zero sorry/axiom. See `docs/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`
@@ -516,7 +520,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10): Comprehensive Audit Remediation — 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Phase AC6 COMPLETE (documentation, testing & closure: T-03 DecodingSuite, audit errata, workstream history). Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
 - **WS-AB PORTFOLIO COMPLETE** (v0.24.0–v0.25.5): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations implemented: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3). Priority Inheritance Protocol (D4). Bounded Latency Theorem WCRT = D*L_max + N*(B+P) (D5). API Surface Integration & Closure (D6). Rust ABI synchronized (SyscallId 25, KernelError 44). Zero sorry/axiom. See `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
-- **Next milestone**: Raspberry Pi 5 hardware binding (WS-AG Phases AG3–AG10)
+- **Next milestone**: Raspberry Pi 5 hardware binding (WS-AG Phases AG4–AG10)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist

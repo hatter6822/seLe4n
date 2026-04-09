@@ -17,7 +17,7 @@ namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
 
-/-- F-04: Kernel error codes. This inductive has 44 variants.
+/-- F-04: Kernel error codes. This inductive has 49 variants.
 **Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
 patterns when matching on `KernelError`. Lean's exhaustiveness checker will
 flag missing arms at compile time, but catch-all patterns silently swallow
@@ -76,6 +76,11 @@ inductive KernelError where
   | invalidSyscallArgument  -- X5-E/M-11: syscall-specific argument decode failure (distinct from generic invalidArgument)
   | ipcTimeout             -- WS-Z/Z6: IPC blocked thread timed out due to SchedContext budget expiry
   | alignmentError         -- D3-B: IPC buffer address not aligned to ipcBufferAlignment (512 bytes)
+  | vmFault                -- AG3-C: virtual memory fault (data abort or instruction abort)
+  | userException          -- AG3-C: unclassified synchronous exception from user mode
+  | hardwareFault          -- AG3-C: SError (asynchronous external abort / hardware error)
+  | notSupported           -- AG3-C: unsupported exception type (e.g., FIQ)
+  | invalidIrq             -- AG3-D: interrupt ID not mapped in IRQ handler table
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard

@@ -314,21 +314,50 @@ theorem extractMemoryRegions_truncated (blob : ByteArray) (h : blob.size < 16) :
   rw [hFuel]
   simp [extractMemoryRegions.go]
 
-/-- T6-M: Classify an FDT memory region as a `MemoryKind`.
-    RAM regions have `kind = .ram`. Device regions are not present in the
-    `/memory` node — they come from individual device nodes (deferred to WS-U).
-    Reserved regions are identified by the memory reservation block.
+/-- AG3-A (P-01): Classify an address against a platform memory map.
+    Looks up the address in the provided memory map regions:
+    - If it falls within a `.ram` region → `.ram`
+    - If it falls within a `.device` region → `.device`
+    - If it falls within a `.reserved` region → that region's kind
+    - If no region matches → `.reserved` (unmapped = reserved)
 
-    AF3-F (AF-41): Always returns `.ram`. ARM64 device memory type
-    classification from DTB `device_type` property is deferred to WS-V. -/
-def classifyMemoryRegion (_region : FdtMemoryRegion) : MemoryKind :=
-  .ram  -- /memory node entries are always RAM
+    The platform memory map is provided by `MachineConfig.memoryMap` and
+    contains all declared physical memory regions with their kinds. -/
+def classifyMemoryRegion (region : FdtMemoryRegion)
+    (platformMemory : List MemoryRegion := []) : MemoryKind :=
+  match platformMemory.find? fun r => r.contains ⟨region.base⟩ with
+  | some r => r.kind
+  | none => .ram  -- Default: /memory node entries are RAM when no map provided
 
-/-- T6-M: Convert parsed FDT memory regions to `MemoryRegion` values. -/
+/-- AG3-A (P-01): Classify a raw physical address against a platform memory map.
+    Standalone address classification for use outside FDT parsing contexts. -/
+def classifyAddress (addr : PAddr) (platformMemory : List MemoryRegion) : MemoryKind :=
+  match platformMemory.find? fun r => r.contains addr with
+  | some r => r.kind
+  | none => .reserved  -- Unmapped addresses are reserved
+
+/-- T6-M: Convert parsed FDT memory regions to `MemoryRegion` values.
+    AG3-A: Accepts an optional platform memory map for address classification. -/
 def fdtRegionsToMemoryRegions (regions : List FdtMemoryRegion)
-    : List MemoryRegion :=
+    (platformMemory : List MemoryRegion := []) : List MemoryRegion :=
   regions.map fun r =>
-    { base := ⟨r.base⟩, size := r.size, kind := classifyMemoryRegion r }
+    { base := ⟨r.base⟩, size := r.size, kind := classifyMemoryRegion r platformMemory }
+
+/-- AG3-A: When no platform memory map is provided, classification defaults to `.ram`. -/
+theorem classifyMemoryRegion_default (region : FdtMemoryRegion) :
+    classifyMemoryRegion region = .ram := rfl
+
+/-- AG3-A: Unmapped addresses are classified as `.reserved`. -/
+theorem classifyAddress_unmapped (addr : PAddr) (pm : List MemoryRegion)
+    (hNone : pm.find? (fun r => r.contains addr) = none) :
+    classifyAddress addr pm = .reserved := by
+  simp [classifyAddress, hNone]
+
+/-- AG3-A: When a matching region is found, classification returns its kind. -/
+theorem classifyAddress_found (addr : PAddr) (pm : List MemoryRegion) (r : MemoryRegion)
+    (hFound : pm.find? (fun r => r.contains addr) = some r) :
+    classifyAddress addr pm = r.kind := by
+  simp [classifyAddress, hFound]
 
 /-- T6-M: Attempt to construct a `DeviceTree` from a DTB blob.
     Currently implements:

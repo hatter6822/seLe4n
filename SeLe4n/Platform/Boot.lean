@@ -318,15 +318,22 @@ theorem bootFromPlatformWithWarnings_wellFormed_no_warnings (config : PlatformCo
     IntermediateState invariant witnesses carry forward because they do not
     depend on `MachineState` fields.
 
-    AF3-F (AF-45): Currently copies only `physicalAddressWidth` from
-    `MachineConfig`. Other hardware parameters (register width, cache
-    line size, etc.) are not yet propagated. Full `MachineConfig`
-    application is deferred to WS-V. -/
+    AG3-B (P-04): Copies all `MachineConfig` fields to machine state:
+    `physicalAddressWidth`, `registerWidth`, `virtualAddressWidth`,
+    `pageSize`, `maxASID`, `memoryMap`, `registerCount`. Invariant
+    witnesses thread through unchanged because none depend on machine
+    metadata fields. -/
 def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
     IntermediateState where
   state := { ist.state with
     machine := { ist.state.machine with
-      physicalAddressWidth := config.physicalAddressWidth } }
+      physicalAddressWidth := config.physicalAddressWidth
+      registerWidth := config.registerWidth
+      virtualAddressWidth := config.virtualAddressWidth
+      pageSize := config.pageSize
+      maxASID := config.maxASID
+      memoryMap := config.memoryMap
+      registerCount := config.registerCount } }
   hAllTables := ist.hAllTables
   hPerObjectSlots := ist.hPerObjectSlots
   hPerObjectMappings := ist.hPerObjectMappings
@@ -344,6 +351,36 @@ theorem applyMachineConfig_objects_eq (ist : IntermediateState) (config : Machin
 theorem applyMachineConfig_physicalAddressWidth (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.machine.physicalAddressWidth =
     config.physicalAddressWidth := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `registerWidth` from config. -/
+theorem applyMachineConfig_registerWidth (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.registerWidth =
+    config.registerWidth := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `virtualAddressWidth` from config. -/
+theorem applyMachineConfig_virtualAddressWidth (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.virtualAddressWidth =
+    config.virtualAddressWidth := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `pageSize` from config. -/
+theorem applyMachineConfig_pageSize (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.pageSize =
+    config.pageSize := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `maxASID` from config. -/
+theorem applyMachineConfig_maxASID (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.maxASID =
+    config.maxASID := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `memoryMap` from config. -/
+theorem applyMachineConfig_memoryMap (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.memoryMap =
+    config.memoryMap := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `registerCount` from config. -/
+theorem applyMachineConfig_registerCount (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.registerCount =
+    config.registerCount := rfl
 
 -- ============================================================================
 -- U6-G (U-M15): Boot-to-Runtime Invariant Bridge
