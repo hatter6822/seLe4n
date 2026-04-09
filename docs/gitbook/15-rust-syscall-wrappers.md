@@ -118,7 +118,7 @@ parameter.
 - AG2-A domain conformance: MAX_DOMAIN matches Lean `numDomainsVal = 16`
   (zero-indexed 0..=15), exhaustive valid/invalid domain boundary tests
 
-### sele4n-hal (AG4, v0.27.0)
+### sele4n-hal (AG4, v0.26.5)
 
 Kernel-side ARM64 Hardware Abstraction Layer (`#![no_std]`, `#![allow(unsafe_code)]`).
 Unlike the user-space crates, the HAL inherently requires unsafe code for hardware

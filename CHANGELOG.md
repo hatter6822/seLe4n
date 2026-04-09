@@ -1,4 +1,4 @@
-## v0.27.0 — WS-AG Phase AG4: HAL Crate + Boot Foundation
+## v0.26.5 — WS-AG Phase AG4: HAL Crate + Boot Foundation
 
 Phase AG4 of WS-AG H3 Hardware Binding Audit Remediation. Creates the
 kernel-side Rust/assembly infrastructure for Raspberry Pi 5 — the first phase
