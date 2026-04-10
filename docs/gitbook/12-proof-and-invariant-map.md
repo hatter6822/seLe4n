@@ -700,6 +700,12 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + TLB-flush operations
 - 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
 
+Cache coherency model (`CacheModel.lean`, AG8-B):
+- `CacheLineState` — invalid/clean/dirty abstraction of ARM64 D-cache and I-cache line state
+- `CacheState` — per-address D-cache and I-cache state (function representation)
+- `dcClean`, `dcInvalidate`, `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA` — 5 cache maintenance operations
+- 10 preservation theorems: `dcCleanInvalidate_makes_line_invalid`, `icInvalidateAll_coherent`, `empty_cacheCoherent`, `dcClean_preserves_icache`, `dcCleanInvalidate_preserves_icache`, `dcClean_frame`, `dcCleanInvalidate_frame`, `dcClean_preserves_dcacheCoherent`, `dcCleanInvalidate_preserves_dcacheCoherent`, `pageTableUpdate_icache_coherent`
+
 ## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
 
 Badge-override safety in `cspaceMint` is now fully proven:
@@ -2552,8 +2558,11 @@ object architecture delivered across phases Z1–Z9 (213 sub-tasks, v0.23.0–v0
    bounded by `maxReplenishments × budget` over any time window
 2. **Donation chain acyclicity**: `donationChainAcyclic` — no circular SchedContext
    donation chains (prevents deadlock in passive server protocol). AG8-F
-   extends to k>2 cycles via `donationChainAcyclic_general` +
-   `blockedOnReply_cannot_call`
+   provides `donationChainAcyclic_general` (donation owners are in
+   blockedOnReply state, extracted from `donationOwnerValid`) and
+   `blockedOnReply_cannot_call` (blocked threads cannot initiate calls).
+   The formal bridge lemma from donation edges to `blockingAcyclic`
+   sub-relation is deferred to WS-V
 3. **Timeout termination**: `blockedThreadTimeoutConsistent` — budget-exhausted
    IPC blocks are guaranteed to be unblocked via `timeoutBlockedThreads`
 4. **Admission control soundness**: `admissionCheck` enforces total utilization

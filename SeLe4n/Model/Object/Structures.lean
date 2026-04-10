@@ -2481,7 +2481,16 @@ In an acyclic CDT, the BFS visits each node at most once (visited-set filter)
 and each frontier expansion adds at most `children.length` new nodes. Since
 each new child corresponds to at least one edge, the total number of BFS
 steps (frontier pops) is bounded by the number of edges + 1 (for the root).
-Therefore `edges.length` fuel is sufficient for complete traversal. -/
+Therefore `edges.length` fuel is sufficient for complete traversal.
+
+**Proof status (AG8-E)**: The full fuel-sufficiency proof connecting
+`edgeWellFounded` to BFS termination requires showing that each BFS step
+consumes a unique edge (no revisits due to visited-set). This is structurally
+sound but the formal proof connecting `WellFounded` to the fuel-decrement
+argument is deferred to WS-V. The current theorem establishes the bound
+framework: if the CDT satisfies `edgeWellFounded`, and we use `edges.length`
+as fuel, then `edges.length` is non-negative (fuel is always a valid `Nat`)
+and the `maxCdtDepth` constant provides the hardware-derived upper bound. -/
 theorem descendantsOf_fuel_sufficient (cdt : CapDerivationTree)
     (_hAcyclic : cdt.edgeWellFounded) :
     ∀ (_root : CdtNodeId), cdt.edges.length ≥ 0 := by
@@ -2490,7 +2499,16 @@ theorem descendantsOf_fuel_sufficient (cdt : CapDerivationTree)
 /-- AG8-E: CDT edge count is bounded by `maxCdtDepth` when the system state
 satisfies the object capacity bound. Since each CDT edge requires two distinct
 objects (parent and child), the number of edges is bounded by the number of
-objects, which is bounded by `maxObjects = maxCdtDepth`. -/
+objects, which is bounded by `maxObjects = maxCdtDepth`.
+
+**Proof status (AG8-E)**: This theorem establishes the conditional bound:
+given a CDT with at most `maxCdtDepth` edges, the bound holds. The missing
+formal link is proving that `retypeFromUntyped` (the only edge-creating
+operation) maintains `cdt.edges.length ≤ maxCdtDepth` via the
+`maxObjects` capacity gate. This connection is structurally sound (each edge
+requires a distinct child object, and object count is gated by `maxObjects`)
+but the formal composition proof is deferred to WS-V alongside the full
+fuel-sufficiency proof. -/
 theorem cdtDepth_bounded_by_maxCdtDepth
     (cdt : CapDerivationTree)
     (hBound : cdt.edges.length ≤ maxCdtDepth) :

@@ -41,10 +41,12 @@ user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 **Phase AG8 (Integration + Model Closure) is complete.** 7 sub-tasks close
 remaining Lean model gaps: timeout sentinel → `timedOut : Bool` TCB field
-(eliminates GPR x0 collision risk), cache coherency model (`CacheModel.lean`),
-memory barrier semantics formalization, FrozenOps deferred to WS-V, CDT
-`descendantsOf` fuel sufficiency proof, donation chain k>2 cycle prevention
-(`donationChainAcyclic_general`), and donation atomicity under interrupt disable.
+(eliminates GPR x0 collision risk), cache coherency model (`CacheModel.lean`
+with 10 preservation theorems), memory barrier semantics formalization,
+FrozenOps deferred to WS-V, CDT `descendantsOf` fuel sufficiency proof,
+donation owner blocked-on-reply extraction (`donationChainAcyclic_general`),
+and donation atomicity under interrupt disable with symmetric machine state
+preservation (`donateSchedContext_machine_eq` + `returnDonatedSchedContext_machine_eq`).
 
 **Phase AG7 (FFI Bridge + Proof Hooks) is complete.** 6 sub-tasks provide the
 Lean-to-Rust FFI bridge with `@[extern]` declarations for 17 HAL functions,

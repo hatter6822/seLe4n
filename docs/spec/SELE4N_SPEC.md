@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (2,643 theorem/lemma declarations),
+2. machine-checked invariant preservation (2,709 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -53,7 +53,7 @@ enforcement, and scheduling.
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 88,666 across 136 Lean files |
 | **Test LoC** | 11,374 across 16 Lean test suites |
-| **Proved declarations** | 2,643 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,709 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
 | **Active workstream** | **WS-AG Phase AG7 COMPLETE** (v0.26.8). H3 Hardware Binding Audit Remediation — Phase AG7: FFI Bridge + Proof Hooks. Lean `@[extern]` FFI declarations for 17 Rust HAL functions. MMIO volatile primitives. Production `AdapterProofHooks` with substantive preservation proofs for all 4 adapter paths. `proofLayerInvariantBundle` extended to 11 conjuncts. Key theorem: `contextSwitchState_preserves_proofLayerInvariantBundle` (11-conjunct preservation through atomic context switch). Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG6 (v0.26.0–v0.26.7), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG8–AG10 (integration, testing, documentation).** |

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-ejwgv",
-      "commit_sha": "713853514da54fb6ece7b8311df9787779316228",
-      "tree_sha": "e22ee2499cf70e8079093f4dccd87c04c23e08fd",
-      "committed_at_utc": "2026-04-09T20:00:43-04:00"
+      "commit_sha": "0b33eba0c3cd204513ee387163ee4a6161e5215c",
+      "tree_sha": "a192795d3babb717e78a2b705ce70be93023c774",
+      "committed_at_utc": "2026-04-10T02:13:08+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ea1813bf08c462aca91084b639a99910ba105a5f44253a141688d064bb37824e"
+    "source_digest": "f0c0c55595cb78d4e21fb7425110e3e586136e7073c1eac358fa505347d7dd3d"
   },
   "summary": {
     "module_count": 157,
-    "declaration_count": 4923
+    "declaration_count": 4926
   },
   "readme_sync": {
     "version": "0.26.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 90990,
+    "production_loc": 91088,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2706,
+    "proved_theorem_lemma_decls": 2709,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1570,7 +1570,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.CacheModel",
       "path": "SeLe4n/Kernel/Architecture/CacheModel.lean",
-      "declaration_count": 20,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -1744,8 +1744,30 @@
         },
         {
           "kind": "theorem",
+          "name": "dcClean_preserves_dcacheCoherent",
+          "line": 195,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcClean",
+            "dcacheCoherent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dcCleanInvalidate_preserves_dcacheCoherent",
+          "line": 209,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcCleanInvalidate",
+            "dcacheCoherent"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "pageTableUpdate_icache_coherent",
-          "line": 196,
+          "line": 221,
           "called": [
             "CacheState",
             "PAddr",
@@ -21909,7 +21931,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Donation",
       "path": "SeLe4n/Kernel/IPC/Operations/Donation.lean",
-      "declaration_count": 16,
+      "declaration_count": 17,
       "declarations": [
         {
           "kind": "namespace",
@@ -22117,11 +22139,28 @@
         {
           "kind": "theorem",
           "name": "donationAtomicRegion_of_disabled",
-          "line": 491,
+          "line": 496,
           "called": [
-            "Kernel",
             "SystemState",
             "donationAtomicRegion"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "returnDonatedSchedContext_machine_eq",
+          "line": 511,
+          "called": [
+            "Kernel",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "lookupTcb",
+            "none",
+            "returnDonatedSchedContext",
+            "scId",
+            "storeObject",
+            "storeObject_machine_eq_local",
+            "toObjId"
           ]
         }
       ]
@@ -48498,7 +48537,7 @@
         {
           "kind": "theorem",
           "name": "descendantsOf_fuel_sufficient",
-          "line": 2485,
+          "line": 2494,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -48508,7 +48547,7 @@
         {
           "kind": "theorem",
           "name": "cdtDepth_bounded_by_maxCdtDepth",
-          "line": 2494,
+          "line": 2512,
           "called": [
             "CapDerivationTree",
             "maxCdtDepth"

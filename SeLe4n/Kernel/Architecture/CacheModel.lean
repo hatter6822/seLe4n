@@ -190,6 +190,31 @@ theorem dcCleanInvalidate_frame (cs : CacheState) (addr other : SeLe4n.PAddr)
     (dcCleanInvalidate cs addr).dcache other = cs.dcache other := by
   simp [dcCleanInvalidate, hNe]
 
+/-- DC CVAC preserves D-cache coherency: cleaning a line can only transition
+dirty→clean, which maintains the ≠dirty invariant for all addresses. -/
+theorem dcClean_preserves_dcacheCoherent (cs : CacheState) (addr : SeLe4n.PAddr)
+    (h : dcacheCoherent cs) :
+    dcacheCoherent (dcClean cs addr) := by
+  intro other
+  simp only [dcClean]
+  split
+  · -- other = addr
+    subst_vars
+    split <;> simp_all
+  · -- other ≠ addr
+    exact h other
+
+/-- DC CIVAC preserves D-cache coherency: invalidating a line produces
+`.invalid`, which trivially satisfies ≠dirty. -/
+theorem dcCleanInvalidate_preserves_dcacheCoherent (cs : CacheState) (addr : SeLe4n.PAddr)
+    (h : dcacheCoherent cs) :
+    dcacheCoherent (dcCleanInvalidate cs addr) := by
+  intro other
+  simp only [dcCleanInvalidate]
+  split
+  · simp
+  · exact h other
+
 /-- Page table update protocol: after DC CIVAC on a page table page followed
 by IC IALLU, the resulting cache state is I-cache coherent. This models the
 required cache maintenance sequence for page table modifications. -/

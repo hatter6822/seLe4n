@@ -58,10 +58,34 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   `Platform/RPi5/RuntimeContract.lean` (hBind, hSc) and
   `Platform/RPi5/ProofHooks.lean` (hCurr, hObj)
 
+### Post-implementation audit fixes
+
+- **AG8-B audit**: Added `dcClean_preserves_dcacheCoherent` and
+  `dcCleanInvalidate_preserves_dcacheCoherent` — missing preservation theorems
+  proving D-cache coherency is maintained through clean and clean+invalidate
+  operations. Brings CacheModel preservation coverage to 10 theorems
+- **AG8-E audit**: Updated docstrings for `descendantsOf_fuel_sufficient` and
+  `cdtDepth_bounded_by_maxCdtDepth` to honestly document proof status. The
+  theorems are correct but weak (BFS initiation guarantee / identity bridge).
+  Full fuel-sufficiency proof deferred to WS-V with the CDT rework
+- **AG8-F audit**: Rewrote `donationChainAcyclic_general` docstring to
+  accurately describe what it proves (donation owner blocked-on-reply state
+  extraction). Formal bridge lemma from donation edges to `blockingAcyclic`
+  sub-relation documented as deferred to WS-V
+- **AG8-G audit**: Added `returnDonatedSchedContext_machine_eq` — symmetric
+  machine state preservation theorem for the return path. Mirrors
+  `donateSchedContext_machine_eq` with 3-step `storeObject` transitivity chain.
+  Closes asymmetric coverage gap between donate and return paths
+
 ### Key theorems
 
 - `donateSchedContext_machine_eq`: machine state preserved through SchedContext
   donation
+- `returnDonatedSchedContext_machine_eq`: machine state preserved through
+  SchedContext return (symmetric with donate)
+- `dcClean_preserves_dcacheCoherent`: D-cache coherency preserved through clean
+- `dcCleanInvalidate_preserves_dcacheCoherent`: D-cache coherency preserved
+  through clean+invalidate
 - `donationChainAcyclic_general`: donation owners in blockedOnReply state
 - `blockedOnReply_cannot_call`: blocked threads cannot initiate calls
 - `empty_cacheCoherent`: empty cache is trivially coherent

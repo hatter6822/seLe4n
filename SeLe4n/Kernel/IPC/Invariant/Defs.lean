@@ -1055,30 +1055,30 @@ theorem donationChainAcyclic_of_no_donated
 -- AG8-F: Donation Chain k>2 Cycle Prevention (H3-PROOF-03)
 -- ============================================================================
 
-/-- AG8-F: General donation chain acyclicity for arbitrary k-cycles.
+/-- AG8-F: Donation owner blocked-on-reply extraction.
 
-The 2-cycle prevention (`donationChainAcyclic`) prevents mutual donation pairs.
-For k > 2, the IPC protocol structurally prevents cycles:
+Extracts the structural consequence of `donationOwnerValid`: when a thread
+has a `.donated scId owner` binding, the owner thread is in `.blockedOnReply`
+state. This is a key ingredient in the k>2 cycle prevention argument:
 
 1. Donation edges are created only by `endpointCall` → `donateSchedContext`.
-2. A thread that donates its SchedContext enters `.blockedOnReply` state.
-3. A thread in `.blockedOnReply` cannot invoke `endpointCall` (requires `.ready`).
-4. Therefore, a thread at the *end* of a donation chain (the server) cannot
-   create a new donation edge back to any thread in the chain.
+2. A thread that donates its SchedContext enters `.blockedOnReply` state
+   (established by this theorem via `donationOwnerValid`).
+3. A thread in `.blockedOnReply` cannot invoke `endpointCall` (requires `.ready`)
+   — see `blockedOnReply_cannot_call`.
+4. Therefore, the owner at the *end* of a donation chain cannot create a new
+   donation edge back to any thread in the chain.
 
-This means any cycle of length k > 2 would require a thread in `.blockedOnReply`
-to simultaneously initiate a new Call, which is impossible by the ipcState
-state machine.
+**Formal status**: This theorem proves that donation owners are blocked. The
+full k>2 cycle prevention follows from two independent mechanisms:
+- This structural argument (owners are blocked → cannot extend the chain)
+- `blockingAcyclic` (10th conjunct of `crossSubsystemInvariant`), which
+  provides general acyclicity of the blocking graph via `WellFounded`.
+  Donation chains are a sub-relation of the blocking graph.
 
-**Bridge from blockingAcyclic**: The `blockingAcyclic` predicate (10th conjunct
-of `crossSubsystemInvariant`) provides general acyclicity of the blocking
-graph via `WellFounded`. Donation chains are a sub-relation of the blocking
-graph (every donation edge tid1 → tid2 implies tid1 is blocked on tid2).
-Therefore `blockingAcyclic` subsumes k-cycle prevention for all k.
-
-This theorem bridges `donationChainAcyclic` (2-cycle) with the general
-`blockingAcyclic` argument, establishing that the combined invariant
-prevents cycles of all lengths. -/
+The formal bridge lemma from donation edges to blocking graph edges
+(proving the sub-relation) is deferred to WS-V. The structural argument
+above provides the semantic justification. -/
 theorem donationChainAcyclic_general
     (st : SystemState)
     (_hDCA : donationChainAcyclic st)
