@@ -481,18 +481,16 @@ theorem donateSchedContext_machine_eq
               exact h2.trans h1
     | _ => simp only []; intro h; cases h
 
-/-- AG8-G: Corollary — donation is atomic because the kernel runs with
-interrupts disabled throughout. All kernel operations preserve
-`interruptsEnabled = false` (proven by AG5-G preservation theorems).
-`donateSchedContext` only modifies `objects` via `storeObject`, which
-preserves machine state per `storeObject_machine_eq`. Therefore the
-full donation sequence (read blocking graph → modify bindings →
-propagate PIP) executes atomically.
+/-- AG8-G: Convenience wrapper — packages interrupt-disabled hypotheses
+into `donationAtomicRegion`. This is `And.intro` of the two hypotheses;
+the caller must establish both.
 
-**Note**: This theorem packages hypotheses that the caller must establish.
-The `donateSchedContext_machine_eq` theorem proves that `donateSchedContext`
-preserves `machine` state, so if interrupts are disabled before the call,
-they remain disabled after. -/
+The substantive machine preservation proofs that make atomicity meaningful
+are the `*_machine_eq` theorems: `donateSchedContext_machine_eq`,
+`returnDonatedSchedContext_machine_eq`, `applyCallDonation_machine_eq`,
+and `applyReplyDonation_machine_eq`. These prove that if interrupts are
+disabled before a donation operation, they remain disabled after (since
+the entire `machine` field is preserved). -/
 theorem donationAtomicRegion_of_disabled
     (st st' : SystemState)
     (hPre : st.machine.interruptsEnabled = false)
@@ -549,5 +547,70 @@ theorem returnDonatedSchedContext_machine_eq
                 have h3 := storeObject_machine_eq_local p2.2 _ _ _ hS3
                 exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
+
+-- ============================================================================
+-- AG8-G: Wrapper function machine state preservation
+-- ============================================================================
+
+/-- AG8-G: applyCallDonation preserves machine state.
+Composition of `donateSchedContext_machine_eq`: all fallback paths return `st`
+unchanged, and the success path delegates to `donateSchedContext` which
+preserves machine state. -/
+theorem applyCallDonation_machine_eq
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
+    (applyCallDonation st caller receiver).machine = st.machine := by
+  unfold applyCallDonation
+  cases lookupTcb st receiver with
+  | none => rfl
+  | some receiverTcb =>
+    simp only []
+    cases receiverTcb.schedContextBinding with
+    | unbound =>
+      simp only []
+      cases lookupTcb st caller with
+      | none => rfl
+      | some callerTcb =>
+        simp only []
+        cases callerTcb.schedContextBinding with
+        | unbound => rfl
+        | bound clientScId =>
+          simp only []
+          cases hDonate : donateSchedContext st caller receiver clientScId with
+          | error _ => rfl
+          | ok st' => exact donateSchedContext_machine_eq st st' caller receiver clientScId hDonate
+        | donated scId owner => rfl
+    | bound scId => rfl
+    | donated scId owner => rfl
+
+/-- AG8-G: removeRunnable preserves machine state — it only modifies scheduler. -/
+private theorem removeRunnable_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).machine = st.machine := by
+  unfold removeRunnable; rfl
+
+/-- AG8-G: applyReplyDonation preserves machine state.
+Composition of `returnDonatedSchedContext_machine_eq` and `removeRunnable_machine_eq`:
+all fallback paths return `st` unchanged, and the success path delegates to
+`returnDonatedSchedContext` (preserves machine) followed by `removeRunnable`
+(only modifies scheduler). -/
+theorem applyReplyDonation_machine_eq
+    (st : SystemState) (replier : SeLe4n.ThreadId) :
+    (applyReplyDonation st replier).machine = st.machine := by
+  unfold applyReplyDonation
+  cases lookupTcb st replier with
+  | none => rfl
+  | some replierTcb =>
+    simp only []
+    cases replierTcb.schedContextBinding with
+    | unbound => rfl
+    | bound scId => rfl
+    | donated scId originalOwner =>
+      simp only []
+      cases hReturn : returnDonatedSchedContext st replier scId originalOwner with
+      | error _ => rfl
+      | ok st' =>
+        simp only []
+        have hMach := returnDonatedSchedContext_machine_eq st st' replier scId originalOwner hReturn
+        have hRem := removeRunnable_machine_eq st' replier
+        exact hRem.trans hMach
 
 end SeLe4n.Kernel

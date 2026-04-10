@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-ejwgv",
-      "commit_sha": "88f7f5c465be2c8b5259ea732b8fbdb561a7ecd7",
-      "tree_sha": "b80c78f893664a247fb04b076e55d10f209186a4",
-      "committed_at_utc": "2026-04-10T03:25:08+00:00"
+      "commit_sha": "a18d122046c524ac67306731e445700fbbc408b2",
+      "tree_sha": "c674628f0d5a59e81769ed68b2ca29a8d2d20287",
+      "committed_at_utc": "2026-04-10T03:41:43+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c97ed3f7e3a707b80de92bd2dc09dc3aaaaefe77403dd266e425de149812f549"
+    "source_digest": "13c1e7de30963a13f403ab33231026be28e12c6e3d8b40689b9fe2d08fe0268c"
   },
   "summary": {
     "module_count": 157,
-    "declaration_count": 4933
+    "declaration_count": 4936
   },
   "readme_sync": {
     "version": "0.26.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91164,
+    "production_loc": 91227,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2716,
+    "proved_theorem_lemma_decls": 2719,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -22002,7 +22002,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Donation",
       "path": "SeLe4n/Kernel/IPC/Operations/Donation.lean",
-      "declaration_count": 17,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
@@ -22210,7 +22210,7 @@
         {
           "kind": "theorem",
           "name": "donationAtomicRegion_of_disabled",
-          "line": 496,
+          "line": 494,
           "called": [
             "SystemState",
             "donationAtomicRegion"
@@ -22219,9 +22219,8 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_machine_eq",
-          "line": 511,
+          "line": 509,
           "called": [
-            "Kernel",
             "SchedContextId",
             "SystemState",
             "ThreadId",
@@ -22232,6 +22231,48 @@
             "storeObject",
             "storeObject_machine_eq_local",
             "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyCallDonation_machine_eq",
+          "line": 559,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "applyCallDonation",
+            "donateSchedContext",
+            "donateSchedContext_machine_eq",
+            "lookupTcb",
+            "none",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnable_machine_eq",
+          "line": 586,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "removeRunnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyReplyDonation_machine_eq",
+          "line": 595,
+          "called": [
+            "Kernel",
+            "SystemState",
+            "ThreadId",
+            "applyReplyDonation",
+            "lookupTcb",
+            "none",
+            "removeRunnable_machine_eq",
+            "returnDonatedSchedContext",
+            "returnDonatedSchedContext_machine_eq",
+            "scId"
           ]
         }
       ]

@@ -86,6 +86,12 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
 - **AG8-F audit**: Refined `blockedOnReply_cannot_call` docstring to describe
   it as a "building block" of the cycle prevention argument rather than "the
   structural invariant that prevents k>2 donation cycles"
+- **AG8-G audit (round 2)**: Added `applyCallDonation_machine_eq`,
+  `applyReplyDonation_machine_eq`, and `removeRunnable_machine_eq` — wrapper-
+  level machine state preservation proofs closing the gap between inner function
+  proofs (`donateSchedContext_machine_eq`, `returnDonatedSchedContext_machine_eq`)
+  and the API-level functions actually called from IPC dispatch. Updated
+  `donationAtomicRegion_of_disabled` docstring to reference the full proof chain
 
 ### Key theorems
 
@@ -93,6 +99,8 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   donation
 - `returnDonatedSchedContext_machine_eq`: machine state preserved through
   SchedContext return (symmetric with donate)
+- `applyCallDonation_machine_eq`: wrapper-level machine preservation (call path)
+- `applyReplyDonation_machine_eq`: wrapper-level machine preservation (reply path)
 - `dcClean_preserves_dcacheCoherent`: D-cache coherency preserved through clean
 - `dcCleanInvalidate_preserves_dcacheCoherent`: D-cache coherency preserved
   through clean+invalidate
