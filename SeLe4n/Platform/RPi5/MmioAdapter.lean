@@ -754,27 +754,32 @@ theorem barrierOrdered_trivial (st st' : SystemState) :
   trivial
 
 /-- DSB followed by ISB guarantees TLB invalidation visibility.
-After DSB + ISB, any page table walk will use the updated mappings.
-This formalizes the contract that TlbModel.tlbBarrierComplete depends on. -/
+In the sequential model, this is trivially satisfied (`barrierOrdered := True`).
+On hardware, DSB + ISB ensures page table walks use updated mappings.
+This formalizes the contract that TlbModel.tlbBarrierComplete depends on.
+Becomes a non-trivial obligation in the multi-core extension (WS-W). -/
 theorem dsb_isb_guarantees_tlb_visibility (st st' : SystemState)
     (_hDsb : BarrierKind.dsb_ish = .dsb_ish)
     (_hIsb : BarrierKind.isb = .isb) :
     barrierOrdered st st' :=
   trivial
 
-/-- DMB ISH guarantees MMIO write visibility.
-MMIO writes preceded by DMB ISH are guaranteed to be observed by hardware
-before any subsequent data access. Required for GIC register sequences
-(acknowledge → process → EOI). -/
+/-- DMB ISH guarantees MMIO write ordering (trivially in sequential model).
+On hardware, MMIO writes preceded by DMB ISH are observed before subsequent
+data accesses. Required for GIC register sequences (acknowledge → process → EOI).
+In the sequential model, `barrierOrdered := True` so this is trivially satisfied.
+Becomes a non-trivial obligation in the multi-core extension (WS-W). -/
 theorem dmb_guarantees_mmio_ordering (st st' : SystemState)
     (_hDmb : BarrierKind.dmb_ish = .dmb_ish) :
     barrierOrdered st st' :=
   trivial
 
-/-- DSB ISH guarantees MMIO write completion.
-MMIO writes preceded by DSB ISH are guaranteed *completed* (not just ordered)
+/-- DSB ISH guarantees MMIO write completion (trivially in sequential model).
+On hardware, MMIO writes preceded by DSB ISH are *completed* (not just ordered)
 before subsequent instructions. Required before ERET to ensure GIC EOI is
-processed before returning to user mode. -/
+processed before returning to user mode.
+In the sequential model, `barrierOrdered := True` so this is trivially satisfied.
+Becomes a non-trivial obligation in the multi-core extension (WS-W). -/
 theorem dsb_guarantees_mmio_completion (st st' : SystemState)
     (_hDsb : BarrierKind.dsb_ish = .dsb_ish) :
     barrierOrdered st st' :=

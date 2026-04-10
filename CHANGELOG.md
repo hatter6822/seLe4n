@@ -19,7 +19,7 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   `Architecture/CacheModel.lean`. `CacheLineState` (invalid/clean/dirty),
   `CacheState` structure with D-cache and I-cache function fields. Operations:
   `dcClean`, `dcInvalidate`, `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`.
-  8 preservation theorems including `empty_cacheCoherent`,
+  10 preservation theorems including `empty_cacheCoherent`,
   `icInvalidateAll_coherent`, and `pageTableUpdate_icache_coherent` composition
 - **AG8-C** (H3-ARCH-08): Memory barrier semantics formalization in
   `MmioAdapter.lean`. `BarrierKind` (dmb_ish/dsb_ish/isb), `barrierOrdered`
@@ -76,6 +76,14 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   machine state preservation theorem for the return path. Mirrors
   `donateSchedContext_machine_eq` with 3-step `storeObject` transitivity chain.
   Closes asymmetric coverage gap between donate and return paths
+- **AG8-C audit**: Updated barrier theorem docstrings
+  (`dsb_isb_guarantees_tlb_visibility`, `dmb_guarantees_mmio_ordering`,
+  `dsb_guarantees_mmio_completion`) to explicitly state they are trivially
+  satisfied in the sequential model (`barrierOrdered := True`). Prevents
+  readers from mistaking vacuous proofs for substantive hardware guarantees
+- **AG8-F audit**: Refined `blockedOnReply_cannot_call` docstring to describe
+  it as a "building block" of the cycle prevention argument rather than "the
+  structural invariant that prevents k>2 donation cycles"
 
 ### Key theorems
 

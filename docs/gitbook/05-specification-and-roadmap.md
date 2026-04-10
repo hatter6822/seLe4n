@@ -15,7 +15,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.26.6` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 91,088 across 141 Lean files |
+| Production LoC | 91,095 across 141 Lean files |
 | Test LoC | 11,374 across 16 suites |
 | Proved declarations | 2,709 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |

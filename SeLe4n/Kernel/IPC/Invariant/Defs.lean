@@ -1098,9 +1098,11 @@ theorem donationChainAcyclic_general
   exact ⟨ownerTcb, hOwnerTcb, hBlocked⟩
 
 /-- AG8-F: Blocked-on-reply threads cannot initiate calls.
-This is the structural invariant that prevents k>2 donation cycles:
+A building block of the k>2 donation cycle prevention argument:
 a thread in `.blockedOnReply` state has `ipcState ≠ .ready`, so it
-cannot enter `endpointCall` (which requires `.ready` state). -/
+cannot enter `endpointCall` (which requires `.ready` state).
+Combined with `donationChainAcyclic_general` (owners are blocked),
+this prevents donation chain owners from creating new edges. -/
 theorem blockedOnReply_cannot_call
     (ipcState : ThreadIpcState)
     (epId : SeLe4n.ObjId) (replyTarget : Option SeLe4n.ThreadId)
