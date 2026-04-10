@@ -1016,11 +1016,13 @@ Y1-E: Uses `Std.HashSet` for O(1) visited-set membership checks (was O(n²)
 with `List.Mem`). The `visited` parameter mirrors `acc` for membership;
 `acc` remains the result list.
 
-AF2-F / AG8-E: Fuel sufficiency established. `descendantsOf_fuel_sufficient`
-proves `edges.length ≥ 0` (non-negative fuel), and `maxCdtDepth = 65536`
-provides the hardware-binding CDT depth constant.
-The structural argument: the CDT is acyclic (proven by `cdtAcyclicity` /
-`edgeWellFounded`), so BFS with `edges.length` fuel visits every
+AF2-F / AG8-E: Fuel sufficiency placeholder. `descendantsOf_fuel_sufficient`
+proves only `edges.length ≥ 0` (a `Nat` tautology — not a substantive fuel
+sufficiency proof). `maxCdtDepth = 65536` provides the hardware-binding CDT
+depth constant. The substantive fuel-sufficiency proof (connecting
+`edgeWellFounded` to BFS termination) is deferred to WS-V.
+Structural argument (informal): the CDT is acyclic (proven by `cdtAcyclicity`
+/ `edgeWellFounded`), so BFS with `edges.length` fuel visits every
 reachable node — each edge is traversed at most once, and fuel ≥ edge
 count guarantees no premature termination. The visited-set filter ensures
 each node is processed at most once. -/
@@ -2476,39 +2478,40 @@ sufficient for complete BFS traversal.
 Value: matches `maxObjects` (65536) from `Model/State.lean`. -/
 def maxCdtDepth : Nat := 65536
 
-/-- AG8-E: Fuel sufficiency — `descendantsOf` uses `cdt.edges.length` as fuel.
-In an acyclic CDT, the BFS visits each node at most once (visited-set filter)
-and each frontier expansion adds at most `children.length` new nodes. Since
-each new child corresponds to at least one edge, the total number of BFS
-steps (frontier pops) is bounded by the number of edges + 1 (for the root).
-Therefore `edges.length` fuel is sufficient for complete traversal.
+/-- AG8-E: Fuel sufficiency placeholder — `descendantsOf` uses `cdt.edges.length`
+as fuel for BFS traversal. The intended property is that in an acyclic CDT,
+`edges.length` fuel is always sufficient for complete BFS traversal (each BFS
+step consumes a unique edge due to the visited-set filter).
 
-**Proof status (AG8-E)**: The full fuel-sufficiency proof connecting
-`edgeWellFounded` to BFS termination requires showing that each BFS step
-consumes a unique edge (no revisits due to visited-set). This is structurally
-sound but the formal proof connecting `WellFounded` to the fuel-decrement
-argument is deferred to WS-V. The current theorem establishes the bound
-framework: if the CDT satisfies `edgeWellFounded`, and we use `edges.length`
-as fuel, then `edges.length` is non-negative (fuel is always a valid `Nat`)
-and the `maxCdtDepth` constant provides the hardware-derived upper bound. -/
+**Current theorem (AG8-E)**: Proves only `cdt.edges.length ≥ 0`, which is a
+tautology for `Nat` — all natural numbers are non-negative. The `_hAcyclic`
+hypothesis is carried for API signature stability but is **unused** in the
+proof. This theorem does NOT prove fuel sufficiency.
+
+**Deferred to WS-V**: The substantive proof requires showing that each BFS
+step in `descendantsOf.go` consumes a unique edge (no revisits due to the
+`visited` HashSet), connecting `edgeWellFounded` to the fuel-decrement
+argument. The structural reasoning is sound (see `descendantsOf` docstring)
+but the formal mechanization is non-trivial and deferred. -/
 theorem descendantsOf_fuel_sufficient (cdt : CapDerivationTree)
     (_hAcyclic : cdt.edgeWellFounded) :
     ∀ (_root : CdtNodeId), cdt.edges.length ≥ 0 := by
   intro _; omega
 
-/-- AG8-E: CDT edge count is bounded by `maxCdtDepth` when the system state
-satisfies the object capacity bound. Since each CDT edge requires two distinct
-objects (parent and child), the number of edges is bounded by the number of
-objects, which is bounded by `maxObjects = maxCdtDepth`.
+/-- AG8-E: CDT depth bound placeholder — restates the hypothesis as the
+conclusion (`P → P`). This is an identity theorem that proves nothing beyond
+what is assumed.
 
-**Proof status (AG8-E)**: This theorem establishes the conditional bound:
-given a CDT with at most `maxCdtDepth` edges, the bound holds. The missing
-formal link is proving that `retypeFromUntyped` (the only edge-creating
-operation) maintains `cdt.edges.length ≤ maxCdtDepth` via the
-`maxObjects` capacity gate. This connection is structurally sound (each edge
-requires a distinct child object, and object count is gated by `maxObjects`)
-but the formal composition proof is deferred to WS-V alongside the full
-fuel-sufficiency proof. -/
+**Current theorem (AG8-E)**: Given `hBound : cdt.edges.length ≤ maxCdtDepth`,
+concludes `cdt.edges.length ≤ maxCdtDepth`. The proof is `hBound` (identity).
+This does NOT prove that system operations maintain the CDT edge bound.
+
+**Deferred to WS-V**: The substantive proof requires showing that
+`retypeFromUntyped` (the only CDT edge-creating operation) maintains
+`cdt.edges.length ≤ maxCdtDepth` via the `maxObjects` capacity gate. Each
+CDT edge requires a distinct child object, and object count is gated by
+`maxObjects = maxCdtDepth = 65536`, so the structural argument is sound
+but the formal composition proof is deferred. -/
 theorem cdtDepth_bounded_by_maxCdtDepth
     (cdt : CapDerivationTree)
     (hBound : cdt.edges.length ≤ maxCdtDepth) :

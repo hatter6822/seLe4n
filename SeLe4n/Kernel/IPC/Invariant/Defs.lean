@@ -964,10 +964,12 @@ a thread in `.blockedOnReply` state (waiting for reply from its donation
 target) cannot initiate a new `Call` (its ipcState is not `.ready`),
 breaking any potential chain of length > 2.
 
-AG8-F: This structural argument is now formalized in
-`donationChainAcyclic_general` and `blockedOnReply_cannot_call`. The
-combined invariant (`donationChainAcyclic ∧ donationOwnerValid`) prevents
-cycles of all lengths. See AG8-F section below. -/
+AG8-F: The structural building blocks are `donationChainAcyclic_general`
+(re-extracts the blocked-on-reply property from `donationOwnerValid`) and
+`blockedOnReply_cannot_call` (proves blocked threads cannot call). These
+provide the *ingredients* of the k>2 prevention argument, but the formal
+bridge lemma from donation edges to `blockingAcyclic` (proving donation
+chains are a sub-relation of the blocking graph) is deferred to WS-V. -/
 def donationChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
     (scId1 scId2 : SeLe4n.SchedContextId),
@@ -1057,28 +1059,28 @@ theorem donationChainAcyclic_of_no_donated
 
 /-- AG8-F: Donation owner blocked-on-reply extraction.
 
-Extracts the structural consequence of `donationOwnerValid`: when a thread
-has a `.donated scId owner` binding, the owner thread is in `.blockedOnReply`
-state. This is a key ingredient in the k>2 cycle prevention argument:
+**What this theorem proves**: Re-extracts a subset of `donationOwnerValid`:
+when a thread has a `.donated scId owner` binding, the owner thread exists
+as a TCB in `.blockedOnReply` state. The proof applies `hDOV` and drops the
+`.bound scId` conjunct from `donationOwnerValid`'s conclusion.
 
+**Note**: The `_hDCA : donationChainAcyclic st` hypothesis is carried for
+API signature completeness (the caller typically has both invariants
+available) but is **unused** in this proof. The theorem name reflects the
+*intended* role in the k>2 cycle prevention argument, not what the current
+proof establishes on its own.
+
+**Role in k>2 cycle prevention** (informal argument, not yet mechanized):
 1. Donation edges are created only by `endpointCall` → `donateSchedContext`.
-2. A thread that donates its SchedContext enters `.blockedOnReply` state
-   (established by this theorem via `donationOwnerValid`).
-3. A thread in `.blockedOnReply` cannot invoke `endpointCall` (requires `.ready`)
+2. Donation owners are in `.blockedOnReply` state (this theorem).
+3. Blocked-on-reply threads cannot invoke `endpointCall` (requires `.ready`)
    — see `blockedOnReply_cannot_call`.
-4. Therefore, the owner at the *end* of a donation chain cannot create a new
-   donation edge back to any thread in the chain.
+4. Therefore, owners at chain endpoints cannot create new donation edges.
 
-**Formal status**: This theorem proves that donation owners are blocked. The
-full k>2 cycle prevention follows from two independent mechanisms:
-- This structural argument (owners are blocked → cannot extend the chain)
-- `blockingAcyclic` (10th conjunct of `crossSubsystemInvariant`), which
-  provides general acyclicity of the blocking graph via `WellFounded`.
-  Donation chains are a sub-relation of the blocking graph.
-
-The formal bridge lemma from donation edges to blocking graph edges
-(proving the sub-relation) is deferred to WS-V. The structural argument
-above provides the semantic justification. -/
+**Deferred to WS-V**: The formal bridge lemma from donation edges to blocking
+graph edges (proving donation chains are a sub-relation of `blockingAcyclic`)
+is not yet mechanized. The informal argument above provides the semantic
+justification; the formal composition is deferred. -/
 theorem donationChainAcyclic_general
     (st : SystemState)
     (_hDCA : donationChainAcyclic st)

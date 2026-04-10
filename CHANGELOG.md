@@ -33,17 +33,18 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   AG8-A `timedOut` addition) and partial mutation concerns (AE2-D) warrant
   continued experimental status. All 4 FrozenOps files annotated with
   "Experimental — deferred to WS-V (AG8-D)"
-- **AG8-E** (F-S05): CDT `descendantsOf` fuel sufficiency proof.
+- **AG8-E** (F-S05): CDT `descendantsOf` fuel sufficiency placeholders.
   `maxCdtDepth : Nat := 65536` constant based on RPi5 maximum kernel objects.
-  `descendantsOf_fuel_sufficient` theorem proves fuel parameter is non-negative
-  (always sufficient for BFS initiation). `cdtDepth_bounded_by_maxCdtDepth`
-  theorem connects CDT depth to the hardware-derived bound
-- **AG8-F** (H3-PROOF-03): Donation chain k>2 cycle prevention.
-  `donationChainAcyclic_general` theorem proves donation owners are in
-  `blockedOnReply` state (derives from `donationOwnerValid`).
+  `descendantsOf_fuel_sufficient` proves only `edges.length ≥ 0` (Nat tautology
+  — placeholder, not substantive fuel sufficiency). `cdtDepth_bounded_by_maxCdtDepth`
+  is `P → P` (identity — placeholder, not an operational bound proof).
+  Substantive fuel-sufficiency and depth-bound proofs deferred to WS-V
+- **AG8-F** (H3-PROOF-03): Donation chain k>2 cycle prevention building blocks.
+  `donationChainAcyclic_general` re-extracts blocked-on-reply state from
+  `donationOwnerValid` (unused `_hDCA` hypothesis carried for API completeness).
   `blockedOnReply_cannot_call` proves blocked threads cannot initiate new calls.
-  Together these prevent cycles of any length k>2, extending the existing
-  2-cycle prevention
+  Together these provide the *ingredients* for k>2 prevention; the formal bridge
+  from donation edges to `blockingAcyclic` sub-relation is deferred to WS-V
 - **AG8-G** (H3-IPC-04): Donation atomicity under interrupt disable.
   `donationAtomicRegion` predicate asserting `interruptsEnabled = false` for
   both pre- and post-states. `donateSchedContext_machine_eq` theorem proving
@@ -67,11 +68,11 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   `dcInvalidate` (4) and `dcZeroByVA` (3), bringing total to 17 theorems
 - **AG8-E audit**: Updated docstrings for `descendantsOf_fuel_sufficient` and
   `cdtDepth_bounded_by_maxCdtDepth` to honestly document proof status. The
-  theorems are correct but weak (BFS initiation guarantee / identity bridge).
-  Full fuel-sufficiency proof deferred to WS-V with the CDT rework
+  theorems are placeholders: `Nat ≥ 0` tautology and `P → P` identity
+  respectively. Substantive fuel-sufficiency proof deferred to WS-V
 - **AG8-F audit**: Rewrote `donationChainAcyclic_general` docstring to
-  accurately describe what it proves (donation owner blocked-on-reply state
-  extraction). Formal bridge lemma from donation edges to `blockingAcyclic`
+  honestly state it re-extracts from `donationOwnerValid` with unused `_hDCA`
+  hypothesis. Formal bridge lemma from donation edges to `blockingAcyclic`
   sub-relation documented as deferred to WS-V
 - **AG8-G audit**: Added `returnDonatedSchedContext_machine_eq` — symmetric
   machine state preservation theorem for the return path. Mirrors
@@ -96,12 +97,15 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
 - `dcCleanInvalidate_preserves_dcacheCoherent`: D-cache coherency preserved
   through clean+invalidate
 - `donationChainAcyclic_general`: donation owners in blockedOnReply state
+  (re-extraction from `donationOwnerValid`; unused `_hDCA` hypothesis)
 - `blockedOnReply_cannot_call`: blocked threads cannot initiate calls
 - `empty_cacheCoherent`: empty cache is trivially coherent
 - `pageTableUpdate_icache_coherent`: I-cache coherence after page table update
   + flush
-- `descendantsOf_fuel_sufficient`: CDT traversal fuel always sufficient
-- `cdtDepth_bounded_by_maxCdtDepth`: CDT depth within hardware bound
+- `descendantsOf_fuel_sufficient`: placeholder — proves `Nat ≥ 0` (tautology);
+  substantive fuel sufficiency deferred to WS-V
+- `cdtDepth_bounded_by_maxCdtDepth`: placeholder — `P → P` identity;
+  operational depth bound deferred to WS-V
 
 ### New files
 
