@@ -116,7 +116,7 @@ API surface with frozen operations, and cross-subsystem invariant composition.
 - **Z6** (v0.23.12–v0.23.14): Timeout endpoints — budget-driven IPC timeout, `endpointQueueRemove`, `blockedThreadTimeoutConsistent` invariant.
 - **Z7** (v0.23.15–v0.23.16): SchedContext donation — `donateSchedContext`, donation-aware IPC wrappers, 4 new invariants, `ipcInvariantFull` extended to 14 conjuncts (AG1-C: 15th conjunct `uniqueWaiters` added).
 - **Z8** (v0.23.17–v0.23.18): API surface — 3 error-exclusivity theorems, 4 frozen operations, enforcement boundary 22→25.
-- **Z9** (v0.23.20): Invariant composition — `crossSubsystemInvariant` 5→8 predicates, `proofLayerInvariantBundle` 9→10 conjuncts, 14 disjointness witnesses, 3 frame lemmas, boot/operation preservation.
+- **Z9** (v0.23.20): Invariant composition — `crossSubsystemInvariant` 5→8 predicates, `proofLayerInvariantBundle` 9→10 conjuncts (AG7-D: extended to 11), 14 disjointness witnesses, 3 frame lemmas, boot/operation preservation.
 
 Plan: [`WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md`](../dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md).
 

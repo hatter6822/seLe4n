@@ -1272,7 +1272,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12) | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches TCB priority |
 | `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (15-conjunct, AG1-C: +`uniqueWaiters`) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, and `uniqueWaiters` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
-| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle`; extended from 9 to 10 conjuncts (Z9: + `schedulerInvariantBundleExtended`) | Top-level proof surface includes all 7 scheduler conjuncts plus full CBS scheduler extension |
+| `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle`; extended from 9 to 11 conjuncts (Z9: + `schedulerInvariantBundleExtended`, AG7-D: + `notificationWaiterConsistent`) | Top-level proof surface includes all 7 scheduler conjuncts plus full CBS scheduler extension and notification-waiter consistency |
 
 ### New proofs and definitions
 
@@ -2517,7 +2517,7 @@ kernel-wide invariant bundle.
 - `crossSubsystemInvariant` extended from 5 to **8 predicates** (Z9 adds the three above)
 
 **Top-level bundle extension**:
-- `proofLayerInvariantBundle` extended from 9 to **10 conjuncts**: added `schedulerInvariantBundleExtended` (the 16-conjunct CBS-aware scheduler bundle from Z4/AE3-A)
+- `proofLayerInvariantBundle` extended from 9 to **11 conjuncts**: added `schedulerInvariantBundleExtended` (Z4/AE3-A) and `notificationWaiterConsistent` (AG7-D)
 - Preservation theorems updated for all kernel operations that touch SchedContext state
 
 **Boot safety extension** (`Platform/Boot.lean`):

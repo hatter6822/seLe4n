@@ -7,7 +7,8 @@
 -/
 
 import SeLe4n.Platform.RPi5.Board
-import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Kernel.Architecture.Adapter
+import SeLe4n.Kernel.Scheduler.Invariant
 
 /-!
 # Raspberry Pi 5 — Runtime Boundary Contract
@@ -40,55 +41,75 @@ open SeLe4n.Model
 Timer monotonicity: ARM Generic Timer (CNTPCT_EL0) is monotonically
 non-decreasing. Counter rollover is outside the operational lifetime.
 
-Register context stability (U6-C strengthened): When a thread is scheduled
-in the post-state, the machine register file must match that thread's saved
-`registerContext` in the TCB. This replaces the previous permissive disjunct
-(`sp preserved ∨ context switch in progress`) which was trivially satisfied
-and did not actually constrain hardware behavior.
+Register context stability (U6-C strengthened, AG7-D comprehensive): When a
+thread is scheduled in the post-state, the contract validates ALL properties
+required to maintain `proofLayerInvariantBundle` for the current-thread
+predicates:
 
-The strengthened predicate requires:
-- If `st'.scheduler.current = some tid`, then `st'.machine.regs` must be
-  consistent with the TCB's `registerContext` for `tid`.
-- If no thread is scheduled, the register file is unconstrained.
+1. **Register-context match**: `machine.regs == tcb.registerContext`
+2. **Dequeue-on-dispatch**: current thread not in runnable queue
+3. **Time-slice positivity**: `tcb.timeSlice > 0`
+4. **IPC readiness**: `tcb.ipcState == .ready` (ensures the current thread
+   is not blocked on any IPC operation, enabling derivation of
+   `currentNotEndpointQueueHead` and `currentNotOnNotificationWaitList`
+   from the IPC invariants)
+5. **EDF compatibility**: `tcb.deadline.toNat == 0` (zero-deadline threads
+   trivially satisfy `edfCurrentHasEarliestDeadline`; the scheduler always
+   clears deadlines before dispatch on RPi5)
+6. **Budget sufficiency**: if the thread is SchedContext-bound, the bound
+   SchedContext has `budgetRemaining > 0`
 
-On ARMv8-A, `saveOutgoingContext` stores registers into the outgoing TCB,
-then `restoreIncomingContext` loads the incoming thread's saved registers —
-so the strengthened predicate holds by construction during context switch.
+This comprehensive check enables non-vacuous `AdapterProofHooks` for both
+`preserveWriteRegister` and `preserveContextSwitch` on the production
+contract.
 
 Memory access: Restricted to declared RAM regions in the BCM2712 memory map.
 Device and reserved regions require explicit MMIO adapter calls.
 -/
 
-/-- U6-C/V4-I: Computable check for register context stability. Returns `true`
-    if the machine register file matches the scheduled thread's saved context.
+/-- AG7-D: Budget sufficiency check for the current thread's SchedContext.
+    Returns `true` if the thread is unbound (vacuously sufficient) or if the
+    bound SchedContext has `budgetRemaining > 0`. -/
+private def budgetSufficientCheck (st' : SystemState) (tcb : TCB) : Bool :=
+  match tcb.schedContextBinding with
+  | .unbound => true
+  | .bound scId | .donated scId _ =>
+    match st'.objects[scId.toObjId]? with
+    | some (.schedContext sc) => sc.budgetRemaining.val > 0
+    | _ => true
+
+/-- U6-C/V4-I/AG7-D: Computable check for register context stability with
+    comprehensive current-thread validation. Returns `true` if the post-state
+    satisfies all current-thread predicates required by `proofLayerInvariantBundle`.
 
     When `scheduler.current = some tid`:
-    - If the object is a TCB: checks `st'.machine.regs == tcb.registerContext`.
+    - If the object is a TCB: checks register match, dequeue-on-dispatch,
+      time-slice positivity, IPC readiness, EDF compatibility, and budget.
     - If the object is missing or not a TCB: returns `false` (contract violation).
-      A scheduled thread that has no corresponding TCB or maps to a non-TCB
-      object represents a malformed scheduler state. The contract must reject
-      this to prevent unsound reasoning about register-file consistency.
 
     LOW-05 / Y2-B: The pre-state parameter `_st` is retained for signature
     compatibility with the `RuntimeBoundaryContract.registerContextStable` field
-    but is not inspected. Register-context stability is checked uniformly via the
-    post-state only: `st'.machine.regs == tcb.registerContext`. This is correct
-    because `contextSwitchState` (X1-F) guarantees that post-state registers
-    always match the current TCB's saved context regardless of whether a context
-    switch occurred. -/
+    but is not inspected. All checks examine the post-state only. -/
 def registerContextStableCheck (_st st' : SystemState) : Bool :=
   match st'.scheduler.current with
   | none => true
   | some tid =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      -- LOW-05: Register-context stability is checked uniformly regardless of
-      -- whether a context switch occurred. The `contextSwitchState` operation
-      -- (X1-F) guarantees that post-state registers always match the current
-      -- TCB's saved context — both for same-thread continuation and for
-      -- cross-thread context switches. The previous implementation had identical
-      -- `then`/`else` branches; this simplification removes the dead branching.
-      st'.machine.regs == tcb.registerContext
+      -- Core register-context match (U6-C)
+      st'.machine.regs == tcb.registerContext &&
+      -- Dequeue-on-dispatch: current not in runnable queue (AG7-D)
+      !st'.scheduler.runnable.contains tid &&
+      -- Time-slice positivity (AG7-D)
+      (tcb.timeSlice > 0) &&
+      -- IPC readiness (AG7-D): enables derivation of currentNotEndpointQueueHead
+      -- and currentNotOnNotificationWaitList from pre-state IPC invariants
+      (tcb.ipcState == .ready) &&
+      -- EDF compatibility: zero deadline trivially satisfies earliest-deadline
+      -- ordering (AG7-D)
+      (tcb.deadline.toNat == 0) &&
+      -- Budget sufficiency (AG7-D)
+      budgetSufficientCheck st' tcb
     | _ => false
 
 /-- U6-C: Prop-level register context stability predicate. -/
@@ -178,5 +199,33 @@ theorem mmioAccess_ram_kind_disjoint :
     ∀ (r : SeLe4n.MemoryRegion),
       (r.kind == .ram && r.kind == .device) = false := by
   intro r; cases r.kind <;> decide
+
+/-- AG7-D: When `registerContextStableCheck` passes for a context-switch
+    post-state, extract `currentBudgetPositive` from the budget-sufficiency
+    conjunct. The budget check in `registerContextStableCheck` mirrors
+    the structure of `currentBudgetPositive` exactly. -/
+theorem registerContextStableCheck_budget
+    (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SeLe4n.Model.SystemState)
+    (tcb : SeLe4n.Model.TCB)
+    (hObj : st.objects[newTid.toObjId]? = some (.tcb tcb))
+    (hStable : registerContextStableCheck st (contextSwitchState newTid newRegs st) = true) :
+    SeLe4n.Kernel.currentBudgetPositive (contextSwitchState newTid newRegs st) := by
+  unfold registerContextStableCheck contextSwitchState at hStable
+  simp only [hObj, Bool.and_eq_true] at hStable
+  unfold SeLe4n.Kernel.currentBudgetPositive contextSwitchState; simp only [hObj]
+  have hBud := hStable.2
+  -- budgetSufficientCheck mirrors currentBudgetPositive structure
+  match hBind : tcb.schedContextBinding with
+  | .unbound => trivial
+  | .bound scId | .donated scId _ =>
+    simp only [hBind, budgetSufficientCheck] at hBud
+    simp only [hBind]
+    match hSc : st.objects[scId.toObjId]? with
+    | some (.schedContext sc) =>
+      simp only [hSc] at hBud ⊢
+      simp at hBud; exact hBud
+    | some (.endpoint _) | some (.notification _) | some (.tcb _) |
+      some (.cnode _) | some (.vspaceRoot _) | some (.untyped _) | none =>
+      simp [hSc]
 
 end SeLe4n.Platform.RPi5

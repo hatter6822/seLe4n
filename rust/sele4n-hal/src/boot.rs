@@ -8,7 +8,7 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.26.6";
+const KERNEL_VERSION: &str = "0.26.8";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -69,10 +69,22 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!();
     crate::kprintln!("[boot] Boot complete, entering kernel");
 
-    // AG7-A will add: kernel_main() via Lean FFI
-    // For now, enter idle loop — this is the AG4 gate test endpoint.
-    // The presence of "Boot complete, entering kernel" in UART output
-    // verifies the AG4 gate.
+    // AG7-A: Lean kernel entry via FFI bridge.
+    // On hardware builds, `lean_kernel_main` is provided by the linked Lean
+    // object. On simulation/test builds, it falls through to idle_loop().
+    #[cfg(feature = "hw_target")]
+    {
+        extern "C" {
+            fn lean_kernel_main(dtb_ptr: u64);
+        }
+        // SAFETY: lean_kernel_main is the Lean-compiled entry point linked from
+        // libsele4n.a. The DTB pointer from U-Boot is passed through. The
+        // function should not return; if it does, we fall through to idle.
+        unsafe { lean_kernel_main(_dtb_ptr) };
+    }
+
+    // Idle fallback: enter WFE loop when no kernel main is linked (simulation)
+    // or if kernel_main returns (should not happen in production).
     idle_loop()
 }
 

@@ -166,9 +166,20 @@ def contextMatchesCurrent (st : SystemState) : Prop :=
   match st.scheduler.current with
   | some tid =>
       match st.objects[tid.toObjId]? with
-      | some (.tcb tcb) => st.machine.regs = tcb.registerContext
+      | some (.tcb tcb) => (st.machine.regs == tcb.registerContext) = true
       | _ => True
   | none => True
+
+/-- AG7-D bridge: propositional RegisterFile equality implies BEq contextMatchesCurrent.
+    Used by scheduler operations that establish `machine.regs = tcb.registerContext`
+    via definitional equality (e.g., inline context restore in `schedule`). -/
+theorem contextMatchesCurrent_of_regs_eq {st : SystemState} {tid : SeLe4n.ThreadId}
+    {tcb : TCB}
+    (hCurr : st.scheduler.current = some tid)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hRegs : st.machine.regs = tcb.registerContext) :
+    contextMatchesCurrent st := by
+  simp [contextMatchesCurrent, hCurr, hObj, hRegs, RegisterFile.beq_self]
 
 -- ============================================================================
 -- WS-H6: Full scheduler invariant bundle

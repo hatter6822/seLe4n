@@ -131,3 +131,192 @@ pub fn read_current_el() -> u64 {
     let val = read_sysreg!("CurrentEL");
     (val >> 2) & 0x3
 }
+
+// ============================================================================
+// AG7-B: Additional system register accessors
+// ============================================================================
+
+/// Read TTBR0_EL1 — Translation Table Base Register 0 (user space).
+/// ARM ARM D17.2.144.
+#[inline(always)]
+pub fn read_ttbr0_el1() -> u64 {
+    read_sysreg!("ttbr0_el1")
+}
+
+/// Read TTBR1_EL1 — Translation Table Base Register 1 (kernel space).
+/// ARM ARM D17.2.145.
+#[inline(always)]
+pub fn read_ttbr1_el1() -> u64 {
+    read_sysreg!("ttbr1_el1")
+}
+
+/// Read MAIR_EL1 — Memory Attribute Indirection Register.
+/// ARM ARM D17.2.95.
+#[inline(always)]
+pub fn read_mair_el1() -> u64 {
+    read_sysreg!("mair_el1")
+}
+
+/// Read ESR_EL1 — Exception Syndrome Register (read-only).
+/// ARM ARM D17.2.40: Contains syndrome information for exceptions taken to EL1.
+#[inline(always)]
+pub fn read_esr_el1() -> u64 {
+    read_sysreg!("esr_el1")
+}
+
+/// Read ELR_EL1 — Exception Link Register (read-only for exception context).
+/// ARM ARM D17.2.38: Address to return to after exception handling.
+#[inline(always)]
+pub fn read_elr_el1() -> u64 {
+    read_sysreg!("elr_el1")
+}
+
+/// Write ELR_EL1 — Exception Link Register.
+/// Used during context switch to set return address.
+#[inline(always)]
+pub fn write_elr_el1(val: u64) {
+    write_sysreg!("elr_el1", val);
+}
+
+/// Read FAR_EL1 — Fault Address Register (read-only).
+/// ARM ARM D17.2.43: Holds the faulting virtual address for data/instruction aborts.
+#[inline(always)]
+pub fn read_far_el1() -> u64 {
+    read_sysreg!("far_el1")
+}
+
+/// Read SPSR_EL1 — Saved Program Status Register (read-only for exception context).
+/// ARM ARM D17.2.131: Holds saved PSTATE from the exception.
+#[inline(always)]
+pub fn read_spsr_el1() -> u64 {
+    read_sysreg!("spsr_el1")
+}
+
+/// Write SPSR_EL1 — Saved Program Status Register.
+/// Used during context switch to restore PSTATE.
+#[inline(always)]
+pub fn write_spsr_el1(val: u64) {
+    write_sysreg!("spsr_el1", val);
+}
+
+/// Read MPIDR_EL1 — Multiprocessor Affinity Register (read-only).
+/// ARM ARM D17.2.97: Identifies the core in a multi-core system.
+/// Aff0 (bits [7:0]) = core number within cluster.
+#[inline(always)]
+pub fn read_mpidr_el1() -> u64 {
+    read_sysreg!("mpidr_el1")
+}
+
+/// Read CTR_EL0 — Cache Type Register (read-only).
+/// ARM ARM D17.2.20: Cache line sizes for I-cache and D-cache.
+/// Bits [19:16] = DminLine (log2 of D-cache line size in words).
+/// Bits [3:0] = IminLine (log2 of I-cache line size in words).
+#[inline(always)]
+pub fn read_ctr_el0() -> u64 {
+    read_sysreg!("ctr_el0")
+}
+
+/// Read VBAR_EL1 — Vector Base Address Register.
+/// ARM ARM D17.2.147.
+#[inline(always)]
+pub fn read_vbar_el1() -> u64 {
+    read_sysreg!("vbar_el1")
+}
+
+// ============================================================================
+// AG7-B Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_sctlr_el1_no_panic() {
+        let _ = read_sctlr_el1();
+    }
+
+    #[test]
+    fn read_tcr_el1_no_panic() {
+        let _ = read_tcr_el1();
+    }
+
+    #[test]
+    fn read_current_el_no_panic() {
+        let el = read_current_el();
+        // On non-aarch64, returns 0
+        #[cfg(not(target_arch = "aarch64"))]
+        assert_eq!(el, 0);
+        let _ = el;
+    }
+
+    #[test]
+    fn read_ttbr0_el1_no_panic() {
+        let _ = read_ttbr0_el1();
+    }
+
+    #[test]
+    fn read_ttbr1_el1_no_panic() {
+        let _ = read_ttbr1_el1();
+    }
+
+    #[test]
+    fn read_mair_el1_no_panic() {
+        let _ = read_mair_el1();
+    }
+
+    #[test]
+    fn read_esr_el1_no_panic() {
+        let _ = read_esr_el1();
+    }
+
+    #[test]
+    fn read_elr_el1_no_panic() {
+        let _ = read_elr_el1();
+    }
+
+    #[test]
+    fn read_far_el1_no_panic() {
+        let _ = read_far_el1();
+    }
+
+    #[test]
+    fn read_spsr_el1_no_panic() {
+        let _ = read_spsr_el1();
+    }
+
+    #[test]
+    fn read_mpidr_el1_no_panic() {
+        let _ = read_mpidr_el1();
+    }
+
+    #[test]
+    fn read_ctr_el0_no_panic() {
+        let _ = read_ctr_el0();
+    }
+
+    #[test]
+    fn read_vbar_el1_no_panic() {
+        let _ = read_vbar_el1();
+    }
+
+    #[test]
+    fn write_sctlr_el1_no_panic() {
+        write_sctlr_el1(0);
+    }
+
+    #[test]
+    fn write_elr_el1_no_panic() {
+        write_elr_el1(0);
+    }
+
+    #[test]
+    fn write_spsr_el1_no_panic() {
+        write_spsr_el1(0);
+    }
+
+    #[test]
+    fn read_daif_no_panic() {
+        let _ = read_daif();
+    }
+}
