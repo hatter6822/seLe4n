@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-ejwgv",
-      "commit_sha": "856e0ab1f14e61ff333ec884da86f37631b08492",
-      "tree_sha": "896fabc9f6bc8d044cab85ecab32130615e757db",
-      "committed_at_utc": "2026-04-10T02:49:39+00:00"
+      "commit_sha": "5b3676b356681dfd4398f3b04a02b57e4c731aeb",
+      "tree_sha": "c9c7d1ddd7fee625b3a371bd6f0b8f5f98896da5",
+      "committed_at_utc": "2026-04-10T03:20:09+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2b6ed3e04446a844bc4acbff475a5e0121124ba3f9e94c81b48405ba26819381"
+    "source_digest": "dbb751aee7975b0a509e88905803770e2e9f57d41ccb259638379aa01c294087"
   },
   "summary": {
     "module_count": 157,
-    "declaration_count": 4926
+    "declaration_count": 4933
   },
   "readme_sync": {
     "version": "0.26.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91095,
+    "production_loc": 91159,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2709,
+    "proved_theorem_lemma_decls": 2716,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1570,7 +1570,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.CacheModel",
       "path": "SeLe4n/Kernel/Architecture/CacheModel.lean",
-      "declaration_count": 22,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "namespace",
@@ -1766,8 +1766,79 @@
         },
         {
           "kind": "theorem",
+          "name": "dcInvalidate_makes_line_invalid",
+          "line": 223,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcInvalidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dcInvalidate_frame",
+          "line": 228,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcInvalidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dcInvalidate_preserves_icache",
+          "line": 234,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcInvalidate"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dcInvalidate_preserves_dcacheCoherent",
+          "line": 240,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcInvalidate",
+            "dcacheCoherent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dcZeroByVA_frame",
+          "line": 254,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcZeroByVA"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dcZeroByVA_preserves_icache",
+          "line": 260,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcZeroByVA"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dcZeroByVA_makes_line_dirty",
+          "line": 267,
+          "called": [
+            "CacheState",
+            "PAddr",
+            "dcZeroByVA"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "pageTableUpdate_icache_coherent",
-          "line": 221,
+          "line": 285,
           "called": [
             "CacheState",
             "PAddr",

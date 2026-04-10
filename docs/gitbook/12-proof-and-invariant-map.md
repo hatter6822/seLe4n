@@ -704,7 +704,7 @@ Cache coherency model (`CacheModel.lean`, AG8-B):
 - `CacheLineState` — invalid/clean/dirty abstraction of ARM64 D-cache and I-cache line state
 - `CacheState` — per-address D-cache and I-cache state (function representation)
 - `dcClean`, `dcInvalidate`, `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA` — 5 cache maintenance operations
-- 10 preservation theorems: `dcCleanInvalidate_makes_line_invalid`, `icInvalidateAll_coherent`, `empty_cacheCoherent`, `dcClean_preserves_icache`, `dcCleanInvalidate_preserves_icache`, `dcClean_frame`, `dcCleanInvalidate_frame`, `dcClean_preserves_dcacheCoherent`, `dcCleanInvalidate_preserves_dcacheCoherent`, `pageTableUpdate_icache_coherent`
+- 17 preservation theorems covering all 5 operations: `dcCleanInvalidate_makes_line_invalid`, `icInvalidateAll_coherent`, `empty_cacheCoherent`, `dcClean_preserves_icache`, `dcCleanInvalidate_preserves_icache`, `dcClean_frame`, `dcCleanInvalidate_frame`, `dcClean_preserves_dcacheCoherent`, `dcCleanInvalidate_preserves_dcacheCoherent`, `dcInvalidate_makes_line_invalid`, `dcInvalidate_frame`, `dcInvalidate_preserves_icache`, `dcInvalidate_preserves_dcacheCoherent`, `dcZeroByVA_frame`, `dcZeroByVA_preserves_icache`, `dcZeroByVA_makes_line_dirty`, `pageTableUpdate_icache_coherent`
 
 ## 11. Badge-override safety (WS-D3 / F-06 / TPI-D04 complete)
 

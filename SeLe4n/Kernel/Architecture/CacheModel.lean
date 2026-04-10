@@ -215,9 +215,73 @@ theorem dcCleanInvalidate_preserves_dcacheCoherent (cs : CacheState) (addr : SeL
   · simp
   · exact h other
 
+-- ============================================================================
+-- DC IVAC (dcInvalidate) theorems
+-- ============================================================================
+
+/-- DC IVAC makes the target line invalid. -/
+theorem dcInvalidate_makes_line_invalid (cs : CacheState) (addr : SeLe4n.PAddr) :
+    (dcInvalidate cs addr).dcache addr = .invalid := by
+  simp [dcInvalidate]
+
+/-- DC IVAC does not affect other addresses (frame). -/
+theorem dcInvalidate_frame (cs : CacheState) (addr other : SeLe4n.PAddr)
+    (hNe : other ≠ addr) :
+    (dcInvalidate cs addr).dcache other = cs.dcache other := by
+  simp [dcInvalidate, hNe]
+
+/-- DC IVAC preserves I-cache state (separate structure). -/
+theorem dcInvalidate_preserves_icache (cs : CacheState) (addr : SeLe4n.PAddr) :
+    (dcInvalidate cs addr).icache = cs.icache := by
+  simp [dcInvalidate]
+
+/-- DC IVAC preserves D-cache coherency: invalidating a line produces
+`.invalid`, which satisfies ≠dirty. -/
+theorem dcInvalidate_preserves_dcacheCoherent (cs : CacheState) (addr : SeLe4n.PAddr)
+    (h : dcacheCoherent cs) :
+    dcacheCoherent (dcInvalidate cs addr) := by
+  intro other
+  simp only [dcInvalidate]
+  split
+  · simp
+  · exact h other
+
+-- ============================================================================
+-- DC ZVA (dcZeroByVA) theorems
+-- ============================================================================
+
+/-- DC ZVA does not affect other addresses (frame). -/
+theorem dcZeroByVA_frame (cs : CacheState) (addr other : SeLe4n.PAddr)
+    (hNe : other ≠ addr) :
+    (dcZeroByVA cs addr).dcache other = cs.dcache other := by
+  simp [dcZeroByVA, hNe]
+
+/-- DC ZVA preserves I-cache state (separate structure). -/
+theorem dcZeroByVA_preserves_icache (cs : CacheState) (addr : SeLe4n.PAddr) :
+    (dcZeroByVA cs addr).icache = cs.icache := by
+  simp [dcZeroByVA]
+
+/-- DC ZVA introduces a dirty line at the target address. This is the only
+operation that can BREAK `dcacheCoherent` — the caller must clean/invalidate
+afterwards if coherency is required. -/
+theorem dcZeroByVA_makes_line_dirty (cs : CacheState) (addr : SeLe4n.PAddr) :
+    (dcZeroByVA cs addr).dcache addr = .dirty := by
+  simp [dcZeroByVA]
+
+-- ============================================================================
+-- Composed protocol theorems
+-- ============================================================================
+
 /-- Page table update protocol: after DC CIVAC on a page table page followed
-by IC IALLU, the resulting cache state is I-cache coherent. This models the
-required cache maintenance sequence for page table modifications. -/
+by IC IALLU, the resulting cache state is I-cache coherent.
+
+**Note**: In this abstract model, the I-cache coherency conclusion depends
+only on `icInvalidateAll` (which unconditionally sets all I-cache lines to
+`.invalid`). The `dcCleanInvalidate` step is required on hardware to ensure
+the D-cache writes back to memory before the I-cache refetches, but this
+D→memory→I relationship is not captured in the current 3-state model (see
+module header "Non-modeled aspects"). The composed statement documents the
+required protocol even though the formal proof only uses the IC IALLU step. -/
 theorem pageTableUpdate_icache_coherent (cs : CacheState) (ptAddr : SeLe4n.PAddr) :
     icacheCoherent (icInvalidateAll (dcCleanInvalidate cs ptAddr)) := by
   exact icInvalidateAll_coherent _

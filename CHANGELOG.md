@@ -19,7 +19,7 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   `Architecture/CacheModel.lean`. `CacheLineState` (invalid/clean/dirty),
   `CacheState` structure with D-cache and I-cache function fields. Operations:
   `dcClean`, `dcInvalidate`, `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`.
-  10 preservation theorems including `empty_cacheCoherent`,
+  17 preservation theorems including `empty_cacheCoherent`,
   `icInvalidateAll_coherent`, and `pageTableUpdate_icache_coherent` composition
 - **AG8-C** (H3-ARCH-08): Memory barrier semantics formalization in
   `MmioAdapter.lean`. `BarrierKind` (dmb_ish/dsb_ish/isb), `barrierOrdered`
@@ -63,7 +63,8 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
 - **AG8-B audit**: Added `dcClean_preserves_dcacheCoherent` and
   `dcCleanInvalidate_preserves_dcacheCoherent` — missing preservation theorems
   proving D-cache coherency is maintained through clean and clean+invalidate
-  operations. Brings CacheModel preservation coverage to 10 theorems
+  operations (first audit). Second audit added 7 more theorems for
+  `dcInvalidate` (4) and `dcZeroByVA` (3), bringing total to 17 theorems
 - **AG8-E audit**: Updated docstrings for `descendantsOf_fuel_sufficient` and
   `cdtDepth_bounded_by_maxCdtDepth` to honestly document proof status. The
   theorems are correct but weak (BFS initiation guarantee / identity bridge).

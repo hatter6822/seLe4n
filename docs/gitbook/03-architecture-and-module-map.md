@@ -300,7 +300,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
 - `SeLe4n/Kernel/Architecture/CacheModel.lean` *(AG8-B v0.26.9)*
   - Cache coherency model: `CacheLineState` (invalid/clean/dirty), `CacheState`
     with D-cache/I-cache function fields. Operations: `dcClean`, `dcInvalidate`,
-    `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`. 10 preservation theorems.
+    `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`. 17 preservation theorems.
 - `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0, WS-K-E v0.16.4, WS-K-F v0.16.5)*
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
