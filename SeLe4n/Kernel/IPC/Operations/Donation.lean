@@ -613,4 +613,24 @@ theorem applyReplyDonation_machine_eq
         have hRem := removeRunnable_machine_eq st' replier
         exact hRem.trans hMach
 
+/-- AG8-G: cleanupPreReceiveDonation preserves machine state.
+All fallback paths return `st` unchanged, and the success path delegates to
+`returnDonatedSchedContext` which preserves machine state. -/
+theorem cleanupPreReceiveDonation_machine_eq
+    (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    (cleanupPreReceiveDonation st receiver).machine = st.machine := by
+  unfold cleanupPreReceiveDonation
+  cases lookupTcb st receiver with
+  | none => rfl
+  | some recvTcb =>
+    simp only []
+    cases recvTcb.schedContextBinding with
+    | unbound => rfl
+    | bound scId => rfl
+    | donated scId originalOwner =>
+      simp only []
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => rfl
+      | ok st' => exact returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner hReturn
+
 end SeLe4n.Kernel

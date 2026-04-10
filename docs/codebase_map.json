@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-ejwgv",
-      "commit_sha": "a18d122046c524ac67306731e445700fbbc408b2",
-      "tree_sha": "c674628f0d5a59e81769ed68b2ca29a8d2d20287",
-      "committed_at_utc": "2026-04-10T03:41:43+00:00"
+      "commit_sha": "27f766b3b4193524b418e9caadcb0399a0023047",
+      "tree_sha": "7a567a66226604268cd15f9e9ee1933f8d9f0cfc",
+      "committed_at_utc": "2026-04-10T03:46:33+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "13c1e7de30963a13f403ab33231026be28e12c6e3d8b40689b9fe2d08fe0268c"
+    "source_digest": "6a09e7b052333ba06adb017c31b06e173e4eb13ff686bca8f4c2bffbc66ee8c4"
   },
   "summary": {
     "module_count": 157,
-    "declaration_count": 4936
+    "declaration_count": 4937
   },
   "readme_sync": {
     "version": "0.26.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91227,
+    "production_loc": 91247,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2719,
+    "proved_theorem_lemma_decls": 2720,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -22002,7 +22002,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Donation",
       "path": "SeLe4n/Kernel/IPC/Operations/Donation.lean",
-      "declaration_count": 20,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -22263,13 +22263,28 @@
           "name": "applyReplyDonation_machine_eq",
           "line": 595,
           "called": [
-            "Kernel",
             "SystemState",
             "ThreadId",
             "applyReplyDonation",
             "lookupTcb",
             "none",
             "removeRunnable_machine_eq",
+            "returnDonatedSchedContext",
+            "returnDonatedSchedContext_machine_eq",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupPreReceiveDonation_machine_eq",
+          "line": 619,
+          "called": [
+            "Kernel",
+            "SystemState",
+            "ThreadId",
+            "cleanupPreReceiveDonation",
+            "lookupTcb",
+            "none",
             "returnDonatedSchedContext",
             "returnDonatedSchedContext_machine_eq",
             "scId"
