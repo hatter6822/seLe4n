@@ -553,20 +553,26 @@ structures. See `SeLe4n/Kernel/Lifecycle/Operations.lean` (S5-G/S5-H).
 seLe4n implements budget-driven timeout for IPC blocking operations (Z6),
 extending seL4 MCS timeout semantics. When a thread's SchedContext budget
 expires while blocked on send/receive/call/reply, the thread is unblocked
-with timeout error code `0xFFFFFFFF` in register x0 and re-enqueued in the
+with the explicit `timedOut := true` TCB field set and re-enqueued in the
 RunQueue.
 
 - **`timeoutThread`** (`Timeout.lean`): Removes thread from endpoint queue
-  via `endpointQueueRemove`, resets IPC state to `.ready`, writes timeout
-  error code, re-enqueues via `ensureRunnable`.
+  via `endpointQueueRemove`, resets IPC state to `.ready`, sets
+  `timedOut := true`, re-enqueues via `ensureRunnable`.
 - **`timeoutBlockedThreads`** (`Core.lean`): Looks up the per-SchedContext
   thread index (`scThreadIndex`) for O(1) identification of threads bound
   to an exhausted SchedContext, then calls `timeoutThread` on each.
 - **`timeoutAwareReceive`** (`Timeout.lean`): Wrapper that detects prior
-  timeout via error code in register context.
+  timeout via `tcb.timedOut` field; clears the flag on detection.
 - **`blockedThreadTimeoutConsistent`** invariant: Threads with
   `timeoutBudget = some scId` must reference a valid SchedContext and be
   in a blocking IPC state.
+
+**AG8-A migration note** (v0.26.9): Prior to AG8-A, timeout was signaled via
+a sentinel value `0xFFFFFFFF` in GPR x0 combined with an `ipcState = .ready`
+dual-condition check. This was fragile and could collide with legitimate IPC
+data. AG8-A replaced the sentinel with an explicit `timedOut : Bool` TCB field,
+eliminating the collision risk entirely.
 
 The timeout lookup is triggered in `timerTickBudget` on budget exhaustion,
 using the `scThreadIndex` (a Robin Hood hash table mapping `SchedContextId`

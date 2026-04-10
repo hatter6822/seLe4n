@@ -100,6 +100,9 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
     ASID root resolution, page-table management.
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`
   - VSpace invariant bundle, success/error preservation theorems, round-trip correctness theorems.
+- `SeLe4n/Kernel/Architecture/CacheModel.lean` *(AG8-B)*
+  - Cache coherency model (`CacheLineState`, `CacheState`, `dcClean`, `dcInvalidate`,
+    `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`), 8 preservation theorems.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants
     (WS-H12e: uses `schedulerInvariantBundleFull` and `coreIpcInvariantBundle` with full

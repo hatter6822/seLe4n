@@ -536,6 +536,14 @@ structure TCB where
       Cleared by `revertPriorityInheritance` when the client is unblocked.
       Default `none` = no PIP boost (existing effective priority behavior). -/
   pipBoost : Option SeLe4n.Priority := none
+  /-- AG8-A (H3-IPC-01/I-01): Explicit timeout flag replacing the fragile
+      sentinel pattern (`gpr x0 = 0xFFFFFFFF ∧ ipcState = .ready`).
+      Set to `true` by `timeoutThread` when a thread's IPC operation times
+      out due to SchedContext budget expiry. Cleared to `false` by
+      `timeoutAwareReceive` after the timeout is detected and reported.
+      This eliminates the risk of sentinel collision with legitimate IPC data
+      in register x0. -/
+  timedOut : Bool := false
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -560,7 +568,8 @@ instance : BEq TCB where
     a.schedContextBinding == b.schedContextBinding &&
     a.timeoutBudget == b.timeoutBudget &&
     a.maxControlledPriority == b.maxControlledPriority &&
-    a.pipBoost == b.pipBoost
+    a.pipBoost == b.pipBoost &&
+    a.timedOut == b.timedOut
 
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.

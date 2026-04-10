@@ -128,12 +128,12 @@ private theorem registerContextStable_writeRegister_contextMatch
   -- When check passes for some tid / .tcb tcb case, the && chain has regs == ctx as first conjunct
   unfold contextMatchesCurrent; simp only [writeRegisterState]
   match hCurr : st.scheduler.current with
-  | none => simp [hCurr]
+  | none => simp
   | some tid =>
-    simp only [hCurr]
+    simp only []
     match hObj : st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      simp only [hObj]
+      simp only []
       -- Goal: (writeReg ... == tcb.registerContext) = true
       -- Extract register match from the && chain in registerContextStableCheck
       unfold registerContextStablePred registerContextStableCheck at hStable

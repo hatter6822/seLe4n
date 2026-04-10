@@ -219,13 +219,13 @@ theorem registerContextStableCheck_budget
   | .unbound => trivial
   | .bound scId | .donated scId _ =>
     simp only [hBind, budgetSufficientCheck] at hBud
-    simp only [hBind]
+    simp only []
     match hSc : st.objects[scId.toObjId]? with
     | some (.schedContext sc) =>
       simp only [hSc] at hBud ⊢
       simp at hBud; exact hBud
     | some (.endpoint _) | some (.notification _) | some (.tcb _) |
       some (.cnode _) | some (.vspaceRoot _) | some (.untyped _) | none =>
-      simp [hSc]
+      simp
 
 end SeLe4n.Platform.RPi5

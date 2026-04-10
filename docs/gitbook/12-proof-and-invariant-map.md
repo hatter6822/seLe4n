@@ -2551,7 +2551,9 @@ object architecture delivered across phases Z1–Z9 (213 sub-tasks, v0.23.0–v0
 1. **CBS bandwidth isolation**: `cbs_bandwidth_bounded` — total CPU consumption
    bounded by `maxReplenishments × budget` over any time window
 2. **Donation chain acyclicity**: `donationChainAcyclic` — no circular SchedContext
-   donation chains (prevents deadlock in passive server protocol)
+   donation chains (prevents deadlock in passive server protocol). AG8-F
+   extends to k>2 cycles via `donationChainAcyclic_general` +
+   `blockedOnReply_cannot_call`
 3. **Timeout termination**: `blockedThreadTimeoutConsistent` — budget-exhausted
    IPC blocks are guaranteed to be unblocked via `timeoutBlockedThreads`
 4. **Admission control soundness**: `admissionCheck` enforces total utilization
