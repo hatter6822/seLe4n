@@ -1054,57 +1054,64 @@ theorem donationChainAcyclic_of_no_donated
   exact absurd hB1 (hNone tid1 tcb1 h1 scId1 tid2)
 
 -- ============================================================================
--- AG8-F: Donation Chain k>2 Cycle Prevention (H3-PROOF-03)
+-- AG8-F: Donation Chain Cycle Prevention (H3-PROOF-03)
 -- ============================================================================
 
-/-- AG8-F: Donation owner blocked-on-reply extraction.
+/-- AG8-F: `donationOwnerValid` subsumes `donationChainAcyclic`.
 
-**What this theorem proves**: Re-extracts a subset of `donationOwnerValid`:
-when a thread has a `.donated scId owner` binding, the owner thread exists
-as a TCB in `.blockedOnReply` state. The proof applies `hDOV` and drops the
-`.bound scId` conjunct from `donationOwnerValid`'s conclusion.
-
-**Note**: The `_hDCA : donationChainAcyclic st` hypothesis is carried for
-API signature completeness (the caller typically has both invariants
-available) but is **unused** in this proof. The theorem name reflects the
-*intended* role in the k>2 cycle prevention argument, not what the current
-proof establishes on its own.
-
-**Role in k>2 cycle prevention** (informal argument, not yet mechanized):
-1. Donation edges are created only by `endpointCall` → `donateSchedContext`.
-2. Donation owners are in `.blockedOnReply` state (this theorem).
-3. Blocked-on-reply threads cannot invoke `endpointCall` (requires `.ready`)
-   — see `blockedOnReply_cannot_call`.
-4. Therefore, owners at chain endpoints cannot create new donation edges.
-
-**Deferred to WS-V**: The formal bridge lemma from donation edges to blocking
-graph edges (proving donation chains are a sub-relation of `blockingAcyclic`)
-is not yet mechanized. The informal argument above provides the semantic
-justification; the formal composition is deferred. -/
-theorem donationChainAcyclic_general
+Proves that 2-cycles are structurally impossible when donation owners
+have `.bound` bindings. If thread `tid1` has `.donated scId1 tid2`, then
+by `donationOwnerValid`, `tid2` has `.bound scId1`. Since `.bound` and
+`.donated` are distinct constructors of `SchedContextBinding`, `tid2` cannot
+simultaneously have `.donated scId2 tid1`. Contradiction. -/
+theorem donationOwnerValid_implies_donationChainAcyclic
     (st : SystemState)
-    (_hDCA : donationChainAcyclic st)
     (hDOV : donationOwnerValid st) :
-    ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
-      (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
-    st.objects[tid.toObjId]? = some (.tcb tcb) →
-    tcb.schedContextBinding = .donated scId owner →
-    -- The owner is blocked on reply and thus cannot initiate another Call.
-    -- This prevents the owner from creating a new donation edge, breaking
-    -- any potential k>2 cycle that would include this thread.
-    ∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
-      ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget := by
-  intro tid tcb scId owner hTcb hBinding
-  have ⟨_, hOwner⟩ := hDOV tid tcb scId owner hTcb hBinding
-  obtain ⟨ownerTcb, hOwnerTcb, _, hBlocked⟩ := hOwner
-  exact ⟨ownerTcb, hOwnerTcb, hBlocked⟩
+    donationChainAcyclic st := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 hTcb1 hTcb2 hDon1 hDon2
+  -- tid1 has .donated scId1 tid2, so by donationOwnerValid:
+  -- tid2 (the owner) has .bound scId1
+  have ⟨_, hOwner⟩ := hDOV tid1 tcb1 scId1 tid2 hTcb1 hDon1
+  obtain ⟨ownerTcb, hOwnerTcb, hBound, _⟩ := hOwner
+  -- Equate ownerTcb with tcb2: both come from st.objects[tid2.toObjId]?
+  rw [hTcb2] at hOwnerTcb
+  cases hOwnerTcb -- ownerTcb = tcb2
+  -- Now: hBound : tcb2.schedContextBinding = .bound scId1
+  --      hDon2  : tcb2.schedContextBinding = .donated scId2 tid1
+  -- .bound ≠ .donated — constructor disjointness
+  rw [hDon2] at hBound; cases hBound
+
+/-- AG8-F: Donation chains cannot extend beyond length 1.
+
+If thread `tid` has `.donated scId owner`, then by `donationOwnerValid`,
+the `owner` has `schedContextBinding = .bound scId`. Since `.bound` and
+`.donated` are distinct constructors of `SchedContextBinding`, the owner
+cannot also have a `.donated` binding. This prevents donation chains of
+length ≥ 2 entirely — not just cycles, but all extensions. -/
+theorem donationChain_no_extension
+    (st : SystemState)
+    (hDOV : donationOwnerValid st)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hDonated : tcb.schedContextBinding = .donated scId owner) :
+    ∀ (ownerTcb : TCB),
+      st.objects[owner.toObjId]? = some (.tcb ownerTcb) →
+      ∀ scId2 owner2, ownerTcb.schedContextBinding ≠ .donated scId2 owner2 := by
+  intro ownerTcb hOwnerTcb scId2 owner2 hContra
+  have ⟨_, hOwner⟩ := hDOV tid tcb scId owner hTcb hDonated
+  obtain ⟨ownerTcb', hOwnerTcb', hBound, _⟩ := hOwner
+  rw [hOwnerTcb] at hOwnerTcb'
+  cases hOwnerTcb' -- ownerTcb' = ownerTcb
+  -- hBound : ownerTcb.schedContextBinding = .bound scId
+  -- hContra : ownerTcb.schedContextBinding = .donated scId2 owner2
+  rw [hContra] at hBound; cases hBound
 
 /-- AG8-F: Blocked-on-reply threads cannot initiate calls.
-A building block of the k>2 donation cycle prevention argument:
-a thread in `.blockedOnReply` state has `ipcState ≠ .ready`, so it
-cannot enter `endpointCall` (which requires `.ready` state).
-Combined with `donationChainAcyclic_general` (owners are blocked),
-this prevents donation chain owners from creating new edges. -/
+A thread in `.blockedOnReply` state has `ipcState ≠ .ready`, so it
+cannot enter `endpointCall` (which requires `.ready` state per the
+`runnableThreadIpcReady` scheduler invariant — only `.ready` threads
+are in the runnable queue and thus dispatched to execute). -/
 theorem blockedOnReply_cannot_call
     (ipcState : ThreadIpcState)
     (epId : SeLe4n.ObjId) (replyTarget : Option SeLe4n.ThreadId)

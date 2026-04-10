@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-binding-audit-ejwgv",
-      "commit_sha": "27f766b3b4193524b418e9caadcb0399a0023047",
-      "tree_sha": "7a567a66226604268cd15f9e9ee1933f8d9f0cfc",
-      "committed_at_utc": "2026-04-10T03:46:33+00:00"
+      "commit_sha": "51930ab7bf7ee083164502bb984d0f82eb6de4c4",
+      "tree_sha": "98c10a87fa5dbf845d201a70b1dec48dad8438cb",
+      "committed_at_utc": "2026-04-10T04:14:43+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6a09e7b052333ba06adb017c31b06e173e4eb13ff686bca8f4c2bffbc66ee8c4"
+    "source_digest": "99bdf56b7e4374d9b274b02699d6c94b6094bef095bd9004546cdb16362f172b"
   },
   "summary": {
     "module_count": 157,
-    "declaration_count": 4937
+    "declaration_count": 4942
   },
   "readme_sync": {
     "version": "0.26.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91247,
+    "production_loc": 91350,
     "test_files": 16,
     "test_loc": 11374,
-    "proved_theorem_lemma_decls": 2720,
+    "proved_theorem_lemma_decls": 2725,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -15304,7 +15304,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Defs",
       "path": "SeLe4n/Kernel/IPC/Invariant/Defs.lean",
-      "declaration_count": 69,
+      "declaration_count": 70,
       "declarations": [
         {
           "kind": "namespace",
@@ -16097,14 +16097,23 @@
         },
         {
           "kind": "theorem",
-          "name": "donationChainAcyclic_general",
-          "line": 1084,
+          "name": "donationOwnerValid_implies_donationChainAcyclic",
+          "line": 1067,
+          "called": [
+            "SystemState",
+            "donationChainAcyclic",
+            "donationOwnerValid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "donationChain_no_extension",
+          "line": 1091,
           "called": [
             "SchedContextId",
             "SystemState",
             "TCB",
             "ThreadId",
-            "donationChainAcyclic",
             "donationOwnerValid",
             "scId",
             "toObjId"
@@ -16113,7 +16122,7 @@
         {
           "kind": "theorem",
           "name": "blockedOnReply_cannot_call",
-          "line": 1108,
+          "line": 1115,
           "called": [
             "ObjId",
             "ThreadId",
@@ -16123,7 +16132,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerValid_of_no_donated",
-          "line": 1116,
+          "line": 1123,
           "called": [
             "SystemState",
             "TCB",
@@ -16136,7 +16145,7 @@
         {
           "kind": "theorem",
           "name": "donationBudgetTransfer_of_no_shared",
-          "line": 1126,
+          "line": 1133,
           "called": [
             "SystemState",
             "TCB",
@@ -16149,7 +16158,7 @@
         {
           "kind": "def",
           "name": "ipcInvariantFull",
-          "line": 1150,
+          "line": 1157,
           "called": [
             "Kernel",
             "SystemState",
@@ -22002,7 +22011,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Donation",
       "path": "SeLe4n/Kernel/IPC/Operations/Donation.lean",
-      "declaration_count": 21,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -22209,17 +22218,21 @@
         },
         {
           "kind": "theorem",
-          "name": "donationAtomicRegion_of_disabled",
-          "line": 494,
+          "name": "donateSchedContext_atomicRegion",
+          "line": 488,
           "called": [
+            "SchedContextId",
             "SystemState",
+            "ThreadId",
+            "donateSchedContext",
+            "donateSchedContext_machine_eq",
             "donationAtomicRegion"
           ]
         },
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_machine_eq",
-          "line": 509,
+          "line": 508,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -22235,8 +22248,22 @@
         },
         {
           "kind": "theorem",
+          "name": "returnDonatedSchedContext_atomicRegion",
+          "line": 553,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "donationAtomicRegion",
+            "returnDonatedSchedContext",
+            "returnDonatedSchedContext_machine_eq",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "applyCallDonation_machine_eq",
-          "line": 559,
+          "line": 574,
           "called": [
             "SystemState",
             "ThreadId",
@@ -22251,7 +22278,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_machine_eq",
-          "line": 586,
+          "line": 601,
           "called": [
             "SystemState",
             "ThreadId",
@@ -22261,7 +22288,7 @@
         {
           "kind": "theorem",
           "name": "applyReplyDonation_machine_eq",
-          "line": 595,
+          "line": 610,
           "called": [
             "SystemState",
             "ThreadId",
@@ -22277,7 +22304,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_machine_eq",
-          "line": 619,
+          "line": 634,
           "called": [
             "Kernel",
             "SystemState",
@@ -46863,7 +46890,7 @@
     {
       "module": "SeLe4n.Model.Object.Structures",
       "path": "SeLe4n/Model/Object/Structures.lean",
-      "declaration_count": 168,
+      "declaration_count": 171,
       "declarations": [
         {
           "kind": "namespace",
@@ -48531,9 +48558,36 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "childrenOf_to_edge",
+          "line": 2324,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "cdtMapsConsistent",
+            "childrenOf",
+            "get",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CdtChildReachable_implies_cdtReachable",
+          "line": 2337,
+          "called": [
+            "CapDerivationTree",
+            "CdtChildReachable",
+            "CdtNodeId",
+            "cdtMapsConsistent",
+            "cdtReachable",
+            "childrenOf_to_edge",
+            "getElem"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "KernelObject",
-          "line": 2323,
+          "line": 2396,
           "called": [
             "CNode",
             "Endpoint",
@@ -48546,8 +48600,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2335>",
-          "line": 2335,
+          "name": "<anonymous:instance:2408>",
+          "line": 2408,
           "called": [
             "KernelObject"
           ]
@@ -48555,19 +48609,19 @@
         {
           "kind": "inductive",
           "name": "KernelObjectType",
-          "line": 2346,
+          "line": 2419,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "KernelObjectType",
-          "line": 2356,
+          "line": 2429,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 2360,
+          "line": 2433,
           "called": [
             "KernelObjectType"
           ]
@@ -48575,7 +48629,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 2371,
+          "line": 2444,
           "called": [
             "KernelObjectType",
             "none"
@@ -48584,7 +48638,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 2382,
+          "line": 2455,
           "called": [
             "KernelObjectType",
             "ofNat",
@@ -48594,7 +48648,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 2386,
+          "line": 2459,
           "called": [
             "KernelObjectType",
             "toNat"
@@ -48603,13 +48657,13 @@
         {
           "kind": "namespace",
           "name": "KernelObject",
-          "line": 2391,
+          "line": 2464,
           "called": []
         },
         {
           "kind": "def",
           "name": "objectType",
-          "line": 2393,
+          "line": 2466,
           "called": [
             "KernelObject",
             "KernelObjectType"
@@ -48618,7 +48672,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 2414,
+          "line": 2487,
           "called": [
             "KernelObject",
             "ObjId",
@@ -48629,8 +48683,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:2428>",
-          "line": 2428,
+          "name": "<anonymous:instance:2501>",
+          "line": 2501,
           "called": [
             "KernelObject",
             "ObjId",
@@ -48641,7 +48695,7 @@
         {
           "kind": "def",
           "name": "threadSchedulingParams",
-          "line": 2454,
+          "line": 2527,
           "called": [
             "Deadline",
             "DomainId",
@@ -48658,25 +48712,42 @@
         {
           "kind": "def",
           "name": "maxCdtDepth",
-          "line": 2479,
+          "line": 2552,
           "called": []
         },
         {
           "kind": "theorem",
-          "name": "descendantsOf_fuel_sufficient",
-          "line": 2496,
+          "name": "edgeWellFounded_no_self_reachable",
+          "line": 2567,
           "called": [
             "CapDerivationTree",
-            "CdtNodeId",
+            "CdtChildReachable",
+            "CdtChildReachable_implies_cdtReachable",
+            "cdtMapsConsistent",
             "edgeWellFounded"
           ]
         },
         {
           "kind": "theorem",
-          "name": "cdtDepth_bounded_by_maxCdtDepth",
-          "line": 2515,
+          "name": "addEdge_edges_length",
+          "line": 2584,
           "called": [
             "CapDerivationTree",
+            "CdtNodeId",
+            "DerivationOp",
+            "addEdge"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "addEdge_maintains_depth_bound",
+          "line": 2596,
+          "called": [
+            "CapDerivationTree",
+            "CdtNodeId",
+            "DerivationOp",
+            "addEdge",
+            "addEdge_edges_length",
             "maxCdtDepth"
           ]
         }

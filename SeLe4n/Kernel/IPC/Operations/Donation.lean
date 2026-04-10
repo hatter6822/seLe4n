@@ -481,22 +481,21 @@ theorem donateSchedContext_machine_eq
               exact h2.trans h1
     | _ => simp only []; intro h; cases h
 
-/-- AG8-G: Convenience wrapper — packages interrupt-disabled hypotheses
-into `donationAtomicRegion`. This is `And.intro` of the two hypotheses;
-the caller must establish both.
-
-The substantive machine preservation proofs that make atomicity meaningful
-are the `*_machine_eq` theorems: `donateSchedContext_machine_eq`,
-`returnDonatedSchedContext_machine_eq`, `applyCallDonation_machine_eq`,
-and `applyReplyDonation_machine_eq`. These prove that if interrupts are
-disabled before a donation operation, they remain disabled after (since
-the entire `machine` field is preserved). -/
-theorem donationAtomicRegion_of_disabled
+/-- AG8-G: Donation is atomic — `donateSchedContext` preserves the
+interrupt-disabled state. Derives the post-condition from
+`donateSchedContext_machine_eq`: since the entire `machine` field is
+preserved, `interruptsEnabled` remains `false` through the operation. -/
+theorem donateSchedContext_atomicRegion
     (st st' : SystemState)
+    (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId)
     (hPre : st.machine.interruptsEnabled = false)
-    (hPost : st'.machine.interruptsEnabled = false) :
-    donationAtomicRegion st st' :=
-  ⟨hPre, hPost⟩
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    donationAtomicRegion st st' := by
+  constructor
+  · exact hPre
+  · have hMach := donateSchedContext_machine_eq st st' clientTid serverTid clientScId h
+    rw [hMach]; exact hPre
 
 -- ============================================================================
 -- AG8-G.2: returnDonatedSchedContext machine state preservation
@@ -547,6 +546,22 @@ theorem returnDonatedSchedContext_machine_eq
                 have h3 := storeObject_machine_eq_local p2.2 _ _ _ hS3
                 exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
+
+/-- AG8-G: Return donation is atomic — `returnDonatedSchedContext` preserves
+the interrupt-disabled state. Derives the post-condition from
+`returnDonatedSchedContext_machine_eq`. -/
+theorem returnDonatedSchedContext_atomicRegion
+    (st st' : SystemState)
+    (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId)
+    (hPre : st.machine.interruptsEnabled = false)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationAtomicRegion st st' := by
+  constructor
+  · exact hPre
+  · have hMach := returnDonatedSchedContext_machine_eq st st' serverTid scId originalOwner h
+    rw [hMach]; exact hPre
 
 -- ============================================================================
 -- AG8-G: Wrapper function machine state preservation

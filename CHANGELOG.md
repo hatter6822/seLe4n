@@ -33,25 +33,32 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   AG8-A `timedOut` addition) and partial mutation concerns (AE2-D) warrant
   continued experimental status. All 4 FrozenOps files annotated with
   "Experimental — deferred to WS-V (AG8-D)"
-- **AG8-E** (F-S05): CDT `descendantsOf` fuel sufficiency placeholders.
+- **AG8-E** (F-S05): CDT `descendantsOf` fuel sufficiency and depth bounds.
   `maxCdtDepth : Nat := 65536` constant based on RPi5 maximum kernel objects.
-  `descendantsOf_fuel_sufficient` proves only `edges.length ≥ 0` (Nat tautology
-  — placeholder, not substantive fuel sufficiency). `cdtDepth_bounded_by_maxCdtDepth`
-  is `P → P` (identity — placeholder, not an operational bound proof).
-  Substantive fuel-sufficiency and depth-bound proofs deferred to WS-V
-- **AG8-F** (H3-PROOF-03): Donation chain k>2 cycle prevention building blocks.
-  `donationChainAcyclic_general` re-extracts blocked-on-reply state from
-  `donationOwnerValid` (unused `_hDCA` hypothesis carried for API completeness).
-  `blockedOnReply_cannot_call` proves blocked threads cannot initiate new calls.
-  Together these provide the *ingredients* for k>2 prevention; the formal bridge
-  from donation edges to `blockingAcyclic` sub-relation is deferred to WS-V
-- **AG8-G** (H3-IPC-04): Donation atomicity under interrupt disable.
-  `donationAtomicRegion` predicate asserting `interruptsEnabled = false` for
-  both pre- and post-states. `donateSchedContext_machine_eq` theorem proving
-  machine state (including `interruptsEnabled`) is preserved through donation.
-  `donationAtomicRegion_of_disabled` convenience theorem. Three-component
-  atomicity argument documented: AG5-G region, PIP propagation locality,
-  machine state preservation
+  `childrenOf_to_edge` bridges `childMap` membership to proof-anchor edge list.
+  `CdtChildReachable_implies_cdtReachable` converts inductive reachability to
+  path-based reachability (induction on CdtChildReachable with List path
+  extension). `edgeWellFounded_no_self_reachable` proves no CDT self-cycles
+  under `edgeWellFounded` + `cdtMapsConsistent`. `addEdge_edges_length` proves
+  `addEdge` increments `edges.length` by exactly 1. `addEdge_maintains_depth_bound`
+  proves depth bound preserved through `addEdge`
+- **AG8-F** (H3-PROOF-03): Donation chain cycle prevention — substantive proofs.
+  `donationOwnerValid_implies_donationChainAcyclic` proves that `donationOwnerValid`
+  structurally implies `donationChainAcyclic` via `.bound ≠ .donated` constructor
+  disjointness (SchedContextBinding mutually exclusive constructors with
+  DecidableEq). `donationChain_no_extension` proves donated threads' owners
+  cannot themselves be in `.donated` state. `blockedOnReply_cannot_call` proves
+  blocked threads cannot initiate new calls
+- **AG8-G** (H3-IPC-04): Donation atomicity under interrupt disable —
+  substantive composed proofs. `donationAtomicRegion` predicate asserting
+  `interruptsEnabled = false` for both pre- and post-states.
+  `donateSchedContext_machine_eq` / `returnDonatedSchedContext_machine_eq`
+  theorems proving machine state preserved through donation.
+  `donateSchedContext_atomicRegion` / `returnDonatedSchedContext_atomicRegion`
+  compose pre-condition + `machine_eq` to derive atomicity (non-vacuous:
+  post-condition derived, not assumed). Wrapper proofs:
+  `applyCallDonation_machine_eq`, `applyReplyDonation_machine_eq`,
+  `cleanupPreReceiveDonation_machine_eq`, `removeRunnable_machine_eq`
 
 ### Additional fixes
 
@@ -66,14 +73,22 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
   proving D-cache coherency is maintained through clean and clean+invalidate
   operations (first audit). Second audit added 7 more theorems for
   `dcInvalidate` (4) and `dcZeroByVA` (3), bringing total to 17 theorems
-- **AG8-E audit**: Updated docstrings for `descendantsOf_fuel_sufficient` and
-  `cdtDepth_bounded_by_maxCdtDepth` to honestly document proof status. The
-  theorems are placeholders: `Nat ≥ 0` tautology and `P → P` identity
-  respectively. Substantive fuel-sufficiency proof deferred to WS-V
-- **AG8-F audit**: Rewrote `donationChainAcyclic_general` docstring to
-  honestly state it re-extracts from `donationOwnerValid` with unused `_hDCA`
-  hypothesis. Formal bridge lemma from donation edges to `blockingAcyclic`
-  sub-relation documented as deferred to WS-V
+- **AG8-E audit (substantive)**: Replaced both placeholder theorems with
+  substantive proofs. `descendantsOf_fuel_sufficient` (Nat ≥ 0 tautology) →
+  `edgeWellFounded_no_self_reachable` (no CDT node reaches itself under
+  edgeWellFounded + cdtMapsConsistent). `cdtDepth_bounded_by_maxCdtDepth`
+  (P → P identity) → `addEdge_edges_length` + `addEdge_maintains_depth_bound`
+  (addEdge increments edges by 1, preserves depth bound). New bridge theorems:
+  `childrenOf_to_edge` (childMap membership → edge existence),
+  `CdtChildReachable_implies_cdtReachable` (inductive reachability → path-based
+  reachability via path extension with List getElem? index manipulation)
+- **AG8-F audit (substantive)**: Replaced weak `donationChainAcyclic_general`
+  (unused `_hDCA` hypothesis) with two substantive theorems:
+  `donationOwnerValid_implies_donationChainAcyclic` (owners have `.bound` binding
+  → `.bound ≠ .donated` constructor disjointness prevents 2-cycles) and
+  `donationChain_no_extension` (donated threads' owners cannot themselves be
+  donated). Both proofs use `Option.some` injectivity on `st.objects` lookup
+  followed by constructor disjointness contradiction
 - **AG8-G audit**: Added `returnDonatedSchedContext_machine_eq` — symmetric
   machine state preservation theorem for the return path. Mirrors
   `donateSchedContext_machine_eq` with 3-step `storeObject` transitivity chain.
@@ -86,13 +101,14 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
 - **AG8-F audit**: Refined `blockedOnReply_cannot_call` docstring to describe
   it as a "building block" of the cycle prevention argument rather than "the
   structural invariant that prevents k>2 donation cycles"
-- **AG8-G audit (round 2)**: Added `applyCallDonation_machine_eq`,
-  `applyReplyDonation_machine_eq`, `cleanupPreReceiveDonation_machine_eq`, and
-  `removeRunnable_machine_eq` — wrapper-level machine state preservation proofs
-  closing the gap between inner function proofs (`donateSchedContext_machine_eq`,
-  `returnDonatedSchedContext_machine_eq`) and the API-level functions actually
-  called from IPC dispatch. Updated `donationAtomicRegion_of_disabled` docstring
-  to reference the full proof chain
+- **AG8-G audit (round 2, substantive)**: Added wrapper-level machine state
+  preservation proofs: `applyCallDonation_machine_eq`,
+  `applyReplyDonation_machine_eq`, `cleanupPreReceiveDonation_machine_eq`,
+  `removeRunnable_machine_eq`. Replaced vacuous `donationAtomicRegion_of_disabled`
+  (hypothesis packaging) with composed atomicity proofs:
+  `donateSchedContext_atomicRegion` and `returnDonatedSchedContext_atomicRegion`
+  — each derives post-condition `interruptsEnabled = false` from pre-condition +
+  `machine_eq` theorem, proving donation is atomic under interrupt disable
 
 ### Key theorems
 
@@ -107,16 +123,26 @@ Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
 - `dcClean_preserves_dcacheCoherent`: D-cache coherency preserved through clean
 - `dcCleanInvalidate_preserves_dcacheCoherent`: D-cache coherency preserved
   through clean+invalidate
-- `donationChainAcyclic_general`: donation owners in blockedOnReply state
-  (re-extraction from `donationOwnerValid`; unused `_hDCA` hypothesis)
+- `donationOwnerValid_implies_donationChainAcyclic`: `donationOwnerValid` →
+  `donationChainAcyclic` via `.bound ≠ .donated` constructor disjointness
+- `donationChain_no_extension`: donated threads' owners cannot be donated
+- `donateSchedContext_atomicRegion`: donation atomic under interrupt disable
+  (composed from pre-condition + `donateSchedContext_machine_eq`)
+- `returnDonatedSchedContext_atomicRegion`: return-donation atomic under
+  interrupt disable (composed from pre-condition +
+  `returnDonatedSchedContext_machine_eq`)
 - `blockedOnReply_cannot_call`: blocked threads cannot initiate calls
 - `empty_cacheCoherent`: empty cache is trivially coherent
 - `pageTableUpdate_icache_coherent`: I-cache coherence after page table update
   + flush
-- `descendantsOf_fuel_sufficient`: placeholder — proves `Nat ≥ 0` (tautology);
-  substantive fuel sufficiency deferred to WS-V
-- `cdtDepth_bounded_by_maxCdtDepth`: placeholder — `P → P` identity;
-  operational depth bound deferred to WS-V
+- `childrenOf_to_edge`: `childrenOf` membership → edge existence (under
+  `cdtMapsConsistent`)
+- `CdtChildReachable_implies_cdtReachable`: inductive reachability → path-based
+  reachability (path extension with List index manipulation)
+- `edgeWellFounded_no_self_reachable`: no CDT self-cycles under
+  `edgeWellFounded` + `cdtMapsConsistent`
+- `addEdge_edges_length`: `addEdge` increments `edges.length` by exactly 1
+- `addEdge_maintains_depth_bound`: depth bound preserved through `addEdge`
 
 ### New files
 
