@@ -17,26 +17,21 @@ open SeLe4n.Model
 -- Z6-C: Timeout-driven IPC unblocking
 -- ============================================================================
 
-/-- Z6-C: Timeout error code written to register x0 when a thread's IPC
-operation times out due to SchedContext budget expiry. Matches seL4 MCS
-convention: timeout is signaled via the return register, not an exception.
-
-**AE4-F (U-23/IPC-01): Timeout Detection Sentinel — Design Rationale**
-
-`timeoutAwareReceive` detects prior timeouts via a composite check:
-  (1) gpr x0 = timeoutErrorCode (0xFFFFFFFF), AND
-  (2) ipcState = .ready
-
-The AND condition mitigates false positives: legitimate IPC messages are
-delivered via `pendingMessage` and set ipcState to `.waitingForReply` or
-`.blocked`, not `.ready`. The gpr x0 sentinel is only written by
-`timeoutThread`, which also sets ipcState to `.ready`.
-
-AF5-B (AF-04): Migration path for H3 hardware binding: add `timedOut : Bool`
-to TCB, eliminating the gpr x0 sentinel entirely. The composite check is
-sound for the current model but fragile if future operations modify gpr x0
-without updating ipcState simultaneously. See AE4-F for full design rationale. -/
-def timeoutErrorCode : SeLe4n.RegValue := ⟨0xFFFFFFFF⟩
+-- ============================================================================
+-- AG8-A (H3-IPC-01/I-01): Timeout sentinel eliminated.
+--
+-- Previous design used a fragile composite check:
+--   (1) gpr x0 = 0xFFFFFFFF (timeoutErrorCode sentinel), AND
+--   (2) ipcState = .ready
+--
+-- This has been replaced with an explicit `timedOut : Bool` field on TCB,
+-- eliminating the risk of sentinel collision with legitimate IPC data.
+-- `timeoutThread` sets `timedOut := true`; `timeoutAwareReceive` checks and
+-- clears it. The register x0 is no longer modified by timeout operations.
+--
+-- History: AE4-F (U-23/IPC-01) documented the migration path. AG8-A
+-- implements it.
+-- ============================================================================
 
 /-- Z6-C1/C2/C3: Unblock a thread whose IPC operation has timed out due to
 SchedContext budget expiry.
@@ -46,9 +41,9 @@ This operation:
    or receive queue using `endpointQueueRemove`.
 2. **IPC state reset** (Z6-C1): Sets `tcb.ipcState := .ready` and clears
    `tcb.pendingMessage := none` and `tcb.timeoutBudget := none`.
-3. **Scheduler re-enqueue** (Z6-C3): Sets the timeout error code in the
-   thread's register context (`gpr 0 := timeoutErrorCode`) and re-enqueues
-   the thread in the RunQueue at its current priority.
+3. **Scheduler re-enqueue** (Z6-C3): Sets the explicit `timedOut := true` flag
+   on the TCB (AG8-A) and re-enqueues the thread in the RunQueue at its
+   current priority.
 
 The `isReceiveQ` parameter indicates which queue the thread is blocked on:
 - `true`: thread was in `blockedOnReceive` on the endpoint's receiveQ
@@ -82,13 +77,14 @@ def timeoutThread
         | .blockedOnReply _ (some serverId) => some serverId
         | _ => none
       -- Step 3: Reset IPC state, clear pending message and timeout budget,
-      -- set timeout error code in register context, update thread state
+      -- set explicit timedOut flag, update thread state.
+      -- AG8-A: Uses timedOut := true instead of sentinel in register x0.
       let tcb' : TCB := { tcb with
         ipcState := .ready,
         pendingMessage := none,
         timeoutBudget := none,
         threadState := .Ready,
-        registerContext := SeLe4n.writeReg tcb.registerContext ⟨0⟩ timeoutErrorCode }
+        timedOut := true }
       match storeObject tid.toObjId (.tcb tcb') st1 with
       | .error e => .error e
       | .ok ((), st2) =>
@@ -108,11 +104,10 @@ def timeoutThread
 Checks whether a thread was timed out by the scheduler during a prior
 blocking receive. The actual timeout is applied asynchronously by
 `timeoutBlockedThreads` in the timer tick path (`timerTickBudget`), which
-sets the timeout error code in register x0 and resets ipcState to `.ready`.
+sets `timedOut := true` and resets ipcState to `.ready`.
 
-Detection: if `gpr x0 = timeoutErrorCode ∧ ipcState = .ready`, the thread
-was timed out → returns `.timedOut` and clears the error code. Otherwise,
-returns `.completed msg` with any pending message (or `IpcMessage.empty`).
+AG8-A: Detection uses explicit `tcb.timedOut ∧ tcb.ipcState = .ready` check,
+replacing the fragile sentinel pattern (gpr x0 = 0xFFFFFFFF).
 
 The `endpointId` parameter is reserved for future validation (confirming the
 timeout applies to the expected endpoint). It is not currently used. -/
@@ -123,12 +118,11 @@ def timeoutAwareReceive
     match lookupTcb st receiver with
     | none => .error .objectNotFound
     | some tcb =>
-      -- Check if receiver already has a timeout error code from prior timeout
-      if tcb.registerContext.gpr ⟨0⟩ = timeoutErrorCode ∧ tcb.ipcState = .ready then
+      -- AG8-A: Check explicit timedOut flag instead of register sentinel
+      if tcb.timedOut ∧ tcb.ipcState = .ready then
         -- Thread was timed out by the scheduler — report timeout
-        -- Clear the error code to avoid re-triggering
-        let regs' := SeLe4n.writeReg tcb.registerContext ⟨0⟩ ⟨0⟩
-        let tcb' := { tcb with registerContext := regs' }
+        -- Clear the timedOut flag to avoid re-triggering
+        let tcb' := { tcb with timedOut := false }
         match storeObject receiver.toObjId (.tcb tcb') st with
         | .error e => .error e
         | .ok ((), st') => .ok (.timedOut, st')

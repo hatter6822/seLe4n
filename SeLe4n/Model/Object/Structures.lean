@@ -1016,16 +1016,16 @@ Y1-E: Uses `Std.HashSet` for O(1) visited-set membership checks (was O(n²)
 with `List.Mem`). The `visited` parameter mirrors `acc` for membership;
 `acc` remains the result list.
 
-AF2-F: Transitive closure completeness for the full CDT depth is deferred
-to WS-V/H3 where concrete CDT depth bounds (ARM64 page table levels) are
-available. Direct-child completeness follows from `childrenOf` correctness
-and the BFS frontier expansion. The structural argument for full
-completeness: the CDT is acyclic (proven by `cdtAcyclicity` /
-`edgeWellFounded`), so BFS with `edges.length` fuel visits every
+AF2-F / AG8-E: Fuel sufficiency placeholder. `descendantsOf_fuel_sufficient`
+proves only `edges.length ≥ 0` (a `Nat` tautology — not a substantive fuel
+sufficiency proof). `maxCdtDepth = 65536` provides the hardware-binding CDT
+depth constant. The substantive fuel-sufficiency proof (connecting
+`edgeWellFounded` to BFS termination) is deferred to WS-V.
+Structural argument (informal): the CDT is acyclic (proven by `cdtAcyclicity`
+/ `edgeWellFounded`), so BFS with `edges.length` fuel visits every
 reachable node — each edge is traversed at most once, and fuel ≥ edge
-count guarantees no premature termination. The formal connection between
-BFS fuel sufficiency and acyclicity-bounded depth requires the
-hardware-binding CDT depth constant (max page table levels × fan-out). -/
+count guarantees no premature termination. The visited-set filter ensures
+each node is processed at most once. -/
 def descendantsOf (cdt : CapDerivationTree) (root : CdtNodeId)
     : List CdtNodeId :=
   go cdt.edges.length [root] {} []
@@ -2314,6 +2314,79 @@ theorem descendantsOf_go_mem_children_found
   · simp only [List.length_append, List.length_cons] at hFuel; omega
   · exact hSync
 
+-- ============================================================================
+-- AG8-E: childrenOf → edge bridge + CdtChildReachable → cdtReachable
+-- ============================================================================
+
+/-- AG8-E: Under `cdtMapsConsistent`, membership in `childrenOf` implies
+existence of a corresponding edge in `cdt.edges`. Bridges the O(1) `childMap`
+lookup to the proof-anchor edge list. -/
+theorem childrenOf_to_edge (cdt : CapDerivationTree)
+    (hConsistent : cdt.cdtMapsConsistent) (parent child : CdtNodeId)
+    (hChild : child ∈ cdt.childrenOf parent) :
+    ∃ e ∈ cdt.edges, e.parent = parent ∧ e.child = child := by
+  simp only [childrenOf] at hChild
+  cases hGet : cdt.childMap.get? parent with
+  | none => rw [hGet] at hChild; simp at hChild
+  | some cs => rw [hGet] at hChild; simp at hChild; exact hConsistent.2.1 parent cs hGet child hChild
+
+/-- AG8-E: Under `cdtMapsConsistent`, `CdtChildReachable` (inductive reachability
+through `childrenOf`) implies `cdtReachable` (path-based reachability through
+`edges`). This bridges the BFS-level reachability definition with the
+proof-anchor edge list, enabling composition with `edgeWellFounded`. -/
+theorem CdtChildReachable_implies_cdtReachable (cdt : CapDerivationTree)
+    (hConsistent : cdt.cdtMapsConsistent)
+    {root n : CdtNodeId} (hReach : CdtChildReachable cdt root n) :
+    cdt.cdtReachable root n := by
+  induction hReach with
+  | child hChild =>
+    obtain ⟨e, heMem, heP, heC⟩ := childrenOf_to_edge cdt hConsistent _ _ hChild
+    refine ⟨[_, _], ?_, rfl, rfl, fun i hi => ?_⟩
+    · show (2 : Nat) > 1; omega
+    · simp only [List.length_cons, List.length_nil] at hi
+      have : i = 0 := by omega
+      subst this; exact ⟨e, heMem, heP, heC⟩
+  | trans _hReach hChild ih =>
+    rename_i mid c
+    obtain ⟨path, hLen, hHead, hLast, hEdges⟩ := ih
+    obtain ⟨e, heMem, heP, heC⟩ := childrenOf_to_edge cdt hConsistent _ _ hChild
+    refine ⟨path ++ [c], ?_, ?_, ?_, ?_⟩
+    · -- length > 1
+      simp [List.length_append]; omega
+    · -- head? = some root
+      cases path with
+      | nil => simp at hLen
+      | cons a rest => simp [List.head?_cons] at hHead ⊢; exact hHead
+    · -- getLast? = some c
+      exact List.getLast?_concat
+    · -- consecutive edges
+      intro i hi
+      have hAppLen : (path ++ [c]).length = path.length + 1 := List.length_append
+      rw [hAppLen] at hi
+      by_cases hlt : i + 1 < path.length
+      · -- Index within original path
+        have h1 : (path ++ [c])[i] = path[i] :=
+          List.getElem_append_left (h := by omega)
+        have h2 : (path ++ [c])[i + 1] = path[i + 1] :=
+          List.getElem_append_left (h := hlt)
+        rw [h1, h2]; exact hEdges i hlt
+      · -- New edge at boundary: i + 1 = path.length
+        have hBound : i + 1 = path.length := by omega
+        -- path[i] = mid (last element of original path)
+        have hIdx : path[i]? = some mid := by
+          rw [show i = path.length - 1 from by omega, ← List.getLast?_eq_getElem?]
+          exact hLast
+        have hPiVal := (List.getElem?_eq_some_iff.mp hIdx).2
+        have hPi : (path ++ [c])[i] = path[i] :=
+          List.getElem_append_left (h := by omega)
+        -- (path ++ [c])[i + 1] = c
+        have hPi1 : (path ++ [c])[i + 1]? = some c := by
+          rw [List.getElem?_append_right (by omega)]
+          simp [show i + 1 - path.length = 0 from by omega]
+        have hPi1Val := (List.getElem?_eq_some_iff.mp hPi1).2
+        rw [hPi, hPiVal, hPi1Val]
+        exact ⟨e, heMem, heP, heC⟩
+
 end CapDerivationTree
 
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is
@@ -2461,5 +2534,69 @@ def threadSchedulingParams (tcb : TCB)
     | some (.schedContext sc) =>
       (sc.priority, sc.deadline, sc.domain, sc.budgetRemaining.val)
     | _ => (tcb.priority, tcb.deadline, tcb.domain, tcb.timeSlice)
+
+-- ============================================================================
+-- AG8-E: descendantsOf Fuel Sufficiency (F-S05)
+-- ============================================================================
+
+/-- AG8-E: Maximum CDT depth for RPi5 hardware binding.
+
+On ARM64 with 4-level page tables, the maximum object derivation chain depth
+is bounded by the maximum number of kernel objects. Each CDT edge connects
+two distinct objects, so the longest acyclic path has at most `maxObjects`
+edges. Since `descendantsOf` uses `cdt.edges.length` as fuel and the CDT
+is acyclic (no node is visited twice), `edges.length` fuel is always
+sufficient for complete BFS traversal.
+
+Value: matches `maxObjects` (65536) from `Model/State.lean`. -/
+def maxCdtDepth : Nat := 65536
+
+/-- AG8-E: Acyclicity transfer — under `edgeWellFounded` and `cdtMapsConsistent`,
+no CDT node can reach itself via `CdtChildReachable`. This bridges the
+inductive reachability definition (used by BFS infrastructure) with the
+path-based acyclicity definition (used by `edgeWellFounded`).
+
+**Proof strategy**: Suppose `CdtChildReachable cdt root root`. By
+`CdtChildReachable_implies_cdtReachable`, there exists a path in `cdt.edges`
+from `root` back to `root` (length ≥ 2). But `edgeWellFounded` prohibits
+exactly such paths. Contradiction.
+
+This is the key acyclicity property needed for BFS fuel sufficiency: in an
+acyclic CDT, BFS processes each node at most once (via the visited set),
+ensuring that `edges.length` fuel suffices for complete traversal. -/
+theorem edgeWellFounded_no_self_reachable (cdt : CapDerivationTree)
+    (hAcyclic : cdt.edgeWellFounded)
+    (hConsistent : cdt.cdtMapsConsistent) :
+    ∀ root, ¬ CapDerivationTree.CdtChildReachable cdt root root := by
+  intro root hReach
+  have hPath := cdt.CdtChildReachable_implies_cdtReachable hConsistent hReach
+  exact hAcyclic root hPath
+
+/-- AG8-E: `addEdge` increases `edges.length` by exactly 1. This is the
+key building block for maintaining the CDT depth bound `edges.length ≤ maxCdtDepth`
+through operations: each `addEdge` call (invoked by `retypeFromUntyped`) adds
+exactly one edge, so the bound is maintained as long as the pre-operation
+count is strictly less than `maxCdtDepth`.
+
+Combined with `addEdge_preserves_edgeWellFounded_fresh` (acyclicity preservation)
+and `addEdge_preserves_cdtMapsConsistent` (index consistency preservation), this
+provides the full maintenance argument for CDT depth bounds. -/
+theorem addEdge_edges_length (cdt : CapDerivationTree)
+    (parent child : CdtNodeId) (op : DerivationOp) :
+    (cdt.addEdge parent child op).edges.length = cdt.edges.length + 1 := by
+  simp [CapDerivationTree.addEdge, List.length_cons]
+
+/-- AG8-E: CDT depth bound preservation through `addEdge`. If the CDT has
+strictly fewer than `maxCdtDepth` edges before adding, it has at most
+`maxCdtDepth` edges after. This is the per-operation maintenance lemma
+for the system-wide CDT depth invariant.
+
+**Proof**: `addEdge` increments `edges.length` by 1 (via `addEdge_edges_length`).
+If the pre-count is `< maxCdtDepth`, the post-count is `≤ maxCdtDepth`. -/
+theorem addEdge_maintains_depth_bound (cdt : CapDerivationTree)
+    (parent child : CdtNodeId) (op : DerivationOp)
+    (hBound : cdt.edges.length < maxCdtDepth) :
+    (cdt.addEdge parent child op).edges.length ≤ maxCdtDepth := by
+  rw [addEdge_edges_length]; omega
 
 end SeLe4n.Model

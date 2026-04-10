@@ -2495,9 +2495,9 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       let stateReady := tcbAfter.ipcState == .ready
       let threadReady := tcbAfter.threadState == .Ready
       let budgetCleared := tcbAfter.timeoutBudget == none
-      let errCode := tcbAfter.registerContext.gpr ⟨0⟩ == SeLe4n.Kernel.timeoutErrorCode
+      let timedOutSet := tcbAfter.timedOut  -- AG8-A: explicit timedOut flag
       let linksCleared := tcbAfter.queuePrev == none && tcbAfter.queueNext == none
-      IO.println s!"[SCO-023] timeoutThread blocked: ready={stateReady} threadReady={threadReady} budgetCleared={budgetCleared} errCode={errCode} linksCleared={linksCleared}"
+      IO.println s!"[SCO-023] timeoutThread blocked: ready={stateReady} threadReady={threadReady} budgetCleared={budgetCleared} errCode={timedOutSet} linksCleared={linksCleared}"
     | _ => IO.println s!"[SCO-023] timeoutThread blocked: tcb not found after timeout"
 
   -- SCO-024: timeoutThread — thread not found returns error
@@ -2551,14 +2551,13 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     IO.println s!"[SCO-028] timeoutBlockedThreads non-matching: still_blocked={stillBlocked}"
   | _ => IO.println s!"[SCO-028] timeoutBlockedThreads non-matching: tcb1 not found"
 
-  -- SCO-029: timeoutAwareReceive — detects timeout via error code
-  -- Build a thread with timeout error code in x0 and ready state
+  -- SCO-029: timeoutAwareReceive — detects timeout via timedOut flag (AG8-A)
+  -- Build a thread with timedOut := true and ready state
   let rcvTid : SeLe4n.ThreadId := ⟨6003⟩
-  let regsWithErr := SeLe4n.writeReg (default : SeLe4n.RegisterFile) ⟨0⟩ SeLe4n.Kernel.timeoutErrorCode
   let tcbTimedOut : TCB := {
     tid := rcvTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
-    ipcState := .ready, registerContext := regsWithErr }
+    ipcState := .ready, timedOut := true }
   let stRcv := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbTimedOut) }
   match SeLe4n.Kernel.timeoutAwareReceive epId rcvTid stRcv with
   | .error err =>
@@ -2684,8 +2683,8 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     match stTimeout.objects[tid1.toObjId]? with
     | some (.tcb tcbAfter) =>
       let stateReady := tcbAfter.ipcState == .ready
-      let errCode := tcbAfter.registerContext.gpr ⟨0⟩ == SeLe4n.Kernel.timeoutErrorCode
-      IO.println s!"[SCO-034] timeoutThread blockedOnCall: ready={stateReady} errCode={errCode}"
+      let timedOutSet := tcbAfter.timedOut  -- AG8-A: explicit timedOut flag
+      IO.println s!"[SCO-034] timeoutThread blockedOnCall: ready={stateReady} errCode={timedOutSet}"
     | _ => IO.println s!"[SCO-034] timeoutThread blockedOnCall: tcb not found"
 
   -- SCO-035: timeoutBlockedThreads — multiple threads with same SC all timed out

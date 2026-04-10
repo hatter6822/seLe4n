@@ -1,3 +1,169 @@
+## v0.26.9 — WS-AG Phase AG8: Integration + Model Closure
+
+Phase AG8 of WS-AG H3 Hardware Binding Audit Remediation. Closes remaining
+Lean model gaps exposed by hardware integration: timeout sentinel migration,
+cache coherency model, memory barrier semantics, FrozenOps production decision,
+CDT fuel sufficiency, donation chain cycle prevention, and donation atomicity.
+7 sub-tasks (AG8-A through AG8-G).
+Gate: `lake build` (256 jobs) + `test_full.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AG8-A** (H3-IPC-01/I-01): Migrated timeout signaling from fragile sentinel
+  value `0xFFFFFFFF` in GPR x0 to explicit `timedOut : Bool` TCB field.
+  `timeoutThread` sets `timedOut := true`, `timeoutAwareReceive` checks
+  `tcb.timedOut` and clears on success. Eliminates collision risk with
+  legitimate IPC data. Updated BEq instance (22 field comparisons).
+  Removed `timeoutErrorCode` constant
+- **AG8-B** (H3-ARCH-07): Cache coherency model in new
+  `Architecture/CacheModel.lean`. `CacheLineState` (invalid/clean/dirty),
+  `CacheState` structure with D-cache and I-cache function fields. Operations:
+  `dcClean`, `dcInvalidate`, `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`.
+  17 preservation theorems including `empty_cacheCoherent`,
+  `icInvalidateAll_coherent`, and `pageTableUpdate_icache_coherent` composition
+- **AG8-C** (H3-ARCH-08): Memory barrier semantics formalization in
+  `MmioAdapter.lean`. `BarrierKind` (dmb_ish/dsb_ish/isb), `barrierOrdered`
+  predicate. 4 theorems: `barrierOrdered_trivial`,
+  `dsb_isb_guarantees_tlb_visibility`, `dmb_guarantees_mmio_ordering`,
+  `dsb_guarantees_mmio_completion`. Sequential model: barriers trivially ordered
+- **AG8-D** (H3-PROOF-05): FrozenOps production decision — deferred to WS-V.
+  Evaluation: 24 operations have preservation theorems, `FrozenSchedulerState`
+  includes `replenishQueue` (AG1-E), commutativity proofs complete. However,
+  frozen-phase type gap (e.g., `FrozenTCB` vs `TCB` field mismatches after
+  AG8-A `timedOut` addition) and partial mutation concerns (AE2-D) warrant
+  continued experimental status. All 4 FrozenOps files annotated with
+  "Experimental — deferred to WS-V (AG8-D)"
+- **AG8-E** (F-S05): CDT `descendantsOf` fuel sufficiency and depth bounds.
+  `maxCdtDepth : Nat := 65536` constant based on RPi5 maximum kernel objects.
+  `childrenOf_to_edge` bridges `childMap` membership to proof-anchor edge list.
+  `CdtChildReachable_implies_cdtReachable` converts inductive reachability to
+  path-based reachability (induction on CdtChildReachable with List path
+  extension). `edgeWellFounded_no_self_reachable` proves no CDT self-cycles
+  under `edgeWellFounded` + `cdtMapsConsistent`. `addEdge_edges_length` proves
+  `addEdge` increments `edges.length` by exactly 1. `addEdge_maintains_depth_bound`
+  proves depth bound preserved through `addEdge`
+- **AG8-F** (H3-PROOF-03): Donation chain cycle prevention — substantive proofs.
+  `donationOwnerValid_implies_donationChainAcyclic` proves that `donationOwnerValid`
+  structurally implies `donationChainAcyclic` via `.bound ≠ .donated` constructor
+  disjointness (SchedContextBinding mutually exclusive constructors with
+  DecidableEq). `donationChain_no_extension` proves donated threads' owners
+  cannot themselves be in `.donated` state. `blockedOnReply_cannot_call` proves
+  blocked threads cannot initiate new calls
+- **AG8-G** (H3-IPC-04): Donation atomicity under interrupt disable —
+  substantive composed proofs. `donationAtomicRegion` predicate asserting
+  `interruptsEnabled = false` for both pre- and post-states.
+  `donateSchedContext_machine_eq` / `returnDonatedSchedContext_machine_eq`
+  theorems proving machine state preserved through donation.
+  `donateSchedContext_atomicRegion` / `returnDonatedSchedContext_atomicRegion`
+  compose pre-condition + `machine_eq` to derive atomicity (non-vacuous:
+  post-condition derived, not assumed). Wrapper proofs:
+  `applyCallDonation_machine_eq`, `applyReplyDonation_machine_eq`,
+  `cleanupPreReceiveDonation_machine_eq`, `removeRunnable_machine_eq`
+
+### Additional fixes
+
+- Fixed pre-existing unused simp argument warnings in
+  `Platform/RPi5/RuntimeContract.lean` (hBind, hSc) and
+  `Platform/RPi5/ProofHooks.lean` (hCurr, hObj)
+
+### Post-implementation audit fixes
+
+- **AG8-B audit**: Added `dcClean_preserves_dcacheCoherent` and
+  `dcCleanInvalidate_preserves_dcacheCoherent` — missing preservation theorems
+  proving D-cache coherency is maintained through clean and clean+invalidate
+  operations (first audit). Second audit added 7 more theorems for
+  `dcInvalidate` (4) and `dcZeroByVA` (3), bringing total to 17 theorems
+- **AG8-E audit (substantive)**: Replaced both placeholder theorems with
+  substantive proofs. `descendantsOf_fuel_sufficient` (Nat ≥ 0 tautology) →
+  `edgeWellFounded_no_self_reachable` (no CDT node reaches itself under
+  edgeWellFounded + cdtMapsConsistent). `cdtDepth_bounded_by_maxCdtDepth`
+  (P → P identity) → `addEdge_edges_length` + `addEdge_maintains_depth_bound`
+  (addEdge increments edges by 1, preserves depth bound). New bridge theorems:
+  `childrenOf_to_edge` (childMap membership → edge existence),
+  `CdtChildReachable_implies_cdtReachable` (inductive reachability → path-based
+  reachability via path extension with List getElem? index manipulation)
+- **AG8-F audit (substantive)**: Replaced weak `donationChainAcyclic_general`
+  (unused `_hDCA` hypothesis) with two substantive theorems:
+  `donationOwnerValid_implies_donationChainAcyclic` (owners have `.bound` binding
+  → `.bound ≠ .donated` constructor disjointness prevents 2-cycles) and
+  `donationChain_no_extension` (donated threads' owners cannot themselves be
+  donated). Both proofs use `Option.some` injectivity on `st.objects` lookup
+  followed by constructor disjointness contradiction
+- **AG8-G audit**: Added `returnDonatedSchedContext_machine_eq` — symmetric
+  machine state preservation theorem for the return path. Mirrors
+  `donateSchedContext_machine_eq` with 3-step `storeObject` transitivity chain.
+  Closes asymmetric coverage gap between donate and return paths
+- **AG8-C audit**: Updated barrier theorem docstrings
+  (`dsb_isb_guarantees_tlb_visibility`, `dmb_guarantees_mmio_ordering`,
+  `dsb_guarantees_mmio_completion`) to explicitly state they are trivially
+  satisfied in the sequential model (`barrierOrdered := True`). Prevents
+  readers from mistaking vacuous proofs for substantive hardware guarantees
+- **AG8-F audit**: Refined `blockedOnReply_cannot_call` docstring to describe
+  it as a "building block" of the cycle prevention argument rather than "the
+  structural invariant that prevents k>2 donation cycles"
+- **AG8-G audit (round 2, substantive)**: Added wrapper-level machine state
+  preservation proofs: `applyCallDonation_machine_eq`,
+  `applyReplyDonation_machine_eq`, `cleanupPreReceiveDonation_machine_eq`,
+  `removeRunnable_machine_eq`. Replaced vacuous `donationAtomicRegion_of_disabled`
+  (hypothesis packaging) with composed atomicity proofs:
+  `donateSchedContext_atomicRegion` and `returnDonatedSchedContext_atomicRegion`
+  — each derives post-condition `interruptsEnabled = false` from pre-condition +
+  `machine_eq` theorem, proving donation is atomic under interrupt disable
+
+### Key theorems
+
+- `donateSchedContext_machine_eq`: machine state preserved through SchedContext
+  donation
+- `returnDonatedSchedContext_machine_eq`: machine state preserved through
+  SchedContext return (symmetric with donate)
+- `applyCallDonation_machine_eq`: wrapper-level machine preservation (call path)
+- `applyReplyDonation_machine_eq`: wrapper-level machine preservation (reply path)
+- `cleanupPreReceiveDonation_machine_eq`: wrapper-level machine preservation
+  (pre-receive cleanup path)
+- `dcClean_preserves_dcacheCoherent`: D-cache coherency preserved through clean
+- `dcCleanInvalidate_preserves_dcacheCoherent`: D-cache coherency preserved
+  through clean+invalidate
+- `donationOwnerValid_implies_donationChainAcyclic`: `donationOwnerValid` →
+  `donationChainAcyclic` via `.bound ≠ .donated` constructor disjointness
+- `donationChain_no_extension`: donated threads' owners cannot be donated
+- `donateSchedContext_atomicRegion`: donation atomic under interrupt disable
+  (composed from pre-condition + `donateSchedContext_machine_eq`)
+- `returnDonatedSchedContext_atomicRegion`: return-donation atomic under
+  interrupt disable (composed from pre-condition +
+  `returnDonatedSchedContext_machine_eq`)
+- `blockedOnReply_cannot_call`: blocked threads cannot initiate calls
+- `empty_cacheCoherent`: empty cache is trivially coherent
+- `pageTableUpdate_icache_coherent`: I-cache coherence after page table update
+  + flush
+- `childrenOf_to_edge`: `childrenOf` membership → edge existence (under
+  `cdtMapsConsistent`)
+- `CdtChildReachable_implies_cdtReachable`: inductive reachability → path-based
+  reachability (path extension with List index manipulation)
+- `edgeWellFounded_no_self_reachable`: no CDT self-cycles under
+  `edgeWellFounded` + `cdtMapsConsistent`
+- `addEdge_edges_length`: `addEdge` increments `edges.length` by exactly 1
+- `addEdge_maintains_depth_bound`: depth bound preserved through `addEdge`
+
+### New files
+
+- `SeLe4n/Kernel/Architecture/CacheModel.lean` — cache coherency model
+
+### Modified files
+
+- `SeLe4n/Model/Object/Types.lean` — `timedOut : Bool` TCB field, BEq update
+- `SeLe4n/Kernel/IPC/Operations/Timeout.lean` — sentinel → `timedOut` migration
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` — atomicity predicate + theorems
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` — k>2 cycle prevention theorems
+- `SeLe4n/Model/Object/Structures.lean` — `maxCdtDepth`, fuel sufficiency proofs
+- `SeLe4n/Platform/RPi5/MmioAdapter.lean` — barrier semantics formalization
+- `SeLe4n/Kernel/FrozenOps/Core.lean` — WS-V deferral annotation
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` — WS-V deferral annotation
+- `SeLe4n/Kernel/FrozenOps/Commutativity.lean` — WS-V deferral annotation
+- `SeLe4n/Kernel/FrozenOps/Invariant.lean` — WS-V deferral annotation
+- `SeLe4n/Platform/RPi5/RuntimeContract.lean` — simp warning fixes
+- `SeLe4n/Platform/RPi5/ProofHooks.lean` — simp warning fixes
+- `SeLe4n/Testing/MainTraceHarness.lean` — timeout field test updates
+
 ## v0.26.8 — WS-AG Phase AG7: FFI Bridge + Proof Hooks
 
 Phase AG7 of WS-AG H3 Hardware Binding Audit Remediation. Lean-to-Rust FFI

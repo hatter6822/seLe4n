@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG5 complete** (interrupts + timer) | ~~WS-F1..F4~~ (done) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG8 complete** (integration + model closure) | ~~WS-F1..F4~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Proof deepening (critical gaps resolved)
@@ -38,6 +38,26 @@ and WS-K (full syscall dispatch) are also complete, providing the typed
 user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 ### H3 — In progress: Raspberry Pi 5 binding
+
+**Phase AG8 (Integration + Model Closure) is complete.** 7 sub-tasks close
+remaining Lean model gaps: timeout sentinel → `timedOut : Bool` TCB field
+(eliminates GPR x0 collision risk), cache coherency model (`CacheModel.lean`
+with 17 preservation theorems), memory barrier semantics formalization,
+FrozenOps deferred to WS-V, CDT `descendantsOf` fuel sufficiency placeholders
+(substantive proofs deferred to WS-V),
+donation owner blocked-on-reply extraction (`donationChainAcyclic_general`),
+and donation atomicity under interrupt disable with symmetric machine state
+preservation (`donateSchedContext_machine_eq` + `returnDonatedSchedContext_machine_eq`).
+
+**Phase AG7 (FFI Bridge + Proof Hooks) is complete.** 6 sub-tasks provide the
+Lean-to-Rust FFI bridge with `@[extern]` declarations for 17 HAL functions,
+MMIO volatile primitives, and production `AdapterProofHooks` with substantive
+(non-vacuous) preservation proofs for all 4 adapter paths. `proofLayerInvariantBundle`
+extended to 11 conjuncts.
+
+**Phase AG6 (Memory Management) is complete.** 9 sub-tasks implement ARMv8
+4-level page table walk with shadow-based refinement proofs, ASID management
+with uniqueness invariant, TLB/cache maintenance HAL wrappers.
 
 **Phase AG5 (Interrupts + Timer) is complete.** 7 sub-tasks connect hardware
 interrupts to the Lean kernel model. Rust HAL: full GIC-400 driver with
@@ -130,14 +150,16 @@ provides the organizational infrastructure for hardware binding:
   against BCM2712 documentation and ARM specifications. Validation results
   documented in Board.lean.
 
-**Remaining H3 work** (AG5 complete, AG6–AG10 remaining):
+**Remaining H3 work** (AG8 complete, AG9–AG10 remaining):
 
 1. ~~Populate RPi5 runtime contract with hardware-validated predicates.~~ **DONE** (WS-H15b).
-2. Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance (with `PagePermissions` support from WS-H11).
+2. ~~Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.~~ **DONE** (AG6-A/B/C/D: 4-level page table walk, shadow refinement, VSpaceBackend instance).
 3. ~~Implement interrupt routing for GIC-400 with IRQ acknowledgment.~~ **DONE** (AG5-A/B/C: full GIC-400 driver with distributor/CPU interface init, acknowledge/dispatch/EOI).
 4. ~~Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).~~ **DONE** (AG5-D/E: timer driver + `timerTick` binding).
-5. Define boot sequence as a verified initial state construction.
+5. ~~Define boot sequence as a verified initial state construction.~~ **DONE** (AG4-E: boot.S/boot.rs assembly→Rust boot sequence).
 6. ~~Implement DTB parsing in `DeviceTree.fromDtb`.~~ **DONE** (X4-A/B/C: full FDT node traversal, GIC discovery, timer extraction).
+7. AG9: Testing + Validation (planned).
+8. AG10: Documentation + Closure (planned).
 
 ### H4 — Planned: evidence convergence
 

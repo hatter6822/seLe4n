@@ -12,6 +12,8 @@ import SeLe4n.Kernel.SchedContext.Budget
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
+**STATUS: Experimental — deferred to WS-V (AG8-D). Not in production chain.**
+
 AF5-I (AF-43): Implements 24 frozen kernel operations that operate on
 `FrozenSystemState` using O(1) array-indexed lookups. Each mirrors a
 builder-phase operation but uses `FrozenMap.get?`/`FrozenMap.set` instead

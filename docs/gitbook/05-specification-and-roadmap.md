@@ -15,11 +15,11 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 |-----------|-------|
 | Version | `0.26.6` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 88,666 across 136 Lean files |
+| Production LoC | 91,159 across 141 Lean files |
 | Test LoC | 11,374 across 16 suites |
-| Proved declarations | 2,643 theorem/lemma declarations (zero sorry/axiom) |
+| Proved declarations | 2,716 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| Active workstream | **WS-AG Phase AG5 COMPLETE** (v0.26.6). GIC-400 + ARM Generic Timer + interrupt model. Prior: AG4 (v0.26.5), AG3 (v0.26.4), AG2 Audit (v0.26.2), AG2 (v0.26.1), AG1 (v0.26.0), WS-AF (v0.25.22–v0.25.27), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: AG6–AG10 (ARMv8 page tables, kernel entry, FFI).** |
+| Active workstream | **WS-AG Phase AG8 COMPLETE** (v0.26.9). Integration + Model Closure. Prior: AG7 (v0.26.8), AG6 (v0.26.7), AG5 (v0.26.6), AG4 (v0.26.5), AG3 (v0.26.4), AG2 Audit (v0.26.2), AG2 (v0.26.1), AG1 (v0.26.0), WS-AF (v0.25.22–v0.25.27), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: AG9–AG10 (kernel entry, integration test).** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

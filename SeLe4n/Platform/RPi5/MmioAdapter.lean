@@ -286,8 +286,10 @@ def mkMmioSafe_gicCpu (addr : PAddr) (outcome memoryAt : Nat)
 
 2. **Memory ordering / barriers**: ARM64 MMIO requires DMB/DSB/ISB barriers for
    correct ordering with respect to normal memory. The abstract model uses
-   instantaneous memory updates with no ordering constraints. Barrier annotations
-   exist in the type system but are not enforced.
+   instantaneous memory updates with no ordering constraints. AG8-C adds formal
+   `BarrierKind` type and `barrierOrdered` predicate with trivial sequential
+   satisfaction and explicit ordering theorems (see end of file). These become
+   non-trivial proof obligations in the multi-core extension (WS-W/WS-V).
 
 3. **Device-specific register semantics**: Beyond the W1C model, device registers
    may have set-only, read-clear, or FIFO semantics. These are *declared* via
@@ -694,5 +696,93 @@ theorem memoryRead_idempotent_nonMmio (addr : PAddr) (st : SystemState)
     (_hNotMmio : notInMmioRegion addr) :
     st.machine.memory addr = st.machine.memory addr := by
   rfl
+
+-- ============================================================================
+-- AG8-C (H3-ARCH-08): Formal Memory Barrier Semantics
+-- ============================================================================
+
+/-!
+## AG8-C: Memory Barrier Semantics Model
+
+ARM64 defines three memory barrier instructions that enforce ordering of
+memory accesses. In the abstract Lean model, all memory updates are
+instantaneous (single-threaded, no pipeline), so barriers are trivially
+satisfied. This formalization captures the *semantic contract* that:
+
+1. MMIO writes preceded by DSB are visible to hardware before subsequent reads
+2. TLB invalidations followed by DSB + ISB are complete before next instruction
+3. Context switch register saves preceded by DMB are ordered correctly
+
+The Rust HAL layer (`barriers.rs`) provides the actual instructions:
+- `dmb_ish()`, `dmb_sy()` — Data Memory Barrier
+- `dsb_ish()`, `dsb_sy()` — Data Synchronization Barrier
+- `isb()` — Instruction Synchronization Barrier
+-/
+
+/-- Memory barrier type classification per ARM Architecture Reference Manual. -/
+inductive BarrierKind where
+  /-- Data Memory Barrier: ensures ordering of data accesses across the
+      barrier point. Accesses before DMB are observed before accesses after. -/
+  | dmb_ish
+  /-- Data Synchronization Barrier: ensures *completion* (not just ordering)
+      of all data accesses before the barrier. Required before TLBI sequences
+      and after GIC register writes. -/
+  | dsb_ish
+  /-- Instruction Synchronization Barrier: flushes the instruction pipeline.
+      Required after TLBI + DSB to ensure subsequent instructions use the
+      new page table mappings. -/
+  | isb
+  deriving Repr, DecidableEq, BEq
+
+/-- Abstract barrier ordering predicate.
+
+In the sequential abstract model, memory updates are instantaneous, so
+barrier ordering is trivially satisfied. This predicate exists to:
+1. Document where barriers are semantically required
+2. Enable future multi-core extension (WS-W/WS-V) where barriers become
+   non-trivial proof obligations
+3. Allow proofs to explicitly depend on barrier presence
+
+`barrierOrdered st st'` asserts that all memory operations in `st` that
+preceded a barrier are visible in `st'`. In the single-core sequential
+model, this is always true. -/
+def barrierOrdered (_st _st' : SystemState) : Prop := True
+
+/-- Barrier ordering is trivially satisfied in the sequential model. -/
+theorem barrierOrdered_trivial (st st' : SystemState) :
+    barrierOrdered st st' :=
+  trivial
+
+/-- DSB followed by ISB guarantees TLB invalidation visibility.
+In the sequential model, this is trivially satisfied (`barrierOrdered := True`).
+On hardware, DSB + ISB ensures page table walks use updated mappings.
+This formalizes the contract that TlbModel.tlbBarrierComplete depends on.
+Becomes a non-trivial obligation in the multi-core extension (WS-W). -/
+theorem dsb_isb_guarantees_tlb_visibility (st st' : SystemState)
+    (_hDsb : BarrierKind.dsb_ish = .dsb_ish)
+    (_hIsb : BarrierKind.isb = .isb) :
+    barrierOrdered st st' :=
+  trivial
+
+/-- DMB ISH guarantees MMIO write ordering (trivially in sequential model).
+On hardware, MMIO writes preceded by DMB ISH are observed before subsequent
+data accesses. Required for GIC register sequences (acknowledge → process → EOI).
+In the sequential model, `barrierOrdered := True` so this is trivially satisfied.
+Becomes a non-trivial obligation in the multi-core extension (WS-W). -/
+theorem dmb_guarantees_mmio_ordering (st st' : SystemState)
+    (_hDmb : BarrierKind.dmb_ish = .dmb_ish) :
+    barrierOrdered st st' :=
+  trivial
+
+/-- DSB ISH guarantees MMIO write completion (trivially in sequential model).
+On hardware, MMIO writes preceded by DSB ISH are *completed* (not just ordered)
+before subsequent instructions. Required before ERET to ensure GIC EOI is
+processed before returning to user mode.
+In the sequential model, `barrierOrdered := True` so this is trivially satisfied.
+Becomes a non-trivial obligation in the multi-core extension (WS-W). -/
+theorem dsb_guarantees_mmio_completion (st st' : SystemState)
+    (_hDsb : BarrierKind.dsb_ish = .dsb_ish) :
+    barrierOrdered st st' :=
+  trivial
 
 end SeLe4n.Platform.RPi5
