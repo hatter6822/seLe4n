@@ -91,7 +91,7 @@ exception level model (H3-ARCH-05), system register file with frame lemmas
 **Phase AG1 (Pre-Hardware Lean Code Fixes) is complete.** 6 sub-tasks resolved
 scheduler priority insertion bugs, timeout diagnostics, `uniqueWaiters`,
 boot duplicate detection, frozen replenish queue, and runtime checks.
-Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md).
+Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md).
 
 **H3-prep (structural foundation) is complete.** The `Platform/` directory
 provides the organizational infrastructure for hardware binding:
