@@ -2107,7 +2107,7 @@ def runWSKGChecks : IO Unit := do
     msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
   }
   expectErr "K-G-NEG-11 vspaceMap decode insufficient msgRegs"
-    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs threeRegDecode)
+    (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs threeRegDecode 65536)
     .invalidMessageInfo
 
   -- K-G-NEG-12: vspaceMapPageChecked with W^X violation (perms = write+execute)
@@ -2211,12 +2211,12 @@ def runWSKGChecks : IO Unit := do
     let lr2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs d1
     unless lr1 == lr2 do
       throw <| IO.userError "K-G-DET-01: decodeLifecycleRetypeArgs not deterministic"
-    let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
-    let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1
+    let vm1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
+    let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs d1 65536
     unless vm1 == vm2 do
       throw <| IO.userError "K-G-DET-01: decodeVSpaceMapArgs not deterministic"
-    let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
-    let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1
+    let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
+    let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
     unless vu1 == vu2 do
       throw <| IO.userError "K-G-DET-01: decodeVSpaceUnmapArgs not deterministic"
     IO.println "determinism check passed [K-G-DET-01 layer 1+2 decode deterministic]"

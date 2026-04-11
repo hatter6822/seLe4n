@@ -273,35 +273,36 @@ private def sad007_lifecycleRetypeInvalidType : IO Unit := do
 /-- SAD-008: decodeVSpaceMapArgs — valid decode. -/
 private def sad008_vspaceMap : IO Unit := do
   -- ASID < 65536, VAddr < 2^48, PAddr arbitrary, perms valid (< 32)
+  -- AH3-C: Pass ARM64 default maxASID (65536) to parameterized decode
   let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub
+  let result := decodeVSpaceMapArgs stub 65536
   expect "SAD-008a vspace map ok" result.isOk
 
 /-- SAD-009: decodeVSpaceMapArgs — invalid ASID (>= 65536). -/
 private def sad009_vspaceMapInvalidAsid : IO Unit := do
   let stub := mkStub #[⟨65536⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub
+  let result := decodeVSpaceMapArgs stub 65536
   expect "SAD-009a vspace map invalid ASID" (!result.isOk)
 
 /-- SAD-010: decodeVSpaceMapArgs — non-canonical VAddr (>= 2^48). -/
 private def sad010_vspaceMapNonCanonical : IO Unit := do
   let stub := mkStub #[⟨1⟩, ⟨2^48⟩, ⟨0x2000⟩, ⟨1⟩]
-  let result := decodeVSpaceMapArgs stub
+  let result := decodeVSpaceMapArgs stub 65536
   expect "SAD-010a vspace map non-canonical" (!result.isOk)
 
 /-- SAD-011: decodeVSpaceMapArgs — invalid permissions (>= 32). -/
 private def sad011_vspaceMapInvalidPerms : IO Unit := do
   let stub := mkStub #[⟨1⟩, ⟨0x1000⟩, ⟨0x2000⟩, ⟨32⟩]
-  let result := decodeVSpaceMapArgs stub
+  let result := decodeVSpaceMapArgs stub 65536
   expect "SAD-011a vspace map invalid perms" (!result.isOk)
 
 /-- SAD-012: decodeVSpaceUnmapArgs — valid and invalid ASID. -/
 private def sad012_vspaceUnmap : IO Unit := do
   let stub := mkStub #[⟨1⟩, ⟨0x1000⟩]
-  let result := decodeVSpaceUnmapArgs stub
+  let result := decodeVSpaceUnmapArgs stub 65536
   expect "SAD-012a vspace unmap ok" result.isOk
   let stubBad := mkStub #[⟨65536⟩, ⟨0x1000⟩]
-  let resultBad := decodeVSpaceUnmapArgs stubBad
+  let resultBad := decodeVSpaceUnmapArgs stubBad 65536
   expect "SAD-012b vspace unmap invalid ASID" (!resultBad.isOk)
 
 -- Notification family ----------------------------------------------------------

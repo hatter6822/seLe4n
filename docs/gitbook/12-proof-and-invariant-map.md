@@ -2273,7 +2273,7 @@ trust boundary specification.
 - `setIPCBufferOp_irqHandlers_eq` — IRQ handlers preserved.
 - `setIPCBufferOp_machine_eq` — machine state preserved.
 - `setIPCBufferOp_asidTable_eq` — ASID table preserved.
-- `setIPCBufferOp_capabilityRefs_eq` — capability refs preserved.
+- `setIPCBufferOp_capabilityRefs_cleaned` — capability refs cleaned via `storeObject` semantics.
 - `setIPCBufferOp_deterministic` — pure function determinism.
 
 ## 24. SchedContext type foundation (WS-Z Phase Z1)

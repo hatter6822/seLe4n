@@ -1046,9 +1046,10 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
                 | some descAddr =>
                     match cspaceDeleteSlotCore descAddr stCur with
                     | .error err =>
+                        -- AH3-A (L-04): Preserve CDT node on slot deletion failure
                         ({ report with firstFailure := some {
                             offendingNode := node, offendingSlot := some descAddr, error := err } },
-                         { stCur with cdt := stCur.cdt.removeNode node })
+                         stCur)
                     | .ok ((), stDel) =>
                         -- V5-N: Redundant detachSlotFromCdt removed (done inside cspaceDeleteSlotCore)
                         ({ report with deletedSlots := descAddr :: report.deletedSlots },
@@ -1079,11 +1080,9 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
             simp
             cases hDel : cspaceDeleteSlotCore descAddr stAcc with
             | error err =>
+              -- AH3-A (L-04): Error branch preserves state unchanged (no removeNode)
               simp
-              exact ih _ { stAcc with cdt := stAcc.cdt.removeNode node }
-                (capabilityInvariantBundle_of_cdt_update stAcc _ hI
-                  (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
-                hKAcc
+              exact ih _ stAcc hI hKAcc
             | ok pair =>
               obtain ⟨_, stDel⟩ := pair
               simp

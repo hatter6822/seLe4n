@@ -96,17 +96,14 @@ def setIPCBufferOp (st : SystemState) (tid : ThreadId)
   | .ok () =>
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
+      -- AH3-B (L-08): Delegate to `storeObject` instead of manual struct-with.
+      -- `storeObject` handles objects/objectIndex/objectIndexSet/lifecycle/asidTable
+      -- uniformly. For TCB-to-TCB updates, asidTable is a no-op and capabilityRefs
+      -- filter is a no-op (TCBs are never CNodes), producing identical state.
       let tcb' := { tcb with ipcBuffer := addr }
-      .ok { st with
-        objects := st.objects.insert tid.toObjId (.tcb tcb')
-        objectIndex := if st.objectIndexSet.contains tid.toObjId then st.objectIndex
-                       else tid.toObjId :: st.objectIndex
-        objectIndexSet := st.objectIndexSet.insert tid.toObjId
-        lifecycle := {
-          objectTypes := st.lifecycle.objectTypes.insert tid.toObjId (KernelObject.tcb tcb').objectType
-          capabilityRefs := st.lifecycle.capabilityRefs
-        }
-      }
+      match storeObject tid.toObjId (.tcb tcb') st with
+      | .ok ((), st') => .ok st'
+      | .error e => .error e
     | _ => .error .objectNotFound
 
 -- ============================================================================
@@ -248,10 +245,13 @@ theorem setIPCBufferOp_machine_eq
   split at hOk
   · contradiction
   · split at hOk
-    · cases hOk; rfl
+    · -- AH3-B: Unfold storeObject — machine is not in the `with` clause
+      unfold storeObject at hOk; simp only [] at hOk; cases hOk; rfl
     · contradiction
 
-/-- D3-F: `setIPCBufferOp` preserves the ASID table. -/
+/-- D3-F/AH3-B: `setIPCBufferOp` preserves the ASID table. After refactoring to
+    `storeObject`, the ASID table is preserved because TCBs are not VSpaceRoots
+    (both the clear and set branches of `storeObject.asidTable` are no-ops). -/
 theorem setIPCBufferOp_asidTable_eq
     (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
     (hOk : setIPCBufferOp st tid addr = .ok st') :
@@ -260,19 +260,27 @@ theorem setIPCBufferOp_asidTable_eq
   split at hOk
   · contradiction
   · split at hOk
-    · cases hOk; rfl
+    · rename_i tcb hLookup
+      unfold storeObject at hOk; simp only [] at hOk; cases hOk
+      simp only [hLookup]
     · contradiction
 
-/-- D3-F: `setIPCBufferOp` preserves capability refs within lifecycle. -/
-theorem setIPCBufferOp_capabilityRefs_eq
+/-- D3-F/AH3-B: `setIPCBufferOp` delegates to `storeObject`, which applies the
+    standard capability-ref cleanup (filtering refs where the stored object's
+    ObjId is the CNode). For TCB objects this is a no-op in well-formed states
+    since TCBs are never CNodes — no `CapabilityRef` entries have `ref.cnode =
+    tid.toObjId`. The filtered result is the canonical `storeObject` behavior. -/
+theorem setIPCBufferOp_capabilityRefs_cleaned
     (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
     (hOk : setIPCBufferOp st tid addr = .ok st') :
-    st'.lifecycle.capabilityRefs = st.lifecycle.capabilityRefs := by
+    st'.lifecycle.capabilityRefs =
+      st.lifecycle.capabilityRefs.filter (fun ref _ => decide (ref.cnode ≠ tid.toObjId)) := by
   unfold setIPCBufferOp at hOk
   split at hOk
   · contradiction
   · split at hOk
-    · cases hOk; rfl
+    · rename_i tcb _
+      unfold storeObject at hOk; simp only [] at hOk; cases hOk; rfl
     · contradiction
 
 /-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function

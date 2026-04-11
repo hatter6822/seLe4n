@@ -1,3 +1,47 @@
+## v0.27.4 — WS-AH Phase AH3: Capability, Architecture & Decode Hardening
+
+Phase AH3 of WS-AH Pre-Release Comprehensive Audit Remediation. Fixes
+CDT-orphaned capabilities on revocation failure (L-04/LOW), eliminates manual
+`storeObject` replication in IPC buffer operations (L-08/LOW), and replaces
+hardcoded ASID limits with platform-configured values (L-14/LOW). 3 sub-tasks
+(AH3-A through AH3-C). Gate: `lake build` + `test_smoke.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AH3-A** (L-04 fix): Fixed `cspaceRevokeCdtStrict` CDT-orphan bug in
+  `Capability/Operations.lean`. Error branch (slot deletion failure) now
+  preserves CDT node (`stAcc`) instead of removing it
+  (`{ stAcc with cdt := stAcc.cdt.removeNode node }`). Prevents orphaned
+  capabilities that would violate `cdtMapsConsistent`. Preservation theorem
+  in `Capability/Invariant/Preservation.lean` simplified — unchanged state
+  trivially preserves invariants (`exact ih _ stAcc hI hKAcc`).
+- **AH3-B** (L-08 fix): Refactored `setIPCBufferOp` in
+  `Architecture/IpcBufferValidation.lean` to delegate TCB update to
+  `storeObject` instead of manual struct-with replication of `objects`,
+  `objectIndex`, `objectIndexSet`, `lifecycle` fields. Eliminates maintenance
+  divergence risk as `storeObject` evolves. Updated 3 preservation theorems:
+  `setIPCBufferOp_machine_eq` (storeObject unfold), `setIPCBufferOp_asidTable_eq`
+  (simp with lookup hypothesis). Renamed `setIPCBufferOp_capabilityRefs_eq` to
+  `setIPCBufferOp_capabilityRefs_cleaned` — conclusion now reflects canonical
+  `storeObject` cleanup semantics (filter on cnode ≠ tid). Cross-subsystem
+  bridge (`setIPCBuffer_crossSubsystemInvariant_bridge`) verified unchanged.
+- **AH3-C** (L-14 fix): Added `(maxASID : Nat)` parameter to
+  `decodeVSpaceMapArgs` and `decodeVSpaceUnmapArgs` in
+  `Architecture/SyscallArgDecode.lean`, replacing hardcoded `65536`. API
+  dispatch arms in `API.lean` pass `st.machine.maxASID`. Updated 10+ theorems
+  with parameter threading. Delegation theorems (`dispatchWithCap_vspaceMap_delegates`,
+  `dispatchWithCap_vspaceUnmap_delegates`) restructured from function-level to
+  state-specific equality with `(st : SystemState)` parameter.
+  `dispatchWithCap_layer2_decode_pure` proof uses `funext` for function
+  extensionality. 11 test call sites updated across 3 files (DecodingSuite,
+  NegativeStateSuite, MainTraceHarness) with `65536` for backward compatibility.
+
+### Infrastructure
+
+- Regenerated `docs/codebase_map.json`
+
+---
+
 ## v0.27.3 — WS-AH Phase AH2: IPC Donation Safety & Boot Pipeline
 
 Phase AH2 of WS-AH Pre-Release Comprehensive Audit Remediation. Eliminates

@@ -996,8 +996,10 @@ def cspaceRevokeCdtStrict (addr : CSpaceAddr) : Kernel RevokeCdtStrictReport :=
                             offendingSlot := some descAddr
                             error := err
                           }
-                          let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
-                          ({ report with firstFailure := some failure }, stRemoved)
+                          -- AH3-A (L-04): Preserve CDT node on slot deletion failure.
+                          -- The capability slot still exists; removing its CDT node would
+                          -- make it unreachable by future revocation, creating an orphan.
+                          ({ report with firstFailure := some failure }, stAcc)
                       | .ok ((), stDel) =>
                           -- V5-N: Redundant detachSlotFromCdt removed (already done by cspaceDeleteSlotCore)
                           let stRemoved := { stDel with cdt := stDel.cdt.removeNode node }
