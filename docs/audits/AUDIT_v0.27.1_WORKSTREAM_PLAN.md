@@ -39,8 +39,9 @@ already-tracked deferrals, and confirmed-correct design decisions.
 | AH4 | Version Consistency & CI Automation | 6 | H-02, version drift | `cargo test` + version check |
 | AH5 | Documentation, Testing & Closure | 6 | M-04–M-08, L-11–L-13, doc sync | `test_full.sh` + doc sync |
 
-**Estimated scope**: ~300–450 new/modified lines of Lean, ~20 lines of Rust,
-~200–300 lines of shell/CI scripts, ~400–600 lines of documentation changes.
+**Estimated scope**: ~360–560 new/modified lines of Lean (functions, theorems,
+test sites), ~20 lines of Rust, ~80–120 lines of shell/CI scripts, ~300–500
+lines of documentation changes.
 
 **Total sub-tasks**: 27 (across 5 phases)
 
@@ -245,44 +246,113 @@ parameters now required by `endpointSendDualChecked`.
 **Files**:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (3 theorems)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (1 theorem)
-**Type**: Multi-step operation
+**Type**: Multi-step operation (4 theorems, each independently compilable)
 
-The signature change to `endpointSendDualChecked` invalidates 4 theorems that
-reference it. Each must be updated to account for the new parameters and return
-type.
+The signature change to `endpointSendDualChecked` (new params + return type
+`Kernel CapTransferSummary`) invalidates 4 theorems. Each theorem requires a
+specific modification strategy. The `endpointCallChecked` theorem family
+(Soundness.lean:416-428) serves as the exact template — it already handles the
+same parameter set and `CapTransferSummary` return type.
 
-**Atomic steps**:
+**Sub-step AH1-C-1: Update equivalence theorem** (Wrappers.lean:69-89)
 
-1. **Update `endpointSendDualChecked_eq_endpointSendDual_when_allowed`**
-   (Wrappers.lean:69-89): Rename to
-   `endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed`. Update
-   the RHS to reference `endpointSendDualWithCaps` instead of
-   `endpointSendDual`. Add the three new parameters to the theorem statement.
+Current theorem statement:
+```lean
+theorem endpointSendDualChecked_eq_endpointSendDual_when_allowed
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState)
+    (hFlow : securityFlowsTo ... = true) :
+    endpointSendDualChecked ctx endpointId sender msg st =
+      endpointSendDual endpointId sender msg st
+```
 
-2. **Update `endpointSendDualChecked_flowDenied`** (Wrappers.lean:95-110):
-   Add the three new parameters. The denial branch is unchanged (still returns
-   `.error .flowDenied`), so the proof body may require only parameter
-   threading.
+Changes:
+- **Rename** to `endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed`
+- **Add 3 parameters**: `endpointRights : AccessRightSet`,
+  `senderCspaceRoot : SeLe4n.ObjId`, `receiverSlotBase : SeLe4n.Slot`
+- **RHS target**: change `endpointSendDual` → `endpointSendDualWithCaps`
+  with the 3 new params threaded through
+- **Proof body**: The existing tactic structure (`unfold`, `simp`, `split`)
+  survives unchanged — the bounds-check if-branches are identical, and the
+  flow-check success path now unfolds to `endpointSendDualWithCaps` instead
+  of `endpointSendDual`. The `simp [*]` in the bounds-failure branches may
+  need adjustment since `endpointSendDualWithCaps` has a different bounds
+  check structure than `endpointSendDual`.
+- **Fallback**: If `simp [*]` doesn't close the bounds-failure branches,
+  use `unfold endpointSendDualWithCaps; simp [*]` (matching the current
+  pattern with `endpointSendDual`).
 
-3. **Update `endpointSendDualChecked_denied_preserves_state`**
-   (Wrappers.lean:298-305): Add the three new parameters. Proof structure
-   unchanged (denial path does not modify state).
+**Sub-step AH1-C-2: Update flow-denied theorem** (Wrappers.lean:95-110)
 
-4. **Update `enforcementSoundness_endpointSendDualChecked`**
-   (Soundness.lean:344-358): Add three parameters. The soundness property
-   (success implies `securityFlowsTo`) is unchanged — the flow check still
-   gates the operation. Proof may need adjustment for `CapTransferSummary`
-   return type.
+Current statement proves: when `securityFlowsTo = false` and message is
+in bounds, the checked send returns `.error .flowDenied`.
 
-5. **Verify coverage**: Check that `checkedDispatchEnforcementCoverage_complete`
-   (Soundness.lean:719) still type-checks (it references
-   `endpointSendDualChecked` in its enforcement boundary list).
+Changes:
+- **Add 3 parameters** to the statement (same as AH1-C-1)
+- **Proof body unchanged**: The denial branch is independent of the
+  delegated function. The existing proof uses `IpcMessage.checkBounds_iff_bounded`
+  to eliminate bounds checks, then `simp [hDeny]` to close the flow-denied case.
+  These tactics do not reference `endpointSendDual` at all — they operate
+  purely on the if-then-else structure of `endpointSendDualChecked`, which
+  retains the same denial branch.
 
-6. **Build modules**:
-   ```bash
-   lake build SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
-   lake build SeLe4n.Kernel.InformationFlow.Enforcement.Soundness
-   ```
+**Sub-step AH1-C-3: Update denied-preserves-state theorem** (Wrappers.lean:298-311)
+
+Current statement:
+```lean
+theorem endpointSendDualChecked_denied_preserves_state ... :
+    ¬∃ st', endpointSendDualChecked ctx endpointId sender msg st = .ok ((), st')
+```
+
+Changes:
+- **Add 3 parameters** to the statement
+- **Change existential type**: `¬∃ st', ... = .ok ((), st')` becomes
+  `¬∃ (r : CapTransferSummary) st', ... = .ok (r, st')` since the return
+  type is now `CapTransferSummary` (not `Unit`)
+- **Proof body**: The existing proof eliminates bounds-check branches via
+  `intro hc; simp [hc] at h` (contradicting the `.ok` assumption), then
+  closes with `simp [hDeny] at h`. This tactic chain operates on the
+  if-then-else structure only and does not reference the success-path
+  delegate, so it survives unchanged.
+
+**Sub-step AH1-C-4: Update enforcement soundness theorem** (Soundness.lean:344-358)
+
+Template: `enforcementSoundness_endpointCallChecked` (Soundness.lean:416-428):
+```lean
+theorem enforcementSoundness_endpointCallChecked ... (r : CapTransferSummary)
+    (st' : SystemState) (hStep : endpointCallChecked ... = .ok (r, st')) :
+    securityFlowsTo ... = true := by
+  unfold endpointCallChecked at hStep
+  cases h : securityFlowsTo ... with
+  | true => rfl
+  | false => simp [h] at hStep
+```
+
+Changes:
+- **Add 3 parameters + `r : CapTransferSummary`** to the statement
+  (replacing the implicit `Unit` pairing)
+- **Update hypothesis**: `hStep : endpointSendDualChecked ... = .ok (r, st')`
+- **Proof body**: The current proof has extra bounds-check elimination
+  (`simp only [show ¬(maxMessageRegisters < ...) from by intro h; simp [h]
+  at hStep, ↓reduceIte] at hStep`). This is **required** because
+  `endpointSendDualChecked` has bounds checks before the flow check, unlike
+  `endpointCallChecked` which delegates to a function that handles bounds
+  internally. The bounds-elimination lines survive unchanged (they reference
+  the if-then-else structure, not the delegate function).
+
+**Sub-step AH1-C-5: Verify coverage completeness** (Soundness.lean:~705-720)
+
+`checkedDispatchEnforcementCoverage_complete` contains a string list of all
+checked wrappers. `"endpointSendDualChecked"` appears in this list. Since we
+are modifying (not renaming) the function, the string reference remains valid.
+Verify this type-checks after the changes above.
+
+**Sub-step AH1-C-6: Build both modules**:
+```bash
+source ~/.elan/env
+lake build SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
+lake build SeLe4n.Kernel.InformationFlow.Enforcement.Soundness
+```
 
 #### AH1-D: Wire `validateVSpaceMapPermsForMemoryKind` into `.vspaceMap` dispatch (M-01)
 
@@ -328,27 +398,77 @@ paths.
 #### AH1-E: Update test suites and fixtures (H-01, M-01)
 
 **Files**:
-- `SeLe4n/Testing/MainTraceHarness.lean` (trace harness calls)
-- `tests/InformationFlowSuite.lean` (NI test cases)
+- `SeLe4n/Testing/MainTraceHarness.lean` (5 call sites)
+- `tests/InformationFlowSuite.lean` (4 call sites)
+- `tests/TraceSequenceProbe.lean` (1 call site)
 - `tests/fixtures/main_trace_smoke.expected` (expected output)
-**Type**: Multi-step operation
+**Type**: Multi-step operation (10 call sites across 3 files)
 
-**Atomic steps**:
+All 10 call sites must add the three new parameters: `endpointRights`,
+`senderCspaceRoot`, `receiverSlotBase`. Test code uses maximally-permissive
+defaults to test the IPC path (not the rights-checking path).
 
-1. **Update MainTraceHarness**: Find all calls to `endpointSendDualChecked`
-   (lines 459, 462, 600, 605, 634) and add the three new parameters using
-   test-appropriate values (e.g., `AccessRightSet.all`, the test CSpace root,
-   `Slot.ofNat 0`).
+**Standard test parameter values**:
+```lean
+-- endpointRights: full rights (test is not testing rights enforcement)
+AccessRightSet.all
+-- senderCspaceRoot: the test state's root CNode (typically ObjId.ofNat 0)
+(ObjId.ofNat 0)
+-- receiverSlotBase: slot 0 (first available receiver slot)
+(Slot.ofNat 0)
+```
 
-2. **Update InformationFlowSuite**: Update test cases at lines 215-250 and
-   397-411 to pass the new parameters.
+**Sub-step AH1-E-1: MainTraceHarness (5 sites)**
 
-3. **Run trace harness**: `lake exe sele4n` and capture new output.
+| Line | Context | Notes |
+|------|---------|-------|
+| ~459 | First checked send test | Basic send with default message |
+| ~462 | Second checked send test | Same test block, alternate path |
+| ~600 | Cross-domain send test | Tests policy denial path (params still needed for signature match) |
+| ~605 | Cross-domain alternate | Same test block |
+| ~634 | End-to-end trace | Full dispatch integration test |
 
-4. **Update fixture**: If trace output changed, update
-   `tests/fixtures/main_trace_smoke.expected` with rationale comment.
+For each site, the existing `endpointSendDualChecked ctx epId tid msg st`
+becomes `endpointSendDualChecked ctx epId tid msg AccessRightSet.all
+(ObjId.ofNat 0) (Slot.ofNat 0) st`. The `st` argument stays last (Kernel
+monad currying).
 
-5. **Run smoke tests**: `./scripts/test_smoke.sh`
+**Sub-step AH1-E-2: InformationFlowSuite (4 sites)**
+
+| Line | Context | Notes |
+|------|---------|-------|
+| ~231 | Flow-allowed test | Expects `.ok` — will now return `CapTransferSummary` |
+| ~246 | Flow-denied test | Expects `.error .flowDenied` — unchanged semantics |
+| ~398 | Projection preservation test | Tests NI invariant through checked send |
+| ~405 | Denied-preserves-state test | Tests no state change on denial |
+
+The flow-denied tests (lines ~246, ~405) need parameter addition only — the
+denial semantics are unchanged. The flow-allowed test (line ~231) may need
+its result pattern updated from `(.ok ((), st'))` to `(.ok (_, st'))` or
+`(.ok (r, st'))` to accommodate the `CapTransferSummary` return type.
+
+**Sub-step AH1-E-3: TraceSequenceProbe (1 site)**
+
+| Line | Context | Notes |
+|------|---------|-------|
+| ~187 | Sequence probe checked send | Add 3 parameters |
+
+**Sub-step AH1-E-4: Run trace harness and update fixture**
+
+1. `source ~/.elan/env && lake exe sele4n > /tmp/trace_output.txt 2>&1`
+2. `diff /tmp/trace_output.txt tests/fixtures/main_trace_smoke.expected`
+3. If output changed (likely — the checked send path now performs cap
+   transfer via `ipcUnwrapCaps`, which may produce different trace lines),
+   update the fixture with a header comment:
+   ```
+   # AH1: checked send now delegates to endpointSendDualWithCaps
+   # (capability transfer is performed on rendezvous)
+   ```
+
+**Sub-step AH1-E-5: Run full smoke test gate**
+```bash
+./scripts/test_smoke.sh
+```
 
 ---
 
@@ -369,217 +489,440 @@ called from the same dispatch functions modified in AH1).
 
 **Finding**: M-02 — Donation wrappers silently swallow errors
 **File**: `SeLe4n/Kernel/IPC/Operations/Donation.lean`, lines 63-82
-**Type**: Multi-step operation
+**Type**: Multi-step operation (6 control-flow paths)
+
+The function has 6 distinct control-flow paths. Each path must be classified
+as either a legitimate no-op (returns `.ok st`) or an error propagation
+(returns `.error e`).
+
+**Path enumeration**:
+
+| # | Condition | Current Return | New Return | Classification |
+|---|-----------|---------------|------------|----------------|
+| 1 | `lookupTcb st receiver = none` | `st` | `.ok st` | No-op: receiver not found (unreachable under invariants, defensive) |
+| 2 | `receiverTcb.schedContextBinding ≠ .unbound` | `st` | `.ok st` | No-op: receiver already has SC (no donation needed) |
+| 3 | `lookupTcb st caller = none` | `st` | `.ok st` | No-op: caller not found (unreachable under invariants) |
+| 4 | `callerTcb.schedContextBinding = .unbound` | `st` | `.ok st` | No-op: caller has no SC to donate |
+| 5 | `callerTcb.schedContextBinding = .donated` | `st` | `.ok st` | No-op: caller's SC is itself donated (cannot re-donate) |
+| 6a | `donateSchedContext ... = .error _` | `st` | `.error e` | **Error propagation** (the key fix) |
+| 6b | `donateSchedContext ... = .ok st'` | `st'` | `.ok st'` | Success |
+
+Only path 6a changes semantics. Paths 1-5 change from bare `st` to `.ok st`,
+and path 6b from bare `st'` to `.ok st'`. Path 6a changes from silent
+swallowing (`st`) to error propagation (`.error e`).
 
 **Atomic steps**:
 
 1. **Read current function**: Donation.lean lines 55-90.
 
-2. **Change signature and body**:
+2. **Change signature**: `SystemState` → `Except KernelError SystemState`
 
-   **Before**:
+3. **Change body** — apply the path classification above:
    ```lean
-   def applyCallDonation (st : SystemState) (caller receiver : ThreadId)
-       : SystemState :=
-     -- ... lookup SchedContext ...
-     match donateSchedContext st caller receiver clientScId with
-     | .error _ => st
-     | .ok st' => st'
-   ```
-
-   **After**:
-   ```lean
-   def applyCallDonation (st : SystemState) (caller receiver : ThreadId)
+   def applyCallDonation
+       (st : SystemState)
+       (caller : SeLe4n.ThreadId) (receiver : SeLe4n.ThreadId)
        : Except KernelError SystemState :=
-     -- ... lookup SchedContext ...
-     match donateSchedContext st caller receiver clientScId with
-     | .error e => .error e
-     | .ok st' => .ok st'
+     match lookupTcb st receiver with
+     | none => .ok st                          -- Path 1: no-op
+     | some receiverTcb =>
+       match receiverTcb.schedContextBinding with
+       | .unbound =>
+         match lookupTcb st caller with
+         | none => .ok st                      -- Path 3: no-op
+         | some callerTcb =>
+           match callerTcb.schedContextBinding with
+           | .bound clientScId =>
+             match donateSchedContext st caller receiver clientScId with
+             | .error e => .error e            -- Path 6a: ERROR PROPAGATION
+             | .ok st' => .ok st'              -- Path 6b: success
+           | _ => .ok st                       -- Paths 4,5: no-op
+       | _ => .ok st                           -- Path 2: no-op
    ```
 
-   For the early-exit paths (no SchedContext bound, caller not active, etc.),
-   these should return `.ok st` (success with unmodified state) since they
-   represent legitimate no-op conditions, not errors. Only propagate errors
-   from the underlying `donateSchedContext` call.
-
-3. **Build module**: `lake build SeLe4n.Kernel.IPC.Operations.Donation`
+4. **Build module**: `lake build SeLe4n.Kernel.IPC.Operations.Donation`
 
 #### AH2-B: Change `applyReplyDonation` return type to `Except` (M-02)
 
 **File**: `SeLe4n/Kernel/IPC/Operations/Donation.lean`, lines 163-172
-**Type**: Multi-step operation
+**Type**: Multi-step operation (4 control-flow paths)
+
+**Path enumeration**:
+
+| # | Condition | Current Return | New Return | Classification |
+|---|-----------|---------------|------------|----------------|
+| 1 | `lookupTcb st replier = none` | `st` | `.ok st` | No-op: replier not found |
+| 2 | `replierTcb.schedContextBinding ≠ .donated` | `st` | `.ok st` | No-op: no donation to return |
+| 3a | `returnDonatedSchedContext ... = .error _` | `st` | `.error e` | **Error propagation** |
+| 3b | `returnDonatedSchedContext ... = .ok st'` | `removeRunnable st' replier` | `.ok (removeRunnable st' replier)` | Success |
+
+Only path 3a changes semantics: from silent swallowing to error propagation.
 
 **Atomic steps**:
 
-1. **Read current function**: Donation.lean lines 150-180.
+1. **Read current function**: Donation.lean lines 158-173.
 
-2. **Change signature and body**: Same pattern as AH2-A.
+2. **Change signature**: `SystemState` → `Except KernelError SystemState`
 
-   **Before**:
+3. **Change body**:
    ```lean
-   def applyReplyDonation (st : SystemState) (replier : ThreadId)
-       : SystemState :=
-     -- ... lookup donated SchedContext ...
-     match returnDonatedSchedContext st replier scId originalOwner with
-     | .error _ => st
-     | .ok st' => removeRunnable st' replier
-   ```
-
-   **After**:
-   ```lean
-   def applyReplyDonation (st : SystemState) (replier : ThreadId)
+   def applyReplyDonation (st : SystemState) (replier : SeLe4n.ThreadId)
        : Except KernelError SystemState :=
-     -- ... lookup donated SchedContext ...
-     match returnDonatedSchedContext st replier scId originalOwner with
-     | .error e => .error e
-     | .ok st' => .ok (removeRunnable st' replier)
+     match lookupTcb st replier with
+     | none => .ok st                          -- Path 1: no-op
+     | some replierTcb =>
+       match replierTcb.schedContextBinding with
+       | .donated scId originalOwner =>
+         match returnDonatedSchedContext st replier scId originalOwner with
+         | .error e => .error e                -- Path 3a: ERROR PROPAGATION
+         | .ok st' => .ok (removeRunnable st' replier)  -- Path 3b: success
+       | _ => .ok st                           -- Path 2: no-op
    ```
 
-   Early-exit paths (no donation active, etc.) return `.ok st`.
-
-3. **Build module**: `lake build SeLe4n.Kernel.IPC.Operations.Donation`
+4. **Build module**: `lake build SeLe4n.Kernel.IPC.Operations.Donation`
 
 #### AH2-C: Update API.lean call sites for donation error handling (M-02)
 
 **File**: `SeLe4n/Kernel/API.lean`
-**Call sites**: Lines ~654, ~855, ~874, ~973, ~1588
-**Type**: Multi-step operation
+**Type**: Multi-step operation (5 code sites + 1 indirect caller + 1 theorem)
 
-Each call site currently uses `let st'' := applyCallDonation ...` (a pure
-binding). After the return type changes to `Except`, each must become an
-error-propagating `match`.
+There are 5 direct call sites in API.lean, 1 indirect wrapper in Donation.lean,
+and 1 equivalence theorem that must be updated. Each `let st'' :=
+applyCallDonation ...` (pure binding) becomes a `match ... with | .error e =>
+.error e | .ok st'' => ...` (error propagation).
 
-**Atomic steps**:
+**Sub-step AH2-C-1: Unchecked `.call` path** (API.lean:~654)
 
-1. **Update `.call` unchecked path** (API.lean:654):
-   ```lean
-   -- Before: let st'' := applyCallDonation st' tid receiverTid
-   -- After:
-   match applyCallDonation st' tid receiverTid with
-   | .error e => .error e
-   | .ok st'' => .ok ((), propagatePriorityInheritance st'' receiverTid)
-   ```
+```lean
+-- BEFORE (line 654):
+let st'' := applyCallDonation st' tid receiverTid
+.ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
 
-2. **Update `.call` checked path** (API.lean:855): Same pattern.
+-- AFTER:
+match applyCallDonation st' tid receiverTid with
+| .error e => .error e
+| .ok st'' =>
+  .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+```
 
-3. **Update `.reply` checked path** (API.lean:874):
-   ```lean
-   match applyReplyDonation st' tid with
-   | .error e => .error e
-   | .ok st'' => .ok ((), revertPriorityInheritance st'' tid)
-   ```
+**Sub-step AH2-C-2: Checked `.call` path** (API.lean:~855)
 
-4. **Update `.replyRecv` checked path** (API.lean:973): Same pattern as `.reply`.
+```lean
+-- BEFORE (line 855):
+let st'' := applyCallDonation st' tid receiverTid
+.ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
 
-5. **Update proof context** (API.lean:1588): Adjust theorem equivalence proof
-   to account for new `match` branches.
+-- AFTER:
+match applyCallDonation st' tid receiverTid with
+| .error e => .error e
+| .ok st'' =>
+  .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+```
 
-6. **Build module**: `lake build SeLe4n.Kernel.API`
+**Sub-step AH2-C-3: Checked `.reply` path** (API.lean:~874)
+
+```lean
+-- BEFORE (line 874):
+let st'' := applyReplyDonation st' tid
+.ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+
+-- AFTER:
+match applyReplyDonation st' tid with
+| .error e => .error e
+| .ok st'' =>
+  .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+```
+
+**Sub-step AH2-C-4: Checked `.replyRecv` path** (API.lean:~973)
+
+Same pattern as AH2-C-3 — `applyReplyDonation` error propagation.
+
+**Sub-step AH2-C-5: Unchecked `.reply` path — indirect via `endpointReplyWithDonation`**
+(Donation.lean:~230-237)
+
+The unchecked `.reply` arm (API.lean:~660-664) delegates to
+`endpointReplyWithDonation`, which internally calls `applyReplyDonation`
+(Donation.lean:237). This is an **indirect** call site that also needs updating:
+
+```lean
+-- BEFORE (Donation.lean:~237):
+let st'' := applyReplyDonation st' replier
+.ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+
+-- AFTER:
+match applyReplyDonation st' replier with
+| .error e => .error e
+| .ok st'' =>
+  .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+```
+
+Similarly, `endpointCallWithDonation` (Donation.lean:~219) calls
+`applyCallDonation` as a `let` binding and must be updated:
+
+```lean
+-- BEFORE (Donation.lean:~219):
+let st'' := applyCallDonation st' caller receiverTid
+
+-- AFTER:
+match applyCallDonation st' caller receiverTid with
+| .error e => .error e
+| .ok st'' => ...
+```
+
+**Sub-step AH2-C-6: Update equivalence theorem** (API.lean:~1567-1591)
+
+`dispatchWithCap_call_uses_withCaps` (line 1567) contains a RHS that
+references `applyCallDonation` as a `let` binding. After the return type
+changes to `Except`, the theorem's RHS must use `match ... with` instead of
+`let`. The proof body uses `simp [dispatchWithCap, ...]` — since the function
+definitions change, the proof may need additional `unfold applyCallDonation`
+steps or `simp` lemmas for the new `match` structure.
+
+**Sub-step AH2-C-7: Build affected modules**:
+```bash
+source ~/.elan/env
+lake build SeLe4n.Kernel.IPC.Operations.Donation
+lake build SeLe4n.Kernel.API
+```
 
 #### AH2-D: Update donation preservation theorems (M-02)
 
 **Files**:
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (3 theorems)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (1 theorem)
-**Type**: Multi-step operation
+**Type**: Multi-step operation (4 theorems, each with specific proof strategy)
 
-**Atomic steps**:
+All 4 theorems currently state unconditional properties of the form
+`(applyCallDonation st ...).field = st.field`. After the return type changes
+to `Except`, each becomes a conditional property: `applyCallDonation st ... =
+.ok st' → st'.field = st.field`.
 
-1. **Update `applyCallDonation_scheduler_eq`** (Donation.lean:128):
-   Current: Unconditional `(applyCallDonation st ...).scheduler = st.scheduler`.
-   New: Conditional on success:
-   `applyCallDonation st ... = .ok st' → st'.scheduler = st.scheduler`.
-   The early-exit `.ok st` paths trivially satisfy this. The
-   `donateSchedContext` success path needs its existing scheduler-preservation
-   lemma threaded through.
+**Sub-step AH2-D-1: Update `applyCallDonation_scheduler_eq`** (Donation.lean:128-152)
 
-2. **Update `applyCallDonation_machine_eq`** (Donation.lean:574):
-   Same pattern — conditional on success.
+Current statement (unconditional):
+```lean
+theorem applyCallDonation_scheduler_eq
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
+    (applyCallDonation st caller receiver).scheduler = st.scheduler
+```
 
-3. **Update `applyReplyDonation_machine_eq`** (Donation.lean:610):
-   Same pattern — conditional on success.
+New statement (conditional on success):
+```lean
+theorem applyCallDonation_scheduler_eq
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (st' : SystemState)
+    (h : applyCallDonation st caller receiver = .ok st') :
+    st'.scheduler = st.scheduler
+```
 
-4. **Update `applyCallDonation_preserves_projection`**
-   (Operations.lean:2398): This information-flow theorem needs the success
-   precondition. The existing proof structure should survive with an added
-   `h : applyCallDonation ... = .ok st'` hypothesis.
+**Proof strategy**: The existing proof (lines 131-152) case-splits on
+`lookupTcb` and `schedContextBinding`, producing `rfl` for every early-exit
+path. After the change, the early-exit paths return `.ok st`, so each `rfl`
+becomes: `cases h; rfl` (inject the `.ok` to extract `st' = st`, then `rfl`).
+The donation success path currently uses `exact donateSchedContext_scheduler_eq
+...` which already handles the `Except` form — thread `h` through to extract
+the `donateSchedContext = .ok _` hypothesis.
 
-5. **Build modules**:
-   ```bash
-   lake build SeLe4n.Kernel.IPC.Operations.Donation
-   lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations
-   ```
+**Sub-step AH2-D-2: Update `applyCallDonation_machine_eq`** (Donation.lean:574-598)
+
+Same transformation as AH2-D-1. Current proof (lines 577-598) has identical
+structure — case splits with `rfl` for early exits and
+`donateSchedContext_machine_eq` for the success path. The same proof strategy
+applies: inject `.ok` at each early-exit, thread the hypothesis through the
+donation success path.
+
+**Sub-step AH2-D-3: Update `applyReplyDonation_machine_eq`** (Donation.lean:610-629)
+
+Current statement:
+```lean
+theorem applyReplyDonation_machine_eq
+    (st : SystemState) (replier : SeLe4n.ThreadId) :
+    (applyReplyDonation st replier).machine = st.machine
+```
+
+New statement:
+```lean
+theorem applyReplyDonation_machine_eq
+    (st : SystemState) (replier : SeLe4n.ThreadId)
+    (st' : SystemState)
+    (h : applyReplyDonation st replier = .ok st') :
+    st'.machine = st.machine
+```
+
+**Proof strategy**: Similar to AH2-D-1/2 but the success path has an extra
+composition: `returnDonatedSchedContext` + `removeRunnable`. The existing proof
+(lines 623-629) already handles this composition. The `.ok` injection at each
+early exit is mechanical. The success path now wraps `removeRunnable st'
+replier` in `.ok`, so the `have hRem := removeRunnable_machine_eq st' replier`
+line remains valid after extracting `st'` from the `.ok`.
+
+**Sub-step AH2-D-4: Update `applyCallDonation_preserves_projection`**
+(Operations.lean:2398-2419+)
+
+Current statement:
+```lean
+theorem applyCallDonation_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (...hypotheses...) :
+    projectState ctx observer (applyCallDonation st caller receiver) =
+    projectState ctx observer st
+```
+
+New statement — add success hypothesis:
+```lean
+theorem applyCallDonation_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (st' : SystemState)
+    (hOk : applyCallDonation st caller receiver = .ok st')
+    (...existing hypotheses...) :
+    projectState ctx observer st' = projectState ctx observer st
+```
+
+**Proof strategy**: The existing proof unfolds `applyCallDonation` and
+case-splits on lookups. For each early-exit returning `.ok st`, inject `hOk`
+to extract `st' = st`, then `subst st'; simp`. For the donation success path,
+the existing `storeObject_preserves_projection` chain remains valid after
+extracting the concrete `st'` from the `.ok` wrapper. The key change is that
+the proof now operates on `st'` (a named variable) rather than `(applyCallDonation
+st caller receiver)` (a compound term), which may simplify some simp steps.
+
+**Sub-step AH2-D-5: Build affected modules**:
+```bash
+source ~/.elan/env
+lake build SeLe4n.Kernel.IPC.Operations.Donation
+lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations
+```
 
 #### AH2-E: Extend `PlatformConfig` with `MachineConfig` field (M-03, L-16)
 
 **Finding**: M-03 — `bootFromPlatform` does not call `applyMachineConfig`
-**File**: `SeLe4n/Platform/Boot.lean`
-**Type**: Multi-step operation
+**File**: `SeLe4n/Platform/Boot.lean` + `SeLe4n/Machine.lean`
+**Type**: Multi-step operation (prerequisite required)
 
 Currently `PlatformConfig` contains only `irqTable` and `initialObjects`.
 `MachineConfig` is applied separately, creating a gap where callers forget the
 second step.
 
+**CRITICAL PREREQUISITE — `defaultMachineConfig`**:
+
+`MachineConfig` (Machine.lean:742-759) has 7 fields, but only `registerCount`
+has a default value (`32`). The remaining 6 fields (`registerWidth`,
+`virtualAddressWidth`, `physicalAddressWidth`, `pageSize`, `maxASID`,
+`memoryMap`) have **no defaults**. Therefore `MachineConfig := {}` is
+**invalid Lean** — it would fail to compile.
+
+Before adding the field to `PlatformConfig`, we must create a default
+configuration constant:
+
+```lean
+/-- AH2-E: Default machine configuration for use as a `PlatformConfig` default.
+    These values represent the abstract model's defaults (not any specific
+    hardware platform). Platform-specific deployments should always provide
+    explicit values. -/
+def defaultMachineConfig : MachineConfig where
+  registerWidth        := 64      -- ARM64 default
+  virtualAddressWidth  := 48      -- ARMv8 VA width
+  physicalAddressWidth := 52      -- ARMv8 max PA width
+  pageSize             := 4096    -- Standard 4K pages
+  maxASID              := 65536   -- 16-bit ASID (ARM64)
+  memoryMap            := []      -- No regions by default
+  registerCount        := 32      -- ARM64 GPR count
+```
+
+These defaults match the existing `MachineState` defaults (e.g.,
+`physicalAddressWidth := 52` at MachineState definition) and the hardcoded
+values already used throughout the codebase (e.g., `65536` for ASID).
+
 **Atomic steps**:
 
-1. **Read current structure**: Boot.lean lines 35-50 (`PlatformConfig`).
+1. **Create `defaultMachineConfig` in Machine.lean**: Add the constant after
+   the `MachineConfig` structure definition (Machine.lean:~760), before the
+   `registerFileGPRCount_eq_registerCount_default` theorem.
 
-2. **Add `machineConfig` field**:
+2. **Build `SeLe4n.Machine`** to verify the constant compiles.
+
+3. **Add `machineConfig` field to `PlatformConfig`** (Boot.lean:56-58):
    ```lean
    structure PlatformConfig where
      irqTable : List IrqEntry
      initialObjects : List ObjectEntry
-     machineConfig : MachineConfig := {}  -- default preserves backward compat
+     machineConfig : MachineConfig := defaultMachineConfig
    ```
 
-   The default `MachineConfig := {}` uses Lean's default field values
-   (physicalAddressWidth = 52, etc.), preserving backward compatibility for
-   existing callers that don't pass it.
+4. **Verify backward compatibility**: Existing callers that construct
+   `PlatformConfig` with `{ irqTable := ..., initialObjects := ... }` will
+   silently pick up `defaultMachineConfig` — this is backward-compatible.
+   The 21+ theorems that reference `bootFromPlatform` will see no signature
+   change (only `PlatformConfig` gains a field with a default).
 
-3. **Verify import**: `MachineConfig` is defined in `SeLe4n.Machine` which
-   Boot.lean already imports.
-
-4. **Build module**: `lake build SeLe4n.Platform.Boot`
+5. **Build module**: `lake build SeLe4n.Platform.Boot`
 
 #### AH2-F: Integrate `applyMachineConfig` into `bootFromPlatform` (M-03)
 
 **File**: `SeLe4n/Platform/Boot.lean`, lines 148-151
-**Type**: Atomic change
+**Type**: Multi-step operation (function change + caller updates + theorem impact)
 
-**Atomic steps**:
+**Sub-step AH2-F-1: Modify `bootFromPlatform`** (Boot.lean:148-151)
 
-1. **Read current function**: Boot.lean lines 148-151.
+Note: `applyMachineConfig` (Boot.lean:326-340) sets 7 `MachineState` fields
+on the `IntermediateState`. Verify it accepts `IntermediateState` (not
+`SystemState`) as input — if it takes `SystemState`, a type adapter may be
+needed. Read Boot.lean:326-340 to confirm the exact signature.
 
-2. **Add `applyMachineConfig` as final step**:
+```lean
+-- BEFORE:
+def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
+  let initial := mkEmptyIntermediateState
+  let withIrqs := foldIrqs config.irqTable initial
+  foldObjects config.initialObjects withIrqs
 
-   **Before**:
-   ```lean
-   def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
-     let initial := mkEmptyIntermediateState
-     let withIrqs := foldIrqs config.irqTable initial
-     foldObjects config.initialObjects withIrqs
-   ```
+-- AFTER:
+def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
+  let initial := mkEmptyIntermediateState
+  let withIrqs := foldIrqs config.irqTable initial
+  let withObjects := foldObjects config.initialObjects withIrqs
+  applyMachineConfig withObjects config.machineConfig
+```
 
-   **After**:
-   ```lean
-   def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
-     let initial := mkEmptyIntermediateState
-     let withIrqs := foldIrqs config.irqTable initial
-     let withObjects := foldObjects config.initialObjects withIrqs
-     applyMachineConfig withObjects config.machineConfig
-   ```
+**Sub-step AH2-F-2: Remove redundant manual `applyMachineConfig` calls**
 
-3. **Update callers**: Find all `bootFromPlatform` call sites. For callers that
-   previously applied `applyMachineConfig` manually (NegativeStateSuite.lean:
-   3312-3314), remove the now-redundant second step. For callers that pass
-   `PlatformConfig` with default fields, the behavior is unchanged (default
-   `MachineConfig` produces the same result as no `applyMachineConfig` call).
+Search for callers that manually chain `applyMachineConfig` after
+`bootFromPlatform`. Known instance:
+- `tests/NegativeStateSuite.lean:~3312-3314`: manually applies machine config
+  after boot. Remove the redundant second step.
 
-4. **Update `bootFromPlatformChecked`** (Boot.lean:242): This calls
-   `bootFromPlatform` internally, so it automatically benefits from the fix.
-   Verify no additional changes needed.
+```bash
+# Find all callers
+grep -rn 'applyMachineConfig' SeLe4n/ tests/ --include='*.lean'
+```
 
-5. **Build module**: `lake build SeLe4n.Platform.Boot`
+**Sub-step AH2-F-3: Verify `bootFromPlatformChecked` inherits the fix**
+
+`bootFromPlatformChecked` (Boot.lean:242) calls `bootFromPlatform` internally.
+Since we changed `bootFromPlatform` to call `applyMachineConfig`, the checked
+variant automatically benefits. No additional changes needed — just verify
+it compiles.
+
+**Sub-step AH2-F-4: Assess theorem impact**
+
+The 21+ theorems that reference `bootFromPlatform` may need updates since the
+function body now includes an `applyMachineConfig` step. Key theorems:
+- `bootFromPlatform_objects_match`: may need to account for machine config
+  not changing objects
+- `bootFromPlatformChecked_*`: should inherit from `bootFromPlatform` changes
+- Any theorem using `unfold bootFromPlatform` will now see the extra step
+
+For most theorems, `applyMachineConfig` only modifies `machine` state fields
+(not `objects`, `cdt`, `scheduler`, etc.), so object/scheduler-related
+theorems should survive with an additional `simp` step. Machine-state
+theorems will need the `config.machineConfig` values threaded through.
+
+**Sub-step AH2-F-5: Build module**:
+```bash
+source ~/.elan/env && lake build SeLe4n.Platform.Boot
+```
 
 #### AH2-G: Fix `timeoutAwareReceive` empty message return (L-02)
 
@@ -587,32 +930,49 @@ second step.
 **File**: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, lines 131-133
 **Type**: Atomic change
 
+**Error variant selection**: `KernelError.ipcMessageEmpty` does **not exist**
+in the codebase (State.lean:34-84 enumerates all 49 variants). The appropriate
+existing variant is `endpointQueueEmpty` (State.lean:43) — this semantically
+matches "expected a pending message but found none", which is analogous to
+"expected a queue entry but found none".
+
+Alternative: use `illegalState` (State.lean:37) if the empty-pending-message
+case represents a protocol violation (thread claimed to have completed IPC but
+has no message). `endpointQueueEmpty` is more specific and preferred.
+
 **Atomic steps**:
 
-1. **Read current code**: Timeout.lean lines 125-140.
+1. **Read current code**: Timeout.lean lines 125-135.
 
 2. **Change empty-message path to error**:
 
-   **Before**:
+   **Before** (Timeout.lean:133):
    ```lean
    | none => .ok (.completed IpcMessage.empty, st)
    ```
 
    **After**:
    ```lean
-   | none => .error .ipcMessageEmpty
+   -- AH2-G: Return error for missing pending message (protocol violation).
+   -- Under normal IPC invariants, a thread reaching this point should always
+   -- have a pendingMessage set by the sender. The `none` case indicates a
+   -- violated IPC protocol — surface it as an error rather than silently
+   -- returning an empty message.
+   | none => .error .endpointQueueEmpty
    ```
 
-   This surfaces the protocol violation rather than masking it. Verify that
-   `KernelError.ipcMessageEmpty` exists, or use an appropriate existing error
-   variant (e.g., `.invalidState`).
+3. **Check callers**: There are 2 known callers (MainTraceHarness.lean:~2562
+   and ~2577). Both call `timeoutAwareReceive` in test contexts where the
+   `pendingMessage = none` path should be unreachable (the test sets up a
+   sender before the receiver). If either test hits this path and now fails,
+   it reveals a test setup bug (missing sender) rather than a kernel issue.
 
-3. **Check callers**: Search for `timeoutAwareReceive` callers and verify they
-   handle the new error path. If callers expect success on this path (unlikely
-   given the `none` case should be unreachable under invariants), add a
-   comment explaining the invariant that prevents this path.
+4. **Update test expectations if needed**: If any test expects
+   `.ok (.completed IpcMessage.empty, _)`, update it to either:
+   - Fix the test setup to ensure a pending message exists, or
+   - Expect `.error .endpointQueueEmpty` if testing the error path
 
-4. **Build module**: `lake build SeLe4n.Kernel.IPC.Operations.Timeout`
+5. **Build module**: `lake build SeLe4n.Kernel.IPC.Operations.Timeout`
 
 ---
 
@@ -633,152 +993,266 @@ ASID limits in the decode layer.
 
 **Finding**: L-04 — CDT node removed despite capability slot deletion failure
 **File**: `SeLe4n/Kernel/Capability/Operations.lean`, lines 982-1006
-**Type**: Multi-step operation
+**Type**: Multi-step operation (code fix + invariant analysis + theorem impact)
 
 When `cspaceDeleteSlotCore` fails for a descendant, the current code still
 removes the CDT node (line 999), leaving the capability slot unreachable by
 future CDT-based revocation. The fix preserves the CDT node on slot deletion
 failure.
 
-**Atomic steps**:
+**Sub-step AH3-A-1: Modify the error branch** (Operations.lean:993-1000)
 
-1. **Read current code**: Operations.lean lines 975-1010.
+The fold body at line 982 processes each CDT descendant node. The error
+branch is at lines 993-1000:
 
-2. **Change error handling in the fold body**:
+```lean
+-- BEFORE (lines 993-1000):
+| .error err =>
+    let failure : RevokeCdtStrictFailure := {
+      offendingNode := node
+      offendingSlot := some descAddr
+      error := err
+    }
+    let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
+    ({ report with firstFailure := some failure }, stRemoved)
 
-   **Before** (on delete failure):
-   ```lean
-   | .error err =>
-       let failure := { ... }
-       let stRemoved := { stAcc with cdt := stAcc.cdt.removeNode node }
-       ({ report with firstFailure := some failure }, stRemoved)
-   ```
+-- AFTER:
+| .error err =>
+    let failure : RevokeCdtStrictFailure := {
+      offendingNode := node
+      offendingSlot := some descAddr
+      error := err
+    }
+    -- AH3-A: Preserve CDT node on slot deletion failure.
+    -- The capability slot still exists; removing its CDT node would
+    -- make it unreachable by future revocation, creating an orphan.
+    ({ report with firstFailure := some failure }, stAcc)
+```
 
-   **After** (preserve CDT node on failure):
-   ```lean
-   | .error err =>
-       let failure := { ... }
-       -- AH3-A: Do NOT remove CDT node on slot deletion failure.
-       -- The capability slot still exists and must remain CDT-trackable
-       -- for future revocation attempts.
-       ({ report with firstFailure := some failure }, stAcc)
-   ```
+Note: The success branch (lines 1001-1004) correctly removes the CDT node
+AFTER successful deletion — this is unchanged.
 
-3. **Assess invariant impact**: The CDT node remains, pointing to a slot whose
-   capability may be in an inconsistent state. Verify that
-   `cdtNodeSlotConsistency` invariant (if it exists) tolerates this. If the
-   invariant requires CDT nodes to point to valid slots, document the tradeoff
-   (CDT tracking preserved at the cost of a potentially-stale CDT-to-slot
-   mapping).
+**Sub-step AH3-A-2: Assess `cdtMapsConsistent` invariant impact**
 
-4. **Build module**: `lake build SeLe4n.Kernel.Capability.Operations`
+The CDT invariant `cdtMapsConsistent` (defined in Capability/Invariant/Defs.lean)
+requires bidirectional consistency between CDT nodes and capability slots.
+Preserving the CDT node on deletion failure is **invariant-correct**: the
+slot still exists with its original capability, and the CDT node still points
+to it. Removing the CDT node while the slot persists is what breaks the
+invariant (creating an unreachable slot).
+
+The fix **strengthens** the CDT invariant: after a failed revocation, the CDT
+still accurately reflects which slots exist. Future revocation attempts can
+retry the failed deletions.
+
+**Sub-step AH3-A-3: Note on `firstFailure` early-exit**
+
+The fold body has an early-exit guard (line 984-985): once `firstFailure` is
+set, subsequent nodes are skipped (`(report, stAcc)`). This means only one
+deletion failure is ever encountered per revocation attempt. The CDT node
+preservation for that single failed node does not interact with subsequent
+nodes — they are simply left untouched.
+
+**Sub-step AH3-A-4: Check preservation theorem impact**
+
+The `cspaceRevokeCdtStrict` preservation theorem (Capability/Invariant/
+Preservation.lean:~993-1050) may reference the `removeNode` call in the error
+branch. After the change, this branch no longer modifies `cdt`, so the proof
+should simplify (the error branch is now a no-op on state). Read the theorem
+to confirm.
+
+**Sub-step AH3-A-5: Build module**:
+```bash
+source ~/.elan/env && lake build SeLe4n.Kernel.Capability.Operations
+lake build SeLe4n.Kernel.Capability.Invariant.Preservation
+```
 
 #### AH3-B: Refactor `setIPCBufferOp` to use `storeObject` (L-08)
 
 **Finding**: L-08 — Manual state manipulation instead of `storeObject`
 **File**: `SeLe4n/Kernel/Architecture/IpcBufferValidation.lean`, lines 92-110
-**Type**: Multi-step operation
+**Type**: Multi-step operation (refactor + equivalence verification + theorem update)
 
 The current implementation manually replicates `storeObject` semantics. If
-`storeObject` is later extended (e.g., ASID table updates, lifecycle hooks),
-this operation would silently diverge.
+`storeObject` is later extended, this operation would silently diverge.
 
-**Atomic steps**:
+**Sub-step AH3-B-1: Confirm semantic equivalence**
 
-1. **Read current code**: IpcBufferValidation.lean lines 90-115.
+The manual code (IpcBufferValidation.lean:100-109) updates 4 state fields:
+```
+objects      := st.objects.insert tid.toObjId (.tcb tcb')
+objectIndex  := if st.objectIndexSet.contains ... then st.objectIndex else ...
+objectIndexSet := st.objectIndexSet.insert tid.toObjId
+lifecycle    := { objectTypes := ..., capabilityRefs := ... }
+```
 
-2. **Read `storeObject` signature**: State.lean lines 521-546.
+`storeObject` (State.lean:521-546) updates 5 fields: the same 4 above plus
+`asidTable`. For a TCB-to-TCB update:
+- `asidTable` clear step: `st.objects[tid.toObjId]?` is `some (.tcb ...)`, not
+  `.vspaceRoot`, so `cleared = st.asidTable`
+- `asidTable` set step: `.tcb tcb'` is not `.vspaceRoot`, so result is `cleared`
+  = `st.asidTable` (unchanged)
 
-3. **Refactor to use `storeObject`**:
+Therefore `storeObject` produces **identical state** to the manual code for
+TCB-to-TCB updates. The `asidTable` branch is a no-op.
 
-   **Before**:
-   ```lean
-   | some (.tcb tcb) =>
-     let tcb' := { tcb with ipcBuffer := addr }
-     .ok { st with
-       objects := st.objects.insert tid.toObjId (.tcb tcb')
-       objectIndex := if st.objectIndexSet.contains tid.toObjId then st.objectIndex
-                      else tid.toObjId :: st.objectIndex
-       objectIndexSet := st.objectIndexSet.insert tid.toObjId
-       lifecycle := { ... }
-     }
-   ```
+However, `storeObject` also handles `lifecycle.capabilityRefs` via a
+`cap.slots.fold` for CNode objects. For TCB objects, the `| _ => cleared`
+branch clears capability refs for the object — which may differ from the
+manual code's `capabilityRefs := st.lifecycle.capabilityRefs` (preserving
+existing refs). **Verify this**: read `storeObject` lines 530-537 to confirm
+whether `cleared` filters by `ref.cnode ≠ id` (which for a TCB would remove
+any refs where the TCB is the cnode — TCBs are never cnodes, so this filter
+is a no-op).
 
-   **After**:
-   ```lean
-   | some (.tcb tcb) =>
-     let tcb' := { tcb with ipcBuffer := addr }
-     storeObject tid.toObjId (.tcb tcb') st
-   ```
+**Sub-step AH3-B-2: Apply the refactoring**
 
-4. **Verify equivalence**: The `storeObject` function (State.lean:521-546)
-   handles `objects`, `objectIndex`, `objectIndexSet`, `lifecycle`, and
-   `asidTable` updates. For a TCB-to-TCB store (not VSpaceRoot), the
-   `asidTable` branch is a no-op (`| _ => cleared` where `cleared = st.asidTable`
-   since the old object is also not a VSpaceRoot). Confirm the refactored
-   version produces identical state.
+```lean
+-- BEFORE (IpcBufferValidation.lean:98-109):
+| some (.tcb tcb) =>
+  let tcb' := { tcb with ipcBuffer := addr }
+  .ok { st with
+    objects := st.objects.insert tid.toObjId (.tcb tcb')
+    objectIndex := if st.objectIndexSet.contains tid.toObjId then st.objectIndex
+                   else tid.toObjId :: st.objectIndex
+    objectIndexSet := st.objectIndexSet.insert tid.toObjId
+    lifecycle := {
+      objectTypes := st.lifecycle.objectTypes.insert tid.toObjId
+        (KernelObject.tcb tcb').objectType
+      capabilityRefs := st.lifecycle.capabilityRefs
+    }
+  }
 
-5. **Check preservation theorems**: If `setIPCBufferOp` has dedicated
-   preservation theorems that reason about the manual struct-with pattern,
-   update them to use `storeObject` lemmas instead.
+-- AFTER:
+| some (.tcb tcb) =>
+  let tcb' := { tcb with ipcBuffer := addr }
+  storeObject tid.toObjId (.tcb tcb') st
+```
 
-6. **Build module**: `lake build SeLe4n.Kernel.Architecture.IpcBufferValidation`
+Note: `storeObject` returns `Kernel Unit` (i.e., `SystemState → Except
+KernelError (Unit × SystemState)`). The current code returns `Except
+KernelError SystemState`. Use pattern matching to adapt:
+```lean
+| some (.tcb tcb) =>
+  let tcb' := { tcb with ipcBuffer := addr }
+  match storeObject tid.toObjId (.tcb tcb') st with
+  | .ok ((), st') => .ok st'
+  | .error e => .error e
+```
+
+Or simplify: `storeObject` always returns `.ok` (it never errors), so we can
+use `let (.ok ((), st')) := storeObject tid.toObjId (.tcb tcb') st; .ok st'`.
+
+**Sub-step AH3-B-3: Update preservation theorems**
+
+The cross-subsystem bridge theorem at CrossSubsystem.lean:~2202-2224
+(`setIPCBufferOp_preserves_crossSubsystemInvariant`) reasons about the manual
+struct-with pattern. After the refactoring, it should use
+`storeObject_preserves_*` lemmas instead. This likely simplifies the proof
+(reuses existing `storeObject` infrastructure instead of manual field reasoning).
+
+**Sub-step AH3-B-4: Build module**:
+```bash
+source ~/.elan/env
+lake build SeLe4n.Kernel.Architecture.IpcBufferValidation
+lake build SeLe4n.Kernel.CrossSubsystem
+```
 
 #### AH3-C: Replace hardcoded ASID 65536 with `st.machine.maxASID` (L-14)
 
 **Finding**: L-14 — Architecture-independent decode hardcodes ARM64 ASID limit
 **File**: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`, lines 209 and 234
-**Type**: Multi-step operation
+**Type**: Multi-step operation (2 functions + 2 dispatch callers + tests)
 
-The decode functions `decodeVSpaceMapArgs` and `decodeVSpaceUnmapArgs` hardcode
-`65536` (ARM64 16-bit ASID limit). This should read from `MachineConfig` for
-platform independence.
+**Recommended approach**: Option A — add `maxASID : Nat` parameter to both
+decode functions. This is minimal and avoids threading `SystemState` through
+a pure decode layer.
 
-**Atomic steps**:
+**Sub-step AH3-C-1: Update `decodeVSpaceMapArgs`** (SyscallArgDecode.lean:201-224)
 
-1. **Read current code**: SyscallArgDecode.lean lines 205-215 and 230-240.
+```lean
+-- BEFORE (line 201):
+def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
+    : Except KernelError VSpaceMapArgs := do
 
-2. **Determine access path**: The decode functions operate on raw registers
-   and do not currently receive `SystemState`. Two approaches:
+-- AFTER:
+def decodeVSpaceMapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
+    : Except KernelError VSpaceMapArgs := do
+```
 
-   **Option A (minimal change)**: Add a `maxASID : Nat` parameter to both
-   decode functions. The caller (API.lean dispatch arm) passes
-   `st.machine.maxASID`.
+And at line 209:
+```lean
+-- BEFORE:
+if !asid.isValidForConfig 65536 then .error .asidNotBound
 
-   **Option B (state-threaded)**: Add `SystemState` parameter to the decode
-   functions. More invasive but consistent with other state-aware decodes.
+-- AFTER:
+if !asid.isValidForConfig maxASID then .error .asidNotBound
+```
 
-   **Recommended**: Option A — minimal parameter addition.
+**Sub-step AH3-C-2: Update `decodeVSpaceUnmapArgs`** (SyscallArgDecode.lean:228-243)
 
-3. **Update `decodeVSpaceMapArgs`**:
+Same change:
+```lean
+-- BEFORE (line 228):
+def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
+    : Except KernelError VSpaceUnmapArgs := do
 
-   **Before**:
-   ```lean
-   if !asid.isValidForConfig 65536 then .error .asidNotBound
-   ```
+-- AFTER:
+def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
+    : Except KernelError VSpaceUnmapArgs := do
+```
 
-   **After**:
-   ```lean
-   if !asid.isValidForConfig maxASID then .error .asidNotBound
-   ```
+And at line 234: `65536` → `maxASID`.
 
-4. **Update `decodeVSpaceUnmapArgs`**: Same pattern.
+**Sub-step AH3-C-3: Update dispatch callers in API.lean**
 
-5. **Update callers in API.lean**: The `.vspaceMap` and `.vspaceUnmap` dispatch
-   arms call these decode functions. Thread `st.machine.maxASID` through:
-   ```lean
-   match decodeVSpaceMapArgs decoded st.machine.maxASID with
-   ```
+The `.vspaceMap` arm (API.lean:~462) and `.vspaceUnmap` arm (API.lean:~472)
+both call these decode functions. Both arms are inside `dispatchCapabilityOnly`
+which receives `SystemState` as `st`:
 
-6. **Update theorem**: `validateVSpaceMapPermsForMemoryKind_device_noexec`
-   and any decode-related theorems in `tests/DecodingSuite.lean` must pass
-   the new parameter.
+```lean
+-- .vspaceMap arm (API.lean:~462) — BEFORE:
+fun st => match decodeVSpaceMapArgs decoded with
+-- AFTER:
+fun st => match decodeVSpaceMapArgs decoded st.machine.maxASID with
 
-7. **Build modules**:
-   ```bash
-   lake build SeLe4n.Kernel.Architecture.SyscallArgDecode
-   lake build SeLe4n.Kernel.API
-   ```
+-- .vspaceUnmap arm (API.lean:~472) — BEFORE:
+fun st => match decodeVSpaceUnmapArgs decoded with
+-- AFTER:
+fun st => match decodeVSpaceUnmapArgs decoded st.machine.maxASID with
+```
+
+**Sub-step AH3-C-4: Update equivalence theorems**
+
+The structural equivalence theorem `checkedDispatch_vspaceMap_eq_unchecked`
+(API.lean:~1060-1065) and any related theorems that reference the decode
+functions will need the `maxASID` parameter threaded through. Since both
+checked and unchecked paths use the shared `dispatchCapabilityOnly` function
+for `.vspaceMap`/`.vspaceUnmap`, the equivalence should survive with the
+parameter addition.
+
+**Sub-step AH3-C-5: Update DecodingSuite tests**
+
+`tests/DecodingSuite.lean` tests `decodeVSpaceMapArgs` and
+`decodeVSpaceUnmapArgs` directly. Each test call must pass a `maxASID`
+value. Use `65536` (the ARM64 default) to keep existing test semantics:
+
+```lean
+-- BEFORE:
+match decodeVSpaceMapArgs decoded with
+-- AFTER:
+match decodeVSpaceMapArgs decoded 65536 with
+```
+
+This maintains backward compatibility for tests while enabling platform
+independence in production dispatch.
+
+**Sub-step AH3-C-6: Build affected modules**:
+```bash
+source ~/.elan/env
+lake build SeLe4n.Kernel.Architecture.SyscallArgDecode
+lake build SeLe4n.Kernel.API
+```
 
 ---
 
@@ -856,29 +1330,92 @@ workstreams.
 #### AH4-E: Create `scripts/check_version_sync.sh` CI validation
 
 **File**: `scripts/check_version_sync.sh` (new file)
-**Type**: Multi-step operation
+**Type**: Multi-step operation (script creation + integration)
 
-Create a CI-safe shell script that validates version consistency across all
-known version-bearing files against the canonical `lakefile.toml` version.
+Create a CI-safe shell script following the project's existing patterns
+(`check_website_links.sh`, `test_tier0_hygiene.sh`). The script validates
+version consistency across all known version-bearing files against the
+canonical `lakefile.toml` version.
+
+**Full script specification**:
+
+```bash
+#!/usr/bin/env bash
+# seLe4n — version sync check
+# Validates that all version-bearing files match lakefile.toml
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
+# Extract canonical version from lakefile.toml
+CANONICAL=$(grep '^version' lakefile.toml | sed 's/.*"\(.*\)"/\1/')
+if [[ -z "${CANONICAL}" ]]; then
+  echo "ERROR: Could not extract version from lakefile.toml" >&2
+  exit 1
+fi
+
+FAIL=0
+
+check_file() {
+  local file="$1" pattern="$2" label="$3"
+  if [[ ! -f "${file}" ]]; then
+    echo "WARN: ${file} not found (skipped)"
+    return
+  fi
+  if ! grep -q "${CANONICAL}" <(grep "${pattern}" "${file}"); then
+    local actual
+    actual=$(grep "${pattern}" "${file}" | head -1)
+    echo "MISMATCH: ${label}"
+    echo "  Expected: ${CANONICAL}"
+    echo "  Found:    ${actual}"
+    echo "  File:     ${file}"
+    FAIL=1
+  fi
+}
+
+# 1. Rust HAL boot banner
+check_file "rust/sele4n-hal/src/boot.rs" "KERNEL_VERSION" "Rust HAL KERNEL_VERSION"
+
+# 2. Rust workspace Cargo.toml
+check_file "rust/Cargo.toml" 'version\s*=' "Rust workspace version"
+
+# 3. Spec document
+check_file "docs/spec/SELE4N_SPEC.md" "Package version" "SELE4N_SPEC package version"
+
+# 4. i18n README badges (10 files)
+for lang in ar de es fr hi ja ko pt-BR ru zh-CN; do
+  readme="docs/i18n/${lang}/README.md"
+  check_file "${readme}" "version-" "i18n README (${lang})"
+done
+
+echo "Canonical version: ${CANONICAL}"
+if [[ "${FAIL}" -eq 1 ]]; then
+  echo "FAIL: Version sync check found mismatches." >&2
+  exit 1
+else
+  echo "PASS: All version-bearing files match lakefile.toml."
+fi
+```
+
+**Checked files** (14 total):
+
+| # | File | Pattern | Notes |
+|---|------|---------|-------|
+| 1 | `rust/sele4n-hal/src/boot.rs` | `KERNEL_VERSION` | UART boot banner |
+| 2 | `rust/Cargo.toml` | `version =` | Workspace version |
+| 3 | `docs/spec/SELE4N_SPEC.md` | `Package version` | Spec table |
+| 4–13 | `docs/i18n/*/README.md` | `version-` | Badge SVGs (10 files) |
 
 **Atomic steps**:
 
-1. **Write the script**:
-   - Extract canonical version from `lakefile.toml` via
-     `grep '^version' lakefile.toml | sed 's/.*"\(.*\)"/\1/'`
-   - Check `rust/sele4n-hal/src/boot.rs` KERNEL_VERSION matches
-   - Check `rust/Cargo.toml` workspace version matches
-   - Check all 10 i18n README badge versions match
-   - Check `docs/spec/SELE4N_SPEC.md` package version table matches
-   - Report mismatches with file:line and exit 1 on any failure
-
+1. **Write the script** (under 60 lines — safe for single Write call)
 2. **Make executable**: `chmod +x scripts/check_version_sync.sh`
-
 3. **Run shellcheck**: `shellcheck scripts/check_version_sync.sh`
-
-4. **Test the script**: Run it against the current (pre-fix) state to verify
-   it detects known mismatches. Then run again after AH4-A through AH4-D to
-   verify all pass.
+4. **Pre-fix validation**: Run against current (stale) state — should report
+   mismatches for `boot.rs`, i18n READMEs, spec, etc.
+5. **Post-fix validation**: Run after AH4-A through AH4-D — should pass
 
 #### AH4-F: Integrate version check into Tier 0 hygiene
 
@@ -890,13 +1427,18 @@ so it runs on every PR and push.
 
 **Atomic steps**:
 
-1. **Read current script**: `scripts/test_tier0_hygiene.sh`
+1. **Read current script**: `scripts/test_tier0_hygiene.sh`, specifically the
+   insertion region around the website link check (line 98).
 
-2. **Add version sync check** after the existing website link check:
+2. **Insert after line 98** (after `run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"`):
    ```bash
-   echo "=== Version sync check ==="
-   ./scripts/check_version_sync.sh || exit 1
+   # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
+   run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
    ```
+
+   This follows the existing `run_check "HYGIENE"` pattern used by all other
+   checks in the script. The `run_check` function handles pass/fail reporting
+   and respects `CONTINUE_MODE`.
 
 3. **Run Tier 0**: `./scripts/test_tier0_hygiene.sh`
 
@@ -918,98 +1460,198 @@ test gate.
 #### AH5-A: Document design-rationale findings in source code (M-04, M-07)
 
 **Files**:
-- `SeLe4n/Platform/Boot.lean`, line 898 (M-04)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean`, line 185 (M-07)
-**Type**: Multi-step operation
+- `SeLe4n/Platform/Boot.lean`, line ~898 (M-04)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean`, line ~185 (M-07)
+**Type**: Multi-step operation (2 comment insertions)
 
-**Atomic steps**:
+**Sub-step AH5-A-1: M-04 — VSpaceRoot boot exclusion** (Boot.lean:~898)
 
-1. **M-04 — VSpaceRoot boot exclusion**: Add a structured comment block at
-   `bootSafeObject` (Boot.lean:898) explaining:
-   - Why VSpaceRoots are excluded (ASID table registration requires a running
-     kernel, not available during boot)
-   - The tradeoff (all address spaces must be configured post-boot via syscalls)
-   - Integration timeline (VSpaceRoot boot support planned for WS-V when ASID
-     manager is wired into production)
+Insert comment block immediately above the `bootSafeObject` definition:
+```lean
+/-- M-04/AH5-A: Design rationale — VSpaceRoot exclusion from boot objects.
+VSpaceRoots are excluded from `bootSafeObject` because ASID table registration
+(`asidTable.insert asid id` in `storeObject`) requires a fully initialized
+ASID manager, which is not available during the builder-phase boot sequence.
 
-2. **M-07 — pendingMessage NI visibility**: Add a security analysis comment at
-   `projectKernelObject` TCB case (Projection.lean:185-201) explaining:
-   - `pendingMessage` is technically visible in the projection
-   - Exposure is unreachable under NI invariants: `runnableThreadIpcReady`
-     ensures observable threads are in `.ready` IPC state (no pending message
-     from cross-domain sources), and `currentNotEndpointQueueHead` prevents
-     the current thread from being in an endpoint queue
-   - Reference the specific invariant predicates that make this safe
+**Tradeoff**: All address spaces must be configured post-boot via `vspaceMap`
+syscalls. This prevents pre-populating address space mappings during boot.
+
+**Integration timeline**: VSpaceRoot boot support is planned for WS-V when the
+ASID manager is wired into the `IntermediateState` builder operations. The
+`AsidManager` type and `asidPoolUnique` invariant (AsidManager.lean) provide
+the foundation — the missing piece is builder-phase ASID pool integration. -/
+```
+
+**Sub-step AH5-A-2: M-07 — pendingMessage NI visibility** (Projection.lean:~185)
+
+Insert comment block at the `projectKernelObject` TCB case, immediately
+before or after the `pendingMessage` field projection:
+```lean
+-- M-07/AH5-A: Security analysis — pendingMessage visibility in NI projection.
+-- `pendingMessage` is technically visible in the projection (not stripped
+-- like `registerContext`). However, cross-domain information leakage via
+-- `pendingMessage` is unreachable under the NI invariant conjunction:
+--
+-- 1. `runnableThreadIpcReady`: observable threads are in `.ready` IPC state,
+--    meaning they have no pending message from a cross-domain sender.
+-- 2. `currentNotEndpointQueueHead`: the current thread is not in any endpoint
+--    queue, preventing it from receiving cross-domain messages while observable.
+-- 3. Domain scheduling: only threads in the current domain are observable,
+--    and IPC messages across domains require a domain switch.
+--
+-- A formal proof that these invariants make `pendingMessage` exposure
+-- unreachable is tracked for WS-V (non-interference refinement).
+```
 
 #### AH5-B: Document spec-level findings (M-05, M-06, L-13)
 
 **File**: `docs/spec/SELE4N_SPEC.md`
-**Type**: Multi-step operation
+**Type**: Multi-step operation (3 subsection insertions)
 
-**Atomic steps**:
+Read `docs/spec/SELE4N_SPEC.md` in chunks to locate the exact insertion points
+for each subsection. The spec is ~969 lines with distinct sections for
+platform, capability, and architecture.
 
-1. **M-05 — Simulation contract limitations**: Add a "Platform Testing
-   Limitations" subsection to the platform testing section documenting:
-   - The sim permissive contract accepts all operations (`True` propositions)
-   - The 6-condition RPi5 register context stability check is not exercisable
-     under simulation
-   - Recommendation: use the sim restrictive contract for property validation
-     and RPi5 contract for production-representative testing
+**Sub-step AH5-B-1: M-05 — Simulation contract limitations**
 
-2. **M-06 — CNode intermediate rights divergence**: Add a "seL4 Divergences"
-   subsection to the capability section documenting:
-   - Intermediate CNode `Read` right is not checked during multi-level CSpace
-     traversal (documented as U-M25 in source)
-   - Authority surface is wider: a thread with only `Write` right on an
-     intermediate CNode can still resolve capabilities through it
-   - Rationale: operation-level enforcement (all leaf operations check rights)
-     provides equivalent security for the single-resolution-per-syscall model
-   - The delta is quantified: no additional operations become accessible (rights
-     are still checked at the leaf), but the access path is broader
+Locate the "Platform" or "Platform Testing" section in the spec. Insert a
+subsection:
 
-3. **L-13 — TPIDR_EL0 / TLS gap**: Add a note to the architecture model section:
-   - `RegisterFile` covers GPRs (x0-x30), PC, and SP only
-   - ARM64 TPIDR_EL0 (thread-local storage pointer) is not modeled
-   - Required for hardware user-space TLS support
-   - Integration timeline: future AG-phase when user-space binary loading is
-     implemented
+```markdown
+### Platform Testing Limitations (M-05)
+
+The simulation platform contract (`Sim/Contract.lean`) uses permissive
+`True` propositions for all runtime and boot obligations. This is by design
+— simulation enables fast iteration and test execution without hardware.
+
+**Limitations**:
+- The RPi5 `registerContextStable` check (6 conditions: stack alignment,
+  PC kernel range, budget positivity, SP mapped, return address valid,
+  TLS pointer valid) is NOT exercisable under simulation
+- Cache coherency model proofs (`CacheModel.lean`) are trivially satisfied
+- Interrupt disable/enable semantics are sequential-model approximations
+
+**Recommendation**: Use the `Sim.Restrictive` contract for property
+validation (it imposes some structural constraints). For production-
+representative testing, use the RPi5 contract (`RPi5/Contract.lean`).
+```
+
+**Sub-step AH5-B-2: M-06 — CNode intermediate rights divergence**
+
+Locate the "Capability" section in the spec. Insert a subsection:
+
+```markdown
+### seL4 Divergence: CNode Intermediate Rights (M-06)
+
+`resolveCapAddress` (Operations.lean:85-128) does NOT check `Read` rights
+on intermediate CNode capabilities during multi-level CSpace traversal.
+This diverges from seL4, which requires `Read` on each intermediate CNode.
+
+**Impact**: A thread with only `Write` right on an intermediate CNode can
+still resolve capabilities through it, broadening the access path. However,
+no additional *operations* become accessible — rights are still checked at
+the leaf capability by the individual operation handler.
+
+**Rationale**: seLe4n uses a single-resolution-per-syscall model where each
+syscall resolves exactly one capability path. The intermediate rights check
+in seL4 guards against multi-hop traversals that could bypass CNode access
+control; in seLe4n's flat model, this guard is redundant.
+
+**Source annotation**: U-M25 (Operations.lean).
+```
+
+**Sub-step AH5-B-3: L-13 — TPIDR_EL0 / TLS gap**
+
+Locate the "Architecture Model" section in the spec. Insert a note:
+
+```markdown
+### Architecture Gap: TPIDR_EL0 / TLS (L-13)
+
+`RegisterFile` (Prelude.lean) models GPRs (x0-x30), PC, and SP only.
+The ARM64 `TPIDR_EL0` register (thread-local storage pointer) is not
+modeled. This register is required for user-space TLS support (e.g.,
+`__thread` variables, Go runtime, Rust `thread_local!`).
+
+**Integration timeline**: TPIDR_EL0 modeling is planned for a future
+AG-phase when user-space binary loading and context switching of system
+registers are implemented. The `TrapFrame` in `sele4n-hal` (272 bytes)
+already has space for system register state; the Lean model needs a
+corresponding `RegisterFile` extension.
+```
 
 #### AH5-C: Document defense-in-depth findings in source code (M-08, L-11, L-12)
 
 **Files**:
-- `SeLe4n/Kernel/CrossSubsystem.lean`, lines 273-292 (M-08)
-- `SeLe4n/Prelude.lean`, lines 510-532 (L-11)
-- `SeLe4n/Model/Object/Types.lean`, line 531 (L-12)
-**Type**: Multi-step operation
+- `SeLe4n/Kernel/CrossSubsystem.lean`, lines ~273-292 (M-08)
+- `SeLe4n/Prelude.lean`, lines ~510-532 (L-11)
+- `SeLe4n/Model/Object/Types.lean`, line ~531 (L-12)
+**Type**: Multi-step operation (3 comment insertions at specific locations)
 
-**Atomic steps**:
+**Sub-step AH5-C-1: M-08 — Cross-subsystem composition gap**
+(CrossSubsystem.lean:~273-292)
 
-1. **M-08 — Cross-subsystem composition**: Update the existing gap
-   documentation at CrossSubsystem.lean:273-292 with:
-   - Current predicate count (10) and the 45 pairwise disjointness analyses
-   - Specific remaining gap scenarios (IPC queue ↔ service registry, capability
-     revocation ↔ service endpoints)
-   - Assessment: frame lemmas cover all 33 kernel operations that modify
-     `objects`; remaining gap is theoretical (no known concrete violation)
+There is already a gap documentation block at this location. **Update** the
+existing comment (do not add a duplicate) with:
 
-2. **L-11 — Badge constructor safety**: Add a safety analysis comment at
-   `structure Badge` (Prelude.lean:510):
-   - Direct `Badge.mk n` with `n ≥ 2^64` produces an invalid badge
-   - `Badge.valid` predicate catches this at proof boundaries
-   - `Badge.ofNatMasked` enforces word-size at construction
-   - All kernel-facing badge operations (`cspaceMint`, IPC message delivery)
-     use masked/validated badges
-   - Risk: only internal test code could construct invalid badges; no user-facing
-     path bypasses validation
+```lean
+-- M-08/AH5-C: Cross-subsystem composition coverage assessment.
+-- Current: 10 predicates in `crossSubsystemInvariant`, yielding 45 pairwise
+-- disjointness analyses (10 choose 2). Coverage:
+--   - Frame lemmas: ALL 33 kernel operations that modify `objects` have per-
+--     operation frame lemmas (AD4 portfolio, 2+33 bridge lemmas).
+--   - Pairwise disjointness: most pairs are structurally disjoint (different
+--     fields: scheduler vs objects vs cdt). Remaining gap scenarios:
+--     (1) IPC queue membership ↔ service registry endpoint tracking
+--     (2) Capability revocation ↔ service endpoint lifecycle
+--   - Assessment: no known concrete violation. The gap is theoretical —
+--     frame lemmas ensure each operation preserves all 10 predicates
+--     individually. The missing piece is a formal proof that ALL 10
+--     predicates compose correctly under arbitrary interleaving of all 33
+--     operations (exponential combinatorics, deferred to WS-V).
+```
 
-3. **L-12 — maxControlledPriority default**: Add a design-rationale comment at
-   `maxControlledPriority : SeLe4n.Priority := ⟨0xFF⟩` (Types.lean:531):
-   - Default is maximally permissive (any priority assignable)
-   - Safe because `setPriorityOp` enforces `newPrio ≤ caller.mcp` at the
-     operation level, regardless of the target's MCP default
-   - seL4 uses a restrictive default (0); seLe4n diverges for simpler boot
-     configuration
-   - Production deployments should set explicit MCP values during initialization
+**Sub-step AH5-C-2: L-11 — Badge constructor safety** (Prelude.lean:~510)
+
+Insert comment block immediately above `structure Badge`:
+
+```lean
+-- L-11/AH5-C: Badge constructor safety analysis.
+-- `Badge.mk n` with `n ≥ 2^64` produces an invalid badge (exceeds UInt64
+-- word size). This is by design — Lean's Nat is unbounded, and `Badge` wraps
+-- a Nat for proof convenience.
+--
+-- Safety layers:
+-- 1. `Badge.valid` predicate: `b.val < 2^64` — used in proof obligations
+-- 2. `Badge.ofNatMasked`: truncates to word size at construction
+-- 3. `cspaceMint` (Operations.lean): uses masked badge from decoded syscall
+-- 4. IPC message delivery: badge comes from stored Capability (already masked)
+-- 5. Rust ABI: `Badge` is `u64` — hardware truncation at FFI boundary
+--
+-- Risk: only internal test code can construct `Badge.mk (2^64)` directly.
+-- No user-facing syscall path bypasses `ofNatMasked` or `cspaceMint`.
+-- BadgeOverflowSuite.lean (AG9-E) validates round-trip Nat↔UInt64 safety.
+```
+
+**Sub-step AH5-C-3: L-12 — maxControlledPriority default** (Types.lean:~531)
+
+Insert comment block immediately above or beside the `maxControlledPriority`
+field definition:
+
+```lean
+  -- L-12/AH5-C: Design rationale — maximally permissive MCP default.
+  -- Default `0xFF` (255) allows any priority to be assigned without MCP
+  -- restriction. This is safe because `setPriorityOp` (PriorityManagement.lean)
+  -- enforces `newPrio ≤ caller.mcp` at the operation level — the target's own
+  -- MCP is irrelevant to the authority check.
+  --
+  -- seL4 divergence: seL4 uses a restrictive default (0), requiring explicit
+  -- MCP elevation before priority assignment. seLe4n's permissive default
+  -- simplifies boot configuration: all threads can be assigned any priority
+  -- without a separate MCP initialization step.
+  --
+  -- Production recommendation: set explicit MCP values during system
+  -- initialization to enforce least-privilege priority assignment.
+```
 
 #### AH5-D: Update test fixtures and expected outputs
 
@@ -1018,42 +1660,108 @@ test gate.
 - Any other fixture files affected by AH1–AH3 changes
 **Type**: Multi-step operation
 
-**Atomic steps**:
+**Sub-step AH5-D-1: Identify affected fixtures**
 
-1. **Run trace harness**: `source ~/.elan/env && lake exe sele4n`
-2. **Compare output**: `diff <(lake exe sele4n) tests/fixtures/main_trace_smoke.expected`
-3. **Update fixture** if output changed, with a changelog comment explaining
-   the reason for the change (e.g., "AH1: checked send now performs cap transfer")
-4. **Run smoke tests**: `./scripts/test_smoke.sh`
+Changes in AH1–AH3 that may alter trace output:
+- **AH1 (H-01)**: Checked send now performs cap transfer — may change trace
+  lines for IPC send operations (capability transfer summary output)
+- **AH2-G (L-02)**: `timeoutAwareReceive` now errors instead of returning
+  empty message — if any trace test hits this path, it will produce an error
+  trace line instead of a success line
+- **AH2-A/B (M-02)**: Donation error propagation — if any trace test triggers
+  a donation error, it will now propagate instead of being swallowed
+
+**Sub-step AH5-D-2: Generate new trace output**
+```bash
+source ~/.elan/env && lake exe sele4n > /tmp/new_trace.txt 2>&1
+```
+
+**Sub-step AH5-D-3: Compare and update**
+```bash
+diff /tmp/new_trace.txt tests/fixtures/main_trace_smoke.expected
+```
+
+If differences exist, update the fixture file with the new output. The
+fixture file should not contain changelog comments — those go in the commit
+message and CHANGELOG.md instead.
+
+**Sub-step AH5-D-4: Run smoke tests**
+```bash
+./scripts/test_smoke.sh
+```
 
 #### AH5-E: Synchronize documentation
 
-**Files**:
-- `README.md` — metrics sync from `docs/codebase_map.json`
-- `docs/DEVELOPMENT.md` — WS-AH portfolio status
-- `docs/WORKSTREAM_HISTORY.md` — WS-AH entry
-- `docs/CLAIM_EVIDENCE_INDEX.md` — if claims changed
-- `docs/CHANGELOG.md` — new version entry
-- `docs/codebase_map.json` — regenerate if Lean sources changed
-- Affected GitBook chapters
-**Type**: Multi-step operation
+**Type**: Multi-step operation (6-8 files, ordered by dependency)
 
-**Atomic steps**:
+**Sub-step AH5-E-1: Regenerate `docs/codebase_map.json`**
 
-1. **Add WS-AH entry to WORKSTREAM_HISTORY.md**: Follow existing format with
-   phase completion markers.
+If any Lean module paths changed or new definitions were added:
+```bash
+python3 scripts/generate_codebase_map.py > docs/codebase_map.json
+```
+This is the dependency root — README.md metrics and GitBook chapters
+reference this file.
 
-2. **Update DEVELOPMENT.md**: Add WS-AH portfolio status line.
+**Sub-step AH5-E-2: Update `docs/CHANGELOG.md`**
 
-3. **Add CHANGELOG entry**: Document all phases and sub-task completions.
+Add a new version entry at the top of the changelog. Follow existing format:
+```markdown
+## v0.27.2 — WS-AH: Pre-Release Comprehensive Audit Remediation
 
-4. **Regenerate codebase_map.json**: If any Lean module paths changed or new
-   modules were added.
+### Phase AH1: Critical IPC Dispatch Correctness (H-01, M-01)
+- AH1-A: Fixed `endpointSendDualChecked` to delegate to
+  `endpointSendDualWithCaps` (was `endpointSendDual`)
+- AH1-B: Updated checked `.send` dispatch arm in API.lean
+- AH1-C: Updated 4 NI soundness theorems for new signature
+- AH1-D: Wired `validateVSpaceMapPermsForMemoryKind` into `.vspaceMap` dispatch
+- AH1-E: Updated 10 test call sites across 3 files
 
-5. **Update README.md**: Sync any metrics that changed (module count, theorem
-   count, etc.) from `docs/codebase_map.json`.
+### Phase AH2: IPC Donation Safety & Boot Pipeline (M-02, M-03, L-02)
+[... per-sub-task entries ...]
 
-6. **Update CLAUDE.md**: Add WS-AH to the active workstream context section.
+### Phase AH3: Capability, Architecture & Decode Hardening (L-04, L-08, L-14)
+[... per-sub-task entries ...]
+
+### Phase AH4: Version Consistency & CI Automation (H-02)
+[... per-sub-task entries ...]
+
+### Phase AH5: Documentation, Testing & Closure
+[... per-sub-task entries ...]
+```
+
+**Sub-step AH5-E-3: Update `docs/WORKSTREAM_HISTORY.md`**
+
+Add WS-AH portfolio entry following existing format (copy structure from
+WS-AG entry). Include phase completion dates, sub-task count, and gate criteria.
+
+**Sub-step AH5-E-4: Update `docs/DEVELOPMENT.md`**
+
+Add WS-AH portfolio status line in the "Completed Workstreams" section.
+
+**Sub-step AH5-E-5: Update `README.md`**
+
+Sync metrics from `docs/codebase_map.json`:
+- Module count (if changed)
+- Theorem count (if changed)
+- Version badge (to `0.27.2` or whatever version AH produces)
+
+**Sub-step AH5-E-6: Update `CLAUDE.md`**
+
+Add WS-AH to the "Active workstream context" section, following the existing
+format. Move it above the WS-AG entries. Update the version reference in the
+project description header.
+
+**Sub-step AH5-E-7: Update `docs/CLAIM_EVIDENCE_INDEX.md`**
+
+Only update if claims changed. The H-01 fix (checked send now performs cap
+transfer) may affect claims about information-flow enforcement completeness.
+Check the index for any claims referencing `endpointSendDualChecked`.
+
+**Sub-step AH5-E-8: Update affected GitBook chapters**
+
+Check `docs/gitbook/12-proof-and-invariant-map.md` for references to theorems
+modified in AH1-C and AH2-D. Update if needed (GitBook mirrors canonical docs).
 
 #### AH5-F: Final gate — full test suite
 
@@ -1100,11 +1808,11 @@ on all prior phases completing.
 
 | Phase | New/Modified Lean Lines | Rust/Shell Lines | Doc Lines | Files Touched |
 |-------|------------------------|-----------------|-----------|---------------|
-| AH1 | ~100–150 | 0 | 0 | 5–8 |
-| AH2 | ~120–180 | 0 | 0 | 6–10 |
-| AH3 | ~60–100 | 0 | 0 | 4–6 |
-| AH4 | 0 | ~80–120 | ~30 | 16–18 |
-| AH5 | ~20–40 | 0 | ~300–500 | 12–18 |
+| AH1 | ~100–160 (fn + 4 theorems + 10 test sites) | 0 | 0 | 7 |
+| AH2 | ~150–220 (2 fn + 7 call sites + 4 theorems + boot + config) | 0 | 0 | 8 |
+| AH3 | ~80–120 (3 fixes + 2 theorem updates) | 0 | 0 | 7 |
+| AH4 | 0 | ~80–120 | ~30 | 16 |
+| AH5 | ~30–60 (comments only) | 0 | ~300–500 | 12–18 |
 
 ---
 
@@ -1116,7 +1824,8 @@ on all prior phases completing.
 |----------|------|------------|
 | AH1-C (NI theorem updates) | Soundness theorems may require non-trivial proof restructuring when `endpointSendDualChecked` return type changes from `Unit` to `CapTransferSummary` | Follow `endpointCallChecked` theorem pattern as template; the information-flow property (success ⟹ `securityFlowsTo`) is structurally identical |
 | AH2-D (Donation preservation theorems) | Conditional postconditions change proof obligations for `applyCallDonation_preserves_projection` | Early-exit `.ok st` paths satisfy preservation trivially (state unchanged); focus proof effort on the `donateSchedContext` success path |
-| AH2-F (Boot pipeline change) | Existing callers may break if `PlatformConfig` constructor syntax changes | Default `machineConfig := {}` field preserves backward compatibility for all existing callers |
+| AH2-E (defaultMachineConfig prerequisite) | `MachineConfig` has no defaults for 6/7 fields — `MachineConfig := {}` is invalid Lean | Create `defaultMachineConfig` constant with explicit values matching existing codebase defaults (PA=52, ASID=65536, etc.) |
+| AH2-F (Boot pipeline change) | Existing callers may break if `PlatformConfig` constructor syntax changes | Default `machineConfig := defaultMachineConfig` field preserves backward compatibility for all existing callers |
 
 ### 9.2 Low-Risk Sub-tasks
 
@@ -1173,9 +1882,9 @@ order.
 
 | Phase | Files |
 |-------|-------|
-| AH1 | `Wrappers.lean`, `Soundness.lean`, `API.lean`, `MainTraceHarness.lean`, `InformationFlowSuite.lean`, `main_trace_smoke.expected` |
-| AH2 | `Donation.lean`, `API.lean`, `Operations.lean` (IF), `Boot.lean`, `Timeout.lean`, `NegativeStateSuite.lean`, `OperationChainSuite.lean` |
-| AH3 | `Operations.lean` (Cap), `IpcBufferValidation.lean`, `SyscallArgDecode.lean`, `API.lean`, `DecodingSuite.lean` |
+| AH1 | `Wrappers.lean`, `Soundness.lean`, `API.lean`, `MainTraceHarness.lean`, `InformationFlowSuite.lean`, `TraceSequenceProbe.lean`, `main_trace_smoke.expected` |
+| AH2 | `Machine.lean` (defaultMachineConfig), `Donation.lean`, `API.lean`, `Operations.lean` (IF), `Boot.lean`, `Timeout.lean`, `NegativeStateSuite.lean` |
+| AH3 | `Operations.lean` (Cap), `Preservation.lean` (Cap), `IpcBufferValidation.lean`, `CrossSubsystem.lean`, `SyscallArgDecode.lean`, `API.lean`, `DecodingSuite.lean` |
 | AH4 | `boot.rs`, `CLAUDE.md`, `SELE4N_SPEC.md`, 10 i18n READMEs, `check_version_sync.sh` (new), `test_tier0_hygiene.sh` |
 | AH5 | `Boot.lean`, `Projection.lean`, `SELE4N_SPEC.md`, `CrossSubsystem.lean`, `Prelude.lean`, `Types.lean`, `main_trace_smoke.expected`, `DEVELOPMENT.md`, `WORKSTREAM_HISTORY.md`, `CHANGELOG.md`, `codebase_map.json`, `README.md`, `CLAUDE.md` |
 
