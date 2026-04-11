@@ -62,24 +62,26 @@ This function modifies only `objects` (SchedContext and TCB schedContextBinding
 fields). It does NOT modify the scheduler RunQueue or current thread. -/
 def applyCallDonation
     (st : SystemState)
-    (caller : SeLe4n.ThreadId) (receiver : SeLe4n.ThreadId) : SystemState :=
+    (caller : SeLe4n.ThreadId) (receiver : SeLe4n.ThreadId)
+    : Except KernelError SystemState :=
   -- Check if receiver is passive
   match lookupTcb st receiver with
-  | none => st
+  | none => .ok st                          -- No-op: receiver not found
   | some receiverTcb =>
     match receiverTcb.schedContextBinding with
     | .unbound =>
       -- Receiver is passive — check if caller has a SchedContext to donate
       match lookupTcb st caller with
-      | none => st
+      | none => .ok st                      -- No-op: caller not found
       | some callerTcb =>
         match callerTcb.schedContextBinding with
         | .bound clientScId =>
+          -- AH2-A: Propagate donation errors instead of swallowing them
           match donateSchedContext st caller receiver clientScId with
-          | .error _ => st
-          | .ok st' => st'
-        | _ => st
-    | _ => st  -- Receiver already has SC, no donation needed
+          | .error e => .error e
+          | .ok st' => .ok st'
+        | _ => .ok st                       -- No-op: caller has no SC to donate
+    | _ => .ok st  -- Receiver already has SC, no donation needed
 
 /-- Z7-B: storeObject preserves scheduler. -/
 private theorem storeObject_scheduler_eq_local (st : SystemState) (oid : SeLe4n.ObjId)
@@ -124,32 +126,36 @@ theorem donateSchedContext_scheduler_eq
               exact h2.trans h1
     | _ => simp only []; intro h; cases h
 
-/-- Z7-B: applyCallDonation preserves the scheduler exactly. -/
+/-- Z7-B/AH2-D: applyCallDonation preserves the scheduler exactly. -/
 theorem applyCallDonation_scheduler_eq
-    (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
-    (applyCallDonation st caller receiver).scheduler = st.scheduler := by
-  unfold applyCallDonation
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (st' : SystemState)
+    (h : applyCallDonation st caller receiver = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold applyCallDonation at h
   cases hRecv : lookupTcb st receiver with
-  | none => rfl
+  | none => simp [hRecv] at h; cases h; rfl
   | some receiverTcb =>
-    simp only []
+    simp only [hRecv] at h
     cases hBinding : receiverTcb.schedContextBinding with
     | unbound =>
-      simp only []
+      simp only [hBinding] at h
       cases hCaller : lookupTcb st caller with
-      | none => rfl
+      | none => simp [hCaller] at h; cases h; rfl
       | some callerTcb =>
-        simp only []
+        simp only [hCaller] at h
         cases hCallerBinding : callerTcb.schedContextBinding with
-        | unbound => rfl
+        | unbound => simp [hCallerBinding] at h; cases h; rfl
         | bound clientScId =>
-          simp only []
+          simp only [hCallerBinding] at h
           cases hDonate : donateSchedContext st caller receiver clientScId with
-          | error _ => rfl
-          | ok st' => exact donateSchedContext_scheduler_eq st st' caller receiver clientScId hDonate
-        | donated scId owner => rfl
-    | bound scId => rfl
-    | donated scId owner => rfl
+          | error _ => simp [hDonate] at h
+          | ok stDon =>
+            simp [hDonate] at h; rw [← h]
+            exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
+        | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
+    | bound scId => simp [hBinding] at h; cases h; rfl
+    | donated scId owner => simp [hBinding] at h; cases h; rfl
 
 -- ============================================================================
 -- Z7-C: Post-reply donation return (endpointReply → return SC to client)
@@ -160,16 +166,18 @@ theorem applyCallDonation_scheduler_eq
 If the replier has a donated SchedContext binding (.donated scId originalOwner),
 return the SchedContext to the original owner and remove the (now passive)
 replier from the RunQueue. Otherwise, return the state unchanged. -/
-def applyReplyDonation (st : SystemState) (replier : SeLe4n.ThreadId) : SystemState :=
+def applyReplyDonation (st : SystemState) (replier : SeLe4n.ThreadId)
+    : Except KernelError SystemState :=
   match lookupTcb st replier with
-  | none => st
+  | none => .ok st                          -- No-op: replier not found
   | some replierTcb =>
     match replierTcb.schedContextBinding with
     | .donated scId originalOwner =>
+      -- AH2-B: Propagate return errors instead of swallowing them
       match returnDonatedSchedContext st replier scId originalOwner with
-      | .error _ => st
-      | .ok st' => removeRunnable st' replier
-    | _ => st
+      | .error e => .error e
+      | .ok st' => .ok (removeRunnable st' replier)
+    | _ => .ok st                           -- No-op: no donation to return
 
 -- ============================================================================
 -- Z7-E: Pre-receive donation cleanup
@@ -216,11 +224,14 @@ def endpointCallWithDonation
       match maybeReceiver with
       | some receiverTid =>
         -- Handshake path: a receiver was woken — apply donation
-        let st'' := applyCallDonation st' caller receiverTid
-        -- D4-L: Apply PIP — propagate priority inheritance from the server
-        -- upward through the blocking chain. The server may itself be blocked
-        -- on another server, requiring transitive propagation.
-        .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+        -- AH2-C: Propagate donation errors
+        match applyCallDonation st' caller receiverTid with
+        | .error e => .error e
+        | .ok st'' =>
+          -- D4-L: Apply PIP — propagate priority inheritance from the server
+          -- upward through the blocking chain. The server may itself be blocked
+          -- on another server, requiring transitive propagation.
+          .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
       | none =>
         -- Blocking path: no receiver was available, caller blocked
         .ok ((), st')
@@ -235,11 +246,14 @@ def endpointReplyWithDonation
     | .error e => .error e
     | .ok ((), st') =>
       -- Apply donation return: if replier has donated SC, return it
-      let st'' := applyReplyDonation st' replier
-      -- D4-M: Revert PIP — the client (target) is unblocked, so the replier's
-      -- pipBoost must be recomputed from remaining waiters. Propagate reversion
-      -- upward through the chain.
-      .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+      -- AH2-C: Propagate donation return errors
+      match applyReplyDonation st' replier with
+      | .error e => .error e
+      | .ok st'' =>
+        -- D4-M: Revert PIP — the client (target) is unblocked, so the replier's
+        -- pipBoost must be recomputed from remaining waiters. Propagate reversion
+        -- upward through the chain.
+        .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
 
 /-- Z7: Donation-aware endpointReplyRecv. Composes:
 1. Standard endpointReplyRecv (reply + receive) — server still holds donated SC during reply
@@ -260,9 +274,12 @@ def endpointReplyRecvWithDonation
     | .error e => .error e
     | .ok ((), st') =>
       -- Z7-D1: Return old donation AFTER reply+receive completes
-      let st'' := applyReplyDonation st' receiver
-      -- D4-M: Revert PIP for the reply portion
-      .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
+      -- AH2-C: Propagate donation return errors
+      match applyReplyDonation st' receiver with
+      | .error e => .error e
+      | .ok st'' =>
+        -- D4-M: Revert PIP for the reply portion
+        .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
 
 -- ============================================================================
 -- Z7-J/K: Donation operation structural theorems
@@ -567,65 +584,71 @@ theorem returnDonatedSchedContext_atomicRegion
 -- AG8-G: Wrapper function machine state preservation
 -- ============================================================================
 
-/-- AG8-G: applyCallDonation preserves machine state.
-Composition of `donateSchedContext_machine_eq`: all fallback paths return `st`
+/-- AG8-G/AH2-D: applyCallDonation preserves machine state.
+Composition of `donateSchedContext_machine_eq`: all no-op paths return `.ok st`
 unchanged, and the success path delegates to `donateSchedContext` which
 preserves machine state. -/
 theorem applyCallDonation_machine_eq
-    (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
-    (applyCallDonation st caller receiver).machine = st.machine := by
-  unfold applyCallDonation
-  cases lookupTcb st receiver with
-  | none => rfl
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (st' : SystemState)
+    (h : applyCallDonation st caller receiver = .ok st') :
+    st'.machine = st.machine := by
+  unfold applyCallDonation at h
+  cases hRecv : lookupTcb st receiver with
+  | none => simp [hRecv] at h; cases h; rfl
   | some receiverTcb =>
-    simp only []
-    cases receiverTcb.schedContextBinding with
+    simp only [hRecv] at h
+    cases hBinding : receiverTcb.schedContextBinding with
     | unbound =>
-      simp only []
-      cases lookupTcb st caller with
-      | none => rfl
+      simp only [hBinding] at h
+      cases hCaller : lookupTcb st caller with
+      | none => simp [hCaller] at h; cases h; rfl
       | some callerTcb =>
-        simp only []
-        cases callerTcb.schedContextBinding with
-        | unbound => rfl
+        simp only [hCaller] at h
+        cases hCallerBinding : callerTcb.schedContextBinding with
+        | unbound => simp [hCallerBinding] at h; cases h; rfl
         | bound clientScId =>
-          simp only []
+          simp only [hCallerBinding] at h
           cases hDonate : donateSchedContext st caller receiver clientScId with
-          | error _ => rfl
-          | ok st' => exact donateSchedContext_machine_eq st st' caller receiver clientScId hDonate
-        | donated scId owner => rfl
-    | bound scId => rfl
-    | donated scId owner => rfl
+          | error _ => simp [hDonate] at h
+          | ok stDon =>
+            simp [hDonate] at h; rw [← h]
+            exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
+        | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
+    | bound scId => simp [hBinding] at h; cases h; rfl
+    | donated scId owner => simp [hBinding] at h; cases h; rfl
 
 /-- AG8-G: removeRunnable preserves machine state — it only modifies scheduler. -/
 private theorem removeRunnable_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (removeRunnable st tid).machine = st.machine := by
   unfold removeRunnable; rfl
 
-/-- AG8-G: applyReplyDonation preserves machine state.
+/-- AG8-G/AH2-D: applyReplyDonation preserves machine state.
 Composition of `returnDonatedSchedContext_machine_eq` and `removeRunnable_machine_eq`:
-all fallback paths return `st` unchanged, and the success path delegates to
+all no-op paths return `.ok st` unchanged, and the success path delegates to
 `returnDonatedSchedContext` (preserves machine) followed by `removeRunnable`
 (only modifies scheduler). -/
 theorem applyReplyDonation_machine_eq
-    (st : SystemState) (replier : SeLe4n.ThreadId) :
-    (applyReplyDonation st replier).machine = st.machine := by
-  unfold applyReplyDonation
-  cases lookupTcb st replier with
-  | none => rfl
+    (st : SystemState) (replier : SeLe4n.ThreadId)
+    (st' : SystemState)
+    (h : applyReplyDonation st replier = .ok st') :
+    st'.machine = st.machine := by
+  unfold applyReplyDonation at h
+  cases hLookup : lookupTcb st replier with
+  | none => simp [hLookup] at h; cases h; rfl
   | some replierTcb =>
-    simp only []
-    cases replierTcb.schedContextBinding with
-    | unbound => rfl
-    | bound scId => rfl
+    simp only [hLookup] at h
+    cases hBinding : replierTcb.schedContextBinding with
+    | unbound => simp [hBinding] at h; cases h; rfl
+    | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId originalOwner =>
-      simp only []
+      simp only [hBinding] at h
       cases hReturn : returnDonatedSchedContext st replier scId originalOwner with
-      | error _ => rfl
-      | ok st' =>
-        simp only []
-        have hMach := returnDonatedSchedContext_machine_eq st st' replier scId originalOwner hReturn
-        have hRem := removeRunnable_machine_eq st' replier
+      | error _ => simp [hReturn] at h
+      | ok st'' =>
+        simp [hReturn] at h; cases h
+        have hMach := returnDonatedSchedContext_machine_eq st st'' replier scId originalOwner hReturn
+        have hRem := removeRunnable_machine_eq st'' replier
         exact hRem.trans hMach
 
 /-- AG8-G: cleanupPreReceiveDonation preserves machine state.

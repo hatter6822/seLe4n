@@ -656,8 +656,11 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- D4-L: Propagate PIP upward from the server after Call blocks the caller
           match maybeReceiver with
           | some receiverTid =>
-            let st'' := applyCallDonation st' tid receiverTid
-            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            -- AH2-C: Propagate donation errors
+            match applyCallDonation st' tid receiverTid with
+            | .error e => .error e
+            | .ok st'' =>
+              .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
           | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
@@ -859,8 +862,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           -- D4-L: Propagate PIP upward from the server after Call blocks the caller
           match maybeReceiver with
           | some receiverTid =>
-            let st'' := applyCallDonation st' tid receiverTid
-            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            -- AH2-C: Propagate donation errors
+            match applyCallDonation st' tid receiverTid with
+            | .error e => .error e
+            | .ok st'' =>
+              .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
           | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -878,8 +884,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         match endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge } st with
         | .error e => .error e
         | .ok ((), st') =>
-          let st'' := applyReplyDonation st' tid
-          .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+          -- AH2-C: Propagate donation return errors
+          match applyReplyDonation st' tid with
+          | .error e => .error e
+          | .ok st'' =>
+            .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -977,8 +986,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           match endpointReplyRecvChecked ctx epId tid args.replyTarget msg st with
           | .error e => .error e
           | .ok ((), st') =>
-            let st'' := applyReplyDonation st' tid
-            .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+            -- AH2-C: Propagate donation return errors
+            match applyReplyDonation st' tid with
+            | .error e => .error e
+            | .ok st'' =>
+              .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
@@ -1596,8 +1608,11 @@ theorem dispatchWithCap_call_uses_withCaps
         | .ok (_, st') =>
           match maybeReceiver with
           | some receiverTid =>
-            let st'' := applyCallDonation st' tid receiverTid
-            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            -- AH2-C: Propagate donation errors
+            match applyCallDonation st' tid receiverTid with
+            | .error e => .error e
+            | .ok st'' =>
+              .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
           | none => .ok ((), st') := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 

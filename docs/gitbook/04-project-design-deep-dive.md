@@ -234,10 +234,11 @@ invariant is proved from the operation's preconditions.
 ### Boot sequence
 
 `Platform/Boot.lean` defines `bootFromPlatform`, which folds a
-`PlatformConfig` (IRQ table + initial objects) over the empty
-`IntermediateState`. The master validity theorem `bootFromPlatform_valid`
-guarantees all four invariant witnesses hold after boot. Determinism and
-empty-config identity are also proved.
+`PlatformConfig` (IRQ table + initial objects + machine config) over the empty
+`IntermediateState`, then applies `applyMachineConfig` to set machine state
+fields from `PlatformConfig.machineConfig` (AH2-F). The master validity theorem
+`bootFromPlatform_valid` guarantees all four invariant witnesses hold after
+boot. Determinism and empty-config identity are also proved.
 
 This design means the kernel enters execution with *proven* invariants rather
 than assumed ones — the type system enforces that no unverified state can leak

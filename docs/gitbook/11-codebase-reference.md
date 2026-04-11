@@ -72,7 +72,7 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
   - `Invariant/Structural.lean` — structural invariants, ipcInvariantFull composition (14 conjuncts).
   - `Operations/CapTransfer.lean` — IPC capability transfer (WS-M3).
   - `Operations/Timeout.lean` — budget-driven IPC timeout unblocking (WS-Z6).
-  - `Operations/Donation.lean` — SchedContext donation wrappers + preservation (WS-Z7).
+  - `Operations/Donation.lean` — SchedContext donation wrappers + preservation (WS-Z7). `applyCallDonation`/`applyReplyDonation` return `Except KernelError SystemState` with error propagation (AH2-A/B).
   - `DualQueue/WithCaps.lean` — DualQueue with capability transfer.
 - `SeLe4n/Kernel/SchedContext/` — scheduling context subsystem (WS-Z, v0.23.0–v0.23.20):
   - `Types.lean` — SchedContextId, Budget, Period, SchedContext, SchedContextBinding.

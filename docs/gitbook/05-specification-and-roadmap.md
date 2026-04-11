@@ -19,7 +19,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Test LoC | 11,608 across 17 suites |
 | Proved declarations | 2,725 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| Active workstream | **WS-AG PORTFOLIO COMPLETE** (v0.26.0–v0.27.1). H3 Hardware Binding — 10 phases (AG1–AG10), 67 sub-tasks. Prior: WS-AF (v0.25.22–v0.25.27), WS-AE (v0.25.15–v0.25.21), WS-AD (v0.25.11–v0.25.14), WS-AC (v0.25.3–v0.25.10), WS-B through WS-AB (v0.9.0–v0.25.5). **Next: WS-V (multi-core SMP).** |
+| Active workstream | **WS-AH IN PROGRESS** (v0.27.2–). Pre-Release Comprehensive Audit Remediation — AH1 COMPLETE (v0.27.2, Critical IPC Dispatch), AH2 COMPLETE (v0.27.3, IPC Donation Safety & Boot Pipeline). Prior: WS-AG PORTFOLIO COMPLETE (v0.26.0–v0.27.1, H3 Hardware Binding, 10 phases, 67 sub-tasks). **Next: WS-V (multi-core SMP).** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
