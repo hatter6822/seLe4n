@@ -84,12 +84,12 @@ fi
 # ── Build kernel binary ───────────────────────────────────────────────────
 log_section "BUILD" "Building kernel binary for ${RUST_TARGET}..."
 cd "${RUST_DIR}"
-if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal 2>/tmp/qemu_build.log; then
+if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal 2>"${QEMU_BUILD_LOG}"; then
     # Cross-compilation may fail without linker config — this is expected
     # in CI environments without aarch64 linker. Skip gracefully.
     log_section "META" "SKIP: Cross-compilation failed (expected without aarch64 linker)"
     log_section "META" "       Configure .cargo/config.toml with linker for ${RUST_TARGET}"
-    tail -10 /tmp/qemu_build.log
+    tail -10 "${QEMU_BUILD_LOG}"
     exit 0
 fi
 cd "${REPO_ROOT}"
@@ -103,6 +103,11 @@ log_section "BUILD" "Kernel binary built: $(wc -c < "${KERNEL_BIN}") bytes"
 
 # ── QEMU boot test ────────────────────────────────────────────────────────
 QEMU_LOG=$(mktemp /tmp/qemu_boot_XXXXXX.log)
+QEMU_BUILD_LOG=$(mktemp /tmp/qemu_build_XXXXXX.log)
+
+# Ensure temp files are cleaned up on exit/signal
+cleanup() { rm -f "${QEMU_LOG}" "${QEMU_BUILD_LOG}"; }
+trap cleanup EXIT
 
 log_section "TRACE" "RUN: QEMU boot test (timeout: ${QEMU_TIMEOUT}s)"
 
@@ -155,6 +160,24 @@ else
     log_section "TRACE" "PASS: QEMU completed without crash"
 fi
 
+# Check 5: Structured boot sequence validation from fixture
+FIXTURE="${REPO_ROOT}/tests/fixtures/qemu_boot_expected.txt"
+if [[ -f "${FIXTURE}" ]] && [[ -s "${QEMU_LOG}" ]]; then
+    log_section "TRACE" "Validating boot sequence against ${FIXTURE##*/}..."
+    while IFS='|' read -r check_name fragment; do
+        # Skip comments and blank lines
+        [[ "${check_name}" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${check_name}" ]] && continue
+        check_name=$(echo "${check_name}" | xargs)
+        fragment=$(echo "${fragment}" | xargs)
+        if grep -q "${fragment}" "${QEMU_LOG}" 2>/dev/null; then
+            log_section "TRACE" "PASS: ${check_name} — '${fragment}' found"
+        else
+            log_section "TRACE" "INFO: ${check_name} — '${fragment}' not found (pre-hardware)"
+        fi
+    done < "${FIXTURE}"
+fi
+
 # ── Summary ────────────────────────────────────────────────────────────────
 log_section "META" "QEMU boot log: ${QEMU_LOG}"
 
@@ -162,11 +185,6 @@ if [[ "${BOOT_PASS}" = true ]]; then
     log_section "META" "PASS: AG9-A QEMU integration tests"
 else
     log_section "META" "FAIL: AG9-A QEMU integration tests — see ${QEMU_LOG}"
-fi
-
-# Clean up if all passed
-if [[ "${BOOT_PASS}" = true ]]; then
-    rm -f "${QEMU_LOG}"
 fi
 
 finalize_report

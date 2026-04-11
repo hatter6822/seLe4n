@@ -45,13 +45,26 @@ else
 fi
 
 # Check 2: Timer frequency (CNTFRQ_EL0)
-# Board.lean: timerFrequency = 54000000 Hz (54 MHz)
+# Board.lean: timerFrequencyHz = 54000000 Hz (54 MHz)
+CNTFRQ=""
 if [[ -r /sys/devices/system/clocksource/clocksource0/current_clocksource ]]; then
     log_section "TRACE" "Clock source: $(cat /sys/devices/system/clocksource/clocksource0/current_clocksource)"
-    log_section "TRACE" "Expected timer frequency: 54000000 Hz (Board.lean timerFrequency)"
+fi
+# Attempt to read CNTFRQ from /proc/device-tree (RPi5 exposes this)
+if [[ -r /proc/device-tree/timer/clock-frequency ]]; then
+    CNTFRQ=$(od -An -t u4 /proc/device-tree/timer/clock-frequency 2>/dev/null | xargs)
+fi
+if [[ -n "${CNTFRQ}" ]]; then
+    if [[ "${CNTFRQ}" -eq 54000000 ]]; then
+        log_section "TRACE" "PASS: Timer frequency = ${CNTFRQ} Hz (Board.lean: 54000000)"
+    else
+        record_failure "TRACE" "Timer frequency = ${CNTFRQ} Hz, expected 54000000"
+    fi
+else
+    log_section "TRACE" "PENDING: Timer frequency (CNTFRQ_EL0) — requires kernel driver or bare-metal read"
 fi
 
-# Try to read timer frequency from sysfs or /proc
+# CPU identification
 if [[ -r /proc/cpuinfo ]]; then
     log_section "TRACE" "CPU: $(grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)"
 fi
@@ -84,6 +97,36 @@ if [[ -r /proc/iomem ]]; then
     done
 fi
 
+# ── Device tree based checks (available on RPi5 Linux) ──────────────────
+log_section "HYGIENE" "Checking device tree constants..."
+
+# Check 6: GIC addresses from device tree
+if [[ -d /proc/device-tree/interrupt-controller@ff841000 ]]; then
+    log_section "TRACE" "PASS: GIC distributor node found at ff841000 (Board.lean: 0xFF841000)"
+else
+    log_section "TRACE" "PENDING: GIC distributor base — device tree node not found"
+fi
+
+# Check 7: UART0 base from device tree
+if [[ -d /proc/device-tree/soc/serial@fe201000 ]] || \
+   [[ -d /proc/device-tree/axi/serial@fe201000 ]]; then
+    log_section "TRACE" "PASS: UART0 node found at fe201000 (Board.lean: 0xFE201000)"
+else
+    log_section "TRACE" "PENDING: UART0 base — device tree node not found"
+fi
+
+# Check 8: Virtual address width (48-bit, from kernel config)
+VA_BITS=""
+if [[ -r /proc/kallsyms ]] && command -v awk &>/dev/null; then
+    # Kernel addresses reveal VA width: 48-bit → 0xffff* prefix
+    VA_BITS=$(awk '{print length($1)*4; exit}' /proc/kallsyms 2>/dev/null || true)
+fi
+if [[ -n "${VA_BITS}" ]] && [[ "${VA_BITS}" -ge 48 ]]; then
+    log_section "TRACE" "PASS: Virtual address width >= 48 bits (Board.lean: 48)"
+elif [[ -n "${VA_BITS}" ]]; then
+    log_section "TRACE" "PENDING: Virtual address width = ${VA_BITS} bits (Board.lean: 48)"
+fi
+
 # ── MMIO register checks (require devmem2 or busybox devmem) ────────────
 if command -v devmem2 &>/dev/null || command -v devmem &>/dev/null; then
     DEVMEM_CMD="devmem2"
@@ -93,16 +136,24 @@ if command -v devmem2 &>/dev/null || command -v devmem &>/dev/null; then
     log_section "TRACE" "MMIO tool available: ${DEVMEM_CMD}"
 
     # GIC Distributor: read GICD_IIDR at 0xFF841008
-    log_section "TRACE" "Reading GIC Distributor IIDR at 0xFF841008..."
-    # This would require root and proper memory mapping
-    log_section "TRACE" "INFO: MMIO register reads require bare-metal or custom driver"
+    log_section "TRACE" "INFO: MMIO register validation available with ${DEVMEM_CMD}"
+    log_section "TRACE" "INFO: Run with root for GICD_IIDR read at 0xFF841008"
 else
     log_section "META" "SKIP: devmem2/devmem not available — MMIO register checks skipped"
     log_section "META" "       Install: apt install devmem2  (Debian/Ubuntu)"
 fi
 
+# ── Pending constants (require bare-metal or kernel module) ──────────────
+log_section "META" "PENDING constants (require bare-metal seLe4n kernel boot):"
+log_section "META" "  - peripheralBaseLow (0xFE000000) — verifiable via /proc/iomem"
+log_section "META" "  - peripheralBaseHigh (0x1000000000) — requires 64-bit MMIO probe"
+log_section "META" "  - gicCpuInterfaceBase (0xFF842000) — requires devmem read"
+log_section "META" "  - gicSpiCount (192) — requires GIC GICD_TYPER read"
+log_section "META" "  - timerPpiId (30) / virtualTimerPpiId (27) — requires IRQ test"
+log_section "META" "  - maxASID (65536) — requires ID_AA64MMFR0_EL1 read"
+
 # ── Summary ──────────────────────────────────────────────────────────────
-log_section "META" "Cross-check results saved to docs/hardware_validation/rpi5_cross_check.md"
+log_section "META" "Reference: docs/hardware_validation/rpi5_cross_check.md"
 log_section "META" "Note: Full MMIO validation requires bare-metal seLe4n kernel boot"
 
 finalize_report

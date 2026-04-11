@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.26.9` (`lakefile.toml`) |
+| **Package version** | `0.27.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 91,159 across 141 Lean files |
-| **Test LoC** | 11,374 across 16 Lean test suites |
-| **Proved declarations** | 2,716 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 91,350 across 141 Lean files |
+| **Test LoC** | 11,608 across 17 Lean test suites |
+| **Proved declarations** | 2,725 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
 | **Active workstream** | **WS-AG Phase AG9 COMPLETE** (v0.27.0). H3 Hardware Binding Audit Remediation — Phase AG9: Testing + Validation. QEMU integration testing, BCM2712 hardware constant cross-check, WCRT empirical validation (PMU cycle counting), RunQueue profiling, Badge Nat↔UInt64 overflow validation (22 Lean + 7 Rust tests), ARMv8-A speculation barriers (CSDB/SB/FEAT_CSV2 for Spectre v1/v2), 5-phase hardware test orchestration. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG8 (v0.26.0–v0.26.9), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG10 (documentation + closure).** |

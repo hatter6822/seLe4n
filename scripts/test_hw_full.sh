@@ -13,9 +13,9 @@
 # Test Sequence:
 #   1. Lean tiered test suite (Tier 0-3)
 #   2. Rust workspace tests
-#   3. Hardware cross-check (AG9-B)
-#   4. QEMU integration tests (AG9-A, if QEMU available)
-#   5. Badge overflow validation (AG9-E)
+#   3. Badge overflow validation (AG9-E)
+#   4. Hardware cross-check (AG9-B, ARM64 only)
+#   5. QEMU integration tests (AG9-A, if QEMU available)
 #
 # Usage:
 #   ./scripts/test_hw_full.sh              # Run full hardware test suite

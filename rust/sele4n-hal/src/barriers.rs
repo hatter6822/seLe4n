@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn sb_no_panic() {
-        // SB fallback (DSB SY; ISB) is a no-op on non-aarch64
+        // SB (.inst 0xD503233F) is a no-op on non-aarch64
         sb();
     }
 

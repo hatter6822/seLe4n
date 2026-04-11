@@ -126,7 +126,7 @@ impl LatencyStats {
             self.max = latency;
         }
         self.sum = self.sum.saturating_add(latency);
-        self.count += 1;
+        self.count = self.count.saturating_add(1);
     }
 
     /// Compute the mean latency. Returns 0 if no samples recorded.
@@ -188,6 +188,18 @@ mod tests {
         stats.record(30);
         assert_eq!(stats.min, 10);
         assert_eq!(stats.max, 90);
+    }
+
+    #[test]
+    fn latency_stats_sum_saturates() {
+        let mut stats = LatencyStats::new();
+        stats.record(u64::MAX);
+        stats.record(1);
+        // sum should saturate at u64::MAX, not wrap to 0
+        assert_eq!(stats.sum, u64::MAX);
+        assert_eq!(stats.count, 2);
+        // mean is u64::MAX / 2 (pessimistic but not garbage)
+        assert_eq!(stats.mean(), u64::MAX / 2);
     }
 
     #[test]

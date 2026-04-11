@@ -37,9 +37,19 @@ Constants are verified using one of:
 
 ## Validation Script
 
-Use `scripts/test_hw_crosscheck.sh` on physical RPi5 hardware to automate
-these checks. The script reads hardware registers and compares against
-Board.lean values.
+Run `scripts/test_hw_crosscheck.sh` on physical RPi5 hardware to automate
+available checks. The script currently validates:
+
+- **Automated (PASS/FAIL)**: architecture (ARM64), physical address width
+  (via `/proc/cpuinfo`), page size (via `getconf PAGESIZE`), timer frequency
+  (via device tree `clock-frequency`).
+- **Device tree probe**: GIC distributor node (`@ff841000`), UART0 node
+  (`@fe201000`), virtual address width (from `/proc/kallsyms`).
+- **Pending (bare-metal only)**: MMIO register reads (`devmem2`), GIC TYPER,
+  PPI validation, ASID bits, peripheral boundaries.
+
+Full MMIO validation requires the seLe4n kernel to boot on bare metal with
+mapped device memory regions.
 
 ## Pre-Verified Constants
 

@@ -1990,7 +1990,7 @@ testing (`test_qemu.sh`), BCM2712 hardware constant cross-check script
 (`profiling.rs`), RunQueue cache benchmarking docs, Badge Nat↔UInt64 overflow
 validation (22 Lean + 7 Rust tests), ARMv8-A speculation barriers (CSDB/SB
 for Spectre v1/v2 + FEAT_CSV2 verification), 5-phase hardware test
-orchestration (`test_hw_full.sh`). 361 Rust tests pass, 0 clippy warnings.
+orchestration (`test_hw_full.sh`). 362 Rust tests pass, 0 clippy warnings.
 Zero sorry/axiom.
 
 #### AG9-A: QEMU Integration Testing (New)

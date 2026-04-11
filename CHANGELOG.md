@@ -17,9 +17,10 @@ Gate: `lake build` + `test_smoke.sh` + `cargo test --workspace` +
   Graceful skip when QEMU unavailable (CI-safe). Boot expected fixture at
   `tests/fixtures/qemu_boot_expected.txt`
 - **AG9-B** (H3-PLAT-07, Hardware Cross-Check): New `scripts/test_hw_crosscheck.sh`
-  validation script for physical RPi5 hardware constant verification. Checks
-  all 15 BCM2712 constants from `Board.lean` including GIC addresses, timer
-  frequency, memory regions, address widths. Documentation at
+  validation script for physical RPi5 hardware constant verification. Validates
+  15 BCM2712 constants from `Board.lean` — automated PASS/FAIL for architecture,
+  PA width, page size, timer frequency; device tree probes for GIC and UART
+  addresses; remaining MMIO constants pending bare-metal boot. Documentation at
   `docs/hardware_validation/rpi5_cross_check.md`
 - **AG9-C** (H3-SCHED-05, WCRT Empirical Validation): New `profiling` module
   in `rust/sele4n-hal/src/profiling.rs` providing cycle-accurate measurement
@@ -56,8 +57,8 @@ Gate: `lake build` + `test_smoke.sh` + `cargo test --workspace` +
 - Badge overflow suite registered in `lakefile.toml` and integrated into
   `test_tier2_negative.sh` (Tier 2 gate)
 - Hardware validation documentation directory: `docs/hardware_validation/`
-  (5 reports covering AG9-B through AG9-G)
-- Rust workspace: 361 tests pass (0 failures), 0 clippy warnings
+  (6 reports covering AG9-B through AG9-G)
+- Rust workspace: 362 tests pass (0 failures), 0 clippy warnings
 
 ## v0.26.9 — WS-AG Phase AG8: Integration + Model Closure
 
