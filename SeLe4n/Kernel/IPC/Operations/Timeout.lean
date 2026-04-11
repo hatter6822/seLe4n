@@ -130,6 +130,11 @@ def timeoutAwareReceive
         -- Normal receive path — timeout metadata is set by Z6-G in the blocking path
         match tcb.pendingMessage with
         | some msg => .ok (.completed msg, st)
-        | none => .ok (.completed IpcMessage.empty, st)
+        -- AH2-G: Return error for missing pending message (protocol violation).
+        -- Under normal IPC invariants, a thread reaching this point should always
+        -- have a pendingMessage set by the sender. The `none` case indicates a
+        -- violated IPC protocol — surface it as an error rather than silently
+        -- returning an empty message.
+        | none => .error .endpointQueueEmpty
 
 end SeLe4n.Kernel

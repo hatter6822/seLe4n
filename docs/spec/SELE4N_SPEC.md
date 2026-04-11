@@ -389,7 +389,12 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 organizational foundation for hardware binding:
 
 - `PlatformBinding` typeclass (`SeLe4n/Platform/Contract.lean`)
-- `MachineConfig` and `MemoryRegion` types (`SeLe4n/Machine.lean`)
+- `MachineConfig` and `MemoryRegion` types (`SeLe4n/Machine.lean`);
+  `defaultMachineConfig` constant with ARM64 defaults (AH2-E)
+- `PlatformConfig.machineConfig` field — `bootFromPlatform` now calls
+  `applyMachineConfig` as its final step, ensuring machine state fields
+  (register width, address widths, page size, ASID limit, memory map) are
+  always set from platform configuration (AH2-F, M-03/L-16 fix)
 - `VSpaceBackend` abstraction with permissions-enriched `hashMapVSpaceBackend` instance (WS-G6/WS-H11)
 - `ExtendedBootBoundaryContract` with platform boot fields
 - Simulation platform (`Platform/Sim/`) for testing
@@ -723,7 +728,9 @@ RunQueue.
   thread index (`scThreadIndex`) for O(1) identification of threads bound
   to an exhausted SchedContext, then calls `timeoutThread` on each.
 - **`timeoutAwareReceive`** (`Timeout.lean`): Wrapper that detects prior
-  timeout via `tcb.timedOut` field; clears the flag on detection.
+  timeout via `tcb.timedOut` field; clears the flag on detection. Returns
+  `.error .endpointQueueEmpty` if `pendingMessage = none` (AH2-G, v0.27.3),
+  surfacing protocol violations instead of silently returning empty messages.
 - **`blockedThreadTimeoutConsistent`** invariant: Threads with
   `timeoutBudget = some scId` must reference a valid SchedContext and be
   in a blocking IPC state.
@@ -1007,6 +1014,15 @@ layer (`API.lean`), preserving all existing IPC invariant proofs unchanged. Core
 IPC functions (`endpointCall`, `endpointReply`, `endpointReplyRecv`) are not
 modified. Key helpers: `donateSchedContext`, `returnDonatedSchedContext`,
 `applyCallDonation`, `applyReplyDonation`, `cleanupPreReceiveDonation`.
+
+**Error propagation** (AH2-A/B, v0.27.3): `applyCallDonation` and
+`applyReplyDonation` return `Except KernelError SystemState` (not bare
+`SystemState`). Errors from `donateSchedContext` are propagated to callers
+instead of being silently swallowed. All 7 call sites in `API.lean` and
+`Donation.lean` use match-based error handling. Preservation theorems
+(`applyCallDonation_scheduler_eq`, `applyCallDonation_machine_eq`,
+`applyReplyDonation_machine_eq`, `applyCallDonation_preserves_projection`)
+carry an explicit `h : ... = .ok st'` success hypothesis.
 
 **Invariants** (`ipcInvariantFull` extended from 10 to 15 conjuncts):
 - `donationChainAcyclic`: no circular donation chains (A→B and B→A)

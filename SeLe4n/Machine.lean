@@ -758,6 +758,28 @@ structure MachineConfig where
   registerCount : Nat := 32
   deriving Repr
 
+/-- AH2-E: Default machine configuration for use as a `PlatformConfig` default.
+    These values represent the abstract model's defaults (not any specific
+    hardware platform). Platform-specific deployments should always provide
+    explicit values via their `PlatformConfig.machineConfig` field.
+
+    Matches existing `MachineState` defaults:
+    - `physicalAddressWidth := 52` (ARMv8 max PA width)
+    - `registerWidth := 64` (ARM64 default)
+    - `virtualAddressWidth := 48` (ARMv8 VA width)
+    - `pageSize := 4096` (standard 4K pages)
+    - `maxASID := 65536` (16-bit ASID, ARM64)
+    - `memoryMap := []` (no regions by default)
+    - `registerCount := 32` (ARM64 GPR count) -/
+def defaultMachineConfig : MachineConfig where
+  registerWidth        := 64
+  virtualAddressWidth  := 48
+  physicalAddressWidth := 52
+  pageSize             := 4096
+  maxASID              := 65536
+  memoryMap            := []
+  registerCount        := 32
+
 /-- R6-C: `registerFileGPRCount` equals `MachineConfig.registerCount`'s default
     value. Ensures the BEq comparison range stays in sync with the architecture. -/
 theorem registerFileGPRCount_eq_registerCount_default :

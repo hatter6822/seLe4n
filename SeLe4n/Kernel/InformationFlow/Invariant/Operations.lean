@@ -2411,40 +2411,44 @@ theorem applyCallDonation_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
     (caller receiver : SeLe4n.ThreadId)
+    (st' : SystemState)
+    (hOk : applyCallDonation st caller receiver = .ok st')
     (_hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
     (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
     (hScHigh : ∀ tcb : TCB, lookupTcb st caller = some tcb →
       ∀ scId : SeLe4n.SchedContextId, tcb.schedContextBinding = .bound scId →
         objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (applyCallDonation st caller receiver) =
+    projectState ctx observer st' =
     projectState ctx observer st := by
-  -- applyCallDonation either returns st unchanged or calls donateSchedContext.
+  -- AH2-D: applyCallDonation now returns Except. On success, either returns
+  -- st unchanged (no-op paths) or calls donateSchedContext (donation path).
   -- In the donation case, donateSchedContext does two storeObject calls at
   -- non-observable ObjIds (clientScId.toObjId and serverTid.toObjId).
   -- Chain storeObject_preserves_projection for each store.
-  unfold applyCallDonation
+  unfold applyCallDonation at hOk
   cases hR : lookupTcb st receiver with
-  | none => simp
+  | none => simp [hR] at hOk; cases hOk; simp
   | some receiverTcb =>
-    simp only []
+    simp only [hR] at hOk
     cases hBinding : receiverTcb.schedContextBinding with
-    | bound _ => simp
-    | donated _ _ => simp
+    | bound _ => simp [hBinding] at hOk; cases hOk; simp
+    | donated _ _ => simp [hBinding] at hOk; cases hOk; simp
     | unbound =>
-      simp only []
+      simp only [hBinding] at hOk
       cases hC : lookupTcb st caller with
-      | none => simp
+      | none => simp [hC] at hOk; cases hOk; simp
       | some callerTcb =>
-        simp only []
+        simp only [hC] at hOk
         cases hCBinding : callerTcb.schedContextBinding with
-        | unbound => simp
-        | donated _ _ => simp
+        | unbound => simp [hCBinding] at hOk; cases hOk; simp
+        | donated _ _ => simp [hCBinding] at hOk; cases hOk; simp
         | bound clientScId =>
-          simp only []
+          simp only [hCBinding] at hOk
           cases hDon : donateSchedContext st caller receiver clientScId with
-          | error _ => rfl
-          | ok st' =>
+          | error _ => simp [hDon] at hOk
+          | ok stDon =>
+            simp [hDon] at hOk; cases hOk
             -- donateSchedContext = storeObject(scId) → storeObject(serverId)
             -- Both ObjIds are non-observable, chain storeObject_preserves_projection
             unfold donateSchedContext at hDon

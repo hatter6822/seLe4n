@@ -194,7 +194,7 @@
 [SCO-027] timeoutBlockedThreads: tid1_timed_out=true
 [SCO-028] timeoutBlockedThreads non-matching: still_blocked=true
 [SCO-029] timeoutAwareReceive timeout-detect: timedOut=true
-[SCO-030] timeoutAwareReceive normal: completed=true
+[SCO-030] timeoutAwareReceive normal: error SeLe4n.Model.KernelError.endpointQueueEmpty
 [SCO-031] endpointQueueRemove tail: head=tid1:true tail=tid1:true
 [SCO-032] endpointQueueRemove mid: head=tid1:true tail=tid3:true tid1.next=tid3:true tid3.prev=tid1:true
 [SCO-033] endpointQueueRemove receiveQ: head=tid2:true sendQ_unchanged:true

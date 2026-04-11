@@ -52,10 +52,15 @@ This is the minimal configuration needed to construct a valid
 `IntermediateState` during boot. Platform-specific details (memory layout,
 device tree, etc.) are handled by `PlatformBinding` instances. Machine
 hardware parameters (PA width, register width, etc.) are configured
-separately via `applyMachineConfig` after boot. -/
+separately via `applyMachineConfig` after boot.
+
+AH2-E: `machineConfig` field added so `bootFromPlatform` can automatically
+apply machine configuration without requiring a separate manual call.
+Defaults to `defaultMachineConfig` for backward compatibility. -/
 structure PlatformConfig where
   irqTable : List IrqEntry
   initialObjects : List ObjectEntry
+  machineConfig : MachineConfig := defaultMachineConfig
 
 -- V7-I: O(n) duplicate detection via HashSet accumulation.
 -- Replaces the O(n²) per-element `List.any` scan with a single-pass fold.
@@ -132,11 +137,131 @@ def foldObjects (objs : List ObjectEntry) (ist : IntermediateState)
   objs.foldl (fun acc entry =>
     createObject acc entry.id entry.obj entry.hSlots entry.hMappings) ist
 
+-- ============================================================================
+-- X2-D: Post-boot machine configuration
+-- (AH2-E/F: Moved before bootFromPlatform so it can be called during boot)
+-- ============================================================================
+
+/-- X2-D: Apply platform-specific machine configuration to a booted state.
+    Sets `physicalAddressWidth` from the platform's `MachineConfig`, ensuring
+    runtime PA bounds checks use the correct hardware limit.
+
+    This is a pure machine-state update: it modifies only `state.machine` and
+    preserves all kernel-object, scheduler, capability, and CDT state. All
+    IntermediateState invariant witnesses carry forward because they do not
+    depend on `MachineState` fields.
+
+    AG3-B (P-04): Copies all `MachineConfig` fields to machine state:
+    `physicalAddressWidth`, `registerWidth`, `virtualAddressWidth`,
+    `pageSize`, `maxASID`, `memoryMap`, `registerCount`. Invariant
+    witnesses thread through unchanged because none depend on machine
+    metadata fields. -/
+def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
+    IntermediateState where
+  state := { ist.state with
+    machine := { ist.state.machine with
+      physicalAddressWidth := config.physicalAddressWidth
+      registerWidth := config.registerWidth
+      virtualAddressWidth := config.virtualAddressWidth
+      pageSize := config.pageSize
+      maxASID := config.maxASID
+      memoryMap := config.memoryMap
+      registerCount := config.registerCount } }
+  hAllTables := ist.hAllTables
+  hPerObjectSlots := ist.hPerObjectSlots
+  hPerObjectMappings := ist.hPerObjectMappings
+  hLifecycleConsistent := ist.hLifecycleConsistent
+
+/-- X2-D: `applyMachineConfig` preserves the scheduler state unchanged. -/
+theorem applyMachineConfig_scheduler_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.scheduler = ist.state.scheduler := rfl
+
+/-- X2-D: `applyMachineConfig` preserves the object store unchanged. -/
+theorem applyMachineConfig_objects_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.objects = ist.state.objects := rfl
+
+/-- X2-D: `applyMachineConfig` sets `physicalAddressWidth` from config. -/
+theorem applyMachineConfig_physicalAddressWidth (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.physicalAddressWidth =
+    config.physicalAddressWidth := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `registerWidth` from config. -/
+theorem applyMachineConfig_registerWidth (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.registerWidth =
+    config.registerWidth := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `virtualAddressWidth` from config. -/
+theorem applyMachineConfig_virtualAddressWidth (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.virtualAddressWidth =
+    config.virtualAddressWidth := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `pageSize` from config. -/
+theorem applyMachineConfig_pageSize (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.pageSize =
+    config.pageSize := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `maxASID` from config. -/
+theorem applyMachineConfig_maxASID (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.maxASID =
+    config.maxASID := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `memoryMap` from config. -/
+theorem applyMachineConfig_memoryMap (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.memoryMap =
+    config.memoryMap := rfl
+
+/-- AG3-B: `applyMachineConfig` sets `registerCount` from config. -/
+theorem applyMachineConfig_registerCount (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.registerCount =
+    config.registerCount := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves CDT. -/
+theorem applyMachineConfig_cdt_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.cdt = ist.state.cdt := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves services. -/
+theorem applyMachineConfig_services_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.services = ist.state.services := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves serviceRegistry. -/
+theorem applyMachineConfig_serviceRegistry_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.serviceRegistry = ist.state.serviceRegistry := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves interfaceRegistry. -/
+theorem applyMachineConfig_interfaceRegistry_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves asidTable. -/
+theorem applyMachineConfig_asidTable_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.asidTable = ist.state.asidTable := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves TLB state. -/
+theorem applyMachineConfig_tlb_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.tlb = ist.state.tlb := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves lifecycle metadata. -/
+theorem applyMachineConfig_lifecycle_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.lifecycle = ist.state.lifecycle := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves cdtNodeSlot. -/
+theorem applyMachineConfig_cdtNodeSlot_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
+
+/-- AH2-F: `applyMachineConfig` preserves machine state (only modifies config fields). -/
+theorem applyMachineConfig_machine_fields (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.machine.regs = ist.state.machine.regs ∧
+    (applyMachineConfig ist config).state.machine.memory = ist.state.machine.memory ∧
+    (applyMachineConfig ist config).state.machine.timer = ist.state.machine.timer ∧
+    (applyMachineConfig ist config).state.machine.systemRegisters = ist.state.machine.systemRegisters ∧
+    (applyMachineConfig ist config).state.machine.interruptsEnabled = ist.state.machine.interruptsEnabled :=
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
+
 /-- Q3-C: Construct an `IntermediateState` from platform configuration.
 
 Starts from the empty state and applies:
 1. IRQ handler registrations (via `Builder.registerIrq`)
 2. Initial object insertions (via `Builder.createObject`)
+3. Machine configuration application (via `applyMachineConfig`) — AH2-F
 
 The result carries all four IntermediateState invariant witnesses.
 
@@ -148,7 +273,11 @@ valid scheduler state) is deferred to WS-V. -/
 def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let initial := mkEmptyIntermediateState
   let withIrqs := foldIrqs config.irqTable initial
-  foldObjects config.initialObjects withIrqs
+  let withObjects := foldObjects config.initialObjects withIrqs
+  -- AH2-F: Integrate machine config into boot pipeline to prevent
+  -- PA width misconfiguration (M-03/L-16). Previously callers had to
+  -- manually chain `applyMachineConfig` after boot.
+  applyMachineConfig withObjects config.machineConfig
 
 /-- V5-C/W4-E (M-DEF-3/L-15): **Deprecated** — use `bootFromPlatformChecked`
     for production boot paths. This function silently uses last-wins semantics
@@ -304,83 +433,6 @@ theorem bootFromPlatformWithWarnings_wellFormed_no_warnings (config : PlatformCo
     have : objectIdsUnique config.initialObjects = true := by
       unfold PlatformConfig.wellFormed at hWf; simp [Bool.and_eq_true] at hWf; exact hWf.2
     simp [this]
-
--- ============================================================================
--- X2-D: Post-boot machine configuration
--- ============================================================================
-
-/-- X2-D: Apply platform-specific machine configuration to a booted state.
-    Sets `physicalAddressWidth` from the platform's `MachineConfig`, ensuring
-    runtime PA bounds checks use the correct hardware limit.
-
-    This is a pure machine-state update: it modifies only `state.machine` and
-    preserves all kernel-object, scheduler, capability, and CDT state. All
-    IntermediateState invariant witnesses carry forward because they do not
-    depend on `MachineState` fields.
-
-    AG3-B (P-04): Copies all `MachineConfig` fields to machine state:
-    `physicalAddressWidth`, `registerWidth`, `virtualAddressWidth`,
-    `pageSize`, `maxASID`, `memoryMap`, `registerCount`. Invariant
-    witnesses thread through unchanged because none depend on machine
-    metadata fields. -/
-def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
-    IntermediateState where
-  state := { ist.state with
-    machine := { ist.state.machine with
-      physicalAddressWidth := config.physicalAddressWidth
-      registerWidth := config.registerWidth
-      virtualAddressWidth := config.virtualAddressWidth
-      pageSize := config.pageSize
-      maxASID := config.maxASID
-      memoryMap := config.memoryMap
-      registerCount := config.registerCount } }
-  hAllTables := ist.hAllTables
-  hPerObjectSlots := ist.hPerObjectSlots
-  hPerObjectMappings := ist.hPerObjectMappings
-  hLifecycleConsistent := ist.hLifecycleConsistent
-
-/-- X2-D: `applyMachineConfig` preserves the scheduler state unchanged. -/
-theorem applyMachineConfig_scheduler_eq (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.scheduler = ist.state.scheduler := rfl
-
-/-- X2-D: `applyMachineConfig` preserves the object store unchanged. -/
-theorem applyMachineConfig_objects_eq (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.objects = ist.state.objects := rfl
-
-/-- X2-D: `applyMachineConfig` sets `physicalAddressWidth` from config. -/
-theorem applyMachineConfig_physicalAddressWidth (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.machine.physicalAddressWidth =
-    config.physicalAddressWidth := rfl
-
-/-- AG3-B: `applyMachineConfig` sets `registerWidth` from config. -/
-theorem applyMachineConfig_registerWidth (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.machine.registerWidth =
-    config.registerWidth := rfl
-
-/-- AG3-B: `applyMachineConfig` sets `virtualAddressWidth` from config. -/
-theorem applyMachineConfig_virtualAddressWidth (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.machine.virtualAddressWidth =
-    config.virtualAddressWidth := rfl
-
-/-- AG3-B: `applyMachineConfig` sets `pageSize` from config. -/
-theorem applyMachineConfig_pageSize (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.machine.pageSize =
-    config.pageSize := rfl
-
-/-- AG3-B: `applyMachineConfig` sets `maxASID` from config. -/
-theorem applyMachineConfig_maxASID (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.machine.maxASID =
-    config.maxASID := rfl
-
-/-- AG3-B: `applyMachineConfig` sets `memoryMap` from config. -/
-theorem applyMachineConfig_memoryMap (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.machine.memoryMap =
-    config.memoryMap := rfl
-
-/-- AG3-B: `applyMachineConfig` sets `registerCount` from config. -/
-theorem applyMachineConfig_registerCount (ist : IntermediateState) (config : MachineConfig) :
-    (applyMachineConfig ist config).state.machine.registerCount =
-    config.registerCount := rfl
 
 -- ============================================================================
 -- U6-G (U-M15): Boot-to-Runtime Invariant Bridge
@@ -791,56 +843,69 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.scheduler =
     (default : SystemState).scheduler := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_scheduler, foldIrqs_scheduler, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_scheduler_eq, foldObjects_scheduler, foldIrqs_scheduler, mkEmpty_state_eq_default]
 
 /-- V4-A2/A4: The post-boot state preserves CDT from default. -/
 theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.cdt =
     (default : SystemState).cdt := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_cdt, foldIrqs_cdt, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_cdt_eq, foldObjects_cdt, foldIrqs_cdt, mkEmpty_state_eq_default]
 
 /-- V4-A3: The post-boot state preserves services from default. -/
 theorem bootFromPlatform_services_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.services =
     (default : SystemState).services := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_services, foldIrqs_services, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_services_eq, foldObjects_services, foldIrqs_services, mkEmpty_state_eq_default]
 
 /-- V4-A3: The post-boot state preserves serviceRegistry from default. -/
 theorem bootFromPlatform_serviceRegistry_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.serviceRegistry =
     (default : SystemState).serviceRegistry := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_serviceRegistry, foldIrqs_serviceRegistry, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_serviceRegistry_eq, foldObjects_serviceRegistry, foldIrqs_serviceRegistry, mkEmpty_state_eq_default]
 
 /-- V4-A3: The post-boot state preserves interfaceRegistry from default. -/
 theorem bootFromPlatform_interfaceRegistry_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.interfaceRegistry =
     (default : SystemState).interfaceRegistry := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_interfaceRegistry, foldIrqs_interfaceRegistry, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_interfaceRegistry_eq, foldObjects_interfaceRegistry, foldIrqs_interfaceRegistry, mkEmpty_state_eq_default]
 
 /-- V4-A6: The post-boot state preserves asidTable from default. -/
 theorem bootFromPlatform_asidTable_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.asidTable =
     (default : SystemState).asidTable := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_asidTable, foldIrqs_asidTable, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_asidTable_eq, foldObjects_asidTable, foldIrqs_asidTable, mkEmpty_state_eq_default]
 
 /-- V4-A7: The post-boot state preserves TLB from default. -/
 theorem bootFromPlatform_tlb_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.tlb =
     (default : SystemState).tlb := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_tlb, foldIrqs_tlb, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_tlb_eq, foldObjects_tlb, foldIrqs_tlb, mkEmpty_state_eq_default]
 
-/-- V4-A7: The post-boot state preserves machine from default. -/
-theorem bootFromPlatform_machine_eq (config : PlatformConfig) :
-    (bootFromPlatform config).state.machine =
-    (default : SystemState).machine := by
+/-- AH2-F: After boot, machine config-set fields come from `config.machineConfig`.
+    This replaces the pre-AH2 `bootFromPlatform_machine_eq` which stated the
+    machine state was always default — that is no longer true since `bootFromPlatform`
+    now integrates `applyMachineConfig`. -/
+theorem bootFromPlatform_machine_physicalAddressWidth (config : PlatformConfig) :
+    (bootFromPlatform config).state.machine.physicalAddressWidth =
+    config.machineConfig.physicalAddressWidth := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_physicalAddressWidth]
+
+/-- AH2-F: Non-config machine fields (regs, memory, timer, systemRegisters,
+    interruptsEnabled) are preserved from default after boot. -/
+theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
+    (bootFromPlatform config).state.machine.regs = (default : SystemState).machine.regs ∧
+    (bootFromPlatform config).state.machine.memory = (default : SystemState).machine.memory ∧
+    (bootFromPlatform config).state.machine.timer = (default : SystemState).machine.timer ∧
+    (bootFromPlatform config).state.machine.systemRegisters = (default : SystemState).machine.systemRegisters ∧
+    (bootFromPlatform config).state.machine.interruptsEnabled = (default : SystemState).machine.interruptsEnabled := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default])
 
 /-- Fold-level: foldIrqs preserves capabilityRefs. -/
 private theorem foldIrqs_capabilityRefs (irqs : List IrqEntry) (ist : IntermediateState) :
@@ -850,11 +915,15 @@ private theorem foldIrqs_capabilityRefs (irqs : List IrqEntry) (ist : Intermedia
   exact congrArg (·.capabilityRefs) h
 
 /-- V4-A5: The post-boot state preserves capabilityRefs from default. -/
+private theorem applyMachineConfig_capabilityRefs_eq (ist : IntermediateState) (config : MachineConfig) :
+    (applyMachineConfig ist config).state.lifecycle.capabilityRefs =
+    ist.state.lifecycle.capabilityRefs := rfl
+
 theorem bootFromPlatform_capabilityRefs_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.lifecycle.capabilityRefs =
     (default : SystemState).lifecycle.capabilityRefs := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_capabilityRefs, foldIrqs_capabilityRefs]
+  rw [applyMachineConfig_capabilityRefs_eq, foldObjects_capabilityRefs, foldIrqs_capabilityRefs]
   rw [show mkEmptyIntermediateState.state.lifecycle.capabilityRefs =
         (default : SystemState).lifecycle.capabilityRefs from rfl]
 
@@ -863,7 +932,7 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.cdtNodeSlot =
     (default : SystemState).cdtNodeSlot := by
   show _ = _; unfold bootFromPlatform
-  rw [foldObjects_cdtNodeSlot, foldIrqs_cdtNodeSlot, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_cdtNodeSlot_eq, foldObjects_cdtNodeSlot, foldIrqs_cdtNodeSlot, mkEmpty_state_eq_default]
 
 -- ============================================================================
 -- V4-A4/A8: Boot-safe object predicate
@@ -1009,7 +1078,6 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hIfR := bootFromPlatform_interfaceRegistry_eq config
   have hAsid := bootFromPlatform_asidTable_eq config
   have hTlb := bootFromPlatform_tlb_eq config
-  have hMach := bootFromPlatform_machine_eq config
   -- Builder structural invariants
   have hSlots := (bootFromPlatform config).hPerObjectSlots
   have hAllTables := (bootFromPlatform config).hAllTables

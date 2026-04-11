@@ -1,3 +1,59 @@
+## v0.27.3 — WS-AH Phase AH2: IPC Donation Safety & Boot Pipeline
+
+Phase AH2 of WS-AH Pre-Release Comprehensive Audit Remediation. Eliminates
+silent error swallowing in IPC donation wrappers (M-02/MEDIUM), integrates
+machine configuration into the boot pipeline (M-03/MEDIUM, L-16/LOW subsumed),
+and fixes empty-message masking in timeout-aware receive (L-02/LOW). 7 sub-tasks
+(AH2-A through AH2-G). Gate: `lake build` + `test_smoke.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AH2-A** (M-02 fix): Changed `applyCallDonation` return type from
+  `SystemState` to `Except KernelError SystemState`. All 5 control-flow paths
+  updated: 4 no-op paths return `.ok st`, error path (donation failure) now
+  returns `.error e` instead of silently swallowing to `st`.
+- **AH2-B** (M-02 fix): Changed `applyReplyDonation` return type from
+  `SystemState` to `Except KernelError SystemState`. Same error propagation
+  pattern as AH2-A, with additional `removeRunnable` on success path.
+- **AH2-C** (M-02 fix): Updated 7 call sites (4 in API.lean, 3 in
+  Donation.lean) from direct value binding (`let st'' := applyCallDonation ...`)
+  to match-based error propagation (`match ... with | .error e => .error e |
+  .ok st'' => ...`). Updated `dispatchWithCap_call_uses_withCaps` theorem RHS.
+  Updated 4 test call sites in `MainTraceHarness.lean`.
+- **AH2-D** (M-02 fix): Updated 4 preservation theorems to conditional
+  postconditions: `applyCallDonation_scheduler_eq`,
+  `applyCallDonation_machine_eq`, `applyReplyDonation_machine_eq` (all in
+  Donation.lean), and `applyCallDonation_preserves_projection` (in
+  InformationFlow/Invariant/Operations.lean). Each now takes an explicit
+  `h : applyCallDonation/applyReplyDonation ... = .ok st'` hypothesis.
+- **AH2-E** (M-03 fix): Added `defaultMachineConfig` constant to `Machine.lean`
+  with ARM64 defaults (registerWidth=64, virtualAddressWidth=48,
+  physicalAddressWidth=52, pageSize=4096, maxASID=65536, registerCount=32).
+  Added `machineConfig : MachineConfig := defaultMachineConfig` field to
+  `PlatformConfig`.
+- **AH2-F** (M-03/L-16 fix): Integrated `applyMachineConfig` as final step of
+  `bootFromPlatform`, ensuring machine state fields are always set from platform
+  configuration. Moved `applyMachineConfig` definition before `bootFromPlatform`
+  to resolve forward reference. Added 8 new `applyMachineConfig_*_eq`
+  preservation lemmas (cdt, services, serviceRegistry, interfaceRegistry,
+  asidTable, tlb, lifecycle, cdtNodeSlot). Updated 10+ `bootFromPlatform_*_eq`
+  theorem proofs. Replaced `bootFromPlatform_machine_eq` with two new theorems:
+  `bootFromPlatform_machine_physicalAddressWidth` and
+  `bootFromPlatform_machine_non_config_fields`.
+- **AH2-G** (L-02 fix): Changed `timeoutAwareReceive` to return
+  `.error .endpointQueueEmpty` instead of `.ok (.completed IpcMessage.empty, st)`
+  when `pendingMessage = none`, surfacing protocol violations instead of
+  silently returning empty messages.
+
+### Infrastructure
+
+- Updated trace fixture (`main_trace_smoke.expected`) line 197: SCO-030 now
+  shows `error SeLe4n.Model.KernelError.endpointQueueEmpty`
+- Regenerated fixture SHA256 hash
+- Regenerated `docs/codebase_map.json`
+
+---
+
 ## v0.27.2 — WS-AH Phase AH1: Critical IPC Dispatch Correctness
 
 Phase AH1 of WS-AH Pre-Release Comprehensive Audit Remediation. Fixes the two
