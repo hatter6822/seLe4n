@@ -89,7 +89,7 @@ if ! cargo build --release --target "${RUST_TARGET}" -p sele4n-hal 2>/tmp/qemu_b
     # in CI environments without aarch64 linker. Skip gracefully.
     log_section "META" "SKIP: Cross-compilation failed (expected without aarch64 linker)"
     log_section "META" "       Configure .cargo/config.toml with linker for ${RUST_TARGET}"
-    cat /tmp/qemu_build.log | tail -10
+    tail -10 /tmp/qemu_build.log
     exit 0
 fi
 cd "${REPO_ROOT}"
@@ -99,7 +99,7 @@ if [[ ! -f "${KERNEL_BIN}" ]]; then
     exit 0
 fi
 
-log_section "BUILD" "Kernel binary built: $(ls -lh "${KERNEL_BIN}" | awk '{print $5}')"
+log_section "BUILD" "Kernel binary built: $(wc -c < "${KERNEL_BIN}") bytes"
 
 # ── QEMU boot test ────────────────────────────────────────────────────────
 QEMU_LOG=$(mktemp /tmp/qemu_boot_XXXXXX.log)

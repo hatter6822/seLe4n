@@ -45,9 +45,10 @@ else
 fi
 
 # Check 2: Timer frequency (CNTFRQ_EL0)
-EXPECTED_FREQ=54000000
+# Board.lean: timerFrequency = 54000000 Hz (54 MHz)
 if [[ -r /sys/devices/system/clocksource/clocksource0/current_clocksource ]]; then
     log_section "TRACE" "Clock source: $(cat /sys/devices/system/clocksource/clocksource0/current_clocksource)"
+    log_section "TRACE" "Expected timer frequency: 54000000 Hz (Board.lean timerFrequency)"
 fi
 
 # Try to read timer frequency from sysfs or /proc
