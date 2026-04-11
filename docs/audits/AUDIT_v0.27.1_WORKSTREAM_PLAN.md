@@ -57,7 +57,7 @@ and provides the verification rationale.
 
 | Finding | Audit Severity | Actual | Rationale |
 |---------|---------------|--------|-----------|
-| M-09 | MEDIUM | **INFORMATIONAL** | `LabelingContextValid` as a deployment obligation is **identical to seL4's design**. The codebase already has `labelingContextValid_is_deployment_requirement` witness theorem (Composition.lean:694-695). No runtime enforcement is needed — this is the correct architecture for a separation kernel. Reclassified to INFORMATIONAL. |
+| M-09 | MEDIUM | **INFORMATIONAL** | `LabelingContextValid` as a deployment obligation is **identical to seL4's design**. The codebase already has `labelingContextValid_is_deployment_requirement` witness theorem (Composition.lean:753). No runtime enforcement is needed — this is the correct architecture for a separation kernel. Reclassified to INFORMATIONAL. |
 | M-10 | MEDIUM | **ALREADY TRACKED** | CDT `descendantsOf` fuel sufficiency is already tracked as TPI-DOC and explicitly deferred to WS-V (Structures.lean:2234-2245, CrossSubsystem.lean:92-133). The current depth-1 proof (`descendantsOf_fuel_sufficiency`) is documented with its scope limitation. No new action required beyond existing deferral. |
 | M-11 | MEDIUM | **INFORMATIONAL** | The audit itself confirms: "No user-facing operation uses the 2^52 default." The bare `vspaceMapPageChecked` helper is documented as "proof-layer default only" (VSpace.lean:54-59). The production dispatch path (`vspaceMapPageCheckedWithFlushFromState`) correctly reads `st.machine.physicalAddressWidth`. Internal-only proof helpers do not need platform-specific bounds. |
 
@@ -69,14 +69,14 @@ are needed.
 
 | Finding | Rationale |
 |---------|-----------|
-| L-01 | `endpointQueueRemove` stale-read is safe under `tcbQueueChainAcyclic` invariant (predecessor ≠ successor). Comment WS-L1/L1-A explicitly documents the safety argument. |
+| L-01 | `endpointQueueRemove` stale-read fallback is safe under `tcbQueueLinkIntegrity` invariant (doubly-linked consistency). Safety proven via `queueRemove_predecessor_exists` / `queueRemove_successor_exists` (AE4-E/U-24). |
 | L-03 | `sender == receiver` is unreachable under `runnableThreadIpcReady` + `currentNotEndpointQueueHead` scheduler-IPC coherence invariants. A sender in `.ready` IPC state cannot be in a receive queue. |
 | L-05 | RunQueue `size` is diagnostics-only (AF-40). Not referenced by scheduling selection logic. Proof-enforcement would add complexity with zero functional benefit. |
 | L-06 | CBS integer truncation is standard practice. Per-context budget bounds (`budgetWithinBounds`) hold regardless of admission precision. Documented at Budget.lean:204-217. |
 | L-07 | `schedContextUnbind` clearing current without rescheduling matches seL4 semantics. Dequeue-on-dispatch ensures the next `schedule` call will select correctly. |
 | L-09 | `tlbBarrierComplete = True` is appropriate for the sequential abstract model. Hardware barrier correctness is enforced by Rust HAL wrappers (DSB ISH + ISB after every TLBI). |
 | L-15 | `storeObject` VSpaceRoot ASID replacement is safe under `AsidManager` uniqueness invariant (`asidPoolUnique`). Each ASID maps to exactly one ObjId. |
-| L-17 | Scheduling covert channel is accepted by design, matching seL4's domain scheduler visibility. Explicitly documented with `accepted_scheduling_covert_channel` bound theorem (Projection.lean:355-407). |
+| L-17 | Scheduling covert channel is accepted by design, matching seL4's domain scheduler visibility. Explicitly documented with `acceptedCovertChannel_scheduling` bound theorem (Projection.lean:355-407). |
 | I-01–I-14 | All 14 informational findings describe correct architectural properties (proven unreachability, deliberate dual dispatch, compile-time exhaustiveness, etc.). No action required. |
 
 ### 2.3 Subsumed Findings (1)
@@ -489,27 +489,30 @@ called from the same dispatch functions modified in AH1).
 
 **Finding**: M-02 — Donation wrappers silently swallow errors
 **File**: `SeLe4n/Kernel/IPC/Operations/Donation.lean`, lines 63-82
-**Type**: Multi-step operation (6 control-flow paths)
+**Type**: Multi-step operation (5 control-flow paths)
 
-The function has 6 distinct control-flow paths. Each path must be classified
-as either a legitimate no-op (returns `.ok st`) or an error propagation
-(returns `.error e`).
+The function has 5 structural match arms covering all control-flow paths.
+Each arm must be classified as either a legitimate no-op (returns `.ok st`)
+or an error propagation (returns `.error e`).
 
 **Path enumeration**:
 
 | # | Condition | Current Return | New Return | Classification |
 |---|-----------|---------------|------------|----------------|
 | 1 | `lookupTcb st receiver = none` | `st` | `.ok st` | No-op: receiver not found (unreachable under invariants, defensive) |
-| 2 | `receiverTcb.schedContextBinding ≠ .unbound` | `st` | `.ok st` | No-op: receiver already has SC (no donation needed) |
+| 2 | `receiverTcb.schedContextBinding ≠ .unbound` (wildcard `| _ => st`) | `st` | `.ok st` | No-op: receiver already has SC (covers `.bound` and `.donated`) |
 | 3 | `lookupTcb st caller = none` | `st` | `.ok st` | No-op: caller not found (unreachable under invariants) |
-| 4 | `callerTcb.schedContextBinding = .unbound` | `st` | `.ok st` | No-op: caller has no SC to donate |
-| 5 | `callerTcb.schedContextBinding = .donated` | `st` | `.ok st` | No-op: caller's SC is itself donated (cannot re-donate) |
-| 6a | `donateSchedContext ... = .error _` | `st` | `.error e` | **Error propagation** (the key fix) |
-| 6b | `donateSchedContext ... = .ok st'` | `st'` | `.ok st'` | Success |
+| 4 | `callerTcb.schedContextBinding ≠ .bound` (wildcard `| _ => st`) | `st` | `.ok st` | No-op: caller has no SC to donate (covers `.unbound` and `.donated`) |
+| 5a | `donateSchedContext ... = .error _` | `st` | `.error e` | **Error propagation** (the key fix) |
+| 5b | `donateSchedContext ... = .ok st'` | `st'` | `.ok st'` | Success |
 
-Only path 6a changes semantics. Paths 1-5 change from bare `st` to `.ok st`,
-and path 6b from bare `st'` to `.ok st'`. Path 6a changes from silent
+Only path 5a changes semantics. Paths 1-4 change from bare `st` to `.ok st`,
+and path 5b from bare `st'` to `.ok st'`. Path 5a changes from silent
 swallowing (`st`) to error propagation (`.error e`).
+
+Note: Paths 2 and 4 are wildcard arms (`| _ => st`) that each collapse two
+`SchedContextBinding` constructors. The path count (5 structural arms) matches
+the source code exactly (Donation.lean:63-82).
 
 **Atomic steps**:
 
@@ -534,9 +537,9 @@ swallowing (`st`) to error propagation (`.error e`).
            match callerTcb.schedContextBinding with
            | .bound clientScId =>
              match donateSchedContext st caller receiver clientScId with
-             | .error e => .error e            -- Path 6a: ERROR PROPAGATION
-             | .ok st' => .ok st'              -- Path 6b: success
-           | _ => .ok st                       -- Paths 4,5: no-op
+             | .error e => .error e            -- Path 5a: ERROR PROPAGATION
+             | .ok st' => .ok st'              -- Path 5b: success
+           | _ => .ok st                       -- Path 4: no-op
        | _ => .ok st                           -- Path 2: no-op
    ```
 
@@ -638,14 +641,14 @@ match applyReplyDonation st' tid with
 Same pattern as AH2-C-3 — `applyReplyDonation` error propagation.
 
 **Sub-step AH2-C-5: Unchecked `.reply` path — indirect via `endpointReplyWithDonation`**
-(Donation.lean:~230-237)
+(Donation.lean:~230-242)
 
 The unchecked `.reply` arm (API.lean:~660-664) delegates to
 `endpointReplyWithDonation`, which internally calls `applyReplyDonation`
-(Donation.lean:237). This is an **indirect** call site that also needs updating:
+(Donation.lean:238). This is an **indirect** call site that also needs updating:
 
 ```lean
--- BEFORE (Donation.lean:~237):
+-- BEFORE (Donation.lean:~238):
 let st'' := applyReplyDonation st' replier
 .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
 
@@ -1859,7 +1862,7 @@ order.
 | M-09 | MEDIUM | **No-action** | — | Reclassified INFO; matches seL4 design |
 | M-10 | MEDIUM | **No-action** | — | Already tracked as TPI-DOC; deferred to WS-V |
 | M-11 | MEDIUM | **No-action** | — | Reclassified INFO; production path correct |
-| L-01 | LOW | **No-action** | — | Safe under `tcbQueueChainAcyclic` invariant |
+| L-01 | LOW | **No-action** | — | Safe under `tcbQueueLinkIntegrity` invariant (AE4-E) |
 | L-02 | LOW | **Fix** | AH2 | Empty message masks protocol violations |
 | L-03 | LOW | **No-action** | — | Protected by scheduler-IPC coherence invariants |
 | L-04 | LOW | **Fix** | AH3 | CDT-orphaned capabilities on revoke failure |
