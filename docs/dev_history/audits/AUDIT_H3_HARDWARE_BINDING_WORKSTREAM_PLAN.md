@@ -3,8 +3,8 @@
 **Created**: 2026-04-09
 **Baseline version**: 0.25.27
 **Baseline audits**:
-  - `docs/audits/AUDIT_v0.25.27_RELEASE_COMPREHENSIVE.md` (0 HIGH, 19 MEDIUM, 25 LOW, 3 INFO)
-  - `docs/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (3 CRITICAL, 3 HIGH, 9 MEDIUM, 6 LOW)
+  - `docs/dev_history/audits/AUDIT_v0.25.27_RELEASE_COMPREHENSIVE.md` (0 HIGH, 19 MEDIUM, 25 LOW, 3 INFO)
+  - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (3 CRITICAL, 3 HIGH, 9 MEDIUM, 6 LOW)
 **Prior portfolios**: WS-B through WS-AF (all COMPLETE — see `docs/WORKSTREAM_HISTORY.md`)
 **Hardware target**: Raspberry Pi 5 (BCM2712, 4× Cortex-A76, GIC-400, ARM Generic Timer)
 **Constraint**: Zero `sorry`/`axiom` in production proof surface
