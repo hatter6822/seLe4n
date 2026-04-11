@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-hardware-binding-audit-ejwgv",
-      "commit_sha": "51930ab7bf7ee083164502bb984d0f82eb6de4c4",
-      "tree_sha": "98c10a87fa5dbf845d201a70b1dec48dad8438cb",
-      "committed_at_utc": "2026-04-10T04:14:43+00:00"
+      "branch": "claude/complete-ag9-testing-validation-EQdq7",
+      "commit_sha": "4e7680c4d0ab6174d4180957ba67961145f32c27",
+      "tree_sha": "eb814cc002eb19a526971a9b5fd316788c1799c4",
+      "committed_at_utc": "2026-04-10T02:06:59-04:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "99bdf56b7e4374d9b274b02699d6c94b6094bef095bd9004546cdb16362f172b"
+    "source_digest": "2c64ad8ab13eb63e8bca1d47599a9695295a3bc509c66d2e30b1b3ef6215fbb4"
   },
   "summary": {
-    "module_count": 157,
-    "declaration_count": 4942
+    "module_count": 158,
+    "declaration_count": 4968
   },
   "readme_sync": {
-    "version": "0.26.9",
+    "version": "0.27.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
     "production_loc": 91350,
-    "test_files": 16,
-    "test_loc": 11374,
+    "test_files": 17,
+    "test_loc": 11608,
     "proved_theorem_lemma_decls": 2725,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -59322,6 +59322,305 @@
           "line": 12,
           "called": [
             "runMainTrace"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.BadgeOverflowSuite",
+      "path": "tests/BadgeOverflowSuite.lean",
+      "declaration_count": 26,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.BadgeOverflowSuite",
+          "line": 30,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tag",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 34,
+          "called": [
+            "expectCond",
+            "tag"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov001_zeroRoundTrip",
+          "line": 42,
+          "called": [
+            "expect",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov002_smallRoundTrip",
+          "line": 47,
+          "called": [
+            "expect",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov003_maxValidRoundTrip",
+          "line": 52,
+          "called": [
+            "expect",
+            "isValid",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov004_powerOfTwoRoundTrip",
+          "line": 59,
+          "called": [
+            "expect",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov005_midRangeRoundTrip",
+          "line": 67,
+          "called": [
+            "expect",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov006_exactOverflow",
+          "line": 77,
+          "called": [
+            "expect",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov007_overflowPlusOne",
+          "line": 82,
+          "called": [
+            "expect",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov008_doubleOverflow",
+          "line": 87,
+          "called": [
+            "expect",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov009_largeTruncation",
+          "line": 92,
+          "called": [
+            "expect",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov010_borInRange",
+          "line": 102,
+          "called": [
+            "bor",
+            "expect",
+            "isValid",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov011_borMaxValid",
+          "line": 110,
+          "called": [
+            "bor",
+            "expect",
+            "isValid",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov012_borCommutative",
+          "line": 118,
+          "called": [
+            "bor",
+            "expect",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov013_borIdempotent",
+          "line": 126,
+          "called": [
+            "bor",
+            "expect",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov014_borAlwaysValid",
+          "line": 132,
+          "called": [
+            "bor",
+            "expect",
+            "isValid",
+            "machineWordMax",
+            "ofNatMasked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov015_zeroValid",
+          "line": 143,
+          "called": [
+            "expect",
+            "isValid",
+            "ofNatMasked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov016_maxMinusOneValid",
+          "line": 148,
+          "called": [
+            "expect",
+            "isValid",
+            "machineWordMax",
+            "ofNatMasked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov017_maxWraps",
+          "line": 153,
+          "called": [
+            "expect",
+            "isValid",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov018_machineWordBits",
+          "line": 160,
+          "called": [
+            "expect",
+            "machineWordBits",
+            "machineWordMax"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov019_roundTripTheorem",
+          "line": 169,
+          "called": [
+            "expect",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov020_identitySmall",
+          "line": 176,
+          "called": [
+            "expect",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov021_isWord64Consistency",
+          "line": 183,
+          "called": [
+            "expect",
+            "isWord64Dec",
+            "machineWordMax"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bov022_validityMatchesWord64",
+          "line": 190,
+          "called": [
+            "expect",
+            "isValid",
+            "isWord64Dec",
+            "machineWordMax",
+            "ofNatMasked",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 203,
+          "called": [
+            "bov001_zeroRoundTrip",
+            "bov002_smallRoundTrip",
+            "bov003_maxValidRoundTrip",
+            "bov004_powerOfTwoRoundTrip",
+            "bov005_midRangeRoundTrip",
+            "bov006_exactOverflow",
+            "bov007_overflowPlusOne",
+            "bov008_doubleOverflow",
+            "bov009_largeTruncation",
+            "bov010_borInRange",
+            "bov011_borMaxValid",
+            "bov012_borCommutative",
+            "bov013_borIdempotent",
+            "bov014_borAlwaysValid",
+            "bov015_zeroValid",
+            "bov016_maxMinusOneValid",
+            "bov017_maxWraps",
+            "bov018_machineWordBits",
+            "bov019_roundTripTheorem",
+            "bov020_identitySmall",
+            "bov021_isWord64Consistency",
+            "bov022_validityMatchesWord64"
           ]
         }
       ]

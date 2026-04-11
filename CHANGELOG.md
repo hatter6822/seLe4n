@@ -1,3 +1,64 @@
+## v0.27.0 — WS-AG Phase AG9: Testing + Validation
+
+Phase AG9 of WS-AG H3 Hardware Binding Audit Remediation. Validates the H3
+implementation through QEMU integration testing, hardware constant cross-checks,
+empirical measurement infrastructure, Badge overflow validation, speculation
+barrier hardening (Spectre v1/v2), and full RPi5 test suite orchestration.
+7 sub-tasks (AG9-A through AG9-G).
+Gate: `lake build` + `test_smoke.sh` + `cargo test --workspace` +
+`cargo clippy --workspace` (0 warnings). Zero sorry/axiom.
+
+### Changes
+
+- **AG9-A** (QEMU Integration Testing): New `scripts/test_qemu.sh` automated
+  test infrastructure for QEMU-based kernel validation. Builds kernel binary
+  via `cargo build --release --target aarch64-unknown-none`, launches QEMU
+  `raspi4b` machine, validates UART boot output, checks for fatal exceptions.
+  Graceful skip when QEMU unavailable (CI-safe). Boot expected fixture at
+  `tests/fixtures/qemu_boot_expected.txt`
+- **AG9-B** (H3-PLAT-07, Hardware Cross-Check): New `scripts/test_hw_crosscheck.sh`
+  validation script for physical RPi5 hardware constant verification. Checks
+  all 15 BCM2712 constants from `Board.lean` including GIC addresses, timer
+  frequency, memory regions, address widths. Documentation at
+  `docs/hardware_validation/rpi5_cross_check.md`
+- **AG9-C** (H3-SCHED-05, WCRT Empirical Validation): New `profiling` module
+  in `rust/sele4n-hal/src/profiling.rs` providing cycle-accurate measurement
+  via PMCCNTR_EL0 (CPU cycle counter). `LatencyStats` accumulator for min/max/
+  mean statistics across 10,000+ samples. `enable_cycle_counter()` PMU setup.
+  Documentation at `docs/hardware_validation/wcrt_empirical_validation.md`
+- **AG9-D** (H3-SCHED-03, RunQueue Cache Performance): Profiling infrastructure
+  for RunQueue insert/remove/selection operations. Uses AG9-C `LatencyStats`
+  for cycle counting at various queue sizes (1, 10, 50, 100 threads).
+  Two-stage selection hit rate analysis documented at
+  `docs/hardware_validation/runqueue_cache_performance.md`
+- **AG9-E** (H3-IPC-03, Badge Overflow Validation): New Lean test suite
+  `tests/BadgeOverflowSuite.lean` (22 tests) validating `Badge.ofNatMasked`
+  round-trip identity, overflow/truncation semantics, bor preservation, and
+  boundary values. 7 new Rust tests in `sele4n-types` for ARM64 u64 register
+  width confirmation. Registered as `lake exe badge_overflow_suite` and
+  integrated into Tier 2 negative tests. Documentation at
+  `docs/hardware_validation/badge_overflow_validation.md`
+- **AG9-F** (Speculation Barriers): CSDB (Conditional Speculation Dependency
+  Barrier) added to `barriers.rs` for Spectre v1 mitigation on Cortex-A76.
+  `speculation_safe_bound_check()` generic bounds-check pattern. `sb()` full
+  speculation barrier. `has_feat_csv2()` Spectre v2 hardware mitigation check.
+  CSDB deployed at exception dispatch (`trap.rs`) and GIC interrupt dispatch
+  (`gic.rs`). 7 unit tests. Pre-existing clippy warnings in `mmio.rs` fixed
+  (`is_multiple_of`). Documentation at
+  `docs/hardware_validation/speculation_barriers.md`
+- **AG9-G** (Full RPi5 Test Suite): New `scripts/test_hw_full.sh` orchestrating
+  5-phase hardware validation: Lean tiered tests (Tier 0-3), Rust workspace
+  tests, Badge overflow validation, hardware cross-check, QEMU integration.
+  Report template at `docs/hardware_validation/rpi5_full_test_report.md`
+
+### Infrastructure
+
+- Badge overflow suite registered in `lakefile.toml` and integrated into
+  `test_tier2_negative.sh` (Tier 2 gate)
+- Hardware validation documentation directory: `docs/hardware_validation/`
+  (5 reports covering AG9-B through AG9-G)
+- Rust workspace: 361 tests pass (0 failures), 0 clippy warnings
+
 ## v0.26.9 — WS-AG Phase AG8: Integration + Model Closure
 
 Phase AG8 of WS-AG H3 Hardware Binding Audit Remediation. Closes remaining

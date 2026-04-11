@@ -1,0 +1,16 @@
+# AG9-A: Expected QEMU boot sequence fragments
+#
+# Each non-comment line is a substring that must appear in the QEMU boot log
+# for the corresponding check to pass. Lines are checked in order.
+#
+# Format: CHECK_NAME | expected_fragment
+#
+# These fragments are validated when the full kernel binary is linked and
+# runs on QEMU. During pre-hardware development, checks are informational.
+
+BOOT_BANNER | seLe4n
+UART_INIT   | UART
+MMU_INIT    | MMU
+GIC_INIT    | GIC
+TIMER_INIT  | Timer
+BOOT_DONE   | Boot complete

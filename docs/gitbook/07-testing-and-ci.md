@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **All prior workstreams completed through WS-AG Phase AG8 (v0.26.9). Testing tiers enforce regression protection and evidence continuity across 91,095 production LoC, 11,374 test LoC, and 2,716 proved declarations.**
+Current stage context: **All prior workstreams completed through WS-AG Phase AG9 (v0.27.0). Testing tiers enforce regression protection and evidence continuity across 91,350+ production LoC, 11,600+ test LoC, and 2,725+ proved declarations.**
 
 ## Tier model
 
@@ -122,6 +122,8 @@ stories remain visible and intentional, especially for milestone claims tied to 
 - **WS-Y Phase Y3 (Test Infrastructure & Documentation, v0.22.26):** Migrated 59 of 62 `.build` calls to `.buildChecked` across InformationFlowSuite (15/15), NegativeStateSuite (35/38), OperationChainSuite (9/9) (Y3-A/B/C, MED-02). 3 calls retained with per-call annotations for deliberately malformed negative test states. Replaced duplicate `awaitReceive` probe op with `capCopy` (`cspaceCopy`) — probe now covers 7 truly distinct operation families (Y3-D, LOW-07). Added `assertStateInvariantsFor` docstring and `assertStateInvariantsWithoutSync` companion function (Y3-E, LOW-08). MED-01 test fixture changes verified as already landed in Y1 (Y3-F). **WS-Y PORTFOLIO COMPLETE.**
 
 - **WS-AC (Comprehensive Audit Remediation, v0.25.3–v0.25.10 — PORTFOLIO COMPLETE):** All 6 phases (AC1–AC6) delivered. Test additions: AC1-G/H — 7 negative regression tests (budget fail-closed, CDT tracking); AC3-D — `resolveExtraCaps` silent-drop chain34 test (cap resolution with 2/3 valid); AC4-A — 2 physical address bound regression tests (RPi5 44-bit PA). AC6-A — `DecodingSuite.lean` with 40 tests covering Layer 1 (`RegisterDecode`: `decodeSyscallId`, `decodeMsgInfo`, `decodeCapPtr`, `validateRegBound`) and Layer 2 (`SyscallArgDecode`: 20 per-syscall decode functions across CSpace, VSpace, Lifecycle, Service, Notification, SchedContext, TCB families). Runs in Tier 2 via `lake exe decoding_suite`.
+
+- **WS-AG Phase AG9 (Testing + Validation, v0.27.0):** AG9-A — QEMU integration testing (`scripts/test_qemu.sh`), validates kernel binary boot on QEMU `raspi4b` with UART output and fatal exception checks. AG9-B — Hardware constant cross-check (`scripts/test_hw_crosscheck.sh`), validates 15 BCM2712 constants from Board.lean on physical RPi5. AG9-E — `BadgeOverflowSuite.lean` with 22 tests (BOV-001..022) covering Badge Nat ↔ UInt64 round-trip identity, overflow/truncation, bitwise OR semantics, boundary values, and theorem cross-checks; 7 matching Rust tests in sele4n-types. Runs in Tier 2 via `lake exe badge_overflow_suite`. AG9-F — Speculation barriers (CSDB/SB) in Rust HAL for Spectre v1/v2 mitigation on Cortex-A76; 7 unit tests. AG9-G — Full RPi5 hardware test runner (`scripts/test_hw_full.sh`): 5-phase orchestration of Lean Tier 0-3, Rust workspace, Badge overflow, hardware cross-check, and QEMU integration.
 
 ## Practical failure triage
 

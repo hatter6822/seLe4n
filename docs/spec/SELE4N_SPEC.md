@@ -52,11 +52,11 @@ enforcement, and scheduling.
 | **Package version** | `0.26.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 91,159 across 141 Lean files |
-| **Test LoC** | 11,374 across 16 Lean test suites |
+| **Test LoC** | 11,374 across 17 Lean test suites |
 | **Proved declarations** | 2,716 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AG Phase AG7 COMPLETE** (v0.26.8). H3 Hardware Binding Audit Remediation — Phase AG7: FFI Bridge + Proof Hooks. Lean `@[extern]` FFI declarations for 17 Rust HAL functions. MMIO volatile primitives. Production `AdapterProofHooks` with substantive preservation proofs for all 4 adapter paths. `proofLayerInvariantBundle` extended to 11 conjuncts. Key theorem: `contextSwitchState_preserves_proofLayerInvariantBundle` (11-conjunct preservation through atomic context switch). Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG6 (v0.26.0–v0.26.7), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG8–AG10 (integration, testing, documentation).** |
+| **Active workstream** | **WS-AG Phase AG9 COMPLETE** (v0.27.0). H3 Hardware Binding Audit Remediation — Phase AG9: Testing + Validation. QEMU integration testing, BCM2712 hardware constant cross-check, WCRT empirical validation (PMU cycle counting), RunQueue profiling, Badge Nat↔UInt64 overflow validation (22 Lean + 7 Rust tests), ARMv8-A speculation barriers (CSDB/SB/FEAT_CSV2 for Spectre v1/v2), 5-phase hardware test orchestration. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG8 (v0.26.0–v0.26.9), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG10 (documentation + closure).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

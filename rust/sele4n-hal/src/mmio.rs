@@ -35,7 +35,7 @@
 /// Device-nGnRnE or Device-nGnRE in the page tables.
 #[inline(always)]
 pub fn mmio_read32(addr: usize) -> u32 {
-    debug_assert!(addr % 4 == 0, "MMIO read32: address {:#x} not 4-byte aligned", addr);
+    debug_assert!(addr.is_multiple_of(4), "MMIO read32: address {:#x} not 4-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid MMIO address within a mapped device
@@ -57,7 +57,7 @@ pub fn mmio_read32(addr: usize) -> u32 {
 /// * `val` - Value to write
 #[inline(always)]
 pub fn mmio_write32(addr: usize, val: u32) {
-    debug_assert!(addr % 4 == 0, "MMIO write32: address {:#x} not 4-byte aligned", addr);
+    debug_assert!(addr.is_multiple_of(4), "MMIO write32: address {:#x} not 4-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid MMIO address within a mapped device
@@ -77,7 +77,7 @@ pub fn mmio_write32(addr: usize, val: u32) {
 /// * `addr` - Physical address of the MMIO register (must be 8-byte aligned)
 #[inline(always)]
 pub fn mmio_read64(addr: usize) -> u64 {
-    debug_assert!(addr % 8 == 0, "MMIO read64: address {:#x} not 8-byte aligned", addr);
+    debug_assert!(addr.is_multiple_of(8), "MMIO read64: address {:#x} not 8-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid 8-byte-aligned MMIO address.
@@ -98,7 +98,7 @@ pub fn mmio_read64(addr: usize) -> u64 {
 /// * `val` - Value to write
 #[inline(always)]
 pub fn mmio_write64(addr: usize, val: u64) {
-    debug_assert!(addr % 8 == 0, "MMIO write64: address {:#x} not 8-byte aligned", addr);
+    debug_assert!(addr.is_multiple_of(8), "MMIO write64: address {:#x} not 8-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid 8-byte-aligned MMIO address.

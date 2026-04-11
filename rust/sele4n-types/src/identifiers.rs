@@ -411,4 +411,62 @@ mod tests {
         assert_eq!(u64::from(Slot::from(5u64)), 5u64);
         assert_eq!(u64::from(Badge::from(999u64)), 999u64);
     }
+
+    // ── AG9-E: Badge Overflow Hardware Validation ─────────────────────
+    //
+    // These tests validate that Rust Badge (u64) correctly models the
+    // Lean Badge type's overflow semantics. On ARM64 hardware, badge
+    // values are 64-bit registers — no truncation occurs for values
+    // within u64 range.
+
+    #[test]
+    fn badge_zero_roundtrip() {
+        let b = Badge::from(0u64);
+        assert_eq!(b.raw(), 0);
+        assert_eq!(u64::from(b), 0);
+    }
+
+    #[test]
+    fn badge_max_u64_roundtrip() {
+        let b = Badge::from(u64::MAX);
+        assert_eq!(b.raw(), u64::MAX);
+        assert_eq!(u64::from(b), u64::MAX);
+    }
+
+    #[test]
+    fn badge_power_of_two_roundtrips() {
+        for shift in [0, 16, 32, 48, 63] {
+            let val: u64 = 1 << shift;
+            let b = Badge::from(val);
+            assert_eq!(b.raw(), val, "Badge 2^{shift} roundtrip failed");
+        }
+    }
+
+    #[test]
+    fn badge_bor_max_values() {
+        let a = Badge::from(u64::MAX);
+        let b = Badge::from(u64::MAX);
+        assert_eq!(a.bor(b).raw(), u64::MAX);
+    }
+
+    #[test]
+    fn badge_bor_disjoint_bits() {
+        let a = Badge::from(0xFF00_FF00_FF00_FF00u64);
+        let b = Badge::from(0x00FF_00FF_00FF_00FFu64);
+        assert_eq!(a.bor(b).raw(), u64::MAX);
+    }
+
+    #[test]
+    fn badge_u64_size_is_8_bytes() {
+        // Badge is repr(transparent) over u64 — must be exactly 8 bytes
+        assert_eq!(core::mem::size_of::<Badge>(), 8);
+        // This matches the ARM64 GPR width (64-bit / 8 bytes)
+    }
+
+    #[test]
+    fn badge_midrange_value() {
+        let val = 0xDEAD_BEEF_CAFE_BABEu64;
+        let b = Badge::from(val);
+        assert_eq!(b.raw(), val);
+    }
 }

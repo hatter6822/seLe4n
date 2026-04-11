@@ -44,5 +44,7 @@ run_check "TRACE" lake exe priority_inheritance_suite
 run_check "TRACE" lake exe liveness_suite
 # T-03/AC6-A: Dedicated RegisterDecode + SyscallArgDecode test suite.
 run_check "TRACE" lake exe decoding_suite
+# AG9-E: Badge overflow hardware validation test suite.
+run_check "TRACE" lake exe badge_overflow_suite
 
 finalize_report

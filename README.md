@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.26.9-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.27.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -88,7 +88,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 | **Version** | `0.26.9` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 91,159 across 141 files |
-| **Test Lean LoC** | 11,374 across 16 test suites |
+| **Test Lean LoC** | 11,374 across 17 test suites |
 | **Proved declarations** | 2,716 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
@@ -187,7 +187,7 @@ SeLe4n/
 │   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
-tests/                           15 test suites
+tests/                           16 test suites
 ```
 
 Each subsystem follows the **Operations/Invariant split**: transitions in

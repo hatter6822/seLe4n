@@ -139,10 +139,17 @@ fn esr_ec(esr: u64) -> u64 {
 /// - SVC (0x15): Syscall dispatch (reads x0-x5, x7 from TrapFrame)
 /// - Data/Instruction Abort: VM fault handling (placeholder)
 /// - Other: Unhandled exception (prints diagnostic and halts)
+///
+/// AG9-F: CSDB after ESR classification prevents speculative execution of
+/// the wrong handler branch (Spectre v1 mitigation for exception dispatch).
 #[no_mangle]
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     let esr = read_esr_el1();
     let exception_class = esr_ec(esr);
+
+    // AG9-F: CSDB after reading the exception class ensures speculative
+    // execution cannot bypass the match and enter the wrong handler.
+    crate::barriers::csdb();
 
     match exception_class {
         ec::SVC_AARCH64 => {
