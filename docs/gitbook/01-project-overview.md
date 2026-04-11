@@ -80,8 +80,11 @@ Key recent completions:
 - **WS-AA** (v0.23.21): Comprehensive Audit Remediation — Phases AA1–AA2 complete (Rust ABI type sync, CI hardening). **PORTFOLIO COMPLETE.**
 - **WS-Z** (v0.23.0–v0.23.20): Composable Performance Objects — 10 phases, SchedContext subsystem with CBS budget engine, replenishment queue, scheduler integration, capability-controlled binding, timeout endpoints, SchedContext donation for passive servers, full API surface, and invariant composition. **PORTFOLIO COMPLETE.**
 
-**Next major milestone**: AG10 — Documentation + Closure for the H3 Hardware
-Binding workstream. The hardware binding (AG1–AG9) is complete through v0.27.0.
+**WS-AG PORTFOLIO COMPLETE** (v0.26.0–v0.27.1): H3 Hardware Binding —
+10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400, ARM Generic Timer,
+ARMv8 page tables, FFI bridge, QEMU testing, documentation closure.
+
+**Next major milestone**: WS-V — multi-core SMP, FrozenOps production promotion.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
 [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md).

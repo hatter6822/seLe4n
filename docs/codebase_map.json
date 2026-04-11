@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/complete-ag9-testing-validation-EQdq7",
-      "commit_sha": "4e7680c4d0ab6174d4180957ba67961145f32c27",
-      "tree_sha": "eb814cc002eb19a526971a9b5fd316788c1799c4",
-      "committed_at_utc": "2026-04-10T02:06:59-04:00"
+      "branch": "claude/review-hardware-audit-docs-NQzT0",
+      "commit_sha": "a1ac05b78869211f6c0e6542cb1f13be06f8ef27",
+      "tree_sha": "463788b4d73563a97bab029ea61814cbdb87a207",
+      "committed_at_utc": "2026-04-11T05:02:58+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2c64ad8ab13eb63e8bca1d47599a9695295a3bc509c66d2e30b1b3ef6215fbb4"
+    "source_digest": "f0764eba84742876417a9dbfc97793545c360b659eea89292ccea331ef7742de"
   },
   "summary": {
     "module_count": 158,
     "declaration_count": 4968
   },
   "readme_sync": {
-    "version": "0.27.0",
+    "version": "0.27.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91350,
+    "production_loc": 91466,
     "test_files": 17,
     "test_loc": 11608,
     "proved_theorem_lemma_decls": 2725,

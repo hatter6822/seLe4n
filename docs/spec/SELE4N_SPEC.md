@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 2,725 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AG Phase AG9 COMPLETE** (v0.27.0). H3 Hardware Binding Audit Remediation — Phase AG9: Testing + Validation. QEMU integration testing, BCM2712 hardware constant cross-check, WCRT empirical validation (PMU cycle counting), RunQueue profiling, Badge Nat↔UInt64 overflow validation (22 Lean + 7 Rust tests), ARMv8-A speculation barriers (CSDB/SB/FEAT_CSV2 for Spectre v1/v2), 5-phase hardware test orchestration. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG8 (v0.26.0–v0.26.9), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG10 (documentation + closure).** |
+| **Active workstream** | **WS-AG PORTFOLIO COMPLETE** (v0.26.0–v0.27.1). H3 Hardware Binding Audit Remediation — 10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400 driver, ARM Generic Timer, ARMv8 page tables, ASID manager, FFI bridge, exception/interrupt models, cache coherency, QEMU testing, speculation barriers, documentation closure. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: WS-V (multi-core SMP).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -382,7 +382,7 @@ The first production hardware target is **Raspberry Pi 5** (ARM64, BCM2712).
 | **H0** | Architecture-neutral semantics and proofs | Complete (M1–M7, WS-B..E) |
 | **H1** | Architecture-boundary interfaces and adapters | Complete (M6) |
 | **H2** | Audit-driven proof deepening (close critical gaps) | Complete (WS-F and WS-H portfolios) |
-| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **AG5 complete** (GIC-400 + timer + interrupts) |
+| **H3** | Platform binding — map interfaces to Raspberry Pi 5 hardware | **COMPLETE** (AG1–AG10, v0.26.0–v0.27.1) |
 | **H4** | Evidence convergence — connect proofs to platform assumptions | Planned |
 
 **H3 preparation (structural):** The `Platform/` directory now provides the
@@ -406,8 +406,10 @@ organizational foundation for hardware binding:
   NI step (35th `KernelOperation`)
 
 **H3 binding progress**: AG1 (Lean code fixes) → AG2 (Rust ABI fixes) → AG3
-(platform model) → AG4 (HAL crate + boot) → AG5 (interrupts + timer) complete.
-Remaining: AG6–AG10 (FFI bridge, kernel main, system calls, testing, QEMU).
+(platform model) → AG4 (HAL crate + boot) → AG5 (interrupts + timer) → AG6
+(ARMv8 memory management) → AG7 (FFI bridge + proof hooks) → AG8 (integration
++ model closure) → AG9 (testing + validation) → AG10 (documentation + closure).
+**All 10 phases COMPLETE** (v0.26.0–v0.27.1).
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions (T6-G/M-NEW-8)
 
@@ -446,6 +448,164 @@ assumptions for the initial single-core RPi5 target:
    production dispatch path uses `vspaceMapPageCheckedWithFlush` which
    includes a full flush. Targeted flushes (`tlbFlushByASID`, `tlbFlushByPage`)
    are defined for future optimization but not yet wired into production paths.
+
+### 6.4 Hardware Limitations (AG10-A / FINDING-05)
+
+The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
+
+1. **Single-core execution**: H3 uses Cortex-A76 core 0 only. The remaining
+   3 cores are held in a WFE (Wait For Event) loop by the AG4-E boot sequence
+   (`sele4n-hal/src/boot.S`). All kernel state is core-local — no spinlocks,
+   no inter-processor interrupts (IPI), no cross-core scheduling.
+
+2. **SMP implications**: Symmetric multiprocessing support is deferred to WS-V.
+   SMP would require:
+   - Per-core run queues with work-stealing or affinity-based scheduling
+   - IPI for cross-core preemption notification and TLB shootdown
+   - Spinlocks or ticket locks for shared kernel state (object store, scheduler)
+   - Cache coherency protocol awareness (MOESI on Cortex-A76, managed by hardware
+     but software must ensure proper barrier usage for shared data structures)
+   - Per-core TLB flush coordination (currently single-core TLBI suffices)
+   - Per-core exception vector tables and interrupt routing
+
+3. **Sequential memory model**: Under single-core operation, all memory
+   operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the
+   Rust HAL (`sele4n-hal/src/cpu.rs`) for hardware correctness but are
+   semantically no-ops in the Lean model. The `BarrierKind` type and
+   `barrierOrdered` theorems in `MmioAdapter.lean` (AG8-C) are trivially
+   satisfied under the sequential model.
+
+4. **No multi-core invariants**: The `crossSubsystemInvariant` (10 predicates)
+   and `proofLayerInvariantBundle` (11 conjuncts) are formulated for single-core
+   state. Multi-core extensions would require per-core state partitioning and
+   cross-core invariant composition.
+
+### 6.5 Hardware Binding Architecture (AG10-D)
+
+The H3 hardware binding is structured as a layered architecture bridging the
+abstract Lean kernel model to concrete ARM64 hardware:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Lean Kernel Model (pure functions, machine-checked)     │
+│  - Transitions: SeLe4n/Kernel/API.lean (25 syscalls)     │
+│  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
+├──────────────────────────────────────────────────────────┤
+│  FFI Bridge (@[extern] declarations)                     │
+│  - SeLe4n/Platform/FFI.lean (17 Rust HAL functions)      │
+│  - C calling convention, Lean ↔ Rust type mapping        │
+├──────────────────────────────────────────────────────────┤
+│  Rust HAL (sele4n-hal crate)                             │
+│  - ARM64 instructions (WFE/WFI/NOP/ERET, barriers)      │
+│  - System registers (MRS/MSR for SCTLR, TCR, MAIR, etc.)│
+│  - PL011 UART, GIC-400, ARM Generic Timer               │
+│  - MMU, exception vectors, trap entry/exit               │
+├──────────────────────────────────────────────────────────┤
+│  Hardware (Raspberry Pi 5 / BCM2712 / Cortex-A76)        │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### 6.5.1 Exception Handling
+
+The ARM64 exception model (`SeLe4n/Kernel/Architecture/ExceptionModel.lean`,
+AG3-C) defines the hardware exception dispatch path:
+
+- **Exception types**: Synchronous (SVC, data abort, instruction abort,
+  alignment fault), IRQ, FIQ (unsupported), SError (hardware fault)
+- **ESR_EL1 classification**: The Exception Syndrome Register EC field
+  (bits [31:26]) routes synchronous exceptions to handlers
+- **SVC dispatch**: SVC instructions from EL0 enter `dispatchException` which
+  classifies the exception and routes to `syscallEntry`
+- **Exception levels**: EL0 (user) ↔ EL1 (kernel) transitions are modeled
+  with `exceptionEntry_setsEL1` and `exceptionReturn_restoresEL0` proofs
+- **Atomicity**: 8 preservation theorems prove kernel state consistency across
+  exception and interrupt boundaries (context save/restore, thread selection,
+  dispatch, scheduling, timer tick, and interrupt handling)
+
+The Rust HAL implements the exception vector table (`sele4n-hal/src/vectors.S`)
+with 16 entries (4 types × 4 execution states) and a trap frame
+(`sele4n-hal/src/trap.rs`) that saves/restores all 31 general-purpose registers
+plus SP, ELR_EL1, and SPSR_EL1 (272-byte `TrapFrame`).
+
+#### 6.5.2 Interrupt Dispatch
+
+The GIC-400 interrupt dispatch model
+(`SeLe4n/Kernel/Architecture/InterruptDispatch.lean`, AG3-D) implements the
+acknowledge → dispatch → EOI sequence:
+
+- **Acknowledge**: Read GICC_IAR to get the INTID; spurious INTIDs (≥ 1020)
+  are dropped
+- **Dispatch**: Timer PPI (INTID 30) → `timerTick`; mapped SPIs → endpoint
+  `notificationSignal`; unmapped → error
+- **EOI**: Write GICC_EOIR to signal completion (no-op in abstract model)
+- **INTID space**: SGIs (0–15), PPIs (16–31), SPIs (32–223) for BCM2712
+
+The `handleInterrupt` operation is the 35th `KernelOperation` constructor
+with a corresponding non-interference step in the information flow model.
+
+The Rust GIC-400 driver (`sele4n-hal/src/gic.rs`) initializes the distributor
+(GICD_CTLR, IGROUPR, IPRIORITYR, ITARGETSR, ICPENDR, ISENABLER) and CPU
+interface (GICC_PMR, BPR, CTLR), with a generic `dispatch_irq<F>()` handler.
+
+#### 6.5.3 Timer Binding
+
+The hardware timer model (`SeLe4n/Kernel/Architecture/TimerModel.lean`, AG3-E)
+bridges abstract timer ticks to the ARM Generic Timer:
+
+- **Hardware registers**: CNTPCT_EL0 (54 MHz physical counter), CNTP_CVAL_EL0
+  (comparator), CNTFRQ_EL0 (frequency)
+- **Mapping**: One model `timerTick` = one timer interrupt event (counter ≥
+  comparator). At 1000 Hz tick rate: 54,000 counter increments per tick
+- **Monotonicity**: `hardwareTimerToModelTick_monotone` proves the hardware-to-
+  model conversion is monotonically non-decreasing
+- **`TimerInterruptBinding`**: Structure capturing the bidirectional relationship
+  between hardware timer events and model timer ticks
+
+The Rust timer driver (`sele4n-hal/src/timer.rs`) uses system register
+accessors and counter-relative reprogramming for evenly-spaced interrupts.
+
+#### 6.5.4 Memory Management (ARMv8)
+
+The ARMv8 page table model (`SeLe4n/Kernel/Architecture/PageTable.lean`, AG6)
+provides a formal model of the 4-level translation table structure:
+
+- **Page table levels**: L0 (512 GB regions) → L1 (1 GB) → L2 (2 MB) → L3
+  (4 KB pages). 48-bit VA space, 4 KB granule
+- **Descriptor types**: Invalid, Block (L1/L2 huge pages), Table (next-level
+  pointer), Page (L3 leaf entry)
+- **Attributes**: `PageAttributes` captures access permissions (RW/RO/None,
+  user/kernel), shareability (Non/Inner/Outer), and the access flag
+- **W^X enforcement**: `hwDescriptor_wxCompliant_bridge` bridges hardware
+  descriptor AP/UXN/PXN bits to the abstract VSpace W^X invariant
+- **Walk**: `pageTableWalk` uses structural recursion (no fuel) with
+  `pageTableWalk_deterministic` proof
+
+The VSpace ARMv8 instance (`VSpaceARMv8.lean`, AG6-C/D) provides the
+`VSpaceBackend` typeclass implementation using a shadow `VSpaceRoot` with
+refinement proofs: `simulationRelation`, `lookupPage_refines`,
+`vspaceProperty_transfer`.
+
+The ASID manager (`AsidManager.lean`, AG6-H) implements a bump allocator with
+generation tracking, free list reuse, and `asidPoolUnique` invariant.
+
+#### 6.5.5 FFI Bridge (Lean ↔ Rust)
+
+The FFI bridge (`SeLe4n/Platform/FFI.lean`, AG7) declares 17 `@[extern]`
+functions mapping Lean kernel operations to Rust HAL implementations:
+
+- **UART**: `ffi_uart_putchar`, `ffi_uart_getchar`
+- **Timer**: `ffi_timer_get_count`, `ffi_timer_set_comparator`,
+  `ffi_timer_get_frequency`
+- **GIC**: `ffi_gic_acknowledge`, `ffi_gic_eoi`, `ffi_gic_enable_irq`
+- **MMU**: `ffi_mmu_enable`, `ffi_mmu_set_ttbr0`, `ffi_mmu_invalidate_tlb`
+- **CPU**: `ffi_cpu_wfe`, `ffi_cpu_dsb`, `ffi_cpu_isb`, `ffi_cpu_dmb`
+- **Context switch**: `ffi_context_switch`
+- **Interrupts**: `ffi_interrupts_disable`, `ffi_interrupts_restore`
+
+Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
+`Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
+for all 4 adapter paths. The `proofLayerInvariantBundle` (11 conjuncts)
+and `ipcInvariantFull` (15 conjuncts) are preserved through the FFI boundary.
 
 ---
 
@@ -577,6 +737,29 @@ eliminating the collision risk entirely.
 The timeout lookup is triggered in `timerTickBudget` on budget exhaustion,
 using the `scThreadIndex` (a Robin Hood hash table mapping `SchedContextId`
 to `List ThreadId`) for O(1) identification of affected threads.
+
+### 8.5.1 IPC Buffer Alignment (AG10-B / FINDING-07)
+
+The IPC buffer has specific alignment requirements bridging the Lean model to
+ARM64 hardware:
+
+- **Lean model**: IPC buffer alignment is enforced at 512 bytes
+  (`ipcBufferAlignment = 512` in `Architecture/IpcBufferValidation.lean`).
+  `setIPCBufferOp` validates the address via a 5-step pipeline including
+  alignment check, page membership, and VSpace lookup.
+- **Rust ABI**: The `IpcBuffer` structure (`sele4n-abi/src/ipc_buffer.rs`) is
+  960 bytes, `#[repr(C)]`, with 8-byte natural alignment. The 512-byte model
+  alignment exceeds the ABI's 8-byte requirement.
+- **Hardware justification**: 512-byte alignment provides 8 × 64-byte cache
+  lines on Cortex-A76, ensuring the IPC buffer does not straddle cache line
+  boundaries in a way that would cause false sharing or require additional
+  cache maintenance. This is a **performance optimization**, not an
+  architectural requirement — the hardware would function correctly with
+  any 8-byte aligned buffer.
+- **Page safety**: The `ipcBuffer_within_page` theorem (AE4-J) proves that
+  a 512-byte-aligned IPC buffer of 960 bytes never crosses a 4 KiB page
+  boundary (512 + 960 = 1472 < 4096). This guarantees a single TLB entry
+  covers the entire buffer, avoiding mid-transfer page faults.
 
 ### 8.6 Memory Scrubbing on Delete (WS-S Phase S6)
 
@@ -972,7 +1155,7 @@ upper bits exist. `AccessRightSet.ofNat` masks inputs to the valid 5-bit range.
 ### 11.2 Information Flow and Non-Interference Boundary (AD3-C/F-05)
 
 The kernel's non-interference (NI) guarantees cover all kernel-primitive
-transitions via 34 `NonInterferenceStep` constructors in
+transitions via 35 `NonInterferenceStep` constructors in
 `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`. These include IPC
 (with SchedContext donation and priority inheritance protocol propagation),
 scheduling (including domain rotation via `ComposedNonInterferenceStep`),
