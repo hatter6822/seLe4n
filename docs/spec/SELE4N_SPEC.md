@@ -825,10 +825,12 @@ Every kernel object has a decidable well-formedness predicate:
 ### 8.10 Checked Dispatch and MMIO Adapter (WS-T Phase T6)
 
 - **Checked dispatch**: `dispatchWithCapChecked`, `dispatchSyscallChecked`, and
-  `syscallEntryChecked` gate all 7 policy-relevant operations through
-  `securityFlowsTo` wrappers at runtime (endpointSend/Receive/Call,
-  cspaceMint/Copy/Move, registerService). `checkedDispatch_flowDenied_preserves_state`
-  proves state preservation on flow denial.
+  `syscallEntryChecked` gate all 11 policy-relevant operations through
+  `securityFlowsTo` wrappers at runtime (endpointSend/Receive/Call/Reply/ReplyRecv,
+  cspaceMint/Copy/Move, notificationSignal/Wait, registerService).
+  `checkedDispatch_flowDenied_preserves_state` proves state preservation on flow
+  denial. AH1: Checked `.send` now delegates to `endpointSendDualWithCaps`
+  (capability transfer) matching the unchecked path.
 - **MMIO adapter**: `mmioRead`/`mmioWrite` in `Platform/RPi5/MmioAdapter.lean`
   validate device-region membership. `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C`
   validate the full byte range of the write (AF3-B: prevents boundary-spill into
@@ -836,6 +838,34 @@ Every kernel object has a decidable well-formedness predicate:
   memory ordering. `mmioAccessAllowed` runtime contract predicate gates access.
 - **TLB flush operations**: `tlbFlushByASID`, `tlbFlushByPage`, `tlbFlushAll`
   with state frame proofs for targeted invalidation.
+
+### 8.10.1 Checked Send Capability Transfer (AH1 / H-01)
+
+Prior to AH1, the checked `.send` path (`endpointSendDualChecked`) delegated to
+`endpointSendDual` (without capability transfer), while the unchecked path
+correctly used `endpointSendDualWithCaps`. This meant IPC messages sent through
+the information-flow enforcement layer silently dropped capability transfer on
+rendezvous.
+
+**Fix**: `endpointSendDualChecked` now delegates to `endpointSendDualWithCaps`,
+adding three parameters (`endpointRights`, `senderCspaceRoot`, `receiverSlotBase`)
+and changing the return type to `Kernel CapTransferSummary`. Both checked and
+unchecked `.send` paths now perform identical capability transfer semantics.
+
+**Proof impact**: 7 theorems updated across Wrappers.lean, Soundness.lean, and
+Operations.lean (NI). The enforcement-NI bridge (`enforcementBridge_to_NonInterferenceStep`)
+carries the updated signature. All proofs mechanically verified.
+
+### 8.10.2 Device Memory Execute Permission Validation (AH1 / M-01)
+
+`validateVSpaceMapPermsForMemoryKind` (SyscallArgDecode.lean) was defined and
+tested but not wired into the `.vspaceMap` dispatch arm. Device memory regions
+could theoretically receive execute permission through the syscall path (undefined
+behavior on ARM64).
+
+**Fix**: The `.vspaceMap` dispatch in `dispatchCapabilityOnly` now calls
+`validateVSpaceMapPermsForMemoryKind` after decode and before mapping. Device
+regions with `perms.execute = true` return `.error .policyDenied`.
 
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 

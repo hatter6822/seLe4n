@@ -155,27 +155,39 @@ theorem cspaceMintChecked_NI
 -- WS-H8/H-07: Enforcement-NI bridge theorems for new wrappers
 -- ============================================================================
 
-/-- R5-A/M-01: endpointSendDualChecked NI — projection-based (internalized).
+/-- R5-A/M-01/AH1: endpointSendDualChecked NI — projection-based (internalized).
 
 Replaces the prior hypothesis-accepting version. Instead of accepting the
 two-state NI property as a hypothesis, this version takes a
 one-sided projection preservation hypothesis `hProjection`. The caller proves
-that each individual execution preserves the observer's projection. -/
+that each individual execution preserves the observer's projection.
+
+AH1: Updated to use WithCaps variant and CapTransferSummary return type. -/
 theorem endpointSendDualChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage)
-    (s₁ s₂ s₁' s₂' : SystemState)
+    (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot)
+    (s₁ s₂ : SystemState) (r₁ : CapTransferSummary) (s₁' : SystemState)
+    (r₂ : CapTransferSummary) (s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hProjection : ∀ t t', endpointSendDual endpointId sender msg t = .ok ((), t') →
+    (hProjection : ∀ t r t', endpointSendDualWithCaps endpointId sender msg
+        endpointRights senderCspaceRoot receiverSlotBase t = .ok (r, t') →
         projectState ctx observer t' = projectState ctx observer t)
-    (hStep₁ : endpointSendDualChecked ctx endpointId sender msg s₁ = .ok ((), s₁'))
-    (hStep₂ : endpointSendDualChecked ctx endpointId sender msg s₂ = .ok ((), s₂')) :
+    (hStep₁ : endpointSendDualChecked ctx endpointId sender msg endpointRights
+        senderCspaceRoot receiverSlotBase s₁ = .ok (r₁, s₁'))
+    (hStep₂ : endpointSendDualChecked ctx endpointId sender msg endpointRights
+        senderCspaceRoot receiverSlotBase s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  have hFlow := enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg s₁ s₁' hStep₁
-  rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₁ hFlow] at hStep₁
-  rw [endpointSendDualChecked_eq_endpointSendDual_when_allowed ctx endpointId sender msg s₂ hFlow] at hStep₂
-  unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
+  have hFlow := enforcementSoundness_endpointSendDualChecked ctx endpointId sender msg
+    endpointRights senderCspaceRoot receiverSlotBase s₁ r₁ s₁' hStep₁
+  rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
+    endpointRights senderCspaceRoot receiverSlotBase s₁ hFlow] at hStep₁
+  rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
+    endpointRights senderCspaceRoot receiverSlotBase s₂ hFlow] at hStep₂
+  unfold lowEquivalent; rw [hProjection s₁ r₁ s₁' hStep₁, hProjection s₂ r₂ s₂' hStep₂]; exact hLow
 
 /-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
 transition preserves low-equivalence. -/

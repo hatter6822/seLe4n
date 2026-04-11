@@ -344,8 +344,11 @@ operation's source domain is authorized to flow to the destination domain. -/
 theorem enforcementSoundness_endpointSendDualChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (st st' : SystemState)
-    (hStep : endpointSendDualChecked ctx endpointId sender msg st = .ok ((), st')) :
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st : SystemState) (r : CapTransferSummary) (st' : SystemState)
+    (hStep : endpointSendDualChecked ctx endpointId sender msg endpointRights
+              senderCspaceRoot receiverSlotBase st = .ok (r, st')) :
     securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true := by
   unfold endpointSendDualChecked at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
@@ -680,17 +683,21 @@ their own denied-preserves-state proofs in Soundness.lean above.
 The full NI composition (linking checked dispatch to low-equivalence
 preservation) is in `Invariant/Composition.lean`. -/
 theorem checkedDispatch_flowDenied_preserves_state :
-    (∀ ctx epId sender msg st,
+    (∀ ctx epId sender msg (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+        (receiverSlotBase : SeLe4n.Slot) st,
       securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf epId) = false →
-      ¬∃ st', endpointSendDualChecked ctx epId sender msg st = .ok ((), st')) ∧
+      ¬∃ (r : CapTransferSummary) (st' : SystemState),
+        endpointSendDualChecked ctx epId sender msg
+        endpointRights senderCspaceRoot receiverSlotBase st = .ok (r, st')) ∧
     (∀ ctx src dst rights badge st,
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = false →
       ¬∃ st', cspaceMintChecked ctx src dst rights badge st = .ok ((), st')) ∧
     (∀ ctx caller reg st,
       securityFlowsTo (ctx.threadLabelOf caller) (ctx.serviceLabelOf reg.sid) = false →
       ¬∃ st', registerServiceChecked ctx caller reg st = .ok ((), st')) :=
-  ⟨fun ctx epId sender msg st hDeny =>
-    endpointSendDualChecked_denied_preserves_state ctx epId sender msg st hDeny,
+  ⟨fun ctx epId sender msg endpointRights senderCspaceRoot receiverSlotBase st hDeny =>
+    endpointSendDualChecked_denied_preserves_state ctx epId sender msg
+      endpointRights senderCspaceRoot receiverSlotBase st hDeny,
    fun ctx src dst rights badge st hDeny =>
     cspaceMintChecked_denied_preserves_state ctx src dst rights badge st hDeny,
    fun ctx caller reg st hDeny => by
@@ -745,8 +752,10 @@ theorem checkedDispatchEnforcementCoverage_complete :
 theorem enforcementBridge_to_NonInterferenceStep
     (ctx : LabelingContext) (st st' : SystemState) :
     -- 1. endpointSendDualChecked: success implies sender→endpoint flow allowed
-    (∀ eid sender msg,
-      endpointSendDualChecked ctx eid sender msg st = .ok ((), st') →
+    (∀ eid sender msg (endpointRights : AccessRightSet) (senderCspaceRoot : SeLe4n.ObjId)
+        (receiverSlotBase : SeLe4n.Slot) (r : CapTransferSummary),
+      endpointSendDualChecked ctx eid sender msg endpointRights senderCspaceRoot
+        receiverSlotBase st = .ok (r, st') →
       securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf eid) = true) ∧
     -- 2. notificationSignalChecked: success implies signaler→notification flow allowed
     (∀ ntfnId signaler badge,
@@ -790,8 +799,9 @@ theorem enforcementBridge_to_NonInterferenceStep
       securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
       securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) := by
   exact ⟨
-    fun eid sender msg hStep =>
-      enforcementSoundness_endpointSendDualChecked ctx eid sender msg st st' hStep,
+    fun eid sender msg endpointRights senderCspaceRoot receiverSlotBase r hStep =>
+      enforcementSoundness_endpointSendDualChecked ctx eid sender msg endpointRights
+        senderCspaceRoot receiverSlotBase st r st' hStep,
     fun ntfnId signaler badge hStep =>
       enforcementSoundness_notificationSignalChecked ctx ntfnId signaler badge st st' hStep,
     fun src dst hStep =>

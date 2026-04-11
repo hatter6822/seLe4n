@@ -33,6 +33,11 @@ WS-AD Phase AD4 complete. Phase AD5 complete. **WS-AD PORTFOLIO COMPLETE.**
 WS-AE Phase AE1 complete. Phase AE2 complete. Phase AE3 complete. Phase AE4 complete. Phase AE5 complete. Phase AE6 complete. **WS-AE PORTFOLIO COMPLETE.**
 WS-AF Phase AF1 complete. Phase AF2 complete. Phase AF3 complete. Phase AF4 complete. Phase AF5 complete. Phase AF6 complete. **WS-AF PORTFOLIO COMPLETE.**
 WS-AG Phase AG1 complete. Phase AG2 complete. Phase AG2 Audit complete. Phase AG3 complete. Phase AG4 complete. Phase AG5 complete. Phase AG6 complete. Phase AG7 complete. Phase AG8 complete. Phase AG9 complete. Phase AG10 complete. **WS-AG PORTFOLIO COMPLETE.**
+WS-AH Phase AH1 complete.
+
+### WS-AH: Pre-Release Comprehensive Audit Remediation (IN PROGRESS)
+
+- **Phase AH1 COMPLETE** (v0.27.2): Critical IPC Dispatch Correctness — 5 sub-tasks (AH1-A through AH1-E). AH1-A (H-01/HIGH): `endpointSendDualChecked` now delegates to `endpointSendDualWithCaps` instead of `endpointSendDual` — checked `.send` path performs IPC capability transfer on rendezvous, matching the unchecked path; 3 new parameters (`endpointRights`, `senderCspaceRoot`, `receiverSlotBase`); return type `Kernel Unit` → `Kernel CapTransferSummary`. AH1-B: Updated `dispatchWithCapChecked` `.send` arm to pass cap transfer parameters. AH1-C: Updated 7 NI theorems across 3 files (Wrappers.lean, Soundness.lean, Operations.lean) — equivalence, flow-denied, denied-preserves-state, enforcement sufficiency, soundness, bridge, NI preservation. AH1-D (M-01/MEDIUM): Wired `validateVSpaceMapPermsForMemoryKind` into `.vspaceMap` dispatch — device regions with execute permission now return `.error .policyDenied`; updated `dispatchWithCap_vspaceMap_delegates` theorem. AH1-E: Updated 10 call sites across 3 test files. Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh`. Zero sorry/axiom. See `docs/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md`
 
 ### WS-AG: H3 Hardware Binding Audit Remediation (PORTFOLIO COMPLETE)
 

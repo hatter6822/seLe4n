@@ -462,9 +462,14 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeVSpaceMapArgs decoded with
         | .error e => .error e
         | .ok args =>
-            -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
-            Architecture.vspaceMapPageCheckedWithFlushFromState args.asid args.vaddr args.paddr
-              args.perms st
+            -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
+            -- Device regions must not receive execute permission (undefined on ARM64).
+            match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
+            | .error e => .error e
+            | .ok validatedArgs =>
+                -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
+                Architecture.vspaceMapPageCheckedWithFlushFromState validatedArgs.asid
+                  validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st
     | _ => fun _ => .error .invalidCapability
   | .vspaceUnmap =>
     some <| match cap.target with
@@ -817,7 +822,9 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
-        match endpointSendDualChecked ctx epId tid msg st with
+        -- AH1-B (H-01 fix): Pass capability transfer params to checked send
+        match endpointSendDualChecked ctx epId tid msg cap.rights gate.cspaceRoot
+            decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
@@ -1521,8 +1528,12 @@ theorem dispatchWithCap_vspaceMap_delegates
     (hTarget : cap.target = .object objId)
     (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
     dispatchWithCap decoded tid gate cap =
-      Architecture.vspaceMapPageCheckedWithFlushFromState args.asid args.vaddr args.paddr
-        args.perms := by
+      -- AH1-D: Dispatch now validates permissions against memory kind before mapping
+      fun st => match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
+        | .error e => .error e
+        | .ok validatedArgs =>
+            Architecture.vspaceMapPageCheckedWithFlushFromState validatedArgs.asid
+              validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A: When vspaceUnmap dispatch succeeds, `vspaceUnmapPageWithFlush` is

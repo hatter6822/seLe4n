@@ -510,7 +510,7 @@ Message-bounded theorems:
 
 Information-flow:
 
-- `endpointSendDualChecked` — bounds checks precede flow checks; `enforcement_sufficiency_endpointSendDual` expanded to 4-way disjunction.
+- `endpointSendDualChecked` — bounds checks precede flow checks; `enforcement_sufficiency_endpointSendDual` expanded to 4-way disjunction. AH1: delegates to `endpointSendDualWithCaps` for capability transfer parity with unchecked path.
 - **X3-A (v0.22.20)**: `serviceOrchestrationOutsideNiBoundary` — formal exclusion boundary documenting that service orchestration internals are outside NI scope. `serviceRegistryAffectsProjection` predicate.
 - **X3-B (v0.22.20, extended Y2-E v0.22.24)**: `enforcementBridge_to_NonInterferenceStep` — unified 11-conjunct bridge theorem connecting enforcement soundness (all 11 checked wrappers) to NI composition framework. Y2-E added `endpointCallChecked`, `endpointReplyChecked`, `cspaceMintChecked`, `notificationWaitChecked`, `endpointReplyRecvChecked`.
 - **X3-E (v0.22.20)**: `integrityFlowsTo_prevents_escalation` — privilege escalation prevention theorem for the non-BIBA integrity direction. `securityFlowsTo_prevents_label_escalation` — label-level denial.
@@ -897,7 +897,7 @@ Policy and projection primitives:
 
 Policy checks wired into kernel operations via `Enforcement.lean`:
 
-- `endpointSendDualChecked` — enforces `securityFlowsTo` before IPC send,
+- `endpointSendDualChecked` — enforces `securityFlowsTo` before IPC send (AH1: with capability transfer via `endpointSendDualWithCaps`),
 - `cspaceMintChecked` — enforces `securityFlowsTo` before capability minting.
 *(WS-Q1: `serviceRestartChecked` removed — service lifecycle simplified to registry model.)*
 
