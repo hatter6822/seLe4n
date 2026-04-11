@@ -2406,7 +2406,7 @@ receiver objects (and any SchedContext involved) are non-observable.
 `applyCallDonation` either returns the state unchanged (donation conditions
 not met) or calls `donateSchedContext` which modifies only the caller TCB,
 receiver TCB, and one SchedContext — all at non-observable ObjIds.
-The scheduler is unconditionally preserved (`applyCallDonation_scheduler_eq`). -/
+On success, the scheduler is preserved (`applyCallDonation_scheduler_eq`). -/
 theorem applyCallDonation_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
