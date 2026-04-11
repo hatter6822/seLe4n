@@ -1,3 +1,54 @@
+## v0.27.1 — WS-AG Phase AG10: Documentation + Closure
+
+Phase AG10 of WS-AG H3 Hardware Binding Audit Remediation. Closes the H3
+workstream with comprehensive documentation of hardware binding architecture,
+platform integration, and multi-core limitations. Synchronizes all documentation
+surfaces (spec, README, GitBook, workstream history). 7 sub-tasks (AG10-A
+through AG10-G). **WS-AG PORTFOLIO COMPLETE** (10 phases, 67 sub-tasks,
+v0.26.0–v0.27.1).
+Gate: `lake build` + `test_full.sh` + documentation sync. Zero sorry/axiom.
+
+### Changes
+
+- **AG10-A** (FINDING-05, Multi-Core Limitation Documentation): New
+  "Hardware Limitations" section (6.4) in `SELE4N_SPEC.md` documenting
+  single-core operation (core 0 only, 3 cores in WFE loop), SMP deferral
+  to WS-V with requirements list (per-core run queues, IPI, spinlocks,
+  MOESI cache coherency, per-core TLB coordination), sequential memory
+  model note, and absence of multi-core invariants
+- **AG10-B** (FINDING-07, IPC Buffer Alignment Documentation): New
+  Section 8.5.1 in `SELE4N_SPEC.md` documenting 512-byte alignment (Lean),
+  960-byte `#[repr(C)]` struct (Rust ABI), Cortex-A76 cache line justification,
+  `ipcBuffer_within_page` theorem (1472 < 4096 page boundary)
+- **AG10-C** (Architecture Assumptions Update): Extended
+  `Architecture/Assumptions.lean` with comprehensive documentation for all
+  AG3–AG8 architecture modules: exception model (AG3-C), interrupt dispatch
+  (AG3-D), timer binding (AG3-E), exception levels (AG3-F), ARMv8 page tables
+  (AG6-A/B), VSpace ARMv8 instance (AG6-C/D), ASID manager (AG6-H), TLB model
+  (AG6-F/G), cache coherency model (AG8-B), and ARM64-specific constraints
+- **AG10-D** (SELE4N_SPEC.md Major Update): New "Hardware Binding Architecture"
+  section (6.5) with layered diagram and 5 subsections: Exception Handling
+  (6.5.1), Interrupt Dispatch (6.5.2), Timer Binding (6.5.3), Memory Management
+  ARMv8 (6.5.4), FFI Bridge (6.5.5). Updated H3 status to COMPLETE in Path to
+  Hardware table. Updated NI constructor count 34→35
+- **AG10-E** (Codebase Map Regeneration): Regenerated `docs/codebase_map.json`
+  with updated version 0.27.1, 141 production files, 91,464 LoC
+- **AG10-F** (WORKSTREAM_HISTORY.md Update): Added AG10 entry, changed WS-AG
+  status from IN PROGRESS to PORTFOLIO COMPLETE
+- **AG10-G** (README.md Metrics Sync): Updated metrics table (version, LoC,
+  Rust crates, hardware binding status, single-core note), updated completed
+  workstreams table with WS-AG and WS-AF, updated next milestone to WS-V
+
+### Infrastructure
+
+- Version bump: `lakefile.toml` and `rust/Cargo.toml` 0.27.0→0.27.1
+- Documentation: SELE4N_SPEC.md (+206 lines), Assumptions.lean (+114 lines),
+  WORKSTREAM_HISTORY.md, DEVELOPMENT.md, CLAIM_EVIDENCE_INDEX.md, GitBook
+  chapters 01/05/10 updated
+- Codebase map regenerated with updated metrics
+
+---
+
 ## v0.27.0 — WS-AG Phase AG9: Testing + Validation
 
 Phase AG9 of WS-AG H3 Hardware Binding Audit Remediation. Validates the H3

@@ -159,7 +159,7 @@ provides the organizational infrastructure for hardware binding:
   orchestration (`scripts/test_hw_full.sh`). Hardware validation documentation
   at `docs/hardware_validation/`.
 
-**Remaining H3 work** (AG9 complete, AG10 remaining):
+**H3 Hardware Binding — COMPLETE** (WS-AG AG1–AG10, v0.26.0–v0.27.1):
 
 1. ~~Populate RPi5 runtime contract with hardware-validated predicates.~~ **DONE** (WS-H15b).
 2. ~~Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.~~ **DONE** (AG6-A/B/C/D: 4-level page table walk, shadow refinement, VSpaceBackend instance).
@@ -168,7 +168,7 @@ provides the organizational infrastructure for hardware binding:
 5. ~~Define boot sequence as a verified initial state construction.~~ **DONE** (AG4-E: boot.S/boot.rs assembly→Rust boot sequence).
 6. ~~Implement DTB parsing in `DeviceTree.fromDtb`.~~ **DONE** (X4-A/B/C: full FDT node traversal, GIC discovery, timer extraction).
 7. ~~AG9: Testing + Validation.~~ **DONE** (v0.27.0: QEMU integration, hardware cross-check, WCRT profiling, Badge overflow validation, speculation barriers, full RPi5 test suite).
-8. AG10: Documentation + Closure (planned).
+8. ~~AG10: Documentation + Closure.~~ **DONE** (v0.27.1: SELE4N_SPEC.md Hardware Binding chapter, Architecture Assumptions update, multi-core limitation docs, IPC buffer alignment docs, codebase map regeneration, full documentation sync). **WS-AG PORTFOLIO COMPLETE.**
 
 ### H4 — Planned: evidence convergence
 

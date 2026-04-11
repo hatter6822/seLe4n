@@ -85,12 +85,14 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.27.0` |
+| **Version** | `0.27.1` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 91,350 across 141 files |
+| **Production Lean LoC** | 91,464 across 141 files |
 | **Test Lean LoC** | 11,608 across 17 test suites |
 | **Proved declarations** | 2,725 theorem/lemma declarations (zero sorry/axiom) |
-| **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
+| **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0), SMP deferred to WS-V |
+| **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
 | **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
@@ -207,22 +209,25 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | **Bounded latency** | No formal WCRT bound | `WCRT = D × L_max + N × (B + P)` proven across 7 liveness modules |
 | **Object stores** | Linked lists and arrays | Verified Robin Hood hash tables (`RHTable`/`RHSet`) with O(1) hot paths |
 | **Service management** | Not in kernel | First-class orchestration with dependency graph and acyclicity proofs |
-| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,716 proved declarations, zero sorry/axiom) |
+| **Proofs** | Isabelle/HOL, post-hoc | Lean 4 type-checker, co-located with transitions (2,725 proved declarations, zero sorry/axiom) |
 | **Platform** | C-level HAL | `PlatformBinding` typeclass with typed boundary contracts |
 
 ## What's next
 
-All software-level workstreams (WS-B through WS-AB) are complete. The full
-history is in [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
+All software-level workstreams (WS-B through WS-AB) and the H3 hardware binding
+workstream (WS-AG) are complete. The full history is in
+[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md).
 
 ### Completed workstreams
 
 | Workstream | Scope | Version |
 |------------|-------|---------|
-| **WS-AE** | Production Audit Remediation — Phase AE1: API dispatch & NI composition (8 tasks). Phase AE2: Data structure hardening (8 tasks). Phase AE3: Scheduler & SchedContext correctness (12 tasks). Phase AE4: Capability, IPC & architecture hardening (10 tasks). Phase AE5: Platform, service & cross-subsystem (7 tasks). Phase AE6: Testing, documentation & closure (8 tasks). **PORTFOLIO COMPLETE** (6 phases, 53 tasks) | v0.25.15–v0.25.21 |
+| **WS-AG** | H3 Hardware Binding Audit Remediation — 10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400 driver, ARM Generic Timer, ARMv8 page tables, ASID manager, FFI bridge (17 `@[extern]` functions), exception/interrupt models, cache coherency model, QEMU integration testing, speculation barriers, hardware validation suite. **PORTFOLIO COMPLETE** | v0.26.0–v0.27.1 |
+| **WS-AF** | Pre-Release Comprehensive Audit Remediation — 6 phases (AF1–AF6), 49 sub-tasks. **PORTFOLIO COMPLETE** | v0.25.22–v0.25.27 |
+| **WS-AE** | Production Audit Remediation — 6 phases (AE1–AE6), 53 sub-tasks. **PORTFOLIO COMPLETE** | v0.25.15–v0.25.21 |
 
 ### Next major milestone
 
-**Raspberry Pi 5 hardware binding** — ARMv8 page table walk, GIC-400 interrupt
-routing, boot sequence. Prior audits and milestone closeouts are archived in
-[`docs/dev_history/`](docs/dev_history/README.md).
+**WS-V**: Multi-core SMP support, FrozenOps production promotion, CDT fuel
+sufficiency proofs, and donation chain formal bridge. Prior audits and milestone
+closeouts are archived in [`docs/dev_history/`](docs/dev_history/README.md).
