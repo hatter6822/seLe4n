@@ -17,7 +17,7 @@ Gate: `lake build` + `test_smoke.sh` + `test_full.sh`. Zero sorry/axiom.
 - **AH1-B** (H-01 fix): Updated `dispatchWithCapChecked` `.send` arm in
   API.lean to pass `cap.rights`, `gate.cspaceRoot`, and `decoded.capRecvSlot`
   to the updated `endpointSendDualChecked`.
-- **AH1-C** (H-01 fix): Updated 7 theorems across 3 files:
+- **AH1-C** (H-01 fix): Updated 8 theorems across 3 files:
   - `endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed` (renamed
     from `*_eq_endpointSendDual_*`): equivalence with new WithCaps target
   - `endpointSendDualChecked_flowDenied`: added 3 new parameters

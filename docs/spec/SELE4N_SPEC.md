@@ -852,7 +852,7 @@ adding three parameters (`endpointRights`, `senderCspaceRoot`, `receiverSlotBase
 and changing the return type to `Kernel CapTransferSummary`. Both checked and
 unchecked `.send` paths now perform identical capability transfer semantics.
 
-**Proof impact**: 7 theorems updated across Wrappers.lean, Soundness.lean, and
+**Proof impact**: 8 theorems updated across Wrappers.lean, Soundness.lean, and
 Operations.lean (NI). The enforcement-NI bridge (`enforcementBridge_to_NonInterferenceStep`)
 carries the updated signature. All proofs mechanically verified.
 
