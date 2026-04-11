@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 2,725 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AG Phase AG9 COMPLETE** (v0.27.0). H3 Hardware Binding Audit Remediation — Phase AG9: Testing + Validation. QEMU integration testing, BCM2712 hardware constant cross-check, WCRT empirical validation (PMU cycle counting), RunQueue profiling, Badge Nat↔UInt64 overflow validation (22 Lean + 7 Rust tests), ARMv8-A speculation barriers (CSDB/SB/FEAT_CSV2 for Spectre v1/v2), 5-phase hardware test orchestration. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: AG1–AG8 (v0.26.0–v0.26.9), WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: AG10 (documentation + closure).** |
+| **Active workstream** | **WS-AG PORTFOLIO COMPLETE** (v0.26.0–v0.27.1). H3 Hardware Binding Audit Remediation — 10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400 driver, ARM Generic Timer, ARMv8 page tables, ASID manager, FFI bridge, exception/interrupt models, cache coherency, QEMU testing, speculation barriers, documentation closure. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: WS-V (multi-core SMP).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -518,8 +518,9 @@ AG3-C) defines the hardware exception dispatch path:
   classifies the exception and routes to `syscallEntry`
 - **Exception levels**: EL0 (user) ↔ EL1 (kernel) transitions are modeled
   with `exceptionEntry_setsEL1` and `exceptionReturn_restoresEL0` proofs
-- **Atomicity**: 5 preservation theorems prove kernel state consistency across
-  exception entry/exit boundaries
+- **Atomicity**: 8 preservation theorems prove kernel state consistency across
+  exception and interrupt boundaries (context save/restore, thread selection,
+  dispatch, scheduling, timer tick, and interrupt handling)
 
 The Rust HAL implements the exception vector table (`sele4n-hal/src/vectors.S`)
 with 16 entries (4 types × 4 execution states) and a trap frame

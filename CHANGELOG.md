@@ -32,7 +32,7 @@ Gate: `lake build` + `test_full.sh` + documentation sync. Zero sorry/axiom.
   ARMv8 (6.5.4), FFI Bridge (6.5.5). Updated H3 status to COMPLETE in Path to
   Hardware table. Updated NI constructor count 34→35
 - **AG10-E** (Codebase Map Regeneration): Regenerated `docs/codebase_map.json`
-  with updated version 0.27.1, 141 production files, 91,464 LoC
+  with updated version 0.27.1, 141 production files, 91,466 LoC
 - **AG10-F** (WORKSTREAM_HISTORY.md Update): Added AG10 entry, changed WS-AG
   status from IN PROGRESS to PORTFOLIO COMPLETE
 - **AG10-G** (README.md Metrics Sync): Updated metrics table (version, LoC,

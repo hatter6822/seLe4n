@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-audit-docs-NQzT0",
-      "commit_sha": "7def17838b3b6c05166d5110056d776f84ce076a",
-      "tree_sha": "4f63eddd914b7bf6741cc61a5ea325863e6beb12",
-      "committed_at_utc": "2026-04-11T00:01:57-04:00"
+      "commit_sha": "a1ac05b78869211f6c0e6542cb1f13be06f8ef27",
+      "tree_sha": "463788b4d73563a97bab029ea61814cbdb87a207",
+      "committed_at_utc": "2026-04-11T05:02:58+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "41be85ea70453d093cdf32a491c7701b3694dbce89e5c4fb0cce11c91ff5737a"
+    "source_digest": "f0764eba84742876417a9dbfc97793545c360b659eea89292ccea331ef7742de"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.27.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91464,
+    "production_loc": 91466,
     "test_files": 17,
     "test_loc": 11608,
     "proved_theorem_lemma_decls": 2725,

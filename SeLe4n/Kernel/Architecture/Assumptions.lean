@@ -141,8 +141,10 @@ Key types: `ExceptionType`, `ExceptionSource`, `SynchronousExceptionClass`,
 `ExceptionContext`. The `dispatchException` function is total and deterministic.
 
 AG3-F extends the model with ARM64 privilege levels EL0 (user) and EL1 (kernel),
-setting the appropriate level on exception entry/exit. Five atomicity
-preservation theorems prove kernel state consistency across exception boundaries.
+setting the appropriate level on exception entry/exit. Eight preservation
+theorems prove kernel state consistency across exception and interrupt
+boundaries (context save/restore, thread selection, dispatch, scheduling,
+timer tick, and interrupt handling).
 
 ### AG3-D: Interrupt Dispatch Model (`InterruptDispatch.lean`)
 
@@ -191,7 +193,7 @@ descriptor W^X compliance to the abstract VSpace W^X invariant.
 Provides the `VSpaceBackend` instance for ARMv8 using a shadow `VSpaceRoot`
 structure. All 7 typeclass obligations are discharged. The `simulationRelation`
 connects the shadow state to the abstract HashMap-based VSpace, with
-`lookupPage_refines` and `vspaceProperty_transfer` proving refinement.
+`hwLookupPage_refines` and `vspaceProperty_transfer` proving refinement.
 
 ### AG6-H: ASID Manager (`AsidManager.lean`)
 

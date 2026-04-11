@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **All prior workstreams completed through WS-AG Phase AG9 (v0.27.0). Testing tiers enforce regression protection and evidence continuity across 91,350+ production LoC, 11,600+ test LoC, and 2,725+ proved declarations.**
+Current stage context: **WS-AG PORTFOLIO COMPLETE (v0.26.0–v0.27.1). Testing tiers enforce regression protection and evidence continuity across 91,466+ production LoC, 11,600+ test LoC, and 2,725+ proved declarations.**
 
 ## Tier model
 
